@@ -161,7 +161,8 @@ run with a temporary HOME, temporary stores and stub `claude`, `codex` and `gh`.
 **The check.** Install, scaffold, docs, release metadata and the static stages always run here
 (seconds). The Vitest suite, six to eleven minutes on a shared Mac, comes from `main`'s own push
 run of [check.yml](../.github/workflows/check.yml) on the exact release commit, which ran it on
-Linux and on macOS (`--check auto`, the default; [ci-check.mjs](../tools/release-rc/ci-check.mjs)):
+Linux and on macOS. `main` runs check.yml only for a release commit (`chore(main): release …`),
+so a cut at any other commit runs the whole check here (`--check auto`, the default; [ci-check.mjs](../tools/release-rc/ci-check.mjs)):
 
 - The run is looked up before the build. One that already failed stops the cut; with none at that
   commit, or when GitHub can't be asked, the whole check runs here as before.

@@ -55,6 +55,7 @@ export const fakeServer = () => {
     forgotten: [] as Array<string>,
     refreshes: 0,
     tokenType: "DPoP",
+    lendsDevices: true,
     giveRefresh: true,
     code: "",
     resourceNonce: undefined as string | undefined,
@@ -125,6 +126,7 @@ export const fakeServer = () => {
               thread_wait_endpoint: `${origin}/api/threads/wait`,
               thread_message_endpoint: `${origin}/api/threads/message`,
               thread_stop_endpoint: `${origin}/api/threads/stop`,
+              thread_check_endpoint: `${origin}/api/threads/check`,
             }
           : {}),
       });
@@ -148,7 +150,7 @@ export const fakeServer = () => {
         return json(400, { error: "use_dpop_nonce" }, { "dpop-nonce": state.nonce });
       }
       const form = new URLSearchParams(await readBody(request));
-      let scope = `workspaces device:register device:connect${state.importScope ? " workspaces:import" : ""}${state.givesThreads ? " workspaces:export" : ""}${state.runsWork ? " threads:start" : ""}`;
+      let scope = `workspaces${state.lendsDevices ? " device:register device:connect" : ""}${state.importScope ? " workspaces:import" : ""}${state.givesThreads ? " workspaces:export" : ""}${state.runsWork ? " threads:start" : ""}`;
       if (form.get("grant_type") === "authorization_code") {
         const code = state.codes.get(form.get("code") ?? "");
         state.codes.delete(form.get("code") ?? "");
@@ -163,9 +165,10 @@ export const fakeServer = () => {
         state.refreshes += 1;
         if (!state.refresh.delete(form.get("refresh_token") ?? ""))
           return json(400, { error: "invalid_grant" });
-        if (form.get("scope") === "workspaces:import" && !state.importScope)
+        const narrowed = form.get("scope");
+        if (narrowed !== null && !scope.split(" ").includes(narrowed))
           return json(400, { error: "invalid_scope" });
-        scope = form.get("scope") ?? scope;
+        scope = narrowed ?? scope;
       } else return json(400, { error: "unsupported_grant_type" });
       const access = randomBytes(16).toString("hex");
       const refresh = randomBytes(16).toString("hex");
@@ -274,6 +277,19 @@ export const fakeServer = () => {
         workspaceId: asked["workspaceId"],
         threadId,
         branch: `thread/${threadId}`,
+      });
+    }
+    // Reaches what its own organisation owns, as a GitHub App installed there would.
+    if (url.pathname === "/api/threads/check" && held.scope === "threads:start") {
+      const asked = JSON.parse(await readBody(request)) as { repositories: string[] };
+      return json(200, {
+        connected: true,
+        items: asked.repositories.map((repository) =>
+          repository.startsWith("example/")
+            ? { repository, reach: "yes" }
+            : { repository, reach: "no", reason: "The GitHub App doesn't reach it." },
+        ),
+        model: { agent: "claude", model: "example-model" },
       });
     }
     if (url.pathname === "/api/threads/wait" && held.scope === "threads:start") {

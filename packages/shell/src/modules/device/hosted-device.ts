@@ -4,6 +4,7 @@ import {
   type DeviceCapability,
   type DeviceId,
   type HostedDiscovery,
+  type HostedRepositoryReach,
   type HostedThreadWaited,
   type HostedWorkspace,
   runsSentWork,
@@ -27,6 +28,7 @@ import {
   makeTokenKeeper,
   messageHostedThread,
   startHostedThread,
+  checkHostedRepositories,
   stopHostedThread,
   waitHostedThread,
   registerHostedDevice,
@@ -265,6 +267,15 @@ export interface HostedDevice {
    * with their sign-in. What runs there runs under that workspace's rules. Changes nothing here.
    */
   readonly sendWork: (origin: string, workspace: string, work: WorkToSend) => Promise<WorkSent>;
+  /** Whether a thread there could clone and push each repository. Changes nothing there. */
+  readonly checkWork: (
+    origin: string,
+    workspace: string,
+    repositories: readonly string[],
+  ) => Promise<
+    | { readonly ok: true; readonly reach: HostedRepositoryReach }
+    | { readonly ok: false; readonly why: string }
+  >;
   /** Waits on a thread sent from here: only those, as the server checks again. */
   readonly waitWork: (
     origin: string,
@@ -323,6 +334,8 @@ interface StoredSignIn {
   readonly subject: string;
   readonly refreshToken: string;
   readonly deviceId: DeviceId;
+  /** Older sign-ins always registered. False means this grant can use the server without lending. */
+  readonly deviceRegistered?: boolean;
 }
 
 const parseSignIn = (text: string | undefined): StoredSignIn | undefined => {
@@ -331,7 +344,8 @@ const parseSignIn = (text: string | undefined): StoredSignIn | undefined => {
     const value = JSON.parse(text) as Partial<StoredSignIn>;
     return typeof value.subject === "string" &&
       typeof value.refreshToken === "string" &&
-      typeof value.deviceId === "string"
+      typeof value.deviceId === "string" &&
+      (value.deviceRegistered === undefined || typeof value.deviceRegistered === "boolean")
       ? (value as StoredSignIn)
       : undefined;
   } catch {
@@ -372,6 +386,7 @@ interface Server {
   readonly discovery: HostedDiscovery;
   readonly key: KeyObject;
   readonly deviceId: DeviceId;
+  readonly deviceRegistered: boolean;
   readonly keeper: TokenKeeper;
   readonly limits: AskLimits;
   readonly grants: GrantLedger;
@@ -555,7 +570,13 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
   };
 
   const startLendingNow = async (server: Server) => {
-    if (server.lending !== undefined || !mayLend() || servers.get(server.origin) !== server) return;
+    if (
+      !server.deviceRegistered ||
+      server.lending !== undefined ||
+      !mayLend() ||
+      servers.get(server.origin) !== server
+    )
+      return;
     const scope = await Effect.runPromise(Scope.make());
     server.scope = scope;
     server.lending = await Effect.runPromise(
@@ -657,6 +678,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       discovery,
       key,
       deviceId: signIn.deviceId,
+      deviceRegistered: signIn.deviceRegistered !== false,
       keeper: keeper ?? keeperFor(origin, discovery, key, signIn, () => endedByServer(server)),
       limits: makeAskLimits(options.elapsed, { paused: saved?.paused ?? false }, () => {
         // Paused: everything waiting on the person goes, as paused, and the pause is kept.
@@ -702,12 +724,14 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       changed();
       return listed;
     }
-    server.workspaces = listed.workspaces;
+    server.workspaces = server.deviceRegistered
+      ? listed.workspaces
+      : listed.workspaces.map((workspace) => ({ ...workspace, devices: "off" }));
     server.problem = undefined;
     // A workspace no longer listed, or where the organisation turned lending off, is let go.
     let dropped = false;
     for (const id of server.lent.keys()) {
-      const listedNow = listed.workspaces.find((workspace) => workspace.id === id);
+      const listedNow = server.workspaces.find((workspace) => workspace.id === id);
       if (listedNow !== undefined && listedNow.devices !== "off") continue;
       server.lent.delete(id);
       server.grants.withdraw({ origin: server.origin, workspace: id });
@@ -849,10 +873,16 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       if (!signed.ok) return await giveUp(signed);
       if (signed.tokens.refreshToken === undefined)
         return await giveUp({ ok: false, why: "The server gave no lasting sign-in." });
+      const scopes = signed.tokens.grantedScopes;
+      // If the server omits scope, OAuth treats the grant as matching the request.
+      const registerDevice =
+        scopes === undefined ||
+        (scopes.includes("device:register") && scopes.includes("device:connect"));
       const first: StoredSignIn = {
         subject: signed.tokens.subject,
         refreshToken: signed.tokens.refreshToken,
         deviceId: deviceIdOf(devicePublicKeyText(key)),
+        ...(registerDevice ? {} : { deviceRegistered: false }),
       };
       // A sign-in kept from before goes back if this one doesn't finish.
       const previous = await secrets.get(signInName(origin));
@@ -868,26 +898,28 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       });
       undo.push(() => keeper.signOut());
       if (closed) return await giveUp(CLOSING);
-      const registered = await registerHostedDevice({
-        discovery: found.discovery,
-        keeper,
-        key,
-        fetch: options.fetch,
-        name: options.machineName,
-        platform: options.platform,
-      });
-      if (!registered.ok) return await giveUp(registered);
-      // A device registered under a key kept from before stays: an earlier sign-in shares it.
-      if (stored === undefined)
-        undo.push(() =>
-          forgetHostedDevice({
-            discovery: found.discovery,
-            keeper,
-            key,
-            fetch: options.fetch,
-            deviceId: first.deviceId,
-          }),
-        );
+      if (registerDevice) {
+        const registered = await registerHostedDevice({
+          discovery: found.discovery,
+          keeper,
+          key,
+          fetch: options.fetch,
+          name: options.machineName,
+          platform: options.platform,
+        });
+        if (!registered.ok) return await giveUp(registered);
+        // A key kept from an earlier sign-in may be shared with its registration.
+        if (stored === undefined)
+          undo.push(() =>
+            forgetHostedDevice({
+              discovery: found.discovery,
+              keeper,
+              key,
+              fetch: options.fetch,
+              deviceId: first.deviceId,
+            }),
+          );
+      }
       if (closed) return await giveUp(CLOSING);
       if (keeper.signedOut()) return await giveUp({ ok: false, why: "The sign-in ended." });
       // What was lent there before, and a pause, carry over to the new sign-in, as they are now.
@@ -973,7 +1005,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         servers.delete(origin);
         server.grants.withdraw({ origin });
         await stopLending(server);
-        if (!server.keeper.signedOut())
+        if (server.deviceRegistered && !server.keeper.signedOut())
           await forgetHostedDevice({
             discovery: server.discovery,
             keeper: server.keeper,
@@ -1048,6 +1080,13 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         ...(work.branch === undefined ? {} : { branch: work.branch }),
         clientKey: work.clientKey,
       });
+    },
+
+    checkWork: async (origin, workspace, repositories) => {
+      const server = known(origin);
+      const refused = refusedForThreads(server, workspace);
+      if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
+      return checkHostedRepositories({ ...callsOf(server), workspaceId: workspace, repositories });
     },
 
     waitWork: async (origin, workspace, threadId, wait) => {

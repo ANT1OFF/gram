@@ -224,6 +224,12 @@ function FileEditor({
         value={text}
         onChange={(event) => setDraft(event.target.value)}
       />
+      {file.data?.keptFromWorkers !== undefined && !dirty && (
+        <p role="status" data-testid="memory-kept-from-workers" className="text-meta text-warning">
+          Workers can't read this file: {file.data.keptFromWorkers}. The orchestrator still reads it
+          in full.
+        </p>
+      )}
       {movedUnder && (
         <p role="status" className="text-meta text-warning">
           This file changed in memory since you started editing. Saving overwrites what is there

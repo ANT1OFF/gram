@@ -73,7 +73,7 @@ describe("SettingsNav", () => {
       agents: ["ai-helpers", "connectors", "gateways"],
       usage: [],
       workspaces: ["routines", "review-bots", "storage"],
-      machines: ["phones"],
+      machines: ["phones", "hosted-servers"],
       appearance: ["terminal"],
       notifications: [],
       keyboard: [],

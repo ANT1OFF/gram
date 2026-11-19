@@ -135,9 +135,14 @@ export const DreamRpcs = RpcGroup.make(
     success: Schema.Array(MemoryFileInfo),
     error: errors(NotFound, InvalidState, FsError),
   }),
+  /** `keptFromWorkers`: why workers can't read this file, when they can't. */
   Rpc.make("memory.read", {
     payload: { workspaceId: WorkspaceId, path: Schema.String },
-    success: Schema.Struct({ path: Schema.String, content: Schema.String }),
+    success: Schema.Struct({
+      path: Schema.String,
+      content: Schema.String,
+      keptFromWorkers: Schema.optionalKey(Schema.String),
+    }),
     error: errors(NotFound, InvalidState, FsError),
   }),
   Rpc.make("memory.write", {

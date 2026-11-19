@@ -952,10 +952,12 @@ Settings, its decisions and the activity list followed; see the next section.
 
 ### Settings and the decisions, as built
 
-Settings → Machines shows "Lend this Mac to hosted workspaces" (this computer, off macOS) under
-the other machines, only in the desktop app with hosted features on: each server signed in to,
-its workspaces with what the organisation allows, what is lent, and a field to sign in to
-another. The page reads the device through `window.gram.hostedDevice`, which main serves only to
+Settings → Machines → Hosted servers is its own page. Outside the desktop app it says signing in
+is the app's; with hosted features off it says so and turns them on from there, rather than
+leaving that to Diagnostics. Otherwise it shows a field to sign in first, then each server signed
+in to with what its sign-in allows (runs work sent from here, takes threads, may borrow this
+computer), its workspaces with what the organisation allows and what is lent, and under "Lending
+this Mac" (this computer, off macOS) what lending means and the activity list. The page reads the device through `window.gram.hostedDevice`, which main serves only to
 the app's own pages and never to a decision window. Sign out and Stop lending act at once. Lend,
 Resume lending, Lift the pause and Start afresh only ask main to put the decision to the person,
 in dialogs the operating system draws: the folder picker, then a confirmation that lists the
