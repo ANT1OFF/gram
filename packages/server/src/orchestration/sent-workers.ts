@@ -123,7 +123,7 @@ export const reportOf = (
 };
 
 /** The repository a project's work is in, as a server clones it: never a local path or a sign-in. */
-const repositoryOf = (root: string) =>
+export const repositoryOf = (root: string) =>
   git(root, ["config", "--get", "remote.origin.url"], { timeoutMs: 2_000 }).pipe(
     Effect.map((out) => (out.status === 0 ? out.stdout.trim() : "")),
     Effect.orElseSucceed(() => ""),
@@ -197,14 +197,21 @@ export const sendWorker = (
     readonly branch?: string;
     readonly clientRequestId?: string;
     readonly reason?: string;
+    /** Exactly where it goes, as a person picked it; else `workspace` names it. */
+    readonly target?: { readonly origin: string; readonly workspaceId: string };
   },
+  /**
+   * A person sending it from New task, as the orchestrator's worker: their own say, so the
+   * charter's `sendWork`, which bounds what the orchestrator does unasked, isn't asked.
+   */
+  by: "orchestrator" | "person" = "orchestrator",
 ) =>
   Effect.gen(function* () {
     const authority = yield* orchestration.authorityOf(callerId);
     if (authority === undefined)
       return yield* fail("Only a workspace's orchestrator sends workers.");
     const { thread: caller, state } = authority;
-    if (state.charter.sendWork !== true)
+    if (by === "orchestrator" && state.charter.sendWork !== true)
       return yield* fail(
         "This workspace doesn't send work to servers. The user turns it on in the workspace's settings.",
       );
@@ -248,7 +255,14 @@ export const sendWorker = (
       );
     const listed = yield* port.targets();
     if (!listed.ok) return yield* fail(listed.why);
-    const target = pickTarget(listed.targets, input.workspace);
+    const target =
+      input.target === undefined
+        ? pickTarget(listed.targets, input.workspace)
+        : (listed.targets.find(
+            (each) =>
+              each.origin === input.target?.origin && each.workspaceId === input.target.workspaceId,
+          ) ??
+          "That workspace isn't one this app may send work to now. Settings → Machines lists them.");
     if (typeof target === "string") return yield* fail(target);
     const clientKey = (id ?? crypto.randomUUID()).replaceAll(/[^A-Za-z0-9_-]/g, "");
     const title = input.title.trim().slice(0, 200);

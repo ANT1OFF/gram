@@ -125,6 +125,7 @@ export const fakeServer = () => {
               thread_wait_endpoint: `${origin}/api/threads/wait`,
               thread_message_endpoint: `${origin}/api/threads/message`,
               thread_stop_endpoint: `${origin}/api/threads/stop`,
+              thread_check_endpoint: `${origin}/api/threads/check`,
             }
           : {}),
       });
@@ -274,6 +275,18 @@ export const fakeServer = () => {
         workspaceId: asked["workspaceId"],
         threadId,
         branch: `thread/${threadId}`,
+      });
+    }
+    // Reaches what its own organisation owns, as a GitHub App installed there would.
+    if (url.pathname === "/api/threads/check" && held.scope === "threads:start") {
+      const asked = JSON.parse(await readBody(request)) as { repositories: string[] };
+      return json(200, {
+        connected: true,
+        items: asked.repositories.map((repository) =>
+          repository.startsWith("example/")
+            ? { repository, reach: "yes" }
+            : { repository, reach: "no", reason: "The GitHub App doesn't reach it." },
+        ),
       });
     }
     if (url.pathname === "/api/threads/wait" && held.scope === "threads:start") {

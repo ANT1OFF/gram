@@ -452,6 +452,11 @@ export const HostedDiscovery = Schema.Struct({
   thread_wait_endpoint: Schema.optionalKey(Address),
   thread_message_endpoint: Schema.optionalKey(Address),
   thread_stop_endpoint: Schema.optionalKey(Address),
+  /**
+   * Where this machine asks, before it sends work, whether a thread there could clone each
+   * repository and push its branch (`POST`, `HostedRepositoryReach`). Absent: it isn't asked.
+   */
+  thread_check_endpoint: Schema.optionalKey(Address),
 });
 export type HostedDiscovery = typeof HostedDiscovery.Type;
 
@@ -527,6 +532,7 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
       discovery.thread_wait_endpoint,
       discovery.thread_message_endpoint,
       discovery.thread_stop_endpoint,
+      discovery.thread_check_endpoint,
     ].filter((address) => address !== undefined),
   ];
   if (!calls.every((address) => on(address, secure ? "https:" : "http:")))
@@ -745,8 +751,27 @@ export interface SentWorkBrief {
   readonly clientKey: string;
 }
 
+/** Whether a thread there could clone each repository and push its branch, as the server says. */
+export const HostedRepositoryReach = Schema.Struct({
+  connected: Schema.Boolean,
+  items: Schema.Array(
+    Schema.Struct({
+      repository: Schema.String.check(Schema.isMaxLength(512)),
+      reach: Schema.Literals(["yes", "no", "unknown"]),
+      reason: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(500))),
+    }),
+  ).check(Schema.isMaxLength(8)),
+});
+export type HostedRepositoryReach = typeof HostedRepositoryReach.Type;
+
 export type SentWorkOp =
   | { readonly op: "targets" }
+  | {
+      readonly op: "check";
+      readonly origin: string;
+      readonly workspaceId: string;
+      readonly repositories: readonly string[];
+    }
   | {
       readonly op: "send";
       readonly origin: string;
@@ -786,6 +811,7 @@ export type SentWorkRequestMessage = {
 /** Each op's answer. `unknown`: no clear answer, so the call may be made again with its key. */
 export type SentWorkResult =
   | { readonly ok: true; readonly targets: ReadonlyArray<SentWorkTarget> }
+  | { readonly ok: true; readonly reach: HostedRepositoryReach }
   | { readonly ok: true; readonly threadId: string; readonly branch?: string }
   | { readonly ok: true; readonly waited: HostedThreadWaited }
   | { readonly ok: true; readonly queued: boolean; readonly after?: string }

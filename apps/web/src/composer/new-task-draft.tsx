@@ -19,6 +19,15 @@ import { HarnessSupportDetails } from "@/agents/support-details";
 import { agentLabel } from "@/agents/agent-display";
 import { errorMessage } from "@/api/errors";
 import { RunsOnStop } from "./runs-on-chip";
+import {
+  checkSend,
+  type SendTarget,
+  sendCheckRows,
+  sendTargetKey,
+  sendTask,
+  useSendTargets,
+} from "./send-target";
+import { SendChecks, SendTargetPicker } from "./send-target-stop";
 import { needsMachine, StartMachineCard, useOnDemandMachine } from "./start-machine-card";
 import { Button } from "@/components/ui/button";
 import { shortcutPressed } from "@/keyboard/bindings";
@@ -178,6 +187,37 @@ export function NewTaskDraft({
       ? workspaces.find((state) => state.workspace.id === target.workspaceId)
       : undefined;
   const kind = useThreadsWorkspaceNoun();
+  // Sent to a hosted workspace instead, once a server signed in to runs work sent to it: the
+  // workspace's orchestrator's worker there, after the three checks (board 1 of
+  // docs/design/mocks/hosted-send-and-move).
+  const sendTargets = useSendTargets();
+  const [sendPick, setSendPick] = useState<SendTarget>();
+  const sendTo =
+    sendPick === undefined
+      ? undefined
+      : sendTargets.find((each) => sendTargetKey(each) === sendTargetKey(sendPick));
+  const mac = window.gram?.platform === "darwin";
+  const here = mac ? "This Mac" : "This computer";
+  const hereInLine = mac ? "this Mac" : "this computer";
+  const sendProject = repos[0]?.id;
+  const sendCheck = useQuery({
+    queryKey: [
+      "send-check",
+      target?.workspaceId ?? null,
+      sendProject ?? null,
+      sendTo === undefined ? null : sendTargetKey(sendTo),
+    ],
+    queryFn: () =>
+      checkSend({ workspaceId: target!.workspaceId, projectId: sendProject!, target: sendTo! }),
+    enabled: sendTo !== undefined && target !== undefined && sendProject !== undefined,
+    retry: false,
+    staleTime: 15_000,
+  });
+  const sendRows =
+    sendTo === undefined || sendCheck.data === undefined
+      ? undefined
+      : sendCheckRows(sendCheck.data, sendTo, hereInLine);
+  const sendBlocked = sendRows === undefined || sendRows.some((row) => row.state === "block");
   const name = workspace?.workspace.name ?? repos[0]?.name ?? "";
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
   const agents = useServerSettings((s) => s.settings?.agents);
@@ -331,6 +371,16 @@ export function NewTaskDraft({
     focusIfConnected(formRef.current?.querySelector('textarea[aria-label="What needs doing"]'));
   }, []);
 
+  const sendValid =
+    sendTo !== undefined &&
+    target !== undefined &&
+    sendProject !== undefined &&
+    prompt.trim() !== "" &&
+    !attachments.uploading &&
+    // A server is sent the brief alone: files attached here don't go.
+    attachments.ready.length === 0 &&
+    !sendCheck.isFetching &&
+    !sendBlocked;
   const valid =
     target !== undefined &&
     prompt.trim() !== "" &&
@@ -349,6 +399,26 @@ export function NewTaskDraft({
     // A final still on its way would land after the draft is gone: stop, keeping what was heard,
     // and leave sending to the user once it is in.
     if (dictation.active) return dictation.stop();
+    if (sendTo !== undefined) {
+      if (!sendValid || sending || target === undefined || sendProject === undefined) return;
+      setSending(true);
+      setError(undefined);
+      try {
+        const sent = await sendTask({
+          workspaceId: target.workspaceId,
+          projectId: sendProject,
+          target: sendTo,
+          text: prompt.trim(),
+          clientRequestId: draftId,
+        });
+        useTaskDraftStore.getState().remember(target);
+        void navigate({ to: "/t/$threadId", params: { threadId: sent.threadId } });
+      } catch (e) {
+        setSending(false);
+        setError(errorMessage(e) || "The task couldn't be sent.");
+      }
+      return;
+    }
     if (!valid || sending || selection.data === undefined) return;
     setSending(true);
     setError(undefined);
@@ -413,23 +483,28 @@ export function NewTaskDraft({
     if (who === "me") toOneOff();
   };
 
-  const submitLabel = newForm?.team?.start ?? "Send to team";
+  const submitLabel =
+    sendTo === undefined ? (newForm?.team?.start ?? "Send to team") : `Send to ${sendTo.workspace}`;
   // What Start waits on while a check runs, in its own words on the button: the task's selection,
   // then each agent's readiness, then the workspace's autonomy the summary beside it names.
   const checking: string | undefined =
-    target === undefined || sending
-      ? undefined
-      : selection.isError
+    sendTo !== undefined
+      ? sendCheck.isFetching && !sending
+        ? `Checking with ${sendTo.server}…`
+        : undefined
+      : target === undefined || sending
         ? undefined
-        : selection.data === undefined || selection.isFetching
-          ? "Checking agents…"
-          : preflight.checking
-            ? checkingAgent(orchestratorModel)
-            : hasImages && imagePreflight.checking
-              ? checkingAgent(inputModel)
-              : workspace === undefined
-                ? "Checking the workspace…"
-                : undefined;
+        : selection.isError
+          ? undefined
+          : selection.data === undefined || selection.isFetching
+            ? "Checking agents…"
+            : preflight.checking
+              ? checkingAgent(orchestratorModel)
+              : hasImages && imagePreflight.checking
+                ? checkingAgent(inputModel)
+                : workspace === undefined
+                  ? "Checking the workspace…"
+                  : undefined;
   const budget = ledger?.budget;
   // The level the line beside Start names, the workspace's own. Undefined while the workspace
   // hasn't loaded: the line waits rather than show the default.
@@ -612,6 +687,17 @@ export function NewTaskDraft({
                 />
               </WhereStop>
               <RunsOnStop />
+              {sendTargets.length > 0 && (
+                <WhereStop label="Machine">
+                  <SendTargetPicker
+                    targets={sendTargets}
+                    value={sendTo}
+                    onChange={setSendPick}
+                    here={here}
+                    disabled={attachments.uploading || sending}
+                  />
+                </WhereStop>
+              )}
             </>
           }
           line={
@@ -622,6 +708,29 @@ export function NewTaskDraft({
               : undefined
           }
         />
+
+        {sendTo !== undefined && (
+          <SendChecks
+            target={sendTo}
+            here={hereInLine}
+            rows={
+              sendRows === undefined || attachments.ready.length === 0
+                ? sendRows
+                : [
+                    ...sendRows,
+                    {
+                      id: "attachments",
+                      state: "block",
+                      title: "Attached files don't go to a server",
+                      detail: "Remove them, or keep the task on this computer.",
+                    },
+                  ]
+            }
+            error={sendCheck.isError ? errorMessage(sendCheck.error) : undefined}
+            checking={sendCheck.isFetching}
+            onRecheck={() => void sendCheck.refetch()}
+          />
+        )}
 
         {error && (
           <p role="alert" className="text-reading text-destructive">
@@ -689,7 +798,7 @@ export function NewTaskDraft({
             <PressScale>
               <Button
                 type="submit"
-                disabled={!valid || sending}
+                disabled={(sendTo === undefined ? !valid : !sendValid) || sending}
                 data-testid="task-submit"
                 data-checking={checking === undefined ? undefined : ""}
                 // Its action stays its name while the check runs; the words say why it waits.
@@ -705,7 +814,22 @@ export function NewTaskDraft({
                 {checking === undefined && <ShortcutKbd id="draft.create" cap />}
               </Button>
             </PressScale>
-            {target !== undefined && (
+            {sendTo !== undefined && sendRows !== undefined && sendBlocked && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={sendCheck.isFetching}
+                onClick={() => void sendCheck.refetch()}
+              >
+                Check again
+              </Button>
+            )}
+            {sendTo !== undefined && (
+              <span data-testid="send-signed-in" className="text-meta text-muted-foreground">
+                Signed in to {sendTo.server} · {sendTo.organisation}
+              </span>
+            )}
+            {target !== undefined && sendTo === undefined && (
               // Beside Start, wrapping in its own column rather than under the button: who acts
               // and what still needs you, whatever is folded below. At the Task/Team/Chat
               // choice's own size, since it says what that choice commits to.

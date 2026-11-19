@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { HostedThreadWaited, SentWorkTarget, ThreadId, WorkspaceId } from "@gram/contracts";
+import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as TestClock from "effect/testing/TestClock";
@@ -9,7 +10,7 @@ import { run } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { pickTarget, reportOf } from "./sent-workers.ts";
+import { pickTarget, reportOf, sendWorker } from "./sent-workers.ts";
 import { Orchestration } from "./service.ts";
 import { makeWorld, openOrchestrator, settle, waitReal, withServer } from "./test-harness.ts";
 
@@ -29,6 +30,14 @@ const fakeApp = Effect.gen(function* () {
   const port: SentWorkPortShape = {
     available: true,
     targets: () => Effect.succeed({ ok: true, targets: [PLATFORM] }),
+    check: (_origin, _workspaceId, repositories) =>
+      Effect.succeed({
+        ok: true as const,
+        reach: {
+          connected: true,
+          items: repositories.map((repository) => ({ repository, reach: "yes" as const })),
+        },
+      }),
     send: (origin, workspaceId, work) =>
       Effect.sync(() => {
         asked.push({ op: "send", origin, workspaceId, ...work });
@@ -239,6 +248,51 @@ describe("a worker sent to a server", () => {
           }),
         );
       }),
+  );
+});
+
+describe("a task a person sends from New task", () => {
+  it.effect("goes where they picked, as the orchestrator's worker, whatever the charter says", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      run(world.repo, "remote", "add", "origin", "https://github.com/acme/shop.git");
+      const app = yield* fakeApp;
+      world.sentWork = app.port;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const { thread: orchestrator } = yield* openOrchestrator(world);
+          const deps = {
+            orchestration: yield* Orchestration,
+            store: yield* ThreadStore,
+            runtimes: yield* ThreadRuntimes,
+            port: app.port,
+            proc: yield* Proc,
+          };
+          const task = { ...BRIEF, project: "shop", clientRequestId: "draft-1" };
+          // A workspace there that isn't listed now is refused, and nothing is sent.
+          const elsewhere = yield* sendWorker(
+            deps,
+            orchestrator.id,
+            { ...task, target: { origin: PLATFORM.origin, workspaceId: "w9" } },
+            "person",
+          ).pipe(Effect.flip);
+          expect(elsewhere.message).toContain("Settings → Machines");
+          expect(app.asked).toEqual([]);
+          // The charter's sendWork is off: that bounds the orchestrator, not the person.
+          const sent = yield* sendWorker(
+            deps,
+            orchestrator.id,
+            { ...task, target: { origin: PLATFORM.origin, workspaceId: "w1" } },
+            "person",
+          );
+          expect(sent.runsOn).toBe("Platform · gram.example.com");
+          const worker = yield* deps.store.getThread(sent.threadId);
+          expect(worker.spawnedBy?.threadId).toBe(orchestrator.id);
+          expect(worker.sentTo?.threadId).toBe("t-there-1");
+        }),
+      );
+    }),
   );
 });
 

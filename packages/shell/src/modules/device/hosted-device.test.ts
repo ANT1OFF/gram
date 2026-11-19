@@ -156,6 +156,16 @@ describe("this machine as a personal device", () => {
     expect(await first.device.signIn(origin)).toEqual({ ok: true });
     expect(first.device.state().servers[0]?.runsWork).toBe(true);
     expect(await first.device.sendWork(origin, "w-other", work)).toMatchObject({ ok: false });
+    expect(await first.device.checkWork(origin, "w1", ["example/app", "other/x"])).toEqual({
+      ok: true,
+      reach: {
+        connected: true,
+        items: [
+          { repository: "example/app", reach: "yes" },
+          { repository: "other/x", reach: "no", reason: "The GitHub App doesn't reach it." },
+        ],
+      },
+    });
     expect(fake.state.started).toEqual([]);
     expect(await first.device.sendWork(origin, "w1", work)).toMatchObject({
       ok: true,
