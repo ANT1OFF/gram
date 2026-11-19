@@ -23,7 +23,12 @@ import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { CheckoutService, TurnHooks } from "../runtime/hooks.ts";
 import { makeRuntimeTestLayer, TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { PROFILE_THREADS_DIR, PROFILE_THREADS_PROJECT, PROFILES_OFF } from "./start.ts";
+import {
+  ID_HELD_BY_ANOTHER,
+  PROFILE_THREADS_DIR,
+  PROFILE_THREADS_PROJECT,
+  PROFILES_OFF,
+} from "./start.ts";
 
 const GATEWAY = "https://mcp.example.test/workspace";
 
@@ -406,12 +411,16 @@ describe("thread.createFromProfile", () => {
         const [first, second] = yield* Effect.all([ask(profile()), ask(profile())], {
           concurrency: 2,
         });
-        const third: Thread = yield* ask(profile({ charter: "Another charter." }));
+        const third: Thread = yield* ask(profile());
         expect(first.id).toBe(threadId);
         expect(second.id).toBe(threadId);
         expect(third.id).toBe(threadId);
-        // The profile that came with the first ask is the thread's; a later one changes nothing.
-        expect(third.profile?.charter).toBe(profile().charter);
+        // An ask with another profile isn't answered the thread: the id is held by a thread this
+        // start wouldn't have made, so a thread made ahead under a predicted id is never taken for
+        // a later start's own (it was answered `created: false` before, as if it were).
+        const other = yield* ask(profile({ charter: "Another charter." })).pipe(Effect.flip);
+        expect(other.message).toBe(ID_HELD_BY_ANOTHER);
+        expect((yield* store.getThread(threadId)).profile?.charter).toBe(profile().charter);
         expect((yield* store.listThreads).map((thread) => thread.id)).toEqual([threadId]);
         expect(folders(dataDir)).toEqual([threadId]);
         expect(fake.sessions).toHaveLength(1);

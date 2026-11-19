@@ -145,7 +145,12 @@ const Live = WorktreesLive.pipe(Layer.provideMerge(ProcLive));
 describe("a joined machine's worker host", () => {
   // What a check of the worker's ownership later goes by is this machine's record, never the
   // host's reply: a host that lies about the worktree it made can't choose what is recorded.
-  for (const lie of ["another branch", "other records"] as const) {
+  for (const lie of [
+    "another branch",
+    "other records",
+    "the root folder",
+    "a relative folder",
+  ] as const) {
     it.live(`records only its own values for a worktree made there, given ${lie}`, () =>
       Effect.gen(function* () {
         const dir = tempDir();
@@ -159,14 +164,18 @@ describe("a joined machine's worker host", () => {
               Effect.map((created) => ({
                 ...created,
                 checkout:
-                  lie === "another branch"
-                    ? { ...created.checkout, branch: "feat/by-another-thread" }
-                    : {
-                        ...created.checkout,
-                        repoRoot: "/home/invented/elsewhere",
-                        hostId: HostId.make("m-ffffffffffffffffffffffff"),
-                        cloneIdentity: cloneIdentityOf("https://git.example.test/other/repo.git")!,
-                      },
+                  lie === "the root folder" || lie === "a relative folder"
+                    ? { ...created.checkout, path: lie === "the root folder" ? "/" : "repo" }
+                    : lie === "another branch"
+                      ? { ...created.checkout, branch: "feat/by-another-thread" }
+                      : {
+                          ...created.checkout,
+                          repoRoot: "/home/invented/elsewhere",
+                          hostId: HostId.make("m-ffffffffffffffffffffffff"),
+                          cloneIdentity: cloneIdentityOf(
+                            "https://git.example.test/other/repo.git",
+                          )!,
+                        },
               })),
             ),
         }));
@@ -176,6 +185,14 @@ describe("a joined machine's worker host", () => {
           [],
           root,
         );
+        // A folder that isn't one Gram records (the root, which would claim every path of the
+        // machine, or a relative one) fails the placement, and nothing is recorded.
+        if (lie === "the root folder" || lie === "a relative folder") {
+          expect((yield* prepared.pipe(Effect.flip)).message).toContain(
+            "which isn't one Gram uses",
+          );
+          return;
+        }
         if (lie === "another branch") {
           expect((yield* prepared.pipe(Effect.flip)).message).toBe(
             "build box made the worktree on another branch than the feat/review-ownership Gram asked for, so it isn't used.",

@@ -18,10 +18,12 @@ import {
   InvalidState,
   isCredentialPath,
   isLocalHost,
+  LOCAL_HOST_ID,
   OUTPUTS_PAGE,
   OUTPUTS_PAGE_MAX,
   outputKindOf,
   outputMediaType,
+  sessionHostOf,
   type OutputKind,
   type OutputSource,
   type Thread,
@@ -228,14 +230,20 @@ export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, Workspac
           const otherAttachment = (base: string, at: string) =>
             isInside(base, at) && !isInside(join(base, thread.id), at);
           if (otherAttachment(attachments, path)) return undefined;
-          const roots = [
-            ...new Set([
-              thread.checkout.path,
-              ...checkoutRoots(thread),
-              ...(thread.additionalDirectories ?? []),
-              own,
-            ]),
-          ];
+          // A thread whose session runs on another machine has nothing on this disk but what Gram
+          // stored here for it, in its own attachments folder: its checkouts' paths are that
+          // machine's, and what its session says it sent or wrote is that machine's word.
+          const here = sessionHostOf(thread) === LOCAL_HOST_ID;
+          const roots = here
+            ? [
+                ...new Set([
+                  thread.checkout.path,
+                  ...checkoutRoots(thread),
+                  ...(thread.additionalDirectories ?? []),
+                  own,
+                ]),
+              ]
+            : [own];
           // By name or by where the folder really is: a checkout kept under a linked path
           // (`/tmp/wt/repo`) still holds the evidence recorded by its real one.
           const realRoots = await Promise.all(roots.map(realOr));
@@ -243,7 +251,8 @@ export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, Workspac
             isInside(root, path),
           );
           // Outside its folders a thread shows only what it sent or wrote itself.
-          if (!inside && output.source !== "sent" && output.source !== "written") return undefined;
+          if (!inside && (!here || (output.source !== "sent" && output.source !== "written")))
+            return undefined;
           const checked = await checkFile(path, roots, !inside);
           if (checked === undefined || isCredentialPath(checked.real)) return undefined;
           if (otherAttachment(await realOr(attachments), checked.real)) return undefined;

@@ -37,7 +37,7 @@ import * as Option from "effect/Option";
 import {
   anyPrivate,
   currentReader,
-  readableByOf,
+  privacyOf,
   readerMay,
   touchesUnreadable,
 } from "../../embedding/readable-by.ts";
@@ -106,8 +106,8 @@ const unnamed = <L extends { readonly worktrees: ReadonlyArray<StorageWorktree> 
       // given, which the guard checks against such a thread's folders.
       worktrees: listing.worktrees.filter(
         (worktree) =>
-          (worktree.threadId === undefined || readerMay(reader, readableByOf(worktree.threadId))) &&
-          !touchesUnreadable(reader, [worktree.path]),
+          (worktree.threadId === undefined || readerMay(reader, privacyOf(worktree.threadId))) &&
+          !touchesUnreadable(reader, [worktree.path], "read"),
       ),
     };
   });

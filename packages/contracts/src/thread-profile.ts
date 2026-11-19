@@ -372,6 +372,13 @@ export const ProfileStartRequest = Schema.Struct({
    * Absent: the thread is everyone's to see.
    */
   readableBy: Schema.optionalKey(Schema.String),
+  /**
+   * With `readableBy`: who else may read the thread but never act on it (`Thread.readers`), by
+   * their subjects, at most `THREAD_READERS_MAX`. Only the first start under a `threadId` sets
+   * them; a repeat leaves them as they are, and `THREAD_READERS_PATH` changes them. Absent: its
+   * person alone.
+   */
+  readers: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type ProfileStartRequest = typeof ProfileStartRequest.Type;
 
@@ -383,8 +390,44 @@ export const ProfileStartResponse = Schema.Struct({
   awaitingMachine: Schema.optionalKey(Schema.Boolean),
   /** The subject the thread is readable by (`Thread.readableBy`), where it has one. */
   readableBy: Schema.optionalKey(Schema.String),
+  /** Who else may read it (`Thread.readers`), where it has any. */
+  readers: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type ProfileStartResponse = typeof ProfileStartResponse.Type;
+
+/** The most readers a thread has beside its person (`Thread.readers`). */
+export const THREAD_READERS_MAX = 200;
+
+/**
+ * Where a fronting platform's own service sets who else may read a thread readable by one person
+ * (`Thread.readers`): `POST`, with a `ThreadReadersRequest` as JSON, answered with a
+ * `ThreadReadersResponse`. The set given replaces the one there, on the thread and on every thread
+ * of its kind that came from it or works with it (the threads it spawned or forked, its
+ * workspace's, open or closed), since they are all one person's. Refused for a thread without
+ * `readableBy`, and for one that isn't there. One of the hosted features; a person's sign-in
+ * never reaches it.
+ */
+export const THREAD_READERS_PATH = "/threads/readers";
+
+export const ThreadReadersRequest = Schema.Struct({
+  threadId: ThreadId,
+  /**
+   * Every reader beside the thread's person, by their subjects (printable, at most 128
+   * characters), at most `THREAD_READERS_MAX`; empty: its person alone. The thread's own person
+   * among them changes nothing.
+   */
+  readers: Schema.Array(Schema.String),
+});
+export type ThreadReadersRequest = typeof ThreadReadersRequest.Type;
+
+export const ThreadReadersResponse = Schema.Struct({
+  threadId: ThreadId,
+  /** The readers it has now, sorted, without duplicates. */
+  readers: Schema.Array(Schema.String),
+  /** The threads that now have them: this one and those that came from it or work with it. */
+  threadIds: Schema.Array(ThreadId),
+});
+export type ThreadReadersResponse = typeof ThreadReadersResponse.Type;
 
 /**
  * Where a fronting platform's own service moves a thread started from a profile onto another joined

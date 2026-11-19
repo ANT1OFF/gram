@@ -223,7 +223,11 @@ const asLineage = <A, E, R>(
       Effect.provideService(RoutedFor, { person }),
       // And it reads as its thread's reader: a thread readable by one person sees that person's
       // threads and makes only theirs; any other sees none of them (`embedding/readable-by.ts`).
-      Effect.provideService(ReadingAs, { subject: readableByOf(threadId), fromThread: true }),
+      Effect.provideService(ReadingAs, {
+        subject: readableByOf(threadId),
+        fromThread: true,
+        thread: threadId,
+      }),
     ),
   );
 

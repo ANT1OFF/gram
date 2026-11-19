@@ -3,7 +3,14 @@
 
 import type { EventSinkShape } from "../embedding/event-sink.ts";
 import { ActingPerson } from "../embedding/person.ts";
-import { readableByOf, readableByOfWorkspace, spawnScope } from "../embedding/readable-by.ts";
+import {
+  privacyOfThread,
+  privacyOfWorkspace,
+  readableByOf,
+  readersOf,
+  spawnScope,
+  spawnThread,
+} from "../embedding/readable-by.ts";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Fiber from "effect/Fiber";
@@ -48,6 +55,15 @@ import type { ThreadPlansShape } from "../plans/service.ts";
 import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type { MessageQueue } from "./message-queue.ts";
 import * as FiberSet from "effect/FiberSet";
+
+/** Who may see a thread being made, as it inherits it: its person and its readers. */
+type Seen = { readonly readableBy: string; readonly readers: ReadonlyArray<string> };
+
+const seenOf = (
+  readableBy: string | undefined,
+  readers: Iterable<string> | undefined,
+): Seen | undefined =>
+  readableBy === undefined ? undefined : { readableBy, readers: [...(readers ?? [])] };
 
 /** What creating and closing a thread read and change beside its `Runtime`. */
 export interface ThreadLifecycleDeps {
@@ -282,13 +298,19 @@ export const makeThreadLifecycle = ({
         ...input.kept,
       };
       // Who may see it: its spawner's or its orchestrator's reader where they have one, else the
-      // reader of the agent whose tool call makes it, else what the start says.
-      const parentReader = (id: ThreadId | undefined) =>
+      // reader of the agent whose tool call makes it, else what the start says. Its readers come
+      // with it, from the same place.
+      const parentSeen = (id: ThreadId | undefined): Effect.Effect<Seen | undefined> =>
         id === undefined
           ? Effect.succeed(undefined)
           : store.getThread(id).pipe(
-              Effect.map((parent) => parent.readableBy ?? readableByOf(parent.id)),
-              Effect.orElseSucceed(() => readableByOf(id)),
+              Effect.map((parent) => {
+                const privacy = privacyOfThread(parent);
+                return privacy === undefined
+                  ? undefined
+                  : seenOf(privacy.readableBy, privacy.readers);
+              }),
+              Effect.orElseSucceed(() => seenOf(readableByOf(id), readersOf(id))),
             );
       const orchestratorOf =
         input.workspaceId === undefined
@@ -297,14 +319,24 @@ export const makeThreadLifecycle = ({
               Effect.map((state) => state.workspace.orchestratorThreadId),
               Effect.orElseSucceed(() => undefined),
             );
-      const readableBy =
-        (yield* parentReader(input.spawnedBy?.threadId)) ??
-        (orchestratorOf === thread.id ? undefined : yield* parentReader(orchestratorOf)) ??
-        (input.workspaceId === undefined ? undefined : readableByOfWorkspace(input.workspaceId)) ??
-        (yield* spawnScope) ??
-        input.readableBy ??
-        input.kept?.readableBy;
-      if (readableBy !== undefined) (thread as { readableBy?: string }).readableBy = readableBy;
+      const workspaceSeen =
+        input.workspaceId === undefined ? undefined : privacyOfWorkspace(input.workspaceId);
+      const spawner = yield* spawnThread;
+      const scope = yield* spawnScope;
+      const seen: Seen | undefined =
+        (yield* parentSeen(input.spawnedBy?.threadId)) ??
+        (orchestratorOf === thread.id ? undefined : yield* parentSeen(orchestratorOf)) ??
+        (workspaceSeen === undefined
+          ? undefined
+          : seenOf(workspaceSeen.readableBy, workspaceSeen.readers)) ??
+        seenOf(scope, spawner === undefined ? undefined : readersOf(spawner)) ??
+        seenOf(input.readableBy, input.readers) ??
+        seenOf(input.kept?.readableBy, input.kept?.readers);
+      if (seen !== undefined) {
+        (thread as { readableBy?: string }).readableBy = seen.readableBy;
+        if (seen.readers.length > 0)
+          (thread as { readers?: ReadonlyArray<string> }).readers = seen.readers;
+      }
       // Whom it works for: its spawner's person, else its orchestrator's, else the signed-in person
       // this call is made for. A thread another thread spawned is never the caller's.
       const parentPerson = (id: ThreadId | undefined) =>

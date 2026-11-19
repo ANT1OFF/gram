@@ -349,6 +349,22 @@ const workerIndexChangeOk = (current: string | undefined, next: string): boolean
   return kept.slice(at).every((line) => line.trim() === "");
 };
 
+/** What a worker's index line carries, so a session booting with the index tells it apart. */
+export const WORKER_LINE_LABEL = " (added by a worker)";
+
+/** `next` with every index line a worker added beside `current` labelled as a worker's. */
+export const labelWorkerLines = (current: string | undefined, next: string): string => {
+  const kept = new Set((current ?? "").split("\n"));
+  return next
+    .split("\n")
+    .map((line) =>
+      kept.has(line) || !INDEX_LINE.test(line) || line.endsWith(WORKER_LINE_LABEL)
+        ? line
+        : `${line}${WORKER_LINE_LABEL}`,
+    )
+    .join("\n");
+};
+
 /** Refuses a worker's change that would rewrite the user's, the orchestrator's or the index's words. */
 const workerMayWrite = (path: string, current: string | undefined, next: string | undefined) => {
   if (AUTHORITY_FILES.has(path)) return Effect.fail(refuse(WORKER_WRITE_AUTHORITY(path)));
@@ -1368,11 +1384,18 @@ const make = (root: string): OrchestrationMemoryShape => {
               yield* workerMayChange(path, raw);
             }
             const current = raw === undefined ? undefined : redactText(raw);
-            const { content, result } = yield* change(current);
-            if (options?.asWorker === true && !workerMayRead(path, content)) {
+            const changed = yield* change(current);
+            const { result } = changed;
+            if (options?.asWorker === true && !workerMayRead(path, changed.content)) {
               return yield* refuse(WORKER_WRITE_UNPLAIN);
             }
-            if (options?.asWorker === true) yield* workerMayWrite(path, current, content);
+            if (options?.asWorker === true) yield* workerMayWrite(path, current, changed.content);
+            // The index lines a worker adds say they are a worker's, so the orchestrator's next
+            // session, which boots with the index, never reads them as its own.
+            const content =
+              options?.asWorker === true && path === MEMORY_INDEX
+                ? labelWorkerLines(current, changed.content)
+                : changed.content;
             const write = yield* writeLocked(workspaceId, path, content);
             // What `read` will give back: the scrubbed text, as it is on disk, scrubbed again.
             return { write, result, revision: memoryRevision(redactText(redactText(content))) };
