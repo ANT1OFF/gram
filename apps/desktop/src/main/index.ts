@@ -13,7 +13,7 @@ import {
   pagesOriginFromMessage,
   type UpdateProgress,
 } from "@gram/contracts";
-import { createLogger, defaultDataDir, logDirFor } from "@gram/server/logging";
+import { createLogger, defaultDataDir, logDirFor, securePrivateDir } from "@gram/server/logging";
 import { readUpdatePrefs } from "@gram/server/updates";
 import {
   app,
@@ -211,12 +211,16 @@ const SMOKE_TIMEOUT_MS = 60_000;
 const replacedEnv =
   process.platform === "darwin" && app.isPackaged ? normaliseUserEnv(app.getPath("temp")) : {};
 const dataDir = defaultDataDir();
+// Owner-only before the shell's log or the server writes anything under it.
+const dataDirTightened = securePrivateDir(dataDir);
 /** The shell's log, next to the server's; development also echoes it to stdout. */
 const { logger: log } = createLogger({
   dir: logDirFor(dataDir),
   name: "desktop",
   echo: !app.isPackaged,
 });
+if (dataDirTightened)
+  log.warn({ dataDir }, "data folder was readable by others; made it owner-only");
 if (Object.keys(replacedEnv).length > 0) {
   log.warn(
     { replaced: replacedEnv },

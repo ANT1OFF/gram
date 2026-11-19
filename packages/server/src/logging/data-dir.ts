@@ -1,3 +1,4 @@
+import { chmodSync, mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -33,3 +34,21 @@ export const defaultDataDir = (env: Record<string, string | undefined> = process
     osDataRoot({ env, platform: process.platform, homeDir: homedir() || undefined }),
     "gram-state",
   );
+
+/**
+ * Makes `dir` Gram's private data folder: created owner-only (`0700`), and an existing folder that
+ * others on the machine can read or enter tightened to that. Everything Gram keeps (the database,
+ * logs, attachments) is under it, so no other account can list or read it whatever its own files'
+ * modes are. Windows keeps its per-user ACLs. Returns whether an existing folder was tightened.
+ */
+export const securePrivateDir = (
+  dir: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean => {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (platform === "win32") return false;
+  const mode = statSync(dir).mode & 0o777;
+  if ((mode & 0o077) === 0) return false;
+  chmodSync(dir, mode & 0o700);
+  return true;
+};

@@ -30,6 +30,7 @@ import { GitTurnHooksLive } from "./git/turn-hooks.ts";
 import { ServerWork } from "./host/ownership.ts";
 import { bootLine, LaunchToken, serverPort, ServerLayer } from "./http/server.ts";
 import { embeddingEnabled } from "./settings/embedding.ts";
+import { securePrivateDir } from "./logging/data-dir.ts";
 import { createLogger, logDirFor } from "./logging/logger.ts";
 import { ServerLog, serverLogLayer } from "./logging/service.ts";
 import { ThreadStore } from "./persistence/thread-store.ts";
@@ -140,9 +141,16 @@ const McpCliLayer = fakeAgent ? Layer.succeed(McpCli, makeFakeMcpCli(fakeMcpServ
 // A public connector catalogue will be configured separately. No private repo lookups.
 const McpCatalogueLayer = Layer.empty;
 
+// Owner-only before anything is written under it: the database, logs and attachments.
+const dataDirTightened = securePrivateDir(config.dataDir);
 const logDir = logDirFor(config.dataDir);
 // Standalone (dev, headless) runs echo to stdout; under Electron the file is the only sink.
 const { logger } = createLogger({ dir: logDir, name: "server", echo: parentPort === undefined });
+if (dataDirTightened)
+  logger.warn(
+    { dataDir: config.dataDir },
+    "data folder was readable by others; made it owner-only",
+  );
 
 const LogLive = serverLogLayer({
   logger,
