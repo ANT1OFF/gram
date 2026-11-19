@@ -57,6 +57,15 @@ export const workToSendOf = (arg: unknown) => {
   };
 };
 
+/** The repositories a check names, as a send would: undefined when they aren't. */
+export const repositoriesToCheckOf = (repositories: unknown): string[] | undefined =>
+  Array.isArray(repositories) &&
+  repositories.length >= 1 &&
+  repositories.length <= 8 &&
+  repositories.every((each) => typeof each === "string" && REPOSITORY.test(each))
+    ? (repositories as string[])
+    : undefined;
+
 const UNTIL = new Set(["reply", "idle", "waiting", "message"] as const);
 const MODES = new Set(["queue", "steer", "interrupt"] as const);
 const isOneOf = <T extends string>(set: ReadonlySet<T>, value: unknown): value is T =>

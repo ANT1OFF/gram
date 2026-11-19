@@ -1014,6 +1014,15 @@ every one of them reads it and writes it with `memory_append` (a dated entry, no
 `memory_delete`. The orchestrator curates it by convention, folding duplicates together, pruning
 what is stale and keeping the index true; nothing locks writing to it.
 
+A worker sees only plain notes: a file named for a credential or with front matter marking it
+private reads as missing, as before. A file whose text holds something shaped like a credential
+or token is held back whole, never cut; `memory_list` names it under `keptFromWorkers` and
+`memory_read` refuses it (`kept_from_workers`) with the line and the kind of problem, never the
+text, and the memory editor says the same beside the file. Cited SHAs and thread ids, plain paths
+and long hyphenated names (`qa-2026-11-19-use-cases`) are not taken for tokens. A worker whose
+orchestrator no longer holds the workspace is told which of that is the case. Source:
+[memory filter](../packages/server/src/orchestration/memory-filter.ts).
+
 `search_transcripts` is full-text search over the workspace's own conversations: its
 orchestrator's thread and its workers', archived ones included, ranked with what was said above
 tool names and inputs. It reads the index behind `search_threads` but answers only from the

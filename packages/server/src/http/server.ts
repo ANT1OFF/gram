@@ -170,6 +170,11 @@ import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./rem
 import { RemoteControl } from "./remote-control.ts";
 import { WORKSPACE_TRANSFER_PATHS, WorkspaceTransferRoutes } from "../transfer/routes.ts";
 import {
+  SentWorkRoutes,
+  THREAD_SEND_CHECK_PATH,
+  THREAD_SEND_PATH,
+} from "../orchestration/sent-work-routes.ts";
+import {
   PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
   PROFILE_WAIT_PATH,
@@ -594,6 +599,8 @@ export const AuthMiddleware = HttpRouter.middleware(
             MACHINE_MANAGEMENT_PATHS.has(target.path) ||
             HOST_STOP_PATHS.has(target.path) ||
             WORKSPACE_TRANSFER_PATHS.has(target.path) ||
+            target.path === THREAD_SEND_CHECK_PATH ||
+            target.path === THREAD_SEND_PATH ||
             target.path === PROFILE_START_PATH ||
             target.path === PROFILE_MOVE_PATH ||
             target.path === PROFILE_WAIT_PATH ||
@@ -749,7 +756,11 @@ export const AuthMiddleware = HttpRouter.middleware(
                     ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
                     : yield* hostStopRoute(stopDeps, path)
                   : // A workspace's bundle leaves and arrives through the local app only.
-                    isRemote && path !== undefined && WORKSPACE_TRANSFER_PATHS.has(path)
+                    isRemote &&
+                      path !== undefined &&
+                      (WORKSPACE_TRANSFER_PATHS.has(path) ||
+                        path === THREAD_SEND_CHECK_PATH ||
+                        path === THREAD_SEND_PATH)
                     ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
                     : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
                       ? isRemote || remoteHosts === undefined
@@ -1192,6 +1203,7 @@ export const ServerLayer: Layer.Layer<
           Layer.provide(Layer.mergeAll(WorkspaceTransfer.layer, ThreadTransfer.layer)),
         ),
         ProfileStartRoutes,
+        SentWorkRoutes.pipe(Layer.provide(SentWorkPort.layer)),
         AuthMiddleware,
       ).pipe(
         // One starter for the RPC and the route, so one id makes one thread either way in.

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   currentLimit,
+  missingReading,
   limitsOf,
   limitStale,
   LIMIT_STALE_MS,
@@ -311,5 +312,16 @@ describe("the server's kept readings", () => {
     const after = withReading(limits, reading({ utilization: 0.45 }), NOW + 1);
     expect(limitStale(after.claude!.fiveHour!, NOW + 1)).toBe(false);
     expect(after.claude!.fiveHour!.samples).toHaveLength(2);
+  });
+});
+
+describe("missingReading", () => {
+  const limit = { utilization: 0.4, status: "allowed" as const, resetsAt: 1_000, expiresAt: 1_000 };
+  it("tells a window that reset from one never reported and one that lapsed", () => {
+    expect(missingReading(limit, 999)).toBeUndefined();
+    expect(missingReading(limit, 1_000)).toBe("reset");
+    expect(missingReading(undefined, 1_000)).toBe("unreported");
+    const { resetsAt: _none, ...noReset } = limit;
+    expect(missingReading(noReset, 1_000)).toBe("lapsed");
   });
 });

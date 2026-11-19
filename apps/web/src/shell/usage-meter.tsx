@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { PulseOnce } from "@/motion";
 import {
   currentLimit,
+  missingReading,
   LIMIT_PROVIDERS,
   LIMIT_WINDOWS,
   limitStale,
@@ -340,6 +341,27 @@ function LimitsPopover({
  */
 const LIMIT_ROW = "grid grid-cols-[3.75rem_minmax(2rem,1fr)_2.75rem_6.75rem] items-center gap-x-2";
 
+/** What a window with no current reading says instead of its share. */
+const missingText = (
+  provider: LimitProvider,
+  missing: ReturnType<typeof missingReading>,
+): string | undefined => {
+  const agent = agentLabel(provider);
+  switch (missing) {
+    case undefined:
+      return undefined;
+    case "reset":
+      return `Reset since the last reading. The new window shows with ${agent}'s next reply.`;
+    case "lapsed":
+      return `The last reading is too old to count. A new one comes with ${agent}'s next reply.`;
+    case "unreported":
+      // Claude Code names one window per reply, so the quieter one can stay unreported.
+      return provider === "claude"
+        ? `${agent} hasn't reported this window yet. It reports one window at a time, with its replies.`
+        : `${agent} hasn't reported this window yet. It reports with its replies.`;
+  }
+};
+
 /**
  * A provider's 5-hour and weekly rows under its name and its reading's age, on one row in the
  * columns' grid so the age lines up under Resets; its credits when the agent reports them, and
@@ -408,6 +430,7 @@ function ProviderLimits({
             ? undefined
             : limitForecast({ ...limit, at: limit.at, samples: limit.samples }, now);
         const reset = limit?.resetsAt === undefined ? undefined : resetAtText(limit.resetsAt, now);
+        const missing = missingText(provider, missingReading(windows?.[window], now));
         return (
           <Fragment key={window}>
             <div
@@ -416,7 +439,7 @@ function ProviderLimits({
               data-shown={shown === window || undefined}
               aria-label={
                 limit === undefined
-                  ? `${WINDOW_LABEL[window]}: no reading`
+                  ? `${WINDOW_LABEL[window]}: no reading${missing === undefined ? "" : `. ${missing}`}`
                   : `${WINDOW_LABEL[window]}: ${limitPercent(limit.utilization)}% used${reset === undefined ? "" : `, resets ${reset}`}`
               }
               className={cn(
@@ -445,6 +468,15 @@ function ProviderLimits({
                 </>
               )}
             </div>
+            {missing !== undefined && (
+              // Why the row is a dash, in the forecast's muted sub-row, so it never reads as a fault.
+              <p className={cn(LIMIT_ROW, "-mt-1 text-meta text-muted-foreground")}>
+                <span aria-hidden />
+                <span data-testid="usage-limit-missing" className="col-span-3">
+                  {missing}
+                </span>
+              </p>
+            )}
             {limit?.credits === true && (
               <p
                 data-testid="usage-limit-credits"

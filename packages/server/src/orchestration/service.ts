@@ -897,6 +897,21 @@ export const OrchestrationLive = Layer.effect(
           if (thread === undefined || thread.role !== undefined) return undefined;
           return (yield* listeningWorkspace(thread))?.workspace.id;
         }),
+      memoryClosedReason: (threadId) =>
+        Effect.gen(function* () {
+          const thread = yield* findThread(threadId);
+          if (thread?.role === "orchestrator") {
+            return "This thread isn't its workspace's orchestrator right now: another thread holds the workspace, so its memory isn't open here.";
+          }
+          if (thread === undefined || thread.spawnedBy === undefined) {
+            return "This thread is neither a workspace's orchestrator nor a worker reporting to one, so there is no memory to read here.";
+          }
+          const holder = (yield* findWorkspace(thread.workspaceId))?.workspace.orchestratorThreadId;
+          if (holder === undefined) {
+            return "Your workspace has no orchestrator open right now (it may be starting a fresh session), so its memory isn't open. Try again once the orchestrator is back.";
+          }
+          return "The orchestrator that started you no longer holds this workspace (another thread took it over), so its memory isn't open to you. Report to it and ask the user to adopt you into the current orchestrator.";
+        }),
       isDelegated: delegated,
       noteStop,
       isWorkerSend,

@@ -3,10 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { errorMessage } from "@/api/errors";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { HostedDeviceActivityList } from "./hosted-device-activity";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
+import { useSaveSettings } from "./use-save-settings";
 
 type Bridge = NonNullable<NonNullable<Window["gram"]>["hostedDevice"]>;
 type Server = HostedDeviceView["servers"][number];
@@ -47,20 +49,59 @@ const useHostedDevice = (bridge: Bridge | undefined) => {
 };
 
 /**
- * Settings → Machines → Lend this computer: the hosted servers signed in to, their workspaces,
- * and whether this computer is lent to each. Shown only in the desktop app with hosted features
- * on. Lend, Resume and Lift the pause only open a decision the app draws; Stop and Sign out act
- * at once, since they only take authority away.
+ * Settings → Machines → Hosted servers: signing in to a Gram server that runs work for an
+ * organisation, what each sign-in allows, and lending this computer to its workspaces. Signing in
+ * is the desktop app's, which keeps the sign-in; it needs hosted features on, and says so with a
+ * way to turn them on rather than leaving it to Diagnostics. Lend, Resume and Lift the pause only
+ * open a decision the app draws; Stop and Sign out act at once, since they only take authority away.
  */
-export function HostedDeviceSection() {
+export function HostedServersPage() {
   const bridge = bridgeOf();
-  const hosted = useServerSettings((s) => s.settings !== undefined && embeddingOn(s.settings));
+  const settings = useServerSettings((s) => s.settings);
+  const hosted = settings !== undefined && embeddingOn(settings);
+  const save = useSaveSettings();
   const { state, read } = useHostedDevice(hosted ? bridge : undefined);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [why, setWhy] = useState<string>();
 
-  if (bridge === undefined || !hosted) return null;
+  if (bridge === undefined)
+    return (
+      <p className="text-meta text-muted-foreground" data-testid="hosted-servers-elsewhere">
+        Signing in to a hosted server is in the Gram desktop app, which keeps the sign-in.
+      </p>
+    );
+
+  if (!hosted)
+    return (
+      <section className={SETTINGS_CARD} data-testid="hosted-servers-off">
+        <p>Hosted features are off.</p>
+        <p className="text-meta text-muted-foreground">
+          Turn them on to sign in to a server, send it work from New task or your orchestrator, and
+          lend it {machine()} where its admins allow.
+        </p>
+        <div>
+          <Button
+            size="sm"
+            disabled={settings === undefined || busy}
+            onClick={() => {
+              setBusy(true);
+              setWhy(undefined);
+              save({ experimental: { embedding: true } })
+                .catch((e: unknown) => setWhy(errorMessage(e)))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Turn on hosted features
+          </Button>
+        </div>
+        {why !== undefined && (
+          <p role="alert" className="text-meta text-destructive">
+            {why}
+          </p>
+        )}
+      </section>
+    );
 
   const act = async (run: () => Promise<HostedDeviceDone | void>) => {
     setBusy(true);
@@ -77,24 +118,40 @@ export function HostedDeviceSection() {
   };
 
   return (
-    <section
-      className="flex flex-col gap-2"
-      aria-labelledby="hosted-device-title"
-      data-testid="hosted-device"
-    >
-      <div className="flex flex-col gap-0.5 px-1">
-        <h3 id="hosted-device-title" className={GROUP_TITLE}>
-          Lend {machine()} to hosted workspaces
-        </h3>
-        <p className="text-meta text-muted-foreground">
-          A hosted thread can ask to run a command or read a file in a folder you lend. Each request
-          asks you first, and only while you are at {machine()}.
+    <div className="flex flex-col gap-6" data-testid="hosted-device">
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const server = typed.trim();
+          if (server === "") return;
+          void act(async () => {
+            const done = await bridge.signIn(server);
+            if (done.ok) setTyped("");
+            return done;
+          });
+        }}
+      >
+        <Input
+          aria-label="Server address"
+          placeholder="https://gram.example.com"
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+          className="max-w-80"
+        />
+        <Button type="submit" size="sm" disabled={busy || typed.trim() === ""}>
+          Sign in
+        </Button>
+      </form>
+      {why !== undefined && (
+        <p role="alert" className="text-meta text-destructive">
+          {why}
         </p>
-      </div>
+      )}
       {state === undefined ? (
-        <p className="px-1 text-meta text-muted-foreground">Checking…</p>
+        <p className="text-meta text-muted-foreground">Checking…</p>
       ) : state === null ? (
-        <p className="px-1 text-meta text-muted-foreground">Starting…</p>
+        <p className="text-meta text-muted-foreground">Starting…</p>
       ) : (
         <>
           {state.unavailable !== undefined && (
@@ -117,44 +174,52 @@ export function HostedDeviceSection() {
               )}
             </p>
           )}
+          {state.servers.length === 0 && (
+            <p className="text-meta text-muted-foreground">
+              Not signed in to a server yet. Type the address your organisation gave you.
+            </p>
+          )}
           {state.servers.map((server) => (
             <ServerCard key={server.origin} server={server} bridge={bridge} busy={busy} act={act} />
           ))}
-          <HostedDeviceActivityList bridge={bridge} view={state} machine={machine()} />
-          <form
-            className="flex items-center gap-2 px-1"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const server = typed.trim();
-              if (server === "") return;
-              void act(async () => {
-                const done = await bridge.signIn(server);
-                if (done.ok) setTyped("");
-                return done;
-              });
-            }}
-          >
-            <Input
-              aria-label="Server address"
-              placeholder="https://gram.example.com"
-              value={typed}
-              onChange={(event) => setTyped(event.target.value)}
-              className="max-w-80"
-            />
-            <Button type="submit" size="sm" disabled={busy || typed.trim() === ""}>
-              Sign in
-            </Button>
-          </form>
+          {state.servers.length > 0 && (
+            <section
+              className="flex flex-col gap-2"
+              aria-labelledby="hosted-lending-title"
+              data-testid="hosted-lending"
+            >
+              <div className="flex flex-col gap-0.5 px-1">
+                <h3 id="hosted-lending-title" className={GROUP_TITLE}>
+                  Lending {machine()}
+                </h3>
+                <p className="text-meta text-muted-foreground">
+                  A hosted thread can ask to run a command or read a file in a folder you lend. Each
+                  request asks you first, and only while you are at {machine()}. Lend each workspace
+                  above.
+                </p>
+              </div>
+              <HostedDeviceActivityList bridge={bridge} view={state} machine={machine()} />
+            </section>
+          )}
         </>
       )}
-      {why !== undefined && (
-        <p role="alert" className="px-1 text-meta text-destructive">
-          {why}
-        </p>
-      )}
-    </section>
+    </div>
   );
 }
+
+/** What a sign-in lets this computer do with its server, in the order a person meets them. */
+const allows = (server: Server): string | undefined => {
+  const said = [
+    server.runsWork === true ? "Runs work sent from here" : undefined,
+    server.takesThreads === true ? "takes threads moved there" : undefined,
+    server.workspaces.some((workspace) => workspace.policy !== "off")
+      ? `may borrow ${machine()}`
+      : undefined,
+  ].filter((each) => each !== undefined);
+  if (said.length === 0) return undefined;
+  const line = said.join(" · ");
+  return line.charAt(0).toUpperCase() + line.slice(1);
+};
 
 function ServerCard({
   server,
@@ -175,6 +240,11 @@ function ServerCard({
           <span className="truncate font-mono text-meta text-muted-foreground">
             {server.origin}
           </span>
+          {server.signedIn && allows(server) !== undefined && (
+            <span className="text-meta text-muted-foreground" data-testid="hosted-allows">
+              {allows(server)}
+            </span>
+          )}
         </span>
         {server.paused && (
           <Button

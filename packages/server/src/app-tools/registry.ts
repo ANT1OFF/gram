@@ -122,6 +122,8 @@ export interface ApprovalGate {
     claims?: ReviewWriteClaims,
     /** Why full autonomy didn't cover the call: on the card, and in the agent's refusal. */
     why?: AskedDespiteAutonomy,
+    /** The card's question, when the tool words its own (`AppToolDefinition.title`). */
+    title?: string,
   ): Effect.Effect<void, AppToolError>;
 }
 
@@ -349,6 +351,12 @@ export const bindAppTools = (
               );
         const description =
           describeCall === undefined ? undefined : yield* describeCall(threadId, target);
+        const title =
+          definition.title === undefined
+            ? undefined
+            : yield* definition
+                .title(threadId, target)
+                .pipe(Effect.catchCause(() => Effect.succeed(undefined)));
         // The card's details are the input as it runs, in the schema's own encoding: a key the
         // schema drops or a value it rewrites isn't shown as though it were sent.
         const shown =
@@ -381,6 +389,7 @@ export const bindAppTools = (
           verdict === "forced",
           {},
           why,
+          title,
         );
         // A card whose call has nothing left to act on is withdrawn (interrupting the wait takes
         // it down) and the call refused, rather than left for the user to answer for nothing.
@@ -629,7 +638,7 @@ export const makeApprovalGate = (
    */
   const allowedForSession = new WeakMap<object, Set<string>>();
   return {
-    approve: (threadId, descriptor, input, description, forced = false, claims = {}, why) =>
+    approve: (threadId, descriptor, input, description, forced = false, claims = {}, why, title) =>
       Effect.gen(function* () {
         const { name } = descriptor;
         const because = why === undefined ? "" : ` It needed the user: ${why.agent}`;
@@ -664,6 +673,7 @@ export const makeApprovalGate = (
             input:
               typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {},
             description: plainCardText(description ?? descriptor.description),
+            ...(title === undefined ? {} : { title: plainCardText(title).slice(0, 120) }),
             ...(why === undefined
               ? {}
               : { decisionReason: plainCardText(why.user), autonomyNote: plainCardText(why.tag) }),

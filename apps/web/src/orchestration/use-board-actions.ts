@@ -203,6 +203,7 @@ export function useHandoff(state: WorkspaceState | undefined) {
     useHandoffStore.getState().mark(workspaceId, {
       fromSession: summary?.thread.agentSessionId,
       startedAt: Date.now(),
+      savingFirst: options?.checkpoint !== false,
     });
     try {
       await api.orchestratorHandoff(workspaceId, options);
@@ -220,6 +221,8 @@ export function useHandoff(state: WorkspaceState | undefined) {
     /** Whether there is an orchestrator to hand off at all. */
     available: summary !== undefined,
     running,
+    /** While running: the orchestrator is still saving to memory, before the fresh session. */
+    savingFirst: running && mark?.savingFirst === true,
     start,
   };
 }

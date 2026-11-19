@@ -156,6 +156,17 @@ describe("this machine as a personal device", () => {
     expect(await first.device.signIn(origin)).toEqual({ ok: true });
     expect(first.device.state().servers[0]?.runsWork).toBe(true);
     expect(await first.device.sendWork(origin, "w-other", work)).toMatchObject({ ok: false });
+    expect(await first.device.checkWork(origin, "w1", ["example/app", "other/x"])).toEqual({
+      ok: true,
+      reach: {
+        connected: true,
+        items: [
+          { repository: "example/app", reach: "yes" },
+          { repository: "other/x", reach: "no", reason: "The GitHub App doesn't reach it." },
+        ],
+        model: { agent: "claude", model: "example-model" },
+      },
+    });
     expect(fake.state.started).toEqual([]);
     expect(await first.device.sendWork(origin, "w1", work)).toMatchObject({
       ok: true,
@@ -222,6 +233,29 @@ describe("this machine as a personal device", () => {
       ],
     });
     expect(await device.signIn(origin)).toMatchObject({ ok: false });
+  });
+
+  it("keeps a sign-in that allows sending work without lending this machine", async () => {
+    fake.state.lendsDevices = false;
+    const first = await setUp();
+    expect(await first.device.signIn(origin)).toEqual({ ok: true });
+    expect(fake.state.registeredKey).toBeUndefined();
+    await first.device.close();
+
+    const second = await setUp({}, first.store);
+    await second.waitFor(() => (second.device.state().servers[0]?.workspaces.length ?? 0) > 0);
+    expect(second.device.state().servers[0]).toMatchObject({
+      signedIn: true,
+      workspaces: [{ id: "w1", policy: "off" }],
+    });
+    expect(
+      await second.device.sendWork(origin, "w1", {
+        repositories: ["example/app"],
+        text: "Read the README",
+        clientKey: "verify-scoped-sign-in",
+      }),
+    ).toMatchObject({ ok: true, threadId: "t-sent-1" });
+    expect(dials).toEqual([]);
   });
 
   it("signs in to nothing the person didn't accept", async () => {

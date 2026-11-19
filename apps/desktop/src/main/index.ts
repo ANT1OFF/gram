@@ -195,6 +195,14 @@ const DEV_SERVER_PORT = process.env["GRAM_PORT"] ?? "4317";
  */
 const SMOKE = process.argv.includes("--smoke");
 
+/**
+ * `--journey`: the full app for a packaged journey check (`scripts/verify-hosted-journey.ts`),
+ * which drives it to the end and quits it. As `--smoke` does, it keeps the echo fake agents a
+ * check's environment names (`inheritedServerEnv`) and checks for no update; unlike it, the app
+ * runs as it always does. Without the fake's variables in the environment it changes nothing else.
+ */
+const JOURNEY = process.argv.includes("--journey");
+
 /** What the shared shell code calls this app. */
 const PRODUCT: ShellProduct = { name: "Gram" };
 
@@ -358,7 +366,7 @@ const server = createServerHost({
       serviceName: "gram-server",
       stdio: "pipe",
       env: {
-        ...inheritedServerEnv(process.env, { packaged: app.isPackaged, smoke: SMOKE }),
+        ...inheritedServerEnv(process.env, { packaged: app.isPackaged, smoke: SMOKE || JOURNEY }),
         GRAM_DATA_DIR: dataDir,
         GRAM_APP_VERSION: app.getVersion(),
         // Which build runs, for orchestrators to tell whether a merged fix is live yet.
@@ -534,6 +542,7 @@ let signedUpdateStarting =
     (process.platform === "linux" && process.arch === "x64")) &&
   app.isPackaged &&
   !SMOKE &&
+  !JOURNEY &&
   UPDATE_REPO !== null;
 let quitAfterSignedStartup = false;
 
@@ -794,6 +803,7 @@ async function runApp() {
     process.arch === "arm64" &&
     app.isPackaged &&
     !SMOKE &&
+    !JOURNEY &&
     UPDATE_REPO !== null &&
     validTeamId(GRAM_MAC_TEAM_ID) &&
     (await macBundleTeam(destination).catch(() => undefined)) === GRAM_MAC_TEAM_ID;
@@ -806,7 +816,7 @@ async function runApp() {
     platform: process.platform,
     arch: process.arch,
     packaged: app.isPackaged,
-    smoke: SMOKE,
+    smoke: SMOKE || JOURNEY,
     repo: UPDATE_REPO,
     appImage,
   });
@@ -981,7 +991,7 @@ async function runApp() {
       (await readUpdatePrefs(dataDir)).automaticChecks === true &&
       autoUpdateCheckEnabled({
         packaged: app.isPackaged,
-        smoke: SMOKE,
+        smoke: SMOKE || JOURNEY,
         repoConfigured: UPDATE_REPO !== null,
         env: process.env,
       }),
@@ -1102,7 +1112,7 @@ function fencedUpdateOptions(
     readPrefs: () => readUpdatePrefs(dataDir),
     timersAllowed: autoUpdateCheckEnabled({
       packaged: app.isPackaged,
-      smoke: SMOKE,
+      smoke: SMOKE || JOURNEY,
       repoConfigured: true,
       env: process.env,
     }),
@@ -1318,7 +1328,7 @@ function createDebUpdates(repo: string): NativeUpdates {
     readPrefs: () => readUpdatePrefs(dataDir),
     timersAllowed: autoUpdateCheckEnabled({
       packaged: app.isPackaged,
-      smoke: SMOKE,
+      smoke: SMOKE || JOURNEY,
       repoConfigured: true,
       env: process.env,
     }),

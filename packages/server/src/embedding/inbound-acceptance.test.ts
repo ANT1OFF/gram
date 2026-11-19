@@ -618,6 +618,15 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
         const thread = yield* store.getThread(answered.threadId);
         expect(thread.checkout).toMatchObject({ kind: "worktree", branch: answered.branch });
         expect(thread.mode).toBe("bypassPermissions");
+        // What a start naming no model opens on is what the person is told before sending one.
+        const named = yield* call(at, "/embed/v1/thread-start-model", {
+          token: TOKEN,
+          body: { person },
+        });
+        expect(named.status).toBe(200);
+        expect(JSON.parse(named.body)).toEqual({
+          model: { agent: thread.model.agent, model: thread.model.model },
+        });
         expect(thread.extraCheckouts).toEqual([
           expect.objectContaining({ kind: "worktree", branch: answered.branch }),
         ]);
