@@ -1,6 +1,14 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
 import { ledgerPrsOf, type FeatureCardPr, type ThreadId } from "@gram/contracts";
-import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type Ref } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type Ref,
+} from "react";
 
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
@@ -105,6 +113,8 @@ export function WorkerPrChips({
   foldMerged = false,
   runs = NO_RUNS,
   className = "pr-1.5 pb-1 pl-6",
+  style,
+  onOpenOwn,
 }: {
   threadId: ThreadId;
   cardPrs: readonly FeatureCardPr[];
@@ -118,6 +128,13 @@ export function WorkerPrChips({
   runs?: readonly WatchedRun[];
   /** Where the chips sit: under an overview row's name by default. */
   className?: string;
+  /** Where they sit when it is measured: over their room in a wide row. */
+  style?: CSSProperties | undefined;
+  /**
+   * What a click on its own PR does in place of opening its PR panel in the main view: in the
+   * worker pane, its own PR tool, so the orchestrator stays.
+   */
+  onOpenOwn?: (() => void) | undefined;
 }) {
   const own = useWorkerPrChips(threadId, cardPrs);
   const chips = given ?? own;
@@ -180,6 +197,7 @@ export function WorkerPrChips({
       data-testid="overview-pr-chips"
       data-thread-id={threadId}
       className={cn("flex gap-1", dense ? "flex-nowrap" : "flex-wrap", className)}
+      style={style}
     >
       {shown.map((chip) => (
         <PrChipButton
@@ -188,6 +206,7 @@ export function WorkerPrChips({
           threadId={threadId}
           card={card}
           dense={dense}
+          onOpenOwn={onOpenOwn}
         />
       ))}
       {moreText}
@@ -242,17 +261,19 @@ function PrChipButton({
   threadId,
   card,
   dense,
+  onOpenOwn,
 }: {
   chip: PrChip;
   threadId: ThreadId;
   card: boolean;
   dense: boolean;
+  onOpenOwn: (() => void) | undefined;
 }) {
   const api = useApi();
   const { entry } = chip;
   const open = (event: MouseEvent) => {
     event.preventDefault();
-    if (entry.own) openPrPanel(threadId);
+    if (entry.own) (onOpenOwn ?? (() => openPrPanel(threadId)))();
     else void openExternalUrl(api, entry.url);
   };
   const { marks } = chip;

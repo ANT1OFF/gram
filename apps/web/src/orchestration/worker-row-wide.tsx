@@ -8,33 +8,25 @@ import { MockThumb } from "@/thread/mock-visuals";
 import { useThreadHeadline } from "@/thread/plan-ui";
 
 import { useWorkspaceAsks } from "./ask-stack";
-import type { OverviewWorkerRow } from "./overview-model";
-import { useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
-import type { watchedRuns } from "./waiting-on";
 import type { WideFootProps, WideParts } from "./worker-row";
 
 // The parts only the right pane's wide worker row draws (`WorkerRow`'s `wide`): its last line, with
-// its PR chips, its plan's steps and the docs it wrote, and an ask's pictures. Apart from the row,
+// its plan's steps and the docs it wrote, and an ask's pictures. Apart from the row,
 // so the sidebar's row on the first paint doesn't load what only the pane, loaded later, shows.
 
 /**
- * The wide row's last line: its PR chips first, as the sidebar's second line leads with them, then
- * its plan's steps while it has a plan, then the docs it wrote, each a titled chip that opens it.
+ * The wide row's last line: its plan's steps while it has a plan, then the docs it wrote, each a
+ * titled chip that opens it (its PR chips lead the line above, as the sidebar's row has them).
  * Drawn twice: as `ghost`, inside the row's button, to hold its room; and over that room, outside
- * the button, where its chips and docs are buttons of their own.
+ * the button, where its docs are buttons of their own.
  */
-function WideFoot({ threadId, done, ghost = false, chips }: WideFootProps) {
-  const own = useWorkerPrChips(threadId, chips?.cardPrs ?? NO_CARD_PRS);
-  const prChips = chips?.chips ?? own;
-  const runs = chips?.runs ?? NO_RUNS;
+function WideFoot({ threadId, done, ghost = false }: WideFootProps) {
   const { headline } = useThreadHeadline(threadId);
   const workspaceId = useThreadsStore((s) => s.byId[threadId]?.thread.workspaceId ?? undefined);
   const docs = useDocs(workspaceId);
   const written = (docs.data?.docs ?? []).filter((doc) => doc.authorThreadId === threadId);
   const steps = !done && headline !== undefined && headline.total > 0 ? headline : undefined;
-  if (prChips.length === 0 && runs.length === 0 && steps === undefined && written.length === 0) {
-    return null;
-  }
+  if (steps === undefined && written.length === 0) return null;
   return (
     <span
       aria-hidden={ghost || undefined}
@@ -45,17 +37,6 @@ function WideFoot({ threadId, done, ghost = false, chips }: WideFootProps) {
           : "pointer-events-none absolute right-1.5 bottom-1.5 left-6 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-meta text-muted-foreground *:pointer-events-auto"
       }
     >
-      <WorkerPrChips
-        threadId={threadId}
-        cardPrs={chips?.cardPrs ?? NO_CARD_PRS}
-        chips={prChips}
-        runs={runs}
-        dense
-        ghost={ghost}
-        foldMerged
-        {...(chips === undefined ? {} : { card: chips.card })}
-        className="flex shrink-0 items-center"
-      />
       {steps !== undefined && <PlanSteps done={steps.done} total={steps.total} />}
       {written.slice(0, DOCS_SHOWN).map((doc) =>
         ghost ? (
@@ -92,9 +73,6 @@ const DOCS_SHOWN = 2;
 
 const DOC_CHIP =
   "inline-flex h-5 max-w-56 min-w-0 items-center gap-1 rounded-full border border-edge px-1.5 text-meta";
-
-const NO_CARD_PRS: OverviewWorkerRow["prs"] = [];
-const NO_RUNS: ReturnType<typeof watchedRuns> = [];
 
 /** Its plan as a short bar of steps, the done ones filled, then "Step 2 of 4". */
 export function PlanSteps({ done, total }: { done: number; total: number }) {

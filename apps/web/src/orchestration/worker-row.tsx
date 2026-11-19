@@ -20,7 +20,15 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { useRef, useState, type ComponentType, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type KeyboardEvent,
+  type MouseEvent,
+  type RefObject,
+} from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { keyLabel } from "@/keyboard/registry";
@@ -44,7 +52,7 @@ import {
 } from "@/thread/machine-marker";
 
 import { useWorkspaceAsks } from "./ask-stack";
-import { keepBeside } from "./beside-store";
+import { keepBeside, useBesideStore } from "./beside-store";
 import { PrChip } from "./feature-card";
 import {
   edgeWords,
@@ -144,9 +152,9 @@ export const useWorkLine = (
  * hover card keep the rest. In the compact rail's flyout it has no hover card of its own
  * (`card={false}`), the flyout being one.
  *
- * `wide` is the right pane's Workers list: the same mark, title, agent, words and age, with the age
- * on the title's line, the words wrapped to two lines rather than cut, and under them a last line
- * that leads with the same PR chips, then its plan's steps and the docs it wrote. A worker that
+ * `wide` is the right pane's Workers list: the same mark, title, agent, PR chips, words and age, in
+ * the same order, with the age on the title's line, the words wrapped to two lines rather than
+ * cut, and under them a last line with its plan's steps and the docs it wrote. A worker that
  * asks you to pick between pictures shows the first two under that.
  */
 export function WorkerRow({
@@ -233,8 +241,19 @@ export function WorkerRow({
   const startedAt = useThreadsStore((s) => s.byId[row.threadId]?.thread.createdAt);
   // A second line under its title for what it has done and what it waits on: its PR chips (a run
   // of merged ones folded into "N merged"), then its words, then its age. With neither chips nor
-  // words, the row stays one line and its dot says the rest. Wide, the chips lead its last line.
+  // words, the row stays one line and its dot says the rest. Wide, the same: its chips, then words.
   const hasChips = prChips.length > 0 || runs.length > 0;
+  // Wide, where the chips' room is on its second line, for the real ones over it.
+  const room = useRef<HTMLSpanElement>(null);
+  const roomAt = useRoomAt(room, isWide && hasChips);
+  // Wide, in the pane, its own PR chip opens it there on its PR tool, the orchestrator staying.
+  const openOwnPr =
+    isWide && onOpen !== undefined
+      ? () => {
+          onOpen(PLAIN_OPEN);
+          useBesideStore.getState().setTab("pr");
+        }
+      : undefined;
   const twoLines = edgeSays || (!isWide && prChips.length > 0);
   const said =
     question !== undefined ? asksYouLine(question) : (doing ?? waiting?.label ?? row.now);
@@ -386,12 +405,29 @@ export function WorkerRow({
         {isWide && age}
       </span>
       {isWide
-        ? edgeSays && (
+        ? (edgeSays || hasChips) && (
             <span
               data-testid="overview-worker-line"
-              className="col-span-2 col-start-2 flex min-w-0 items-start gap-x-1.5 text-meta"
+              className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-start gap-x-1.5 gap-y-0.5 text-meta"
             >
-              {words}
+              {/* The chips' room, as the sidebar's line leads with it; the real ones sit over it
+                  outside the row's button. */}
+              {hasChips && (
+                <WorkerPrChips
+                  threadId={row.threadId}
+                  cardPrs={row.prs}
+                  chips={prChips}
+                  runs={runs}
+                  dense
+                  ghost
+                  ghostRef={room}
+                  foldMerged
+                  className="h-lh shrink-0 items-center"
+                />
+              )}
+              {edgeSays && (
+                <span className="flex min-w-0 flex-1 basis-24 items-start gap-x-1.5">{words}</span>
+              )}
             </span>
           )
         : twoLines && (
@@ -423,14 +459,26 @@ export function WorkerRow({
     </>
   );
   // The PR chips sit over their room, outside the row's button: each is a button of its own. Wide,
-  // the whole last line does, its docs being buttons too.
+  // its last line does too, its docs being buttons.
   const chips =
     parts !== undefined ? (
-      <parts.Foot
-        threadId={row.threadId}
-        done={tone === "merged"}
-        chips={{ cardPrs: row.prs, chips: prChips, runs, card }}
-      />
+      <>
+        {hasChips && roomAt !== undefined && (
+          <WorkerPrChips
+            threadId={row.threadId}
+            cardPrs={row.prs}
+            chips={prChips}
+            runs={runs}
+            card={card}
+            dense
+            foldMerged
+            className={WIDE_CHIPS}
+            style={roomAt}
+            onOpenOwn={openOwnPr}
+          />
+        )}
+        <parts.Foot threadId={row.threadId} done={tone === "merged"} />
+      </>
     ) : (
       twoLines &&
       hasChips && (
@@ -504,19 +552,37 @@ export function WorkerRow({
   );
 }
 
-/** What the wide row's last line takes: its chips as the row has them, or its own. */
+/** What the wide row's last line takes. */
 export interface WideFootProps {
   readonly threadId: ThreadId;
   /** Finished: its plan is over, and its steps say nothing. */
   readonly done: boolean;
   /** Drawn to hold its room inside the row's button, unseen. */
   readonly ghost?: boolean;
-  readonly chips?: {
-    readonly cardPrs: OverviewWorkerRow["prs"];
-    readonly chips: ReturnType<typeof useWorkerPrChips>;
-    readonly runs: ReturnType<typeof watchedRuns>;
-    readonly card: boolean;
-  };
+}
+
+/**
+ * Where `room` sits in the row (its offset in the row's menu wrapper, which the real chips are
+ * placed in), measured after each render; `undefined` while `on` is false. Its place moves only
+ * with what the row draws (its title line, its mark), never with the pane's width, so no observer.
+ */
+function useRoomAt(
+  room: RefObject<HTMLElement | null>,
+  on: boolean,
+): { top: number; left: number } | undefined {
+  const [at, setAt] = useState<{ top: number; left: number } | undefined>(undefined);
+  useLayoutEffect(() => {
+    const el = room.current;
+    if (!on || el === null) return;
+    const measure = () =>
+      setAt((was) =>
+        was?.top === el.offsetTop && was.left === el.offsetLeft
+          ? was
+          : { top: el.offsetTop, left: el.offsetLeft },
+      );
+    measure();
+  });
+  return on ? at : undefined;
 }
 
 /** The parts only the pane's wide row draws: its last line, and an ask's pictures. */
@@ -618,6 +684,13 @@ export const WORKER_TRAIL = "in-data-phone-drawer:col-start-3 in-data-phone-draw
  * column and the gap after it, and the row's bottom inset. Only the chips take the pointer: the
  * line's empty room around them stays the row's.
  */
+/** An open with no ⌘ or Ctrl held: in the pane. */
+const PLAIN_OPEN = { metaKey: false, ctrlKey: false } as const;
+
+/** The wide row's real PR chips, over their room on its second line (`useRoomAt`). */
+const WIDE_CHIPS =
+  "pointer-events-none absolute flex h-lh items-center text-meta *:pointer-events-auto";
+
 const WORKER_CHIPS =
   "pointer-events-none absolute bottom-1 left-6 flex h-lh items-center text-meta in-data-phone-drawer:left-7.5 *:pointer-events-auto";
 

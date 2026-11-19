@@ -16,6 +16,7 @@ import {
   keepBeside,
   openBesideFrom,
   useBesideStore,
+  WORKER_PANE_TEST_ID,
 } from "./beside-store";
 
 const ORCH = "t-orch" as ThreadId;
@@ -250,5 +251,29 @@ describe("a link in the worker's own transcript", () => {
     request(ORCH, "diff");
     expect(useLayoutStore.getState().panelTab).toBe("diff");
     expect(useBesideStore.getState().tab).toBe("files");
+  });
+
+  it("hands the keys to the tool's tab only when they were in the pane, never from the chat", () => {
+    keepBeside(WORKER, (threadId) => useLayoutStore.getState().openThread(threadId));
+    const paneEl = document.createElement("div");
+    paneEl.dataset.testid = WORKER_PANE_TEST_ID;
+    const link = document.createElement("button");
+    paneEl.append(link);
+    const composer = document.createElement("textarea");
+    document.body.append(paneEl, composer);
+    try {
+      // The link in its transcript held them: they follow to the tool.
+      link.focus();
+      request(WORKER, "diff");
+      expect(useBesideStore.getState().toolKeys).toBe(true);
+      useBesideStore.setState({ toolKeys: false });
+      // Typing in the orchestrator's composer: they stay there.
+      composer.focus();
+      request(WORKER, "pr");
+      expect(useBesideStore.getState()).toMatchObject({ tab: "pr", toolKeys: false });
+    } finally {
+      paneEl.remove();
+      composer.remove();
+    }
   });
 });

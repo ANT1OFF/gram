@@ -1,5 +1,11 @@
 import { Popover } from "@base-ui/react/popover";
-import type { FinishedWorkerDetail, GitState, ThreadId, WorkspaceId } from "@gram/contracts";
+import type {
+  BoundPr,
+  FinishedWorkerDetail,
+  GitState,
+  ThreadId,
+  WorkspaceId,
+} from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -41,6 +47,7 @@ import { DiffPanel } from "@/panels/diff-panel";
 import { FilesPanel } from "@/panels/files/files-panel";
 import { OutboundLink } from "@/panels/outbound-link";
 import { prDetailQuery, prDetailStamp } from "@/panels/pr-detail-query";
+import { prTargetOf } from "@/panels/pr-identity";
 import { PrPanel } from "@/panels/pr-panel";
 import { focusWhenRendered } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
@@ -56,10 +63,12 @@ import {
   closeBeside,
   closePane,
   useBesideStore,
+  WORKER_PANE_TEST_ID,
   type BesideTab,
 } from "./beside-store";
 import { FinishedFiles, FinishedWorkerView } from "./finished-worker-view";
-import { useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
+import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
+import { nowBesidePrs } from "./rail-model";
 import { StatusDot } from "./status-dot";
 import { STATUS_WORDS } from "./status-words";
 import { PlanSteps } from "./worker-row-wide";
@@ -76,7 +85,7 @@ import { useOpenWorker, useWorkerGroups } from "./workers-panel";
 // and its Changes what its PR (or, its worktree cleaned up, its record) kept. Opening it from the
 // pane's list, its switcher or ↑ ↓ puts the keys on its title, so Esc and ↑ ↓ work at once.
 
-export const WORKER_PANE_TEST_ID = "beside-dock";
+export { WORKER_PANE_TEST_ID };
 
 interface Tool {
   readonly id: BesideTab;
@@ -101,9 +110,12 @@ export const FINISHED = "Finished: read only";
 
 /** What a worker's tools are offered by: where it works, its PR, and whether it is finished. */
 export interface ToolFacts {
-  readonly git: Pick<GitState, "repo" | "changedFiles" | "pr" | "missing"> | undefined;
-  /** The PR the thread is bound to or follows, which the PR tool opens without a badge yet. */
-  readonly boundPr?: number | undefined;
+  readonly git: Pick<GitState, "repo" | "changedFiles" | "pr" | "missing" | "origin"> | undefined;
+  /**
+   * The PR the thread is bound to, which the PR tool opens: before its badge has loaded, and over
+   * a badge that still names another PR.
+   */
+  readonly boundPr?: Pick<BoundPr, "repo" | "number"> | undefined;
   /** Finished (Done): read only, though its worktree may still be there. */
   readonly finished?: boolean;
   /** A finished worker's changed files as its PR lists them, once read. */
@@ -123,7 +135,8 @@ export const liveTools = ({
 }: ToolFacts): readonly Tool[] => {
   const outside = git !== undefined && !git.repo;
   const missing = worktreeMissing(git as GitState | undefined);
-  const pr = git?.pr?.number ?? boundPr;
+  // The one its PR panel opens, its row's chip names and its head line shows.
+  const pr = prTargetOf(git, boundPr)?.number;
   const changed = finished && prFiles !== undefined ? prFiles : (git?.changedFiles ?? 0);
   const noCheckout = missing ? FOLDER_MISSING : finished ? FINISHED : undefined;
   return [
@@ -200,6 +213,17 @@ const typedIn = (target: EventTarget | null): boolean => {
   return target.isContentEditable && (target.textContent ?? "").trim() !== "";
 };
 
+/** Whether the keys are on something of the pane's, other than the pane itself or a disabled button. */
+const heldInPane = (root: HTMLElement | null): boolean => {
+  const held = document.activeElement;
+  return (
+    held instanceof HTMLElement &&
+    held !== root &&
+    root?.contains(held) === true &&
+    !(held instanceof HTMLButtonElement && held.disabled)
+  );
+};
+
 /** Whether a key press is in a field at all, where the arrows move the caret. */
 const inField = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
@@ -268,7 +292,7 @@ export function WorkerPane({
     ? recordTools(detail)
     : liveTools({
         git,
-        boundPr: summary?.thread.boundPr?.number,
+        boundPr: summary?.thread.boundPr,
         finished,
         prFiles: prFiles?.length,
       });
@@ -286,15 +310,20 @@ export function WorkerPane({
   useEffect(() => {
     if (!takeKeys) return;
     useBesideStore.setState({ takeKeys: false });
-    const held = document.activeElement;
-    const onPane =
-      held instanceof HTMLElement &&
-      held !== root.current &&
-      root.current?.contains(held) === true &&
-      !(held instanceof HTMLButtonElement && held.disabled);
-    if (onPane) return;
+    if (heldInPane(root.current)) return;
     void focusWhenRendered(() => titleRef.current);
   }, [takeKeys]);
+  // A link in the pane opened one of its tools: the keys stay where they were, and if the link went
+  // with the view it was in, they go to the shown tool's tab, where Esc and ↑ ↓ work.
+  const toolKeys = useBesideStore((s) => s.toolKeys);
+  useEffect(() => {
+    if (!toolKeys) return;
+    useBesideStore.setState({ toolKeys: false });
+    void focusWhenRendered(() => {
+      if (heldInPane(root.current)) return document.activeElement as HTMLElement;
+      return root.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? null;
+    });
+  }, [toolKeys]);
   // Its keys while focus or the last press is in it; a press anywhere else gives them back.
   useEffect(() => {
     const away = (event: PointerEvent) => {
@@ -476,9 +505,10 @@ function MainViewButton({ worker }: { worker: ThreadId }) {
 }
 
 /**
- * A live worker's state in one line: its status in the list's own words and mark (its row's), its
- * PR chips and its plan's steps, then its agent and when it was last active, kept together so they
- * wrap as one. At work, what its thread runs.
+ * A live worker's state in one line, in its sidebar row's order: its mark, its PR chips, then its
+ * status in the list's own words less the PRs the chips name (each said once), its plan's steps,
+ * then its agent and when it was last active, kept together so they wrap as one. At work, what its
+ * thread runs.
  */
 function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefined }) {
   const summary = useThreadsStore((s) => s.byId[worker]);
@@ -490,27 +520,23 @@ function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefine
   const display = threadStatusOf(summary, detail);
   const agent = summary.thread.model?.agent;
   const active = summary.thread.lastActivityAt;
+  const status = row === undefined || display.working ? display.label : row.status;
   return (
     <div
       data-testid="beside-state"
       className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 pl-1 text-meta text-muted-foreground"
     >
-      <span className="flex min-w-0 items-center gap-1.5">
-        {row === undefined || display.working ? (
-          <Swap swapKey={display.label}>
-            <display.icon
-              aria-hidden
-              data-working={display.working}
-              className={cn("size-icon-row shrink-0", display.tone)}
-            />
-          </Swap>
-        ) : (
-          <StatusDot state={row.dot} className="shrink-0" />
-        )}
-        <span className="truncate" title={row?.status ?? display.label}>
-          {row === undefined || display.working ? display.label : row.status}
-        </span>
-      </span>
+      {row === undefined || display.working ? (
+        <Swap swapKey={display.label}>
+          <display.icon
+            aria-hidden
+            data-working={display.working}
+            className={cn("size-icon-row shrink-0", display.tone)}
+          />
+        </Swap>
+      ) : (
+        <StatusDot state={row.dot} className="-mr-0.5 shrink-0" />
+      )}
       <WorkerPrChips
         threadId={worker}
         cardPrs={NO_PRS}
@@ -518,7 +544,11 @@ function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefine
         dense
         foldMerged
         className="flex shrink-0 items-center"
+        onOpenOwn={openPrTool}
       />
+      <span data-testid="beside-status" className="min-w-0 truncate" title={status}>
+        {nowBesidePrs(status, shownPrNumbers(chips, true))}
+      </span>
       {headline !== undefined && headline.total > 0 && (
         <PlanSteps done={headline.done} total={headline.total} />
       )}
@@ -648,9 +678,14 @@ function ToolRow({
             aria-disabled={off || undefined}
             aria-describedby={off ? `${reasons}-${tool.id}` : undefined}
             tabIndex={selected ? 0 : -1}
-            // Picking a tool by pointer leaves the keyboard where it was (the chat's composer).
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
+            // A click leaves the keys in a field outside the pane (the chat's composer), where
+            // someone types; anywhere else they go to the tab clicked, so ← → move on from it.
+            onMouseDown={(event) => {
+              if (!keepsKeys(document.activeElement, row.current)) return;
+              event.preventDefault();
+            }}
+            onClick={(event) => {
+              if (!keepsKeys(document.activeElement, row.current)) event.currentTarget.focus();
               if (!off) onPick(tool.id);
             }}
             className={cn(
@@ -683,6 +718,10 @@ function ToolRow({
     </div>
   );
 }
+
+/** A tool picked by pointer leaves the keys where they are when they are in a field outside the pane. */
+const keepsKeys = (held: Element | null, row: HTMLElement | null): boolean =>
+  inField(held) && row?.closest(`[data-testid="${WORKER_PANE_TEST_ID}"]`)?.contains(held) !== true;
 
 /** What a tool shows for the worker; a record's from what Gram kept. */
 function ToolBody({
@@ -799,6 +838,9 @@ function Note({ children }: { children: ReactNode }) {
 }
 
 const NO_PRS: readonly never[] = [];
+
+/** Its head's PR chip opens its PR tool here, the PR the tool names, the orchestrator staying. */
+const openPrTool = () => useBesideStore.getState().setTab("pr");
 
 /** An open with no ⌘ or Ctrl held: in the pane. */
 const PLAIN = { metaKey: false, ctrlKey: false } as const;
