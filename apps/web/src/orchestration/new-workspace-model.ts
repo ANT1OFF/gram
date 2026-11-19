@@ -14,12 +14,14 @@ import {
 import type { SaveWorkspaceInput } from "@/api/types";
 import { projectNameOf, toggleDraftProject } from "@/settings/workspace-settings-model";
 
-// Pure logic behind the New workspace sheet: repositories, what it should work on, and autonomy.
-// The name, models and stages wait for the workspace's settings. No React, so it is tested without
+// Pure logic behind the New workspace sheet: its name, repositories, what it should work on, and
+// autonomy. The stages wait for the workspace's settings. No React, so it is tested without
 // a browser.
 
 /** The sheet as it is filled in. */
 export interface NewWorkspaceDraft {
+  /** The name typed; blank names it after the home repository (`workspaceNameFor`). */
+  readonly name: string;
   readonly projectIds: readonly ProjectId[];
   readonly homeProjectId: ProjectId | undefined;
   /** "What should it work on?": the orchestrator's first message, when there is one. */
@@ -34,6 +36,7 @@ export interface NewWorkspaceDraft {
 }
 
 export const emptyNewWorkspace: NewWorkspaceDraft = {
+  name: "",
   projectIds: [],
   homeProjectId: undefined,
   task: "",
@@ -75,8 +78,8 @@ export const toggleRepo = (
 };
 
 /**
- * The name a new workspace starts with: its home repository's, numbered past any workspace that
- * has it already (`web`, `web 2`). Renaming waits for its settings.
+ * The name a new workspace gets when none is typed: its home repository's, numbered past any
+ * workspace that has it already (`web`, `web 2`).
  */
 export const workspaceNameFor = (
   draft: Pick<NewWorkspaceDraft, "homeProjectId">,
@@ -98,16 +101,30 @@ export const createInput = (
   starting: OrchestratorCharter,
   projects: readonly Project[],
   workspaces: readonly WorkspaceState[],
-): { readonly input: SaveWorkspaceInput } | { readonly error: string } => {
+):
+  | { readonly input: SaveWorkspaceInput }
+  | { readonly error: string; readonly field: "repositories" | "name" } => {
   const [first, ...rest] = draft.projectIds;
-  if (first === undefined) return { error: "Pick at least one repository." };
+  if (first === undefined) return { error: "Pick at least one repository.", field: "repositories" };
   const homeProjectId =
     draft.homeProjectId !== undefined && draft.projectIds.includes(draft.homeProjectId)
       ? draft.homeProjectId
       : first;
+  // A typed name is the person's: kept as typed, never numbered, so one that is taken is refused
+  // here rather than by the save.
+  const typed = draft.name.trim();
+  if (
+    typed !== "" &&
+    workspaces.some(({ workspace }) => workspace.name.trim().toLowerCase() === typed.toLowerCase())
+  ) {
+    return {
+      error: `${typed} is taken. Pick another name.`,
+      field: "name",
+    };
+  }
   return {
     input: {
-      name: workspaceNameFor({ homeProjectId }, projects, workspaces),
+      name: typed === "" ? workspaceNameFor({ homeProjectId }, projects, workspaces) : typed,
       projectIds: [first, ...rest],
       homeProjectId,
       charter: charterOf(draft, starting),
