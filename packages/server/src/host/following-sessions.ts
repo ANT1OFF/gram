@@ -1,5 +1,5 @@
 import type { ConnectorsSeen } from "@gram/agents";
-import { HostFailed, type HostUnavailable } from "@gram/contracts";
+import { HostFailed, type HostSessionOpen, type HostUnavailable } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -54,6 +54,12 @@ export const followingSessions = (
     /** Read at each wait, so a machine readied to stop meanwhile is waited for as one. */
     readonly reattachMs?: number | (() => number);
     readonly callMs?: number;
+    /**
+     * Asked of each open against the connection it goes to, just before it is sent there: why it
+     * mustn't open now, if it mustn't. What let the session through was asked of the machine as
+     * it was then; a machine that came back on another disk meanwhile owes a resume first.
+     */
+    readonly admit?: (request: HostSessionOpen) => string | undefined;
   } = {},
 ): HostSessionsConnection => {
   const reattach = timing.reattachMs ?? REATTACH_WITHIN_MS;
@@ -114,16 +120,43 @@ export const followingSessions = (
       Effect.exit,
       Effect.asVoid,
     );
+  /**
+   * The disk each session was opened on, and the one its events last came from, as their hosts
+   * said (`HostHello.diskId`): a session the host no longer has after its machine came back on
+   * another disk was lost with the old one (`replaced`).
+   */
+  const disks = new Map<string, { opened?: string | undefined; seen?: string | undefined }>();
   return {
-    open: (request) => call((s) => s.open(request)),
+    open: (request) =>
+      awaitConnection(current, callMs).pipe(
+        Effect.mapError((error) => new HostFailed({ message: error.message })),
+        Effect.flatMap((live) => {
+          const refused = timing.admit?.(request);
+          if (refused !== undefined) return Effect.fail(new HostFailed({ message: refused }));
+          return live.sessions.open(request).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                const disk = live.hello.diskId;
+                disks.set(request.handle, { opened: disk, seen: disk });
+              }),
+            ),
+          );
+        }),
+      ),
+    replaced: (handle) => {
+      const disk = disks.get(handle);
+      return disk?.opened !== undefined && disk.seen !== undefined && disk.opened !== disk.seen;
+    },
     events: (handle, afterSeq) => {
       let seen = afterSeq;
       const follow = (
         connection: Effect.Effect<HostConnection, HostUnavailable>,
       ): ReturnType<HostSessionsConnection["events"]> =>
         Stream.unwrap(
-          Effect.map(connection, (live) =>
-            live.sessions.events(handle, seen).pipe(
+          Effect.map(connection, (live) => {
+            const disk = disks.get(handle);
+            if (disk !== undefined) disk.seen = live.hello.diskId;
+            return live.sessions.events(handle, seen).pipe(
               Stream.tap((next) =>
                 Effect.sync(() => {
                   seen = next.seq;
@@ -144,8 +177,8 @@ export const followingSessions = (
                   ),
                 ),
               ),
-            ),
-          ),
+            );
+          }),
         );
       return follow(awaitConnection(current, callMs));
     },
@@ -189,7 +222,8 @@ export const followingSessions = (
         call((s) => s.connectors.setEnabled(handle, name, enabled)),
       authenticate: (handle, name) => call((s) => s.connectors.authenticate(handle, name)),
     },
-    close: (handle) => quiet((s) => s.close(handle)),
+    close: (handle) =>
+      quiet((s) => s.close(handle)).pipe(Effect.ensuring(Effect.sync(() => disks.delete(handle)))),
     accountScope: (agent) => call((s) => s.accountScope?.(agent) ?? Effect.succeed(undefined)),
     reload: (agent, reload) => quiet((s) => s.reload(agent, reload)),
   };

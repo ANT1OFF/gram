@@ -162,7 +162,12 @@ export const hostStopRoute = (
           Effect.match({ onFailure: failed, onSuccess: () => json({ ok: true }) }),
         );
       case MACHINES_STOP_EXPECT_PATH:
-        deps.hosts.stops.expect(hostId);
+        // Said only once written: a word lost in a restart would let the machine back unowed.
+        try {
+          deps.hosts.stops.expect(hostId);
+        } catch {
+          return refuse("The machine's record couldn't be kept; try again.", 503);
+        }
         return json({ ok: true });
       case MACHINES_STOP_RESUME_PATH: {
         const kept = body["kept"] === undefined ? undefined : keptBefore(body["kept"]);

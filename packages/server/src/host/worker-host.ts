@@ -193,7 +193,7 @@ const WAKE_LOOK = "500 millis";
  * no work until it is stopped and started, or its stop is taken back, and one back after a stop
  * until its threads are resumed (`StopMarks.resuming`), whose folders may not be there before.
  * With them off, and for a machine that isn't joined, an absent machine is unavailable at once,
- * as ever.
+ * as ever; one there that owes a resume (back on another disk) is waited for all the same.
  *
  * A thread whose folder its machine's resume couldn't put back (`StopMarks.blocked`) opens no
  * session there, and says why at once. Nor does one whose machine's resume made no progress for
@@ -226,17 +226,18 @@ export const awaitedMachines =
       if (first.host !== undefined && settled()) return first.host;
       const asIs = first.host === undefined ? Effect.fail(first.away) : Effect.succeed(first.host);
       if (remote.machines.get(id)?.confirmedAt === undefined) return yield* asIs;
-      if (!embeddingOn(yield* store.getSettings)) return yield* asIs;
+      // With the hosted features off, a machine that is away isn't waited for; one that is there
+      // but owes a resume (back on another disk) is, as this Gram resumes it itself
+      // (`resumeOwedMachines`): no session opens over folders not yet put back.
+      if (!embeddingOn(yield* store.getSettings) && (first.host === undefined || settled()))
+        return yield* asIs;
       yield* Effect.logInfo("a session waits for its machine to be started").pipe(
         Effect.annotateLogs({ hostId: id }),
       );
       if (threadId !== undefined) remote.stops.awaiting(id, threadId);
-      // Given up on while this waited: said, not opened.
-      const stalledBefore = remote.stops.stalled(id);
-      const stalledNow = () => {
-        const at = remote.stops.stalled(id);
-        return at !== undefined && at !== stalledBefore;
-      };
+      // A resume that made no progress for too long: said, at once or once this waited for it,
+      // never opened. Only a resume that completes opens the machine.
+      const stalledNow = () => remote.stops.stalled(id) !== undefined;
       const ready = get(id).pipe(
         Effect.filterOrFail(
           settled,
@@ -294,7 +295,7 @@ export const restoreGateOf = (
 };
 
 /** What a session waiting on a resume that made no progress is told. */
-export const RESUME_STALLED = `That machine's threads were being put back, and nothing came back for ${RESUME_STALL_MS / 60_000} minutes, so this session wasn't opened over folders that may not be there. Send again to open it as the folders are now.`;
+export const RESUME_STALLED = `That machine's threads were being put back, and nothing came back for ${RESUME_STALL_MS / 60_000} minutes, so this session wasn't opened over folders that may not be there. It opens once the machine's resume completes.`;
 
 /**
  * The joined machines' worker hosts, when this server has joined machines (`RemoteHosts`) and the

@@ -166,6 +166,14 @@ export const HostFeature = Schema.Literals([
    */
   "wip-restore-ref",
   /**
+   * Checks a folder that is there before taking it for put back, when asked (`host.stop.restore`'s
+   * `pending`): a resume before set out to put it back and may have stopped part way. An empty
+   * folder is made again; a worktree of the thread's clone gets the kept work put into it, as a
+   * clone that is there does; anything else is refused. A control plane doesn't take a host
+   * without it at its word for such a folder.
+   */
+  "wip-restore-pending",
+  /**
    * Keeps a thread's work in progress off the machine while it works (`host.stop.keep`): the same
    * hidden ref a stop writes, without readying the machine to stop. A control plane asks it after a
    * turn and during a long one, so a machine that is lost costs minutes of work, not the turn's.
@@ -213,6 +221,9 @@ export const HostFeature = Schema.Literals([
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
+/** `HostHello.diskId` and `bootId`: a random id, as a host writes it. */
+export const HostDiskId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{8,64}$/));
+
 /** The host's answer to `host.hello`: who it is and what it can do. */
 export const HostHello = Schema.Struct({
   protocol: Schema.Int,
@@ -233,6 +244,26 @@ export const HostHello = Schema.Struct({
   features: Schema.optionalKey(
     Schema.Array(Schema.String.check(Schema.isMaxLength(64))).check(Schema.isMaxLength(256)),
   ),
+  /**
+   * The disk the host runs on: an id it made the first time it started there, kept in its own
+   * folder beside its key but never with its clones. Same disk, the machine's folders are still
+   * there; another, it is a new machine under the same key, whose folders a resume puts back
+   * before any session opens, and a host that says a disk it replaced is refused. Absent from a
+   * joined machine's host built before it (1.31.0 and earlier) or one that couldn't keep the id,
+   * and from this machine's own host. A control plane built before it ignores it.
+   */
+  diskId: Schema.optionalKey(HostDiskId),
+  /**
+   * This start of the host's process: a fresh id each time it starts, so a redial from the same
+   * process (its connection only dropped) is told apart from a restart on the same disk, which
+   * took its sessions with it. Sent with `diskId`.
+   */
+  bootId: Schema.optionalKey(HostDiskId),
+  /**
+   * The host couldn't keep part of `diskId` (its clones' own volume): what is on its disk can't be
+   * told from one start to the next, so each start owes a resume. Sent with `diskId`.
+   */
+  diskUnknown: Schema.optionalKey(Schema.Literal(true)),
 });
 export type HostHello = typeof HostHello.Type;
 
@@ -1090,6 +1121,11 @@ export const HostRpcs = RpcGroup.make(
        * Nothing else is tried when it isn't there: no branch is fallen back on.
        */
       ref: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+      /**
+       * A resume before set out to put this folder back and didn't finish with it, served by a
+       * host that names `wip-restore-pending`: one that is there is checked, not taken as is.
+       */
+      pending: Schema.optionalKey(Schema.Literal(true)),
     },
     success: HostStopRestored,
     error: HostFailed,

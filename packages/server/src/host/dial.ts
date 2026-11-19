@@ -57,7 +57,11 @@ export const connectUrl = (origin: string) =>
 export const dialOnce = <R>(
   options: DialOptions,
   service: Effect.Effect<HostService, never, Scope.Scope | R>,
-  /** Runs on each message the main Gram sends: the dial got through and is being served. */
+  /**
+   * Runs on each message the main Gram sends after its first: the dial got through and is being
+   * served. The first is its hello, which it asks of every dial before it decides whether to take
+   * the host, so a dial refused after it doesn't count as one that got through.
+   */
   served: Effect.Effect<void> = Effect.void,
   idleMs: number = READ_IDLE_MS,
 ): Effect.Effect<string, never, R> =>
@@ -70,12 +74,13 @@ export const dialOnce = <R>(
     let socketEnded = false;
     /** When the main Gram last sent anything, or when the dial started. */
     let heard = now();
-    const received = Effect.andThen(
-      Effect.sync(() => {
-        heard = now();
-      }),
-      served,
-    );
+    /** How many messages the main Gram has sent on this dial. */
+    let messages = 0;
+    const received = Effect.suspend(() => {
+      heard = now();
+      messages += 1;
+      return messages > 1 ? served : Effect.void;
+    });
     const joined = options.joined ?? (() => true);
     // Ends a dial the main Gram has gone silent on, so the next one is made, and one of a
     // machine that has left since, so none is.
@@ -179,8 +184,9 @@ export const dialForever = <R>(
     yield* Effect.addFinalizer(() => release);
     /** Since when no dial has got through, while what is kept waits for one. */
     let detachedSince: number | undefined;
-    // Only a message from the main Gram says a dial got through: a dial left hanging on its
-    // connect, or refused, doesn't.
+    // Only a message from the main Gram after its hello says a dial got through: a dial left
+    // hanging on its connect, refused, or asked its hello and then refused, doesn't. So a host the
+    // main Gram keeps refusing ends what it kept once its grace runs out, however often it dials.
     const served = Effect.sync(() => {
       detachedSince = undefined;
     });
