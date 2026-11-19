@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   addressZone,
+  createHostDoors,
+  DOOR_MS,
   hostZone,
   loopbackPortOf,
   parsePreviewBounds,
@@ -109,6 +111,41 @@ describe("the preview's requests no page is named for", () => {
     expect(unattributedRequest("blob:https://approved.example/1", "https://approved.example")).toBe(
       "allow",
     );
+  });
+});
+
+describe("the local session's proxy doors", () => {
+  it("admits a public host only once a request to it was let through, for a while", () => {
+    let now = 1_000;
+    const doors = createHostDoors(() => now);
+    expect(doors.admits("cdn.example")).toBe(false);
+    doors.open("https://cdn.example/app.js");
+    expect(doors.admits("cdn.example")).toBe(true);
+    expect(doors.admits("other.example")).toBe(false);
+    now += DOOR_MS + 1;
+    expect(doors.admits("cdn.example")).toBe(false);
+  });
+
+  it("opens no door for loopback, a page's own data or another scheme", () => {
+    const doors = createHostDoors();
+    for (const url of [
+      "http://127.0.0.1:5173/",
+      "ws://localhost:5173/",
+      "data:text/plain,x",
+      "blob:https://a.example/1",
+      "ftp://files.example/",
+    ])
+      doors.open(url);
+    for (const host of ["127.0.0.1", "localhost", "a.example", "files.example"])
+      expect(doors.admits(host)).toBe(false);
+  });
+
+  it("spells a host as the proxy reads it from a CONNECT", () => {
+    const doors = createHostDoors();
+    doors.open("wss://Socket.Example:8443/live");
+    doors.open("https://[2606:4700::1111]/");
+    expect(doors.admits("socket.example")).toBe(true);
+    expect(doors.admits("[2606:4700::1111]")).toBe(true);
   });
 });
 

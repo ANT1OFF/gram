@@ -89,6 +89,25 @@ const probe = (name, url) =>
 })();
 </script>`;
 
+/**
+ * A worker's script: an HTTP request and a WebSocket to loopback `port`, each named by `kind`, so
+ * the listener there sees which reached it.
+ */
+const workerSource = (port, kind) => `
+fetch("http://127.0.0.1:${port}/from-${kind}", { mode: "no-cors" }).catch(() => {});
+try { new WebSocket("ws://localhost:${port}/ws-${kind}"); } catch {}
+`;
+
+/** A page that starts a dedicated, a shared and a service worker, each reaching for loopback. */
+const workersPage = (port) => `<!doctype html><title>Workers</title><script>
+const source = ${JSON.stringify(workerSource(port, "KIND"))};
+const blobOf = (kind) => URL.createObjectURL(new Blob([source.replaceAll("KIND", kind)]));
+new Worker(blobOf("dedicated"));
+try { new SharedWorker(blobOf("shared")); } catch {}
+navigator.serviceWorker?.register("/sw.js").catch(() => {});
+setTimeout(() => (document.title = "workers-done"), 4000);
+</script>`;
+
 /** A page that gathers ICE against `servers`, then titles itself "rtc-done". */
 const rtcPage = (servers) => `<!doctype html><title>RTC</title><script>
 (async () => {
@@ -127,6 +146,20 @@ async function main() {
         .end(
           `<title>Agent page</title><script>setTimeout(() => (location.href = "/agent-redirect"), 1500);</script>`,
         );
+    if (request.url === "/rtc-local")
+      return response.writeHead(200, { "content-type": "text/html" }).end(rtcPage(exfilServers));
+    if (request.url === "/door-then-rtc")
+      return response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(
+          `<title>Door</title><script>fetch("http://exfil.example:${exfilPort}/door", { mode: "no-cors" }).finally(() => (document.title = "door-done"));</script>`,
+        );
+    if (request.url === "/workers-local")
+      return response.writeHead(200, { "content-type": "text/html" }).end(workersPage(dev.port));
+    if (request.url === "/sw.js")
+      return response
+        .writeHead(200, { "content-type": "text/javascript" })
+        .end(workerSource(dev.port, "service"));
     if (request.url === "/agent-redirect")
       return response
         .writeHead(302, { location: `http://site.example:${site.port}/agent-redirect-action` })
@@ -225,6 +258,52 @@ fetch("http://${LAN2}:${unusedPort}/opaque-fetch", { mode: "no-cors" }).then(
   });
   await new Promise((resolve) => proxyServer.listen(0, "127.0.0.1", resolve));
   const G = gram.port;
+  // A host on the internet that an agent's page has no business reaching: its one synthetic
+  // address dials this listener, so whatever the local session's proxy lets through is counted.
+  const exfil = { connections: 0 };
+  const exfilServer = createTcpServer((socket) => {
+    exfil.connections += 1;
+    socket.destroy();
+  });
+  await new Promise((resolve) => exfilServer.listen(0, "127.0.0.1", resolve));
+  const exfilPort = exfilServer.address().port;
+  const exfilServers = [
+    { urls: `stun:exfil.example:${exfilPort}` },
+    {
+      urls: [
+        `turn:exfil.example:${exfilPort}?transport=tcp`,
+        `turn:${LAN}:${rtc.tcpPort}?transport=tcp`,
+      ],
+      username: "fixture",
+      credential: "fixture",
+    },
+  ];
+  /** The pages a synthetic agent drives, and the hosts it lets each load, as the pane would. */
+  const agentDriven = new Set();
+  const agent = {
+    navigation: (contents, url) =>
+      agentDriven.has(contents) && new URL(url).hostname === "site.example" ? "load" : undefined,
+    request: (contents, details) => {
+      if (!agentDriven.has(contents)) return undefined;
+      const { hostname } = new URL(details.url);
+      const page = contents.getURL();
+      // A public page loads from public hosts and nothing on loopback, as publicPageRequest says.
+      if (page.startsWith("http://site.example"))
+        return Promise.resolve(
+          ["127.0.0.1", "localhost", "[::1]"].includes(hostname) ? "block" : "allow",
+        );
+      if (hostname === "site.example" || hostname === "exfil.example")
+        return Promise.resolve("allow");
+      return undefined;
+    },
+    userInput: () => {},
+    driverOf: () => undefined,
+    handBack: () => {},
+    takeOver: () => {},
+    inspectionOf: () => undefined,
+    inspect: async () => ({ ok: false, code: "noPane", message: "fixture" }),
+    viewport: async () => ({ ok: false, code: "noPane", message: "fixture" }),
+  };
   const page = (
     port,
   ) => `<!doctype html><title>Remote page</title><a id="dl" download href="/file.bin">x</a>
@@ -292,6 +371,12 @@ const probe = (name, url, init = {}) =>
         .end(`<title>${request.url.slice(1)}</title>`);
     if (request.url === "/rtc")
       return response.writeHead(200, { "content-type": "text/html" }).end(rtcPage(rtcServers));
+    if (request.url === "/workers")
+      return response.writeHead(200, { "content-type": "text/html" }).end(workersPage(G));
+    if (request.url === "/sw.js")
+      return response
+        .writeHead(200, { "content-type": "text/javascript" })
+        .end(workerSource(G, "service"));
     if (request.url === "/rtc-control")
       return response.writeHead(200, { "content-type": "text/html" }).end(rtcPage(loopbackServers));
     if (request.url === "/lookups")
@@ -356,6 +441,7 @@ const probe = (name, url, init = {}) =>
   const linkQuestions = [];
   const lookups = {};
   const host = installPreview(ipc, {
+    agent,
     openLink: async (url) => {
       linkQuestions.push(url);
       return false;
@@ -376,6 +462,8 @@ const probe = (name, url, init = {}) =>
           return Promise.resolve([]);
         case "throw.example":
           throw new Error("resolver gone");
+        case "exfil.example":
+          return Promise.resolve(["93.184.216.35"]);
         default:
           return Promise.resolve(["93.184.216.34"]);
       }
@@ -385,9 +473,11 @@ const probe = (name, url, init = {}) =>
     // The synthetic private address is the fixture's loopback listeners, on any port, so a
     // connection the proxy let through to it is seen.
     dialWebAddress: (address, port) =>
-      address === "93.184.216.34"
-        ? connect({ host: "127.0.0.1", port: port === site.port ? port : 9 })
-        : connect({ host: address === LAN || address === LAN2 ? "127.0.0.1" : address, port }),
+      address === "93.184.216.35"
+        ? connect({ host: "127.0.0.1", port: exfilPort })
+        : address === "93.184.216.34"
+          ? connect({ host: "127.0.0.1", port: port === site.port ? port : 9 })
+          : connect({ host: address === LAN || address === LAN2 ? "127.0.0.1" : address, port }),
   });
   const T = "t-web";
   const state = () => invoke(Channels.previewStateGet, { threadId: T });
@@ -839,6 +929,114 @@ const probe = (name, url, init = {}) =>
       false && markSeen("/mark-user") === userSeen,
     { userSeen },
   );
+  // The local session: loopback directly, anything else only through a proxy of its own, which
+  // reaches only a host its request check just let a page go to.
+  const localRule = await local.resolveProxy(`http://exfil.example:${exfilPort}/`);
+  check(
+    "the local session's proxy is its own, not the system's",
+    /^PROXY 127\.0\.0\.1:\d+$/.test(localRule) &&
+      !localRule.endsWith(`:${proxyServer.address().port}`),
+    localRule,
+  );
+  check(
+    "the local session reaches loopback directly",
+    (await local.resolveProxy(`http://127.0.0.1:${dev.port}/`)) === "DIRECT" &&
+      (await local.resolveProxy(`http://localhost:${dev.port}/`)) === "DIRECT",
+  );
+  check(
+    "a link-local address goes to the local session's proxy, never directly",
+    (await local.resolveProxy("http://169.254.169.254/")) === localRule,
+  );
+  const titled = async (threadId, prefix) => {
+    for (const end = Date.now() + 20_000; Date.now() < end; await delay(100)) {
+      const now = await invoke(Channels.previewStateGet, { threadId });
+      if (now?.title?.startsWith(prefix)) return now.title;
+    }
+    return (await invoke(Channels.previewStateGet, { threadId }))?.title;
+  };
+  // A loopback page, a dev app's or a previewed file's: WebRTC to a host on the internet, by STUN
+  // over UDP or TURN over TCP, and to a private address, reaches nothing.
+  const exfilBefore = exfil.connections;
+  const lanBefore = rtc.connections.length;
+  await invoke(Channels.previewOpen, {
+    threadId: "t-rtc-local",
+    url: `http://127.0.0.1:${dev.port}/rtc-local`,
+  });
+  host.contentsOf("t-rtc-local")?.setBackgroundThrottling(false);
+  const localRtc = await titled("t-rtc-local", "rtc-");
+  check("the loopback page ran its WebRTC probe", localRtc === "rtc-done", localRtc);
+  check(
+    "a loopback page's WebRTC reaches no host on the internet and no private address",
+    exfil.connections === exfilBefore && rtc.connections.length === lanBefore,
+    { exfil: exfil.connections - exfilBefore, lan: rtc.connections.length - lanBefore },
+  );
+  check(
+    "a loopback page's WebRTC policy sends no UDP",
+    host.contentsOf("t-rtc-local")?.getWebRTCIPHandlingPolicy() === "disable_non_proxied_udp",
+  );
+  // The control, in the same session: once the request check let the page reach that host (as
+  // the agent browser would for a page it drives), the same probe's TURN reaches it.
+  const doorPage = host.contentsFor("t-door", true);
+  agentDriven.add(doorPage);
+  doorPage?.setBackgroundThrottling(false);
+  await doorPage?.loadURL(`http://127.0.0.1:${dev.port}/door-then-rtc`).catch(() => {});
+  await titled("t-door", "door-done");
+  await delay(500);
+  const doorBefore = exfil.connections;
+  await doorPage?.loadURL(`http://127.0.0.1:${dev.port}/rtc-local`).catch(() => {});
+  const doorRtc = await titled("t-door", "rtc-");
+  check(
+    "control: once the check let a page reach the host, the same TURN probe reaches it",
+    doorBefore > exfilBefore && doorRtc === "rtc-done" && exfil.connections > doorBefore,
+    { door: doorBefore - exfilBefore, turn: exfil.connections - doorBefore, title: doorRtc },
+  );
+  // An agent's page on a public host still loads in the local session, through its proxy.
+  const agentWeb = host.contentsFor("t-agent-web", true);
+  agentDriven.add(agentWeb);
+  agentWeb?.setBackgroundThrottling(false);
+  const gramBeforeWorkers = gram.seen.length;
+  await agentWeb?.loadURL(`http://site.example:${site.port}/workers`).catch(() => {});
+  const workersTitle = await titled("t-agent-web", "workers-done");
+  check(
+    "an agent's page on a public host loads in the local session, through its proxy",
+    workersTitle === "workers-done" && agentWeb?.session === local,
+    { title: workersTitle, url: agentWeb?.getURL() },
+  );
+  const fromWorkers = gram.seen.slice(gramBeforeWorkers).map((r) => r.url);
+  // Its service worker never registers here (an http page the fixture can't make secure in this
+  // session), so only the dedicated and shared ones are this check's.
+  for (const kind of ["dedicated", "shared"])
+    check(
+      `that page's ${kind} worker's HTTP request reaches no loopback listener`,
+      !fromWorkers.includes(`/from-${kind}`),
+      fromWorkers,
+    );
+  check(
+    "that page's dedicated worker's WebSocket reaches no loopback listener",
+    !fromWorkers.includes("/ws-dedicated"),
+    fromWorkers,
+  );
+  // A loopback page's own workers still reach loopback.
+  const devBeforeWorkers = dev.seen.length;
+  await invoke(Channels.previewOpen, {
+    threadId: "t-workers-local",
+    url: `http://127.0.0.1:${dev.port}/workers-local`,
+  });
+  host.contentsOf("t-workers-local")?.setBackgroundThrottling(false);
+  await titled("t-workers-local", "workers-done");
+  const devWorkers = dev.seen.slice(devBeforeWorkers).map((r) => r.url);
+  check(
+    "a loopback page's dedicated and shared workers still reach loopback",
+    devWorkers.includes("/from-dedicated") && devWorkers.includes("/from-shared"),
+    devWorkers,
+  );
+  // Recorded, not checked: what of the public page's workers reached loopback by a path no
+  // request check sees. Only a session of its own for agents' public pages closes this.
+  results.push(
+    `residual, loopback reached from the public page's workers: ${JSON.stringify(fromWorkers)}`,
+  );
+  exfilServer.close();
+
   // The control: the same page in a session without the policy reaches both, so the probe is real.
   const controlSession = session.fromPartition("fixture-control");
   await controlSession.setProxy({ mode: "direct" });
