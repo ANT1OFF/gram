@@ -6,6 +6,8 @@
 
 import { MACHINE_LOST_DURING_MAX, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import { EventHub } from "../events/event-hub.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
@@ -41,20 +43,33 @@ export const commandDuring = (inputs: ReadonlyArray<unknown>): string | undefine
 };
 
 /**
- * Resumes a thread whose last turn a lost machine cut off: the same conversation is sent the note
- * above. False, and nothing sent, when its last turn ended otherwise.
+ * Resumes a thread whose machine was lost under it (`Thread.machineIncident`, or a `lastError` from
+ * before it that says so): the same conversation is sent the note above, and the incident is
+ * cleared, as a resume clears it; a failure of the resumed turn on a machine still away sets it
+ * again. False, and nothing sent, when no lost machine cut it off.
  */
 export const resumeAfterMachineLost = (
-  store: Pick<ThreadStore["Service"], "getThread">,
+  store: Pick<ThreadStore["Service"], "getThread" | "updateThread">,
   runtimes: Pick<ThreadRuntimesShape, "sendNotice">,
   threadId: ThreadId,
 ) =>
   Effect.gen(function* () {
-    const lost = (yield* store.getThread(threadId)).lastError?.machineLost;
+    const thread = yield* store.getThread(threadId);
+    const lost = thread.machineIncident ?? thread.lastError?.machineLost;
     if (lost === undefined) return false;
     yield* runtimes.sendNotice(threadId, MACHINE_LOST_KEY, {
       text: machineLostText(lost.machine, lost.during),
       author: "server",
     });
+    if (thread.machineIncident !== undefined) {
+      const next = yield* store
+        .updateThread(threadId, (current) => {
+          const { machineIncident: _, ...rest } = current;
+          return rest;
+        })
+        .pipe(Effect.orDie);
+      const hub = yield* Effect.serviceOption(EventHub);
+      if (Option.isSome(hub)) yield* hub.value.publish({ type: "thread.upsert", thread: next });
+    }
     return true;
   });

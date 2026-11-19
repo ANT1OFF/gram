@@ -32,6 +32,7 @@ import {
   type ThreadStatus,
   type ThreadError,
   type AgentFailure,
+  type MachineIncident,
   type MessageId,
   type Thread,
   type TurnEndReason,
@@ -83,7 +84,62 @@ export interface TurnLifecycleDeps {
   readonly stampTurnEnd: FeedWriter["stampTurnEnd"];
   readonly setRetrying: (rt: Runtime, retrying: boolean, detail?: string) => Effect.Effect<void>;
   readonly clearPendingRequests: (rt: Runtime, reason: string) => Effect.Effect<void>;
+  /**
+   * The name of the joined machine the thread runs on, while it is offline: a failure then is the
+   * machine's (`Thread.machineIncident`). Absent where there are no joined machines.
+   */
+  readonly awayMachine?: (thread: Thread) => string | undefined;
 }
+
+/** A session a joined machine took with it (`EndedEvent.lostMachine`): which, and what ran. */
+export interface MachineLostNote {
+  readonly machine: string;
+  readonly during?: string;
+}
+
+/**
+ * The thread's machine incident after a failure at `at`: `lost` when the failure was a session the
+ * machine took with it, `away` when the machine is offline now, and otherwise the one it had,
+ * which only a completed turn or a resume clears. Never goes back from `lost` to `away`.
+ */
+export const incidentAfter = (
+  thread: Pick<Thread, "machineIncident" | "savedWork">,
+  at: number,
+  lost: MachineLostNote | undefined,
+  away: string | undefined,
+): MachineIncident | undefined => {
+  const kept = thread.machineIncident;
+  const machine = lost?.machine ?? away;
+  if (machine === undefined) return kept;
+  const state = lost !== undefined || kept?.state === "lost" ? "lost" : "away";
+  if (kept !== undefined && kept.machine === machine) {
+    const during = kept.during ?? lost?.during;
+    return { ...kept, state, ...(during === undefined ? {} : { during }) };
+  }
+  return {
+    at,
+    machine,
+    state,
+    ...(thread.savedWork === undefined ? {} : { saved: thread.savedWork.at }),
+    ...(lost?.during === undefined ? {} : { during: lost.during }),
+  };
+};
+
+/** `error` as kept while `incident` lasts: it says the machine was lost, and since when. */
+export const withIncident = (
+  error: ThreadError,
+  incident: MachineIncident | undefined,
+): ThreadError =>
+  incident === undefined
+    ? error
+    : {
+        ...error,
+        machineLost: {
+          machine: incident.machine,
+          ...(incident.during === undefined ? {} : { during: incident.during }),
+          at: incident.at,
+        },
+      };
 
 /** The statuses that show the agent at work on a turn: what `noteDeliveryStart` counts. */
 const WORK_STATUSES: ReadonlySet<AgentStatus> = new Set<AgentStatus>(["running", "compacting"]);
@@ -110,6 +166,7 @@ export const makeTurnLifecycle = ({
   stampTurnEnd,
   setRetrying,
   clearPendingRequests,
+  awayMachine,
 }: TurnLifecycleDeps) => {
   /** Reports a delivery's outcome, once: whichever comes first clears `carrying`. Holds the lock. */
   const settleDelivery = (rt: Runtime, outcome: "accepted" | SystemDeliveryFailure) =>
@@ -248,26 +305,50 @@ export const makeTurnLifecycle = ({
       // install: the thread says what happened instead.
       const gone = rt.cwd !== undefined && !(yield* checkouts.present(rt.cwd));
       const text = gone ? missingThreadFolder(rt.cwd!) : undefined;
-      yield* keepError(
+      const kept = yield* keepError(
         rt,
         text === undefined ? unavailableError(error, at) : missingFolderError(text, at),
       );
+      if (kept?.machineLost !== undefined)
+        yield* Effect.logInfo("agent unavailable on a lost machine").pipe(
+          Effect.annotateLogs({ threadId: rt.threadId, machineLost: true }),
+        );
       yield* setStatus(rt, "error", text ?? detail);
     });
 
-  /** Puts `error` on the thread as its `lastError`, or with none, clears the one it has. */
-  const keepError = (rt: Runtime, error: ThreadError | undefined) =>
+  /**
+   * Puts `error` on the thread as its `lastError`, or with none, clears the one it has and its
+   * machine incident: only a turn that completes does. A failure keeps the incident apart
+   * (`incidentAfter`) and the error carries it, so a later failure never hides a lost machine.
+   * The error as kept, if any.
+   */
+  const keepError = (rt: Runtime, error: ThreadError | undefined, lost?: MachineLostNote) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.option);
-      if (Option.isNone(thread)) return;
-      if (error === undefined && thread.value.lastError === undefined) return;
+      if (Option.isNone(thread)) return undefined;
+      if (
+        error === undefined &&
+        thread.value.lastError === undefined &&
+        thread.value.machineIncident === undefined
+      )
+        return undefined;
+      const at = yield* Clock.currentTimeMillis;
+      const away =
+        error === undefined || lost !== undefined ? undefined : awayMachine?.(thread.value);
       const next = yield* store
         .updateThread(rt.threadId, (current) => {
-          const { lastError: _, ...rest } = current;
-          return error === undefined ? rest : { ...rest, lastError: error };
+          const { lastError: _, machineIncident: __, ...rest } = current;
+          if (error === undefined) return rest;
+          const incident = incidentAfter(current, at, lost, away);
+          return {
+            ...rest,
+            lastError: withIncident(error, incident),
+            ...(incident === undefined ? {} : { machineIncident: incident }),
+          };
         })
         .pipe(Effect.orDie);
       yield* publishUpsert(next);
+      return next.lastError;
     });
 
   /**
@@ -280,7 +361,7 @@ export const makeTurnLifecycle = ({
     failure: AgentFailure,
     detail: string,
     turnId: TurnId | undefined,
-    machineLost?: ThreadError["machineLost"],
+    machineLost?: MachineLostNote,
   ) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
@@ -301,8 +382,8 @@ export const makeTurnLifecycle = ({
         },
         at,
         turnId,
-        machineLost,
       );
+      const kept = (yield* keepError(rt, error, machineLost)) ?? error;
       yield* Effect.logWarning("turn failed").pipe(
         Effect.annotateLogs({
           threadId: rt.threadId,
@@ -311,10 +392,10 @@ export const makeTurnLifecycle = ({
           httpStatus: failure.httpStatus ?? "",
           code: loggableCode(failure.code),
           retryable: failure.retryable,
+          machineLost: kept.machineLost !== undefined,
         }),
       );
-      yield* keepError(rt, error);
-      return error;
+      return kept;
     });
 
   /**

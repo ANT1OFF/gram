@@ -11,12 +11,15 @@ import { formatStamp } from "@/lib/time";
 import { useThreadsStore } from "@/stores/threads";
 
 import { SavedDiffDialog, SavedFiles } from "./saved-work";
-import { filesWord, savedBefore, savedWhat } from "./saved-work-words";
+import { filesWord, lostAt, savedBefore, savedWhat } from "./saved-work-words";
 
 type MachineLost = NonNullable<ThreadError["machineLost"]>;
 
-/** Where the card stands: offering the resume, resuming, or a quiet receipt once it went on. */
-export type MachineLostState = "lost" | "resuming" | "resumed";
+/**
+ * Where the card stands: offering the resume, resuming, a quiet receipt once it went on, or a
+ * quiet line once a later failure while the machine was still lost took its place.
+ */
+export type MachineLostState = "lost" | "resuming" | "resumed" | "superseded";
 
 /** The card's title: "This worker's machine was lost at 08:14". */
 export const machineLostTitle = (at: number): string =>
@@ -48,7 +51,12 @@ export function MachineLostCard({
   const count = saved === undefined ? 0 : saved.files.length + saved.more;
   const state = useThreadsStore((s): MachineLostState => {
     const summary = s.byId[threadId];
-    if (summary === undefined || summary.thread.lastError?.at !== error.at) return "resumed";
+    const current = summary?.thread.lastError;
+    if (summary === undefined || current === undefined) return "resumed";
+    if (current.at !== error.at)
+      return current.machineLost !== undefined && lostAt(current) === lostAt(error)
+        ? "superseded"
+        : "resumed";
     return summary.status === "error" || summary.status === "idle" || summary.status === "cold"
       ? "lost"
       : "resuming";
@@ -77,20 +85,22 @@ export function MachineLostCard({
       </>
     );
 
-  if (shown === "resumed") {
+  if (shown === "resumed" || shown === "superseded") {
     return (
       <div
         role="status"
         data-testid="machine-lost"
-        data-state="resumed"
+        data-state={shown}
         className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-border p-2.5 text-reading text-muted-foreground"
       >
         <ServerCrash aria-hidden className="mt-0.5 size-icon-row shrink-0" />
         <p className="min-w-0 flex-1 text-meta">
-          <span className="font-medium text-foreground">{machineLostTitle(error.at)}</span>
-          {saved === undefined
-            ? " · resumed on its folder as last saved"
-            : ` · resumed on its folder as saved at ${formatStamp(saved.at)}`}
+          <span className="font-medium text-foreground">{machineLostTitle(lostAt(error))}</span>
+          {shown === "superseded"
+            ? " · still lost, as said below"
+            : saved === undefined
+              ? " · resumed on its folder as last saved"
+              : ` · resumed on its folder as saved at ${formatStamp(saved.at)}`}
         </p>
       </div>
     );
@@ -106,13 +116,13 @@ export function MachineLostCard({
       <ServerCrash aria-hidden className="mt-0.5 size-icon-row shrink-0 text-destructive" />
       <div className="min-w-0 flex-1">
         <p data-testid="machine-lost-title" className="text-meta font-medium text-destructive">
-          {machineLostTitle(error.at)}
+          {machineLostTitle(lostAt(error))}
         </p>
         <p className="break-words">{during} It wasn't idle, and nothing stopped it on purpose.</p>
         {saved === undefined ? (
           <p className="mt-1 text-meta text-muted-foreground">
             Its folder is saved every few minutes while it works, so it comes back as last saved:
-            anything in the last few minutes before {formatStamp(error.at)} may be missing.
+            anything in the last few minutes before {formatStamp(lostAt(error))} may be missing.
           </p>
         ) : (
           <>

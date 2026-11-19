@@ -523,11 +523,19 @@ the local app, as the other `/machines/*` routes are.
   folder back from that ref when it is resumed, as after a stop, and loses at most the last few
   minutes. Only folders Gram made from a clone are kept, since only those can be made again. A
   host older than this keeps nothing until it is readied to stop.
-- When a lost machine doesn't come back within the session's reattach window, the turn it cut
-  off fails saying so (`ThreadError.machineLost`: the machine, and the command that was running),
-  not as a plain session end. The conversation shows that turn's card with Resume worker
+- When a lost machine doesn't come back within the session's reattach window, or comes back on
+  another disk without the session, the turn it cut off fails saying so
+  (`ThreadError.machineLost`: the machine, and the command that was running), not as a plain
+  session end. The conversation shows that turn's card with Resume worker
   (`thread.resumeAfterMachineLost`): the same conversation gets Gram's note of what was cut off,
   which brings the machine back and its folder as last kept.
+- The loss is kept on the thread apart from its last error (`Thread.machineIncident`: when, which
+  machine, `away` or `lost`, and the time of the last save before it), so a later failure doesn't
+  hide it: a message that waits on the machine and then fails as "offline" keeps the card, and
+  every error written while it lasts carries it as `machineLost`, dated from the loss. A thread
+  that was idle when its machine took its session gets it too, and so does any failure of a
+  thread whose machine is offline then. Only a turn that completes, or Resume worker, clears it.
+  A failure logs `machineLost: true` on its "turn failed" line.
 - Each keep says what the save holds (`HostStopKept.saved`): the diff of the kept commit against
   where its branch left its base, bodies cut to 512 KB with the largest files listed without
   theirs. Gram records the time and the files on the thread (`Thread.savedWork`), so the
@@ -573,6 +581,9 @@ the local app, as the other `/machines/*` routes are.
   another disk has its folders only once the resume has made them again. No timer opens it. When
   25 minutes pass with no resume started and no folder done, the sessions waiting on it fail with
   that reason and the log says so. A message sent after that opens on the folders as they are.
+  The machine still owes its resume (`resuming` in the status) until one completes; a resume that
+  can't reach the machine, fails or is cut off leaves it owed. Time this Gram was down doesn't
+  count towards the 25 minutes.
 - A thread's session opens as soon as its own folders are back. The folders of threads a session
   waits for go first.
 - A thread with a folder that is missing or refused doesn't open on the machine, during the resume
@@ -591,9 +602,19 @@ the local app, as the other `/machines/*` routes are.
 - A message that waits in a thread's queue during the resume is sent once, when the thread's
   folders are back or the resume ends.
 - `POST /machines/stop/expect` says a machine is being started on another disk: `{ "id" }`. Once
-  it dials in, it waits for its resume as above, though this Gram saw no stop of it (it was
-  restarted since, or the machine was stopped some other way). Call it before the host starts; it
-  holds for fifteen minutes.
+  it dials in, it waits for its resume as above, though this Gram saw no stop of it (the machine
+  was stopped some other way, or its host doesn't say its disk). Call it before the host starts;
+  it holds for fifteen minutes.
+- What this Gram knows of each machine's stops is kept across its own restart, in
+  `remote-access/machine-marks.json` in its data folder, owner-only and replaced whole on each
+  change: whether it was readied and left, whether it is owed a resume and how far that got, the
+  threads whose folders are back or couldn't be put back, what each stop kept (without the diff),
+  an `expect`, and the machine's disk. So a machine owed a resume when Gram restarts is still owed
+  it after, and its sessions still wait. A new disk and the resume it owes are written together.
+  A file that can't be read is started over, with a warning in the log; it never stops Gram
+  starting. A write that fails is logged as an error and tried again at the next change. What
+  stops kept is held to the newest 256 folders a machine, and left out of a write that would
+  pass 4 MB before anything else is.
 - A branch whose tip is already on the remote's branch of the same name, with nothing
   uncommitted, needs no hidden ref: the stop answers `caughtUp: true` for that folder with no
   `ref`. A ref this folder left at an earlier stop is deleted then. One that names anything
@@ -608,6 +629,35 @@ the local app, as the other `/machines/*` routes are.
 The new host must start with the stopped one's home folder (`GRAM_HOST_HOME`). The machine's key
 is in that home, so the new host dials in as the same machine and nothing about the threads
 changes. With the threads' folders at the same paths, they are found as they were.
+
+### Same disk or a new one
+
+A joined machine's host keeps a random id of its disk in its home folder (`disk-id`, beside the
+key, never in `repos/`), made the first time it starts there, and says it in its hello with a
+fresh id for each start of its process (`HostHello.diskId`, `bootId`). Gram remembers the last
+disk of each machine and reads a dial against it:
+
+- **The same disk and start**: only the connection dropped, and sessions pick up where they were.
+- **The same disk, another start**: the host restarted. A session it no longer has ended with
+  it, and the conversation carries on there, as before.
+- **Another disk**: a new machine under the same key. It is owed a resume before any session
+  opens there, whatever Gram remembers of a stop, and a session the old disk had ends as lost,
+  not restarted. Each open is checked again against the connection it goes out on, so a session
+  let through just before the machine came back on another disk doesn't open there either, and
+  what a resume begun on the old disk finds counts for nothing on the new one. With the hosted
+  features off, nobody else resumes the machine, so this Gram does as soon as it is online, and
+  sessions wait for it.
+- **No disk said** (a host of 1.31.0 or earlier, or one that couldn't keep the file): as before
+  hosts said one, for a machine none of whose hosts ever said one. For a machine whose hosts did,
+  it is refused while a host that says its disk is online, or while the machine owes a resume:
+  it can't say it isn't an old disk's host ("refused a joined machine's host that didn't say its
+  disk"). Removing the machine and joining it again starts it over.
+
+So whatever brings a machine back on another disk must not copy `disk-id` with the rest of the
+home folder: the key and `host.json` are what make it the same machine, and the id is what makes
+it another disk. A copied id reads as the old disk restarted, whose folders are taken to be
+there. The id only tells an honest host's disks apart: anything holding the machine's key can
+say any id, as it could dial in as the machine before.
 
 **On a replaced disk** (the same machine key, the folders gone) a thread's work in progress
 follows it. For each missing folder that Gram made from the machine's clone of a repository (a

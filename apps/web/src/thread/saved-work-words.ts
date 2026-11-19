@@ -19,22 +19,29 @@ export const savedWhat = (saved: SavedWork): string => {
   return `${filesWord(count)} changed${saved.uncommitted ? ", not committed" : ""}`;
 };
 
-/** The last save before `error`, when there is one: what a lost machine gives back. */
+/**
+ * When the machine was lost: when the thread's machine incident began, which a later failure while
+ * it lasted keeps (`machineLost.at`), or the error's own time for one written before that.
+ */
+export const lostAt = (error: Pick<ThreadError, "at" | "machineLost">): number =>
+  error.machineLost?.at ?? error.at;
+
+/** The last save before `error`'s loss, when there is one: what a lost machine gives back. */
 export const savedBefore = (
   saved: SavedWork | undefined,
-  error: Pick<ThreadError, "at">,
-): SavedWork | undefined => (saved !== undefined && saved.at <= error.at ? saved : undefined);
+  error: Pick<ThreadError, "at" | "machineLost">,
+): SavedWork | undefined => (saved !== undefined && saved.at <= lostAt(error) ? saved : undefined);
 
 /**
  * A worker's now line once its machine was lost: "machine lost 08:14 · 6 files saved", or "· nothing
  * to save" when the save held no change. Without a save it names the loss alone.
  */
 export const machineLostLine = (
-  error: Pick<ThreadError, "at">,
+  error: Pick<ThreadError, "at" | "machineLost">,
   saved: SavedWork | undefined,
   now?: number,
 ): string => {
-  const head = `machine lost ${formatStamp(error.at, now)}`;
+  const head = `machine lost ${formatStamp(lostAt(error), now)}`;
   const before = savedBefore(saved, error);
   if (before === undefined) return head;
   const count = savedFileCount(before);

@@ -33,7 +33,7 @@ import { PulseOnce, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { ThreadMachineMarker } from "@/thread/machine-marker";
 import { SavedWorkLine } from "@/thread/saved-work";
-import { machineLostLine } from "@/thread/saved-work-words";
+import { lostAt as machineLostAt, machineLostLine } from "@/thread/saved-work-words";
 import { useThreadsStore } from "@/stores/threads";
 
 import { useBesideLink } from "./beside-link";
@@ -265,7 +265,9 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
   const lostAt = useThreadsStore((s) => {
     const summary = s.byId[worker.threadId];
     const error = summary?.thread.lastError;
-    return summary?.status === "error" && error?.machineLost !== undefined ? error.at : undefined;
+    return summary?.status === "error" && error?.machineLost !== undefined
+      ? machineLostAt(error)
+      : undefined;
   });
   const now = lostAt === undefined ? worker.now : machineLostLine({ at: lostAt }, undefined);
   return (

@@ -1551,6 +1551,7 @@ describe("ThreadRuntimes", () => {
           httpStatus: "",
           code: "",
           retryable: true,
+          machineLost: false,
         },
       ]);
       logged.length = 0;
@@ -1802,8 +1803,18 @@ describe("ThreadRuntimes", () => {
       );
       yield* session.end(machineAwayEnded("box"));
       yield* waitStatus(thread.id, "error");
-      const failed = (yield* store.getThread(thread.id)).lastError;
-      expect(failed?.machineLost).toEqual({ machine: "box", during: "bun run check" });
+      const lost = yield* store.getThread(thread.id);
+      const failed = lost.lastError;
+      expect(lost.machineIncident).toMatchObject({
+        machine: "box",
+        state: "lost",
+        during: "bun run check",
+      });
+      expect(failed?.machineLost).toEqual({
+        machine: "box",
+        during: "bun run check",
+        at: lost.machineIncident?.at,
+      });
       // The command it cut off doesn't read as running still.
       const parts = (yield* store.listMessages(thread.id)).find((m) => m.id === reply)?.parts;
       expect(parts).toContainEqual(
@@ -1819,7 +1830,71 @@ describe("ThreadRuntimes", () => {
       expect(next.sent[0]?.text).toContain("bun run check");
       yield* next.completeTurn();
       yield* waitStatus(thread.id, "idle");
-      expect((yield* store.getThread(thread.id)).lastError).toBeUndefined();
+      const resumed = yield* store.getThread(thread.id);
+      expect(resumed.lastError).toBeUndefined();
+      expect(resumed.machineIncident).toBeUndefined();
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("keeps a lost machine through the failures after it, until a turn completes", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const runtimes = yield* ThreadRuntimes;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* createRunning();
+      yield* session.end(machineAwayEnded("box"));
+      yield* waitStatus(thread.id, "error");
+      const incident = (yield* store.getThread(thread.id)).machineIncident;
+      expect(incident).toMatchObject({ machine: "box", state: "lost" });
+      // The next message can't start an agent there: its own error, still the machine's loss.
+      yield* fake.setUnavailable("box is offline; its workers start once it's back.");
+      yield* runtimes.send(thread.id, { text: "again" });
+      yield* waitFor(
+        "the failure after the loss",
+        store
+          .getThread(thread.id)
+          .pipe(Effect.map((t) => t.lastError?.text.includes("offline") === true)),
+      );
+      const after = yield* store.getThread(thread.id);
+      expect(after.machineIncident).toEqual(incident);
+      expect(after.lastError?.machineLost).toEqual({ machine: "box", at: incident?.at });
+      // Only a turn that completes clears it.
+      yield* fake.setUnavailable(undefined);
+      yield* runtimes.send(thread.id, { text: "once more" });
+      const next = yield* waitFor(
+        "a session after the loss",
+        fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length > 0 && s)),
+      );
+      // The message that waited goes first, then this one, each its own turn.
+      yield* next.completeTurn();
+      yield* waitFor(
+        "the second message",
+        Effect.sync(() => next.sent.length === 2),
+      );
+      yield* next.completeTurn();
+      yield* waitStatus(thread.id, "idle");
+      const done = yield* store.getThread(thread.id);
+      expect(done.machineIncident).toBeUndefined();
+      expect(done.lastError).toBeUndefined();
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("says a lost machine of a thread that was idle when it went", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const { thread, session } = yield* createRunning();
+      yield* session.completeTurn();
+      yield* waitStatus(thread.id, "idle");
+      yield* session.end(machineAwayEnded("box"));
+      yield* waitFor(
+        "the loss",
+        store
+          .getThread(thread.id)
+          .pipe(Effect.map((t) => t.machineIncident?.state === "lost" && t)),
+      );
+      expect((yield* store.getThread(thread.id)).lastError?.machineLost).toMatchObject({
+        machine: "box",
+      });
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
