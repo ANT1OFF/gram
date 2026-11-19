@@ -30,7 +30,7 @@ import {
   type ThreadId,
   type ThreadNotFound,
 } from "@gram/contracts";
-import { Pr, prChecksStamp, repoFromPrUrl } from "@gram/git";
+import { canWrite, Pr, prChecksStamp, repoFromPrUrl } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -43,6 +43,7 @@ import { randomUUID } from "node:crypto";
 import { EventHub } from "../events/event-hub.ts";
 import { upsertsChanging } from "../events/upsert-changes.ts";
 import { asBackground } from "../github/budget.ts";
+import { PrCommentReads } from "../git/pr-comments.ts";
 import { bindMainPr, isBadgeOf, markOf, unmarked, withMonitorMark } from "../git/extra-prs.ts";
 import { GitRefresh, GitServerConfig } from "../git/platform.ts";
 import { MachineBranchPr } from "../git/machine-branch-pr.ts";
@@ -153,6 +154,8 @@ export const BabysitLive = Layer.effect(
     const config = yield* GitServerConfig;
     const refreshes = yield* GitRefresh;
     const machineBranchPr = yield* MachineBranchPr;
+    // Without it, no person's review is verified, so none reaches the agent.
+    const commentReads = Option.getOrUndefined(yield* Effect.serviceOption(PrCommentReads));
 
     const seen = new Map<ThreadId, MonitorSnapshot>();
     /** Why each thread's pending notice is due; cleared when it's delivered. */
@@ -660,9 +663,32 @@ export const BabysitLive = Layer.effect(
         // Unlike the bot's, this goes out after babysitting has finished or stopped: a person asking
         // for changes on a PR handed back as ready is exactly what the agent should hear, and it can't
         // loop, since nothing the agent does makes a person review again.
-        const standing = (found.badge.review?.humanReviews ?? []).toReversed();
+        // Only a reviewer who can push to the repository reaches the agent, as for a comment: on
+        // a public repository anyone can review. One whose permission GitHub didn't say is held
+        // for the next look; one who can't push is passed over and never told.
+        const reviewed = (found.badge.review?.humanReviews ?? []).toReversed();
+        const writers = new Set<string>();
+        const unverified = new Set<string>();
+        for (const author of new Set(reviewed.map((review) => review.author))) {
+          const permission =
+            commentReads === undefined
+              ? Option.none()
+              : yield* asBackground(commentReads.permission(found.cwd, bound.repo, author)).pipe(
+                  Effect.option,
+                );
+          if (Option.isNone(permission)) unverified.add(author);
+          else if (canWrite(permission.value)) writers.add(author);
+        }
+        const held = reviewed.filter((r) => fresh.has(r.id) && unverified.has(r.author));
+        if (held.length > 0) {
+          humanPending.set(threadId, new Set(held.map((r) => r.id)));
+          yield* Effect.logWarning("person review not verified; held for the next look").pipe(
+            Effect.annotateLogs({ threadId, pr: bound.number, reviews: held.length }),
+          );
+        }
+        const standing = reviewed.filter((review) => writers.has(review.author));
         const newReviewIds = standing.filter((review) => fresh.has(review.id)).map((r) => r.id);
-        // Dismissed before it could be sent.
+        // Dismissed before it could be sent, or nobody's who can push.
         if (newReviewIds.length === 0) return;
         const notice: HumanReviewNotice = {
           kind: "humanReview",

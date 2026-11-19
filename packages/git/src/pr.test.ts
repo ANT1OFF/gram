@@ -70,6 +70,7 @@ const openPrWith = (nodes: ReadonlyArray<Json>) =>
   reshapePrNode({
     number: 5,
     state: "OPEN",
+    isCrossRepository: false,
     headRefOid: "deadbeef",
     commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes } } } }] },
   });
@@ -238,8 +239,8 @@ describe("SHA anchoring", () => {
   it("lets only a tip match yield merged", () => {
     const chosen = choose(
       [
-        { number: 2, state: "OPEN", headRefOid: "bbb" },
-        { number: 1, state: "MERGED", headRefOid: "aaa" },
+        { number: 2, state: "OPEN", isCrossRepository: false, headRefOid: "bbb" },
+        { number: 1, state: "MERGED", isCrossRepository: false, headRefOid: "aaa" },
       ],
       "aaa",
     );
@@ -249,32 +250,60 @@ describe("SHA anchoring", () => {
 
   it("counts the pushed tip as a match", () => {
     expect(
-      choose([{ number: 5, state: "OPEN", headRefOid: "pushed" }], "localnew", "pushed")
-        ?.headMatches,
+      choose(
+        [{ number: 5, state: "OPEN", isCrossRepository: false, headRefOid: "pushed" }],
+        "localnew",
+        "pushed",
+      )?.headMatches,
     ).toBe(true);
   });
 
   it("never shows an unanchored merged or closed PR", () => {
-    expect(choose([{ number: 1, state: "MERGED", headRefOid: "old" }], "new")).toBeUndefined();
     expect(
-      choose([{ number: 322, state: "CLOSED", headRefOid: "9bf1cf13" }], "56f14ce9"),
+      choose([{ number: 1, state: "MERGED", isCrossRepository: false, headRefOid: "old" }], "new"),
+    ).toBeUndefined();
+    expect(
+      choose(
+        [{ number: 322, state: "CLOSED", isCrossRepository: false, headRefOid: "9bf1cf13" }],
+        "56f14ce9",
+      ),
     ).toBeUndefined();
     expect(choose([], "abc")).toBeUndefined();
   });
 
   it("marks an open PR ahead when its head is an ancestor, else shows it by name", () => {
     const ancestor = Effect.runSync(
-      choosePr([{ number: 9, state: "OPEN", headRefOid: "old" }], "new", "", () =>
-        Effect.succeed(true),
+      choosePr(
+        [{ number: 9, state: "OPEN", isCrossRepository: false, headRefOid: "old" }],
+        "new",
+        "",
+        () => Effect.succeed(true),
       ),
     );
     expect([ancestor?.headMatches, ancestor?.aheadOfPr]).toEqual([false, true]);
-    const byName = choose([{ number: 7, state: "OPEN", headRefOid: "yyy" }], "local");
+    const byName = choose(
+      [{ number: 7, state: "OPEN", isCrossRepository: false, headRefOid: "yyy" }],
+      "local",
+    );
     expect([byName?.pr["number"], byName?.headMatches, byName?.aheadOfPr]).toEqual([
       7,
       false,
       false,
     ]);
+  });
+
+  it("takes only a PR whose head is in the repo, whatever a fork names its branch", () => {
+    const own = { number: 3, state: "OPEN", isCrossRepository: false, headRefOid: "tip" };
+    const fork = { number: 4, state: "OPEN", isCrossRepository: true, headRefOid: "tip" };
+    // A PR that doesn't say where its head lives is nobody's either.
+    const unsaid = { number: 5, state: "OPEN", headRefOid: "tip" };
+    for (const prs of [
+      [own, fork, unsaid],
+      [unsaid, fork, own],
+    ])
+      expect(choose(prs, "tip")?.pr["number"]).toBe(3);
+    expect(choose([fork, unsaid], "tip")).toBeUndefined();
+    expect(choose([{ ...fork, headRefOid: "other" }], "tip")).toBeUndefined();
   });
 
   it("guards empty oids", () => {
@@ -333,7 +362,7 @@ describe("GraphQL", () => {
     // GitHub prices a connection under these ten at ten requests: review threads here were five
     // of the six points a branch lookup cost.
     const q = prGraphqlQuery([{ kind: "discover" }]);
-    expect(q).toContain("nodes{number state headRefOid}");
+    expect(q).toContain("nodes{number state headRefOid isCrossRepository}");
     expect(q).not.toContain("reviewThreads");
     expect(q).not.toContain("statusCheckRollup");
   });
@@ -342,6 +371,7 @@ describe("GraphQL", () => {
     const node = {
       number: 42,
       state: "OPEN",
+      isCrossRepository: false,
       url: "https://github.com/o/r/pull/42",
       isDraft: false,
       headRefOid: "abc123",
@@ -417,6 +447,7 @@ describe("GraphQL", () => {
       const node = reshapePrNode({
         number: 9,
         state: "OPEN",
+        isCrossRepository: false,
         url: "u",
         headRefOid: "deadbeef",
         reviewDecision: "REVIEW_REQUIRED",
@@ -434,7 +465,7 @@ describe("GraphQL", () => {
         { kind: "user", name: "mona" },
       ]);
       const none = yield* buildPrStatus(
-        [reshapePrNode({ number: 9, state: "OPEN" })],
+        [reshapePrNode({ number: 9, state: "OPEN", isCrossRepository: false })],
         anchored,
       ).pipe(Effect.provideService(Proc, proc));
       expect(none).not.toHaveProperty("reviewRequests");
@@ -454,6 +485,7 @@ describe("GraphQL", () => {
         const node = reshapePrNode({
           number: 9,
           state: "OPEN",
+          isCrossRepository: false,
           url: "u",
           headRefOid: "deadbeef",
           comments: {
@@ -488,6 +520,7 @@ describe("GraphQL", () => {
         {
           number: 5,
           state: "MERGED",
+          isCrossRepository: false,
           url: "u",
           isDraft: false,
           headRefOid: "deadbeef",
@@ -506,6 +539,7 @@ describe("GraphQL", () => {
         reshapePrNode({
           number: 5,
           state: "MERGED",
+          isCrossRepository: false,
           url: "u",
           isDraft: false,
           headRefOid: "deadbeef",
@@ -564,14 +598,27 @@ describe("GraphQL", () => {
           const i = key.slice(1);
           const nodes =
             branch === "reused"
-              ? [{ number: 1, state: "MERGED", headRefOid: "old" }]
-              : [{ number: Number(i) + 100, state: "MERGED", headRefOid: `tip-${branch}` }];
+              ? [{ number: 1, state: "MERGED", isCrossRepository: false, headRefOid: "old" }]
+              : [
+                  {
+                    number: Number(i) + 100,
+                    state: "MERGED",
+                    isCrossRepository: false,
+                    headRefOid: `tip-${branch}`,
+                  },
+                ];
           data[`e${i}`] = { pullRequests: { nodes } };
         }
         for (const [key, number] of Object.entries(vars)) {
           if (!key.startsWith("p")) continue;
           data[`e${key.slice(1)}`] = {
-            pullRequest: { number: Number(number), state: "MERGED", headRefOid: "any", url: "u" },
+            pullRequest: {
+              number: Number(number),
+              state: "MERGED",
+              isCrossRepository: false,
+              headRefOid: "any",
+              url: "u",
+            },
           };
         }
         return { status: 0, stdout: JSON.stringify({ data }) };
@@ -605,7 +652,9 @@ describe("GraphQL", () => {
             ? { status: 0, stdout: JSON.stringify({ errors: [{ message: "bad" }] }) }
             : {
                 status: 0,
-                stdout: JSON.stringify([{ number: 3, state: "OPEN", headRefOid: "tip-x" }]),
+                stdout: JSON.stringify([
+                  { number: 3, state: "OPEN", isCrossRepository: false, headRefOid: "tip-x" },
+                ]),
               },
         );
         const viaRest = yield* Effect.request(
@@ -637,7 +686,12 @@ const fakeGitHub = (prs: Array<Json & { number: number; headRefName: string }>) 
       if (key.startsWith("b")) {
         const nodes = prs
           .filter((pr) => pr.headRefName === value)
-          .map(({ number, state, headRefOid }) => ({ number, state, headRefOid }));
+          .map(({ number, state, headRefOid, isCrossRepository }) => ({
+            number,
+            state,
+            headRefOid,
+            isCrossRepository,
+          }));
         data[`e${i}`] = { pullRequests: { nodes } };
       } else if (key.startsWith("p")) {
         data[`e${i}`] = { pullRequest: prs.find((pr) => pr.number === Number(value)) ?? null };
@@ -658,6 +712,7 @@ const queryOf = (args: ReadonlyArray<string>) =>
 const openPr = (overrides: Json = {}) => ({
   number: 7,
   state: "OPEN",
+  isCrossRepository: false,
   url: "https://github.com/acme/web/pull/7",
   headRefName: "feat",
   headRefOid: "tip-feat",
@@ -756,6 +811,7 @@ describe("a branch's PR, polled by number", () => {
 const boundNode = (number: number) => ({
   number,
   state: "MERGED",
+  isCrossRepository: false,
   url: `https://github.com/acme/lib/pull/${number}`,
   title: "Fix the flake",
   isDraft: false,
@@ -785,7 +841,16 @@ const batchingProc = () =>
       const i = key.slice(1);
       if (key.startsWith("b")) {
         data[`e${i}`] = {
-          pullRequests: { nodes: [{ number: 100, state: "MERGED", headRefOid: `tip-${value}` }] },
+          pullRequests: {
+            nodes: [
+              {
+                number: 100,
+                state: "MERGED",
+                isCrossRepository: false,
+                headRefOid: `tip-${value}`,
+              },
+            ],
+          },
         };
       } else if (key.startsWith("p")) {
         data[`e${i}`] = { pullRequest: boundNode(Number(value)) };
@@ -830,6 +895,7 @@ describe("boundPrStatus", () => {
           {
             ...boundNode(42),
             state: "OPEN",
+            isCrossRepository: false,
             headRefName: "fix",
             updatedAt: "2026-09-29T10:00:00Z",
             reviews: {
@@ -917,7 +983,15 @@ describe("boundPrStatus", () => {
       const { proc, calls } = mockProc((args) =>
         args[0] === "api"
           ? { status: 0, stdout: JSON.stringify({ errors: [{ message: "bad" }] }) }
-          : { status: 0, stdout: JSON.stringify({ number: 42, state: "OPEN", url: "u" }) },
+          : {
+              status: 0,
+              stdout: JSON.stringify({
+                number: 42,
+                state: "OPEN",
+                isCrossRepository: false,
+                url: "u",
+              }),
+            },
       );
       const status = yield* boundPrStatus("/work/app", { repo: "acme/lib", number: 42 }).pipe(
         Effect.provideService(Proc, proc),
@@ -948,6 +1022,7 @@ describe("PR detail", () => {
   const view: Json = {
     number: 7,
     state: "OPEN",
+    isCrossRepository: false,
     url: "u",
     title: "t",
     body: "b",

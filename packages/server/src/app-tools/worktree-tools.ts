@@ -1,4 +1,4 @@
-import { AppToolError, LOCAL_HOST_ID } from "@gram/contracts";
+import { AppToolError, LOCAL_HOST_ID, sessionHostOf } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -7,6 +7,10 @@ import { heldCheckoutPaths } from "../runtime/create-in-checkout.ts";
 import type { CheckoutServiceShape } from "../runtime/hooks.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
 import { defineAppTool } from "./definition.ts";
+
+/** What `move_to_worktree` tells a thread whose session runs on another machine. */
+export const RUNS_ELSEWHERE =
+  "This thread runs on another machine, and move_to_worktree makes worktrees only on the machine Gram itself runs on. Make the worktree with git where you are, and work in it by its absolute path.";
 
 /** `move_to_worktree`: the native version of "the sidebar follows Claude into a worktree". */
 export const moveToWorktreeTool = (
@@ -33,6 +37,11 @@ export const moveToWorktreeTool = (
       Effect.gen(function* () {
         const tool = "move_to_worktree";
         const thread = yield* store.getThread(threadId);
+        // The worktree is made on this machine, from this disk's repository: a thread whose
+        // session runs on another machine would be moved off its own folder onto this one's.
+        if (sessionHostOf(thread) !== LOCAL_HOST_ID) {
+          return yield* new AppToolError({ tool, message: RUNS_ELSEWHERE });
+        }
         const project = (yield* store.listProjects).find((p) => p.id === thread.projectId);
         if (project === undefined) {
           return yield* new AppToolError({ tool, message: "This thread's project is gone." });
@@ -41,9 +50,16 @@ export const moveToWorktreeTool = (
           (yield* store.listThreads).filter((t) => t.id !== threadId),
           LOCAL_HOST_ID,
         );
+        // Someone else's code stays someone else's: the new worktree is marked so too.
+        const untrusted = thread.checkout.untrusted === true;
         const checkout = yield* checkouts
           .prepare(
-            { kind: "newWorktree", branch, ...(base === undefined ? {} : { base }) },
+            {
+              kind: "newWorktree",
+              branch,
+              ...(base === undefined ? {} : { base }),
+              ...(untrusted ? { untrusted: true } : {}),
+            },
             others,
             thread.checkout.repoRoot ?? project.root,
           )

@@ -7,6 +7,9 @@ type LooseChunk = Record<string, unknown> & { type: string };
  * Folds `UIMessageChunk`s into a `UIMessage` the way the AI SDK's `readUIMessageStream` does, but
  * synchronously, so the runtime can persist a snapshot the moment a part completes.
  */
+const streaming = (parts: Map<string, Part>) =>
+  [...parts.values()].some((part) => part["state"] === "streaming");
+
 export class MessageAccumulator {
   private readonly parts: Array<Part> = [];
   private metadata: Record<string, unknown> | undefined;
@@ -177,6 +180,16 @@ export class MessageAccumulator {
   unfinishedTools(): readonly string[] {
     return [...this.toolParts.entries()].flatMap(([id, part]) =>
       part["state"] === "input-streaming" || part["state"] === "input-available" ? [id] : [],
+    );
+  }
+
+  /** No tool call, text or reasoning still under way: a later part can start a new message. */
+  settled(): boolean {
+    return (
+      this.unfinishedTools().length === 0 &&
+      this.preliminaryTools().length === 0 &&
+      !streaming(this.textParts) &&
+      !streaming(this.reasoningParts)
     );
   }
 

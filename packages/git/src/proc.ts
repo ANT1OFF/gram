@@ -19,6 +19,18 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
 import { ProcSpawnError, ProcTimeout, type ProcError } from "./errors.ts";
 import { makeCommandWorker } from "./proc-worker-client.ts";
 import { TIER_MILLIS } from "./proc-bounds.ts";
+import {
+  appendGitConfig,
+  discoverySignature,
+  gitEnvKey,
+  type Guard,
+  type ConfigEntry,
+  guardFor,
+  submoduleGitDirs,
+  leadingOptions,
+  parseConfigList,
+  withGuardArgs,
+} from "./repo-config-guard.ts";
 
 export type Tier = "local" | "network" | "slow";
 
@@ -354,10 +366,103 @@ const pathProbeLayer = Layer.effect(
 
 export const PathProbeLive = pathProbeLayer.pipe(Layer.provide(CommandRunnerLive));
 
+const GUARD_CACHE_LIMIT = 512;
+
+interface CachedGuard {
+  readonly signature: string;
+  readonly gitDir: string;
+  readonly commonDir: string;
+  readonly guard: Guard;
+}
+
+/**
+ * The repository config guard for git children (`repo-config-guard.ts`): the repository's own
+ * program-naming keys read before the call, with git's own options and the call's env, and kept
+ * while nothing that decides the repository or its config has changed.
+ */
+const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
+  const cache = new Map<string, CachedGuard>();
+  return (
+    exe: string,
+    args: ReadonlyArray<string>,
+    options: Omit<RunOptions, "omitEnv">,
+    env: Readonly<Record<string, string>>,
+  ): Effect.Effect<Guard, ProcError> =>
+    Effect.gen(function* () {
+      const globals = args.slice(0, leadingOptions(args));
+      const key = `${options.cwd}\0${globals.join("\0")}\0${gitEnvKey(env)}`;
+      const hit = cache.get(key);
+      if (
+        hit !== undefined &&
+        discoverySignature(options.cwd, hit.gitDir, hit.commonDir) === hit.signature
+      )
+        return hit.guard;
+      // `git config` reads `GIT_CONFIG` as its `--file`, which the call itself ignores: listed
+      // with it, the repository's own keys wouldn't show.
+      const listEnv = Object.fromEntries(
+        Object.entries(env).filter(([name]) => name.toUpperCase() !== "GIT_CONFIG"),
+      );
+      const read = (more: ReadonlyArray<string>) =>
+        runner.run(exe, "git", [...globals, ...more], { cwd: options.cwd, tier: "local" }, listEnv);
+      const dirs = yield* read([
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-dir",
+        "--git-common-dir",
+      ]);
+      const listing = yield* read(["config", "--list", "--show-scope", "-z"]);
+      // A listing that failed or was cut short can't vouch for anything: the call doesn't run.
+      if (listing.status !== 0 || listing.truncated)
+        return yield* Effect.fail(
+          new ProcSpawnError({ bin: "git", message: "couldn't read the repository's git config" }),
+        );
+      const [gitDir, commonDir] = dirs.stdout.trim().split("\n");
+      // A git started inside a submodule reads that one's own config, so it is read here too.
+      const nested: Array<ConfigEntry> = [];
+      if (dirs.status === 0 && commonDir) {
+        const submodules = submoduleGitDirs(commonDir);
+        if (submodules === undefined)
+          return yield* Effect.fail(
+            new ProcSpawnError({ bin: "git", message: "the repository has too many submodules" }),
+          );
+        // Read as that submodule's own git does, so its conditional includes (`onbranch:`,
+        // `hasconfig:`) are judged against it rather than against this repository.
+        for (const sub of submodules) {
+          const own = yield* runner.run(
+            exe,
+            "git",
+            ["--git-dir", sub, "config", "--list", "--show-scope", "-z"],
+            { cwd: options.cwd, tier: "local" },
+            listEnv,
+          );
+          if (own.status !== 0 || own.truncated)
+            return yield* Effect.fail(
+              new ProcSpawnError({ bin: "git", message: "couldn't read a submodule's git config" }),
+            );
+          for (const entry of parseConfigList(own.stdout))
+            if (entry.scope === "local" || entry.scope === "worktree") nested.push(entry);
+        }
+      }
+      const guard = guardFor(parseConfigList(listing.stdout), nested);
+      // Not a repository (yet), or one with includes: read again next time.
+      if (dirs.status === 0 && gitDir && commonDir && !guard.includes && globals.length === 0) {
+        if (cache.size >= GUARD_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+        cache.set(key, {
+          signature: discoverySignature(options.cwd, gitDir, commonDir),
+          gitDir,
+          commonDir,
+          guard,
+        });
+      }
+      return guard;
+    });
+};
+
 const makeProc = Effect.gen(function* () {
   const runner = yield* CommandRunner;
   const probe = yield* PathProbe;
   const resolved = new Map<string, string>();
+  const repoConfigGuard = makeRepoConfigGuard(runner);
   const run: ProcShape["run"] = (bin, args, options) =>
     Effect.gen(function* () {
       const pathValue = yield* probe.path;
@@ -368,12 +473,16 @@ const makeProc = Effect.gen(function* () {
       }
       // The inherited env is filtered here, as data, so the runner (perhaps a worker) gets no function.
       const { omitEnv, ...rest } = options;
+      const base = withoutEnv(childEnv(process.env, pathValue, process.platform), omitEnv);
+      if (!isGitExecutable(exe)) return yield* runner.run(exe, bin, args, rest, base);
+      const env = { ...base, ...rest.env };
+      const guard = yield* repoConfigGuard(exe, args, rest, env);
       return yield* runner.run(
         exe,
         bin,
-        args,
-        rest,
-        withoutEnv(childEnv(process.env, pathValue, process.platform), omitEnv),
+        withGuardArgs(args, guard),
+        { ...rest, env: undefined },
+        appendGitConfig(env, guard.pairs),
       );
     });
   return { run };

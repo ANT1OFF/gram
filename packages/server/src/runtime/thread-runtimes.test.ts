@@ -14,6 +14,9 @@ import {
   type ServerEvent,
   type ThreadId,
 } from "@gram/contracts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -1995,8 +1998,19 @@ describe("ThreadRuntimes", () => {
         fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
       );
       expect(session.options).toMatchObject({ untrustedTree: true });
-      const own = yield* createRunning();
-      expect("untrustedTree" in own.session.options).toBe(false);
+      // An own folder that brings no agent settings of its own: one that can't be read counts as
+      // untrusted until the user trusts it.
+      const root = mkdtempSync(join(tmpdir(), "gram-own-"));
+      const own = yield* runtimes.create({
+        projectRoot: root,
+        checkout: { kind: "main", path: root },
+        input: { text: "one" },
+      });
+      const ownSession = yield* waitFor(
+        "the own thread's first send",
+        fake.latest(own.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+      );
+      expect("untrustedTree" in ownSession.options).toBe(false);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 

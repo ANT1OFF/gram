@@ -63,6 +63,12 @@ export const MACHINES_UPDATE_ALL_PATH = "/machines/update-all";
 export const MACHINES_AUTOMATIC_UPDATES_PATH = "/machines/automatic-updates";
 /** Asks a machine for its Claude Code sign-in again, as after its Sign in terminal ends. */
 export const MACHINES_CHECK_SIGN_IN_PATH = "/machines/check-sign-in";
+/**
+ * Lets the disk this Gram last refused a host of the machine on back in as that machine, at that
+ * host's next dial within fifteen minutes (`StopMarks.readmit`): `{ id }`, answered with the disk.
+ * For a host nobody can run `gram-host new-disk` on. Its resume checks its folders.
+ */
+export const MACHINES_READMIT_PATH = "/machines/readmit";
 
 /**
  * Registers a provisioned host by the public key it made (`gram-host provision`): confirmed from
@@ -99,6 +105,7 @@ export const MACHINE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
   MACHINES_UPDATE_ALL_PATH,
   MACHINES_AUTOMATIC_UPDATES_PATH,
   MACHINES_CHECK_SIGN_IN_PATH,
+  MACHINES_READMIT_PATH,
 ]);
 
 /**
@@ -643,6 +650,22 @@ export const machineManagement = (
             409,
           );
         return json({ ...machinesStatus(hosts, remote, appVersion, access), output });
+      }
+      case MACHINES_READMIT_PATH: {
+        const id = (yield* jsonBody(256))?.["id"];
+        const machine = typeof id === "string" ? hosts.machines.get(id) : undefined;
+        if (typeof id !== "string" || machine === undefined) return refuse("no such machine", 404);
+        if (provisionedOnly && machine.kind !== "provisioned")
+          return refuse("no such machine", 404);
+        let disk: string | undefined;
+        try {
+          disk = hosts.stops.readmit(HostId.make(id));
+        } catch {
+          return json({ message: "The machine's record couldn't be kept; try again." }, 503);
+        }
+        return disk === undefined
+          ? json({ message: "No host of this machine has been refused since Gram started." }, 409)
+          : json({ disk });
       }
       case MACHINES_CHECK_SIGN_IN_PATH: {
         const id = (yield* jsonBody(256))?.["id"];

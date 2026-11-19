@@ -91,13 +91,15 @@ describe("the PR context builder", () => {
       ],
       botRequested: false,
     });
-    // Configured as a review bot, it is the AI reviewer, and its request is the bot's.
+    // Configured as a review bot, its request is the bot's. Its review stays a person's: the badge
+    // lists people's verdicts only, and a person whose login matches a pattern is a person.
     const bots: ReadonlyArray<ReviewBot> = [
       ...BOTS,
       { loginPattern: "acme-review*", rereviewCommand: "/review", canApprove: true },
     ];
     const ctx = of({ badge: b, bots });
     expect(ctx.humans.reviews).toEqual([
+      { who: "acme-reviewer", verdict: "approved", onHead: true },
       { who: "riley", verdict: "changesRequested", onHead: true },
     ]);
     expect(ctx.humans.requested).toEqual([

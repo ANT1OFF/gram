@@ -682,6 +682,8 @@ export const agentHostOnMachine = (
   onSignInProblem?: () => void,
   /** Where the machine keeps what users attach, for each session's sends to carry them there. */
   attachments: AttachmentsOnMachine = () => Effect.fail(`${machineName} holds no attachments`),
+  /** The one folder attachments are carried from, on a server with no local user. */
+  carriedFrom?: string,
 ): AgentHost => {
   const kind = inServer.kind;
   /** A start that failed there, named for the machine and logged here, where nothing else is. */
@@ -747,7 +749,14 @@ export const agentHostOnMachine = (
                       }),
                     )
                   : openOnHost(host, kind, reaching, machineName, (input) =>
-                      carryAttachments(options.threadId, input, machineName, attachments),
+                      carryAttachments(
+                        options.threadId,
+                        input,
+                        machineName,
+                        attachments,
+                        undefined,
+                        carriedFrom,
+                      ),
                     ).pipe(Effect.catch(failedThere));
               }),
       ),

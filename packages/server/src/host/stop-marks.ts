@@ -79,8 +79,9 @@ export interface KeptRecord {
 export const KEPT_FOLDERS_MAX = 256;
 
 /**
- * How many disks a machine is remembered to have been replaced from, newest kept. Only remembered
- * for now: what would refuse a host that says one of them comes later, and finds them there.
+ * How many disks a machine is remembered to have been replaced from, newest kept: a host that says
+ * one of them is refused (`fenced`). Its way out is to say a disk this Gram hasn't seen
+ * (`gram-host new-disk`), which is the machine replaced again, owing a resume.
  */
 export const RETIRED_DISKS_KEPT = 64;
 
@@ -101,6 +102,8 @@ export const MachineMarks = Schema.Struct({
   rested: Schema.optionalKey(Schema.Array(ThreadId)),
   /** Told to come back on another disk then (`expect`). */
   expected: Schema.optionalKey(Schema.Number),
+  /** Told then to let this disk it refused back in, once (`readmit`). */
+  readmit: Schema.optionalKey(Schema.Struct({ disk: HostDiskId, at: Schema.Number })),
   /**
    * Owed a resume: when it last made progress, the generation it is owed under, and whether it is
    * owed because what was kept of the machine couldn't be read (`unknown`).
@@ -154,10 +157,14 @@ export type MachineMarksByHost = Readonly<Record<string, MachineMarks>>;
  *   are there;
  * - `replaced`: another disk, a new machine under the same key, whose folders aren't there until
  *   a resume puts them back. It is owed one from then, in the same change that remembers the disk.
+ * - `fenced`: a disk the machine was replaced from (`retired`), or the one it leaves while told it
+ *   comes back on another (`expect`): an old host, cut off, dialling in again with the machine's
+ *   key. It is refused, and nothing is remembered of it.
  */
 export type DiskVerdict =
   | { readonly kind: "unknown" | "first" | "redial" | "restarted" }
-  | { readonly kind: "replaced"; readonly was: string };
+  | { readonly kind: "replaced"; readonly was: string }
+  | { readonly kind: "fenced"; readonly why: "replaced" | "expected" };
 
 /** What a change that lifts a debt, or a host's arrival, does when its record can't be written. */
 export class MarksNotKept extends Error {
@@ -177,7 +184,8 @@ export interface StopMarks {
    * A host of the machine dialled in and said this of its disk: what that makes it, and the
    * machine is no longer stopped (`back`), in one write. Owes it a resume on another disk, or
    * after it left while readied to stop, or when told it comes back on another disk. Throws
-   * `MarksNotKept` when the record can't be written: the host is then not to come online.
+   * `MarksNotKept` when the record can't be written: the host is then not to come online. Nor is
+   * one it says is `fenced`, which changes nothing.
    */
   readonly arrive: (
     id: HostId,
@@ -218,6 +226,17 @@ export interface StopMarks {
    * `MarksNotKept` when that can't be written.
    */
   readonly expect: (id: HostId) => void;
+  /**
+   * The disk this process last refused a host of the machine on (`fenced`) is let in at that
+   * host's next dial within `EXPECT_FOR_MS`, once: a disk it was replaced from as the machine
+   * replaced again, owing a resume whose folders are checked; the disk it is leaving under an
+   * `expect` as it is, the `expect` taken back. For a fenced host nobody can give a new disk id
+   * (`gram-host new-disk`). Answers that disk, or undefined when no host of the machine was refused
+   * since this Gram started. Lifts a fence, so written first: throws `MarksNotKept` when it can't be.
+   */
+  readonly readmit: (id: HostId) => string | undefined;
+  /** The disk this process last refused a host of the machine on, if any (`readmit`). */
+  readonly refusedDisk: (id: HostId) => string | undefined;
   /**
    * Its sessions wait for its resume: dialled in after a stop, or on another disk, and its threads
    * not yet resumed, until a resume of it completes on that disk. No timer and no cancel opens it.
@@ -365,6 +384,8 @@ export const makeStopMarks = (
   const waiting = new Map<HostId, number>();
   const waitingSince = new Map<HostId, number>();
   const cancels = new Map<HostId, number>();
+  /** The disk a host of each machine was last refused on (`fenced`), for `readmit`. */
+  const refused = new Map<HostId, string>();
   const threadsAwaiting = new Map<HostId, Set<ThreadId>>();
   const readyListeners = new Set<(id: HostId) => void>();
   const ready = (id: HostId) => {
@@ -462,6 +483,26 @@ export const makeStopMarks = (
       let verdict: DiskVerdict = { kind: "unknown" };
       if (said.diskId !== undefined) {
         const known = record.disk;
+        // Not the machine any more, whatever is online: refused, with nothing written or changed,
+        // unless this disk was said to be let back (`readmit`), once.
+        const letIn =
+          record.readmit?.disk === said.diskId && now() - record.readmit.at < EXPECT_FOR_MS;
+        if (record.retired?.includes(said.diskId) === true) {
+          if (!letIn) {
+            refused.set(id, said.diskId);
+            return { kind: "fenced", why: "replaced" };
+          }
+          const { readmit: _, ...rest } = record;
+          record = {
+            ...rest,
+            retired: (rest.retired ?? []).filter((each) => each !== said.diskId),
+          };
+        }
+        const told = record.expected;
+        if (known?.id === said.diskId && told !== undefined && now() - told < EXPECT_FOR_MS) {
+          refused.set(id, said.diskId);
+          return { kind: "fenced", why: "expected" };
+        }
         record = {
           ...record,
           disk: {
@@ -540,6 +581,16 @@ export const makeStopMarks = (
     back: (id) => note(id, backOf(get(id))),
     // Written first: whoever said it is told when it didn't hold.
     expect: (id) => commit(id, { ...get(id), expected: now() }),
+    // The leaving disk's fence is the `expect`: taken back now. A retired disk's, at its arrival.
+    readmit: (id) => {
+      const disk = refused.get(id);
+      if (disk === undefined) return undefined;
+      const record = get(id);
+      const { expected: _, ...rest } = record;
+      commit(id, { ...(record.disk?.id === disk ? rest : record), readmit: { disk, at: now() } });
+      return disk;
+    },
+    refusedDisk: (id) => refused.get(id),
     resuming: (id) => {
       const record = get(id);
       if (record.owed === undefined) return false;
@@ -703,6 +754,7 @@ export const makeStopMarks = (
     wantedSince: (id) => waitingSince.get(id),
     forget: (id) => {
       cancels.delete(id);
+      refused.delete(id);
       running.delete(id);
       savedDiffs.delete(id);
       threadsAwaiting.delete(id);

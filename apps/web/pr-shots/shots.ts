@@ -2967,6 +2967,61 @@ const OLDER_SERVER_SHOTS: readonly Shot[] = [
   },
 ];
 
+/**
+ * A worker whose machine was lost and came back without its saved work, gone from the remote and
+ * not in its branch. Before: the lost machine's card, whose Resume can't bring it back. After: the
+ * card says the saved work is gone, offers the branch without it, and asks before dropping it.
+ */
+const keptWorkGone = async (page: Page, confirm: boolean) => {
+  await page.goto("/t/t-docs");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  await page.evaluate(() => window.gramMock!.turnEnded?.("t-docs" as never));
+  await page.evaluate(() =>
+    window.gramMock!.simulateTurnError(
+      "t-docs" as never,
+      {
+        kind: "unknown",
+        retryable: false,
+        code: "kept-work-gone",
+        text: "Its saved work is gone from the remote and its branch doesn't hold it, so its folder wasn't put back. Push its saved ref back and the next resume brings it, or open it from the branch without that work.",
+        machineLost: { machine: "build-box" },
+      },
+      "Tidy the guide",
+    ),
+  );
+  const card = page.getByTestId("agent-error").or(page.getByTestId("machine-lost"));
+  await card.first().waitFor();
+  await card.first().scrollIntoViewIfNeeded();
+  const offer = page.getByTestId("agent-error-from-branch");
+  if (confirm && (await offer.count()) > 0) {
+    await offer.click();
+    const confirming = page.getByTestId("agent-error-from-branch-confirming");
+    await confirming.waitFor();
+    // The card grew under the latest: back to the end of the conversation, as a reader is.
+    await confirming.evaluate((element) => element.scrollIntoView({ block: "end" }));
+    await page
+      .getByRole("button", { name: "Jump to latest" })
+      .click({ timeout: 1000 })
+      .catch(() => {});
+  }
+  await page.waitForTimeout(400);
+};
+
+const KEPT_WORK_GONE_SHOTS: readonly Shot[] = [
+  {
+    name: "kept-work-gone",
+    title:
+      "A worker whose saved work is gone from the remote: the card and its way out (before: the lost machine's Resume)",
+    open: (page) => keptWorkGone(page, false),
+  },
+  {
+    name: "kept-work-gone-confirm",
+    title:
+      "The same worker after Open from the branch…: the confirm that says the saved work is dropped",
+    open: (page) => keptWorkGone(page, true),
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
   {
     name: "new-workspace-refused",
@@ -2979,6 +3034,7 @@ export const SHOTS: readonly Shot[] = [
   ...MACHINE_SHOTS,
   ...MACHINE_MARKER_SHOTS,
   ...OLDER_SERVER_SHOTS,
+  ...KEPT_WORK_GONE_SHOTS,
   ...PHONE_ACCESS_SHOTS,
   ...EVENT_ROUTINE_SHOTS,
   ...ROUTINES_POLISH_SHOTS,

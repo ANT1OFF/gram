@@ -80,7 +80,7 @@ import { cloneRepo } from "../fs/clone.ts";
 import { registerRepo } from "../fs/folders.ts";
 import { ReadingAs, SERVER } from "../embedding/readable-by.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
-import { cloneIdentityOf, cloneUrlOf } from "../host/repos.ts";
+import { cloneIdentityOf, cloneUrlOf, originIdentityAt } from "../host/repos.ts";
 import { keepThreadWork } from "../host/stop-resume.ts";
 import { migrations } from "../persistence/migrations.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -726,6 +726,9 @@ const make = (options: ThreadTransferOptions) =>
         const more: Array<string> = [];
         let checkout: Checkout;
         let undo: Effect.Effect<void> = Effect.void;
+        // Recorded before its agent runs here again: what its ownership of a PR goes by.
+        const cloneIdentity = yield* withGit("", originIdentityAt(top));
+        const recorded = cloneIdentity === undefined ? {} : { cloneIdentity };
         if (inPlace) {
           const stamp = new Date(now).toISOString().slice(0, 16).replace(/[-:T]/g, "");
           const aside = `aside/${folderName(branch ?? bundle.thread.id)}-${stamp}`;
@@ -751,6 +754,7 @@ const make = (options: ThreadTransferOptions) =>
             path: was.path,
             repoRoot: top,
             ...(branch === undefined ? {} : { branch }),
+            ...recorded,
           };
         } else {
           const placed = yield* placeWork(top, bundle);
@@ -764,6 +768,7 @@ const make = (options: ThreadTransferOptions) =>
             path: placed.dir,
             repoRoot: top,
             ...(branch === undefined || placed.detached ? {} : { branch }),
+            ...recorded,
           };
           undo = withGit("", removeWorktreeDir(top, placed.dir, true)).pipe(Effect.ignore);
         }
@@ -804,6 +809,7 @@ const make = (options: ThreadTransferOptions) =>
         const top = project.root;
         const placed = yield* placeWork(top, bundle);
         const { dir } = placed;
+        const cloneIdentity = yield* withGit("", originIdentityAt(top));
         const more: Array<string> = [];
         if (placed.detached && bundle.branch !== undefined) {
           more.push(
@@ -824,6 +830,7 @@ const make = (options: ThreadTransferOptions) =>
             path: dir,
             repoRoot: top,
             ...(bundle.branch === undefined || placed.detached ? {} : { branch: bundle.branch }),
+            ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
           },
           withGit("", removeWorktreeDir(top, dir, true)).pipe(Effect.ignore),
           who,

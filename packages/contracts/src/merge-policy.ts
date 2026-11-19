@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { currentBaseOf, mergeStateAllowsMerge, requiredChecksOf, type PrStatus } from "./git.ts";
-import { matchesBotLogin, type ReviewBot } from "./review.ts";
+import { matchesBotLogin, reviewerMayWrite, type ReviewBot } from "./review.ts";
 
 export const MergeReviewPolicy = Schema.Literals(["automatic", "solo", "bot"]);
 export type MergeReviewPolicy = typeof MergeReviewPolicy.Type;
@@ -95,7 +95,10 @@ export const mergePolicyReady = (
     return false;
   if (
     badge.review?.verdictOnHead === "changesRequested" ||
-    badge.review?.humanReviews?.some((review) => review.verdict === "changesRequested")
+    // An outsider's change request blocks nothing: anyone can review a public PR.
+    badge.review?.humanReviews?.some(
+      (review) => review.verdict === "changesRequested" && reviewerMayWrite(review),
+    )
   )
     return false;
   const checks = requiredChecksOf(badge);

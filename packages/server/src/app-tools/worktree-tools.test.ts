@@ -1,11 +1,12 @@
 import { afterAll, describe, expect, it } from "@effect/vitest";
+import { HostId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as fs from "node:fs";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
-import { eventually, hasGit, makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
+import { eventually, hasGit, makeRepo, removeDir, run, tempDir } from "../git/test-repo.ts";
 import { GitTurnHooksLive } from "../git/turn-hooks.ts";
 import { ServerCore } from "../http/server.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -13,6 +14,7 @@ import { FakeAgentAdapter, FakeAgentControl } from "../runtime/fake-agent.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { AppToolRegistry } from "./registry.ts";
+import { RUNS_ELSEWHERE } from "./worktree-tools.ts";
 
 const TestLayer = ServerCore.pipe(
   Layer.provideMerge(FakeAgentAdapter),
@@ -86,5 +88,32 @@ describe.skipIf(!hasGit)("move_to_worktree", () => {
         );
         expect(reopened.options.cwd).toBe(moved.checkout.path);
       }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+  it.live("refuses a thread whose session runs on another machine, making nothing here", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      dirs.push(dir);
+      const repo = makeRepo(dir);
+      const runtimes = yield* ThreadRuntimes;
+      const registry = yield* AppToolRegistry;
+      const store = yield* ThreadStore;
+      const thread = yield* runtimes.create({
+        projectRoot: repo,
+        checkout: { kind: "main", path: repo },
+      });
+      yield* Effect.addFinalizer(() => runtimes.close(thread.id, {}).pipe(Effect.ignore));
+      // The same path on another machine: its folder there, never this disk's repository.
+      const elsewhere = yield* store.updateThread(thread.id, (t) => ({
+        ...t,
+        checkout: { ...t.checkout, hostId: HostId.make("elsewhere") },
+      }));
+      const tool = registry
+        .forThread(thread.id)
+        .find((t) => t.descriptor.name === "move_to_worktree");
+      const result = yield* tool!.run({ branch: "feat-pulled" }).pipe(Effect.flip);
+      expect(result.message).toBe(RUNS_ELSEWHERE);
+      expect((yield* store.getThread(thread.id)).checkout).toEqual(elsewhere.checkout);
+      expect(run(repo, "branch", "--list", "feat-pulled")).toBe("");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 });

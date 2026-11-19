@@ -83,6 +83,66 @@ export function previewRequest(url: string): PreviewRequest {
   return loopbackPortOf(url) === undefined ? "block" : "allow";
 }
 
+/**
+ * Whether the local session lets through a request no page can be named for, such as a worker's:
+ * Chromium gives those no `WebContents`, so the agent browser's rules can't be asked. The same
+ * session holds agents' pages on public hosts, whose workers make exactly such requests, so one
+ * reaches loopback only when it started on loopback, or started nowhere (the app's own load). An
+ * opaque initiator (`null`, a `data:` worker's) could be anyone's, and doesn't.
+ */
+export function unattributedRequest(url: string, initiator: string | undefined): PreviewRequest {
+  if (previewRequest(url) === "block") return "block";
+  const parsed = parse(url);
+  if (parsed !== undefined && LOCAL.has(parsed.protocol)) return "allow";
+  if (initiator === undefined) return "allow";
+  return loopbackPortOf(initiator) === undefined ? "block" : "allow";
+}
+
+/** How long a host the local session's request check let through stays reachable by its proxy. */
+export const DOOR_MS = 60_000;
+/** How many such hosts are kept; the least recently opened go first. */
+export const DOORS_KEPT = 512;
+
+/** The hosts the local session's proxy may connect to: those its request check just let through. */
+export interface HostDoors {
+  /** A request to `url` was let through: its host is reachable for `DOOR_MS` from now. */
+  open(url: string): void;
+  /** Whether the proxy may connect to `hostname`, as `hostnameOf` spells it. */
+  admits(hostname: string): boolean;
+}
+
+/**
+ * The local session's second line. Its pages reach loopback directly and anything else only
+ * through its proxy, which connects only to a host this session's `webRequest` check let a page
+ * request in the last `DOOR_MS`: a public host an agent's page is approved for, or one that page
+ * loads from. A loopback page's own requests never go off loopback, so they open no door, and
+ * what the check never sees (WebRTC, a worker's socket, a preconnect) opens none either: with no
+ * agent on a public page, the session reaches nothing off loopback at all.
+ */
+export function createHostDoors(now: () => number = Date.now): HostDoors {
+  const doors = new Map<string, number>();
+  return {
+    open(url) {
+      const parsed = parse(url);
+      if (parsed === undefined || (!WEB.has(parsed.protocol) && !SOCKETS.has(parsed.protocol)))
+        return;
+      if (loopbackPortOf(url) !== undefined) return;
+      const host = hostnameOf(parsed.hostname);
+      if (host === undefined) return;
+      doors.delete(host);
+      doors.set(host, now() + DOOR_MS);
+      if (doors.size > DOORS_KEPT) doors.delete(doors.keys().next().value!);
+    },
+    admits(hostname) {
+      const until = doors.get(hostname);
+      if (until === undefined) return false;
+      if (until > now()) return true;
+      doors.delete(hostname);
+      return false;
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 // The web session
 

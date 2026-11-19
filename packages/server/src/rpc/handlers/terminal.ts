@@ -35,6 +35,7 @@ import {
   resolveScriptRun,
   ScriptsError,
 } from "../../scripts/project-scripts.ts";
+import { folderBringsNothing, projectFolderTrusted } from "../../settings/folder-trust.ts";
 import { checkShell } from "../../terminal/shell-check.ts";
 import { openSignInTerminal } from "../../host/claude-sign-in.ts";
 import { logDefects, type Handlers } from "./common.ts";
@@ -45,6 +46,9 @@ import { logDefects, type Handlers } from "./common.ts";
  */
 export const SHARED_MACHINE =
   "This machine holds a thread readable by someone else, so no shell opens on it for you.";
+
+/** Why a script from a folder the user hasn't trusted doesn't run. */
+export const UNTRUSTED_SCRIPTS = "Trust this folder to run its scripts.";
 
 /** `terminal.*`: the Terminal tab, over the host's pseudo-terminals. */
 const terminalHandlers = Effect.gen(function* () {
@@ -169,6 +173,9 @@ const terminalHandlers = Effect.gen(function* () {
       const project = (yield* store.listProjects).find((each) => each.id === thread.projectId);
       if (project === undefined)
         return yield* new NotFound({ entity: "project", id: thread.projectId });
+      // A folder's own scripts run only once the user trusts the folder they came with.
+      if (!projectFolderTrusted(project, folderBringsNothing(project.root)))
+        return yield* new InvalidState({ message: UNTRUSTED_SCRIPTS });
       return yield* Effect.tryPromise({
         try: () =>
           resolveScriptRun(

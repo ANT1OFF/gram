@@ -14,6 +14,7 @@ import {
   hostHome,
   readHostConfig,
   readHostKey,
+  renewDiskId,
   writeJoined,
 } from "./host-config.ts";
 import {
@@ -29,6 +30,7 @@ import { provisionedOrigin } from "./provisioned.ts";
 import type { HostService } from "./protocol.ts";
 import {
   installService,
+  restartService,
   serviceCommand,
   serviceFile,
   servicePlatform,
@@ -54,6 +56,10 @@ const USAGE = `gram-host: run this machine's work for a Gram on another machine,
   gram-host leave [--no-service]
       Stop the service and forget the join, its key and any Claude token. With --no-service, for
       a machine that joined with --no-service, it forgets them without stopping a service.
+  gram-host new-disk
+      For a disk the main Gram refuses as one this machine was replaced from: say a disk it hasn't
+      seen, so this one is the machine again, with the same id and threads. The service restarts;
+      restart a gram-host run yourself. Gram puts back and checks its folders before any opens.
 
 GRAM_HOST_HOME sets the folder the host keeps its join and key in, and GRAM_HOST_REPOS the one
 it clones repositories into for the workers placed on it (by default, repos in GRAM_HOST_HOME).`;
@@ -394,6 +400,22 @@ export const runCli = <R>(
       // Started by the host itself when it updates (`self-update.ts`), outside its own service.
       case "update-supervise":
         return superviseHere(home, rest);
+      case "new-disk":
+        return Effect.gen(function* () {
+          if (joined(home) === undefined)
+            return yield* fail("This machine hasn't joined a Gram: gram-host join.");
+          renewDiskId(home);
+          yield* say(
+            "This disk has a new id: the main Gram takes it as the machine on a new disk, and checks its folders before any thread opens there. The disk it ran on until now is refused from then on.",
+          );
+          const platform = servicePlatform();
+          if (platform !== undefined && (yield* serviceRunning(platform)) === true)
+            return yield* restartService(platform).pipe(
+              Effect.andThen(say("The service restarted on this disk.")),
+              Effect.catch((error) => fail(`The service didn't restart: ${error.message}`)),
+            );
+          yield* say("Start the host again (gram-host run) for it to dial in on this disk.");
+        });
       case "leave": {
         const platform = servicePlatform();
         return leave(

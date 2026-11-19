@@ -98,10 +98,10 @@ const graphql = (
 
 const PR_REVIEW_QUERY = `query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){pullRequest(number:$num){
 number url state viewerDidAuthor author{login} headRefOid reviewDecision mergeStateStatus
-reviews(last:50){nodes{id author{login __typename} state submittedAt commit{oid} body}}
+reviews(last:50){nodes{id author{login __typename} authorAssociation state submittedAt commit{oid} body}}
 reviewThreads(first:100){nodes{id isResolved isOutdated path line startLine
-comments(first:50){nodes{id author{login} body createdAt url}}}}
-comments(last:30){nodes{id author{login} body createdAt}}}}}`;
+comments(first:50){nodes{id author{login __typename} body createdAt url}}}}
+comments(last:30){nodes{id author{login __typename} body createdAt}}}}}`;
 
 interface PrReviewRequest {
   readonly workTree: string;

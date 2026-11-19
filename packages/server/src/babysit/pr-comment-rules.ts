@@ -1,7 +1,7 @@
 // What a person's comment on a worker's PR becomes: the rules that pass one over, and the notice
 // that carries it to the worker. Pure, so each rule is tested on its own.
 
-import { isBotLogin, type ReviewBot } from "@gram/contracts";
+import { markHidden, type ReviewBot } from "@gram/contracts";
 import type { FetchedComment } from "@gram/git";
 import { fence, FENCE_OPENER } from "../git/untrusted-fence.ts";
 import { sameText, type Post, type PostTarget } from "./posted-comments.ts";
@@ -39,8 +39,8 @@ export const passOver = (
   comment: FetchedComment,
   bots: ReadonlyArray<ReviewBot>,
 ): PassReason | undefined => {
-  if (comment.authorIsBot || /\[bot\]$/i.test(comment.author) || isBotLogin(bots, comment.author))
-    return "bot";
+  // An app account only: a person whose login a bot pattern matches is a person, asked about as one.
+  if (comment.authorIsBot || /\[bot\]$/i.test(comment.author)) return "bot";
   if (comment.author === "") return "bot";
   if (comment.kind === "review" && comment.state !== "COMMENTED") return "verdict";
   if (!hasWords(comment)) return "empty";
@@ -134,23 +134,8 @@ const cut = (text: string): string =>
     ? text
     : `${text.slice(0, COMMENT_NOTICE_CHARS)}\n… [cut: ${text.length - COMMENT_NOTICE_CHARS} more characters; read the rest on GitHub]`;
 
-/** A Markdown link-reference definition, `[label]: …`, which GitHub renders as nothing. */
-const LINK_DEFINITION = /^ {0,3}\[[^\]\n]*\]:[ \t]/;
-
-/**
- * `text` with what GitHub hides marked as such: HTML comments (`<!-- … -->`) and link-reference
- * definitions, the `[//]: # (…)` comment form among them. Words a collaborator put there are words
- * the user never saw on the page; the worker is told so.
- */
-export const markHidden = (text: string): string =>
-  text
-    .replaceAll("<!--", "[hidden on GitHub: ")
-    .replaceAll("-->", " :end of hidden]")
-    .split("\n")
-    .map((line) =>
-      LINK_DEFINITION.test(line) ? `[hidden on GitHub: ${line} :end of hidden]` : line,
-    )
-    .join("\n");
+// Moved to contracts, which marks review bodies in notices the same way.
+export { markHidden };
 
 /** What `comment` says, as the fence carries it: the body, then each inline comment by place. */
 const commentText = (comment: FetchedComment): string => {

@@ -55,3 +55,4 @@ export const GitLive = Layer.mergeAll(GitStateRuntimeLive, WorktreesLive, Checkp
 );
 
 export * from "./ci-diagnostics.ts";
+export { readInside, realRoot } from "./contained.ts";

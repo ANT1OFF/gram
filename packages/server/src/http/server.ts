@@ -1007,11 +1007,9 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer))),
           Layer.provideMerge(OrchestrationMemory.layer),
           Layer.provideMerge(
-            Layer.mergeAll(
-              BabysitLive,
-              PrCommentWakesLive.pipe(Layer.provide(PrCommentReads.layer)),
-              RunMonitorLive,
-              ThreadWakesLive,
+            Layer.mergeAll(BabysitLive, PrCommentWakesLive, RunMonitorLive, ThreadWakesLive).pipe(
+              // Both ask a commenter's or reviewer's permission before the agent hears them.
+              Layer.provide(PrCommentReads.layer),
             ),
           ),
           // The condition wakes' engine, under the wakes and the orchestration, which keep the

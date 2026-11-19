@@ -615,33 +615,33 @@ describe("merge_when_ready guidance at full autonomy", () => {
     },
   ] as const;
 
-  // A refusal changes nothing, so every origin that isn't the PR's repository is tried in one world.
-  it.effect.skipIf(!hasGit)(
-    "refuses to arm a worker's own PR from an origin on another host than the PR's",
-    () =>
-      Effect.gen(function* () {
-        const world = yield* makeWorld;
-        yield* withServer(
-          world,
-          Effect.gen(function* () {
-            const store = yield* ThreadStore;
-            const { worker, bind, merge } = yield* boundWorker(world);
-            for (const each of HOSTS.filter((one) => !one.owned)) {
-              world.origin = each.origin;
-              world.prHost = "prHost" in each ? each.prHost : undefined;
+  // The origin is the one Gram recorded as it made the worker's worktree, so each is its own world.
+  for (const each of HOSTS.filter((one) => !one.owned)) {
+    it.effect.skipIf(!hasGit)(
+      `refuses to arm a worker's own PR from ${each.label}, another host than the PR's`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          world.origin = each.origin;
+          world.prHost = "prHost" in each ? each.prHost : undefined;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const { worker, bind, merge } = yield* boundWorker(world);
               yield* bind;
-              expect(yield* merge.delegatedAtFullAutonomy!({}), each.label).toBe(false);
+              expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(false);
               const refused = yield* merge.run({}).pipe(Effect.flip);
-              expect(refused.message, each.label).toContain(
+              expect(refused.message).toContain(
                 "it is in another repository than the worktree Gram gave the worker",
               );
-            }
-            expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
-            expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
-          }),
-        );
-      }).pipe(Effect.scoped),
-  );
+              expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+              expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
+  }
 
   for (const each of HOSTS.filter((one) => one.owned)) {
     it.effect.skipIf(!hasGit)(`arms a worker's own PR from ${each.label}`, () =>
@@ -668,8 +668,9 @@ describe("merge_when_ready guidance at full autonomy", () => {
   }
 
   /**
-   * An armed merge of a worker's own PR whose checkout's origin turns into `to` before its launch
-   * looks again, or during GitHub's fresh read; `prHost` is where the PR is.
+   * An armed merge of a worker's own PR whose checkout's origin the worker rewrites to `to` before
+   * its launch looks again, or during GitHub's fresh read; `prHost` is where the PR is. Ownership
+   * goes by the origin Gram recorded as it made the worktree (`from`), so none of it matters.
    */
   const SWITCHES = [
     {
@@ -689,18 +690,16 @@ describe("merge_when_ready guidance at full autonomy", () => {
       prHost: "ghe.example.test",
     },
     {
-      label: "nothing, on the Enterprise PR's own host",
-      from: "https://ghe.example.test/acme/app.git",
-      to: "https://ghe.example.test/acme/app.git",
-      prHost: "ghe.example.test",
+      label: "another repository",
+      from: "https://github.com/acme/app.git",
+      to: "https://github.com/elsewhere/other.git",
     },
   ] as const;
 
   for (const each of SWITCHES)
     for (const when of ["before the launch", "during the fresh read"] as const) {
-      const merges = each.from === each.to;
       it.effect.skipIf(!hasGit)(
-        `an armed merge whose origin turns to ${each.label} ${when} ${merges ? "merges" : "doesn't launch"}`,
+        `an armed merge whose origin the worker rewrites to ${each.label} ${when} still merges`,
         () =>
           Effect.gen(function* () {
             const world = yield* makeWorld;
@@ -752,16 +751,14 @@ describe("merge_when_ready guidance at full autonomy", () => {
                   "the switch",
                   Effect.sync(() => switched || undefined),
                 );
-                if (merges)
-                  yield* waitReal(
-                    "the merge",
-                    Effect.sync(
-                      () =>
-                        world.ghCalls.some((c) => c[2] === "merge" && c[3] === "12") || undefined,
-                    ),
-                  );
+                yield* waitReal(
+                  "the merge",
+                  Effect.sync(
+                    () => world.ghCalls.some((c) => c[2] === "merge" && c[3] === "12") || undefined,
+                  ),
+                );
                 yield* settle;
-                expect(world.ghCalls.filter((c) => c[2] === "merge")).toHaveLength(merges ? 1 : 0);
+                expect(world.ghCalls.filter((c) => c[2] === "merge")).toHaveLength(1);
               }),
             );
           }).pipe(Effect.scoped),

@@ -12,6 +12,7 @@ import {
   type WorkspaceState,
   type WorkspaceId,
   defaultSlotOf,
+  inlineText,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -254,8 +255,8 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         if (memo?.userIntervened !== true) return [outbox, false];
         const note =
           by === "user"
-            ? `The user handed "${worker.title}" [thread ${worker.id}] back to you: they are done talking to it.`
-            : `"${worker.title}" [thread ${worker.id}] sat idle ${USER_HOLD_IDLE_MS / 60_000} minutes after the user last wrote to it, so they are likely done talking to it.`;
+            ? `The user handed "${inlineText(worker.title)}" [thread ${worker.id}] back to you: they are done talking to it.`
+            : `"${inlineText(worker.title)}" [thread ${worker.id}] sat idle ${USER_HOLD_IDLE_MS / 60_000} minutes after the user last wrote to it, so they are likely done talking to it.`;
         return [
           withNotes(
             {

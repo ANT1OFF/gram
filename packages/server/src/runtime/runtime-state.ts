@@ -317,6 +317,13 @@ export interface Runtime {
   readonly runningTools: Set<string>;
   /** Each open message's tool calls' times so far (`MessageMetadata.toolTimes`), by message. */
   readonly toolTimes: Map<MessageId, Record<string, ToolTime>>;
+  /**
+   * A message steered in while the turn's reply streamed: the reply it went in after, which closes
+   * at its next new part so what follows draws below the message (`splitAfterSteer`).
+   */
+  steerSplit: { readonly turnId: TurnId; readonly reply: MessageId } | undefined;
+  /** The agent's message id, by its reply split after a steer, to the message it streams into now. */
+  readonly replyAliases: Map<MessageId, MessageId>;
   quiet: WorkerQuiet | undefined;
   /** The compaction the agent reports under way, which `thread.status` carries while it lasts. */
   compaction: CompactionActivity | undefined;

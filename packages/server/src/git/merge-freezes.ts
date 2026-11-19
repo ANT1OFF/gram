@@ -6,11 +6,16 @@
  * repo must be one of the caller's workspace's.
  *
  * GitHub merges a PR whose auto-merge is armed by itself, under any freeze of Gram's. So a freeze
- * turns off the auto-merge that its repo's PRs onto the branch had armed, where the PR is one of
- * Gram's threads', keeps them on the freeze, and arms them again with the same method once it ends
- * (handing them to a freeze that stands on the branch by then instead). A PR someone turns off,
- * holds, unbinds or closes meanwhile is let go of (`forget`), never armed again. A person's merge, an
- * auto-merge on a PR no Gram thread has, or an entry already in a merge queue, it can't stop.
+ * turns off the auto-merge that its repo's PRs onto the branch had armed, where a Gram thread binds
+ * the PR (following it is not owning it), keeps them on the freeze with the head each stood on, and
+ * arms them again with the same method once it ends, pinned to that head (handing them to a freeze
+ * that stands on the branch by then instead). What was approved was the head that stood, and GitHub
+ * would turn the auto-merge off on a push by someone without write access; a push during the
+ * freeze finds nothing armed. So a PR whose head moved meanwhile is not armed again, and its
+ * thread is told. A PR
+ * someone turns off, holds, unbinds or closes meanwhile is let go of (`forget`), never armed again.
+ * A person's merge, an auto-merge on a PR no Gram thread binds, or an entry already in a merge
+ * queue, it can't stop.
  *
  * A freeze always ends at its `until`. That is checked on every read, whatever the timers did, so
  * a freeze whose thread died, or whose expiry fell while the app was down, never outlives it. A
@@ -48,6 +53,7 @@ import { EventHub, isThreadRemoved } from "../events/event-hub.ts";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { redactText } from "../logging/redact.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { BranchHeads } from "../wakes/branch-heads.ts";
 import { AutoMerges } from "./auto-merges.ts";
@@ -123,6 +129,18 @@ export class MergeFreezes extends Context.Service<MergeFreezes, MergeFreezesShap
 const keyOf = (repo: string, branch: string) => `${repo.toLowerCase()}#${branch}`;
 const sameRepo = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
+/** The thread that binds PR `number` of `repo`; one that only follows it (`extraPrs`) doesn't own it. */
+const binderOf = (threads: ReadonlyArray<Thread>, repo: string, number: number) =>
+  threads.find(
+    (thread) =>
+      thread.boundPr !== undefined &&
+      sameRepo(thread.boundPr.repo, repo) &&
+      thread.boundPr.number === number,
+  );
+
+/** `abc1234`, or what stands for a head not known. */
+const shortHead = (head: string | undefined) => head?.slice(0, 7) ?? "an unknown commit";
+
 /** A freeze as stored: with the folder gh runs in when it ends, the freezing thread's or none. */
 const StoredFreeze = Schema.Struct({
   ...MergeFreeze.fields,
@@ -175,6 +193,7 @@ export const MergeFreezesLive = Layer.effect(
     const hub = yield* EventHub;
     const heads = yield* BranchHeads;
     const autoMerges = yield* AutoMerges;
+    const runtimes = yield* ThreadRuntimes;
     const publisher = yield* GitStatePublisher;
     const changed = yield* PubSub.unbounded<FreezeChange>();
     /** Per repo and branch, the freeze stored, expired or not; reads skip an expired one. */
@@ -211,31 +230,53 @@ export const MergeFreezesLive = Layer.effect(
       });
 
     /**
-     * Whether a PR whose auto-merge a freeze took down may have it armed again now: a Gram thread
-     * still binds it, that thread isn't archived or babysat or in a paused workspace, and no hold
-     * stands on its merge. A PR let go of on purpose (`forget`) isn't asked about at all.
+     * The thread that may have the auto-merge a freeze took down from its PR armed again now, or
+     * `undefined`: a Gram thread still binds it, that thread isn't archived or babysat or in a
+     * paused workspace, and no hold stands on its merge. A PR let go of on purpose (`forget`) isn't
+     * asked about at all.
      */
-    const mayRearm = (repo: string, number: number) =>
+    const rearmOwner = (repo: string, number: number) =>
       Effect.gen(function* () {
-        const owner = (yield* store.listThreads).find((thread) =>
-          [thread.boundPr, ...(thread.extraPrs ?? [])].some(
-            (pr) => pr !== undefined && sameRepo(pr.repo, repo) && pr.number === number,
-          ),
-        );
-        if (owner === undefined || owner.parked || owner.babysit !== undefined) return false;
-        if (
-          owner.boundPr !== undefined &&
-          owner.boundPr.number === number &&
-          sameRepo(owner.boundPr.repo, repo) &&
-          owner.boundPr.mergeWhenReady?.hold !== undefined
-        )
-          return false;
-        if (owner.workspaceId === undefined) return true;
+        const owner = binderOf(yield* store.listThreads, repo, number);
+        if (owner === undefined || owner.parked || owner.babysit !== undefined) return undefined;
+        if (owner.boundPr?.mergeWhenReady?.hold !== undefined) return undefined;
+        if (owner.workspaceId === undefined) return owner;
         const state = yield* store
           .getWorkspace(owner.workspaceId)
           .pipe(Effect.orElseSucceed(() => undefined));
-        return state?.paused === undefined;
+        return state?.paused === undefined ? owner : undefined;
       });
+
+    /** Tells `owner` the freeze that ended left its PR's auto-merge off, and why. */
+    const tellNotRearmed = (owner: Thread, ended: StoredFreeze, number: number, why: string) =>
+      runtimes
+        .sendNotice(owner.id, `merge-freeze:${ended.repo}#${number}`, {
+          text: `The merge freeze on ${ended.repo} ${ended.branch} ended, and Gram left the GitHub auto-merge it turned off on ${ended.repo}#${number} off: ${why}. Gram arms an auto-merge again only on the head it stood on. If the PR's head now is one to merge, arm its auto-merge again (set_auto_merge) or ask the user to.`,
+        })
+        .pipe(
+          Effect.catch((e) =>
+            Effect.logWarning("merge freeze notice not sent").pipe(
+              Effect.annotateLogs({ threadId: owner.id, error: e.message }),
+            ),
+          ),
+        );
+
+    /** Hands `entries` to the freeze standing on the branch now, if one does. */
+    const handOff = (key: string, entries: NonNullable<StoredFreeze["disarmed"]>) =>
+      locks.withLock(
+        key,
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const next = standing(freezes.get(key), now);
+          if (next === undefined) return false;
+          const kept = next.disarmed ?? [];
+          yield* write(key, {
+            ...next,
+            disarmed: [...kept, ...entries.filter((d) => !kept.some((k) => k.number === d.number))],
+          });
+          return true;
+        }),
+      );
 
     /**
      * Arms again the GitHub auto-merges an ended freeze turned off, or hands them to the freeze that
@@ -245,35 +286,58 @@ export const MergeFreezesLive = Layer.effect(
       Effect.gen(function* () {
         const disarmed = ended.disarmed ?? [];
         if (disarmed.length === 0) return;
-        const handed = yield* locks.withLock(
-          key,
-          Effect.gen(function* () {
-            const now = yield* Clock.currentTimeMillis;
-            const next = standing(freezes.get(key), now);
-            if (next === undefined) return false;
-            const kept = next.disarmed ?? [];
-            yield* write(key, {
-              ...next,
-              disarmed: [
-                ...kept,
-                ...disarmed.filter((d) => !kept.some((k) => k.number === d.number)),
-              ],
-            });
-            return true;
-          }),
-        );
-        if (handed) return;
+        if (yield* handOff(key, disarmed)) return;
         const cwd = yield* ghFolder(ended);
-        for (const { number, method } of disarmed) {
-          // Asked again now: what became of the PR meanwhile decides, not what it was.
-          if (!(yield* mayRearm(ended.repo, number))) continue;
-          const failed = yield* autoMerges.enable(cwd, ended.repo, number, method);
-          // A PR merged or closed meanwhile has nothing to arm; anything else is logged.
-          if (failed !== undefined) {
+        /** Arms one auto-merge again, pinned to the head it stood on, or tells its thread why not. */
+        const rearmOne = (entry: NonNullable<StoredFreeze["disarmed"]>[number]) =>
+          Effect.gen(function* () {
+            const { number, method, head } = entry;
+            // A freeze set on the branch since the handoff above takes it instead.
+            if (yield* handOff(key, [entry])) return;
+            // Asked again now: what became of the PR meanwhile decides, not what it was.
+            const owner = yield* rearmOwner(ended.repo, number);
+            if (owner === undefined) return;
+            // Recorded before freezes kept the head: nothing says what the auto-merge stood on.
+            if (head === undefined) {
+              return yield* tellNotRearmed(
+                owner,
+                ended,
+                number,
+                "the freeze didn't record which head it was armed on",
+              );
+            }
+            const now = yield* autoMerges.headOf(cwd, ended.repo, number);
+            // A PR merged or closed meanwhile has nothing to arm.
+            if (now?.open === false) return;
+            // Pushed to while nothing was armed: not the head that stood when it was taken down.
+            if (now !== undefined && now.head !== head) {
+              return yield* tellNotRearmed(
+                owner,
+                ended,
+                number,
+                `its head moved from ${shortHead(head)}, the head it was armed on, to ${shortHead(now.head)} while the freeze stood`,
+              );
+            }
+            // Pinned: GitHub refuses to arm it if the head moved since the read above.
+            const failed = yield* autoMerges.enable(cwd, ended.repo, number, method, head);
+            if (failed === undefined) return;
             yield* Effect.logWarning("merge freeze couldn't re-arm an auto-merge").pipe(
               Effect.annotateLogs({ repo: ended.repo, number, error: failed }),
             );
-          }
+            // A reply lost after GitHub armed it: read again before saying it isn't.
+            const armedNow = yield* autoMerges.armed(cwd, ended.repo, ended.branch);
+            if (armedNow?.some((pr) => pr.number === number && pr.head === head) === true) return;
+            yield* tellNotRearmed(
+              owner,
+              ended,
+              number,
+              `GitHub refused to arm it on ${shortHead(head)}: ${failed.split("\n")[0]!.slice(0, 200)}`,
+            );
+          });
+        for (const entry of disarmed) {
+          // Under the repo's fence, which a new freeze takes to stand: one set meanwhile waits,
+          // then finds this PR armed and takes it down in turn.
+          yield* fences.withLock(ended.repo.toLowerCase(), rearmOne(entry));
         }
       });
 
@@ -431,16 +495,19 @@ export const MergeFreezesLive = Layer.effect(
         return false;
       });
 
-    /** The PRs of Gram's threads in `repo`, whose GitHub auto-merge a freeze takes down. */
+    /**
+     * The PRs Gram's threads bind in `repo`, whose GitHub auto-merge a freeze takes down. One a
+     * thread only follows (`extraPrs`) is someone else's to arm, and isn't touched.
+     */
     const gramPrs = (repo: string) =>
       store.listThreads.pipe(
         Effect.map(
           (threads) =>
             new Set(
               threads.flatMap((thread) =>
-                [thread.boundPr, ...(thread.extraPrs ?? [])].flatMap((pr) =>
-                  pr !== undefined && sameRepo(pr.repo, repo) ? [pr.number] : [],
-                ),
+                thread.boundPr !== undefined && sameRepo(thread.boundPr.repo, repo)
+                  ? [thread.boundPr.number]
+                  : [],
               ),
             ),
         ),
@@ -474,7 +541,13 @@ export const MergeFreezesLive = Layer.effect(
               if ((current.disarmed ?? []).some((d) => d.number === pr.number)) {
                 return "kept" as const;
               }
-              yield* write(key, { ...current, disarmed: [...(current.disarmed ?? []), pr] });
+              // With the head it stood on, the only one it is armed on again.
+              const taken = {
+                number: pr.number,
+                method: pr.method,
+                ...(pr.head === undefined ? {} : { head: pr.head }),
+              };
+              yield* write(key, { ...current, disarmed: [...(current.disarmed ?? []), taken] });
               const why = yield* autoMerges.disable(cwd, set.repo, pr.number);
               if (why === undefined) return "taken" as const;
               const now = freezes.get(key);
