@@ -17,6 +17,7 @@ import { dreamsRpc } from "./dreams/rpc";
 import { filesRpc } from "./files/rpc";
 import { keybindingsRpc } from "./keybindings/rpc";
 import { labelsRpc } from "./labels/rpc";
+import { peopleRpc } from "./people/rpc";
 import { orchestrationRpc } from "./orchestration/rpc";
 import { prPeopleRpc } from "./pr-people/rpc";
 import { profilesRpc } from "./profiles/rpc";
@@ -110,6 +111,7 @@ export async function createRpcApi(url: string, session?: GramServer["session"])
     ...filesRpc(domain),
     ...keybindingsRpc(domain),
     ...labelsRpc(domain),
+    ...peopleRpc(domain),
     ...orchestrationRpc(domain),
     ...pagesRpc(domain),
     ...prPeopleRpc(domain),

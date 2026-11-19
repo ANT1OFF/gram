@@ -90,6 +90,7 @@ export interface CreateThreadInput {
       | "boundPr"
       | "extraPrs"
       | "readableBy"
+      | "startedBy"
       | "transferredFrom"
       | "transferredTo"
     >

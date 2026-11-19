@@ -149,6 +149,8 @@ export const makeClosedReopener = (
             ...(thread.transferredTo === undefined ? {} : { transferredTo: thread.transferredTo }),
             // Readable by the one person it was readable by before it closed.
             ...(thread.readableBy === undefined ? {} : { readableBy: thread.readableBy }),
+            // Working for the person it worked for before it closed.
+            ...(thread.startedBy === undefined ? {} : { startedBy: thread.startedBy }),
           },
           // A session that never received a message has no transcript to continue.
           ...(thread.agentSessionId === undefined || thread.agentSessionUnused === true

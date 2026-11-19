@@ -355,6 +355,8 @@ export const FeatureCardWorker = Schema.Struct({
   overlapsWith: Schema.Array(ThreadId),
   /** The paths it shares with them, sorted, the first few only. */
   overlapFiles: Schema.Array(Schema.String),
+  /** The person it works for (`Thread.startedBy`); absent for nobody's, as on the desktop app. */
+  startedBy: Schema.optionalKey(Schema.String),
 });
 export type FeatureCardWorker = typeof FeatureCardWorker.Type;
 
@@ -479,6 +481,8 @@ export interface FeatureCardFacts {
   readonly activity: ReadonlyMap<ThreadId, string>;
   /** Epoch ms each worker was spawned, which places a new card in the stream. */
   readonly spawnedAt: ReadonlyMap<ThreadId, number>;
+  /** The person each worker works for (`Thread.startedBy`), where it has one. */
+  readonly startedBy?: ReadonlyMap<ThreadId, string> | undefined;
   /** The ledger's held briefs (`OrchestratorLedger.held`); absent with none. */
   readonly held?: ReadonlyArray<HeldBrief> | undefined;
   readonly now: number;
@@ -494,6 +498,7 @@ const cardWorkerOf = (
   facts: FeatureCardFacts,
 ): FeatureCardWorker => {
   const model = facts.models.get(worker.threadId);
+  const person = facts.startedBy?.get(worker.threadId);
   const flag = stationFlag(worker);
   return {
     threadId: worker.threadId,
@@ -507,6 +512,7 @@ const cardWorkerOf = (
     prs: ledgerPrsOf(worker).map(featureCardPrOf),
     overlapsWith: worker.overlapsWith,
     overlapFiles: worker.overlapFiles ?? [],
+    ...(person === undefined ? {} : { startedBy: person }),
   };
 };
 

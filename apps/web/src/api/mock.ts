@@ -133,6 +133,7 @@ import { createFilesMock } from "./files/mock";
 import { createDocsMock } from "./docs/mock";
 import { createPagesMock } from "./pages/mock";
 import { createLabelsMock } from "./labels/mock";
+import { createPeopleMock } from "./people/mock";
 import { createKeybindingsMock } from "./keybindings/mock";
 import { createTerminalMock } from "./terminal/mock";
 import { createBrowserViewMock } from "./browser-view/mock";
@@ -3137,6 +3138,7 @@ export function createMockApi(options: MockApiOptions = {}) {
     ...createFilesMock(world),
     ...createKeybindingsMock(world),
     ...createLabelsMock(world),
+    ...createPeopleMock(),
     ...createSessionsMock(world),
     ...speech,
     /** Local browser-shell stand-ins; hosted flags never change available bridge members. */

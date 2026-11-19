@@ -1,0 +1,20 @@
+{
+  "title": "The Board for more than one person",
+  "slug": "board-directions",
+  "status": "approved",
+  "template": "options",
+  "current": 2,
+  "approved": 2,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-19"
+    },
+    {
+      "n": 2,
+      "file": "v2.html",
+      "created": "2026-11-19"
+    }
+  ]
+}

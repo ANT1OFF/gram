@@ -1080,6 +1080,13 @@ export const Thread = Schema.Struct({
    */
   readableBy: Schema.optionalKey(Schema.String),
   /**
+   * The person the thread works for, by the subject fronted sign-in names them with: who started
+   * it, or for a thread another thread spawned, its spawner's person (a worker its orchestrator's).
+   * Set when the thread is made and never changed after. Absent without a signed-in person: a
+   * thread of the desktop app, or one an agent started for nobody.
+   */
+  startedBy: Schema.optionalKey(Schema.String),
+  /**
    * The conversations of an embedding host this thread owns now (`ConversationRef`): the ones its
    * `reply` may answer. A thread owns one when the host first sends it a message there, or when its
    * orchestrator hands it over (`spawn_worker`'s `conversations`); a worker's go back to its

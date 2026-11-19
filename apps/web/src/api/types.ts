@@ -32,6 +32,7 @@ import type { DreamsApi } from "./dreams/types";
 import type { FilesApi } from "./files/types";
 import type { KeybindingsApi } from "./keybindings/types";
 import type { LabelsApi } from "./labels/types";
+import type { PeopleApi } from "./people/types";
 import type { OrchestrationApi } from "./orchestration/types";
 import type { PrPeopleApi } from "./pr-people/types";
 import type { ProfilesApi } from "./profiles/types";
@@ -254,6 +255,7 @@ export interface Api
     KeybindingsApi,
     LabelsApi,
     OrchestrationApi,
+    PeopleApi,
     PagesApi,
     PrPeopleApi,
     ProfilesApi,

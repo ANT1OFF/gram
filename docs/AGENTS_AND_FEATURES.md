@@ -68,7 +68,12 @@ configured pass.
   settings, or every project on the machine. It saves only on a separate confirming press, and a
   held key never answers a second card. Codex cards offer no "always", as they carry no rule.
 - **The Board.** A workspace's features, workers and pull requests on one surface, with each pull
-  request's checks, reviews and merge readiness, read through the GitHub CLI.
+  request's checks, reviews and merge readiness, read through the GitHub CLI. Behind fronted sign-in,
+  where more than one person's work is on a Board, it says whose each line is (`Thread.startedBy`:
+  who started a thread, and its spawner's person for what it spawns), puts a card per person
+  above the lines that shows only their lines when picked, and names the first place two people's
+  workers change the same files. A Board that is one person's work, as the desktop app's always
+  is, shows none of it.
 - **Inbox.** Questions, approvals, plans, review requests, drafts, errors and steps from every
   workspace and solo thread collect in one list by kind, each answered in a pane beside it. Each
   row is two lines: what the item is about, wrapping before it is cut, then its workspace, its kind

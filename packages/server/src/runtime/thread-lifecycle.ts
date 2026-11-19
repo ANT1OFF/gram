@@ -305,6 +305,22 @@ export const makeThreadLifecycle = ({
         input.readableBy ??
         input.kept?.readableBy;
       if (readableBy !== undefined) (thread as { readableBy?: string }).readableBy = readableBy;
+      // Whom it works for: its spawner's person, else its orchestrator's, else the signed-in person
+      // this call is made for. A thread another thread spawned is never the caller's.
+      const parentPerson = (id: ThreadId | undefined) =>
+        id === undefined
+          ? Effect.succeed(undefined)
+          : store.getThread(id).pipe(
+              Effect.map((parent) => parent.startedBy),
+              Effect.orElseSucceed(() => undefined),
+            );
+      const startedBy =
+        input.kept?.startedBy ??
+        (input.spawnedBy === undefined
+          ? ((orchestratorOf === thread.id ? undefined : yield* parentPerson(orchestratorOf)) ??
+            (yield* ActingPerson))
+          : yield* parentPerson(input.spawnedBy.threadId));
+      if (startedBy !== undefined) (thread as { startedBy?: string }).startedBy = startedBy;
       const stored = yield* store.insertThread(thread);
       if (input.restoreClosedHistory === true) yield* store.restoreClosedHistory(thread.id);
       if (eventSink !== undefined && thread.spawnedBy === undefined) {
