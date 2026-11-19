@@ -6,6 +6,7 @@ import {
   notARepositoryMessage,
   parseRepoRemote,
   remoteLabel,
+  type FolderSettings,
   type Project,
 } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
@@ -28,6 +29,7 @@ import { Shimmer } from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { ChooseFolderButton } from "./choose-folder-button";
+import { FolderTrustQuestion } from "./folder-trust-question";
 import { GitBadge } from "./git-badge";
 import { splitForCompletion, tildify } from "./path";
 import { useRepoSuggestions } from "./repository-suggestions";
@@ -170,12 +172,39 @@ function useRegisterRepository(onAdded: (project: Project) => void | Promise<voi
     }
   };
 
+  /** A folder that brings agent settings of its own, waiting on the user's answer. */
+  const [asking, setAsking] = useState<{ path: string; settings: FolderSettings }>();
+
+  /**
+   * Adds the folder, asking first when it brings settings that would run as the user: false
+   * then, until the answer adds it. A folder already added keeps the answer it has.
+   */
+  const addFolder = async (path: string): Promise<boolean> => {
+    if (running.current) return false;
+    setAsking(undefined);
+    const known = queryClient
+      .getQueryData<Project[]>(["projects"])
+      ?.some((project) => project.root === path);
+    // A folder that can't be read is left to `projects.add`, which says why.
+    const settings = known ? undefined : await api.folderSettings(path).catch(() => undefined);
+    if (settings === undefined || settings.none) return register(() => api.addProject(path));
+    setAsking({ path, settings });
+    return false;
+  };
+
   return {
     pending,
     error,
     setError,
     cloneFolder,
-    addFolder: (path: string) => register(() => api.addProject(path)),
+    asking,
+    answer: (trust: boolean | undefined) => {
+      if (asking === undefined) return Promise.resolve(false);
+      setAsking(undefined);
+      if (trust === undefined) return Promise.resolve(false);
+      return register(() => api.addProject(asking.path, { trust }));
+    },
+    addFolder,
     clone: ({ remote, label, repo }: Extract<RepositoryInput, { kind: "clone" }>) => {
       const into = cloneFolder === undefined ? "" : ` into ${cloneFolder}/${repo}`;
       return register((signal) => api.cloneProject(remote, { signal }), `Cloning ${label}${into}…`);
@@ -272,12 +301,11 @@ export function AddRepository({
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  const { pending, error, setError, cloneFolder, addFolder, clone } = useRegisterRepository(
-    async (project) => {
+  const { pending, error, setError, cloneFolder, asking, answer, addFolder, clone } =
+    useRegisterRepository(async (project) => {
       await onAdded(project);
       setText("");
-    },
-  );
+    });
   const input = readRepositoryInput(text);
   const home = useHome();
   const folderStatus = useFolderStatus(input.kind === "folder" ? input.path : "");
@@ -528,7 +556,29 @@ export function AddRepository({
           onChoose={addFolder}
         />
       </div>
-      {pending?.cloning !== undefined ? (
+      {asking !== undefined ? (
+        <FolderTrustQuestion
+          settings={asking.settings}
+          actions={
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => void answer(undefined)}
+              >
+                Cancel
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => void answer(false)}>
+                Add without them
+              </Button>
+              <Button type="button" size="sm" onClick={() => void answer(true)}>
+                Trust and add
+              </Button>
+            </>
+          }
+        />
+      ) : pending?.cloning !== undefined ? (
         <CloneProgress id={hintId} label={pending.cloning} />
       ) : error !== undefined ? (
         <p id={hintId} role="alert" className="text-meta text-destructive">

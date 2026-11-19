@@ -43,6 +43,13 @@ const run = (id = 10, attempt = 1, status = "completed") => ({
   event: "pull_request",
   status,
   conclusion: status === "completed" ? "success" : null,
+  head_repository: { full_name: "example/project" },
+  pull_requests: [
+    {
+      number: 1,
+      base: { ref: "main", repo: { url: "https://api.github.com/repos/example/project" } },
+    },
+  ],
 });
 const job = (name: string, conclusion = "success", more = {}) => ({
   id: name === "docs" ? 100 : 100 + name.length,
@@ -477,6 +484,118 @@ describe("lanes at the independent merge gate", () => {
           workflows: [bare],
         } as typeof laned),
       ).toMatchObject({ success: "failing" });
+    }),
+  );
+});
+
+describe("a run counts only when it is the PR's own", () => {
+  const e2e = ["e2e 1/2", "e2e 2/2"];
+  const always = {
+    ...policy,
+    workflows: policy.workflows.map((workflow) => ({ ...workflow, alwaysJobs: e2e })),
+  };
+  const own = { ...run(10), conclusion: "success" };
+  // A fork's PR from a same-named branch at the same commit: its jobs skip, its run succeeds.
+  const fork = {
+    ...run(20),
+    head_repository: { full_name: "stranger/project" },
+    pull_requests: [],
+  };
+  // A second PR from the same branch, to another base, red.
+  const otherPr = {
+    ...run(30),
+    conclusion: "failure",
+    pull_requests: [
+      {
+        number: 2,
+        base: { ref: "release", repo: { url: "https://api.github.com/repos/example/project" } },
+      },
+    ],
+  };
+  // One run GitHub ties to both PRs at once: nobody's evidence.
+  const shared = {
+    ...run(40),
+    conclusion: "failure",
+    pull_requests: [...own.pull_requests, ...otherPr.pull_requests],
+  };
+  const jobsOf: Record<number, ReadonlyArray<Record<string, unknown>>> = {
+    10: ["classify", "qualification", "check", "subscription-smoke", ...e2e].map((name) =>
+      job(name),
+    ),
+    20: ["classify", "qualification", "check", "subscription-smoke", ...e2e].map((name) => ({
+      ...job(name, "skipped"),
+      run_id: 20,
+    })),
+    30: ["check"].map((name) => ({ ...job(name, "failure"), run_id: 30 })),
+    40: ["check"].map((name) => ({ ...job(name, "failure"), run_id: 40 })),
+  };
+  const layer = (runs: ReadonlyArray<Record<string, unknown>>) =>
+    Layer.succeed(Proc, {
+      run: (bin, args) => {
+        if (bin === "git")
+          return Effect.succeed({
+            status: 0,
+            stdout: diff("runtime.ts"),
+            stderr: "",
+            truncated: false,
+          });
+        let body: unknown;
+        if (args.some((arg) => arg.startsWith("ref=")))
+          body = { data: { repository: { object: { text: JSON.stringify(always) } } } };
+        else if (args[1]?.includes("actions/runs?"))
+          body = { total_count: runs.length, workflow_runs: runs };
+        else {
+          const id = Number(/actions\/runs\/(\d+)\//.exec(args[1] ?? "")?.[1]);
+          const jobs = jobsOf[id] ?? [];
+          body = { total_count: jobs.length, jobs };
+        }
+        return Effect.succeed({
+          status: 0,
+          stdout: JSON.stringify(body),
+          stderr: "",
+          truncated: false,
+        });
+      },
+    });
+
+  it.effect("follows its own run whatever newer runs share its commit and branch", () =>
+    Effect.gen(function* () {
+      for (const runs of [
+        [own, fork, otherPr, shared],
+        [shared, otherPr, fork, own],
+      ]) {
+        expect(
+          yield* verifyMergeCi("/repo", "example/project", badge).pipe(Effect.provide(layer(runs))),
+        ).toBe("passing");
+      }
+    }),
+  );
+
+  it.effect("neither passes nor blocks on a run that is not its own", () =>
+    Effect.gen(function* () {
+      const foreign = [fork, otherPr, shared];
+      expect(
+        yield* verifyMergeCi("/repo", "example/project", badge).pipe(
+          Effect.provide(layer(foreign)),
+        ),
+      ).toBe("pending");
+      // A fork run whose every job skipped and that GitHub calls a success never stands in for
+      // the jobs a solo local check can't.
+      expect(
+        yield* mergeCiForLaunch("/repo", "example/project", badge, head).pipe(
+          Effect.provide(layer(foreign)),
+        ),
+      ).toBe("pending");
+    }),
+  );
+
+  it.effect("takes a run to another base as another PR's", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* verifyMergeCi("/repo", "example/project", { ...badge, baseRef: "release" }).pipe(
+          Effect.provide(layer([own])),
+        ),
+      ).toBe("pending");
     }),
   );
 });

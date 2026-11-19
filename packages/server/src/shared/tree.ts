@@ -12,6 +12,7 @@ import {
   SHARED_ABSENT,
   SHARED_FILE_MAX_BYTES,
   SHARED_FILES_MAX,
+  SHARED_FOLDER_MAX_BYTES,
   SHARED_PART_BYTES,
   SHARED_RESERVED_PREFIX,
   type SharedEntry,
@@ -94,8 +95,32 @@ interface Known {
   readonly sha256: string;
 }
 
-/** The shared folder at `root` on this machine. */
-export const sharedTree = (root: string): SharedTree => {
+/**
+ * The bytes the plain files under `folder` take, at any depth, links passed by: what a sync has
+ * put there, what is on its way in, and what an agent wrote there itself.
+ */
+const bytesUnder = async (folder: string): Promise<number> => {
+  let total = 0;
+  const walk = async (at: string, depth: number): Promise<void> => {
+    const names = await readdir(at, { withFileTypes: true }).catch(() => []);
+    for (const entry of names) {
+      const absolute = join(at, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < MAX_DEPTH + 1) await walk(absolute, depth + 1);
+      } else if (entry.isFile()) {
+        total += (await lstat(absolute).catch(() => undefined))?.size ?? 0;
+      }
+    }
+  };
+  await walk(folder, 0);
+  return total;
+};
+
+/** The shared folder at `root` on this machine; `maxBytes` the most a sync fills it to. */
+export const sharedTree = (
+  root: string,
+  maxBytes: number = SHARED_FOLDER_MAX_BYTES,
+): SharedTree => {
   const base = resolve(root);
   /** Each file's hash as last read, kept while its size and time stay the same. */
   const known = new Map<string, Known>();
@@ -247,6 +272,15 @@ export const sharedTree = (root: string): SharedTree => {
       const bytes = Buffer.from(request.data, "base64");
       if (bytes.length > SHARED_PART_BYTES || offset + bytes.length > size)
         throw invalid(`A part of ${path} that doesn't fit it`);
+      // A file is let in only while the folder has room for all of it: the machine on the other
+      // end, or an agent there, can't fill this machine's disk through the sync.
+      if (offset === 0) {
+        const replaced = (await lstat(absolute).catch(() => undefined))?.size ?? 0;
+        if ((await bytesUnder(base)) - replaced + size > maxBytes)
+          throw invalid(
+            `The shared folder is full (${Math.round(maxBytes / 2 ** 20)} MB here), so ${path} isn't taken in`,
+          );
+      }
       await mkdir(join(base, INCOMING), { recursive: true, mode: 0o700 });
       const incoming = incomingOf(path, sha256);
       const handle = await open(

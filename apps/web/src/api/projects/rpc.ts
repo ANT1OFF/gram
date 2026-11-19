@@ -5,7 +5,15 @@ import type { ProjectsApi } from "./types";
 export const projectsRpc = ({ client }: RpcContext): ProjectsApi => ({
   listProjects: () => run(client["projects.list"](undefined)),
   listRepositories: () => run(client["projects.repositories"](undefined)),
-  addProject: (root) => run(client["projects.add"]({ root })),
+  addProject: (root, options) =>
+    run(
+      client["projects.add"](
+        options?.trust === undefined ? { root } : { root, trust: options.trust },
+      ),
+    ),
+  folderSettings: (root) => run(client["projects.folderSettings"]({ root })),
+  setFolderTrust: (projectId, trusted) =>
+    run(client["projects.setFolderTrust"]({ projectId, trusted })),
   cloneProject: (remote, options) =>
     run(
       client["projects.clone"](

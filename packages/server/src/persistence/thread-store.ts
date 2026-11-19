@@ -514,6 +514,8 @@ export interface ThreadStoreShape {
     expectedRevision: string,
   ): Effect.Effect<{ readonly auditSeq: number } | undefined>;
   setProjectBookmarked(id: ProjectId, bookmarked: boolean): Effect.Effect<Project, NotFound>;
+  /** Records the user's answer about the project's own agent settings and scripts. */
+  setProjectFolderTrust(id: ProjectId, trusted: boolean): Effect.Effect<Project, NotFound>;
   /** Removes a project from the recents; refused while any thread belongs to it. */
   forgetProject(id: ProjectId): Effect.Effect<void, NotFound | InvalidState>;
 
@@ -1634,6 +1636,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         bookmarked: number;
         last_opened_at: number | null;
         local_check?: string | null;
+        folder_trust?: string | null;
       }
       const toProject = (r: ProjectRow): Project => {
         // A recipe with a key this build doesn't know is unreadable, never a check without it: the
@@ -1658,6 +1661,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               }
             : {}),
           bookmarked: bool(r.bookmarked),
+          // Anything but the two answers reads as never asked, which a folder with settings
+          // treats as untrusted.
+          ...(r.folder_trust === "trusted" || r.folder_trust === "untrusted"
+            ? { folderTrust: r.folder_trust }
+            : {}),
           ...(r.last_opened_at === null ? {} : { lastOpenedAt: Number(r.last_opened_at) }),
         });
       };
@@ -1703,6 +1711,23 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           Effect.map((rows) => rows.map(toProject)),
         ),
       );
+
+      const setProjectFolderTrust: ThreadStoreShape["setProjectFolderTrust"] = (id, trusted) =>
+        tx(
+          Effect.gen(function* () {
+            const value = trusted ? "trusted" : "untrusted";
+            yield* sql`UPDATE projects SET folder_trust = ${value} WHERE id = ${id}`;
+            const row = (yield* sql<ProjectRow>`SELECT * FROM projects WHERE id = ${id}`)[0];
+            if (row === undefined) {
+              return yield* new NotFound({
+                entity: "project",
+                id,
+                message: "That project no longer exists.",
+              });
+            }
+            return toProject(row);
+          }),
+        );
 
       const setProjectBookmarked: ThreadStoreShape["setProjectBookmarked"] = (id, bookmarked) =>
         tx(
@@ -2603,6 +2628,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             }),
           ),
         setProjectBookmarked,
+        setProjectFolderTrust,
         forgetProject,
 
         insertThread: (thread) =>

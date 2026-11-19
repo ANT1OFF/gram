@@ -217,7 +217,7 @@ export const REVIEW_REQUEST_DETAILS_PER_QUERY = 20;
 // nothing in GraphQL points, so review requests carry the two only own PRs show.
 const DETAILS_GQL_FIELDS =
   "labels(first:100){nodes{name} totalCount} additions deletions headRefOid headRefName mergeStateStatus updatedAt isDraft reviewDecision commits(last:1){nodes{commit{statusCheckRollup{state}}}} " +
-  "reviews(last:20){nodes{id author{login} state submittedAt commit{oid} body}}";
+  "reviews(last:20){nodes{id author{login __typename} state submittedAt commit{oid} body}}";
 
 /** One aliased `pullRequest` block per PR, named by typed variables so nothing is interpolated. */
 export const reviewRequestDetailsQuery = (count: number): string => {

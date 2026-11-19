@@ -23,6 +23,12 @@ export interface Shortcut {
   skipWhileTyping?: boolean;
   /** Also fire while focus is inside a dialog; the rest wait until it closes, so nothing acts behind it. */
   allowInDialogs?: boolean;
+  /**
+   * Never takes a key another shortcut holds, whether or not that one applies right now, nor an
+   * editing chord (`EDIT_CHORDS`). For keys from a repository's own files, so they can't stand in
+   * for one of Gram's or a paste.
+   */
+  yields?: boolean;
   /** Hide from the shortcut overlay (e.g. duplicates of a documented binding). */
   hidden?: boolean;
   /**
@@ -64,6 +70,47 @@ export function parseKeys(keys: string): Chord {
     key: KEY_ALIASES[key] ?? key,
   };
 }
+
+/**
+ * Whether two key strings name the same chord, however they are spelled: off macOS `mod` and
+ * `ctrl` are the same Control key, as `matches` reads them.
+ */
+export function sameKeys(a: string, b: string, mac = isMac()): boolean {
+  const chord = (keys: string) => {
+    const parsed = parseKeys(keys);
+    return mac ? parsed : { ...parsed, mod: false, ctrl: parsed.ctrl || parsed.mod };
+  };
+  const x = chord(a);
+  const y = chord(b);
+  return (
+    x.mod === y.mod &&
+    x.ctrl === y.ctrl &&
+    x.shift === y.shift &&
+    x.alt === y.alt &&
+    x.key === y.key
+  );
+}
+
+/** Editing chords every text field answers, which no shortcut from a repository's files may take. */
+export const EDIT_CHORDS: readonly string[] = [
+  "mod+a",
+  "mod+c",
+  "mod+v",
+  "mod+x",
+  "mod+z",
+  "mod+y",
+  "mod+shift+z",
+  "mod+shift+v",
+];
+
+/** Whether a yielding shortcut's keys are held by any other shortcut, active now or not. */
+const heldByOther = (keys: string, mac: boolean): boolean =>
+  EDIT_CHORDS.some((chord) => sameKeys(chord, keys, mac)) ||
+  registry.some((other) => {
+    if (other.yields === true) return false;
+    const theirs = effectiveKeys(other.id, other.keys);
+    return theirs !== undefined && sameKeys(theirs, keys, mac);
+  });
 
 /**
  * The zoom characters, which mean zoom wherever a layout puts them. They go by what was typed, ahead
@@ -314,12 +361,20 @@ export function dispatchShortcut(event: KeyboardEvent, mac = isMac()): boolean {
     dialog !== null &&
     !dialog.hasAttribute("data-closed") &&
     !dialog.hasAttribute("data-ending-style");
-  for (const scoped of [true, false]) {
+  for (const pass of ["scoped", "unscoped", "yielding"] as const) {
     for (let i = registry.length - 1; i >= 0; i--) {
       const shortcut = registry[i]!;
-      if ((shortcut.focusScope !== undefined) !== scoped) continue;
+      const ofPass =
+        shortcut.yields === true
+          ? "yielding"
+          : shortcut.focusScope !== undefined
+            ? "scoped"
+            : "unscoped";
+      if (ofPass !== pass) continue;
       const keys = effectiveKeys(shortcut.id, shortcut.keys);
       if (keys === undefined || !matches(keys, event, mac)) continue;
+      // Gram's own keys stay Gram's even where that shortcut doesn't apply right now.
+      if (pass === "yielding" && heldByOther(keys, mac)) continue;
       if (inDialog && !shortcut.allowInDialogs) continue;
       if (typing && !shortcut.allowInInputs && !parseKeys(keys).mod) continue;
       if (typing && shortcut.skipWhileTyping) continue;

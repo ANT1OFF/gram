@@ -17,6 +17,7 @@ import {
   type RunWatch,
   type Thread,
   type ThreadId,
+  fenceNames,
 } from "@gram/contracts";
 import { ghApi, gitFailMsg, originOwnerRepo, Proc } from "@gram/git";
 import * as Cause from "effect/Cause";
@@ -132,13 +133,23 @@ const runDoneText = (
   run: RunView,
   failedJobs: ReadonlyArray<string>,
 ): string => {
-  const conclusion =
-    run.conclusion === undefined || run.conclusion === "" ? "done" : run.conclusion;
-  const shown = failedJobs.slice(0, FAILED_JOBS_NAMED);
-  const more = failedJobs.length - shown.length;
-  const failed =
-    shown.length === 0 ? "" : ` Failed: ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}.`;
-  return `Workflow run "${runName(run)}" (${watch.repo} #${watch.runId}) completed: ${conclusion}.${failed}${run.url === undefined ? "" : ` ${run.url}`}`;
+  // GitHub's own word, kept to it: anything else is a name someone chose.
+  const conclusion = /^[a-z_]{1,30}$/.test(run.conclusion ?? "") ? run.conclusion! : "done";
+  const named = [run.workflowName, run.displayTitle].filter(
+    (part): part is string => part !== undefined && part !== "",
+  );
+  const lines = [
+    `Workflow run ${watch.repo} #${watch.runId} completed: ${conclusion}.${run.url === undefined ? "" : ` ${run.url}`}`,
+  ];
+  if (named.length > 0)
+    lines.push(
+      `Its workflow and title:\n${fenceNames("the run's workflow name and title", named)}`,
+    );
+  if (failedJobs.length > 0)
+    lines.push(
+      `Failed jobs:\n${fenceNames("the failed jobs' names", failedJobs, FAILED_JOBS_NAMED)}`,
+    );
+  return lines.join("\n");
 };
 
 const refuse = (message: string) => new AppToolError({ tool: "run_monitor", message });

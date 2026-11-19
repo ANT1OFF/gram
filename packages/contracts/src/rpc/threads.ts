@@ -87,7 +87,9 @@ export const ThreadRpcs = RpcGroup.make(
    *
    * `threadId` is the caller's own id for the thread, a UUID it made before asking, so a start it
    * asks for again makes one thread: when a thread started from a profile already has that id, it
-   * is answered as it is and nothing is made, whatever profile came this time.
+   * is answered as it is and nothing is made, whatever profile came this time. A signed-in person
+   * (fronted sign-in) names no id: theirs is refused, so no id a person picks can pass for a later
+   * start by the embedding host's service.
    */
   Rpc.make("thread.createFromProfile", {
     payload: { profile: Schema.Unknown, threadId: Schema.optionalKey(ThreadId) },
@@ -126,6 +128,16 @@ export const ThreadRpcs = RpcGroup.make(
   Rpc.make("thread.resumeAfterMachineLost", {
     payload: threadRef,
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
+  }),
+  /**
+   * Makes the thread's folder on its machine from its branch without the work its last stop kept,
+   * which is gone from the remote (`ThreadError.code` `kept-work-gone`): what a person chooses when
+   * that work can't be got back. Resumes each joined machine the thread is held off for that reason;
+   * `InvalidState` when it isn't, or the machine couldn't do it.
+   */
+  Rpc.make("thread.restoreFromBranch", {
+    payload: threadRef,
+    error: errors(ThreadNotFound, InvalidState),
   }),
   /**
    * The diff behind `Thread.savedWork`, as the machine last sent it: readable while the machine is

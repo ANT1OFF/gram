@@ -1,5 +1,8 @@
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { defaultDataDir, osDataRoot } from "./data-dir.ts";
+import { defaultDataDir, osDataRoot, securePrivateDir } from "./data-dir.ts";
 
 describe("Gram data directory", () => {
   it("honors the explicit Gram directory", () => {
@@ -31,6 +34,34 @@ describe("Gram data directory", () => {
     );
     for (const platform of ["darwin", "linux", "win32"] as const) {
       expect(osDataRoot({ env: {}, platform, homeDir: undefined })).toBe(".");
+    }
+  });
+});
+
+describe.skipIf(process.platform === "win32")("securePrivateDir", () => {
+  it("creates the data folder owner-only, whatever the umask", () => {
+    const root = mkdtempSync(join(tmpdir(), "gram-data-"));
+    const previous = process.umask(0o022);
+    try {
+      const dir = join(root, "nested", "gram-state");
+      expect(securePrivateDir(dir)).toBe(false);
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
+    } finally {
+      process.umask(previous);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("tightens an existing folder others can read or enter", () => {
+    const root = mkdtempSync(join(tmpdir(), "gram-data-"));
+    try {
+      const dir = join(root, "gram-state");
+      mkdirSync(dir);
+      chmodSync(dir, 0o755);
+      expect(securePrivateDir(dir)).toBe(true);
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

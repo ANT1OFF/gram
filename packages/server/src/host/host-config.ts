@@ -250,6 +250,22 @@ export const hostDiskId = (home: string): string => {
   });
 };
 
+/**
+ * Gives `home` a new disk id, once its host is told this disk is the machine now
+ * (`gram-host new-disk`): at its next start it says a disk the main Gram hasn't seen, so it comes
+ * back as the machine replaced afresh, owing a resume, rather than a disk it was replaced from.
+ * Answers the new id.
+ */
+export const renewDiskId = (home: string): string =>
+  withLock(join(home, `${DISK_ID}.lock`), () => {
+    const before = readPrivate(home, DISK_ID)?.trim();
+    let made = newDiskId();
+    while (made.trim() === before) made = newDiskId();
+    writePrivate(home, DISK_ID, made);
+    syncFolder(home);
+    return made.trim();
+  });
+
 /** The folder in a work volume of its own that holds that volume's id (`hostIdentity`). */
 export const VOLUME_ID_FOLDER = ".gram-volume";
 

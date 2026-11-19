@@ -30,6 +30,9 @@ export interface JobFolder {
   readonly cwd: string;
   readonly state: JobFolderState;
   readonly note?: string;
+  /** When the step began on it, and when it was done with it. */
+  readonly startedAt?: number;
+  readonly endedAt?: number;
 }
 
 export interface MachineJob {
@@ -43,7 +46,7 @@ export interface MachineJob {
   readonly createdAt: number;
   readonly startedAt?: number;
   readonly endedAt?: number;
-  /** When it last made progress: its start, or a folder done. */
+  /** When it last made progress: its start, a folder started, or a folder done. */
   readonly progressAt: number;
   /** The longest it goes without progress once running; past that it fails by itself. */
   readonly budgetMs: number;
@@ -61,7 +64,10 @@ export interface JobReport {
   readonly folders: (
     all: ReadonlyArray<{ readonly threadId: ThreadId; readonly cwd: string }>,
   ) => Effect.Effect<void>;
-  /** One folder started, or done with: done counts as progress. */
+  /**
+   * One folder started, or done with: each counts as progress, so the job's budget is a folder's
+   * at a time however many folders it has, and one large clone under way never reads as stalled.
+   */
   readonly folder: (
     threadId: ThreadId,
     cwd: string,
@@ -153,12 +159,19 @@ export const makeMachineJobs = (): Effect.Effect<MachineJobs, never, Scope.Scope
         Effect.flatMap(Clock.currentTimeMillis, (at) =>
           Effect.sync(() =>
             update(entry, (job) => {
+              const finished = state !== "running";
               const folders = (job.folders ?? []).map((folder) =>
                 folder.threadId === threadId && folder.cwd === cwd
-                  ? { threadId, cwd, state, ...(note === undefined ? {} : { note }) }
+                  ? {
+                      threadId,
+                      cwd,
+                      state,
+                      ...(note === undefined ? {} : { note }),
+                      startedAt: folder.startedAt ?? at,
+                      ...(finished ? { endedAt: at } : {}),
+                    }
                   : folder,
               );
-              const finished = state !== "running";
               return {
                 ...job,
                 folders,
@@ -168,7 +181,7 @@ export const makeMachineJobs = (): Effect.Effect<MachineJobs, never, Scope.Scope
                   ).length,
                   total: folders.length,
                 },
-                ...(finished ? { progressAt: at } : {}),
+                progressAt: at,
               };
             }),
           ),

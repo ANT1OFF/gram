@@ -94,9 +94,9 @@ describe("a machine's long step as a job", () => {
           seen = (yield* jobs.watch(job.id, { seen: seen.version, waitMs: 20_000 }))!;
         }
         expect(seen.result).toBe("resumed");
-        expect(seen.folders).toEqual([
-          { threadId: T1, cwd: "/a", state: "restored" },
-          { threadId: T1, cwd: "/b", state: "refused", note: "git fetch failed" },
+        expect(seen.folders).toMatchObject([
+          { threadId: T1, cwd: "/a", state: "restored", startedAt: 0, endedAt: 0 },
+          { threadId: T1, cwd: "/b", state: "refused", note: "git fetch failed", endedAt: 0 },
         ]);
         // A poll that waits gives up at its own wait, never later.
         const blocked = yield* jobs.start({
@@ -179,6 +179,40 @@ describe("a machine's long step as a job", () => {
         expect(jobs.get(resume.job.id)!.state).toBe("done");
       }),
     ),
+  );
+
+  it.effect(
+    "isn't cut off over many slow folders, each inside the budget, longer than it in all",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const jobs = yield* makeMachineJobs();
+          const cwds = ["/a", "/b", "/c", "/d", "/e"];
+          const { job } = yield* jobs.start({
+            kind: "resume",
+            machine: MACHINE,
+            budgetMs: 20 * 60_000,
+            run: (report) =>
+              Effect.gen(function* () {
+                yield* report.folders(cwds.map((cwd) => ({ threadId: T1, cwd })));
+                // One large clone after another: 15 minutes each, 75 in all.
+                for (const cwd of cwds) {
+                  yield* report.folder(T1, cwd, "running");
+                  yield* Effect.sleep("15 minutes");
+                  yield* report.folder(T1, cwd, "restored");
+                }
+                return "resumed";
+              }),
+          });
+          yield* TestClock.adjust("80 minutes");
+          const ended = yield* jobs.ended(job.id);
+          expect(ended).toMatchObject({ state: "done", progress: { done: 5, total: 5 } });
+          // Each folder says when it was begun and done with.
+          expect(ended!.folders!.map(({ startedAt, endedAt }) => [startedAt, endedAt])).toEqual(
+            cwds.map((_, at) => [at * 15 * 60_000, (at + 1) * 15 * 60_000]),
+          );
+        }),
+      ),
   );
 
   it.effect("fails by itself once it goes its budget without progress, its step cut off", () =>

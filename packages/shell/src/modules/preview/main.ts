@@ -4,7 +4,9 @@
 // shell shows that isn't the app's own, so it gets nothing of the app's: sessions of its own kept in
 // memory, no preload, no permission, no download, no client certificate (`core/preview-rules.ts`).
 // A thread's page is in a session of one of three kinds. The local session holds loopback pages and
-// agents' pages, and loads nothing off loopback but what the agent browser allows an agent's page.
+// agents' pages, and loads nothing off loopback but what the agent browser allows an agent's page;
+// it reaches loopback directly and anything else only through a proxy of its own, which connects
+// only to a host that check just let a page reach, so a socket the check never sees goes no further.
 // The web sessions hold the pages the user opens anywhere else, and no agent ever drives or reads
 // them, so what the user signs in to there stays theirs. The shared web session holds pages on the
 // internet, and never reaches loopback or a private network, whatever asks. A page the user opens
@@ -45,9 +47,11 @@ import {
   parsePreviewBounds,
   previewNavigation,
   previewRequest,
+  unattributedRequest,
   previewsToClose,
   previewThreadOf,
   resolvedWithin,
+  createHostDoors,
   webNavigation,
   webNetworkOf,
   destinationOf,
@@ -242,7 +246,62 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     callback();
   });
 
+  /**
+   * Chromium connects to these directly and sends everything else to the session's proxy. Its own
+   * implicit bypass also covers link-local addresses (where a cloud's metadata service lives), so
+   * that is taken away (`<-loopback>`) and loopback alone is named, as the headless browser does.
+   */
+  const LOOPBACK_BYPASS = "<-loopback>;127.0.0.1;[::1];localhost";
+
   const localSession = (ses: Session) => {
+    // Loopback directly; anything else only through the session's own proxy, which connects only
+    // to a public host this session's request check let a page reach just now (`createHostDoors`)
+    // and checks the very address it dials, so WebRTC, a worker's socket or a preconnect, which
+    // that check never sees, reaches no other host and no private network. Until the proxy is in
+    // place nothing goes out; if it can't start, the session is held to loopback alone, through a
+    // proxy that is a closed port.
+    const doors = createHostDoors();
+    const pinned = startWebProxy({
+      lookup: options.lookupWebHost ?? systemLookup,
+      dial: options.dialWebAddress,
+      admits: (hostname) => doors.admits(hostname),
+      onError: (error) =>
+        options.log.warn({ source: "preview", error: String(error) }, "the local proxy failed"),
+    })
+      .then(async (proxy) => {
+        proxies.set(proxy.realm, { proxy, ses });
+        app.once("will-quit", () => void proxy.close());
+        return `127.0.0.1:${proxy.port}`;
+      })
+      .catch((error: unknown) => {
+        options.log.error(
+          { source: "preview", error: String(error) },
+          "the local session's proxy didn't start; its pages reach loopback alone",
+        );
+        return "127.0.0.1:9";
+      })
+      .then(async (proxyRules) => {
+        await ses.setProxy({
+          mode: "fixed_servers",
+          proxyRules,
+          proxyBypassRules: LOOPBACK_BYPASS,
+        });
+        return true;
+      })
+      .catch(() => false);
+    const answer = (
+      url: string,
+      callback: (response: { cancel?: boolean }) => void,
+      allowed: boolean,
+    ) => {
+      void pinned.then(
+        (ready) => {
+          if (ready && allowed) doors.open(url);
+          callback(ready && allowed ? {} : { cancel: true });
+        },
+        () => callback({ cancel: true }),
+      );
+    };
     ses.webRequest.onBeforeRequest((details, callback) => {
       const asked =
         details.webContents === undefined
@@ -259,12 +318,16 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
             });
       if (asked !== undefined) {
         void asked.then(
-          (verdict) => callback(verdict === "allow" ? {} : { cancel: true }),
+          (verdict) => answer(details.url, callback, verdict === "allow"),
           () => callback({ cancel: true }),
         );
         return;
       }
-      callback(previewRequest(details.url) === "allow" ? {} : { cancel: true });
+      const verdict =
+        details.webContents === undefined
+          ? unattributedRequest(details.url, details.initiatorOrigin)
+          : previewRequest(details.url);
+      answer(details.url, callback, verdict === "allow");
     });
   };
 
@@ -461,9 +524,10 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     });
     view.setVisible(false);
     // WebRTC's sockets don't pass the session's request check: no UDP at all, and TCP only through
-    // the proxy, which reaches a private network only for a private page's own session, and
+    // the session's proxy, which reaches a private network only for a private page's own session,
+    // a public host from the local session only where its request check just let a page go, and
     // loopback never. Set on the page itself, so every frame in it holds to it.
-    if (kind === "web") view.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+    view.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
     const preview: Preview = {
       threadId,
       kind,

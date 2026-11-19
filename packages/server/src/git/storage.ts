@@ -26,6 +26,7 @@ import {
 } from "@gram/contracts";
 import {
   gh,
+  isSameRepoHead,
   git,
   localBaseRef,
   porcelainChanges,
@@ -193,6 +194,8 @@ export const parseBranchPrs = (stdout: string): ReadonlyMap<string, BranchPr> =>
   for (const item of body as ReadonlyArray<Record<string, unknown>>) {
     const { number, state, headRefName, headRefOid } = item ?? {};
     if (typeof number !== "number" || typeof headRefName !== "string") continue;
+    // A fork's PR from a branch of the same name says nothing about this repo's branch.
+    if (!isSameRepoHead(item)) continue;
     if (state !== "OPEN" && state !== "MERGED" && state !== "CLOSED") continue;
     // gh lists the newest first; an older PR from a reused branch name says less.
     if (prs.has(headRefName)) continue;
@@ -225,7 +228,7 @@ const askGh = (repoTop: string): Effect.Effect<ReadonlyMap<string, BranchPr>, ne
     "--limit",
     String(PR_LIMIT),
     "--json",
-    "number,state,headRefName,headRefOid",
+    "number,state,headRefName,headRefOid,isCrossRepository",
   ]).pipe(
     Effect.map((out) => (out.status === 0 ? parseBranchPrs(out.stdout) : new Map())),
     Effect.orElseSucceed(() => new Map<string, BranchPr>()),

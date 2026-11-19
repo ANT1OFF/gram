@@ -46,6 +46,7 @@ export const OWNERSHIP_BLOCKERS = {
   unverified: "its ownership could not be verified",
   machineUnconfirmed: "its machine did not confirm the worktree Gram made there",
   cloneUnrecorded: "its worktree on another machine predates the record of its clone",
+  originUnrecorded: "its worktree predates the record of the repository it was made from",
   otherThread: "another thread binds it or holds its branch",
 } as const;
 
@@ -134,6 +135,13 @@ const EXPLANATIONS: Record<string, OwnershipExplanation> = {
   [OWNERSHIP_BLOCKERS.cloneUnrecorded]: {
     reason:
       "the worktree Gram made on the worker's machine is older than Gram's record of which repository it cloned there",
+    fix: "Ask your orchestrator to start a fresh worker for this pull request.",
+    orchestratorFix: "Start a fresh worker for this pull request.",
+    unblocks: true,
+  },
+  [OWNERSHIP_BLOCKERS.originUnrecorded]: {
+    reason:
+      "the worktree Gram gave the worker is older than Gram's record of which repository it was made from",
     fix: "Ask your orchestrator to start a fresh worker for this pull request.",
     orchestratorFix: "Start a fresh worker for this pull request.",
     unblocks: true,
@@ -509,22 +517,24 @@ export const remoteNamesOtherRepo = (url: string | undefined, repo: string): boo
 };
 
 /**
- * The remote a folder is a clone of, by what this machine can trust: here, its origin (its repo's
- * main checkout's, once the folder is gone); on another machine, the URL of the origin Gram
- * recorded as it made it there (`cloneIdentity`), never what that machine reports.
+ * The remote a folder is a clone of, by what this machine can trust: the URL of the origin Gram
+ * recorded as it made the folder (`cloneIdentity`), on any machine. Only a folder here made before
+ * that was recorded goes by its live origin (its repo's main checkout's, once the folder is gone),
+ * which its agent can rewrite: never enough for ownership (`checkWorkerPr` requires the record),
+ * only for another thread's claim, where a doubt counts as holding the branch.
  */
 const remoteUrlOf = (checkout: Checkout) =>
   Effect.gen(function* () {
-    if (!isLocalHost(checkout))
-      return checkout.cloneIdentity === undefined ? undefined : cloneUrlOf(checkout.cloneIdentity);
+    if (checkout.cloneIdentity !== undefined) return cloneUrlOf(checkout.cloneIdentity);
+    if (!isLocalHost(checkout)) return undefined;
     const at = (yield* folderExists(checkout.path)) ? checkout.path : checkout.repoRoot;
     return at === undefined ? undefined : yield* originUrlOf(at);
   });
 
 /**
  * Whether `checkout`, a folder of another thread's, may be a clone of `repo`, by what this machine
- * can trust: here, its origin; on another machine, the origin Gram recorded as it made it there
- * (`cloneIdentity`), never the path that machine reports. Only a remote that plainly names
+ * can trust (`remoteUrlOf`): the origin Gram recorded as it made it, else, for an older folder
+ * here, its live origin; never the path another machine reports. Only a remote that plainly names
  * another repository (`remoteNamesOtherRepo`) is a no: a folder, origin or identity that is
  * missing, unreadable, malformed or ambiguous may hold the branch, so it counts as holding it.
  */
@@ -587,6 +597,10 @@ const claimedByAnother = (
  * call it repeatedly; arming persists the verified branch with the intent. GitHub supplies the head
  * on every call, asked from the repo's main checkout when the worktree's folder is gone. A doubt is a refusal; `reviewedHead`, when given, must still be its head.
  *
+ * A worktree here counts only by the identity of its repository's origin Gram recorded as it made
+ * it (`cloneIdentity`), never by the origin its git config names now, which the worker can
+ * rewrite; one made before that was recorded owns nothing (`originUnrecorded`).
+ *
  * A worktree Gram made on another machine counts from what this machine recorded as it made it,
  * never from what that machine says: its machine, the identity of the origin it cloned, which
  * must be a workspace project's origin here (`projectOfClone`), and its branch, the only one it
@@ -625,6 +639,8 @@ const checkWorkerPr = (
     let unconfirmed = false;
     /** A worktree on another machine made before its clone's identity was recorded. */
     let unrecordedClone = false;
+    /** A worktree here made before its origin's identity was recorded. */
+    let unrecordedOrigin = false;
     for (const checkout of heldWorktrees(thread)) {
       if (!isLocalHost(checkout)) {
         if (checkout.repoRoot === undefined || checkout.branch === undefined) continue;
@@ -652,7 +668,13 @@ const checkWorkerPr = (
         continue;
       }
       if (!roots.has(yield* canonical(checkout.repoRoot ?? checkout.path))) continue;
-      if (!mayNameRepo(yield* originUrlOf(at), repo)) continue;
+      // The origin Gram recorded as it made the worktree, never the live one: the worktree's git
+      // config is the agent's to rewrite, and a rewritten origin would claim any repository.
+      if (checkout.cloneIdentity === undefined) {
+        unrecordedOrigin = true;
+        continue;
+      }
+      if (!mayNameRepo(cloneUrlOf(checkout.cloneIdentity), repo)) continue;
       if (checkout.branch !== undefined) branches.set(checkout.branch, checkout);
       for (const owned of ownedIn(thread, checkout)) branches.set(owned, checkout);
       if (present) {
@@ -672,9 +694,11 @@ const checkWorkerPr = (
         ? OWNERSHIP_BLOCKERS.machineUnconfirmed
         : unrecordedClone
           ? OWNERSHIP_BLOCKERS.cloneUnrecorded
-          : unrecorded
-            ? OWNERSHIP_BLOCKERS.worktreeGone
-            : OWNERSHIP_BLOCKERS.repoNotInWorkspace;
+          : unrecordedOrigin
+            ? OWNERSHIP_BLOCKERS.originUnrecorded
+            : unrecorded
+              ? OWNERSHIP_BLOCKERS.worktreeGone
+              : OWNERSHIP_BLOCKERS.repoNotInWorkspace;
     const head = yield* prHead(cwd, number, repo);
     if (!sameRepo(head.repo, repo)) return OWNERSHIP_BLOCKERS.otherRepo;
     if (head.state !== "OPEN")
@@ -687,7 +711,9 @@ const checkWorkerPr = (
         ? OWNERSHIP_BLOCKERS.machineUnconfirmed
         : unrecordedClone
           ? OWNERSHIP_BLOCKERS.cloneUnrecorded
-          : OWNERSHIP_BLOCKERS.branchNotHeld;
+          : unrecordedOrigin
+            ? OWNERSHIP_BLOCKERS.originUnrecorded
+            : OWNERSHIP_BLOCKERS.branchNotHeld;
     if (reviewedHead !== undefined && head.headRefOid !== reviewedHead)
       return head.headRefOid === undefined
         ? OWNERSHIP_BLOCKERS.headUnknown

@@ -13,6 +13,7 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { workerThreadId } from "./outbox.ts";
 import { Orchestration } from "./service.ts";
 import { makeWorld, openOrchestrator, serverLayer, spawn } from "./test-harness.ts";
+import { makeStopMarks } from "../host/stop-marks.ts";
 
 const MACHINE = {
   id: HostId.make("m-0123456789abcdef01234567"),
@@ -32,7 +33,11 @@ const agents = Layer.effect(
   }),
 ).pipe(Layer.provideMerge(FakeAgentAdapter));
 /** No machine's link is registered, so a call for this machine's own paths looks nothing up. */
-const NO_LINKS = { machines: { list: () => [] } };
+const NO_LINKS = {
+  machines: { list: () => [] },
+  // A send asks whether the machine's resume holds the thread off: nothing is owed here.
+  stops: makeStopMarks(),
+};
 const remote = Layer.succeed(RemoteHosts, {
   ...NO_LINKS,
   list: () => [MACHINE],

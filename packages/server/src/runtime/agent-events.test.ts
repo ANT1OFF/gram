@@ -539,6 +539,37 @@ describe("ThreadRuntimes agent events", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect("never takes a session's word for a mode that asks less, only the user's pick", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const runtimes = yield* ThreadRuntimes;
+      const { thread, session } = yield* createRunning;
+      yield* runtimes.setMode(thread.id, "default");
+      const events = yield* serverEvents;
+      // A session that says it now runs unasked, as a compromised agent or another machine might:
+      // Gram's own cards would go unasked for it.
+      yield* session.emit(
+        { type: "mode", mode: "bypassPermissions" },
+        { type: "notice", level: "warning", message: "after the mode" },
+      );
+      yield* waitFor(
+        "the notice after it",
+        Effect.sync(() => events.some((e) => e.type === "notify" && e.title === "after the mode")),
+      );
+      expect((yield* store.getThread(thread.id)).mode).toBe("default");
+      // A lesser mode is still taken as said.
+      yield* session.emit({ type: "mode", mode: "plan" });
+      yield* waitFor(
+        "the plan mode",
+        store.getThread(thread.id).pipe(Effect.map((t) => t.mode === "plan")),
+      );
+      // The user's pick is the way in, and the session's report of it then changes nothing.
+      yield* runtimes.setMode(thread.id, "bypassPermissions");
+      yield* session.emit({ type: "mode", mode: "bypassPermissions" });
+      expect((yield* store.getThread(thread.id)).mode).toBe("bypassPermissions");
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("applies mode changes, publishes notices, and records plans as a data part", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore;
@@ -1054,6 +1085,75 @@ describe("ThreadRuntimes agent events", () => {
       expect(refused).toMatchObject({ message, folderMissing: { path: dir } });
       expect((yield* fake.latest(thread.id)) === session).toBe(true);
     }).pipe(Effect.provide(makeRuntimeTestLayer(TurnHooks.layerNoop, CheckoutsOnDisk))),
+  );
+
+  it.effect(
+    "draws a message steered into a streaming reply above what the agent says after it",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const { thread, session } = yield* createRunning;
+        const messageId = "m-steered-reply" as MessageId;
+        const chunk = (c: Record<string, unknown>) =>
+          session.emit({ type: "chunk", messageId, chunk: c as never });
+        yield* chunk({ type: "start", messageId, messageMetadata: { agentMessageIds: ["sdk-1"] } });
+        yield* chunk({ type: "start-step" });
+        yield* chunk({
+          type: "tool-input-available",
+          toolCallId: "t1",
+          toolName: "Bash",
+          input: {},
+        });
+        yield* waitFor(
+          "the tool call streaming",
+          runtimes
+            .liveMessages(thread.id)
+            .pipe(
+              Effect.map((all) => all.some((m) => m.parts.some((p) => p.type.startsWith("tool-")))),
+            ),
+        );
+        yield* runtimes.steer(thread.id, { text: "install btop" });
+        // The tool call under way finishes in the reply it started in.
+        yield* chunk({ type: "tool-output-available", toolCallId: "t1", output: "ok" });
+        yield* chunk({ type: "finish-step" });
+        yield* chunk({ type: "start-step" });
+        yield* chunk({ type: "text-start", id: "x" });
+        yield* chunk({ type: "text-delta", id: "x", delta: "Installed btop." });
+        yield* chunk({ type: "text-end", id: "x" });
+        yield* chunk({ type: "finish-step" });
+        yield* chunk({ type: "finish" });
+        yield* session.emit({ type: "turnEnd", reason: "completed" });
+        const messages = yield* waitFor(
+          "the answer stored",
+          store
+            .listMessages(thread.id)
+            .pipe(
+              Effect.map(
+                (all) =>
+                  all.some((m) =>
+                    m.parts.some((p) => p.type === "text" && p.text === "Installed btop."),
+                  ) && all,
+              ),
+            ),
+        );
+        const shape = messages.map((m) => [
+          m.role,
+          m.parts.flatMap((p) =>
+            p.type === "text" ? [p.text] : p.type.startsWith("tool-") ? ["tool"] : [],
+          ),
+        ]);
+        expect(shape).toEqual([
+          ["user", ["one"]],
+          ["assistant", ["tool"]],
+          ["user", ["install btop"]],
+          ["assistant", ["Installed btop."]],
+        ]);
+        const answer = messages.at(-1)!;
+        expect(answer.id).not.toBe(messageId);
+        expect(answer.metadata?.agentMessageIds).toEqual(["sdk-1"]);
+        expect(answer.metadata?.turnEnd?.reason).toBe("completed");
+      }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
   it.effect("refuses a steer into a turn whose folder was deleted, and stops it", () =>
