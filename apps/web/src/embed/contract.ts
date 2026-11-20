@@ -137,8 +137,8 @@ export interface ShellNavigationGroup {
   /**
    * The heading opens and closes the group's rows, in the open sidebar and a phone's menu. Only a
    * group with a `label` can be; the compact sidebar and the palette list its rows either way.
-   * Closed, the group still shows the row the window is at, and its heading says the sum of its
-   * hidden rows' counts. Off by default.
+   * Closed, the group still shows the row the window is at, unless `whenClosed` says otherwise,
+   * and its heading says the sum of its hidden rows' counts. Off by default.
    */
   readonly collapsible?: boolean;
   /**
@@ -147,6 +147,12 @@ export interface ShellNavigationGroup {
    * touched.
    */
   readonly collapsed?: boolean;
+  /**
+   * What a closed collapsible group shows. "current", the default, keeps the row the window is at.
+   * "nothing" hides every row, so only the person opens it, and its heading is marked current
+   * while the window is at one of its rows.
+   */
+  readonly whenClosed?: "current" | "nothing";
   readonly items: readonly ShellNavigationItem[];
 }
 

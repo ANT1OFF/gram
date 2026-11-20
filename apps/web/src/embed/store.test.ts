@@ -6,6 +6,7 @@ import {
   groupOpen,
   headingTo,
   hiddenCount,
+  holdsCurrent,
   itemName,
   navigationAt,
   currentDestination,
@@ -217,5 +218,16 @@ describe("a collapsible navigation group", () => {
     expect(hiddenCount(govern, false, "/connections")).toBe(1);
     expect(hiddenCount(govern, true, undefined)).toBeUndefined();
     expect(hiddenCount({ ...govern, items: [items[1]!] }, false, undefined)).toBeUndefined();
+  });
+
+  it("closed with whenClosed nothing, hides the row the window is at and marks the heading", () => {
+    const shut = { ...govern, whenClosed: "nothing" as const };
+    expect(shownRows(shut, false, "/access")).toEqual([]);
+    expect(shownRows(shut, true, "/access")).toEqual(items);
+    expect(hiddenCount(shut, false, "/access")).toBe(3);
+    expect(holdsCurrent(shut, false, "/access")).toBe(true);
+    expect(holdsCurrent(shut, true, "/access")).toBe(false);
+    expect(holdsCurrent(shut, false, "/elsewhere")).toBe(false);
+    expect(holdsCurrent(govern, false, "/access")).toBe(false);
   });
 });

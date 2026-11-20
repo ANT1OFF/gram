@@ -17,6 +17,7 @@ import { useGroupFold } from "@/embed/folded";
 import {
   headingTo,
   hiddenCount,
+  holdsCurrent,
   navigationAt,
   shownCount,
   shownRows,
@@ -110,6 +111,7 @@ function PhoneGroup({
   const hidden = hiddenCount(group, fold.open, at);
   const page = headingTo(group);
   const pathname = usePathname();
+  const holds = holdsCurrent(group, fold.open, at);
   return (
     <section
       {...(group.label === undefined ? {} : { "aria-label": group.label })}
@@ -123,10 +125,10 @@ function PhoneGroup({
             {...{ [OVERVIEW_STOP]: "" }}
             data-testid="embed-navigation-heading-link"
             data-glide-skip=""
-            aria-current={pathname === page ? "page" : undefined}
+            aria-current={pathname === page ? "page" : holds ? "true" : undefined}
             className={cn(
               HEADING,
-              "flex min-h-11 min-w-0 flex-1 items-center outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-[current=page]:text-foreground",
+              "flex min-h-11 min-w-0 flex-1 items-center outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-[current=page]:text-foreground aria-[current=true]:text-foreground",
             )}
           >
             <span className="min-w-0 flex-1 truncate">{group.label}</span>
@@ -168,9 +170,11 @@ function PhoneGroup({
             data-testid="embed-navigation-toggle"
             aria-expanded={fold.open}
             aria-controls={rows}
+            data-current={holds ? "" : undefined}
             onClick={fold.toggle}
             className={cn(
               HEADING,
+              "data-current:text-foreground",
               "flex min-h-11 w-full items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
             )}
           >

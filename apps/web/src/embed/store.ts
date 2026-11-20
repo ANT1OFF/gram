@@ -289,16 +289,31 @@ export const foldable = (group: ShellNavigationGroup): boolean =>
 export const groupOpen = (group: ShellNavigationGroup, kept: boolean | undefined): boolean =>
   !foldable(group) || (kept ?? group.collapsed !== true);
 
+/** Whether a closed group keeps the row the window is at in sight. */
+const keepsCurrent = (group: ShellNavigationGroup): boolean => group.whenClosed !== "nothing";
+
 /**
  * The rows a group shows: all of them while open; closed, only the row the window is at, so the
- * place stays in sight.
+ * place stays in sight, or none when the group says so.
  */
 export const shownRows = (
   group: ShellNavigationGroup,
   open: boolean,
   at: string | undefined,
 ): readonly ShellNavigationItem[] =>
-  open ? group.items : group.items.filter((item) => item.to === at);
+  open
+    ? group.items
+    : keepsCurrent(group)
+      ? group.items.filter((item) => item.to === at)
+      : [];
+
+/** Whether a closed group hides the row the window is at: its heading is then marked current. */
+export const holdsCurrent = (
+  group: ShellNavigationGroup,
+  open: boolean,
+  at: string | undefined,
+): boolean =>
+  !open && !keepsCurrent(group) && at !== undefined && group.items.some((item) => item.to === at);
 
 /** What a closed group's heading counts: the sum of its hidden rows' counts, or nothing. */
 export const hiddenCount = (
@@ -310,7 +325,7 @@ export const hiddenCount = (
     ? undefined
     : shownCount(
         group.items
-          .filter((item) => item.to !== at)
+          .filter((item) => !keepsCurrent(group) || item.to !== at)
           .reduce((sum, item) => sum + (shownCount(item.count) ?? 0), 0),
       );
 

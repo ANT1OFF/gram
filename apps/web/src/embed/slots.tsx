@@ -21,6 +21,7 @@ import {
   currentDestination,
   headingTo,
   hiddenCount,
+  holdsCurrent,
   navigationAt,
   shownCount,
   shownNavigation,
@@ -279,6 +280,7 @@ function EmbedGroup({
   const hidden = hiddenCount(group, fold.open, at);
   const page = headingTo(group);
   const pathname = usePathname();
+  const holds = holdsCurrent(group, fold.open, at);
   const heading = roomy
     ? // Small capitals, letter-spaced, with air above: a quiet label for what follows.
       "flex h-5 items-end px-2 pt-3 pb-1 text-caption font-medium tracking-[0.08em] text-muted-foreground uppercase box-content"
@@ -300,12 +302,12 @@ function EmbedGroup({
               {...{ [OVERVIEW_STOP]: "" }}
               data-testid="embed-navigation-heading-link"
               data-glide-skip=""
-              aria-current={pathname === page ? "page" : undefined}
+              aria-current={pathname === page ? "page" : holds ? "true" : undefined}
               className={cn(
                 heading,
                 "relative",
                 roomy && "box-border h-6 pt-0",
-                "min-w-0 flex-1 rounded-(--radius-sm) outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:text-foreground",
+                "min-w-0 flex-1 rounded-(--radius-sm) outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:text-foreground aria-[current=true]:text-foreground",
               )}
             >
               <span className="min-w-0 flex-1 truncate">{group.label}</span>
@@ -347,9 +349,11 @@ function EmbedGroup({
               data-testid="embed-navigation-toggle"
               aria-expanded={fold.open}
               aria-controls={rows}
+              data-current={holds ? "" : undefined}
               onClick={fold.toggle}
               className={cn(
                 heading,
+                "data-current:text-foreground",
                 // The heading's 20 px and its 4 px below, counted inside its width: a content-box
                 // button at full width would stand out past the sidebar by its padding and scroll
                 // the sidebar sideways.
