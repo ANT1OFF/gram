@@ -292,7 +292,9 @@ GRAM_UI_PROPERTY_SEED=<seed> GRAM_UI_PROPERTY_PATH=<path> \
 ```
 
 `GRAM_UI_PROPERTY_RUNS` and `GRAM_UI_PROPERTY_STEPS` try more and longer sequences, and a new seed
-tries others; do that when changing what needs you.
+tries others; do that when changing what needs you. Unlike the
+[random exploration trial](#random-exploration-trial), it explores only the steps it lists, and
+replays them, so it can gate a pull request.
 
 ### Isolated UI preview
 
