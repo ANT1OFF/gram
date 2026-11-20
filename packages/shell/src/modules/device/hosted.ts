@@ -1,12 +1,9 @@
-import { randomBytes, sign, type KeyObject, createHash, timingSafeEqual } from "node:crypto";
+import { randomBytes, type KeyObject, createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   checkHostedDiscovery,
-  deviceRegistrationBytes,
   HOSTED_DISCOVERY_PATH,
   type HostedDiscovery,
-  HostedDeviceChallenge,
-  HostedDeviceRegistered,
   hostedOrigin,
   HostedThreadImported,
   type HostedThreadExport,
@@ -26,16 +23,11 @@ import {
   HostedTokenAnswer,
   runsSentWork,
   startsWorkerMachines,
-  WORKER_MACHINE_CALLS,
-  WORKER_MACHINE_NAME,
-  type WorkerMachineCall,
   type HostedWorkspace,
   HostedWorkspaces,
-  type DeviceId,
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 import { dpopProof } from "./dpop.ts";
-import { deviceIdOf, devicePublicKeyText } from "./keys.ts";
 
 /**
  * The calls a desktop app makes to a hosted server it signs in to (`docs/design/personal-device.md`,
@@ -76,10 +68,10 @@ export const HOSTED_SCOPES = [
 export type HostedScope = (typeof HOSTED_SCOPES)[number];
 
 export type Failed = { readonly ok: false; readonly why: string };
-const failed = (why: string): Failed => ({ ok: false, why });
+export const failed = (why: string): Failed => ({ ok: false, why });
 
-const UNREACHABLE = "The server didn't answer.";
-const UNREADABLE = "The server's answer isn't one Gram reads.";
+export const UNREACHABLE = "The server didn't answer.";
+export const UNREADABLE = "The server's answer isn't one Gram reads.";
 
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -107,7 +99,7 @@ const readBounded = async (response: Response, most: number): Promise<string | u
   return Buffer.concat(parts).toString("utf8");
 };
 
-const jsonOf = async (response: Response): Promise<unknown> => {
+export const jsonOf = async (response: Response): Promise<unknown> => {
   const text = await readBounded(response, HOSTED_ANSWER_MOST_BYTES);
   if (text === undefined) return undefined;
   try {
@@ -585,7 +577,7 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
 };
 
 /** A call made with a token: its proof when it is bound to the key, once more for a nonce. */
-const authorizedCall = async (
+export const authorizedCall = async (
   keeper: TokenKeeper,
   key: KeyObject,
   scope: HostedScope,
@@ -667,7 +659,7 @@ export const listHostedWorkspaces = async (
 };
 
 /** A refusal's own words, as `{ error: { message } }` or `{ error }` puts them; bounded. */
-const refusalOf = (answer: unknown): string | undefined => {
+export const refusalOf = (answer: unknown): string | undefined => {
   if (typeof answer !== "object" || answer === null || !("error" in answer)) return undefined;
   const { error } = answer;
   const said =
@@ -1044,237 +1036,4 @@ const sameOrigin = (address: string, origin: string): boolean => {
   } catch {
     return false;
   }
-};
-
-/**
- * Registers the device's key: the server gives a challenge for this person, the device signs it,
- * and the server answers with the id it derived from the key, which must be the device's own.
- */
-export const registerHostedDevice = async (
-  calls: HostedCalls & {
-    readonly name: string;
-    readonly platform: "darwin" | "linux" | "win32";
-  },
-): Promise<{ readonly ok: true; readonly deviceId: DeviceId } | Failed> => {
-  const asked = await authorizedCall(
-    calls.keeper,
-    calls.key,
-    "device:register",
-    calls.fetch,
-    "POST",
-    `${calls.discovery.devices_endpoint}/challenge`,
-    {},
-  );
-  if ("why" in asked) return asked;
-  if (asked.status !== 200) return failed("The server refused to register this machine.");
-  const challenge = Schema.decodeUnknownOption(HostedDeviceChallenge)(await jsonOf(asked));
-  if (challenge._tag === "None") return failed(UNREADABLE);
-  const publicKey = devicePublicKeyText(calls.key);
-  const signature = sign(
-    null,
-    deviceRegistrationBytes({
-      origin: calls.discovery.issuer,
-      subject: calls.keeper.subject,
-      publicKey,
-      challenge: challenge.value.challenge,
-    }),
-    calls.key,
-  ).toString("base64url");
-  const registered = await authorizedCall(
-    calls.keeper,
-    calls.key,
-    "device:register",
-    calls.fetch,
-    "POST",
-    calls.discovery.devices_endpoint,
-    {
-      publicKey,
-      challenge: challenge.value.challenge,
-      signature,
-      name: [...calls.name].slice(0, 128).join(""),
-      platform: calls.platform,
-    },
-  );
-  if ("why" in registered) return registered;
-  if (registered.status !== 200 && registered.status !== 201)
-    return failed("The server refused to register this machine.");
-  const answer = Schema.decodeUnknownOption(HostedDeviceRegistered)(await jsonOf(registered));
-  if (answer._tag === "None") return failed(UNREADABLE);
-  // An id the server made up for another key would let it speak for a device it isn't.
-  if (answer.value.deviceId !== deviceIdOf(publicKey))
-    return failed("The server registered another key.");
-  return { ok: true, deviceId: answer.value.deviceId };
-};
-
-/** Forgets the device on the server, as **Sign out** does. Best effort: signing out goes on. */
-export const forgetHostedDevice = async (
-  calls: HostedCalls & { readonly deviceId: string },
-): Promise<boolean> => {
-  const response = await authorizedCall(
-    calls.keeper,
-    calls.key,
-    "device:register",
-    calls.fetch,
-    "DELETE",
-    `${calls.discovery.devices_endpoint}/${encodeURIComponent(calls.deviceId)}`,
-  );
-  if ("why" in response) return false;
-  await response.body?.cancel().catch(() => undefined);
-  return response.status >= 200 && response.status < 300;
-};
-
-/** `call` under `endpoint`: one path segment more, whether or not the endpoint ends in a slash. */
-const callAddress = (endpoint: string, which: string): string => {
-  const url = new URL(endpoint);
-  let path = url.pathname;
-  while (path.endsWith("/")) path = path.slice(0, -1);
-  url.pathname = `${path}/${which}`;
-  return url.href;
-};
-
-/**
- * One call about a machine of a worker's own, under `worker_machines_endpoint`, with the person's
- * sign-in: its status and its JSON body as received, for this machine's server to read. The server
- * decides who the person is from the token, whether they may have the machine, and what it may be.
- */
-export const callWorkerMachines = async (
-  calls: HostedCalls & {
-    readonly call: WorkerMachineCall;
-    readonly body: Readonly<Record<string, unknown>>;
-  },
-): Promise<{ readonly ok: true; readonly status: number; readonly body: unknown } | Failed> => {
-  const endpoint = calls.discovery.worker_machines_endpoint;
-  if (endpoint === undefined || !startsWorkerMachines(calls.discovery))
-    return failed("This server doesn't start machines for this computer's workers.");
-  if (!(WORKER_MACHINE_CALLS as readonly string[]).includes(calls.call))
-    return failed("The request isn't one the app sends.");
-  // The token as it stands before the call, and after it: a renewal on the way may replace the
-  // one the call was made with, and neither may leave the app.
-  const before = await calls.keeper.token("machines:workers").catch(() => undefined);
-  const response = await authorizedCall(
-    calls.keeper,
-    calls.key,
-    "machines:workers",
-    calls.fetch,
-    "POST",
-    callAddress(endpoint, calls.call),
-    calls.body,
-  );
-  if ("why" in response) return response;
-  // What a server echoes of the sign-in never leaves the app: the token it was called with, and
-  // anything shaped like a signed token (a proof, a JWT), wherever it is in the answer.
-  const after = await calls.keeper.token("machines:workers").catch(() => undefined);
-  const secrets = [before, after].flatMap((held) =>
-    held?.ok === true ? [held.token.accessToken] : [],
-  );
-  const body = scrubbed(await jsonOf(response), secrets);
-  // A 503 is the server's own word that it is busy, for the server to read: never "no answer".
-  if (response.status === 401 || (response.status >= 500 && response.status !== 503))
-    return failed(
-      scrubbed(refusalOf(body), secrets) ??
-        (response.status === 401 ? "The server refused the sign-in." : UNREACHABLE),
-    );
-  return { ok: true, status: response.status, body };
-};
-
-const BASE64URL = new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-");
-
-/** Whether a word is a signed token: three or more base64url parts of 8 or more, dot-separated. */
-const signedToken = (word: string) => {
-  const parts = word.split(".");
-  return parts.length >= 3 && parts.every((part) => part.length >= 8);
-};
-
-/** `text` with each word that is a signed token replaced, in one pass over it. */
-const withoutSignedTokens = (text: string): string => {
-  let out = "";
-  let word = "";
-  for (const char of text) {
-    if (BASE64URL.has(char) || char === ".") {
-      word += char;
-      continue;
-    }
-    out += signedToken(word) ? "[redacted]" : word;
-    word = "";
-    out += char;
-  }
-  return out + (signedToken(word) ? "[redacted]" : word);
-};
-
-/** `value` with every string's copy of a secret, or of a signed token, replaced. */
-export const scrubbed = <T>(value: T, secrets: ReadonlyArray<string>, depth = 0): T => {
-  if (typeof value === "string") {
-    let text: string = value;
-    for (const secret of secrets) if (secret !== "") text = text.split(secret).join("[redacted]");
-    return withoutSignedTokens(text) as T;
-  }
-  if (typeof value !== "object" || value === null || depth > 16) return value;
-  if (Array.isArray(value)) return value.map((each) => scrubbed(each, secrets, depth + 1)) as T;
-  return Object.fromEntries(
-    Object.entries(value).map(([key, each]) => [key, scrubbed(each, secrets, depth + 1)]),
-  ) as T;
-};
-
-/**
- * The address and handshake headers of one dial of the relay that carries a worker machine's
- * connection to this machine: a fresh `machines:workers` token, bound to the device key by a proof
- * made for this dial alone.
- */
-export const workerMachineRelayDial = async (
-  calls: HostedCalls & { readonly name: string },
-): Promise<
-  { readonly ok: true; readonly url: string; readonly headers: Record<string, string> } | Failed
-> => {
-  const connect = calls.discovery.worker_machine_connect;
-  if (connect === undefined || !startsWorkerMachines(calls.discovery))
-    return failed("This server doesn't start machines for this computer's workers.");
-  if (!WORKER_MACHINE_NAME.test(calls.name)) return failed("That isn't a worker machine's name.");
-  const held = await calls.keeper.fresh("machines:workers");
-  if (!held.ok) return failed(held.why);
-  // A WebSocket's handshake answers a nonce challenge in no way this app can read, so a current
-  // nonce is had first: one call to the server's own worker-machine endpoint, which takes its
-  // challenge and keeps the nonce it gives, as every call made with a token does.
-  const endpoint = calls.discovery.worker_machines_endpoint;
-  if (endpoint !== undefined) {
-    const primed = await authorizedCall(
-      calls.keeper,
-      calls.key,
-      "machines:workers",
-      calls.fetch,
-      "POST",
-      callAddress(endpoint, "status"),
-      { name: calls.name },
-    );
-    if (!("why" in primed)) await primed.body?.cancel().catch(() => undefined);
-  }
-  const url = new URL(connect);
-  url.hash = "";
-  url.searchParams.set("name", calls.name);
-  const { token } = held;
-  return {
-    ok: true,
-    url: url.href,
-    headers: {
-      authorization: `${token.tokenType} ${token.accessToken}`,
-      dpop: dpopProof(calls.key, {
-        method: "GET",
-        // The relay's own `wss:` address, without its query, as the server checks it.
-        url: url.href,
-        accessToken: token.accessToken,
-        now: Date.now(),
-        ...(calls.keeper.nonce.value === undefined ? {} : { nonce: calls.keeper.nonce.value }),
-      }),
-    },
-  };
-};
-
-/**
- * A live relay's lease: a `machines:workers` token never handed out before, so the server is asked
- * each time, and a sign-in it ended or revoked is found now rather than once a cached token runs
- * out. Whether one was had.
- */
-export const leaseWorkerMachineRelay = async (keeper: TokenKeeper): Promise<boolean> => {
-  if (keeper.signedOut()) return false;
-  const held = await keeper.fresh("machines:workers").catch(() => undefined);
-  return held?.ok === true;
 };

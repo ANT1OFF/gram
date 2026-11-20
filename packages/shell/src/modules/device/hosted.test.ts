@@ -4,7 +4,6 @@ import { dpopProof } from "./dpop.ts";
 import { browser, fakeServer } from "./hosted-fake.ts";
 import {
   discoverHosted,
-  forgetHostedDevice,
   HOSTED_TOKEN_MOST_MS,
   HOSTED_TOKEN_RENEW_BEFORE_MS,
   exportHostedThread,
@@ -16,13 +15,15 @@ import {
   waitHostedThread,
   listHostedWorkspaces,
   makeTokenKeeper,
-  registerHostedDevice,
   signInHosted,
+  type TokenKeeper,
+} from "./hosted.ts";
+import { forgetHostedDevice, registerHostedDevice } from "./hosted-registration.ts";
+import {
   leaseWorkerMachineRelay,
   scrubbed,
-  type TokenKeeper,
   workerMachineRelayDial,
-} from "./hosted.ts";
+} from "./hosted-worker-machines.ts";
 import { deviceIdOf, devicePrivateKeyFrom, generateDeviceKey } from "./keys.ts";
 
 let fake: ReturnType<typeof fakeServer>;

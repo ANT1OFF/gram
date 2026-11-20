@@ -9,9 +9,6 @@ import {
   type HostedThreadWaited,
   type HostedWorkspace,
   runsSentWork,
-  startsWorkerMachines,
-  type WorkerMachineCall,
-  type WorkerMachineServer,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -23,7 +20,6 @@ import { checkLendable, type LendBounds } from "./folders.ts";
 import {
   discoverHosted,
   type Fetch,
-  forgetHostedDevice,
   exportHostedThread,
   givesThreads,
   importHostedThread,
@@ -32,17 +28,20 @@ import {
   makeTokenKeeper,
   messageHostedThread,
   startHostedThread,
-  callWorkerMachines,
-  leaseWorkerMachineRelay,
-  workerMachineRelayDial,
   checkHostedRepositories,
   hostedMachine,
   stopHostedThread,
   waitHostedThread,
-  registerHostedDevice,
   signInHosted,
   type TokenKeeper,
 } from "./hosted.ts";
+import { forgetHostedDevice, registerHostedDevice } from "./hosted-registration.ts";
+import { parseSignIn, type StoredSignIn } from "./stored-sign-in.ts";
+import {
+  type HostedWorkerMachines,
+  hostedWorkerMachines,
+  NOT_SIGNED_IN,
+} from "./hosted-worker-machines.ts";
 import {
   deviceIdOf,
   devicePrivateKeyFrom,
@@ -177,10 +176,6 @@ export type ThreadMoved =
     }
   | { readonly ok: false; readonly why: string; readonly unknown?: true };
 
-const NOT_SIGNED_IN = { ok: false as const, why: "Sign in to the server first." };
-const NO_WORKER_MACHINE_SERVER =
-  "No hosted server this computer is signed in to starts machines for its workers.";
-
 export type ThreadFetched =
   | { readonly ok: true; readonly bundle: unknown }
   | { readonly ok: false; readonly why: string };
@@ -242,7 +237,7 @@ export interface DeviceActivity {
   readonly more: boolean;
 }
 
-export interface HostedDevice {
+export interface HostedDevice extends HostedWorkerMachines {
   readonly state: () => HostedDeviceState;
   /** Reads the local log again: at most `most` lines, newest first. */
   readonly activity: (most: number) => Promise<DeviceActivity>;
@@ -318,40 +313,6 @@ export interface HostedDevice {
   ) => Promise<WorkMessaged>;
   /** Stops the turn a thread sent from here is working on. Takes authority away, so never paused. */
   readonly stopWork: (origin: string, workspace: string, threadId: string) => Promise<Done>;
-  /**
-   * The server this computer's orchestrators may ask for machines of a worker's own: the first
-   * signed in, not paused, that starts them. Or why there is none.
-   */
-  readonly workerMachineServer: () =>
-    | { readonly ok: true; readonly server: WorkerMachineServer }
-    | { readonly ok: false; readonly why: string };
-  /**
-   * One call about a worker's machine, with the person's sign-in. A pause holds back a start, never
-   * a status, a release or a stop, which only look or give back.
-   */
-  readonly workerMachineCall: (
-    origin: string,
-    call: WorkerMachineCall,
-    body: Readonly<Record<string, unknown>>,
-  ) => Promise<
-    | { readonly ok: true; readonly status: number; readonly body: unknown }
-    | { readonly ok: false; readonly why: string }
-  >;
-  /** Whether the sign-in to `origin` covers carrying its worker machines' connections now. */
-  readonly workerMachineRelayAllowed: (origin: string) => boolean;
-  /**
-   * A live relay's lease: whether a `machines:workers` token can still be had for `origin` now,
-   * renewing it when it is due, so an expired or revoked sign-in ends the relays it covered.
-   */
-  readonly workerMachineRelayLease: (origin: string) => Promise<boolean>;
-  /** The address and headers of one dial of a worker machine's relay. */
-  readonly workerMachineRelayDial: (
-    origin: string,
-    name: string,
-  ) => Promise<
-    | { readonly ok: true; readonly url: string; readonly headers: Record<string, string> }
-    | { readonly ok: false; readonly why: string }
-  >;
   /** A decision: only from the lending sheet. */
   readonly lend: (origin: string, workspace: string, choice: LendChoice) => Promise<Done>;
   /**
@@ -385,29 +346,6 @@ const SERVERS_MOST = 16;
 
 const derived = (secret: Buffer, use: string) =>
   createHmac("sha256", secret).update(`gram-device-${use}-v1`).digest();
-
-interface StoredSignIn {
-  readonly subject: string;
-  readonly refreshToken: string;
-  readonly deviceId: DeviceId;
-  /** Older sign-ins always registered. False means this grant can use the server without lending. */
-  readonly deviceRegistered?: boolean;
-}
-
-const parseSignIn = (text: string | undefined): StoredSignIn | undefined => {
-  if (text === undefined) return undefined;
-  try {
-    const value = JSON.parse(text) as Partial<StoredSignIn>;
-    return typeof value.subject === "string" &&
-      typeof value.refreshToken === "string" &&
-      typeof value.deviceId === "string" &&
-      (value.deviceRegistered === undefined || typeof value.deviceRegistered === "boolean")
-      ? (value as StoredSignIn)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-};
 
 type Store = Pick<DeviceSecrets, "get" | "set" | "remove">;
 
@@ -1180,55 +1118,11 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       });
     },
 
-    workerMachineServer: () => {
-      const signedIn = [...servers.values()].filter(
-        (server) => !server.keeper.signedOut() && startsWorkerMachines(server.discovery),
-      );
-      const open = signedIn.find((server) => !server.limits.paused());
-      if (open !== undefined)
-        return { ok: true, server: { origin: open.origin, server: open.discovery.name } };
-      if (signedIn.length > 0)
-        return {
-          ok: false,
-          why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
-        };
-      return { ok: false, why: NO_WORKER_MACHINE_SERVER };
-    },
-
-    workerMachineCall: async (origin, call, body) => {
-      const server = known(origin);
-      if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
-      if (call === "start" && server.limits.paused())
-        return {
-          ok: false,
-          why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
-        };
-      return callWorkerMachines({ ...callsOf(server), call, body });
-    },
-
-    workerMachineRelayAllowed: (origin) => {
-      const server = known(origin);
-      return (
-        server !== undefined && !server.keeper.signedOut() && startsWorkerMachines(server.discovery)
-      );
-    },
-
-    workerMachineRelayLease: async (origin) => {
-      const server = known(origin);
-      if (
-        server === undefined ||
-        server.keeper.signedOut() ||
-        !startsWorkerMachines(server.discovery)
-      )
-        return false;
-      return leaseWorkerMachineRelay(server.keeper);
-    },
-
-    workerMachineRelayDial: async (origin, name) => {
-      const server = known(origin);
-      if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
-      return workerMachineRelayDial({ ...callsOf(server), name });
-    },
+    ...hostedWorkerMachines({
+      servers: () => servers.values(),
+      known,
+      callsOf,
+    }),
 
     stopWork: async (origin, workspace, threadId) => {
       const server = known(origin);

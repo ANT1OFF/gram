@@ -14,6 +14,8 @@ export * from "./dial.ts";
 export * from "./settings.ts";
 export * from "./dpop.ts";
 export * from "./hosted.ts";
+export * from "./hosted-worker-machines.ts";
+export * from "./hosted-registration.ts";
 export * from "./lending.ts";
 export * from "./command-facts.ts";
 export * from "./ask-view.ts";
