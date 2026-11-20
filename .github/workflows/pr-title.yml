@@ -1,0 +1,43 @@
+name: Pull request title
+
+# The squash merge keeps the pull request's title as the commit on main, and release-please reads
+# those commits for the next version and the changelog (docs/RELEASING.md#versions). A title that
+# isn't a conventional commit drops the change from both, so it is checked before the merge.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  title:
+    # No checkout and no token: it reads only the event's title, so a fork's pull request is safe.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 2
+    env:
+      # Through the environment, never interpolated into the script.
+      TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - shell: bash
+        run: |
+          # The types release-please and this repository's history use; a scope is lowercase words
+          # with hyphens, several separated by commas; `!` marks a breaking change.
+          types='feat|fix|perf|refactor|docs|chore|test|ci|build|revert'
+          scope='[a-z0-9][a-z0-9-]*'
+          pattern="^($types)(\\($scope(, ?$scope)*\\))?!?: [^ ](.*[^ ])?\$"
+          if [[ "$TITLE" =~ $pattern ]]; then
+            echo "Conventional title: $TITLE"
+            exit 0
+          fi
+          {
+            echo "::error title=Pull request title::Not a conventional commit title: \"$TITLE\""
+            echo "Expected <type>(<scope>): <summary>, the scope optional, '!' before ':' for a breaking change."
+            echo "Types: ${types//|/, }. feat proposes a minor release and fix or perf a patch; docs, refactor, chore, test, ci and build add no changelog entry."
+            echo "For example: fix(web): keep the composer's draft when a thread reloads"
+            echo "Edit the title on the pull request; this check reruns by itself."
+          } >&2
+          exit 1
