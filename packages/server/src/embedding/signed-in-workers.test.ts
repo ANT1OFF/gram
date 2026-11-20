@@ -35,6 +35,7 @@ import {
   UNSETTLED_START_MS,
   NO_SIGNED_IN_SERVER,
   settleOwedStops,
+  tellSignedInRelease,
   plainName,
   RELAYED_MOST,
   SignedInWorkers,
@@ -727,8 +728,9 @@ describe("worker machines from a signed-in hosted server", () => {
         via: ORIGIN,
       };
       expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
-      answer = { status: 404, body: {} };
-      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
+      // A 404 is a machine reclaimed there: gone, nothing to tell again.
+      answer = { status: 404, body: { code: "not_found" } };
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Success");
       answer = { status: 200, body: { known: true, released: false } };
       expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Success");
     }),
@@ -1121,5 +1123,97 @@ describe("stops a server never confirmed", () => {
         yield* settleOwedStops(port, owed);
         expect(owed.list()).toEqual([]);
       }),
+  );
+});
+
+describe("RunHeim's answers about one machine", () => {
+  const noMachines = {
+    list: () => [],
+    remove: () => false,
+    machines: {
+      provision: () => {
+        throw new Error("not registered here");
+      },
+    },
+  };
+
+  it.effect("starts a machine still released once more, after taking the release back", () =>
+    Effect.gen(function* () {
+      let released = true;
+      const app = fakeApp({
+        answer: ({ call, body }) => {
+          if (call === "release" && body["released"] === false) released = false;
+          return call === "start" && released
+            ? { status: 409, body: { code: "released" } }
+            : { status: call === "start" ? 202 : 200, body: {} };
+        },
+      });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: noMachines,
+      });
+      expect(yield* source.start({ name: NAME, orchestrator: "o", title: "Again" })).toEqual({
+        kind: "started",
+        name: NAME,
+      });
+      expect(app.calls.map((each) => each.call)).toEqual(["start", "release", "start"]);
+    }),
+  );
+
+  it.effect("asks again at most once, however the server answers the second time", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "start"
+            ? { status: 409, body: { code: "released" } }
+            : { status: 200, body: {} },
+      });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: noMachines,
+      });
+      const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
+      expect(started.kind).toBe("refused");
+      expect(app.calls.map((each) => each.call)).toEqual(["start", "release", "start"]);
+    }),
+  );
+
+  it.effect("reads a release the server answers not_found as a machine gone, and forgets it", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({ answer: () => ({ status: 404, body: { code: "not_found" } }) });
+      const gone: string[] = [];
+      const tell = releaseTeller(undefined, bridgeWorkerMachines(app.port), (machine) =>
+        Effect.sync(() => gone.push(machine.name)),
+      )!;
+      const machine = {
+        id: "m-0123456789abcdef01234567",
+        name: NAME,
+        onDemand: "worker",
+        via: ORIGIN,
+      };
+      // Taken as told: nothing to tell again of a machine reclaimed there.
+      expect((yield* tell(machine, true).pipe(Effect.result))._tag).toBe("Success");
+      expect(gone).toEqual([NAME]);
+    }),
+  );
+
+  it.live("asks again, after a wait, a release the server is too busy for", () =>
+    Effect.gen(function* () {
+      let busy = 2;
+      const app = fakeApp({
+        answer: () =>
+          busy-- > 0
+            ? { status: 503, body: { code: "busy" } }
+            : { status: 200, body: { known: true, released: true } },
+      });
+      const told = yield* tellSignedInRelease(
+        bridgeWorkerMachines(app.port),
+        { name: NAME, via: ORIGIN },
+        true,
+        { retryMs: 5 },
+      );
+      expect(told).toBe("applied");
+      expect(app.calls).toHaveLength(3);
+    }),
   );
 });

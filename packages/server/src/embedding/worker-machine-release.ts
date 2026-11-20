@@ -13,7 +13,7 @@
 // What was told is kept in memory: after a restart it is told again, which the provider takes as
 // the same word.
 
-import { effectiveCheckout, hostOf, type Thread, type ThreadId } from "@gram/contracts";
+import { effectiveCheckout, HostId, hostOf, type Thread, type ThreadId } from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -139,13 +139,17 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
 export const releaseTeller = (
   hosts: OnDemandHosts | undefined,
   signedIn: WorkerMachinePortShape | undefined,
+  /** A machine the signed-in server reclaimed first: forgotten here. */
+  gone: (machine: ReleaseMachine) => Effect.Effect<void> = () => Effect.void,
 ) => {
   if (hosts === undefined && signedIn === undefined) return undefined;
   return (machine: ReleaseMachine, released: boolean): Effect.Effect<void, Error> =>
     machine.via !== undefined
       ? signedIn === undefined
         ? Effect.fail(new Error("no desktop app to tell"))
-        : tellSignedInRelease(signedIn, { name: machine.name, via: machine.via }, released)
+        : tellSignedInRelease(signedIn, { name: machine.name, via: machine.via }, released).pipe(
+            Effect.flatMap((told) => (told === "gone" ? gone(machine) : Effect.void)),
+          )
       : hosts === undefined
         ? Effect.fail(new Error("no host provider to tell"))
         : tellRelease(hosts, machine, released);
@@ -157,9 +161,12 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     const hosts = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
     const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
     const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-    const tell = releaseTeller(
-      hosts,
-      signedIn?.port.available === true ? signedIn.port : undefined,
+    const relayed = signedIn?.port.available === true ? signedIn.port : undefined;
+    const tell = releaseTeller(hosts, relayed, (machine) =>
+      Effect.sync(() => {
+        relayed?.unrelay(machine.name);
+        remote?.remove(HostId.make(machine.id));
+      }),
     );
     if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;

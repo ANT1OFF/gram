@@ -452,6 +452,10 @@ export const withName = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> => (locks === undefined ? effect : locks.withLock(name, effect));
 
+/** A server's answer's `code`, where it gives one. */
+const codeOf = (body: unknown): unknown =>
+  typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
+
 /**
  * What a stop's answer says: the machine was stopped; there was no such machine (a 404, or a 2xx
  * saying `stopped: false`, as a server answers a name it holds nothing for); or nothing clear.
@@ -687,9 +691,21 @@ export const signedInSource = (
     givesBack: true,
     unrelease: (name) =>
       tellSignedInRelease(port, { name, via: origin }, false).pipe(
+        Effect.flatMap((told) =>
+          told === "applied"
+            ? Effect.succeed(undefined)
+            : // Reclaimed there: nothing to wait for, and nothing here to keep or relay.
+              Effect.sync(() => {
+                port.unrelay(name);
+                const machine = named(name);
+                if (machine !== undefined) hosts.remove(HostId.make(machine.id));
+                return "gone" as const;
+              }),
+        ),
         Effect.catch(() =>
           Effect.logWarning("a worker machine reused could not be told it is working").pipe(
             Effect.annotateLogs({ machine: name }),
+            Effect.as(undefined),
           ),
         ),
       ),
@@ -705,11 +721,21 @@ export const signedInSource = (
           withName(
             deps.locks,
             ask.name,
-            port.call(origin, "start", {
-              name: ask.name,
-              title: ask.title.slice(0, 120),
-              orchestrator: ask.orchestrator,
-              choices: choicesOfAsk(ask),
+            Effect.gen(function* () {
+              const send = port.call(origin, "start", {
+                name: ask.name,
+                title: ask.title.slice(0, 120),
+                orchestrator: ask.orchestrator,
+                choices: choicesOfAsk(ask),
+              });
+              const first = yield* send;
+              // Still released there: taken back, and asked once more, never again.
+              if (!first.ok || first.status !== 409 || codeOf(first.body) !== "released")
+                return first;
+              yield* tellSignedInRelease(port, { name: ask.name, via: origin }, false).pipe(
+                Effect.ignore,
+              );
+              return yield* send;
             }),
           ).pipe(
             Effect.map((answered) =>
@@ -819,35 +845,47 @@ export const tellSignedInRelease = (
   port: WorkerMachinePortShape,
   machine: { readonly name: string; readonly via: string },
   released: boolean,
-) =>
-  port
-    .call(machine.via, "release", {
-      name: machine.name,
-      released,
-      reason: released ? "finished" : "working",
-    })
-    .pipe(
-      Effect.flatMap((answered) => {
-        // Taken only when the server applied it: a 2xx that says it knows no such machine
-        // (`known: false`), or a 404, changed nothing there and is told again next pass.
-        const known =
-          answered.ok && typeof answered.body === "object" && answered.body !== null
-            ? (answered.body as { known?: unknown }).known
-            : undefined;
-        return answered.ok && answered.status < 300 && known !== false
-          ? Effect.void
-          : // Only the status: what a server answers isn't written to the log.
-            Effect.fail(
-              new Error(
-                !answered.ok
-                  ? "no answer"
-                  : answered.status < 300
-                    ? "the server knows no such machine"
-                    : `the server answered ${answered.status}`,
-              ),
-            );
-      }),
-    );
+  options: { readonly retryMs?: number; readonly attempts?: number } = {},
+): Effect.Effect<"applied" | "gone", Error> =>
+  Effect.gen(function* () {
+    const attempts = options.attempts ?? RELEASE_ATTEMPTS;
+    let last = "no answer";
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      // A server too busy, or no answer: asked again after a wait that doubles.
+      if (attempt > 0)
+        yield* Effect.sleep((options.retryMs ?? RELEASE_RETRY_MS) * 2 ** (attempt - 1));
+      const answered = yield* port.call(machine.via, "release", {
+        name: machine.name,
+        released,
+        reason: released ? "finished" : "working",
+      });
+      if (!answered.ok) {
+        last = "no answer";
+        continue;
+      }
+      // Reclaimed there first (a take-back included): there is nothing left to tell.
+      if (answered.status === 404) return "gone" as const;
+      if (answered.status === 503) {
+        last = "the server is busy";
+        continue;
+      }
+      if (answered.status >= 300)
+        return yield* Effect.fail(new Error(`the server answered ${answered.status}`));
+      // A 2xx that says it knows no such machine changed nothing there: told again next pass.
+      const known =
+        typeof answered.body === "object" && answered.body !== null
+          ? (answered.body as { known?: unknown }).known
+          : undefined;
+      if (known === false) return yield* Effect.fail(new Error("the server knows no such machine"));
+      return "applied" as const;
+    }
+    // Only what went wrong, in a few words: what a server answers isn't written to the log.
+    return yield* Effect.fail(new Error(last));
+  });
+
+/** How many times a release is asked while the server is busy, and the first wait between. */
+export const RELEASE_ATTEMPTS = 3;
+export const RELEASE_RETRY_MS = 1_000;
 
 /** The desktop's signed-in worker machines: the source for `sandbox`, and the relay it carries. */
 export class SignedInWorkers extends Context.Service<

@@ -373,12 +373,15 @@ asks the app over its parent port, and the app makes each call with the person's
 `POST <worker_machines_endpoint>/choices` (its picks, as `/hosts/choices` answers them, and the
 models its machines run as `models: [{ agent, id, resolvedId?, label? }]`: a worker on another is
 refused before a machine is asked for), `/start` `{ name, title, orchestrator, choices }`,
-`/status` `{ name }`, `/release` `{ name, released, reason }` (applied unless a 404 or
-`known: false`) and `/stop` `{ name }` (answered
+`/status` `{ name }`, `/release` `{ name, released, reason }` (a `404 { code: "not_found" }`
+means the machine was reclaimed there: it is forgotten here; a `503` is asked again after a wait
+that doubles; `known: false` is told again next pass) and `/stop` `{ name }` (answered
 `{ stopped }`: `false`, or a 404, when it holds no machine of that name). No call names an
 owner: the server takes the person from the token, and answers each as `/hosts/*` does (`409` over
-the person's total, or `409 { code: "name_in_use" }` for a name a reclaimed machine had; `403` or
-`404` not allowed).
+the person's total, `409 { code: "name_in_use" }` for a name a reclaimed machine or the person's
+hosted worker machine has, which is refused, or `409 { code: "released" }` for a machine still
+held as released, which the desktop takes back with `/release` `released: false` and asks once
+more; `403` or `404` not allowed).
 
 The desktop can't be dialled, so the machine's `gram-host` is provisioned for the hosted server's
 own origin and dials it at `/host/connect`; the app dials `worker_machine_connect?name=<name>`, and

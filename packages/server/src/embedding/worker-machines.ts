@@ -253,7 +253,29 @@ export const askWorkerMachine = <R>(
         kind: "refused",
         message: `The machine name ${ask.name} was a machine's that the server has since reclaimed, so it isn't used again. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
       } as const;
-    if (status === 409) return parseOverTotal(body);
+    // Held as released there, even after it was taken back once.
+    if (
+      status === 409 &&
+      typeof body === "object" &&
+      body !== null &&
+      (body as { code?: unknown }).code === "released"
+    )
+      return {
+        kind: "refused",
+        message: `${ask.name} is still held as released there, after it was told it is working again. Try again in a minute, or spawn with another clientRequestId.`,
+      } as const;
+    // Over the person's total, as a `409` with no code, or `over_total`, says; another code is no
+    // total to show.
+    const code =
+      typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
+    if (status === 409 && (code === undefined || code === "over_total"))
+      return parseOverTotal(body);
+    if (status === 409)
+      return {
+        kind: "refused",
+        message:
+          text((body as { message?: unknown }).message, 300) ?? "The server refused that machine.",
+      } as const;
     if (status === 403 || status === 404)
       return {
         kind: "refused",
@@ -443,7 +465,7 @@ export interface WorkerMachineSource {
    * Tells the provider a machine this spawn reuses is working again, before it is waited on: one
    * released once its work was over sleeps until it is told so. Never fails.
    */
-  readonly unrelease: (name: string) => Effect.Effect<void>;
+  readonly unrelease: (name: string) => Effect.Effect<"gone" | undefined>;
   /** The id of the machine registered here under `name`, when there is one. */
   readonly idOf: (name: string) => string | undefined;
   /**
@@ -585,7 +607,7 @@ export const embeddedSource = (
   // Its provider pauses an idle machine and reclaims it once released (`worker-machine-release.ts`).
   givesBack: false,
   // Its provider wakes a machine on the next message, released or not.
-  unrelease: () => Effect.void,
+  unrelease: () => Effect.succeed(undefined),
   idOf: (name) =>
     machines().find(
       (machine) =>

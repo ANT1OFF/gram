@@ -214,6 +214,10 @@ subscription token reaches a machine, with its own consent.
 - **Reusing a machine.** A machine a spawn reuses (one an earlier spawn of the same id left
   registered, or one it shares that is offline) is told it is working (`released: false`) before
   it is waited for: one released once its work was over sleeps until then.
+- **A machine still released.** A start answered `409 { code: "released" }` takes the release
+  back (`released: false`) and asks once more, never again; a release answered
+  `404 { code: "not_found" }`, a take-back's too, is a machine reclaimed there, forgotten here; a
+  `503` is asked again after a wait.
 - **A reclaimed name.** A start answered `409 { code: "name_in_use" }` (the name was a machine's
   the server has since reclaimed) is refused once, saying to spawn with another
   `clientRequestId`; it is never asked again, nor read as being over the total.

@@ -150,6 +150,10 @@ const checkRevision = (
   return Effect.fail(new AppToolError({ tool, message: refusal("stale_revision", message) }));
 };
 
+/** Why a spawn can't reuse a machine the server reclaimed since: its name isn't given out again. */
+const reclaimedWords = (name: string) =>
+  `The machine ${name} was reclaimed by the server since its work was over, so it isn't there to reuse, and its name isn't given out again. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`;
+
 /** `schedule_wake` lists its condition flat (`WakeConditionInput`); this decodes it as the union. */
 const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
 
@@ -296,7 +300,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
                 name: machine.name,
                 givesBack: source.givesBack,
                 prepare: Effect.gen(function* () {
-                  yield* source.unrelease(machine.name);
+                  if ((yield* source.unrelease(machine.name)) === "gone")
+                    return yield* fail(reclaimedWords(machine.name));
                   const arrived = yield* source.arrive(machine.name);
                   if (typeof arrived !== "string")
                     return yield* fail(
@@ -345,7 +350,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           const already = joined().find((each) => each.name === name && theirs(each));
           // Reused, it may have been released once its earlier work was over, and sleeps until it
           // is told it is working: told so before it is waited for.
-          if (already !== undefined) yield* source.unrelease(name);
+          if (already !== undefined && (yield* source.unrelease(name)) === "gone")
+            return yield* fail(reclaimedWords(name));
           const asked =
             already !== undefined
               ? ({ kind: "started", name } as const)

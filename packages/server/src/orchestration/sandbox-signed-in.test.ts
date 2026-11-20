@@ -798,4 +798,63 @@ describe("sandbox from a signed-in hosted server", () => {
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );
+
+  it.live("refuses a reused machine the server says it reclaimed, and forgets it", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const { port, calls } = fakePort((call) =>
+        call === "choices"
+          ? { status: 404, body: {} }
+          : call === "release"
+            ? { status: 404, body: { code: "not_found" } }
+            : { status: 200, body: {} },
+      );
+      const machine = {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "",
+        confirmed: true,
+        onDemand: "worker",
+        via: SERVER.origin,
+      };
+      let registered = true;
+      const listed = () => (registered ? [machine] : []);
+      const remote = Layer.succeed(RemoteHosts, {
+        machines: { list: () => [], get: () => undefined },
+        stops: makeStopMarks(),
+        watch: () => () => undefined,
+        list: listed,
+      } as unknown as RemoteHostsShape);
+      const hosts = {
+        list: listed,
+        remove: () => {
+          registered = false;
+          return true;
+        },
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port, hosts, timeoutMs: 5_000, everyMs: 10 });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(remote),
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session, thread } = yield* openOrchestrator(world);
+        machine.name = workerMachineName(thread.id, SANDBOX.clientRequestId);
+        const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
+        expect(result).toMatchObject({
+          _tag: "Failure",
+          failure: { message: expect.stringMatching(/reclaimed/) },
+        });
+        // Told at once, not after the wait; nothing stopped, and the registration let go.
+        expect(calls.map((each) => each.call)).toEqual(["choices", "release"]);
+        expect(registered).toBe(false);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
 });
