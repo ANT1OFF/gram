@@ -411,6 +411,17 @@ export const ALLOWLISTS = {
       "apps/web/src/whats-new/use-whats-new-on-launch.ts": 1,
     },
   },
+  // The desktop build reads Gram's own checkout, before any agent has touched it; the rest build
+  // repositories for tests.
+  "no-raw-git": {
+    owners: ["packages/git/src/proc.ts"],
+    pending: [
+      "apps/desktop/src/build-source.ts",
+      "packages/git/src/test-utils.ts",
+      "packages/server/src/app-tools/pr-tools-kit.ts",
+      "packages/server/src/git/test-repo.ts",
+    ],
+  },
   "no-adhoc-lock": {
     owners: ["packages/server/src/git/keyed-lock.ts"],
     pending: [],
@@ -491,8 +502,8 @@ export const MAX_LINES = {
     "packages/server/src/browser/tools.ts": 1018,
     "packages/server/src/embedding/acceptance.test.ts": 1233,
     "packages/server/src/embedding/event-sink.ts": 1019,
-    "packages/server/src/git/local-checks.test.ts": 2003,
-    "packages/server/src/git/local-checks.ts": 2141,
+    "packages/server/src/git/local-checks.test.ts": 1762,
+    "packages/server/src/git/local-checks.ts": 1967,
     "packages/server/src/git/merge-moved-base.test.ts": 1348,
     "packages/server/src/git/merge-when-ready.ts": 1691,
     "packages/server/src/git/publisher.test.ts": 2029,

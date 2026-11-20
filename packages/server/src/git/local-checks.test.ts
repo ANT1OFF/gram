@@ -1,8 +1,6 @@
 import {
   localCheckConcurrencyOf,
   ProjectLocalCheck as ProjectLocalCheckSchema,
-  type ThreadId,
-  type ProjectId,
   type ProjectLocalCheck,
 } from "@gram/contracts";
 import { describe, expect, it } from "@effect/vitest";
@@ -13,24 +11,12 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import {
-  chmodSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  utimesSync,
-} from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import * as nodePath from "node:path";
-import { ServerConfig } from "../config.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient } from "../platform/unstable.ts";
-import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import {
-  LocalCheckRunner,
   LocalChecks,
-  LocalChecksLive,
   type LocalCheck,
   type LocalCheckRunnerShape,
   diagnoseExit,
@@ -42,34 +28,8 @@ import {
   spawnCheck,
   readExitStatus as readExitStatusOf,
 } from "./local-checks.ts";
+import { checked, configured, fixture, layer } from "./local-checks-fixture.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
-
-/** A repo with `main` one commit past where `feature` branched, each adding its own file. */
-const fixture = (protectedBlob = false) => {
-  const dir = tempDir();
-  const repo = makeRepo(dir);
-  let protectedOid: string | undefined;
-  if (protectedBlob) {
-    protectedOid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
-      cwd: repo,
-      input: "synthetic protected fixture",
-      encoding: "utf8",
-    }).trim();
-    run(repo, "update-index", "--add", "--cacheinfo", `100644,${protectedOid},.env.example`);
-    run(repo, "commit", "-qm", "synthetic protected ancestor");
-  }
-  run(repo, "checkout", "-q", "-b", "feature");
-  write(nodePath.join(repo, "feature.txt"), "feature\n");
-  run(repo, "add", "feature.txt");
-  run(repo, "commit", "-q", "-m", "feature");
-  const head = run(repo, "rev-parse", "HEAD").trim();
-  run(repo, "checkout", "-q", "main");
-  write(nodePath.join(repo, "base.txt"), "base\n");
-  run(repo, "add", "base.txt");
-  run(repo, "commit", "-q", "-m", "base");
-  const base = run(repo, "rev-parse", "HEAD").trim();
-  return { dir, repo, head, base, protectedOid };
-};
 
 /** Assemble the known disjoint synthetic merge without asking Git to merge omitted blobs. */
 const fixtureTree = (dir: string, repo: string, base: string, head: string): string => {
@@ -87,54 +47,6 @@ const fixtureTree = (dir: string, repo: string, base: string, head: string): str
   return execFileSync("git", ["write-tree"], { cwd: repo, env, encoding: "utf8" }).trim();
 };
 
-const configured = (repo: string, setting: ProjectLocalCheck) =>
-  Effect.gen(function* () {
-    const store = yield* ThreadStore;
-    const project = yield* store.ensureProject({ root: repo, name: "invented" });
-    const writes = (["command", "setup", "timeoutMs", "preparation"] as const).map((field) => ({
-      key: `project.localCheck.${field}`,
-      path: ["localCheck", field],
-      before: project.localCheck?.[field],
-      after: setting[field],
-    }));
-    const updated = yield* store.updateProjectLocalCheckAudited(
-      project.id,
-      writes,
-      {
-        at: 1,
-        threadId: "test" as ThreadId,
-        proposerRole: "plain",
-        scope: "project",
-        approvedBy: "user",
-        approvedAt: 1,
-        changes: [],
-        shown: [],
-      },
-      project.localCheckRevision!,
-    );
-    expect(updated).toBeDefined();
-  });
-
-const layer = (
-  database: string,
-  logs: string,
-  runner: LocalCheckRunnerShape["run"],
-  configure = true,
-  proc: Layer.Layer<Proc> = ProcLive,
-) =>
-  LocalChecksLive.pipe(
-    Layer.provide(Layer.succeed(LocalCheckRunner, { run: runner })),
-    Layer.provide(proc),
-    Layer.provide(ServerConfig.layer({ ...TEST_CONFIG, dataDir: logs })),
-    Layer.provideMerge(
-      configure
-        ? Layer.effectDiscard(
-            configured(nodePath.join(logs, "repo"), { command: "invented-check" }),
-          ).pipe(Layer.provideMerge(ThreadStore.layerSqlite(database).pipe(Layer.orDie)))
-        : ThreadStore.layerSqlite(database).pipe(Layer.orDie),
-    ),
-  );
-
 /** What launchd gives an app opened from Finder or the Dock. */
 const LAUNCHD_PATH = "/usr/bin:/bin";
 
@@ -147,20 +59,6 @@ const alive = (pid: number) => {
     return false;
   }
 };
-
-/** Ensures the pair and waits for how it ended. */
-const checked = (repo: string, head: string, base: string, since = 0, projectId?: ProjectId) =>
-  Effect.gen(function* () {
-    const checks = yield* LocalChecks;
-    const done = yield* Deferred.make<LocalCheck>();
-    const started = yield* checks.ensure(repo, head, base, {
-      since,
-      ...(projectId === undefined ? {} : { projectId }),
-      onDone: (check) => Deferred.succeed(done, check).pipe(Effect.asVoid),
-    });
-    if (started?.status !== "running") return started;
-    return yield* Deferred.await(done);
-  });
 
 /** Passes only where `test.sh` says so, and keeps what it saw of `shared.txt`. */
 const judge =
@@ -1893,126 +1791,6 @@ describe.skipIf(!hasGit || process.platform === "win32")("a local check across a
         removeDir(dir);
       }
     }),
-  );
-});
-
-/** A runner whose every check passes. */
-const pass: LocalCheckRunnerShape["run"] = () => Effect.succeed({ ok: true });
-
-describe.skipIf(!hasGit || process.platform === "win32")("a retention sweep", () => {
-  it.live(
-    "forgets old checks and their logs, reclaims abandoned work folders it made and keeps a pass's commits",
-    () =>
-      Effect.gen(function* () {
-        const { dir, repo, head, base } = fixture();
-        const database = nodePath.join(dir, "gram.db");
-        const checksDir = nodePath.join(dir, "local-checks");
-        const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
-        try {
-          const passed = yield* checked(repo, head, base).pipe(
-            Effect.provide(layer(database, dir, pass)),
-          );
-          expect(passed).toMatchObject({ status: "passed" });
-          write(passed!.log!, "kept\n");
-          // Older checks of other heads, past what retention keeps.
-          const stale = (status: string, age: number, name: string) => ({
-            head: name.repeat(40),
-            base,
-            tree: "e".repeat(40),
-            status,
-            command: "invented-check",
-            isolation: LOCAL_CHECK_ISOLATION,
-            startedAt: Date.now() - age,
-            finishedAt: Date.now() - age,
-            host: "invented",
-            log: nodePath.join(checksDir, `${name}.log`),
-          });
-          const oldFailure = stale("failed", 10 * 24 * 60 * 60 * 1000, "1");
-          const oldPass = stale("passed", 40 * 24 * 60 * 60 * 1000, "2");
-          yield* Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
-            for (const [key, data] of [
-              ["stale-failure", oldFailure],
-              ["stale-pass", oldPass],
-            ] as const)
-              yield* sql`INSERT INTO local_checks (key, data) VALUES (${key}, ${JSON.stringify(data)})`;
-          }).pipe(Effect.provide(ThreadStore.layerSqlite(database).pipe(Layer.orDie)));
-          for (const path of [oldFailure.log, oldPass.log]) {
-            write(path, "old\n");
-            utimesSync(path, old, old);
-          }
-          const orphanOld = nodePath.join(checksDir, "orphan-old.log");
-          const orphanNew = nodePath.join(checksDir, "orphan-new.log");
-          write(orphanOld, "old\n");
-          utimesSync(orphanOld, old, old);
-          write(orphanNew, "new\n");
-
-          // Work folders: one never checked out, one a crash left checked out, one kept because
-          // its processes weren't shown gone, and one Gram didn't make.
-          const work = nodePath.join(checksDir, "work");
-          const [own] = readdirSync(nodePath.join(checksDir, "repos")).map((name) =>
-            nodePath.join(checksDir, "repos", name),
-          );
-          const empty = nodePath.join(work, "aaaaaaaaaaaa-AbCdEf");
-          mkdirSync(nodePath.join(empty, "src"), { recursive: true });
-          const crashed = nodePath.join(work, "cccccccccccc-Zz9Zz9");
-          mkdirSync(crashed, { recursive: true });
-          run(
-            own!,
-            "worktree",
-            "add",
-            "-q",
-            "--detach",
-            nodePath.join(crashed, "src"),
-            passed!.mergedCommit!,
-          );
-          const retained = nodePath.join(work, "bbbbbbbbbbbb-Retain");
-          mkdirSync(nodePath.join(retained, "src"), { recursive: true });
-          write(nodePath.join(retained, "retained"), "");
-          const foreign = nodePath.join(work, "notours");
-          mkdirSync(foreign, { recursive: true });
-          for (const folder of [empty, crashed, retained, foreign]) utimesSync(folder, old, old);
-          // A repository of Gram's own that has kept nothing for longer than a pass is kept.
-          const unused = nodePath.join(checksDir, "repos", "0123456789abcdef.git");
-          run(dir, "init", "-q", "--bare", unused);
-          const longAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
-          utimesSync(nodePath.join(unused, "HEAD"), longAgo, longAgo);
-
-          const report = yield* Effect.gen(function* () {
-            const checks = yield* LocalChecks;
-            const swept = yield* checks.sweep;
-            // The current pass is still found, its commits kept by a ref.
-            expect(yield* checks.lookup(repo, head, base)).toMatchObject({ status: "passed" });
-            return swept;
-          }).pipe(Effect.provide(layer(database, dir, pass)));
-          expect(report).toMatchObject({ records: 2, logs: 3, work: 2, collected: 1, repos: 1 });
-          expect(existsSync(unused)).toBe(false);
-          expect(existsSync(own!)).toBe(true);
-          expect([oldFailure.log, oldPass.log, orphanOld].filter(existsSync)).toEqual([]);
-          expect([passed!.log!, orphanNew].every(existsSync)).toBe(true);
-          expect([empty, crashed].filter(existsSync)).toEqual([]);
-          expect([retained, foreign].every(existsSync)).toBe(true);
-          expect(run(own!, "worktree", "list")).not.toContain("cccccccccccc");
-          expect(
-            run(own!, "for-each-ref", "--format=%(objectname)", "refs/gram/keep/").trim(),
-          ).toBe(passed!.mergedCommit);
-          // After a restart, the pass is still there to reuse, and the old ones aren't.
-          yield* Effect.gen(function* () {
-            const checks = yield* LocalChecks;
-            expect(yield* checks.lookup(repo, head, base)).toMatchObject({ status: "passed" });
-            expect(yield* checked(repo, head, base)).toMatchObject({ status: "passed" });
-            // Collected already today, and nothing else to remove.
-            expect(yield* checks.sweep).toMatchObject({
-              records: 0,
-              logs: 0,
-              work: 0,
-              collected: 0,
-            });
-          }).pipe(Effect.provide(layer(database, dir, pass)));
-        } finally {
-          removeDir(dir);
-        }
-      }),
   );
 });
 

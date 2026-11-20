@@ -59,11 +59,16 @@ const UNSAFE_CHARACTERS = /[\u0000-\u001f\u007f<>:"|?*\\]/;
 /**
  * Whether `path` may name a file in a shared folder: relative, `/` between parts, no empty, `.` or
  * `..` part, no part Gram keeps for itself, nothing a file system on another machine can't hold.
+ * And nothing that makes a folder a git repository on the machine it lands on: no `.git` part, and
+ * no `HEAD` file, which a bare repository is found by. Another machine's files are data there,
+ * never a repository whose config and hooks that machine's git would read.
  */
 export const isSharedPath = (path: string): boolean => {
   if (path.length === 0 || path.length > 1024 || path.startsWith("/")) return false;
   if (UNSAFE_CHARACTERS.test(path)) return false;
   const parts = path.split("/");
+  if (parts.some((part) => part.toLowerCase() === ".git")) return false;
+  if (parts.at(-1)!.toUpperCase() === "HEAD") return false;
   return parts.every(
     (part) =>
       part.length > 0 &&

@@ -3,7 +3,7 @@ import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { git, STRICT_STATUS_ARGS } from "./exec.ts";
-import { ProcLive } from "./proc.ts";
+import { Proc, ProcLive } from "./proc.ts";
 import { guardFor, parseConfigList, withGuardArgs } from "./repo-config-guard.ts";
 import { hasGit, removeDir, run, tempDir } from "./test-utils.ts";
 
@@ -56,7 +56,7 @@ const withSubmodules = () => {
       key,
       `touch '${marker(name)}'; cat`,
     );
-  return { repo, ran, modules, plantIn };
+  return { repo, root, ran, modules, plantIn };
 };
 
 describe.skipIf(!hasGit)("Gram's own git and the repository's config", () => {
@@ -200,6 +200,202 @@ describe.skipIf(!hasGit)("Gram's own git and a submodule's config", () => {
       expect((yield* git(repo, STRICT_STATUS_ARGS)).stdout).toContain("sub");
       expect(ran()).toEqual([]);
     }).pipe(provide),
+  );
+
+  it.live("runs no hook the repository has, on merge, checkout and commit", () =>
+    Effect.gen(function* () {
+      const { repo, ran, marker } = setup();
+      const hook = (dir: string, name: string) => {
+        fs.mkdirSync(dir, { recursive: true });
+        const path = nodePath.join(dir, name);
+        fs.writeFileSync(
+          path,
+          `#!/bin/sh\ntouch '${marker(`${nodePath.basename(dir)}-${name}`)}'\n`,
+        );
+        fs.chmodSync(path, 0o755);
+      };
+      const names = [
+        "post-merge",
+        "post-checkout",
+        "pre-commit",
+        "post-commit",
+        "reference-transaction",
+      ];
+      // Both where git looks by default and where a repository's own `core.hooksPath` sends it.
+      for (const name of names) hook(nodePath.join(repo, ".git", "hooks"), name);
+      const own = nodePath.join(repo, "own-hooks");
+      for (const name of names) hook(own, name);
+      run(repo, "config", "core.hooksPath", own);
+      run(repo, "-c", "core.hooksPath=/dev/null", "branch", "ahead");
+      expect((yield* git(repo, ["checkout", "-q", "ahead"])).status).toBe(0);
+      fs.writeFileSync(nodePath.join(repo, "a.txt"), "two\n");
+      const commit = yield* git(repo, [
+        "-c",
+        "user.email=t@example.invalid",
+        "-c",
+        "user.name=T",
+        "commit",
+        "-qam",
+        "two",
+      ]);
+      expect(commit.status).toBe(0);
+      expect((yield* git(repo, ["checkout", "-q", "main"])).status).toBe(0);
+      expect((yield* git(repo, ["merge", "-q", "--ff-only", "ahead"])).status).toBe(0);
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
+  it.live("runs nothing a nested repository's config names, wherever its git folder is", () =>
+    Effect.gen(function* () {
+      const { repo, ran, marker } = setup();
+      // A repository inside the worktree, added as a gitlink, with its own `.git` folder: not one
+      // `git submodule` made, so nothing under `.git/modules`.
+      const inner = nodePath.join(repo, "inner");
+      fs.mkdirSync(inner);
+      run(inner, "init", "-q", "-b", "main");
+      fs.writeFileSync(nodePath.join(inner, ".gitattributes"), "*.txt filter=nested\n");
+      fs.writeFileSync(nodePath.join(inner, "n.txt"), "one\n");
+      run(inner, "add", "-A");
+      run(inner, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "n");
+      run(repo, "add", "inner");
+      run(repo, "commit", "-qm", "gitlink");
+      run(inner, "config", "filter.nested.clean", `touch '${marker("nested-clean")}'; cat`);
+      run(inner, "config", "core.fsmonitor", `touch '${marker("nested-fsmonitor")}'; false`);
+      // `.gitmodules` asks for the strictest status; Gram's strict callers ask for it themselves.
+      fs.writeFileSync(
+        nodePath.join(repo, ".gitmodules"),
+        '[submodule "inner"]\n\tpath = inner\n\tignore = none\n',
+      );
+      // Same size, so git has to read the file, through its clean filter, to see the change.
+      fs.writeFileSync(nodePath.join(inner, "n.txt"), "two\n");
+
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).stdout).toContain("inner");
+      expect((yield* git(repo, ["status", "--porcelain"])).status).toBe(0);
+      yield* git(repo, ["diff", "HEAD"]);
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
+  it.live(
+    "guards a nested repository whose .git is a link, or that is checked out after a call",
+    () =>
+      Effect.gen(function* () {
+        const { repo, root, ran, marker } = setup();
+        const inner = nodePath.join(repo, "inner");
+        fs.mkdirSync(inner);
+        run(inner, "init", "-q", "-b", "main");
+        fs.writeFileSync(nodePath.join(inner, ".gitattributes"), "*.txt filter=nested\n");
+        fs.writeFileSync(nodePath.join(inner, "n.txt"), "one\n");
+        run(inner, "add", "-A");
+        run(inner, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "n");
+        run(repo, "add", "inner");
+        run(repo, "commit", "-qm", "gitlink");
+        // Nothing checked out at the gitlink when Gram first looks, so the guard it keeps has no
+        // nested config in it.
+        const away = nodePath.join(root, "inner-git");
+        fs.renameSync(nodePath.join(inner, ".git"), away);
+        expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+        // Then the agent puts it back as a link git follows, with a filter in its config.
+        if (process.platform !== "win32") fs.symlinkSync(away, nodePath.join(inner, ".git"));
+        else fs.renameSync(away, nodePath.join(inner, ".git"));
+        run(inner, "config", "filter.nested.clean", `touch '${marker("nested-clean")}'; cat`);
+        fs.writeFileSync(nodePath.join(inner, "n.txt"), "two\n");
+        expect((yield* git(repo, STRICT_STATUS_ARGS)).stdout).toContain("inner");
+        expect(ran()).toEqual([]);
+      }).pipe(provide),
+  );
+
+  it.live("sees a nested repository's shared config change after Gram's last call", () =>
+    Effect.gen(function* () {
+      const { repo, root, ran, marker } = setup();
+      const inner = nodePath.join(repo, "inner");
+      fs.mkdirSync(inner);
+      run(inner, "init", "-q", "-b", "main");
+      fs.writeFileSync(nodePath.join(inner, ".gitattributes"), "*.txt filter=nested\n");
+      fs.writeFileSync(nodePath.join(inner, "n.txt"), "one\n");
+      run(inner, "add", "-A");
+      run(inner, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "n");
+      run(repo, "add", "inner");
+      run(repo, "commit", "-qm", "gitlink");
+      // The nested repository's git folder is a worktree's: its config is in the common dir its
+      // `commondir` names.
+      const common = nodePath.join(root, "common");
+      fs.renameSync(nodePath.join(inner, ".git"), common);
+      const own = nodePath.join(root, "own");
+      fs.mkdirSync(own);
+      fs.writeFileSync(nodePath.join(own, "commondir"), `${common}\n`);
+      for (const file of ["HEAD", "index"])
+        fs.copyFileSync(nodePath.join(common, file), nodePath.join(own, file));
+      fs.writeFileSync(nodePath.join(inner, ".git"), `gitdir: ${own}\n`);
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+      run(inner, "config", "filter.nested.clean", `touch '${marker("common-clean")}'; cat`);
+      fs.writeFileSync(nodePath.join(inner, "n.txt"), "two\n");
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
+  it.live.skipIf(process.platform === "win32")("gives the git that gh starts the same guard", () =>
+    Effect.gen(function* () {
+      const { repo, root, plant, ran } = setup();
+      plant("core.fsmonitor", "fsmonitor");
+      fs.writeFileSync(nodePath.join(repo, "a.txt"), "two\n");
+      // A stand-in `gh` that does what the real one does in a checkout: runs git there.
+      const bin = nodePath.join(root, "bin");
+      fs.mkdirSync(bin);
+      const gh = nodePath.join(bin, "gh");
+      fs.writeFileSync(gh, "#!/bin/sh\nexec git status --porcelain\n");
+      fs.chmodSync(gh, 0o755);
+      const proc = yield* Proc;
+      const out = yield* proc.run(gh, ["pr", "create"], { cwd: repo });
+      expect(out.status).toBe(0);
+      expect(out.stdout).toContain("a.txt");
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
+  it.live("sees a submodule's git folder pointed at a shared config after Gram's last call", () =>
+    Effect.gen(function* () {
+      const { repo, root, ran, modules } = withSubmodules();
+      fs.rmSync(nodePath.join(repo, ".gitattributes"));
+      run(repo, "commit", "-qam", "no attributes");
+      const common = nodePath.join(root, "common");
+      fs.cpSync(modules, common, { recursive: true });
+      fs.appendFileSync(
+        nodePath.join(common, "config"),
+        `[filter "planted"]\n\tclean = touch '${nodePath.join(root, "ran-shared")}'; cat\n`,
+      );
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+      fs.writeFileSync(nodePath.join(modules, "commondir"), "../../../../common\n");
+      fs.writeFileSync(nodePath.join(repo, "sub", "l.txt"), "two\n");
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
+  it.live.skipIf(process.platform === "win32")(
+    "sees a .git link's gitdir file pointed at another repository after Gram's last call",
+    () =>
+      Effect.gen(function* () {
+        const { repo, root, ran, marker } = setup();
+        const good = nodePath.join(root, "good.git");
+        fs.renameSync(nodePath.join(repo, ".git"), good);
+        const evil = nodePath.join(root, "evil.git");
+        fs.cpSync(good, evil, { recursive: true });
+        fs.appendFileSync(
+          nodePath.join(evil, "config"),
+          `[filter "other"]\n\tclean = touch '${marker("relinked")}'; cat\n`,
+        );
+        fs.writeFileSync(nodePath.join(repo, ".gitattributes"), "*.txt filter=other\n");
+        const pointer = nodePath.join(root, "pointer");
+        fs.writeFileSync(pointer, `gitdir: ${good}\n`);
+        fs.symlinkSync(pointer, nodePath.join(repo, ".git"));
+        expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+        fs.writeFileSync(pointer, `gitdir: ${evil}\n`);
+        fs.writeFileSync(nodePath.join(repo, "a.txt"), "two\n");
+        expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+        expect(ran()).toEqual([]);
+      }).pipe(provide),
   );
 
   it.live("sees a submodule config an agent writes after Gram's last call", () =>

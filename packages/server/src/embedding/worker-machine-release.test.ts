@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import { makeOnDemandHosts } from "./on-demand.ts";
 
 import {
+  recordTold,
   releaseDecisions,
   tellRelease,
   WORKER_RELEASE_SETTLE_MS,
@@ -171,11 +172,50 @@ describe("a worker machine's work", () => {
       new Set(),
       now,
       new Map([
-        ["cccc", { released: true, at: now - 2 * 60 * 60_000 }],
-        ["dddd", { released: true, at: now - 60_000 }],
+        [machine("cccc").name, { released: true, at: now - 2 * 60 * 60_000 }],
+        [machine("dddd").name, { released: true, at: now - 60_000 }],
       ]),
     );
     expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([["dddd", false]]);
+  });
+
+  it("tells an embedder's provider a take-back again on every pass until it is taken", () => {
+    // Told released; a worker is at work there again; the take-back fails at the provider.
+    const told = new Map([[machine("aaaa").name, { released: true, at: now - 60_000 }]]);
+    const pass = () =>
+      releaseDecisions([machine("aaaa")], [on("t1", "aaaa")], new Set(), now, told);
+    expect(pass().map(({ released }) => released)).toEqual([false]);
+    recordTold(told, machine("aaaa"), false, false, now);
+    // Still held released there: asked again, never left to its reclaim.
+    expect(pass().map(({ released }) => released)).toEqual([false]);
+    recordTold(told, machine("aaaa"), false, true, now);
+    expect(pass()).toEqual([]);
+    // Its host came back under another key, and so another id: still the machine told.
+    told.set(machine("aaaa").name, { released: true, at: now });
+    const rekeyed = machine("eeee", { name: machine("aaaa").name });
+    expect(
+      releaseDecisions([rekeyed], [on("t1", "eeee")], new Set(), now, told).map(
+        ({ released }) => released,
+      ),
+    ).toEqual([false]);
+  });
+
+  it("judges an embedder's machine by the workers the ledger reads finished, as it always has", () => {
+    // Merged, its turn still running: finished as the ledger reads it, though not releasable.
+    const placed = [on("t-running", "aaaa"), on("t-running", "bbbb")];
+    const decided = releaseDecisions(
+      [machine("aaaa"), relayed("bbbb")],
+      placed,
+      new Set(),
+      now,
+      new Map(),
+      new Set(["t-running" as ThreadId]),
+    );
+    // The embedder's is released; the hosted server's is kept at work.
+    expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([
+      ["aaaa", true],
+      ["bbbb", false],
+    ]);
   });
 
   it("keeps a worker whose pull request merged but whose turn still runs at work", () => {

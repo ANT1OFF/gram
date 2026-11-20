@@ -107,6 +107,14 @@ export const ReleaseVersion = Schema.String.check(
 /** An npm package (`@scope/name`) or a GitHub repo (`owner/repo`), never starting with a dash. */
 export const ReleaseName = Schema.String.check(Schema.isPattern(/^@?[\w.~][\w.~-]*(\/[\w.~-]+)?$/));
 
+/**
+ * A name npm reads as a registry package and nothing else: `name` or `@scope/name`, in npm's own
+ * characters. An unscoped `owner/repo`, a URL or a path would be a git or file spec, which `npm view`
+ * fetches from wherever it names.
+ */
+export const isNpmPackageName = (name: string): boolean =>
+  name.length <= 214 && /^(?:@[a-z0-9~][a-z0-9._~-]*\/)?[a-z0-9~][a-z0-9._~-]*$/.test(name);
+
 /** How old a release must be before it wakes anyone, by default: Gram's own Dependabot cooldown. */
 export const RELEASE_MIN_AGE_DAYS = 7;
 

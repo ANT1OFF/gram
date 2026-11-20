@@ -375,7 +375,11 @@ and reports it as flaky.
 app at random and checks the properties in [spec.ts](../apps/web/bombadil/spec.ts) on every state
 it captures: its own (no console errors, HTTP errors, uncaught exceptions or unhandled
 rejections), the Inbox count agreeing with its rows, no click adding two history entries, Back
-leaving the page it started from, and no `undefined`, `NaN` or `[object Object]` outside code. It
+leaving the page it started from, and no `undefined`, `NaN` or `[object Object]` outside code.
+Further properties check that nothing says "Loading…" or stays `aria-busy` for more than 10 s, that
+at 360, 768, 1024 and 1440 px wide (it resizes the window now and then) the page never scrolls
+sideways and no titlebar or dock controls overlap for a second, that Escape closes the topmost
+dialog or menu and returns focus to its opener, and that no list shows one item's row twice. It
 serves the e2e preview bundle on 127.0.0.1 with synthetic mock state, in Playwright's Chromium,
 with coverage instrumentation off (with it on, the app never renders). From the root:
 
