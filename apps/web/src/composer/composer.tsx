@@ -101,6 +101,7 @@ import {
   effortOptions,
   gatewayModelWarning,
   modelOptions,
+  ModelsAllowedBy,
   pickerModelId,
   unlistedWarning,
   useModels,
@@ -163,19 +164,26 @@ const waitingThreads = new Set<string>();
 /** Shown while a send waits for the connection to come back. */
 const RECONNECT_HINT = "Waiting for the connection — sends once it's back";
 
-export function Composer({
-  threadId,
-  focused,
-  placeholder,
-  toWorker = false,
-}: {
+type ComposerProps = {
   threadId: ThreadId;
   focused: boolean;
   /** In place of "Message…", e.g. beside the chat, where it steers a worker. */
   placeholder?: string | undefined;
   /** The thread is a live worker of an orchestrator: the placeholder names "this worker". */
   toWorker?: boolean;
-}) {
+};
+
+/** A thread's prompt box, whose model lists offer only what the thread's profile lets it run. */
+export function Composer(props: ComposerProps) {
+  const profile = useThreadsStore((s) => s.byId[props.threadId]?.thread.profile);
+  return (
+    <ModelsAllowedBy profile={profile}>
+      <ThreadComposer {...props} />
+    </ModelsAllowedBy>
+  );
+}
+
+function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: ComposerProps) {
   const api = useApi();
   const typing = useTypingPresence();
   const navigate = useNavigate();

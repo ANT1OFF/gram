@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { useModels } from "@/composer/models";
+import { ModelsAllowedBy, useModels } from "@/composer/models";
 import { EFFORT_OPTIONS } from "@/composer/options";
 import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
 import { cn } from "@/lib/utils";
@@ -98,16 +98,24 @@ function Line({
  * orchestrator's switch saves memory first, and while one is under way the sheet opens on how it
  * stands, with Cancel switch before the old session stops and Retry once it has failed.
  */
-export function ContinueInDialog({
-  threadId,
-  model: picked,
-  onClose,
-}: {
+type ContinueInProps = {
   threadId: ThreadId;
   /** The model picked in the chip's group; absent, §3.5's default target. */
   model?: string | undefined;
   onClose: () => void;
-}) {
+};
+
+/** The sheet, offering only the models the thread's profile lets it run. */
+export function ContinueInDialog(props: ContinueInProps) {
+  const profile = useThreadsStore((s) => s.byId[props.threadId]?.thread.profile);
+  return (
+    <ModelsAllowedBy profile={profile}>
+      <ContinueInSheet {...props} />
+    </ModelsAllowedBy>
+  );
+}
+
+function ContinueInSheet({ threadId, model: picked, onClose }: ContinueInProps) {
   const api = useApi();
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const offer = useSwitchOffer(threadId);

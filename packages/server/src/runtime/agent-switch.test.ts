@@ -1801,6 +1801,29 @@ describe("startFreshOn", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect(
+    "refuses a model the thread's profile doesn't allow, by fresh session or model change",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const { thread: idle } = yield* idleThread;
+        // A profile that lets its sessions run only Fake Haiku.
+        const thread = yield* store.updateThread(idle.id, (t) => ({
+          ...t,
+          profile: { charter: "", models: ["fake-haiku"] },
+        }));
+        const fresh = yield* Effect.flip(runtimes.startFreshOn(thread.id, CODEX));
+        expect(fresh._tag).toBe("InvalidState");
+        expect(fresh.message).toContain("doesn't allow fake-opus");
+        const changed = yield* Effect.flip(
+          runtimes.setModel(thread.id, { ...thread.model, model: "fake-sonnet" }),
+        );
+        expect(changed.message).toContain("doesn't allow fake-sonnet");
+        yield* unchanged(thread.id, thread);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("refuses mid-turn and on the model it already runs, leaving the thread alone", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;
