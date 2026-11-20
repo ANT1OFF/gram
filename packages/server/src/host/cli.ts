@@ -11,6 +11,7 @@ import {
   ensureHostHome,
   forgetJoined,
   type HostConfig,
+  hostDialToken,
   hostHome,
   readHostConfig,
   readHostKey,
@@ -62,7 +63,9 @@ const USAGE = `gram-host: run this machine's work for a Gram on another machine,
       restart a gram-host run yourself. Gram puts back and checks its folders before any opens.
 
 GRAM_HOST_HOME sets the folder the host keeps its join and key in, and GRAM_HOST_REPOS the one
-it clones repositories into for the workers placed on it (by default, repos in GRAM_HOST_HOME).`;
+it clones repositories into for the workers placed on it (by default, repos in GRAM_HOST_HOME).
+GRAM_HOST_DIAL_TOKEN_FILE names a file whose token every dial of gram-host run carries, for
+whatever launched the host to tell its hosts apart by.`;
 
 /** A join link's origin and code, or why it isn't one. */
 export const parseJoinLink = (
@@ -341,6 +344,7 @@ export const runCli = <R>(
       case "run": {
         const found = joined(home);
         if (found === undefined) return fail("This machine hasn't joined a Gram: gram-host join.");
+        const dialToken = hostDialToken();
         // An update a reboot or crash left unfinished is rolled back or finished alongside.
         return Effect.forkScoped(recoverHere(home, host.release)).pipe(
           Effect.andThen(
@@ -350,6 +354,7 @@ export const runCli = <R>(
                 hostId: found.config.hostId,
                 key: found.key,
                 joined: stillJoined(home, found.config),
+                ...(dialToken === undefined ? {} : { dialToken }),
               },
               host.service(
                 HostIdSchema.make(found.config.hostId),
