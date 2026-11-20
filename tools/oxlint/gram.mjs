@@ -25,6 +25,9 @@
 // And a file-size ceiling: a file's lines of code (blank and comment-only lines aside) stay under
 // `MAX_LINES` in `allowlists.mjs`, and the files already over it may only shrink.
 //
+// And no relative path from one workspace package's sources into another's: `../../server/src/x`
+// would skip the package's declared exports and every import fence in `.oxlintrc.json`.
+//
 // And one optical stroke for Lucide icons: the `lucide` class sets it per size (styles/base.css),
 // so a `strokeWidth` on the icon is outranked and does nothing.
 //
@@ -364,6 +367,39 @@ export default {
             for (const { node, message } of found)
               context.report({ node, message: message + note });
           },
+        };
+      },
+    },
+    "no-cross-package-path": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow a relative import from one workspace package's sources into another package or app",
+        },
+      },
+      create(context) {
+        const file = relative(REPO, context.filename).replaceAll("\\", "/");
+        const own = /^((?:apps|packages)\/[^/]+)\/src\//.exec(file)?.[1];
+        if (own === undefined || isTestFile(file)) return {};
+        const check = (source) => {
+          if (typeof source?.value !== "string" || !source.value.startsWith(".")) return;
+          const target = relative(
+            REPO,
+            resolve(dirname(context.filename), source.value),
+          ).replaceAll("\\", "/");
+          const unit = /^((?:apps|packages)\/[^/]+)(?:\/|$)/.exec(target)?.[1];
+          if (unit === undefined || unit === own) return;
+          context.report({
+            node: source,
+            message: `\`${source.value}\` reaches from ${own} into ${unit} by a relative path, which skips its package.json and the import fences in .oxlintrc.json. Import it by the package's name and one of its declared "exports" (add an export if the piece is meant to be shared, and the dependency to ${own}/package.json), or move the piece into the package that owns it.`,
+          });
+        };
+        return {
+          ImportDeclaration: (node) => check(node.source),
+          ExportNamedDeclaration: (node) => check(node.source),
+          ExportAllDeclaration: (node) => check(node.source),
+          ImportExpression: (node) => check(node.source),
         };
       },
     },
