@@ -17,6 +17,8 @@ export const pullRequestsRpc = ({ client }: RpcContext): PullRequestsApi => ({
     run(client["git.prCheckDiagnostic"]({ threadId, selection })),
   prChecks: (threadId) => run(client["git.prChecks"]({ threadId })),
   verifyState: (threadId) => run(client["git.verifyState"]({ threadId })),
+  verifyEvidence: (threadId, driver, file) =>
+    run(client["git.verifyEvidence"]({ threadId, driver, file })),
   prRerunChecks: (threadId) => run(client["git.prRerunChecks"]({ threadId })),
   prMergeOptions: (threadId) => run(client["pr.mergeOptions"]({ threadId })),
   prMerge: (threadId, strategy, auto) =>

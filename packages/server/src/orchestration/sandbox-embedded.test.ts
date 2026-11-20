@@ -3,9 +3,16 @@
 
 import { createServer, type Server } from "node:http";
 import { describe, expect, it } from "@effect/vitest";
-import { type AgentFailureKind, HostId, LOCAL_HOST_ID, type ThreadId } from "@gram/contracts";
+import {
+  AppToolError,
+  type AgentFailureKind,
+  HostId,
+  LOCAL_HOST_ID,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
 import { makeOnDemandHosts, OnDemand } from "../embedding/on-demand.ts";
 import { hasGit } from "../git/test-repo.ts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
@@ -14,6 +21,7 @@ import { makeStopMarks } from "../host/stop-marks.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import type { FakeSession } from "../runtime/fake-agent.ts";
 import type { HeldSpawn } from "./service.ts";
+import { workerMachinesOffered } from "./service/worker-machines-offered.ts";
 import {
   atAutonomy,
   makeWorld,
@@ -26,6 +34,18 @@ import {
 } from "./test-harness.ts";
 
 const MACHINE = HostId.make("m-0123456789abcdef01234567");
+/** Where an embedded Gram's orchestrator runs: a machine of its person's, never this one. */
+const ORCHESTRATORS = HostId.make("m-89abcdef0123456789abcdef");
+
+/** Puts the orchestrator on its person's machine, as an embedder's always is. */
+const onItsMachine = (id: ThreadId) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    yield* store.updateThread(id, (thread) => ({
+      ...thread,
+      checkout: { ...thread.checkout, hostId: ORCHESTRATORS },
+    }));
+  });
 
 /** An embedder's host provider on loopback that offers no choices and starts what it is asked. */
 const fakeProvider = (started: { name?: string }) =>
@@ -76,6 +96,20 @@ const fail = (session: FakeSession, id: ThreadId, kind: AgentFailureKind = "netw
     yield* settle;
   });
 
+describe("an embedded orchestrator's prompt", () => {
+  it.effect("says nothing of worker machines, as it never did", () =>
+    Effect.gen(function* () {
+      const offered = yield* workerMachinesOffered.pipe(
+        Effect.provideService(
+          OnDemand,
+          makeOnDemandHosts({ url: "http://127.0.0.1:9", token: "t" }),
+        ),
+      );
+      expect(yield* offered).toBeUndefined();
+    }),
+  );
+});
+
 describe.skipIf(!hasGit)("sandbox from an embedder's host provider", () => {
   it.effect(
     "keeps a brief the spawn breaker held, as an embedded spawn always has",
@@ -85,6 +119,7 @@ describe.skipIf(!hasGit)("sandbox from an embedder's host provider", () => {
         // This machine and the worker machine are Grace's, as an embedder's are its person's.
         world.owners = new Map([
           [LOCAL_HOST_ID, "grace"],
+          [ORCHESTRATORS, "grace"],
           [MACHINE, "grace"],
         ]);
         // The machine it starts joins at once, under the name asked for.
@@ -126,6 +161,7 @@ describe.skipIf(!hasGit)("sandbox from an embedder's host provider", () => {
           // A worker on the model failed to start: the breaker holds the next spawns on it.
           const failed = yield* spawn(session, { feature: "failed" });
           yield* fail(failed.session, failed.thread.id);
+          yield* onItsMachine(thread.id);
           const result = yield* session
             .callTool("spawn_worker", {
               project: "shop",
@@ -143,6 +179,91 @@ describe.skipIf(!hasGit)("sandbox from an embedder's host provider", () => {
           expect((yield* outboxOf(workspaceId)).heldBriefs?.map((brief) => brief.id)).toEqual([
             held.id,
           ]);
+        }).pipe(Effect.provide(context), Effect.provideService(ServerWork, true));
+      }).pipe(Effect.scoped),
+    { timeout: 90_000 },
+  );
+  it.effect(
+    "starts its machine and admits it before any approval, as an embedded spawn always has",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        world.owners = new Map([
+          [LOCAL_HOST_ID, "grace"],
+          [ORCHESTRATORS, "grace"],
+          [MACHINE, "grace"],
+        ]);
+        // The machine it starts joins at once, without Claude Code.
+        const started: { name?: string } = {};
+        const provider = yield* fakeProvider(started);
+        const machine = () =>
+          started.name === undefined
+            ? []
+            : [
+                {
+                  id: MACHINE,
+                  name: started.name,
+                  confirmed: true,
+                  owner: "grace",
+                  onDemand: "worker",
+                  onlineSince: 1,
+                  tools: [{ tool: "claude", found: false }],
+                },
+              ];
+        const remote = Layer.succeed(RemoteHosts, {
+          machines: { list: () => [], get: () => undefined },
+          stops: makeStopMarks(),
+          watch: () => () => undefined,
+          list: machine,
+        } as unknown as RemoteHostsShape);
+        const context = yield* Layer.build(
+          serverLayer(world).pipe(
+            Layer.provide(remote),
+            Layer.provide(
+              Layer.succeed(OnDemand)(makeOnDemandHosts({ url: provider.url, token: "synthetic" })),
+            ),
+          ),
+        );
+        yield* Effect.gen(function* () {
+          const { thread } = yield* openOrchestrator(world);
+          yield* onItsMachine(thread.id);
+          const registry = yield* AppToolRegistry;
+          let asked = 0;
+          const gated = bindAppTools(
+            registry.definitions.map((definition) =>
+              definition.descriptor.name === "spawn_worker"
+                ? { ...definition, alwaysAsks: true }
+                : definition,
+            ),
+            thread.id,
+            {
+              approve: () =>
+                Effect.suspend(() => {
+                  asked += 1;
+                  return Effect.fail(
+                    new AppToolError({ tool: "spawn_worker", message: "The user said no." }),
+                  );
+                }),
+            },
+          ).find((tool) => tool.descriptor.name === "spawn_worker")!;
+          const result = yield* gated
+            .run({
+              project: "shop",
+              feature: "heavy",
+              title: "Heavy build",
+              brief: "Synthetic work",
+              clientRequestId: "heavy-1",
+              sandbox: { own: true, reason: "A long build." },
+            })
+            .pipe(Effect.result);
+          // Started and waited for as the call resolved, and refused on what joined, before any
+          // card: the user is never asked about a spawn its machine can't run.
+          expect(provider.asked.map((each) => each.path)).toContain("/hosts/start");
+          expect(result).toMatchObject({
+            _tag: "Failure",
+            failure: { message: expect.stringMatching(/Claude Code is not installed/) },
+          });
+          expect(asked).toBe(0);
         }).pipe(Effect.provide(context), Effect.provideService(ServerWork, true));
       }).pipe(Effect.scoped),
     { timeout: 90_000 },

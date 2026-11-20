@@ -1521,6 +1521,17 @@ required, how long it took, and whether it covers the change. Its count, "3/4", 
 that cover the change. Uncommitted files are named as left out of every run. The tab reads
 `git.verifyState`; a repository without a recipe has no Proof tool at all.
 
+Each driver's run gets an empty folder of its own in `GRAM_VERIFY_EVIDENCE_DIR`, beside the run's
+log under Gram's data folder and outside any checkout, for the screenshots, videos, snapshots and
+logs it wants a reader to see. It may list them in a `manifest.json` there,
+`{"items": [{"file", "caption", "kind"}]}` with `kind` one of `screenshot`, `video`, `snapshot` or
+`log`; without one, the folder's pictures and videos show by name. Proof shows the screenshots
+under their driver, opening at full size, and names the rest. Only files directly in the folder
+count, never through a link, at most 24 of them; a picture is read through `git.verifyEvidence` by
+the name Proof listed, up to 5 MiB. The folder is emptied when the driver runs again and goes with
+its log when retention removes that, and the budget counts both. Nothing in it goes in git, and it
+shows what the driver chose to keep, never that it passed. A run on a joined machine shows none.
+
 ## Agents after Gram quits
 
 Off by default. **Settings → General → Running work → Run agents after quit** runs this machine's

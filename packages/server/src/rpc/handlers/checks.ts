@@ -1,4 +1,4 @@
-import { effectiveCheckout, GitError, InvalidState } from "@gram/contracts";
+import { effectiveCheckout, GitError, InvalidState, NotFound } from "@gram/contracts";
 import { Pr, prChecksStamp } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -30,6 +30,22 @@ export const checksHandlers = Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
         if (verifyStatus === undefined) return { recipe: "none", drivers: [] } as const;
         return yield* verifyStatus.stateFor(thread);
+      }),
+
+    "git.verifyEvidence": ({ threadId, driver, file }) =>
+      Effect.gen(function* () {
+        const thread = yield* store.getThread(threadId);
+        const image =
+          verifyStatus === undefined
+            ? undefined
+            : yield* verifyStatus.evidence(thread, driver, file);
+        if (image === undefined)
+          return yield* new NotFound({
+            entity: "file",
+            id: file,
+            message: `No picture ${file} from ${driver} on this commit.`,
+          });
+        return image;
       }),
 
     "git.prChecks": ({ threadId }) =>
