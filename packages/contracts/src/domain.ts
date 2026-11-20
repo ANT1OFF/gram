@@ -1138,6 +1138,15 @@ export const Thread = Schema.Struct({
 export type Thread = typeof Thread.Type;
 
 /**
+ * Whether the thread's agent, not the user, answers for its PR's events (CI settling, a merge, a
+ * watched run, a review round, babysitting stopping): a worker, which an orchestrator spawned. Those
+ * events wake the worker to act on them and never notify the user; the user hears from the worker
+ * or its orchestrator when they're needed. A solo thread's PR events are the user's.
+ */
+export const agentOwnsPrEvents = (thread: Pick<Thread, "spawnedBy">): boolean =>
+  thread.spawnedBy !== undefined;
+
+/**
  * Whether a thread's sessions get the user's browser, as the server opens them
  * (`thread.browserStatus`): `off` when it wasn't lent it, `on`, `held` when a consent in Settings
  * holds it back (`why`), and `unavailable` when this thread's session can't have it at all (`why`):

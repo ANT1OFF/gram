@@ -1709,6 +1709,73 @@ describe("babysit mode", () => {
   );
 
   it.effect(
+    "tells a worker its PR is ready to merge, or that babysitting stopped, never the user",
+    () =>
+      Effect.gen(function* () {
+        reset();
+        const hub = yield* EventHub;
+        const notified: Array<Extract<ServerEvent, { type: "notify" }>> = [];
+        const subscribed = yield* Deferred.make<void>();
+        yield* hub
+          .serverEvents(
+            Deferred.succeed(subscribed, undefined).pipe(
+              Effect.as({ type: "threads.snapshot", threads: [] } as const),
+            ),
+          )
+          .pipe(
+            Stream.runForEach((event) =>
+              Effect.sync(() => {
+                if (event.type === "notify") notified.push(event);
+              }),
+            ),
+            Effect.forkScoped,
+          );
+        yield* Deferred.await(subscribed);
+        const babysit = yield* Babysit;
+        const runtimes = yield* ThreadRuntimes;
+        const worker = (id: ThreadId) =>
+          runtimes.updateThread(id, (t) => ({
+            ...t,
+            spawnedBy: { threadId: "t-invented-orchestrator" as ThreadId, feature: "invented" },
+          }));
+
+        const ready = yield* monitoredThread;
+        yield* worker(ready);
+        yield* babysit.setEnabled(ready, true);
+        yield* publish(
+          ready,
+          badge({ mergeState: "CLEAN", review: reviewState({ verdictOnHead: "approved" }) }),
+        );
+        yield* quiet;
+        yield* waitFor(
+          "the worker told it's ready",
+          inputs(ready).pipe(
+            Effect.map((all) =>
+              all.some((input) => input.text.startsWith("#12 is ready to merge")),
+            ),
+          ),
+        );
+
+        const stopped = yield* monitoredThread;
+        yield* worker(stopped);
+        yield* babysit.setEnabled(stopped, true);
+        yield* publish(stopped, badge());
+        yield* publish(stopped, badge({ state: "CLOSED" }));
+        yield* quiet;
+        expect(yield* babysitOf(stopped)).toMatchObject({ phase: "stopped" });
+        yield* waitFor(
+          "the worker told babysitting stopped",
+          inputs(stopped).pipe(
+            Effect.map((all) =>
+              all.some((input) => input.text.startsWith("Babysitting stopped on #12")),
+            ),
+          ),
+        );
+        expect(notified).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect(
     "leaves a red check nobody requires alone, and finishes on UNSTABLE once the rest pass",
     () =>
       Effect.gen(function* () {

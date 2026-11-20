@@ -4,6 +4,7 @@
 // A person approving or requesting changes is a notice of its own, which babysitting never counts.
 
 import {
+  agentOwnsPrEvents,
   DEFAULT_BABYSIT_ROUNDS,
   effectiveCheckout,
   initialBabysitState,
@@ -297,6 +298,16 @@ export const BabysitLive = Layer.effect(
           Effect.annotateLogs({ threadId, reason: halt.reason, detail: halt.detail }),
         );
         if (stopped === true) {
+          const thread = yield* store.getThread(threadId).pipe(Effect.option);
+          // A worker's babysitting stopping is its own to act on: it's woken with why, and the
+          // user isn't asked.
+          if (Option.isSome(thread) && agentOwnsPrEvents(thread.value)) {
+            return yield* runtimes
+              .sendNotice(threadId, `babysit-stopped:${number}`, {
+                text: `Babysitting stopped on #${number}: ${halt.detail}. Pick the PR up from here.`,
+              })
+              .pipe(Effect.ignore);
+          }
           yield* hub.publish({
             type: "notify",
             kind: "needsInput",
@@ -324,6 +335,14 @@ export const BabysitLive = Layer.effect(
           })
           .pipe(Effect.ignore);
         yield* runtimes.markCompleted(found.thread.id, "agent").pipe(Effect.ignore);
+        // A worker merges its own PR (merge_when_ready): it's told, and the user isn't.
+        if (agentOwnsPrEvents(found.thread)) {
+          return yield* runtimes
+            .sendNotice(found.thread.id, `babysit-ready:${badge.number}`, {
+              text: `#${badge.number} is ready to merge: approved on head, checks green, merge state clean. Not merged.`,
+            })
+            .pipe(Effect.ignore);
+        }
         yield* hub.publish({
           type: "notify",
           kind: "done",

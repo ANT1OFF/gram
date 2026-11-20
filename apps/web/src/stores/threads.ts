@@ -13,6 +13,7 @@ import type {
   UserInput,
   WorktreeRemoval,
 } from "@gram/contracts";
+import { agentOwnsPrEvents } from "@gram/contracts";
 import { create } from "zustand";
 
 import type { ApiServerEvent, CloseThreadOptions } from "@/api/types";
@@ -134,6 +135,8 @@ const patch = (
 
 export const createThreadsSlice = (
   set: (fn: (s: ThreadsState) => Partial<ThreadsState>) => void,
+  /** The current state, for events that read it before changing anything. */
+  get?: () => ThreadsState,
 ): ThreadsState => ({
   ready: false,
   byId: {},
@@ -384,6 +387,9 @@ export const createThreadsSlice = (
       case "pr.reviewRound": {
         // The Review tab refetches through the `git.state` that accompanies a round; this is the toast.
         // Approval or changes requested on head is the user's cue, so it notifies natively too.
+        // A worker's round is the worker's: its review monitor wakes it, and the user isn't told.
+        const owner = get?.().byId[event.threadId]?.thread;
+        if (owner !== undefined && agentOwnsPrEvents(owner)) return;
         const verdict = event.round.verdictOnHead;
         const notify: Notify = {
           type: "notify",
@@ -446,7 +452,7 @@ export const createThreadsSlice = (
   },
 });
 
-export const useThreadsStore = create<ThreadsState>()((set) => createThreadsSlice(set));
+export const useThreadsStore = create<ThreadsState>()((set, get) => createThreadsSlice(set, get));
 
 /** Applies the server events still waiting for their frame, set while `useServerEvents` runs. */
 let flushPending: (() => void) | undefined;
