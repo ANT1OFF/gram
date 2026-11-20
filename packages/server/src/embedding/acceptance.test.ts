@@ -263,7 +263,12 @@ describe("decision hook: an agent's outward command", () => {
           "the card",
           store.listRequests(first.id).pipe(Effect.map((requests) => requests[0])),
         );
-        const other = yield* startThread("hello");
+        // A thread whose agent waits on a card of its own, so its session stays up meanwhile.
+        const other = yield* startThread("look /approve{echo hi}");
+        yield* eventually(
+          "the other thread's card",
+          store.listRequests(other.id).pipe(Effect.map((requests) => requests.length === 1)),
+        );
         const otherSession = yield* sessionOf(other.id);
         // Its agent numbers its requests as the first's does, and one of them is resolved.
         yield* otherSession.emit(
@@ -275,14 +280,14 @@ describe("decision hook: an agent's outward command", () => {
               id: "after" as RequestId,
               toolName: "Bash",
               displayName: "Bash",
-              input: { command: "ls" },
+              input: { command: "echo after" },
               suggestions: [],
             },
           },
         );
         yield* eventually(
           "the other thread's events",
-          store.listRequests(other.id).pipe(Effect.map((requests) => requests.length === 1)),
+          store.listRequests(other.id).pipe(Effect.map((requests) => requests.length === 2)),
         );
         yield* runtimes
           .respond(first.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
