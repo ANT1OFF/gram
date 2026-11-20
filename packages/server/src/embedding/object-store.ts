@@ -211,17 +211,19 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
     // One writer at a time: the walk, the outputs and a restore all save through here.
     const saveLock = yield* Semaphore.make(1);
     const saveManifest = saveLock.withPermits(1)(
-      Effect.promise(async () => {
-        if (!unsaved) return;
-        unsaved = false;
-        try {
-          await mkdir(dirname(manifestFile), { recursive: true });
-          await writeFile(`${manifestFile}.tmp`, JSON.stringify(manifest));
-          await rename(`${manifestFile}.tmp`, manifestFile);
-        } catch {
-          unsaved = true;
-        }
-      }),
+      Effect.uninterruptible(
+        Effect.promise(async () => {
+          if (!unsaved) return;
+          unsaved = false;
+          try {
+            await mkdir(dirname(manifestFile), { recursive: true });
+            await writeFile(`${manifestFile}.tmp`, JSON.stringify(manifest));
+            await rename(`${manifestFile}.tmp`, manifestFile);
+          } catch {
+            unsaved = true;
+          }
+        }),
+      ),
     );
 
     /** Keys already said to be left out, so the log says so once each. */
