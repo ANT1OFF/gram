@@ -28,7 +28,7 @@ const promptOf = (p: Elicitation): McpPrompt => ({
  * thread's across a restart, from sharing an id.
  */
 export const codexRequestId = (jsonRpcId: string | number, scope: string): RequestId =>
-  RequestId.make(scope === "" ? `codex-${jsonRpcId}` : `codex-${scope}-${jsonRpcId}`);
+  RequestId.make(`codex-${scope}-${jsonRpcId}`);
 
 const commandScopes = (
   available: ReadonlyArray<unknown> | null | undefined,
@@ -134,12 +134,12 @@ const withholdsAlways = (level: OutwardGate | undefined, kind: OutwardKind | und
  */
 export const toPendingRequest = (
   request: ServerRequest,
+  /** The session's own part of each card id (`codexRequestId`). */
+  idScope: string,
   changes: (itemId: string) => ReadonlyArray<FileUpdateChange> | undefined,
   gate: boolean | OutwardGate = false,
   /** A server's permission prompt is answered once each time (`OpenSessionOptions.browserAsk`). */
   promptsOnce = false,
-  /** The session's own part of each card id (`codexRequestId`). */
-  idScope = "",
 ): PendingRequest | undefined => {
   const level = gateLevel(gate);
   const id = codexRequestId(request.id, idScope);

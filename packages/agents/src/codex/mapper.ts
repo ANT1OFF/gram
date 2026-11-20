@@ -46,8 +46,8 @@ import {
  */
 
 export interface CodexMapperOptions {
-  /** The session's own part of each card id (`codexRequestId`); none by default. */
-  readonly requestScope?: string;
+  /** The session's own part of each card id (`codexRequestId`). */
+  readonly requestScope: string;
   /** Only a newly created, unforked provider session has a proven zero baseline. */
   readonly freshSession?: boolean;
   /** The provider thread this mapper owns; child and sibling events must stay in their scope. */
@@ -1056,7 +1056,7 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
       case "serverRequest/resolved":
         out.push({
           type: "requestResolved",
-          requestId: codexRequestId(notification.params.requestId, options.requestScope ?? ""),
+          requestId: codexRequestId(notification.params.requestId, options.requestScope),
         });
         break;
       case "configWarning": {

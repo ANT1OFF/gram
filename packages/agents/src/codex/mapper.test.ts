@@ -2,15 +2,24 @@ import { fileEditsOf, MessageId, type AgentEvent } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 import { claudeFailure, codexFailure, httpFailure } from "../failure.ts";
 import { autoReviewNotice } from "./auto-review-notice.ts";
-import { hunksOf, makeCodexMapper, type CodexCompactionPhase } from "./mapper.ts";
+import {
+  hunksOf,
+  makeCodexMapper,
+  type CodexCompactionPhase,
+  type CodexMapperOptions,
+} from "./mapper.ts";
 import type { ServerNotification } from "./protocol/ServerNotification.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import { codexFixture, serverMessages } from "./testing.ts";
 
+/** A mapper for one session, whose card ids are scoped `s`. */
+const mapperOf = (options: Omit<CodexMapperOptions, "requestScope">) =>
+  makeCodexMapper({ requestScope: "s", ...options });
+
 /** Replays a fixture's notifications through a fresh mapper. */
 const replay = (name: string, gateway = false): Array<AgentEvent> => {
   let n = 0;
-  const mapper = makeCodexMapper({
+  const mapper = mapperOf({
     newMessageId: () => MessageId.make(`m${++n}`),
     freshSession: true,
     gateway,
@@ -63,7 +72,7 @@ const limitsUpdate = (
 
 describe("makeCodexMapper", () => {
   it("retains a native image view's actual source instead of an empty result", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("image-message") });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("image-message") });
     const events = mapper.map({
       method: "item/completed",
       params: {
@@ -109,7 +118,7 @@ describe("makeCodexMapper", () => {
   });
 
   it("stores a patch's file changes as an Edit the shared file-edit shape reads per file", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("patch") });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("patch") });
     const item: Omit<Extract<ThreadItem, { type: "fileChange" }>, "status"> = {
       type: "fileChange",
       id: "patch-1",
@@ -189,7 +198,7 @@ describe("makeCodexMapper", () => {
   });
 
   it("refuses native image admission from another provider thread", () => {
-    const mapper = makeCodexMapper({
+    const mapper = mapperOf({
       newMessageId: () => MessageId.make("native"),
       threadId: "owner",
     });
@@ -205,7 +214,7 @@ describe("makeCodexMapper", () => {
 
   it("admits native images once in their owning turn, including completion-only new turns", () => {
     let id = 0;
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make(`image-${++id}`) });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make(`image-${++id}`) });
     const image = (turnId: string, path = "/synthetic/shot.png", method = "item/completed") =>
       mapper.map({
         method,
@@ -248,7 +257,7 @@ describe("makeCodexMapper", () => {
   });
 
   it("extracts native dynamic image blocks without fetching output-controlled URLs", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("image-message") });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("image-message") });
     const events = mapper.map({
       method: "item/completed",
       params: {
@@ -295,7 +304,7 @@ describe("makeCodexMapper", () => {
     expect(events.findIndex((e) => e.type === "toolImage")).toBeLessThan(events.length - 1);
   });
   it("reports Codex's 5-hour and weekly limits as readings, a reached one as rejected", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("m"), freshSession: true });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("m"), freshSession: true });
     expect(mapper.map(limitsUpdate(null, 85))).toEqual([
       {
         type: "rateLimit",
@@ -314,14 +323,14 @@ describe("makeCodexMapper", () => {
   });
 
   it("reads only the account's snapshot, not another limit bucket's", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("m"), freshSession: true });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("m"), freshSession: true });
     expect(mapper.map(limitsUpdate(null, 97, "codex_bengalfox"))).toEqual([]);
     // A snapshot that doesn't say which limit it is, as an older Codex sends, is the account's.
     expect(mapper.map(limitsUpdate(null, 40, null))).toHaveLength(2);
   });
 
   it("leaves out a window Codex doesn't name or sends empty", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("m"), freshSession: true });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("m"), freshSession: true });
     expect(
       mapper.map({
         method: "account/rateLimits/updated",
@@ -382,7 +391,7 @@ describe("makeCodexMapper", () => {
   });
 
   it("closes unfinished tools on interruption without changing completed tools", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("cancelled-message") });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("cancelled-message") });
     const item = {
       type: "commandExecution",
       id: "pending",
@@ -491,7 +500,7 @@ describe("makeCodexMapper", () => {
 
   it("marks a compaction Codex started itself with the context it compacted", () => {
     let n = 0;
-    const mapper = makeCodexMapper({
+    const mapper = mapperOf({
       newMessageId: () => MessageId.make(`m${++n}`),
       now: () => 1_790_000_000_000,
     });
@@ -530,7 +539,7 @@ describe("makeCodexMapper", () => {
 
   it("marks the compaction a /compact asked for as the user's, and only that one", () => {
     let n = 0;
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make(`m${++n}`) });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make(`m${++n}`) });
     const messages = serverMessages(codexFixture("cx15-auto-compact")).filter(
       (message) => !("id" in message),
     );
@@ -564,7 +573,7 @@ describe("makeCodexMapper", () => {
     expect(triggers(false)).toEqual(["live auto", "auto"]);
 
     // One asked for whose turn ended without it (interrupted) leaves the next to Codex.
-    const fresh = makeCodexMapper({ newMessageId: () => MessageId.make(`f${++n}`) });
+    const fresh = mapperOf({ newMessageId: () => MessageId.make(`f${++n}`) });
     fresh.compactionRequested(true);
     const later = messages
       .flatMap((message) => fresh.map(message as ServerNotification))
@@ -576,7 +585,7 @@ describe("makeCodexMapper", () => {
 
   it("keeps compaction authoritative across active status, retries and duplicate starts", () => {
     let clock = 1_000;
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("m"), now: () => clock });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("m"), now: () => clock });
     const notify = (method: string, params: unknown) =>
       mapper.map({ method, params } as ServerNotification);
     const item = { type: "contextCompaction", id: "compact" };
@@ -621,7 +630,7 @@ describe("makeCodexMapper", () => {
   });
 
   it("doesn't treat an active thread notification as compaction completion", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("m") });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("m") });
     mapper.map({
       method: "item/started",
       params: {
@@ -645,7 +654,7 @@ describe("makeCodexMapper", () => {
   it("observes item duration independently of the remainder of the turn", () => {
     let clock = 1_000;
     const phases: Array<CodexCompactionPhase> = [];
-    const mapper = makeCodexMapper({
+    const mapper = mapperOf({
       newMessageId: () => MessageId.make("m"),
       now: () => clock,
       onCompaction: (phase) => phases.push(phase),
@@ -690,7 +699,7 @@ describe("makeCodexMapper", () => {
   it("records newer CLI lifecycle timestamps separately from receipt time", () => {
     let clock = 1_000;
     const phases: Array<CodexCompactionPhase> = [];
-    const mapper = makeCodexMapper({
+    const mapper = mapperOf({
       newMessageId: () => MessageId.make("m"),
       now: () => clock,
       onCompaction: (phase) => phases.push(phase),
@@ -713,7 +722,7 @@ describe("makeCodexMapper", () => {
     "forgets an unfinished compaction after %s",
     (status) => {
       const phases: Array<CodexCompactionPhase> = [];
-      const mapper = makeCodexMapper({
+      const mapper = mapperOf({
         newMessageId: () => MessageId.make("m"),
         onCompaction: (phase) => phases.push(phase),
       });
@@ -769,7 +778,7 @@ describe("makeCodexMapper", () => {
   });
 
   it("ends a turn the model refused, such as for an effort it doesn't take, with the error", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("m1") });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("m1") });
     const turn = {
       id: "turn_1",
       items: [],
@@ -955,7 +964,7 @@ describe("makeCodexMapper failures", () => {
   });
 
   it("carries the thread's goal, and says when it was cleared", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("m1") });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("m1") });
     const goal = {
       threadId: "thr_1",
       objective: "Make the retry test deterministic",
@@ -1018,7 +1027,7 @@ describe("hunksOf", () => {
 });
 
 const diagnosticMapper = (scope = "synthetic-user", cwd = "/synthetic/repo") =>
-  makeCodexMapper({
+  mapperOf({
     newMessageId: () => MessageId.make("m"),
     diagnosticScope: scope,
     diagnosticCwd: cwd,
@@ -1045,7 +1054,7 @@ describe("Codex startup diagnostic identity", () => {
       diagnosticMapper("synthetic-user", "/synthetic/other-worktree").map(diagnosticConfig())[0],
     );
     expect(
-      makeCodexMapper({ newMessageId: () => MessageId.make("m") }).map(diagnosticConfig())[0],
+      mapperOf({ newMessageId: () => MessageId.make("m") }).map(diagnosticConfig())[0],
     ).toEqual({
       type: "notice",
       level: "warning",
@@ -1182,7 +1191,7 @@ describe("Codex's automatic approvals reviewer", () => {
   });
 
   it("tracks reviews in progress until they finish or their turn ends, and shows a warning", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("m"), threadId: "thread" });
+    const mapper = mapperOf({ newMessageId: () => MessageId.make("m"), threadId: "thread" });
     const notify = (method: string, params: Record<string, unknown>) =>
       mapper.map({ method, params: { threadId: "thread", ...params } } as ServerNotification);
     const reviewed = (phase: string, reviewId: string, status: string) =>

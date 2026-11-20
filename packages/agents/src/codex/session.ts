@@ -1173,10 +1173,10 @@ export const makeCodexHost = (
         }
         const card = toPendingRequest(
           request,
+          idScope,
           mapper.changes,
           level ?? false,
           promptsOnce,
-          idScope,
         );
         if (card === undefined) {
           emit({

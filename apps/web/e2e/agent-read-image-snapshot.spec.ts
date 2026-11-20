@@ -28,7 +28,7 @@ test("agent-read snapshot survives source deletion and reload without crossing t
   const { makeCodexMapper } = (await import(
     new URL("../../../packages/agents/src/codex/mapper.ts", import.meta.url).href
   )) as {
-    makeCodexMapper: (options: { newMessageId: () => MessageId }) => {
+    makeCodexMapper: (options: { requestScope: string; newMessageId: () => MessageId }) => {
       map: (notification: unknown) => AgentEvent[];
     };
   };
@@ -63,7 +63,10 @@ test("agent-read snapshot survives source deletion and reload without crossing t
   writeFileSync(outside, png);
   const threadId = "t-deps" as ThreadId;
   const mapped: AgentEvent[] = [];
-  const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("snapshot-message") });
+  const mapper = makeCodexMapper({
+    requestScope: "s",
+    newMessageId: () => MessageId.make("snapshot-message"),
+  });
   const wrapper = {
     type: "dynamicToolCall",
     id: "wrapper",

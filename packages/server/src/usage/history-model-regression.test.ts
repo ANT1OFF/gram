@@ -63,6 +63,7 @@ const count = (input: number, output: number) => ({
 
 it("counts only the new request when a fresh Codex mapper receives resumed cumulative telemetry", () => {
   const mapper = makeCodexMapper({
+    requestScope: "s",
     threadId: "offline-session",
     newMessageId: () => MessageId.make("offline-reply"),
   });
