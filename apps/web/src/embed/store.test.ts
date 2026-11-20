@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   foldable,
   groupOpen,
+  headingTo,
   hiddenCount,
   itemName,
   navigationAt,
@@ -179,6 +180,14 @@ describe("a collapsible navigation group", () => {
     { id: "access", label: "Access", to: "/access", count: 1 },
   ];
   const govern = { id: "govern", label: "Govern", collapsible: true, collapsed: true, items };
+
+  it("opens a page from its heading only with a heading and a path under the app", () => {
+    expect(headingTo({ ...govern, to: "/govern" })).toBe("/govern");
+    expect(headingTo({ id: "govern", to: "/govern", items })).toBeUndefined();
+    expect(headingTo({ ...govern, label: " ", to: "/govern" })).toBeUndefined();
+    expect(headingTo({ ...govern, to: "https://elsewhere.example" })).toBeUndefined();
+    expect(headingTo(govern)).toBeUndefined();
+  });
 
   it("folds only when asked and when it has a heading to fold under", () => {
     expect(foldable(govern)).toBe(true);

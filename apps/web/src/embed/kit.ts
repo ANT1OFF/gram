@@ -14,9 +14,24 @@ export {
 } from "@/components/code/code-editor";
 export { Diff } from "@/components/code/diff";
 export { lineDiff, type DiffLine, type DiffSpan } from "@/components/code/text-diff";
+export {
+  AvatarRow,
+  type AvatarRowProps,
+  type AvatarRowTag,
+  type AvatarRowTagLook,
+  type AvatarRowTone,
+} from "@/components/avatar-row";
 export { EmptyState, type EmptyAction, type EmptyIcon } from "@/components/empty-state";
 export { Hint } from "@/components/hint";
+export { TreeList, type TreeListProps, type TreeNode } from "@/components/tree-list";
 export { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+export {
+  Avatar,
+  type AvatarGlyph,
+  type AvatarProps,
+  type AvatarSize,
+  type AvatarStatus,
+} from "@/components/ui/avatar";
 export { Badge } from "@/components/ui/badge";
 export { Button, buttonVariants } from "@/components/ui/button";
 export { ButtonGroup } from "@/components/ui/button-group";

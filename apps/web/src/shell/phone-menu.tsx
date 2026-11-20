@@ -3,10 +3,25 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { ChevronDown, History, Search, Settings, SunMoon } from "lucide-react";
 import { createElement, useEffect, useId, useRef, useState } from "react";
 
-import { EmbedSwitcher, ItemIcon, linkTo, useCurrentDestination } from "@/embed/slots";
+import {
+  EmbedSwitcher,
+  ItemIcon,
+  linkTo,
+  MARK_GROUND,
+  MarkStatus,
+  useCurrentDestination,
+  usePathname,
+} from "@/embed/slots";
 import type { ShellNavigationGroup } from "@/embed/contract";
 import { useGroupFold } from "@/embed/folded";
-import { hiddenCount, navigationAt, shownCount, shownRows, useEmbedShell } from "@/embed/store";
+import {
+  headingTo,
+  hiddenCount,
+  navigationAt,
+  shownCount,
+  shownRows,
+  useEmbedShell,
+} from "@/embed/store";
 import { useHistoryStore } from "@/history/history-view";
 import { useLaunchIssues } from "@/launch-checks/banner";
 import { cn } from "@/lib/utils";
@@ -60,7 +75,7 @@ function Places({ placement }: { placement: "main" | "foot" }) {
       aria-label={placement === "main" ? "Places" : "More places"}
       data-testid={placement === "main" ? "embed-navigation-main" : "embed-navigation"}
       data-placement={placement}
-      className="flex flex-col"
+      className={cn("flex flex-col", MARK_GROUND)}
     >
       {groups.map((group, index) => (
         <PhoneGroup
@@ -93,13 +108,58 @@ function PhoneGroup({
   const rows = useId();
   const items = shownRows(group, fold.open, at);
   const hidden = hiddenCount(group, fold.open, at);
+  const page = headingTo(group);
+  const pathname = usePathname();
   return (
     <section
       {...(group.label === undefined ? {} : { "aria-label": group.label })}
       data-testid="embed-navigation-group"
       data-open={fold.foldable ? String(fold.open) : undefined}
     >
-      {fold.foldable ? (
+      {page !== undefined ? (
+        <h2 data-testid="embed-navigation-heading" className="flex min-w-0 items-center pr-3.5">
+          <Link
+            {...linkTo(page)}
+            {...{ [OVERVIEW_STOP]: "" }}
+            data-testid="embed-navigation-heading-link"
+            aria-current={pathname === page ? "page" : undefined}
+            className={cn(
+              HEADING,
+              "flex min-h-11 min-w-0 flex-1 items-center outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-[current=page]:text-foreground",
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">{group.label}</span>
+          </Link>
+          {hidden !== undefined && (
+            <span
+              data-testid="embed-navigation-hidden-count"
+              className="shrink-0 text-body text-status-needs tabular-nums"
+            >
+              {hidden}
+            </span>
+          )}
+          {fold.foldable && (
+            <button
+              type="button"
+              {...{ [OVERVIEW_STOP]: "" }}
+              data-testid="embed-navigation-toggle"
+              aria-label={group.label}
+              aria-expanded={fold.open}
+              aria-controls={rows}
+              onClick={fold.toggle}
+              className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            >
+              <ChevronDown
+                aria-hidden
+                className={cn(
+                  "size-4 transition-transform duration-(--dur-fast)",
+                  !fold.open && "-rotate-90",
+                )}
+              />
+            </button>
+          )}
+        </h2>
+      ) : fold.foldable ? (
         <h2 data-testid="embed-navigation-heading">
           <button
             type="button"
@@ -153,7 +213,10 @@ function PhoneGroup({
                 className={ROW}
               >
                 <ItemIcon item={item} className="size-[1.375rem] shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {item.label}
+                  <MarkStatus item={item} />
+                </span>
                 {count !== undefined && (
                   <span
                     data-testid="embed-navigation-count"

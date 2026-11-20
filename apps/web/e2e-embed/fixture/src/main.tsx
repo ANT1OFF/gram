@@ -12,6 +12,8 @@ import {
   type ShellSlotProps,
 } from "gram-web";
 import {
+  Avatar,
+  AvatarRow,
   Badge,
   Button,
   CodeEditor,
@@ -33,8 +35,11 @@ import {
   Popover,
   SettingRow,
   SettingsGroup,
+  TreeList,
   type CodeEditorHandle,
+  type TreeNode,
 } from "gram-web/kit";
+import { Bot } from "lucide-react";
 import "gram-web/style.css";
 import { useRef, useState } from "react";
 
@@ -194,6 +199,115 @@ function Members() {
     </div>
   );
 }
+
+/** A person in the tree, as a row. */
+const person = (id: string, name: string, title: string, online: boolean): TreeNode => ({
+  id,
+  label: name,
+  content: (
+    <AvatarRow
+      testId="fixture-person"
+      avatar={{
+        name,
+        ...(online ? { status: "success" as const, statusLabel: "Online" } : { dimmed: true }),
+      }}
+      name={name}
+      meta={title}
+      status={online ? "Online" : "Seen yesterday"}
+      statusTone={online ? "default" : "muted"}
+    />
+  ),
+});
+
+/** The kit's marks, rows and tree, with made-up people and agents. */
+function People() {
+  const tree: readonly TreeNode[] = [
+    {
+      id: "north",
+      label: "North",
+      content: <span className="text-body-strong">North</span>,
+      children: [
+        person("ada", "Ada Example", "Lead", true),
+        {
+          id: "east",
+          label: "East",
+          content: <span className="text-body-strong">East</span>,
+          children: [
+            person("bo", "Bo Sample", "Engineer", true),
+            person("cy", "Cy Placeholder", "Engineer", false),
+          ],
+        },
+      ],
+    },
+  ];
+  return (
+    <Page title="People" description="Marks, rows and a tree from the kit.">
+      <div data-testid="fixture-marks" className="flex flex-wrap items-center gap-4">
+        <Avatar name="Ada Example" size="xs" status="success" statusLabel="Online" />
+        <Avatar name="Ada Example" size="sm" status="idle" statusLabel="Away" />
+        <Avatar name="Ada Example" status="success" statusLabel="Online" labelled />
+        <Avatar name="Build bot" shape="square" glyph={Bot} size="xs" status="working" />
+        <Avatar name="Build bot" shape="square" glyph={Bot} size="sm" status="waiting" />
+        <Avatar name="Build bot" shape="square" glyph={Bot} status="needs" />
+        <Avatar name="Build bot" shape="square" glyph={Bot} status="error" dimmed />
+      </div>
+      <div className="flex flex-col divide-y divide-border">
+        <AvatarRow
+          testId="fixture-agent-row"
+          avatar={{ name: "Build bot", shape: "square", glyph: Bot, status: "working" }}
+          name="Build bot"
+          tags={[
+            { label: "Shared", look: "badge" },
+            { label: "bot/build", look: "code", hideOnPhone: true },
+          ]}
+          meta="Owned by Ada Example · acts through two accounts"
+          aside="Writing the release notes"
+          status="Working"
+          statusTone="working"
+        />
+        <AvatarRow
+          avatar={{ name: "Ada Example", status: "success" }}
+          name="Ada Example"
+          tags={["You", "Lead"]}
+          meta="Lead"
+          status="Online"
+        />
+        <AvatarRow
+          compact
+          avatar={{ name: "Check bot", shape: "square", glyph: Bot, status: "needs" }}
+          name="Check bot"
+          meta="Waiting on a review"
+          status="Waiting on someone"
+          statusTone="needs"
+        />
+      </div>
+      <TreeList testId="fixture-tree" label="Teams" nodes={tree} />
+    </Page>
+  );
+}
+
+/** A group whose heading opens a page, its rows marks with a status. */
+(window as unknown as { fixturePeopleNav: unknown }).fixturePeopleNav = {
+  id: "people",
+  label: "People",
+  to: "/govern/people",
+  placement: "main",
+  collapsible: true,
+  items: [
+    {
+      id: "build-bot",
+      label: "Build bot",
+      to: "/govern/agents/build-bot",
+      mark: { shape: "square", glyph: Bot, status: "working", statusLabel: "Working" },
+    },
+    {
+      id: "ada",
+      label: "Ada Example",
+      to: "/govern/agents/ada",
+      mark: { status: "success", statusLabel: "Online" },
+    },
+  ],
+};
 
 /** This app's own first page, at the app's root in place of Gram's. */
 function Home() {
@@ -469,6 +583,7 @@ mountGram({
       { path: "/govern/beside/$threadId", title: "Beside", component: Beside },
       { path: "/govern/changes/$threadId", title: "Changes", component: Changes },
       { path: "/govern/source", title: "Source", component: Source },
+      { path: "/govern/people", title: "People", component: People },
     ],
     home: { title: "Home", component: Home },
     navigation: [BUILD, GOVERN],

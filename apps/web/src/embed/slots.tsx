@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { createElement, useEffect, useId, useMemo, useRef, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
+import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
 
@@ -18,6 +19,7 @@ import { useGroupFold } from "./folded";
 import {
   itemName,
   currentDestination,
+  headingTo,
   hiddenCount,
   navigationAt,
   shownCount,
@@ -88,12 +90,32 @@ function Monogram({ label, className }: { label: string; className?: string }) {
 
 export function ItemIcon({ item, className }: { item: ShellNavigationItem; className: string }) {
   const Icon = item.icon;
+  const mark = item.mark;
+  if (mark !== undefined)
+    return (
+      <Avatar {...mark} name={mark.name ?? item.label} size="xs" testId="embed-navigation-mark" />
+    );
   return Icon === undefined ? (
     <Monogram label={item.label} className={className} />
   ) : (
     <Icon aria-hidden className={className} />
   );
 }
+
+/** A mark's status in words after a row's name, for a screen reader. */
+export function MarkStatus({ item }: { item: ShellNavigationItem }) {
+  const words = item.mark?.statusLabel;
+  return words === undefined || words === "" ? null : <span className="sr-only">, {words}</span>;
+}
+
+/** A row's name for a screen reader where only its icon shows: with its mark's status. */
+export const spokenStatus = (item: ShellNavigationItem, name: string): string =>
+  item.mark?.statusLabel === undefined || item.mark.statusLabel === ""
+    ? name
+    : `${name}, ${item.mark.statusLabel}`;
+
+/** The ground a mark's status dot is ringed in: the sidebar's own. */
+export const MARK_GROUND = "[--mark-ground:var(--color-sidebar)]";
 
 /**
  * A navigation row: its fill and colour ease in on hover, and it gives a little when pressed, under
@@ -221,6 +243,7 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
       data-look={roomy ? "roomy" : undefined}
       className={cn(
         "relative flex shrink-0 flex-col text-body",
+        MARK_GROUND,
         roomy ? "gap-0" : "gap-tight",
         // In the list it scrolls with the rest, a list's step from what follows; at the foot it
         // is a block of its own, ruled off from the list above.
@@ -254,6 +277,8 @@ function EmbedGroup({
   const rows = useId();
   const items = shownRows(group, fold.open, at);
   const hidden = hiddenCount(group, fold.open, at);
+  const page = headingTo(group);
+  const pathname = usePathname();
   const heading = roomy
     ? // Small capitals, letter-spaced, with air above: a quiet label for what follows.
       "flex h-5 items-end px-2 pt-3 pb-1 text-caption font-medium tracking-[0.08em] text-muted-foreground uppercase box-content"
@@ -265,7 +290,56 @@ function EmbedGroup({
       data-open={fold.foldable ? String(fold.open) : undefined}
     >
       {group.label !== undefined &&
-        (fold.foldable ? (
+        (page !== undefined ? (
+          <h2
+            data-testid="embed-navigation-heading"
+            className={cn("flex min-w-0 items-center gap-1", roomy && "pt-3")}
+          >
+            <Link
+              {...linkTo(page)}
+              {...{ [OVERVIEW_STOP]: "" }}
+              data-testid="embed-navigation-heading-link"
+              data-glide-skip=""
+              aria-current={pathname === page ? "page" : undefined}
+              className={cn(
+                heading,
+                "relative",
+                roomy && "box-border h-6 pt-0",
+                "min-w-0 flex-1 rounded-(--radius-sm) outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:text-foreground",
+              )}
+            >
+              <span className="min-w-0 flex-1 truncate">{group.label}</span>
+            </Link>
+            {hidden !== undefined && (
+              <span
+                data-testid="embed-navigation-hidden-count"
+                className="shrink-0 text-meta text-muted-foreground tabular-nums"
+              >
+                {hidden}
+              </span>
+            )}
+            {fold.foldable && (
+              <button
+                type="button"
+                {...{ [OVERVIEW_STOP]: "" }}
+                data-testid="embed-navigation-toggle"
+                aria-label={group.label}
+                aria-expanded={fold.open}
+                aria-controls={rows}
+                onClick={fold.toggle}
+                className="grid size-6 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none transition-colors duration-(--dur-fast) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <ChevronDown
+                  aria-hidden
+                  className={cn(
+                    "size-3.5 transition-transform duration-(--dur-fast)",
+                    !fold.open && "-rotate-90",
+                  )}
+                />
+              </button>
+            )}
+          </h2>
+        ) : fold.foldable ? (
           <h2 data-testid="embed-navigation-heading" className={roomy ? "pt-3" : undefined}>
             <button
               type="button"
@@ -318,14 +392,21 @@ function EmbedGroup({
                 aria-current={current ? "page" : undefined}
                 className={roomy ? ROOMY_ROW : NAV_ROW}
               >
-                {roomy ? (
+                {roomy && item.mark !== undefined ? (
+                  <span className="grid size-8 shrink-0 place-items-center">
+                    <ItemIcon item={item} className="shrink-0" />
+                  </span>
+                ) : roomy ? (
                   <RoomyTile>
                     <ItemIcon item={item} className="shrink-0" />
                   </RoomyTile>
                 ) : (
                   <ItemIcon item={item} className="size-icon-row shrink-0" />
                 )}
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {item.label}
+                  <MarkStatus item={item} />
+                </span>
                 <Count count={item.count} />
               </Link>
             </li>
@@ -359,7 +440,7 @@ export function EmbedFootIcons() {
   return groups.flatMap((group) =>
     group.items.map((item) => {
       const count = shownCount(item.count);
-      const name = itemName(group, item.label);
+      const name = spokenStatus(item, itemName(group, item.label));
       const spoken = count === undefined ? name : `${name}, ${count}`;
       return (
         <Hint
@@ -418,6 +499,7 @@ export function EmbedRailNavigation({
       data-placement={placement}
       className={cn(
         "relative flex shrink-0 flex-col items-center",
+        MARK_GROUND,
         quiet ? "gap-3.5" : "gap-1",
         !main && !quiet && "border-t border-sidebar-divider py-2",
       )}
@@ -431,7 +513,7 @@ export function EmbedRailNavigation({
           {group.items.map((item) => {
             const current = item.to === at;
             const count = shownCount(item.count);
-            const name = itemName(group, item.label);
+            const name = spokenStatus(item, itemName(group, item.label));
             const spoken = count === undefined ? name : `${name}, ${count}`;
             return (
               <Hint
