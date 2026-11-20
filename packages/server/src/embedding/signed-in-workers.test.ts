@@ -1126,7 +1126,7 @@ describe("stops a server never confirmed", () => {
   );
 });
 
-describe("RunHeim's answers about one machine", () => {
+describe("a hosted server's answers about one machine", () => {
   const noMachines = {
     list: () => [],
     remove: () => false,

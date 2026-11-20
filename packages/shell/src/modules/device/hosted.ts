@@ -1168,7 +1168,8 @@ export const callWorkerMachines = async (
     held?.ok === true ? [held.token.accessToken] : [],
   );
   const body = scrubbed(await jsonOf(response), secrets);
-  if (response.status === 401 || response.status >= 500)
+  // A 503 is the server's own word that it is busy, for the server to read: never "no answer".
+  if (response.status === 401 || (response.status >= 500 && response.status !== 503))
     return failed(
       scrubbed(refusalOf(body), secrets) ??
         (response.status === 401 ? "The server refused the sign-in." : UNREACHABLE),

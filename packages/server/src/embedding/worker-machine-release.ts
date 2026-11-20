@@ -20,7 +20,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import { RemoteHosts } from "../host/remote-hosts.ts";
-import { finishedWorkers } from "../orchestration/ledger.ts";
+import { releasableWorkers } from "../orchestration/ledger.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand, type OnDemandHosts } from "./on-demand.ts";
@@ -92,7 +92,7 @@ export const releaseDecisions = (
   >,
   finished: ReadonlySet<ThreadId>,
   now: number,
-  told: ReadonlyMap<string, boolean>,
+  told: ReadonlyMap<string, { readonly released: boolean; readonly at: number }>,
 ): ReadonlyArray<{ readonly machine: ReleaseMachine; readonly released: boolean }> =>
   machines
     .filter(
@@ -106,11 +106,18 @@ export const releaseDecisions = (
           !finished.has(thread.id) &&
           !(thread.spawnedBy === undefined && thread.parked === true),
       );
-      if (atWork) return told.get(machine.id) === false ? [] : [{ machine, released: false }];
+      // What was told is trusted a while only: a reuse that failed may have taken a release back.
+      const said = told.get(machine.id);
+      const fresh = (released: boolean) =>
+        said !== undefined && said.released === released && now - said.at < TOLD_FOR_MS;
+      if (atWork) return fresh(false) ? [] : [{ machine, released: false }];
       const settling =
         machine.onlineSince !== undefined && now - machine.onlineSince < WORKER_RELEASE_SETTLE_MS;
-      return settling || told.get(machine.id) === true ? [] : [{ machine, released: true }];
+      return settling || fresh(true) ? [] : [{ machine, released: true }];
     });
+
+/** How long what was told of a machine is trusted before it is told again. */
+export const TOLD_FOR_MS = 60 * 60_000;
 
 /** Tells the provider a worker machine's work is over, or going on again. 404: it keeps none. */
 export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, released: boolean) =>
@@ -175,7 +182,7 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
      * What the provider was last told of each machine, by its id: a machine that takes the name of
      * one reclaimed before it has another key, and so another id, and is told afresh.
      */
-    const told = new Map<string, boolean>();
+    const told = new Map<string, { readonly released: boolean; readonly at: number }>();
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
       if (machines.length === 0) return;
@@ -184,7 +191,7 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
       for (const workspace of yield* store.listWorkspaces) {
         const ledger = yield* orchestration.ledger(workspace.workspace.id).pipe(Effect.option);
         if (Option.isSome(ledger))
-          for (const id of finishedWorkers(ledger.value.features)) finished.add(id);
+          for (const id of releasableWorkers(ledger.value.features)) finished.add(id);
       }
       for (const { machine, released } of releaseDecisions(
         machines,
@@ -195,11 +202,14 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
       )) {
         const sent = yield* tell(machine, released).pipe(Effect.result);
         // Kept only once the provider took it: one it didn't apply is told again next pass.
-        if (sent._tag === "Success") told.set(machine.id, released);
-        else
+        if (sent._tag === "Success") told.set(machine.id, { released, at: Date.now() });
+        else {
+          // Not known to have been taken, or taken with the answer lost: nothing kept of it.
+          told.delete(machine.id);
           yield* Effect.logWarning("a worker machine's release could not be told").pipe(
             Effect.annotateLogs({ machine: machine.name, reason: sent.failure.message }),
           );
+        }
       }
     });
     yield* pass.pipe(

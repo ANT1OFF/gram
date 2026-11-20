@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { makeOnDemandHosts } from "./on-demand.ts";
+import { releasableWorkers } from "../orchestration/ledger.ts";
 import {
   releaseDecisions,
   tellRelease,
@@ -125,7 +126,7 @@ describe("a worker machine's work", () => {
       [on("t1", "aaaa"), on("t2", "bbbb")],
       new Set(),
       now,
-      new Map(),
+      new Map<string, { released: boolean; at: number }>(),
     );
     // Both at work, the one that has only just come back included: told so at once.
     expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([
@@ -135,7 +136,7 @@ describe("a worker machine's work", () => {
   });
 
   it("judges a machine's work over only once it has settled, and says nothing twice", () => {
-    const told = new Map([["cccc", true]]);
+    const told = new Map([["cccc", { released: true, at: now - 60_000 }]]);
     const decided = releaseDecisions(
       [machine("aaaa", { onlineSince: now - 60_000 }), machine("bbbb"), machine("cccc")],
       [],
@@ -145,5 +146,41 @@ describe("a worker machine's work", () => {
     );
     // aaaa has just come online: not yet. cccc was told already.
     expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([["bbbb", true]]);
+  });
+
+  it("keeps a worker whose pull request merged but whose turn still runs at work", () => {
+    const worker = (threadId: string, state: string, status: string) => ({
+      threadId,
+      state,
+      status,
+    });
+    const released = releasableWorkers([
+      {
+        workers: [worker("t-running", "merged", "running"), worker("t-done", "merged", "idle")],
+      },
+    ] as never);
+    expect([...released]).toEqual(["t-done"]);
+  });
+
+  it("tells again, after a while, a release a reuse since may have taken back", () => {
+    // Told released two hours ago; a reuse that failed since took the release back there.
+    const decided = releaseDecisions(
+      [machine("aaaa")],
+      [],
+      new Set(),
+      now,
+      new Map([["aaaa", { released: true, at: now - 2 * 60 * 60_000 }]]),
+    );
+    expect(decided.map(({ released }) => released)).toEqual([true]);
+    // Told a minute ago: not again.
+    expect(
+      releaseDecisions(
+        [machine("aaaa")],
+        [],
+        new Set(),
+        now,
+        new Map([["aaaa", { released: true, at: now - 60_000 }]]),
+      ),
+    ).toEqual([]);
   });
 });

@@ -349,10 +349,11 @@ const serverRelayMessageOf = (message: unknown): WorkerMachineRelayMessage | und
 /** The fields this machine's server reads of each call's answer. */
 const ANSWER_FIELDS: Readonly<Record<WorkerMachineCall, ReadonlyArray<string>>> = {
   choices: ["choices", "note", "keeps", "models"],
-  start: ["name", "message", "asked", "inUse", "total", "machines"],
-  status: ["phase", "message", "step", "publicKey", "platform"],
-  release: ["known", "released", "message"],
-  stop: ["stopped", "message"],
+  // `code` names the answer where a status alone doesn't (`name_in_use`, `released`, `not_found`).
+  start: ["code", "name", "message", "asked", "inUse", "total", "machines"],
+  status: ["code", "phase", "message", "step", "publicKey", "platform"],
+  release: ["code", "known", "released", "message"],
+  stop: ["code", "stopped", "message"],
 };
 
 const answerFields = (call: WorkerMachineCall, body: unknown): unknown => {

@@ -263,6 +263,21 @@ export const isLiveWorker = (
   (!FINISHED_STATES.has(worker.state) ||
     workerHasOngoingWork({ pendingRequests: [], userIntervened: false, ...worker }));
 
+/**
+ * The workers whose machine may be told its work is over: finished as the ledger reads them and
+ * with nothing still going on (`isLiveWorker`), so one whose pull request merged while its turn,
+ * a build or a check still runs keeps its machine at work.
+ */
+export const releasableWorkers = (
+  features: ReadonlyArray<Pick<FeatureLedgerEntry, "workers">>,
+): ReadonlySet<ThreadId> =>
+  new Set(
+    features
+      .flatMap((feature) => feature.workers)
+      .filter((worker) => !isLiveWorker(worker))
+      .map((worker) => worker.threadId),
+  );
+
 /** The workers a ledger reads as finished: delivered, merged or archived. */
 export const finishedWorkers = (
   features: ReadonlyArray<FeatureLedgerEntry>,

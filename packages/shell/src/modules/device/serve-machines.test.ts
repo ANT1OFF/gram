@@ -383,3 +383,36 @@ describe("the relays the app keeps", () => {
     });
   });
 });
+
+describe("the codes a server's answers carry", () => {
+  it("reach this machine's server for each call that reads them", async () => {
+    const relays = makeWorkerMachineRelays({
+      device: () => undefined,
+      post: () => undefined,
+      watch: false,
+    });
+    for (const [call, body] of [
+      ["start", { code: "released" }],
+      ["start", { code: "name_in_use", message: "Used." }],
+      ["release", { code: "not_found" }],
+      ["stop", { code: "not_found", stopped: false }],
+    ] as const) {
+      const device = deviceFor([], { on: true }, body);
+      expect(
+        await answerWorkerMachines(
+          {
+            type: "machines.request",
+            id: "c",
+            op: "call",
+            origin: ORIGIN,
+            call,
+            body: { name: NAME },
+          },
+          device,
+          relays,
+        ),
+        call,
+      ).toMatchObject({ result: { ok: true, body } });
+    }
+  });
+});
