@@ -1,4 +1,10 @@
-export { AcpError, connectAcp, startAcpAgent, type AcpConnection, type AcpHandlers } from "./acp.ts";
+export {
+  AcpError,
+  connectAcp,
+  startAcpAgent,
+  type AcpConnection,
+  type AcpHandlers,
+} from "./acp.ts";
 export { makeGrokMapper, outputText, toolFor, turnUsage, type GrokMapper } from "./mapper.ts";
 export {
   autoAnswer,

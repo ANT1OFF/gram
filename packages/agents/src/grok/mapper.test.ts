@@ -119,7 +119,11 @@ describe("Grok Build mapper", () => {
     expect(asked).toContainEqual({ type: "status", status: "awaitingApproval" });
     const ended = map.ended("cancelled");
     expect(chunks(ended)).toContainEqual(
-      expect.objectContaining({ type: "tool-output-error", toolCallId: "call-1", errorText: "Cancelled" }),
+      expect.objectContaining({
+        type: "tool-output-error",
+        toolCallId: "call-1",
+        errorText: "Cancelled",
+      }),
     );
     expect(ended).toContainEqual({ type: "requestResolved", requestId: request });
     expect(ended).toContainEqual({ type: "turnEnd", reason: "interrupted" });

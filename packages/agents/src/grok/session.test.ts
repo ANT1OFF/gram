@@ -7,9 +7,9 @@ import { describe, expect, it } from "vitest";
 import type { AcpConnection, AcpHandlers, StartAcpAgent } from "./acp.ts";
 import { autoAnswer, grokPermission, makeGrokHost, permissionParams } from "./session.ts";
 
-describe("Grok Build permissions", () => {
-  const command = (text: string) => ({ kind: "execute", rawInput: { command: text } });
+const command = (text: string) => ({ kind: "execute", rawInput: { command: text } });
 
+describe("Grok Build permissions", () => {
   it("asks under an outward gate whatever the mode, so Gram sees every command", () => {
     expect(grokPermission("bypassPermissions", "all")).toBe("ask");
     expect(grokPermission("auto", "irreversible")).toBe("ask");
@@ -22,7 +22,9 @@ describe("Grok Build permissions", () => {
   it("lets through what a gated bypass session would run, except what the gate asks about", () => {
     expect(autoAnswer("bypassPermissions", "all", command("ls -la"))).toBe("allow");
     expect(autoAnswer("bypassPermissions", "all", command("git push origin main"))).toBeUndefined();
-    expect(autoAnswer("bypassPermissions", "irreversible", command("gh pr merge 12"))).toBeUndefined();
+    expect(
+      autoAnswer("bypassPermissions", "irreversible", command("gh pr merge 12")),
+    ).toBeUndefined();
     expect(autoAnswer("auto", "all", { kind: "edit", rawInput: {} })).toBe("allow");
   });
 
@@ -113,7 +115,7 @@ describe("Grok Build host", () => {
                   scope: "always",
                 });
             }),
-          ).pipe(Effect.forkChild);
+          ).pipe(Effect.forkScoped);
           yield* session.send({ text: "go" });
           yield* Effect.promise(async () => {
             while (!events.some((event) => event.type === "turnEnd"))
@@ -129,7 +131,11 @@ describe("Grok Build host", () => {
       params: permissionParams("ask"),
     });
     const request = events.find((event) => event.type === "request");
-    expect(request?.type === "request" && request.request.scopes).toEqual(["once", "always"]);
+    expect(
+      request?.type === "request" && request.request.kind === "approval"
+        ? request.request.scopes
+        : undefined,
+    ).toEqual(["once", "always"]);
     expect(agent.calls).toContainEqual({
       method: "answered",
       params: { outcome: { outcome: "selected", optionId: "always-allow" } },

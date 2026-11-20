@@ -140,7 +140,9 @@ export const resolveBinary = Effect.fnUntraced(function* (
     // A native multicall binary (mise's command wrappers, busybox) picks its tool by the name it
     // is run under, so a link to it under another name keeps the link's path.
     const path =
-      kind === "native" && commandName(real.value) !== commandName(candidate) ? candidate : real.value;
+      kind === "native" && commandName(real.value) !== commandName(candidate)
+        ? candidate
+        : real.value;
     return { path, skipped } satisfies ResolvedBinary;
   }
   const detail = skipped.length ? ` (skipped: ${skipped.map((s) => s.path).join(", ")})` : "";

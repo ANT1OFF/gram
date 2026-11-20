@@ -169,7 +169,8 @@ export interface PermissionOption {
 /** Gram's scope for an option: `allow_always` is session-long when its id says so. */
 export const scopeOf = (option: PermissionOption): ApprovalScope | undefined => {
   if (option.kind === "allow_once") return "once";
-  if (option.kind === "allow_always") return option.optionId.endsWith("-session") ? "session" : "always";
+  if (option.kind === "allow_always")
+    return option.optionId.endsWith("-session") ? "session" : "always";
   return undefined;
 };
 
@@ -180,8 +181,10 @@ export const optionFor = (
   scope: ApprovalScope | undefined,
 ): PermissionOption | undefined => {
   if (decision === "deny")
-    return options.find((option) => option.kind === "reject_once") ??
-      options.find((option) => option.kind.startsWith("reject"));
+    return (
+      options.find((option) => option.kind === "reject_once") ??
+      options.find((option) => option.kind.startsWith("reject"))
+    );
   return (
     options.find((option) => scope !== undefined && scopeOf(option) === scope) ??
     options.find((option) => option.kind === "allow_once")
@@ -274,7 +277,9 @@ export const makeGrokMapper = (options: GrokMapperOptions): GrokMapper => {
     out.push(
       chunk(
         t,
-        part.kind === "text" ? { type: "text-end", id: part.id } : { type: "reasoning-end", id: part.id },
+        part.kind === "text"
+          ? { type: "text-end", id: part.id }
+          : { type: "reasoning-end", id: part.id },
       ),
     );
   };
@@ -294,11 +299,18 @@ export const makeGrokMapper = (options: GrokMapperOptions): GrokMapper => {
       endPart(t, out);
       const id = `${kind}-${++t.parts}`;
       t.part = { id, kind };
-      out.push(chunk(t, kind === "text" ? { type: "text-start", id } : { type: "reasoning-start", id }));
+      out.push(
+        chunk(t, kind === "text" ? { type: "text-start", id } : { type: "reasoning-start", id }),
+      );
     }
     const id = t.part.id;
     out.push(
-      chunk(t, kind === "text" ? { type: "text-delta", id, delta } : { type: "reasoning-delta", id, delta }),
+      chunk(
+        t,
+        kind === "text"
+          ? { type: "text-delta", id, delta }
+          : { type: "reasoning-delta", id, delta },
+      ),
     );
   };
 
@@ -311,7 +323,9 @@ export const makeGrokMapper = (options: GrokMapperOptions): GrokMapper => {
     const tool = toolFor(grokToolName(update), record(update["rawInput"]));
     if (!t.tools.has(id)) {
       t.tools.set(id, { name: tool.name, done: false });
-      out.push(chunk(t, { type: "tool-input-start", toolCallId: id, toolName: tool.name, ...TOOL_FLAGS }));
+      out.push(
+        chunk(t, { type: "tool-input-start", toolCallId: id, toolName: tool.name, ...TOOL_FLAGS }),
+      );
       out.push(
         chunk(t, {
           type: "tool-input-available",
