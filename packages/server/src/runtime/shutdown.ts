@@ -1,5 +1,6 @@
 // The server's shutdown, which the desktop shell asks for with a `{ type: "shutdown" }` message
-// rather than a signal. Electron's `utilityProcess.kill()` sends SIGTERM and then SIGKILL two seconds
+// rather than a signal. A server no shell runs (in a container, or a terminal) takes SIGTERM and
+// SIGINT as the same request, and bounds it itself (`SIGNAL_STOP_DEADLINE_MS`). Electron's `utilityProcess.kill()` sends SIGTERM and then SIGKILL two seconds
 // later on POSIX, and calls TerminateProcess on Windows, so a signal leaves the server no time to
 // end its agents. `stopForShutdown` stops the sessions. When the program then returns, the layers
 // close the terminals, the agent servers and the database in turn, and the process exits. Main's
@@ -26,6 +27,11 @@ const WORKING_TIMEOUT_MS = 500;
  * server and its tree.
  */
 export const SHUTDOWN_DEADLINE_MS = 8_000;
+/**
+ * When a server no shell runs, stopped by a signal, exits whatever of its teardown is left: no main
+ * kills it, so this is its stop timeout, inside `docker stop`'s default 10 s and a pod's grace.
+ */
+export const SIGNAL_STOP_DEADLINE_MS = 9_500;
 
 /** Whether `message` is main's request to shut down. */
 export const isShutdownRequest = (message: unknown): boolean =>

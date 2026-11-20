@@ -8,6 +8,7 @@ import {
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
 import { CodexHost, CodexHostLive } from "@gram/agents/codex";
 import { OpenCodeHost, OpenCodeHostLive } from "@gram/agents/opencode";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -48,6 +49,7 @@ import {
   isUpdateShutdownRequest,
   SHUTDOWN_DEADLINE_MS,
   shutdownDiagnostics,
+  SIGNAL_STOP_DEADLINE_MS,
   stopForShutdown,
   unattestedEssential,
   type ShutdownEssentials,
@@ -218,6 +220,41 @@ const sealEssentials = async (requestedAt: number) => {
   parentPort?.postMessage(message);
 };
 
+/**
+ * Set when a signal, not main, stopped a server no shell runs (in a container, `docker stop` or a
+ * pod's deletion; in a terminal, Ctrl-C). `runMain` interrupts the program on it; the program then
+ * stops the sessions as main's request does, and an exit by interruption alone is a clean one.
+ */
+let signalled = false;
+
+if (parentPort === undefined) {
+  const onSignal = () => {
+    if (shutdownRequestedAt !== undefined) return;
+    const requestedAt = Date.now();
+    shutdownRequestedAt = requestedAt;
+    signalled = true;
+    ownedChildrenOrderly = beginChildShutdownCheck();
+    setTimeout(() => {
+      logger.warn(
+        { ms: Date.now() - requestedAt, waitingOn: activeResourceCounts() },
+        "shutdown overran its deadline",
+      );
+    }, SHUTDOWN_DEADLINE_MS).unref();
+    // No main kills this server when its teardown hangs, so it ends itself: past the bound, only a
+    // SIGKILL would, and that one leaves no line saying what held it.
+    setTimeout(() => {
+      logger.error(
+        { ms: Date.now() - requestedAt, waitingOn: activeResourceCounts() },
+        "shutdown: teardown didn't end in time; exiting",
+      );
+      process.exit(1);
+    }, SIGNAL_STOP_DEADLINE_MS).unref();
+  };
+  // Before `runMain`'s own listeners, so the stop is marked before the program is interrupted.
+  process.on("SIGTERM", onSignal);
+  process.on("SIGINT", onSignal);
+}
+
 parentPort?.on("message", ({ data }) => {
   if (!isShutdownRequest(data) || shutdownRequestedAt !== undefined) return;
   const requestedAt = Date.now();
@@ -279,8 +316,7 @@ const program = Effect.gen(function* () {
       console.log(`boot http://127.0.0.1:${port}/`);
     }
   });
-  yield* Effect.promise(() => shutdownRequested.promise);
-  const stopped = yield* stopForShutdown((progress) => {
+  const stopSessions = stopForShutdown((progress) => {
     // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron MessagePortMain
     parentPort?.postMessage(progress);
   }).pipe(
@@ -293,6 +329,12 @@ const program = Effect.gen(function* () {
       Exit.isFailure(exit) ? Effect.sync(() => agentsStopped.resolve(undefined)) : Effect.void,
     ),
   );
+  // A signal interrupts the wait (`runMain`): the sessions stop here, bounded, before the layers
+  // close, as on main's request. Nothing new starts while the rest of the teardown runs.
+  yield* Effect.promise(() => shutdownRequested.promise).pipe(
+    Effect.onInterrupt(() => (signalled ? Effect.asVoid(Effect.exit(stopSessions)) : Effect.void)),
+  );
+  const stopped = yield* stopSessions;
   // An update stops the owned agent processes before the layers close rather than after, so the
   // essentials don't wait on the HTTP and core teardown (`UPDATE_ESSENTIALS`).
   if (forUpdate) {
@@ -342,7 +384,7 @@ program.pipe(
   Effect.provideService(ServerWork, true),
   // After the layers have closed, so it times the whole teardown. The exit is explicit: `runMain`
   // leaves a program that ends without a signal to the event loop, which `parentPort` keeps alive.
-  Effect.onExit((exit) =>
+  Effect.onExit((ended) =>
     essentialsSealed
       ? // Main is killing the server with the rest of its tree. Exiting, which `runMain` does after
         // a failure, would leave what is still under the server out of main's reach.
@@ -355,6 +397,11 @@ program.pipe(
       : Effect.sync(() => {
           if (shutdownRequestedAt === undefined) return;
           agentsStopped.resolve(undefined);
+          // A signal's stop ends the program by interrupting it: that alone is no failure.
+          const exit =
+            signalled && Exit.isFailure(ended) && Cause.hasInterruptsOnly(ended.cause)
+              ? Exit.succeed(sessionsStopped === true)
+              : ended;
           const orderly = ownedChildrenOrderly();
           const diagnostics = shutdownDiagnostics(exit, sessionsStopped, orderly);
           const fields = {

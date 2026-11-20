@@ -24,6 +24,11 @@ The compose file maps the port to this machine's loopback only (`127.0.0.1:4317`
 port the server listens on inside the container, so the printed address works as it is. Other
 machines on your network can't reach it.
 
+A stop (`docker compose stop`, or a pod's deletion) sends SIGTERM, which the server takes as the
+desktop app's quit: it starts nothing new, gives the agent sessions 4 seconds to stop and save, then
+closes the rest and exits 0. It ends itself after 9.5 seconds whatever is left, inside Docker's
+default 10, and logs what held it. A turn the stop cut off is marked interrupted at the next start.
+
 ## Sign the agents in
 
 The agents run inside the container and keep their logins in its home folder, which is a volume,
