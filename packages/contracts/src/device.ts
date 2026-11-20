@@ -965,8 +965,16 @@ export type WorkerMachineOp =
        */
       readonly account?: string;
     }
-  /** Keep carrying this machine's connection, dialling the relay again whenever it ends. */
-  | { readonly op: "relay"; readonly origin: string; readonly name: string }
+  /**
+   * Keep carrying this machine's connection, dialling the relay again whenever it ends: under
+   * the sign-in `account` alone, where one is given (`WorkerMachineServer.account`).
+   */
+  | {
+      readonly op: "relay";
+      readonly origin: string;
+      readonly name: string;
+      readonly account?: string;
+    }
   /** Stop carrying it. */
   | { readonly op: "unrelay"; readonly name: string }
   /**
@@ -976,7 +984,11 @@ export type WorkerMachineOp =
    */
   | {
       readonly op: "relays";
-      readonly machines: ReadonlyArray<{ readonly origin: string; readonly name: string }>;
+      readonly machines: ReadonlyArray<{
+        readonly origin: string;
+        readonly name: string;
+        readonly account?: string;
+      }>;
       readonly fresh?: true;
     };
 

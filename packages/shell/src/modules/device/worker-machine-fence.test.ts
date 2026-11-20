@@ -4,7 +4,9 @@
 import type { HostedDiscovery } from "@gram/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { TokenKeeper } from "./hosted.ts";
+import type { HostedDevice } from "./hosted-device.ts";
 import { ANOTHER_ACCOUNT, hostedWorkerMachines } from "./hosted-worker-machines.ts";
+import { makeWorkerMachineRelays } from "./serve-machines.ts";
 import { devicePrivateKeyFrom, generateDeviceKey } from "./keys.ts";
 import { STOP_TOO_LATE, SUPERSEDED } from "./worker-machine-fence.ts";
 
@@ -151,5 +153,38 @@ describe("a worker machine's call, as the app sends it for one sign-in", () => {
       (await machines.workerMachineCall(ORIGIN, "status", { name: NAME }, undefined, mine)).ok,
     ).toBe(true);
     expect(sent).toEqual(["status"]);
+  });
+});
+
+describe("a worker machine's relay, under the sign-in it was asked for under", () => {
+  it("is neither dialled nor leased under another sign-in there", async () => {
+    const { machines, sent } = setup();
+    const OLD = "mark-ada-before-0123456789";
+    // The app as the relays use it: the real calls over the fake sign-in.
+    const opened: string[] = [];
+    const relays = makeWorkerMachineRelays({
+      watch: false,
+      leaseMs: 60_000,
+      device: () => machines as unknown as HostedDevice,
+      post: () => undefined,
+      open: (url) => {
+        opened.push(url);
+        return { close: () => undefined, send: () => undefined } as never;
+      },
+    });
+    try {
+      // Registered under the sign-in before: not carried under this one, nor renewed.
+      relays.sync([{ origin: ORIGIN, name: NAME, account: OLD }], true);
+      for (let each = 0; each < 50; each += 1) await Promise.resolve();
+      expect(opened).toEqual([]);
+      expect(sent).toEqual([]);
+      expect(machines.workerMachineRelayAllowed(ORIGIN, OLD)).toBe(false);
+      expect(await machines.workerMachineRelayLease(ORIGIN, OLD)).toBe(false);
+      expect(await machines.workerMachineRelayDial(ORIGIN, NAME, OLD)).toEqual(ANOTHER_ACCOUNT);
+      // Its own sign-in's machine is.
+      expect(machines.workerMachineRelayAllowed(ORIGIN, MARK)).toBe(true);
+    } finally {
+      relays.close();
+    }
   });
 });

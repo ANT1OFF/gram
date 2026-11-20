@@ -42,15 +42,22 @@ export interface WorkerMachinePortShape {
   ) => Effect.Effect<
     { readonly ok: true; readonly status: number; readonly body: unknown } | Refused
   >;
-  /** Asks the app to carry this machine's connection, dialling its relay again whenever it ends. */
-  readonly relay: (origin: string, name: string) => void;
+  /**
+   * Asks the app to carry this machine's connection, dialling its relay again whenever it ends:
+   * under the sign-in `account` alone, where one is given.
+   */
+  readonly relay: (origin: string, name: string, account?: string) => void;
   readonly unrelay: (name: string) => void;
   /**
    * Tells the app to carry exactly these and no others; `fresh` from a server just started, so
    * every connection the app carried for the one before is dialled again.
    */
   readonly relays: (
-    machines: ReadonlyArray<{ readonly origin: string; readonly name: string }>,
+    machines: ReadonlyArray<{
+      readonly origin: string;
+      readonly name: string;
+      readonly account?: string;
+    }>,
     fresh?: boolean,
   ) => void;
   /** Where each relayed connection the app opens is handed: one handler, the latest set. */
@@ -287,8 +294,15 @@ export const bridgeWorkerMachines = (
             : refusedOf(result),
         ),
       ),
-    relay: (origin, name) =>
-      post({ type: "machines.request", id: randomUUID(), op: "relay", origin, name }),
+    relay: (origin, name, account) =>
+      post({
+        type: "machines.request",
+        id: randomUUID(),
+        op: "relay",
+        origin,
+        name,
+        ...(account === undefined ? {} : { account }),
+      }),
     unrelay: (name) => post({ type: "machines.request", id: randomUUID(), op: "unrelay", name }),
     relays: (machines, fresh) =>
       post({

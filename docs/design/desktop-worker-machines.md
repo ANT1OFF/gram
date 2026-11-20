@@ -322,8 +322,12 @@ subscription token reaches a machine, with its own consent.
   (`PairedMachine.viaAccount`) and every stop owed. Each call about one carries it, and the app
   sends nothing for a mark that isn't its sign-in's now. A stop owed is let go of, settled or
   skipped only by its own sign-in's answers and registrations: while another sign-in's machine
-  has its name, it is neither sent nor let go of. So signing in there as someone else, or in
-  another organisation, neither forgets the first sign-in's machines nor settles their stops.
+  has its name, it is neither sent nor let go of. A machine registered under another sign-in is
+  frozen for this one: a start of its name (a retry of the same request after signing in again,
+  say) is refused in words before anything is sent, no give-back of the name sends a stop, and its
+  relay is carried, dialled and leased only under the sign-in it was asked for under, so it is
+  never kept awake by another. So signing in there as someone else, or in another organisation,
+  neither forgets, reuses nor deletes the first sign-in's machines, nor settles their stops.
   A machine or a stop owed from before marks were kept is never forgotten or settled on a "no such
   machine", which another sign-in may be answering; only a stop answered done settles one.
 - **A machine the server no longer knows** is forgotten here only after three passes in a row

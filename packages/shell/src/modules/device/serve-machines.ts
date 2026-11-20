@@ -84,8 +84,11 @@ export const nodeRelaySocket: OpenRelaySocket = (url, headers) =>
   new globalThis.WebSocket(url, { headers } as unknown as string[]) as unknown as RelaySocket;
 
 export interface WorkerMachineRelays {
-  /** Keep carrying `name`'s connection, from the server at `origin`. */
-  readonly relay: (origin: string, name: string) => void;
+  /**
+   * Keep carrying `name`'s connection, from the server at `origin`: under the sign-in `account`
+   * alone, where one is given.
+   */
+  readonly relay: (origin: string, name: string, account?: string) => void;
   readonly unrelay: (name: string) => void;
   /**
    * Carry exactly these: each one missing is relayed, each other stopped. `fresh`: the server
@@ -93,7 +96,11 @@ export interface WorkerMachineRelays {
    * is closed and dialled again.
    */
   readonly sync: (
-    machines: ReadonlyArray<{ readonly origin: string; readonly name: string }>,
+    machines: ReadonlyArray<{
+      readonly origin: string;
+      readonly name: string;
+      readonly account?: string | undefined;
+    }>,
     fresh: boolean,
   ) => void;
   /**
@@ -109,6 +116,8 @@ export interface WorkerMachineRelays {
 
 interface Wanted {
   readonly origin: string;
+  /** The sign-in it is carried under alone (`WorkerMachineServer.account`), where one is. */
+  readonly account?: string | undefined;
   stopped: boolean;
   socket?: RelaySocket;
   conn?: string;
@@ -145,15 +154,18 @@ export const makeWorkerMachineRelays = (options: {
   };
 
   /** Whether the sign-in covers carrying a machine from `origin` now. */
-  const covered = (origin: string) => options.device()?.workerMachineRelayAllowed(origin) === true;
+  const covered = (entry: Wanted) =>
+    options.device()?.workerMachineRelayAllowed(entry.origin, entry.account) === true;
 
   const dial = async (name: string, entry: Wanted) => {
     if (entry.stopped) return;
     const device = options.device();
     const prepared =
-      device === undefined || !covered(entry.origin)
+      device === undefined || !covered(entry)
         ? undefined
-        : await device.workerMachineRelayDial(entry.origin, name).catch(() => undefined);
+        : await device
+            .workerMachineRelayDial(entry.origin, name, entry.account)
+            .catch(() => undefined);
     if (entry.stopped) return;
     if (prepared === undefined || !prepared.ok) {
       again(name, entry, undefined);
@@ -235,12 +247,18 @@ export const makeWorkerMachineRelays = (options: {
     if (entry.socket !== undefined) closeSafely(entry.socket, 1000, "no longer relayed");
   };
 
-  const relay = (origin: string, name: string) => {
+  const relay = (origin: string, name: string, account?: string) => {
     const kept = wanted.get(name);
-    if (kept !== undefined && kept.origin === origin && !kept.stopped) return;
+    if (kept !== undefined && kept.origin === origin && kept.account === account && !kept.stopped)
+      return;
     if (kept !== undefined) stop(kept);
     if (wanted.size >= RELAYS_MOST && kept === undefined) return;
-    const entry: Wanted = { origin, stopped: false, waitMs: RETRY_FIRST_MS / 2 };
+    const entry: Wanted = {
+      origin,
+      ...(account === undefined ? {} : { account }),
+      stopped: false,
+      waitMs: RETRY_FIRST_MS / 2,
+    };
     wanted.set(name, entry);
     void dial(name, entry);
   };
@@ -252,7 +270,7 @@ export const makeWorkerMachineRelays = (options: {
   };
   const revalidate = () => {
     for (const entry of wanted.values())
-      if (entry.socket !== undefined && !covered(entry.origin))
+      if (entry.socket !== undefined && !covered(entry))
         closeSafely(entry.socket, 4401, "signed out");
   };
   const watcher = options.watch === false ? undefined : setInterval(revalidate, REVALIDATE_MS);
@@ -267,7 +285,7 @@ export const makeWorkerMachineRelays = (options: {
       const leased =
         device === undefined
           ? false
-          : await device.workerMachineRelayLease(entry.origin).catch(() => false);
+          : await device.workerMachineRelayLease(entry.origin, entry.account).catch(() => false);
       if (!leased && entry.socket === socket) closeSafely(socket, 4401, "sign-in ended");
     }
   };
@@ -278,15 +296,18 @@ export const makeWorkerMachineRelays = (options: {
     relay,
     unrelay,
     sync: (machines, fresh) => {
-      const named = new Map(machines.map((each) => [each.name, each.origin]));
+      const named = new Map(machines.map((each) => [each.name, each]));
       // Deleting from a Map as it is iterated is safe: what is left is still visited.
-      for (const name of wanted.keys())
-        if (named.get(name) !== wanted.get(name)?.origin) unrelay(name);
+      for (const name of wanted.keys()) {
+        const listed = named.get(name);
+        const kept = wanted.get(name);
+        if (listed?.origin !== kept?.origin || listed?.account !== kept?.account) unrelay(name);
+      }
       // A server just started knows none of the connections carried for the one before it.
       if (fresh)
         for (const entry of wanted.values())
           if (entry.socket !== undefined) closeSafely(entry.socket, 4503, "Gram restarted");
-      for (const [name, origin] of named) relay(origin, name);
+      for (const [name, each] of named) relay(each.origin, name, each.account);
     },
     revalidate,
     fromServer: (message) => {
@@ -364,24 +385,32 @@ const answerFields = (call: WorkerMachineCall, body: unknown): unknown => {
   return kept;
 };
 
+/** A sign-in's mark as the server sends it (`WorkerMachineServer.account`). */
+const isMark = (value: unknown): value is string =>
+  typeof value === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(value);
+
 /** The `relays` op's list, read entry by entry; undefined when it isn't one. */
 const relaysOf = (
   value: unknown,
-): ReadonlyArray<{ readonly origin: string; readonly name: string }> | undefined => {
+):
+  | ReadonlyArray<{ readonly origin: string; readonly name: string; readonly account?: string }>
+  | undefined => {
   if (!Array.isArray(value) || value.length > 64) return undefined;
-  const listed: Array<{ origin: string; name: string }> = [];
+  const listed: Array<{ origin: string; name: string; account?: string }> = [];
   for (const each of value) {
     if (typeof each !== "object" || each === null) return undefined;
     const origin = Reflect.get(each, "origin");
     const name = Reflect.get(each, "name");
+    const account = Reflect.get(each, "account");
     if (
       typeof origin !== "string" ||
       origin.length > 512 ||
       typeof name !== "string" ||
-      !WORKER_MACHINE_NAME.test(name)
+      !WORKER_MACHINE_NAME.test(name) ||
+      (account !== undefined && !isMark(account))
     )
       return undefined;
-    listed.push({ origin, name });
+    listed.push({ origin, name, ...(account === undefined ? {} : { account }) });
   }
   return listed;
 };
@@ -416,9 +445,15 @@ export const answerWorkerMachines = async (
   if (op === "relay") {
     const origin = textOf(message, "origin", 512);
     const name = textOf(message, "name", 40);
-    if (origin === undefined || name === undefined || !WORKER_MACHINE_NAME.test(name))
+    const account = Reflect.get(message, "account");
+    if (
+      origin === undefined ||
+      name === undefined ||
+      !WORKER_MACHINE_NAME.test(name) ||
+      (account !== undefined && !isMark(account))
+    )
       return respond(MALFORMED);
-    relays.relay(origin, name);
+    relays.relay(origin, name, account);
     return respond({ ok: true });
   }
   if (device === undefined) return respond(NONE);

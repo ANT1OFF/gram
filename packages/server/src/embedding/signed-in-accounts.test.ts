@@ -99,6 +99,52 @@ describe("a sign-in's worker machines", () => {
   );
 });
 
+describe("a machine registered under another sign-in", () => {
+  it.live("is neither reused nor stopped by a same-request retry under a new sign-in", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      // Registered under the person's sign-in before they signed in again: frozen for the new.
+      const key = generateHostKey();
+      hosts.machines.provision({
+        name: NAME,
+        publicKey: key.publicKey,
+        platform: "linux",
+        onDemand: "worker",
+        via: ORIGIN,
+        viaAccount: OTHER,
+      });
+      // The server would hand the same name's old disk back, and a stop of it delete it.
+      const app = appSignedInAs(ACCOUNT, (call) =>
+        call === "status"
+          ? { status: 200, body: { phase: "running", publicKey: key.publicKey } }
+          : { status: call === "start" ? 202 : 200, body: { stopped: true } },
+      );
+      const owed = memoryOwedStops();
+      const source = signedInSource(SERVER, {
+        port: app.port,
+        hosts,
+        owed,
+        starting: new Set(),
+        stopRetryMs: 0,
+        unansweredHoldMs: 0,
+      });
+      // A retry of the same request: the same name. Refused in words, with nothing sent.
+      const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" });
+      expect(started).toMatchObject({
+        kind: "refused",
+        message: expect.stringContaining("another sign-in"),
+      });
+      expect(started).not.toHaveProperty("unknown");
+      // Nor does any give-back of the name stop it.
+      yield* source.abandon(NAME);
+      yield* source.abandon(NAME, { unsettled: true });
+      expect(app.sent).toEqual([]);
+      expect(owed.list()).toEqual([]);
+      expect(hosts.list().map((each) => [each.name, each.viaAccount])).toEqual([[NAME, OTHER]]);
+    }),
+  );
+});
+
 describe("a stop owed under one sign-in", () => {
   it.live("isn't let go of when another sign-in registers a machine of its name", () =>
     Effect.gen(function* () {

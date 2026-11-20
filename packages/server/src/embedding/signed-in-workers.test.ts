@@ -807,7 +807,10 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
           Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
         ),
       );
-      expect(told).toEqual([{ machines: [{ origin: ORIGIN, name: NAME }], fresh: true }]);
+      // Each carried under the sign-in it was asked for under alone.
+      expect(told).toEqual([
+        { machines: [{ origin: ORIGIN, name: NAME, account: ACCOUNT }], fresh: true },
+      ]);
       // Removed by hand under Settings → Machines: the app is told to stop carrying it.
       hosts.remove(hosts.list()[0]!.id);
       expect(told.at(-1)).toEqual({ machines: [] });

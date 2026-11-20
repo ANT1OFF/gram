@@ -234,17 +234,21 @@ export interface HostedWorkerMachines {
     | { readonly ok: true; readonly status: number; readonly body: unknown }
     | { readonly ok: false; readonly why: string }
   >;
-  /** Whether the sign-in to `origin` covers carrying its worker machines' connections now. */
-  readonly workerMachineRelayAllowed: (origin: string) => boolean;
+  /**
+   * Whether the sign-in to `origin` covers carrying its worker machines' connections now: and,
+   * for a machine asked for under the sign-in `account`, whether that is the sign-in there now.
+   */
+  readonly workerMachineRelayAllowed: (origin: string, account?: string) => boolean;
   /**
    * A live relay's lease: whether a `machines:workers` token can still be had for `origin` now,
    * renewing it when it is due, so an expired or revoked sign-in ends the relays it covered.
    */
-  readonly workerMachineRelayLease: (origin: string) => Promise<boolean>;
+  readonly workerMachineRelayLease: (origin: string, account?: string) => Promise<boolean>;
   /** The address and headers of one dial of a worker machine's relay. */
   readonly workerMachineRelayDial: (
     origin: string,
     name: string,
+    account?: string,
   ) => Promise<
     | { readonly ok: true; readonly url: string; readonly headers: Record<string, string> }
     | { readonly ok: false; readonly why: string }
@@ -311,27 +315,33 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
       });
     },
 
-    workerMachineRelayAllowed: (origin) => {
+    workerMachineRelayAllowed: (origin, account) => {
       const server = known(origin);
       return (
-        server !== undefined && !server.keeper.signedOut() && startsWorkerMachines(server.discovery)
+        server !== undefined &&
+        !server.keeper.signedOut() &&
+        startsWorkerMachines(server.discovery) &&
+        (account === undefined || account === server.machineMark)
       );
     },
 
-    workerMachineRelayLease: async (origin) => {
+    workerMachineRelayLease: async (origin, account) => {
       const server = known(origin);
       if (
         server === undefined ||
         server.keeper.signedOut() ||
-        !startsWorkerMachines(server.discovery)
+        !startsWorkerMachines(server.discovery) ||
+        (account !== undefined && account !== server.machineMark)
       )
         return false;
       return leaseWorkerMachineRelay(server.keeper);
     },
 
-    workerMachineRelayDial: async (origin, name) => {
+    workerMachineRelayDial: async (origin, name, account) => {
       const server = known(origin);
       if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
+      // Another sign-in's machine is never carried under this one: not dialled, nor leased.
+      if (account !== undefined && account !== server.machineMark) return ANOTHER_ACCOUNT;
       return workerMachineRelayDial({ ...callsOf(server), name });
     },
   };
