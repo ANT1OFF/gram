@@ -685,6 +685,16 @@ export const machineHosts = (
           const url = yield* appToolsTunnel(id, connection, deps).pipe(
             Scope.provide(scope),
             Effect.catchCause(() => Effect.succeed(undefined)),
+            // Stopped before it finished: no one waits on it, and the next lookup opens it again.
+            Effect.onInterrupt(() =>
+              Effect.andThen(
+                Effect.sync(() => {
+                  if (tunnels.get(connection) === made) tunnels.delete(connection);
+                  Deferred.doneUnsafe(made, Exit.succeed(undefined));
+                }),
+                Scope.close(scope, Exit.void),
+              ),
+            ),
           );
           Deferred.doneUnsafe(made, Exit.succeed(url));
           // Its answers end with the connection: the next one opens the tunnel again.

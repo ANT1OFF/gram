@@ -5,6 +5,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { HOST_PROTOCOL_VERSION, HostId, type Thread, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
 import {
@@ -13,6 +14,7 @@ import {
   privateKeyFrom,
   signedConnectHeaders,
 } from "../host/machine-keys.ts";
+import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { holderOf } from "../host/ownership.ts";
 import { forwardAppTools } from "../host/app-tools-forward.ts";
 import { makeAppToolsTunnel, noAppToolsTunnel } from "../host/app-tools-tunnel.ts";
@@ -29,6 +31,7 @@ import {
   bridgeWorkerMachines,
   forgetReclaimed,
   memoryOwedStops,
+  type NameLocks,
   UNSETTLED_START_MS,
   NO_SIGNED_IN_SERVER,
   settleOwedStops,
@@ -38,6 +41,7 @@ import {
   SignedInWorkersLive,
   signedInSource,
   WorkerMachinePort,
+  type WorkerMachinePortShape,
   type WorkerMachineMessagePort,
 } from "./signed-in-workers.ts";
 
@@ -907,6 +911,81 @@ describe("stops a server never confirmed", () => {
         );
         expect(owed.list()).toEqual([]);
       }),
+  );
+
+  it.effect("read a 2xx that says nothing was stopped as no such machine, through the grace", () =>
+    Effect.gen(function* () {
+      // As a server answers a stop of a name it holds nothing for yet.
+      let stopped = false;
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "stop" ? { status: 200, body: { stopped } } : { status: 200, body: {} },
+      });
+      const port = bridgeWorkerMachines(app.port);
+      const owed = memoryOwedStops();
+      const source = signedInSource(SERVER, {
+        port,
+        hosts: unregistered,
+        owed,
+        stopRetryMs: 0,
+        now: () => 1_000,
+      });
+      yield* source.abandon(NAME, { unsettled: true });
+      expect(owed.list()).toEqual([{ origin: ORIGIN, name: NAME, since: 1_000, unsettled: true }]);
+      yield* settleOwedStops(
+        port,
+        owed,
+        () => false,
+        () => 2_000,
+      );
+      expect(owed.list()).toHaveLength(1);
+      // The start made it after all, and this stop ends it: settled.
+      stopped = true;
+      yield* settleOwedStops(
+        port,
+        owed,
+        () => false,
+        () => 3_000,
+      );
+      expect(owed.list()).toEqual([]);
+    }),
+  );
+
+  it.live("send a retry's start only once a stop of its name already on its way is answered", () =>
+    Effect.gen(function* () {
+      const log: string[] = [];
+      const { port: base } = {
+        port: bridgeWorkerMachines(fakeApp({ answer: () => ({ status: 200, body: {} }) }).port),
+      };
+      // The server takes its time over the stop it was sent.
+      const port: WorkerMachinePortShape = {
+        ...base,
+        call: (_origin, call) =>
+          Effect.gen(function* () {
+            log.push(`${call} sent`);
+            if (call === "stop") yield* Effect.sleep("200 millis");
+            log.push(`${call} answered`);
+            return {
+              ok: true as const,
+              status: call === "start" ? 202 : 200,
+              body: { stopped: true },
+            };
+          }),
+      };
+      const owed = memoryOwedStops();
+      const locks: NameLocks = makeKeyedLock<string>();
+      const starting = new Set<string>();
+      owed.add({ origin: ORIGIN, name: NAME, since: 0 });
+      const source = signedInSource(SERVER, { port, hosts: unregistered, owed, starting, locks });
+      const settling = yield* Effect.forkScoped(
+        settleOwedStops(port, owed, (name) => starting.has(name), Date.now, locks),
+      );
+      while (!log.includes("stop sent")) yield* Effect.sleep("5 millis");
+      // A retry of the spawn that owed it: its start waits for the stop already on its way.
+      yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" });
+      yield* Fiber.join(settling);
+      expect(log).toEqual(["stop sent", "stop answered", "start sent", "start answered"]);
+    }).pipe(Effect.scoped),
   );
 
   it.effect("never stop a machine a later start took the name of", () =>

@@ -38,6 +38,7 @@ import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
 import * as Duration from "effect/Duration";
 import { ServerConfig } from "../config.ts";
+import { type KeyedLock, makeKeyedLock } from "../git/keyed-lock.ts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
 import { noAppToolsTunnel } from "../host/app-tools-tunnel.ts";
@@ -425,7 +426,41 @@ export interface SignedInDeps {
   readonly owed?: OwedStops;
   /** The names a start is on its way for, which no stop owed for an earlier one may end. */
   readonly starting?: Set<string>;
+  /** One lock per name, shared with the settling of stops owed (`withName`). */
+  readonly locks?: NameLocks;
 }
+
+/**
+ * One lock per machine name: a start and a stop of the same name never overlap, so a stop already
+ * on its way is answered before a start of that name goes out, and one that waited for the start
+ * sees it took the name. Shared by every source and the settling of stops owed.
+ */
+export type NameLocks = KeyedLock<string>;
+
+export const withName = <A, E, R>(
+  locks: NameLocks | undefined,
+  name: string,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> => (locks === undefined ? effect : locks.withLock(name, effect));
+
+/**
+ * What a stop's answer says: the machine was stopped; there was no such machine (a 404, or a 2xx
+ * saying `stopped: false`, as a server answers a name it holds nothing for); or nothing clear.
+ */
+export const stopOutcome = (
+  answered:
+    | { readonly ok: true; readonly status: number; readonly body: unknown }
+    | { readonly ok: false },
+): "stopped" | "absent" | "failed" => {
+  if (!answered.ok) return "failed";
+  if (answered.status === 404) return "absent";
+  if (answered.status >= 300) return "failed";
+  const said =
+    typeof answered.body === "object" && answered.body !== null
+      ? (answered.body as { stopped?: unknown }).stopped
+      : undefined;
+  return said === false ? "absent" : "stopped";
+};
 
 /**
  * How long after a start whose outcome wasn't known (no answer, or one interrupted on its way) the
@@ -519,22 +554,28 @@ export const settleOwedStops = (
   owed: OwedStops,
   claimed: (name: string) => boolean = () => false,
   now: () => number = Date.now,
+  locks?: NameLocks,
 ) =>
   Effect.gen(function* () {
-    for (const stop of owed.list()) {
-      if (claimed(stop.name)) {
-        owed.remove(stop.name);
-        continue;
-      }
-      const answered = yield* port.call(stop.origin, "stop", { name: stop.name });
-      if (!answered.ok) continue;
-      if (answered.status < 300) owed.remove(stop.name);
-      else if (
-        answered.status === 404 &&
-        (stop.unsettled !== true || now() - stop.since >= UNSETTLED_START_MS)
-      )
-        owed.remove(stop.name);
-    }
+    for (const stop of owed.list())
+      yield* withName(
+        locks,
+        stop.name,
+        Effect.gen(function* () {
+          // Looked at again once the name is this pass's alone: a start may have taken it.
+          if (claimed(stop.name) || !owed.list().some((each) => each.name === stop.name)) {
+            owed.remove(stop.name);
+            return;
+          }
+          const outcome = stopOutcome(yield* port.call(stop.origin, "stop", { name: stop.name }));
+          if (outcome === "stopped") owed.remove(stop.name);
+          else if (
+            outcome === "absent" &&
+            (stop.unsettled !== true || now() - stop.since >= UNSETTLED_START_MS)
+          )
+            owed.remove(stop.name);
+        }),
+      );
   });
 
 /** The choices and models each server offered, kept a short while, by origin. */
@@ -588,9 +629,11 @@ export const signedInSource = (
       let last = "";
       for (let attempt = 0; attempt < STOP_ATTEMPTS && !stopped; attempt += 1) {
         if (attempt > 0) yield* Effect.sleep(deps.stopRetryMs ?? STOP_RETRY_MS);
-        const answered = yield* port.call(origin, "stop", { name });
+        // One at a time with a start of the same name (`withName`).
+        const answered = yield* withName(deps.locks, name, port.call(origin, "stop", { name }));
         // "No such machine" ends nothing while a start of it may still be on its way.
-        stopped = answered.ok && (answered.status < 300 || (answered.status === 404 && !unsettled));
+        const outcome = stopOutcome(answered);
+        stopped = outcome === "stopped" || (outcome === "absent" && !unsettled);
         // Only the status: what a server answers isn't written to the log.
         last = answered.ok ? `answered ${answered.status}` : "no answer";
       }
@@ -627,20 +670,22 @@ export const signedInSource = (
         deps.owed?.remove(ask.name);
         return askWorkerMachine(
           ask,
-          port
-            .call(origin, "start", {
+          withName(
+            deps.locks,
+            ask.name,
+            port.call(origin, "start", {
               name: ask.name,
               title: ask.title.slice(0, 120),
               orchestrator: ask.orchestrator,
               choices: choicesOfAsk(ask),
-            })
-            .pipe(
-              Effect.map((answered) =>
-                answered.ok
-                  ? { status: answered.status, body: answered.body }
-                  : { failed: answered.why },
-              ),
+            }),
+          ).pipe(
+            Effect.map((answered) =>
+              answered.ok
+                ? { status: answered.status, body: answered.body }
+                : { failed: answered.why },
             ),
+          ),
         ).pipe(
           Effect.tap((started) =>
             Effect.sync(() => {
@@ -835,6 +880,7 @@ export const SignedInWorkersLive = Layer.effect(
     const owed = config === undefined ? memoryOwedStops() : fileOwedStops(config.dataDir);
     /** Names a start is on its way for: no stop owed for an earlier one may end what it makes. */
     const starting = new Set<string>();
+    const locks: NameLocks = makeKeyedLock<string>();
     const claimed = (name: string) =>
       starting.has(name) ||
       hosts.list().some((machine) => machine.name === name && machine.via !== undefined);
@@ -879,7 +925,7 @@ export const SignedInWorkersLive = Layer.effect(
     // A machine the server no longer knows (reclaimed after its release, or removed there) is
     // forgotten here, so its relay stops and its name is free.
     yield* forgetReclaimed(port, hosts).pipe(
-      Effect.andThen(settleOwedStops(port, owed, claimed)),
+      Effect.andThen(settleOwedStops(port, owed, claimed, Date.now, locks)),
       Effect.catchCause((cause) => Effect.logWarning("the reclaimed-machine pass failed", cause)),
       Effect.repeat(Schedule.spaced(RECLAIMED_EVERY)),
       Effect.forkScoped,
@@ -890,7 +936,14 @@ export const SignedInWorkersLive = Layer.effect(
         Effect.map((answered) =>
           answered.ok
             ? {
-                source: signedInSource(answered.server, { port, hosts, offered, owed, starting }),
+                source: signedInSource(answered.server, {
+                  port,
+                  hosts,
+                  offered,
+                  owed,
+                  starting,
+                  locks,
+                }),
                 server: answered.server,
               }
             : {

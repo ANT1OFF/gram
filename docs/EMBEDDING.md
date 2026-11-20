@@ -373,7 +373,8 @@ asks the app over its parent port, and the app makes each call with the person's
 `POST <worker_machines_endpoint>/choices` (its picks, as `/hosts/choices` answers them, and the
 models its machines run as `models: [{ agent, id, resolvedId?, label? }]`: a worker on another is
 refused before a machine is asked for), `/start` `{ name, title, orchestrator, choices }`,
-`/status` `{ name }`, `/release` `{ name, released, reason }` and `/stop` `{ name }`. No call names an
+`/status` `{ name }`, `/release` `{ name, released, reason }` and `/stop` `{ name }` (answered
+`{ stopped }`: `false`, or a 404, when it holds no machine of that name). No call names an
 owner: the server takes the person from the token, and answers each as `/hosts/*` does (`409` over
 the person's total, `403` or `404` not allowed).
 

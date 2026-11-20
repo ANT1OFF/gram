@@ -358,6 +358,12 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             Effect.onInterrupt(() => (already === undefined ? source.abandon(name) : Effect.void)),
           );
           if (typeof arrived !== "string") {
+            // A machine registered here before this try (an earlier spawn of the same id) may
+            // hold that spawn's work on its disk: only a machine this try started is stopped.
+            if (already !== undefined)
+              return yield* fail(
+                `The machine ${name} is registered here from an earlier spawn of this request and didn't come online, so it was left as it is: it may hold that spawn's work. Wait for it to come back, spawn with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
+              );
             if (arrived.failed === "timeout") return yield* fail(yield* source.timedOut(name));
             yield* source.abandon(name);
             return yield* fail(arrived.failed);
@@ -513,7 +519,17 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       handle: (caller, input) =>
         Effect.gen(function* () {
           // Its own machine, started now that the spawn goes ahead, and given back if it doesn't.
-          const plan = sandboxPlans.get(input);
+          // A worker placed by `machine` on one a hosted server started is held to the same rule.
+          const named = input.machine?.trim();
+          const relayedByName =
+            named !== undefined &&
+            joined().some(
+              (each) =>
+                each.via !== undefined &&
+                each.onDemand === "worker" &&
+                (each.name === named || each.id === named),
+            );
+          const plan = sandboxPlans.get(input) ?? (relayedByName ? { givesBack: true } : undefined);
           sandboxPlans.delete(input);
           const prepared = plan?.prepare === undefined ? undefined : yield* plan.prepare;
           const giveBack = prepared?.abandon ?? Effect.void;
@@ -532,11 +548,14 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
                 const cancelled = yield* orchestration
                   .manageHeldSpawn(caller, { id: spawned.id, action: "cancel" })
                   .pipe(Effect.result);
-                yield* giveBack;
+                // A brief that stays held keeps its machine, so it can still run there.
+                if (cancelled._tag === "Success") yield* giveBack;
                 const machine =
                   prepared?.abandon === undefined
                     ? "Its machine is shared with your other workers and stays."
-                    : "Its machine was given back.";
+                    : cancelled._tag === "Success"
+                      ? "Its machine was given back."
+                      : "Its machine is kept for it.";
                 const kept =
                   cancelled._tag === "Success"
                     ? "Nothing is kept."

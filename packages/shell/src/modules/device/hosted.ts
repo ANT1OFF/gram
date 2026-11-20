@@ -1230,6 +1230,22 @@ export const workerMachineRelayDial = async (
   if (!WORKER_MACHINE_NAME.test(calls.name)) return failed("That isn't a worker machine's name.");
   const held = await calls.keeper.fresh("machines:workers");
   if (!held.ok) return failed(held.why);
+  // A WebSocket's handshake answers a nonce challenge in no way this app can read, so a current
+  // nonce is had first: one call to the server's own worker-machine endpoint, which takes its
+  // challenge and keeps the nonce it gives, as every call made with a token does.
+  const endpoint = calls.discovery.worker_machines_endpoint;
+  if (endpoint !== undefined) {
+    const primed = await authorizedCall(
+      calls.keeper,
+      calls.key,
+      "machines:workers",
+      calls.fetch,
+      "POST",
+      callAddress(endpoint, "status"),
+      { name: calls.name },
+    );
+    if (!("why" in primed)) await primed.body?.cancel().catch(() => undefined);
+  }
   const url = new URL(connect);
   url.hash = "";
   url.searchParams.set("name", calls.name);
@@ -1241,6 +1257,7 @@ export const workerMachineRelayDial = async (
       authorization: `${token.tokenType} ${token.accessToken}`,
       dpop: dpopProof(calls.key, {
         method: "GET",
+        // The relay's own `wss:` address, without its query, as the server checks it.
         url: url.href,
         accessToken: token.accessToken,
         now: Date.now(),

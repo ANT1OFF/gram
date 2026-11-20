@@ -19,6 +19,7 @@ import { AppToolError, DEFAULT_CHARTER, HostId } from "@gram/contracts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { makeStopMarks } from "../host/stop-marks.ts";
 import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
+import { workerMachineName } from "../embedding/worker-machines.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { Orchestration } from "./service.ts";
 import { makeWorld, openOrchestrator, outboxOf, serverLayer, waitReal } from "./test-harness.ts";
@@ -596,5 +597,58 @@ describe("sandbox from a signed-in hosted server", () => {
         expect((yield* outboxOf(workspaceId)).heldBriefs ?? []).toEqual([]);
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
+  );
+
+  it.live(
+    "never stops a machine an earlier spawn of the same id left registered, however long it stays offline",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const { port, calls } = fakePort((call) =>
+          call === "choices" ? { status: 404, body: {} } : { status: 200, body: {} },
+        );
+        const machine = {
+          id: HostId.make("m-0123456789abcdef01234567"),
+          name: "",
+          confirmed: true,
+          onDemand: "worker",
+          via: SERVER.origin,
+        };
+        const remote = Layer.succeed(RemoteHosts, {
+          machines: { list: () => [], get: () => undefined },
+          stops: makeStopMarks(),
+          watch: () => () => undefined,
+          list: () => [machine],
+        } as unknown as RemoteHostsShape);
+        const hosts = {
+          list: () => [machine],
+          remove: () => true,
+          machines: {
+            provision: () => {
+              throw new Error("not registered here");
+            },
+          },
+        };
+        const source = signedInSource(SERVER, { port, hosts, timeoutMs: 100, everyMs: 10 });
+        const context = yield* Layer.build(
+          serverLayer(world).pipe(
+            Layer.provide(remote),
+            Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+          ),
+        );
+        yield* Effect.gen(function* () {
+          const { session, thread } = yield* openOrchestrator(world);
+          // The machine the first try of this spawn made: registered here, its disk holding that
+          // try's work, offline now.
+          machine.name = workerMachineName(thread.id, SANDBOX.clientRequestId);
+          const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
+          expect(result).toMatchObject({
+            _tag: "Failure",
+            failure: { message: expect.stringMatching(/left as it is/) },
+          });
+          expect(calls.map((each) => each.call)).not.toContain("stop");
+          expect(calls.map((each) => each.call)).not.toContain("start");
+        }).pipe(Effect.provide(context));
+      }).pipe(Effect.scoped),
   );
 });

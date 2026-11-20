@@ -196,9 +196,16 @@ subscription token reaches a machine, with its own consent.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
   When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way), the
-  server's "no such machine" settles nothing for fifteen minutes, since the start may still make
-  it. A name a later start takes, or one registered here since, is that start's: no stop owed for
+  server's "no such machine" (a 404, or a 2xx with `stopped: false`) settles nothing for fifteen
+  minutes, since the start may still make it. A start and a stop of one name never overlap here:
+  a stop already on its way is answered before a retry's start of that name goes out. A name a later start takes, or one registered here since, is that start's: no stop owed for
   an earlier one ever ends its machine.
+- **A retry of the same spawn.** A machine registered here before the try (an earlier spawn of the
+  same `clientRequestId`) is waited for but never stopped by that try, however long it stays
+  offline: it may hold the earlier spawn's work. Only a machine a try started is given back.
+- **A nonce for each dial.** A WebSocket's handshake can't answer a DPoP nonce challenge the app
+  can read, so before each dial of a relay the app makes one call to the server's worker-machine
+  endpoint, which takes the challenge and keeps the nonce, and signs the dial with it.
 - **A call hung up on.** A session on the machine that gives up on an app-tool call (its
   connection closed) has the host say so over the connection, and the desktop stops answering it,
   as it does a session that hangs up on its own endpoint.
