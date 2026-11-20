@@ -182,7 +182,7 @@ that start itself whenever work here needs the machine:
   five seconds later, for as long as the machine is wanted.
 - A `…/status` answer asked for before this Gram's latest start of that name, or while a start of
   it was on its way, is older than the start, and is taken as saying nothing: it never stops a
-  woken machine's relay. A wake a spawn waits on stays within that spawn's five minutes, its start
+  woken machine's relay, and never uses up a wake, which is tried again. A wake a spawn waits on stays within that spawn's five minutes, its start
   and retries included. An answer that
   says the machine is up again carries it once more.
 
@@ -269,7 +269,9 @@ subscription token reaches a machine, with its own consent.
   A name's machine is brought up once at a time: a retry that comes while a try is still bringing
   it up (a reconnect, a tool call tried again) joins that bring-up rather than starting, waiting
   and giving back on its own, even once the machine is online while that try still places its
-  worker. The bring-up outlives the try that began it, and is stopped, giving
+  worker. Once a try has decided to give the machine back, no try joins its bring-up: one that
+  comes meanwhile waits until the give-back is over, then joins it if it was kept, or brings one
+  up afresh once it is gone. The bring-up outlives the try that began it, and is stopped, giving
   back what it started, only once no try holds it. After it came, a try whose spawn fails gives it
   back only when no other try holds it and no thread is placed on it.
 - **A lost workspace role.** Every call about a machine whose workspace the person no longer has

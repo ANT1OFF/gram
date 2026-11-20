@@ -339,6 +339,39 @@ describe("a worker machine that work here wants", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("keeps its wake for a spawn when another start of the name overlapped its look", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionRelayed(hosts, NAME);
+      const sent = new Map<string, number>();
+      const calls: string[] = [];
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "status"
+            ? { status: 200, body: { phase: "failed", message: "Recovery failed." } }
+            : { status: 202, body: {} },
+      });
+      const bridged = bridgeWorkerMachines(app.port);
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          Effect.gen(function* () {
+            calls.push(call);
+            const statuses = calls.filter((each) => each === "status").length;
+            // A resumed worker's start of the name is on its way while the wake looks, and is
+            // answered 502 before the spawn looks again.
+            if (call === "status" && statuses === 2) sent.set(NAME, 1);
+            if (call === "status" && statuses === 3) sent.set(NAME, 2);
+            return yield* bridged.call(origin, call, body);
+          }),
+      };
+      const source = signedInSource(SERVER, { port, hosts, sent, timeoutMs: 300, everyMs: 10 });
+      yield* source.arrive(NAME);
+      // The spawn's own start of the name went: the overlap didn't spend its wake.
+      expect(calls).toContain("start");
+    }),
+  );
+
   it.live("keeps a wake a spawn waits on within the spawn's own deadline", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());

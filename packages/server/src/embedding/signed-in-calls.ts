@@ -169,8 +169,9 @@ export const wakeSignedIn = (
     if (!read.ok || read.status >= 500) return "retry" as const;
     if (read.status === 404) return "gone" as const;
     if (read.status >= 300) return "refused" as const;
-    // A start of it was on its way, or went, while this was asked: the answer is older than it.
-    if (!settledSince(options.sent, machine.name, before)) return "awake" as const;
+    // A start of it was on its way, or went, while this was asked: the answer is older than it,
+    // and says nothing, so the wake is left to be tried again rather than spent.
+    if (!settledSince(options.sent, machine.name, before)) return "retry" as const;
     const phase = parseMachineStatus(read.body).phase;
     if (phase !== "stopped" && phase !== "failed") {
       options.asleep?.delete(machine.name);

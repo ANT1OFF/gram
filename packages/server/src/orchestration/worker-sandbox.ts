@@ -3,6 +3,7 @@
 // signed in to; on one its orchestrator already has; or on the orchestrator's own machine.
 
 import { AppToolError, effectiveCheckout, hostOf, type ThreadId } from "@gram/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
@@ -47,6 +48,16 @@ export const WorkerSandbox = Schema.Struct({
 });
 export type WorkerSandbox = typeof WorkerSandbox.Type;
 
+/**
+ * One machine name's bring-up (`makeWorkerSandbox`): how many tries of its spawn hold it, and,
+ * while one gives it back, what the rest wait for before they join it or begin again.
+ */
+interface Flight {
+  readonly fiber: Fiber.Fiber<{ readonly startedHere: boolean }, AppToolError>;
+  holders: number;
+  closing?: Deferred.Deferred<void> | undefined;
+}
+
 /** What the sandbox planner reads: the tools' own services, as `tools.ts` has them. */
 export interface WorkerSandboxDeps {
   readonly orchestration: Orchestration["Service"];
@@ -74,13 +85,7 @@ export const makeWorkerSandbox = ({
      * Each machine name's bring-up under way (`workerSandbox`), with how many tries of its spawn
      * hold it. Run in the tools' own scope, so it outlives the try that began it.
      */
-    const machineFlights = new Map<
-      string,
-      {
-        readonly fiber: Fiber.Fiber<{ readonly startedHere: boolean }, AppToolError>;
-        holders: number;
-      }
-    >();
+    const machineFlights = new Map<string, Flight>();
     const flightScope = yield* Effect.scope;
     /**
      * Where `sandbox` puts a worker: the name of a machine of its own, started now, or of one its
@@ -299,27 +304,42 @@ export const makeWorkerSandbox = ({
         // never while another try of the same request still holds it, nor while a thread is
         // placed on it (the spawn's own worker made before it failed included), nor when that
         // can't be read.
-        const giveBack = (othersHold: () => boolean) =>
+        const giveBack = (flight?: Flight) =>
           Effect.gen(function* () {
-            if (othersHold()) return;
-            const id = source.idOf(name);
-            if (id !== undefined) {
-              const threads = yield* store.listThreads.pipe(Effect.option);
-              if (threads._tag === "None") return;
-              if (
-                threads.value.some(
-                  (thread) =>
-                    thread.parked !== true &&
-                    [
-                      effectiveCheckout(thread),
-                      thread.checkout,
-                      ...(thread.extraCheckouts ?? []),
-                    ].some((checkout) => checkout !== undefined && hostOf(checkout) === id),
+            if (flight !== undefined && (flight.holders > 1 || flight.closing !== undefined))
+              return;
+            // No try joins it from here on (`closing`), so none takes a machine being given back.
+            const closing = yield* Deferred.make<void>();
+            if (flight !== undefined) flight.closing = closing;
+            let stopped = false;
+            const open = Effect.suspend(() => {
+              if (flight === undefined) return Effect.void;
+              // Given back: the next try brings one up afresh. Kept: tries join it again.
+              if (stopped && machineFlights.get(name) === flight) machineFlights.delete(name);
+              flight.closing = undefined;
+              return Deferred.succeed(closing, undefined);
+            });
+            yield* Effect.gen(function* () {
+              const id = source.idOf(name);
+              if (id !== undefined) {
+                const threads = yield* store.listThreads.pipe(Effect.option);
+                if (threads._tag === "None") return;
+                if (
+                  threads.value.some(
+                    (thread) =>
+                      thread.parked !== true &&
+                      [
+                        effectiveCheckout(thread),
+                        thread.checkout,
+                        ...(thread.extraCheckouts ?? []),
+                      ].some((checkout) => checkout !== undefined && hostOf(checkout) === id),
+                  )
                 )
-              )
-                return;
-            }
-            yield* source.abandon(name);
+                  return;
+              }
+              stopped = true;
+              yield* source.abandon(name);
+            }).pipe(Effect.ensuring(open));
           });
         // An embedder's provider keeps its machines and gives none back: each try brings up its
         // own, as it always has.
@@ -328,7 +348,7 @@ export const makeWorkerSandbox = ({
             name,
             givesBack: false,
             prepare: Effect.map(bringUp, (brought) =>
-              brought.startedHere ? { abandon: giveBack(() => false) } : {},
+              brought.startedHere ? { abandon: giveBack() } : {},
             ),
           };
         // One bring-up of a name at a time (`machineFlights`): a try of the same request while
@@ -336,27 +356,40 @@ export const makeWorkerSandbox = ({
         // waiting and giving back on its own. The bring-up outlives any one try, and is stopped,
         // giving back what it started, only once no try holds it.
         const prepare = Effect.gen(function* () {
-          const flight = yield* Effect.acquireRelease(
-            Effect.gen(function* () {
-              const joining = machineFlights.get(name);
-              if (joining !== undefined) {
-                joining.holders += 1;
-                return joining;
-              }
-              const made = { fiber: yield* Effect.forkIn(bringUp, flightScope), holders: 1 };
-              machineFlights.set(name, made);
-              return made;
-            }),
-            (held) =>
-              Effect.suspend(() => {
-                held.holders -= 1;
-                if (held.holders > 0) return Effect.void;
-                if (machineFlights.get(name) === held) machineFlights.delete(name);
-                return Fiber.interrupt(held.fiber);
+          // One being given back takes no one: waited out, then joined if it was kept, or begun
+          // afresh once it is gone.
+          let flight: Flight | undefined;
+          while (flight === undefined) {
+            const taken = yield* Effect.acquireRelease(
+              Effect.gen(function* () {
+                const joining = machineFlights.get(name);
+                if (joining?.closing !== undefined) return { wait: joining.closing };
+                if (joining !== undefined) {
+                  joining.holders += 1;
+                  return { held: joining };
+                }
+                const made: Flight = {
+                  fiber: yield* Effect.forkIn(bringUp, flightScope),
+                  holders: 1,
+                };
+                machineFlights.set(name, made);
+                return { held: made };
               }),
-          );
+              (got) =>
+                Effect.suspend(() => {
+                  if (!("held" in got)) return Effect.void;
+                  const held = got.held;
+                  held.holders -= 1;
+                  if (held.holders > 0) return Effect.void;
+                  if (machineFlights.get(name) === held) machineFlights.delete(name);
+                  return Fiber.interrupt(held.fiber);
+                }),
+            );
+            if ("wait" in taken) yield* Deferred.await(taken.wait);
+            else flight = taken.held;
+          }
           const brought = yield* Fiber.join(flight.fiber);
-          return brought.startedHere ? { abandon: giveBack(() => flight.holders > 1) } : {};
+          return brought.startedHere ? { abandon: giveBack(flight) } : {};
         });
         return { name, givesBack: source.givesBack, prepare };
       });
