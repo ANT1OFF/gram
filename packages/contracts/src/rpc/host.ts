@@ -204,6 +204,12 @@ export const HostFeature = Schema.Literals([
    * host without this one, which would refuse it anyway.
    */
   "agent-opencode-sessions",
+  /**
+   * Runs Grok Build sessions on the machine's own `grok` and its sign-in, or the token command its
+   * environment names (`HostStatus.grok`). A control plane opens no Grok Build session on a host
+   * without it, and leaves a Grok worker's agent out of what it sends that host.
+   */
+  "agent-grok",
   /** Fresh non-credential subscription identity before a cold worker's limit preflight. */
   "account-scope",
   /**
@@ -347,6 +353,18 @@ export const HostOpenCodeStatus = Schema.Struct({
 });
 export type HostOpenCodeStatus = typeof HostOpenCodeStatus.Type;
 
+/**
+ * The machine's Grok Build as its host finds it: whether `grok` is there, its version, and the
+ * models it lists. Nothing of a login.
+ */
+export const HostGrokStatus = Schema.Struct({
+  found: Schema.Boolean,
+  version: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
+  /** Absent when Grok Build couldn't list. */
+  models: Schema.optionalKey(Schema.Array(HostModel).check(Schema.isMaxLength(64))),
+});
+export type HostGrokStatus = typeof HostGrokStatus.Type;
+
 /** `host.status`: what the machine can run now. */
 export const HostStatus = Schema.Struct({
   claudeSignIn: ClaudeSignIn,
@@ -367,6 +385,11 @@ export const HostStatus = Schema.Struct({
    * plane built before it ignores it.
    */
   opencode: Schema.optionalKey(HostOpenCodeStatus),
+  /**
+   * Its Grok Build, from a host that runs Grok Build sessions (`agent-grok`). A control plane built
+   * before it ignores it.
+   */
+  grok: Schema.optionalKey(HostGrokStatus),
 });
 export type HostStatus = typeof HostStatus.Type;
 

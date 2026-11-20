@@ -7,6 +7,7 @@ import {
   type HostId,
   type AgentModel,
   type HostCodexStatus,
+  type HostGrokStatus,
   type HostOpenCodeStatus,
   type HostModel,
   type HostStatus,
@@ -112,19 +113,23 @@ export const hostStatusOf = (
   codex: Effect.Effect<HostCodexStatus | undefined> = Effect.succeed(undefined),
   /** Its OpenCode, on a host that runs OpenCode sessions (`opencode-on-host.ts`). */
   opencode: Effect.Effect<HostOpenCodeStatus | undefined> = Effect.succeed(undefined),
+  /** Its Grok Build, on a host that runs Grok Build sessions (`grok-on-host.ts`). */
+  grok: Effect.Effect<HostGrokStatus | undefined> = Effect.succeed(undefined),
 ): Effect.Effect<HostStatus> =>
   Effect.gen(function* () {
-    const [claudeSignIn, claude, git, listed, codexStatus, openCodeStatus] = yield* Effect.all(
-      [
-        signIn,
-        Effect.promise(() => probeTool("claude", run)),
-        Effect.promise(() => probeTool("git", run)),
-        models,
-        codex,
-        opencode,
-      ],
-      { concurrency: "unbounded" },
-    );
+    const [claudeSignIn, claude, git, listed, codexStatus, openCodeStatus, grokStatus] =
+      yield* Effect.all(
+        [
+          signIn,
+          Effect.promise(() => probeTool("claude", run)),
+          Effect.promise(() => probeTool("git", run)),
+          models,
+          codex,
+          opencode,
+          grok,
+        ],
+        { concurrency: "unbounded" },
+      );
     const claudeTool = claudeSignIn === "unknown" ? claude : { ...claude, found: true };
     return {
       claudeSignIn,
@@ -133,6 +138,7 @@ export const hostStatusOf = (
       ...(listed === undefined ? {} : { models: listed.slice(0, MODELS_SENT).map(hostModelOf) }),
       ...(codexStatus === undefined ? {} : { codex: codexStatus }),
       ...(openCodeStatus === undefined ? {} : { opencode: openCodeStatus }),
+      ...(grokStatus === undefined ? {} : { grok: grokStatus }),
     };
   });
 

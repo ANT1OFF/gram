@@ -40,7 +40,9 @@ import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { codexStatusOf, hostCodexLive } from "./codex-on-host.ts";
 import { CodexHost } from "@gram/agents/codex";
+import { GrokHost, GrokHostLive } from "@gram/agents/grok";
 import { OpenCodeHost } from "@gram/agents/opencode";
+import { grokStatusOf } from "./grok-on-host.ts";
 import { hostOpenCodeLive, openCodeStatusOf } from "./opencode-on-host.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHostKeeping } from "./terminals.ts";
@@ -102,6 +104,7 @@ const hostAgents = (
           const claude = yield* ClaudeHost;
           const codex = Option.getOrUndefined(yield* Effect.serviceOption(CodexHost));
           const opencode = Option.getOrUndefined(yield* Effect.serviceOption(OpenCodeHost));
+          const grok = Option.getOrUndefined(yield* Effect.serviceOption(GrokHost));
           return AgentHosts.of({
             get: (agent) =>
               agent === "claude"
@@ -110,12 +113,14 @@ const hostAgents = (
                   ? Effect.succeed(codex)
                   : agent === "opencode" && opencode !== undefined
                     ? Effect.succeed(opencode)
-                    : Effect.fail(
-                        new AgentUnavailable({
-                          agent,
-                          message: `${agent} sessions don't run in this machine's host yet.`,
-                        }),
-                      ),
+                    : agent === "grok" && grok !== undefined
+                      ? Effect.succeed(grok)
+                      : Effect.fail(
+                          new AgentUnavailable({
+                            agent,
+                            message: `${agent} sessions don't run in this machine's host yet.`,
+                          }),
+                        ),
           });
         }),
       ).pipe(
@@ -130,6 +135,8 @@ const hostAgents = (
         Layer.provide(codexData === undefined ? Layer.empty : hostCodexLive(codexData)),
         // OpenCode as well on a joined machine (the one whose host has a folder of its own).
         Layer.provide(codexData === undefined ? Layer.empty : hostOpenCodeLive()),
+        // And Grok Build, on that machine's own sign-in or its environment's token command.
+        Layer.provide(codexData === undefined ? Layer.empty : GrokHostLive()),
       );
 
 /** What could stop a host's update: what is running in it now (`HostBusy`). */
@@ -162,6 +169,10 @@ const hostService = (
       Effect.orElseSucceed(() => false),
     );
     const runsOpenCode = yield* agents.get("opencode").pipe(
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
+    );
+    const runsGrok = yield* agents.get("grok").pipe(
       Effect.as(true),
       Effect.orElseSucceed(() => false),
     );
@@ -253,7 +264,8 @@ const hostService = (
         features: HOST_FEATURES.filter(
           (feature) =>
             (feature !== "agent-codex" || runsCodex) &&
-            (feature !== "agent-opencode-sessions" || runsOpenCode),
+            (feature !== "agent-opencode-sessions" || runsOpenCode) &&
+            (feature !== "agent-grok" || runsGrok),
         ),
         ...disk,
       },
@@ -295,6 +307,8 @@ const hostService = (
         runsCodex ? codexStatusOf(agents.get("codex")) : Effect.succeed(undefined),
         // And its OpenCode, where this host runs OpenCode sessions.
         runsOpenCode ? openCodeStatusOf(agents.get("opencode")) : Effect.succeed(undefined),
+        // And its Grok Build, where this host runs Grok Build sessions.
+        runsGrok ? grokStatusOf(agents.get("grok")) : Effect.succeed(undefined),
       ),
       checks,
       admission,
