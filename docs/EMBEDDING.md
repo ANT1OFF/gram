@@ -363,6 +363,28 @@ again, a worker reopened, it asks the same with `released: false, reason: "worki
 provider keeps the disk. Each is told once; after a restart it may be told again, which a provider
 takes as the same word. `404` means the provider keeps none of this.
 
+### Workers' own machines for a desktop orchestrator
+
+The desktop app's orchestrators can have the same machines, from a hosted server the app is signed
+in to, when that server offers them ([design](design/desktop-worker-machines.md)). The server says
+so in its discovery document with `worker_machines_endpoint` and `worker_machine_connect`, both on
+its own origin, and the app then asks for the `machines:workers` scope. The desktop's Gram server
+asks the app over its parent port, and the app makes each call with the person's DPoP-bound token:
+`POST <worker_machines_endpoint>/choices`, `/start` `{ name, title, orchestrator, choices }`,
+`/status` `{ name }`, `/release` `{ name, released, reason }` and `/stop` `{ name }`. No call names an
+owner: the server takes the person from the token, and answers each as `/hosts/*` does (`409` over
+the person's total, `403` or `404` not allowed).
+
+The desktop can't be dialled, so the machine's `gram-host` is provisioned for the hosted server's
+own origin and dials it at `/host/connect`; the app dials `worker_machine_connect?name=<name>`, and
+the server pairs the two only for the machine's owner. Its first frame to the app is
+`{"dial":{"headers":{…}}}`, the four `x-gram-host-*` headers the host signed its dial with; every
+frame after it is the host's, both ways, unchanged. `/status` answers `{ phase, message?,
+publicKey?, platform? }`: once it carries the host's key, the desktop registers the machine itself,
+as a worker host that came through that server, and takes its dial only from that server's relay.
+A machine that isn't online in five minutes is stopped with `/stop`. Release is the same pass as
+above, through the app.
+
 ## Memory updates on a headless server
 
 A headless server runs memory updates as the desktop app does, from the same Settings, with Review

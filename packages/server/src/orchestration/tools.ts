@@ -63,17 +63,18 @@ import { AppToolRegistry } from "../app-tools/registry.ts";
 import { parsePrRef } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { OnDemand, choicesFor } from "../embedding/on-demand.ts";
+import { OnDemand } from "../embedding/on-demand.ts";
+import { SignedInWorkers } from "../embedding/signed-in-workers.ts";
 import { ownerSubject } from "../host/ownership.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import {
-  awaitWorkerMachine,
+  embeddedSource,
   isWorkerMachineName,
   overTotalWords,
   placementOf,
   resolveWorkerPicks,
-  startWorkerMachine,
+  type WorkerMachineSource,
   workerMachineName,
 } from "../embedding/worker-machines.ts";
 import { confineQuestionVisuals } from "../preview/mocks.ts";
@@ -190,6 +191,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const store = yield* ThreadStore;
     // Absent unless an embedder's host provider is set: workers then can't ask for own machines.
     const onDemand = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
+    // In the desktop app: a hosted server it is signed in to, asked through the app.
+    const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const joined = () => (remoteHosts === undefined ? [] : remoteHosts.list());
@@ -228,14 +231,25 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         const ownHost = hostOf(effectiveCheckout(orchestrator));
         // A closed machine's holder is no one's to start machines for (`host/ownership.ts`).
         const owner = ownerSubject(workerHosts?.ownerOf(ownHost));
-        if (onDemand === undefined || owner === undefined)
+        const holder = workerHosts?.ownerOf(ownHost);
+        // The embedder's provider for the orchestrator host's owner; or, for an orchestrator on a
+        // machine of no one's in particular in the desktop app, the server the app is signed in to.
+        const found: WorkerMachineSource | { readonly refused: string } | undefined =
+          onDemand !== undefined
+            ? owner === undefined
+              ? undefined
+              : embeddedSource(onDemand, owner, joined)
+            : signedIn !== undefined && holder === undefined
+              ? yield* signedIn.source.pipe(
+                  Effect.map((each) => ("refused" in each ? each : each.source)),
+                )
+              : undefined;
+        if (found === undefined || "refused" in found)
           return yield* fail(
-            "Workers can't have machines of their own here: leave out sandbox, and the worker runs on your machine.",
+            `Workers can't have machines of their own here${found === undefined ? "" : `: ${found.refused}`}. Leave out sandbox, and the worker runs on your machine.`,
           );
-        const theirs = (machine: {
-          readonly owner?: string | undefined;
-          readonly onDemand?: string | undefined;
-        }) => machine.onDemand === "worker" && machine.owner === owner;
+        const source = found;
+        const theirs = source.theirs;
         if (sandbox.shareWith !== undefined) {
           const named = sandbox.shareWith.trim();
           if (isWorkerMachineName(named)) {
@@ -258,7 +272,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           return machine.name;
         }
         // Picks by the provider's option ids, or by their labels ("No Internet"), as it offers them.
-        const offered = yield* choicesFor(onDemand, owner);
+        const offered = yield* source.choices;
         const resolved = resolveWorkerPicks(offered?.choices, sandbox);
         if ("refused" in resolved) return yield* fail(resolved.refused);
         const picks = resolved.picks;
@@ -269,8 +283,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         // Asked for already (a retry, or the approval's read of this call): wait for that one.
         const asked = joined().some((each) => each.name === name && theirs(each))
           ? ({ kind: "started", name } as const)
-          : yield* startWorkerMachine(onDemand, {
-              owner,
+          : yield* source.start({
               name,
               orchestrator: caller,
               title: input.title,
@@ -297,10 +310,10 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           };
           return yield* fail(refusal("over_total", overTotalWords(asked, workersOn)));
         }
-        const id = yield* awaitWorkerMachine(joined, { name, owner });
-        if (id === undefined)
+        const arrived = yield* source.arrive(name);
+        if (typeof arrived !== "string")
           return yield* fail(
-            `The machine ${name} was asked for but hasn't come online yet. Spawn again with the same clientRequestId in a minute, or put the worker on your machine.`,
+            arrived.failed === "timeout" ? yield* source.timedOut(name) : arrived.failed,
           );
         return name;
       });

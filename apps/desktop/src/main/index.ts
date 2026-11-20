@@ -85,7 +85,9 @@ import {
   filterEnvironment,
   makeAskQueue,
   makeHostedDevice,
+  makeWorkerMachineRelays,
   serveSentWorkMessage,
+  serveWorkerMachineMessage,
   vaultSecrets,
   watchPresence,
 } from "@gram/shell/modules/device";
@@ -355,6 +357,14 @@ let pagesOrigin: unknown;
 const keepAwake = createKeepAwake(powerSaveBlocker);
 
 /** The server process (src/server); see `server-host.ts`. */
+/**
+ * The connections of machines of a worker's own, from a hosted server, carried to the server as
+ * frames (`docs/design/desktop-worker-machines.md`). Posted to whichever server child runs now.
+ */
+const workerMachineRelays = makeWorkerMachineRelays({
+  device: () => deviceHost.device(),
+  post: (message) => server.post(message),
+});
 const server = createServerHost({
   fork: () => {
     const child = utilityProcess.fork(join(__dirname, "../server/server.js"), [], {
@@ -409,6 +419,8 @@ const server = createServerHost({
     servePaneMessage(message, agentPanes, reply);
     // Work an orchestrator sends to a hosted server: the app holds the sign-in, so it calls.
     serveSentWorkMessage(message, deviceHost.device(), reply);
+    // Machines of a worker's own from a hosted server, and their connections, carried here.
+    serveWorkerMachineMessage(message, deviceHost.device(), workerMachineRelays, reply);
     const announced = pagesOriginFromMessage(message);
     if (announced !== undefined) {
       pagesOrigin = announced;
@@ -475,6 +487,7 @@ if (SMOKE || process.env["CI"]) {
     exiting = true;
     // Best effort: the exit doesn't wait, but lending's commands are asked to stop first.
     void deviceHost.close();
+    workerMachineRelays.close();
     log.fatal({ kind, detail }, "crash");
     process.stderr.write(`${SMOKE ? "SMOKE FAIL" : "fatal"}: ${kind}: ${detail}\n`);
     server.kill("quit");

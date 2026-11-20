@@ -15,7 +15,12 @@
 import type { WorkerPlacement } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { createHash, randomBytes } from "node:crypto";
-import type { OnDemandChoice, OnDemandHosts } from "./on-demand.ts";
+import {
+  choicesFor,
+  type OnDemandChoice,
+  type OnDemandChoices,
+  type OnDemandHosts,
+} from "./on-demand.ts";
 import { callOutside } from "./outside.ts";
 
 /** What an orchestrator asks of a worker's own machine. Short ids, as the provider offers them. */
@@ -188,25 +193,69 @@ export const resolveWorkerPicks = (
   return { picks: resolved };
 };
 
+/** The provider's answer to a start, or why none came. */
+export type StartAnswer =
+  | { readonly status: number; readonly body: unknown }
+  | { readonly failed: string };
+
+/** Whether an ask's name and picks are ones there are, before anything is sent. */
+const askIsWellFormed = (ask: Omit<WorkerMachineAsk, "owner">) =>
+  NAME.test(ask.name) &&
+  (ask.size === undefined || SHORT.test(ask.size)) &&
+  (ask.architecture === undefined || SHORT.test(ask.architecture)) &&
+  (ask.isolation === undefined || SHORT.test(ask.isolation)) &&
+  (ask.environment === undefined || SHORT.test(ask.environment));
+
+/** An ask's picks as the provider takes them: by choice id, only those named. */
+export const choicesOfAsk = (ask: Omit<WorkerMachineAsk, "owner">): Record<string, string> => ({
+  ...(ask.size === undefined ? {} : { size: ask.size }),
+  ...(ask.architecture === undefined ? {} : { architecture: ask.architecture }),
+  ...(ask.isolation === undefined ? {} : { isolation: ask.isolation }),
+  ...(ask.environment === undefined ? {} : { environment: ask.environment }),
+});
+
 /**
- * Asks the provider for a worker's own machine (`POST /hosts/start`, `kind: "worker"`). 409 is
- * over the person's total; 403 or 404 is not allowed (the person or their organisation turned it
- * off, or the provider starts none).
+ * A start, from whichever provider is asked (`send`). 409 is over the person's total; 403 or 404
+ * is not allowed (the person or their organisation turned it off, or the provider starts none).
  */
-export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) =>
+export const askWorkerMachine = <R>(
+  ask: Omit<WorkerMachineAsk, "owner">,
+  send: Effect.Effect<StartAnswer, never, R>,
+): Effect.Effect<WorkerMachineStart, never, R> =>
   Effect.gen(function* () {
-    if (
-      !NAME.test(ask.name) ||
-      (ask.size !== undefined && !SHORT.test(ask.size)) ||
-      (ask.architecture !== undefined && !SHORT.test(ask.architecture)) ||
-      (ask.isolation !== undefined && !SHORT.test(ask.isolation)) ||
-      (ask.environment !== undefined && !SHORT.test(ask.environment))
-    )
+    if (!askIsWellFormed(ask))
       return {
         kind: "refused",
         message: "That size, processor, kind or environment isn't one there is.",
       } as const;
-    const answered = yield* callOutside("host provider", hosts.provider, {
+    const answered = yield* send;
+    if ("failed" in answered)
+      return {
+        kind: "refused",
+        message: `The machine couldn't be asked for: ${answered.failed}`,
+      } as const;
+    const { status, body } = answered;
+    if (status === 409) return parseOverTotal(body);
+    if (status === 403 || status === 404)
+      return {
+        kind: "refused",
+        message:
+          text((body as { message?: unknown } | undefined)?.message, 300) ??
+          "Workers' own machines are off here: put the worker on your own machine.",
+      } as const;
+    if (status < 200 || status >= 300)
+      return {
+        kind: "refused",
+        message: `The machine couldn't be asked for: the server answered ${status}.`,
+      } as const;
+    return { kind: "started", name: ask.name } as const;
+  });
+
+/** Asks the embedder's provider for a worker's own machine (`POST /hosts/start`, `kind: "worker"`). */
+export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) =>
+  askWorkerMachine(
+    ask,
+    callOutside("host provider", hosts.provider, {
       method: "POST",
       path: "/hosts/start",
       json: {
@@ -216,12 +265,7 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
         options: {
           orchestrator: ask.orchestrator,
           title: ask.title.slice(0, 120),
-          choices: {
-            ...(ask.size === undefined ? {} : { size: ask.size }),
-            ...(ask.architecture === undefined ? {} : { architecture: ask.architecture }),
-            ...(ask.isolation === undefined ? {} : { isolation: ask.isolation }),
-            ...(ask.environment === undefined ? {} : { environment: ask.environment }),
-          },
+          choices: choicesOfAsk(ask),
         },
       },
       accept: [403, 404, 409],
@@ -235,24 +279,9 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
             .then((body: unknown) => ({ status: response.status, body })),
         ),
       ),
-      Effect.result,
-    );
-    if (answered._tag === "Failure")
-      return {
-        kind: "refused",
-        message: `The machine couldn't be asked for: ${answered.failure.message}`,
-      } as const;
-    const { status, body } = answered.success;
-    if (status === 409) return parseOverTotal(body);
-    if (status === 403 || status === 404)
-      return {
-        kind: "refused",
-        message:
-          text((body as { message?: unknown } | undefined)?.message, 300) ??
-          "Workers' own machines are off here: put the worker on your own machine.",
-      } as const;
-    return { kind: "started", name: ask.name } as const;
-  });
+      Effect.catch((failure) => Effect.succeed({ failed: failure.message })),
+    ),
+  );
 
 /** A joined machine as waiting for a worker's own reads it. */
 export interface JoiningMachine {
@@ -347,3 +376,56 @@ export const placementOf = (
     ...(why === undefined || why === "" ? {} : { why }),
   };
 };
+
+// ---------------------------------------------------------------------------------------------
+/** A joined machine as a provider reads it. */
+export interface ProvidedMachine {
+  readonly id: string;
+  readonly name: string;
+  readonly owner?: string | undefined;
+  readonly onDemand?: string | undefined;
+  readonly via?: string | undefined;
+  readonly onlineSince?: number | undefined;
+}
+
+/** Why waiting for a machine ended without it. */
+export type ArrivalFailed = { readonly failed: string };
+
+/**
+ * What `sandbox` asks a worker machine of: the embedder's provider (`worker-machines.ts`), or a
+ * hosted server the desktop app is signed in to (here).
+ */
+export interface WorkerMachineSource {
+  /** The provider's choices for this person, if it offers any. */
+  readonly choices: Effect.Effect<OnDemandChoices | undefined>;
+  readonly start: (ask: Omit<WorkerMachineAsk, "owner">) => Effect.Effect<WorkerMachineStart>;
+  /** Whether a joined machine is one this provider started for this orchestrator's person. */
+  readonly theirs: (machine: ProvidedMachine) => boolean;
+  /** Waits for the machine asked for to come online here: its id, or why not (`timeout`). */
+  readonly arrive: (name: string) => Effect.Effect<string | ArrivalFailed>;
+  /**
+   * After a machine didn't come in time: what the orchestrator is told, having stopped it there and
+   * forgotten it here where this provider does so.
+   */
+  readonly timedOut: (name: string) => Effect.Effect<string>;
+}
+
+/** The embedder's host provider, for the person whose host the orchestrator is on. */
+export const embeddedSource = (
+  hosts: OnDemandHosts,
+  owner: string,
+  machines: () => ReadonlyArray<JoiningMachine>,
+): WorkerMachineSource => ({
+  choices: choicesFor(hosts, owner),
+  start: (ask) => startWorkerMachine(hosts, { ...ask, owner }),
+  theirs: (machine) => machine.onDemand === "worker" && machine.owner === owner,
+  arrive: (name) =>
+    awaitWorkerMachine(machines, { name, owner }).pipe(
+      Effect.map((id) => id ?? { failed: "timeout" }),
+    ),
+  // The provider keeps it starting: a retry with the same request id waits for that one.
+  timedOut: (name) =>
+    Effect.succeed(
+      `The machine ${name} was asked for but hasn't come online yet. Spawn again with the same clientRequestId in a minute, or put the worker on your machine.`,
+    ),
+});

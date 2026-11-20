@@ -1,0 +1,347 @@
+// This machine's server asks the app for machines of a worker's own from a hosted server
+// (`packages/server/src/embedding/signed-in-workers.ts`, `docs/design/desktop-worker-machines.md`).
+// The app holds the sign-in, so it makes each call, and it carries each such machine's connection:
+// it dials the server's relay for the machine, and passes what comes through to this machine's
+// server as frames over the same port, and back. It reads nothing in those frames but the first,
+// which says how the host signed its dial; the server checks that signature itself.
+
+import { randomUUID } from "node:crypto";
+
+import {
+  RelayDialFrame,
+  WORKER_MACHINE_CALLS,
+  WORKER_MACHINE_NAME,
+  type WorkerMachineCall,
+  type WorkerMachineRelayMessage,
+  type WorkerMachineResult,
+} from "@gram/contracts";
+import * as Schema from "effect/Schema";
+
+import type { HostedDevice } from "./hosted-device.ts";
+
+const NONE: WorkerMachineResult = { ok: false, why: "Hosted features are off in this app." };
+const MALFORMED: WorkerMachineResult = { ok: false, why: "The request isn't one the app sends." };
+
+/** The first wait after a relay ends, doubled each time up to the last. */
+const RETRY_FIRST_MS = 2_000;
+const RETRY_MOST_MS = 60_000;
+/** A relay that lasted this long resets the wait. */
+const STEADY_MS = 60_000;
+/** How long the relay may take to say how the host dialled, once it is open. */
+const FIRST_FRAME_MS = 30_000;
+/** The most bytes of one frame passed on: the host protocol's frames are far smaller. */
+const FRAME_MOST_BYTES = 16 * 1024 * 1024;
+/** How many machines' connections the app carries at once. */
+const RELAYS_MOST = 32;
+
+const isRequest = (message: unknown): message is { type: "machines.request"; id: string } =>
+  typeof message === "object" &&
+  message !== null &&
+  Reflect.get(message, "type") === "machines.request" &&
+  typeof Reflect.get(message, "id") === "string" &&
+  (Reflect.get(message, "id") as string).length <= 64;
+
+const textOf = (message: object, name: string, most: number): string | undefined => {
+  const value = Reflect.get(message, name);
+  return typeof value === "string" && value.length > 0 && value.length <= most ? value : undefined;
+};
+
+/** A WebSocket as the relay uses one: Node's and Electron's, which take handshake headers. */
+export interface RelaySocket {
+  binaryType: string;
+  readonly readyState: number;
+  send(data: string | Uint8Array): void;
+  close(code?: number, reason?: string): void;
+  addEventListener(
+    type: "open" | "message" | "close" | "error",
+    listener: (event: never) => void,
+  ): void;
+}
+
+export type OpenRelaySocket = (url: string, headers: Record<string, string>) => RelaySocket;
+
+/** Node's own WebSocket, handed the headers as its options (the browser's can't take them). */
+export const nodeRelaySocket: OpenRelaySocket = (url, headers) =>
+  new globalThis.WebSocket(url, { headers } as unknown as string[]) as unknown as RelaySocket;
+
+export interface WorkerMachineRelays {
+  /** Keep carrying `name`'s connection, from the server at `origin`. */
+  readonly relay: (origin: string, name: string) => void;
+  readonly unrelay: (name: string) => void;
+  /** A frame or an end from this machine's server, for a connection the app carries. */
+  readonly fromServer: (message: WorkerMachineRelayMessage) => void;
+  /** Stops every relay, as the app quits. */
+  readonly close: () => void;
+}
+
+interface Wanted {
+  readonly origin: string;
+  stopped: boolean;
+  socket?: RelaySocket;
+  conn?: string;
+  timer?: ReturnType<typeof setTimeout>;
+  waitMs: number;
+}
+
+/**
+ * The relays the app carries. Each dials again whenever it ends, after a wait that grows while
+ * dials keep failing, until the server says to stop or the app quits.
+ */
+export const makeWorkerMachineRelays = (options: {
+  readonly device: () => HostedDevice | undefined;
+  readonly post: (message: WorkerMachineRelayMessage) => void;
+  readonly open?: OpenRelaySocket;
+  readonly now?: () => number;
+}): WorkerMachineRelays => {
+  const open = options.open ?? nodeRelaySocket;
+  const now = options.now ?? Date.now;
+  const wanted = new Map<string, Wanted>();
+  const byConn = new Map<string, Wanted>();
+
+  const again = (name: string, entry: Wanted, since: number | undefined) => {
+    if (entry.stopped || wanted.get(name) !== entry) return;
+    entry.waitMs =
+      since !== undefined && now() - since >= STEADY_MS
+        ? RETRY_FIRST_MS
+        : Math.min(entry.waitMs * 2, RETRY_MOST_MS);
+    entry.timer = setTimeout(() => void dial(name, entry), entry.waitMs);
+  };
+
+  const dial = async (name: string, entry: Wanted) => {
+    if (entry.stopped) return;
+    const device = options.device();
+    const prepared =
+      device === undefined
+        ? undefined
+        : await device.workerMachineRelayDial(entry.origin, name).catch(() => undefined);
+    if (entry.stopped) return;
+    if (prepared === undefined || !prepared.ok) {
+      again(name, entry, undefined);
+      return;
+    }
+    let socket: RelaySocket;
+    try {
+      socket = open(prepared.url, prepared.headers);
+    } catch {
+      again(name, entry, undefined);
+      return;
+    }
+    socket.binaryType = "arraybuffer";
+    entry.socket = socket;
+    let opened: number | undefined;
+    let conn: string | undefined;
+    const firstFrame = setTimeout(() => socket.close(4408, "no dial came through"), FIRST_FRAME_MS);
+    socket.addEventListener("open", () => {
+      opened = now();
+    });
+    socket.addEventListener("message", (event: { data: unknown }) => {
+      const data = event.data instanceof ArrayBuffer ? new Uint8Array(event.data) : event.data;
+      if (typeof data !== "string" && !(data instanceof Uint8Array)) return;
+      const size = typeof data === "string" ? data.length : data.byteLength;
+      if (size > FRAME_MOST_BYTES) {
+        socket.close(1009, "frame too large");
+        return;
+      }
+      if (conn !== undefined) {
+        options.post({ type: "machines.relay.frame", conn, data });
+        return;
+      }
+      // The first: how the host signed its dial, which the server checks.
+      clearTimeout(firstFrame);
+      let first: unknown;
+      try {
+        first = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data));
+      } catch {
+        first = undefined;
+      }
+      const decoded = Schema.decodeUnknownOption(RelayDialFrame)(first);
+      if (decoded._tag === "None") {
+        socket.close(4400, "the relay's first frame isn't a dial");
+        return;
+      }
+      conn = randomUUID();
+      entry.conn = conn;
+      byConn.set(conn, entry);
+      options.post({
+        type: "machines.relay.dial",
+        conn,
+        origin: entry.origin,
+        name,
+        headers: decoded.value.dial.headers,
+      });
+    });
+    socket.addEventListener("close", () => {
+      clearTimeout(firstFrame);
+      if (conn !== undefined) {
+        byConn.delete(conn);
+        options.post({ type: "machines.relay.end", conn });
+      }
+      if (entry.socket === socket) {
+        delete entry.socket;
+        delete entry.conn;
+      }
+      again(name, entry, opened);
+    });
+    socket.addEventListener("error", () => undefined);
+  };
+
+  const stop = (entry: Wanted) => {
+    entry.stopped = true;
+    if (entry.timer !== undefined) clearTimeout(entry.timer);
+    try {
+      entry.socket?.close(1000, "no longer relayed");
+    } catch {
+      // Already closed.
+    }
+  };
+
+  return {
+    relay: (origin, name) => {
+      const kept = wanted.get(name);
+      if (kept !== undefined && kept.origin === origin && !kept.stopped) return;
+      if (kept !== undefined) stop(kept);
+      if (wanted.size >= RELAYS_MOST && kept === undefined) return;
+      const entry: Wanted = { origin, stopped: false, waitMs: RETRY_FIRST_MS / 2 };
+      wanted.set(name, entry);
+      void dial(name, entry);
+    },
+    unrelay: (name) => {
+      const kept = wanted.get(name);
+      if (kept === undefined) return;
+      wanted.delete(name);
+      stop(kept);
+    },
+    fromServer: (message) => {
+      const entry = byConn.get(message.conn);
+      const socket = entry?.socket;
+      if (entry === undefined || socket === undefined || entry.conn !== message.conn) return;
+      if (message.type === "machines.relay.frame") {
+        socket.send(message.data);
+        return;
+      }
+      if (message.type === "machines.relay.end") {
+        byConn.delete(message.conn);
+        const code = message.code;
+        try {
+          socket.close(
+            code !== undefined && (code === 1000 || (code >= 3000 && code <= 4999)) ? code : 1000,
+            (message.reason ?? "").slice(0, 120),
+          );
+        } catch {
+          // Already closed.
+        }
+      }
+    },
+    close: () => {
+      for (const entry of wanted.values()) stop(entry);
+      wanted.clear();
+      byConn.clear();
+    },
+  };
+};
+
+/** A relay message from this machine's server, read field by field. */
+const serverRelayMessageOf = (message: unknown): WorkerMachineRelayMessage | undefined => {
+  if (typeof message !== "object" || message === null) return undefined;
+  const type = Reflect.get(message, "type");
+  const conn = Reflect.get(message, "conn");
+  if (typeof conn !== "string" || conn.length > 64) return undefined;
+  if (type === "machines.relay.frame") {
+    const data = Reflect.get(message, "data");
+    return typeof data === "string" || data instanceof Uint8Array
+      ? { type, conn, data }
+      : undefined;
+  }
+  if (type === "machines.relay.end") {
+    const code = Reflect.get(message, "code");
+    const reason = Reflect.get(message, "reason");
+    return {
+      type,
+      conn,
+      ...(typeof code === "number" && Number.isInteger(code) ? { code } : {}),
+      ...(typeof reason === "string" ? { reason: reason.slice(0, 120) } : {}),
+    };
+  }
+  return undefined;
+};
+
+/** Answers one request from the server, or undefined for any other message. */
+export const answerWorkerMachines = async (
+  message: unknown,
+  device: HostedDevice | undefined,
+  relays: WorkerMachineRelays,
+): Promise<{ type: "machines.response"; id: string; result: WorkerMachineResult } | undefined> => {
+  if (!isRequest(message)) return undefined;
+  const respond = (result: WorkerMachineResult) => ({
+    type: "machines.response" as const,
+    id: message.id,
+    result,
+  });
+  const op = Reflect.get(message, "op");
+  if (op === "unrelay") {
+    const name = textOf(message, "name", 40);
+    if (name === undefined || !WORKER_MACHINE_NAME.test(name)) return respond(MALFORMED);
+    relays.unrelay(name);
+    return respond({ ok: true });
+  }
+  if (device === undefined) return respond(NONE);
+  if (op === "server") {
+    const found = device.workerMachineServer();
+    return respond(found.ok ? { ok: true, server: found.server } : { ok: true, why: found.why });
+  }
+  const origin = textOf(message, "origin", 512);
+  if (origin === undefined) return respond(MALFORMED);
+  if (op === "relay") {
+    const name = textOf(message, "name", 40);
+    if (name === undefined || !WORKER_MACHINE_NAME.test(name)) return respond(MALFORMED);
+    relays.relay(origin, name);
+    return respond({ ok: true });
+  }
+  if (op === "call") {
+    const call = Reflect.get(message, "call");
+    const body = Reflect.get(message, "body");
+    if (
+      typeof call !== "string" ||
+      !(WORKER_MACHINE_CALLS as readonly string[]).includes(call) ||
+      typeof body !== "object" ||
+      body === null ||
+      Array.isArray(body) ||
+      JSON.stringify(body).length > 8 * 1024
+    )
+      return respond(MALFORMED);
+    const answered = await device.workerMachineCall(
+      origin,
+      call as WorkerMachineCall,
+      body as Record<string, unknown>,
+    );
+    return respond(answered);
+  }
+  return respond(MALFORMED);
+};
+
+/**
+ * Serves the server's worker-machine requests and relayed frames: each request answered on
+ * `reply`, never thrown.
+ */
+export const serveWorkerMachineMessage = (
+  message: unknown,
+  device: HostedDevice | undefined,
+  relays: WorkerMachineRelays,
+  reply: (message: unknown) => void,
+): void => {
+  const relayed = serverRelayMessageOf(message);
+  if (relayed !== undefined) {
+    relays.fromServer(relayed);
+    return;
+  }
+  if (!isRequest(message)) return;
+  void answerWorkerMachines(message, device, relays)
+    .catch(() => ({
+      type: "machines.response" as const,
+      id: (message as { id: string }).id,
+      result: { ok: false as const, why: "The app couldn't make the call." },
+    }))
+    .then((response) => {
+      if (response !== undefined) reply(response);
+    });
+};

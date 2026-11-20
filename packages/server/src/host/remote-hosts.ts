@@ -520,9 +520,12 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           current?.confirmedAt !== undefined &&
           // A provisioned host on its own listener's address, whatever access over Tailscale is;
           // a joined machine on the address that access is kept on.
-          (isProvisioned(current)
-            ? options.provisionedOrigin !== undefined && origin === options.provisionedOrigin
-            : origin !== options.provisionedOrigin && (kept === undefined || kept === origin))
+          // A relayed host on the hosted server it came through, and nowhere else.
+          (current.via !== undefined
+            ? origin === current.via
+            : isProvisioned(current)
+              ? options.provisionedOrigin !== undefined && origin === options.provisionedOrigin
+              : origin !== options.provisionedOrigin && (kept === undefined || kept === origin))
         );
       };
       const attach = (dial: AdmittedDial, socket: Socket.Socket) =>
@@ -824,7 +827,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         provisionedOrigin: options.provisionedOrigin,
         closeProvisioned: () => {
           for (const machine of machines.list()) {
-            if (!isProvisioned(machine)) continue;
+            // A relayed host dials through a hosted server, not the provisioned-host listener.
+            if (!isProvisioned(machine) || machine.via !== undefined) continue;
             if (online.has(machine.id)) machines.note(machine.id, { kind: "lost", at: now() });
             bump(machine.id);
             close(machine.id);

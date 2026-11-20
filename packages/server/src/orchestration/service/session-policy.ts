@@ -22,7 +22,7 @@ import {
 import { worktreesOf, type OrchestrationKit } from "./kit.ts";
 /** The session policy each thread opens with. */
 export const makeSessionPolicy = (kit: OrchestrationKit) => {
-  const { store, findWorkspace, findThread, openedInAuto } = kit;
+  const { store, findWorkspace, findThread, openedInAuto, workerMachinesOffered } = kit;
 
   // ---------------------------------------------------------------------------------------
   // Session policy
@@ -55,6 +55,7 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
       });
       if (audience === "orchestrator" && state !== undefined) {
         const projects = new Map((yield* store.listProjects).map((p) => [p.id, p]));
+        const workerMachines = yield* workerMachinesOffered;
         return {
           audience,
           outwardGate,
@@ -79,6 +80,7 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
             autonomy: autonomyOf(state.charter),
             agent: thread.model.agent,
             gated: outwardGate !== undefined,
+            ...(workerMachines === undefined ? {} : { workerMachines }),
             projects: state.workspace.projectIds.flatMap((id) => {
               const project = projects.get(id);
               return project === undefined

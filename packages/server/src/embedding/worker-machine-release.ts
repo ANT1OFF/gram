@@ -24,6 +24,11 @@ import { finishedWorkers } from "../orchestration/ledger.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand, type OnDemandHosts } from "./on-demand.ts";
+import {
+  SignedInWorkers,
+  tellSignedInRelease,
+  type WorkerMachinePortShape,
+} from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
 
 /** How often worker machines are looked at. */
@@ -37,6 +42,8 @@ export interface ReleaseMachine {
   readonly name: string;
   readonly owner?: string | undefined;
   readonly onDemand?: string | undefined;
+  /** The hosted server a desktop's worker host came through (`signed-in-workers.ts`). */
+  readonly via?: string | undefined;
   readonly onlineSince?: number | undefined;
 }
 
@@ -57,7 +64,7 @@ export const workerMachineWork = (
     .filter(
       (machine) =>
         machine.onDemand === "worker" &&
-        machine.owner !== undefined &&
+        (machine.owner !== undefined || machine.via !== undefined) &&
         (machine.onlineSince === undefined ||
           now - machine.onlineSince >= WORKER_RELEASE_SETTLE_MS),
     )
@@ -91,12 +98,36 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
     ),
   );
 
+/**
+ * How a machine's release is told: to the hosted server a desktop's worker host came through, or
+ * to the embedder's provider. Undefined: there is no one to tell.
+ */
+export const releaseTeller = (
+  hosts: OnDemandHosts | undefined,
+  signedIn: WorkerMachinePortShape | undefined,
+) => {
+  if (hosts === undefined && signedIn === undefined) return undefined;
+  return (machine: ReleaseMachine, released: boolean): Effect.Effect<void, Error> =>
+    machine.via !== undefined
+      ? signedIn === undefined
+        ? Effect.fail(new Error("no desktop app to tell"))
+        : tellSignedInRelease(signedIn, { name: machine.name, via: machine.via }, released)
+      : hosts === undefined
+        ? Effect.fail(new Error("no host provider to tell"))
+        : tellRelease(hosts, machine, released);
+};
+
 /** Looks at the worker machines every `WORKER_RELEASE_EVERY`, with a provider and joined machines. */
 export const WorkerMachineReleaseLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const hosts = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
+    const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
     const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-    if (hosts === undefined || remote === undefined) return;
+    const tell = releaseTeller(
+      hosts,
+      signedIn?.port.available === true ? signedIn.port : undefined,
+    );
+    if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
     /** What the provider was last told of each machine, by name. */
@@ -115,7 +146,7 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         if (told.get(machine.name) === over) continue;
         // A machine never told it was released needs no word that it is at work.
         if (!over && !told.has(machine.name)) continue;
-        const sent = yield* tellRelease(hosts, machine, over).pipe(Effect.result);
+        const sent = yield* tell(machine, over).pipe(Effect.result);
         if (sent._tag === "Success") told.set(machine.name, over);
         else
           yield* Effect.logWarning("a worker machine's release could not be told").pipe(

@@ -129,6 +129,8 @@ import { RemoteHosts } from "../../host/remote-hosts.ts";
 import type { OwnerOf } from "../../host/ownership.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { Conversations } from "../../embedding/conversations.ts";
+import { OnDemand } from "../../embedding/on-demand.ts";
+import { SignedInWorkers } from "../../embedding/signed-in-workers.ts";
 import { heldBriefOf } from "../limit-pause.ts";
 import { type PromptWorktree } from "../prompt.ts";
 
@@ -670,6 +672,23 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const composerPresence = Option.getOrUndefined(yield* Effect.serviceOption(ComposerPresence));
   /** Present where an event sink is configured: told the feature cards as they change. */
   const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
+  const onDemandHosts = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
+  const signedInWorkers = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
+  /**
+   * Where `spawn_worker`'s `sandbox` gets a worker a machine of its own now, in a few words for the
+   * orchestrator's prompt: the embedder's provider, or the hosted server the desktop app is signed
+   * in to. Undefined where it gets none, and the prompt then says nothing of it.
+   */
+  const workerMachinesOffered: Effect.Effect<string | undefined> =
+    onDemandHosts !== undefined
+      ? Effect.succeed("this deployment")
+      : signedInWorkers === undefined || !signedInWorkers.port.available
+        ? Effect.succeed(undefined)
+        : signedInWorkers.source.pipe(
+            Effect.map((found) => ("refused" in found ? undefined : found.server.server)),
+            Effect.timeoutOption("3 seconds"),
+            Effect.map(Option.getOrUndefined),
+          );
   const creator = makeThreadCreator({ store, checkouts, runtimes });
   /** Model listings a roster read stopped waiting for, left to finish and fill their cache. */
   const catalogueListings = yield* FiberSet.make();
@@ -1522,6 +1541,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     localChecks,
     composerPresence,
     eventSink,
+    workerMachinesOffered,
     creator,
     rosterHere,
     rosterFor,

@@ -9,6 +9,9 @@ import {
   type HostedThreadWaited,
   type HostedWorkspace,
   runsSentWork,
+  startsWorkerMachines,
+  type WorkerMachineCall,
+  type WorkerMachineServer,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -29,6 +32,8 @@ import {
   makeTokenKeeper,
   messageHostedThread,
   startHostedThread,
+  callWorkerMachines,
+  workerMachineRelayDial,
   checkHostedRepositories,
   hostedMachine,
   stopHostedThread,
@@ -172,6 +177,8 @@ export type ThreadMoved =
   | { readonly ok: false; readonly why: string; readonly unknown?: true };
 
 const NOT_SIGNED_IN = { ok: false as const, why: "Sign in to the server first." };
+const NO_WORKER_MACHINE_SERVER =
+  "No hosted server this computer is signed in to starts machines for its workers.";
 
 export type ThreadFetched =
   | { readonly ok: true; readonly bundle: unknown }
@@ -310,6 +317,33 @@ export interface HostedDevice {
   ) => Promise<WorkMessaged>;
   /** Stops the turn a thread sent from here is working on. Takes authority away, so never paused. */
   readonly stopWork: (origin: string, workspace: string, threadId: string) => Promise<Done>;
+  /**
+   * The server this computer's orchestrators may ask for machines of a worker's own: the first
+   * signed in, not paused, that starts them. Or why there is none.
+   */
+  readonly workerMachineServer: () =>
+    | { readonly ok: true; readonly server: WorkerMachineServer }
+    | { readonly ok: false; readonly why: string };
+  /**
+   * One call about a worker's machine, with the person's sign-in. A pause holds back a start, never
+   * a status, a release or a stop, which only look or give back.
+   */
+  readonly workerMachineCall: (
+    origin: string,
+    call: WorkerMachineCall,
+    body: Readonly<Record<string, unknown>>,
+  ) => Promise<
+    | { readonly ok: true; readonly status: number; readonly body: unknown }
+    | { readonly ok: false; readonly why: string }
+  >;
+  /** The address and headers of one dial of a worker machine's relay. */
+  readonly workerMachineRelayDial: (
+    origin: string,
+    name: string,
+  ) => Promise<
+    | { readonly ok: true; readonly url: string; readonly headers: Record<string, string> }
+    | { readonly ok: false; readonly why: string }
+  >;
   /** A decision: only from the lending sheet. */
   readonly lend: (origin: string, workspace: string, choice: LendChoice) => Promise<Done>;
   /**
@@ -1136,6 +1170,38 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         ...(message.mode === undefined ? {} : { mode: message.mode }),
         clientKey: message.clientKey,
       });
+    },
+
+    workerMachineServer: () => {
+      const signedIn = [...servers.values()].filter(
+        (server) => !server.keeper.signedOut() && startsWorkerMachines(server.discovery),
+      );
+      const open = signedIn.find((server) => !server.limits.paused());
+      if (open !== undefined)
+        return { ok: true, server: { origin: open.origin, server: open.discovery.name } };
+      if (signedIn.length > 0)
+        return {
+          ok: false,
+          why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
+        };
+      return { ok: false, why: NO_WORKER_MACHINE_SERVER };
+    },
+
+    workerMachineCall: async (origin, call, body) => {
+      const server = known(origin);
+      if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
+      if (call === "start" && server.limits.paused())
+        return {
+          ok: false,
+          why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
+        };
+      return callWorkerMachines({ ...callsOf(server), call, body });
+    },
+
+    workerMachineRelayDial: async (origin, name) => {
+      const server = known(origin);
+      if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
+      return workerMachineRelayDial({ ...callsOf(server), name });
     },
 
     stopWork: async (origin, workspace, threadId) => {

@@ -18,15 +18,15 @@ session run there, and the machine is released when the worker's work is over.
 
 ## 1. The pieces that exist
 
-| Piece                                    | Where                                    | What it does today                                                                                                         |
-| ---------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `sandbox` on `spawn_worker`              | `orchestration/tools.ts` `workerSandbox` | Resolves picks against the provider's choices, asks for the machine, waits for it to join, places the worker by name.      |
-| The provider                             | `embedding/on-demand.ts` `OnDemand`      | An `OutsideService` (URL and bearer token) from `GRAM_HOST_PROVIDER_URL`: only when Gram runs embedded.                    |
-| Asking for a worker machine              | `embedding/worker-machines.ts`           | `POST /hosts/start` `{kind: "worker", owner, name, …}`; 409 over the person's total, 403/404 off.                          |
-| Joining                                  | `http/machine-routes.ts` `/machines/provision`, `host/provisioned.ts` | The provider registers the host's public key; the host dials the Gram's provisioned-host listener (TLS, public). |
-| Release                                  | `embedding/worker-machine-release.ts`    | Every ten minutes, `POST /hosts/release` for a worker machine with no worker left at work.                                 |
-| The desktop's sign-in                    | `shell/modules/device/hosted.ts`         | OAuth with PKCE, refresh token in the keychain, a DPoP-bound access token narrowed per scope, held by the main process only. |
-| The server's door to the app             | `embedding/sent-work-port.ts`            | The desktop's Gram server (a utility process) asks the app over `parentPort`; the app makes the call with the sign-in.     |
+| Piece                        | Where                                                                 | What it does today                                                                                                           |
+| ---------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `sandbox` on `spawn_worker`  | `orchestration/tools.ts` `workerSandbox`                              | Resolves picks against the provider's choices, asks for the machine, waits for it to join, places the worker by name.        |
+| The provider                 | `embedding/on-demand.ts` `OnDemand`                                   | An `OutsideService` (URL and bearer token) from `GRAM_HOST_PROVIDER_URL`: only when Gram runs embedded.                      |
+| Asking for a worker machine  | `embedding/worker-machines.ts`                                        | `POST /hosts/start` `{kind: "worker", owner, name, …}`; 409 over the person's total, 403/404 off.                            |
+| Joining                      | `http/machine-routes.ts` `/machines/provision`, `host/provisioned.ts` | The provider registers the host's public key; the host dials the Gram's provisioned-host listener (TLS, public).             |
+| Release                      | `embedding/worker-machine-release.ts`                                 | Every ten minutes, `POST /hosts/release` for a worker machine with no worker left at work.                                   |
+| The desktop's sign-in        | `shell/modules/device/hosted.ts`                                      | OAuth with PKCE, refresh token in the keychain, a DPoP-bound access token narrowed per scope, held by the main process only. |
+| The server's door to the app | `embedding/sent-work-port.ts`                                         | The desktop's Gram server (a utility process) asks the app over `parentPort`; the app makes the call with the sign-in.       |
 
 Two things are missing on the desktop: a provider (there is no `GRAM_HOST_PROVIDER_URL`, and the
 desktop's server holds no token), and a way in for the machine (the desktop is behind NAT, and its
@@ -64,13 +64,13 @@ signed in before the server offered it is told to sign in again; nothing is aske
 
 The calls, each `POST` with a DPoP-bound `machines:workers` token, the person taken from it:
 
-| Call                 | Body                                               | Answer                                                                                     |
-| -------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `…/choices`          | `{}`                                               | The provider's choices, as `/hosts/choices` answers them (size, architecture, isolation, environment). |
-| `…/start`            | `{name, title, orchestrator, choices}`             | 202 `{name}`; 409 over the person's total (the body `/hosts/start` gives); 403/404 off.     |
-| `…/status`           | `{name}`                                           | `{phase, message?, publicKey?, platform?}`: the host's public key once it has made one.    |
-| `…/release`          | `{name, released, reason}`                         | As `/hosts/release`.                                                                       |
-| `…/stop`             | `{name}`                                           | The machine is stopped and reclaimed; used when it never joins.                            |
+| Call        | Body                                   | Answer                                                                                                 |
+| ----------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `…/choices` | `{}`                                   | The provider's choices, as `/hosts/choices` answers them (size, architecture, isolation, environment). |
+| `…/start`   | `{name, title, orchestrator, choices}` | 202 `{name}`; 409 over the person's total (the body `/hosts/start` gives); 403/404 off.                |
+| `…/status`  | `{name}`                               | `{phase, message?, publicKey?, platform?}`: the host's public key once it has made one.                |
+| `…/release` | `{name, released, reason}`             | As `/hosts/release`.                                                                                   |
+| `…/stop`    | `{name}`                               | The machine is stopped and reclaimed; used when it never joins.                                        |
 
 Which of the person's workspaces there the machine is started under, and so whose limits and
 choices apply, is the server's to decide from the sign-in; `…/choices` says which (`workspace:
@@ -93,7 +93,7 @@ and copies frames between them:
    signed dial for the                 pairs by machine          DPoP-bound machines:workers
    server's origin                     name and owner            token, ?name=worker-…
                                                                     │
-                                                                    └─ws (loopback)─▶ desktop Gram server
+                                                                    └─frames over parentPort─▶ desktop Gram server
                                                                        relayed dial, checked as any dial
 ```
 
@@ -111,21 +111,24 @@ and copies frames between them:
    server. The server pairs the two only when the app's person owns that machine, then sends the
    app the host's signed dial headers as the first frame and copies every frame after it, both
    ways, unchanged.
-5. The app opens a loopback WebSocket to its own Gram server's relayed-dial route with those
-   headers and copies frames between the two sockets. The server checks the dial exactly as any
+5. The app passes those headers to its own Gram server over the `parentPort` the server already
+   asks it through (`machines.relay.dial`), then each frame both ways (`machines.relay.frame`,
+   `machines.relay.end`). The server makes a socket of them and checks the dial exactly as any
    dial: the machine's own signature over the origin it was registered through, a fresh nonce, the
    clock. A machine registered through one server is taken only from that server's relay; one
    joined or provisioned another way is never taken on it.
 6. The machine is online. The worker is placed on it by name, as an embedded worker is, and its
    worktree and session run there.
 
-The relayed route is loopback-only and refused to a fronted sign-in, a paired browser or a request
-with an `Origin`, like the other machine routes. Whoever reaches it can still only hand over a dial
-signed by a key the desktop registered, once.
+No HTTP route is added for it: only the app's main process, which started the server, can hand it a
+relayed connection. Even so, it can only hand over a dial signed by a key the desktop registered,
+for the server that key came through, once. The app reads nothing of the frames but the first,
+which must be exactly the host's four dial headers.
 
 If the machine isn't online within five minutes, the desktop asks `…/stop`, forgets the name, and
-the spawn fails with "The machine worker-… didn't join within 5 minutes and was stopped". No
-machine is left running for a spawn that failed.
+the spawn fails with "The machine worker-… didn't join within 5 minutes, so it was stopped". No
+machine is left running for a spawn that failed. A server that says the machine failed or stopped
+(`phase: "failed"`) ends the wait at once with its own words.
 
 ## 4. Who owns and pays for it
 
@@ -195,7 +198,19 @@ that only makes sense there, such as needing the person's own hosted machine run
 server's to relax for a desktop's ask or not. Until it does, the desktop refuses `sandbox` with the server's name and
 "doesn't offer worker machines". Nothing on the desktop depends on how the server runs machines.
 
-## 8. Tests
+## 8. Where it is built
+
+| Piece                                     | Where                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------- |
+| Discovery fields, the scope, the calls    | `contracts/src/device.ts`, `shell/modules/device/hosted.ts`            |
+| The app's answers and the relay           | `shell/modules/device/serve-machines.ts`, wired in `apps/desktop`      |
+| The server's door, the provider, the dial | `server/src/embedding/signed-in-workers.ts`                            |
+| One provider shape for both sources       | `server/src/embedding/worker-machines.ts` (`WorkerMachineSource`)      |
+| A relayed host                            | `PairedMachine.via`, `DialRoute` `relayed` (`host/paired-machines.ts`) |
+| Release                                   | `embedding/worker-machine-release.ts` (`releaseTeller`)                |
+| The orchestrator's prompt                 | One line on `sandbox`, only where a provider offers it (`prompt.ts`)   |
+
+## 9. Tests
 
 - Signed in, `sandbox: {own: true}`: the machine is asked for, registered from its status, its
   relayed dial is taken, and the worker is placed on it.

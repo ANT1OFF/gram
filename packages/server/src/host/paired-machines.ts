@@ -1,7 +1,7 @@
 import type { KeyObject } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
-import type { HostId, HostStatus } from "@gram/contracts";
+import { type HostId, type HostStatus, hostedOrigin } from "@gram/contracts";
 import { makeLaunchToken, tokensEqual } from "../http/auth.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
 import {
@@ -90,6 +90,14 @@ export interface PairedMachine {
    * anyone's default machine (`host/headless.ts`).
    */
   readonly onDemand?: OnDemandKind;
+  /**
+   * The hosted server a worker host came through, for a desktop Gram signed in to one
+   * (`embedding/signed-in-workers.ts`): its origin, which the host signs its dials for and which
+   * only that server's relay carries (`DialRoute` `relayed`). Only with `onDemand: "worker"` and no
+   * owner: on the desktop it is the desktop's, like a joined machine, and placed on only by its
+   * orchestrators' `sandbox`.
+   */
+  readonly via?: string;
 }
 
 /** What an embedder started a host on demand for. */
@@ -107,8 +115,15 @@ const sameName = (machine: Pick<PairedMachine, "name">, name: string) =>
   machine.name.trim().toLowerCase() === name.trim().toLowerCase();
 
 /** Where a machine of this kind may dial in. */
-const routeOf = (machine: Pick<PairedMachine, "kind">): DialRoute =>
-  isProvisioned(machine) ? "provisioned" : "joined";
+const routeOf = (machine: Pick<PairedMachine, "kind" | "via">): DialRoute =>
+  machine.via !== undefined ? "relayed" : isProvisioned(machine) ? "provisioned" : "joined";
+
+/**
+ * A hosted server's origin, as a relayed host's `via`: as the person signed in to it (`https:`,
+ * or loopback for tests), nothing after the host and port.
+ */
+export const isRelayOrigin = (value: unknown): value is string =>
+  typeof value === "string" && value.length <= 512 && hostedOrigin(value) === value;
 
 /**
  * The last reason a joined machine dropped or was refused, as this Gram saw it since it started:
@@ -172,6 +187,8 @@ export interface ProvisionRequest {
   /** The person who may reach it beside its owner (`PairedMachine.person`): only with an owner. */
   readonly person?: string;
   readonly onDemand?: OnDemandKind;
+  /** The hosted server it came through (`PairedMachine.via`): only for a worker host with no owner. */
+  readonly via?: string;
 }
 
 export type ProvisionResult =
@@ -187,8 +204,11 @@ export type ProvisionResult =
       readonly message: string;
     };
 
-/** The way a dial came in: over the tailnet address, or over the provisioned-host listener. */
-export type DialRoute = "joined" | "provisioned";
+/**
+ * The way a dial came in: over the tailnet address, over the provisioned-host listener, or over a
+ * hosted server's relay that the desktop app carries (`embedding/signed-in-workers.ts`).
+ */
+export type DialRoute = "joined" | "provisioned" | "relayed";
 
 export type ConnectResult =
   | { readonly kind: "ok"; readonly machine: PairedMachine }
@@ -254,7 +274,12 @@ const isMachine = (value: unknown): value is PairedMachine => {
     (m["kind"] === undefined ||
       (m["kind"] === "provisioned" &&
         m["confirmedAt"] !== undefined &&
-        m["sshTarget"] === undefined))
+        m["sshTarget"] === undefined)) &&
+    (m["via"] === undefined ||
+      (m["kind"] === "provisioned" &&
+        isRelayOrigin(m["via"]) &&
+        m["onDemand"] === "worker" &&
+        m["owner"] === undefined))
   );
 };
 
@@ -592,8 +617,21 @@ export const createPairedMachines = (
           status: 400,
           message: "The host's key isn't valid.",
         };
-      // One started on demand with no owner would be open to every caller (`host/ownership.ts`).
-      if (
+      // One started on demand with no owner would be open to every caller (`host/ownership.ts`),
+      // except a worker host a desktop asked a hosted server for: the desktop's, like a joined one.
+      if (request.via !== undefined) {
+        if (
+          !isRelayOrigin(request.via) ||
+          request.onDemand !== "worker" ||
+          request.owner !== undefined ||
+          request.person !== undefined
+        )
+          return {
+            kind: "refused",
+            status: 400,
+            message: "A relayed host is a worker host with no owner, from one hosted server.",
+          };
+      } else if (
         (request.onDemand === undefined) !== (request.owner === undefined) ||
         (request.person !== undefined && request.owner === undefined)
       )
@@ -617,7 +655,8 @@ export const createPairedMachines = (
           existing.platform === request.platform &&
           existing.owner === request.owner &&
           existing.person === request.person &&
-          existing.onDemand === request.onDemand
+          existing.onDemand === request.onDemand &&
+          existing.via === request.via
           ? { kind: "provisioned", machine: existing, created: false }
           : {
               kind: "refused",
@@ -655,6 +694,7 @@ export const createPairedMachines = (
         ...(request.owner === undefined ? {} : { owner: request.owner }),
         ...(request.person === undefined ? {} : { person: request.person }),
         ...(request.onDemand === undefined ? {} : { onDemand: request.onDemand }),
+        ...(request.via === undefined ? {} : { via: request.via }),
       };
       save([...machines, machine]);
       return { kind: "provisioned", machine, created: true };
@@ -860,6 +900,7 @@ export const machineView = (
     ...(machine.owner === undefined ? {} : { owner: machine.owner }),
     ...(machine.person === undefined ? {} : { person: machine.person }),
     ...(machine.onDemand === undefined ? {} : { onDemand: machine.onDemand }),
+    ...(machine.via === undefined ? {} : { via: machine.via }),
     ...(online?.selfUpdate === true ? { selfUpdate: true } : {}),
     ...(status.update === undefined ? {} : { update: status.update }),
   };

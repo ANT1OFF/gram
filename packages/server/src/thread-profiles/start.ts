@@ -926,6 +926,7 @@ const holderOfRecord = (id: HostId, record: object): string | undefined =>
     id,
     owner: stringField(record, "owner"),
     onDemand: stringField(record, "onDemand"),
+    via: stringField(record, "via"),
   });
 
 /** Who a machine's record says may reach it beside its owner (`PairedMachine.person`). */

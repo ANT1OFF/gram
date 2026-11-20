@@ -25,6 +25,10 @@ import {
   HostedThreadWaited,
   HostedTokenAnswer,
   runsSentWork,
+  startsWorkerMachines,
+  WORKER_MACHINE_CALLS,
+  WORKER_MACHINE_NAME,
+  type WorkerMachineCall,
   type HostedWorkspace,
   HostedWorkspaces,
   type DeviceId,
@@ -67,6 +71,7 @@ export const HOSTED_SCOPES = [
   "workspaces:export",
   "threads:start",
   "models",
+  "machines:workers",
 ] as const;
 export type HostedScope = (typeof HOSTED_SCOPES)[number];
 
@@ -360,7 +365,8 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
           (scope !== "workspaces:import" || discovery.thread_import_endpoint !== undefined) &&
           (scope !== "workspaces:export" || givesThreads(discovery)) &&
           (scope !== "threads:start" || runsSentWork(discovery)) &&
-          (scope !== "models" || discovery.models_endpoint !== undefined),
+          (scope !== "models" || discovery.models_endpoint !== undefined) &&
+          (scope !== "machines:workers" || startsWorkerMachines(discovery)),
       ).join(" "),
       state,
       code_challenge: challenge,
@@ -1115,4 +1121,75 @@ export const forgetHostedDevice = async (
   if ("why" in response) return false;
   await response.body?.cancel().catch(() => undefined);
   return response.status >= 200 && response.status < 300;
+};
+
+/**
+ * One call about a machine of a worker's own, under `worker_machines_endpoint`, with the person's
+ * sign-in: its status and its JSON body as received, for this machine's server to read. The server
+ * decides who the person is from the token, whether they may have the machine, and what it may be.
+ */
+export const callWorkerMachines = async (
+  calls: HostedCalls & {
+    readonly call: WorkerMachineCall;
+    readonly body: Readonly<Record<string, unknown>>;
+  },
+): Promise<{ readonly ok: true; readonly status: number; readonly body: unknown } | Failed> => {
+  const endpoint = calls.discovery.worker_machines_endpoint;
+  if (endpoint === undefined || !startsWorkerMachines(calls.discovery))
+    return failed("This server doesn't start machines for this computer's workers.");
+  if (!(WORKER_MACHINE_CALLS as readonly string[]).includes(calls.call))
+    return failed("The request isn't one the app sends.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "machines:workers",
+    calls.fetch,
+    "POST",
+    `${endpoint.replace(/\/+$/, "")}/${calls.call}`,
+    calls.body,
+  );
+  if ("why" in response) return response;
+  const body = await jsonOf(response);
+  if (response.status === 401 || response.status >= 500)
+    return failed(
+      refusalOf(body) ??
+        (response.status === 401 ? "The server refused the sign-in." : UNREACHABLE),
+    );
+  return { ok: true, status: response.status, body };
+};
+
+/**
+ * The address and handshake headers of one dial of the relay that carries a worker machine's
+ * connection to this machine: a fresh `machines:workers` token, bound to the device key by a proof
+ * made for this dial alone.
+ */
+export const workerMachineRelayDial = async (
+  calls: HostedCalls & { readonly name: string },
+): Promise<
+  { readonly ok: true; readonly url: string; readonly headers: Record<string, string> } | Failed
+> => {
+  const connect = calls.discovery.worker_machine_connect;
+  if (connect === undefined || !startsWorkerMachines(calls.discovery))
+    return failed("This server doesn't start machines for this computer's workers.");
+  if (!WORKER_MACHINE_NAME.test(calls.name)) return failed("That isn't a worker machine's name.");
+  const held = await calls.keeper.fresh("machines:workers");
+  if (!held.ok) return failed(held.why);
+  const url = new URL(connect);
+  url.hash = "";
+  url.searchParams.set("name", calls.name);
+  const { token } = held;
+  return {
+    ok: true,
+    url: url.href,
+    headers: {
+      authorization: `${token.tokenType} ${token.accessToken}`,
+      dpop: dpopProof(calls.key, {
+        method: "GET",
+        url: url.href,
+        accessToken: token.accessToken,
+        now: Date.now(),
+        ...(calls.keeper.nonce.value === undefined ? {} : { nonce: calls.keeper.nonce.value }),
+      }),
+    },
+  };
 };

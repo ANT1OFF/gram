@@ -156,6 +156,8 @@ export interface NamedMachine {
   readonly id: HostId;
   readonly owner?: string | undefined;
   readonly onDemand?: "personal" | "thread" | "worker" | undefined;
+  /** The hosted server a desktop's worker host came through (`PairedMachine.via`). */
+  readonly via?: string | undefined;
 }
 
 /** Why a worker can't go on a machine its orchestrator named. */
@@ -172,7 +174,7 @@ export const RUNS_ON_ITS_ORCHESTRATORS_MACHINE =
  * - Its orchestrator's own machine always.
  * - Another machine only if it is the orchestrator's person's own (`onDemand: "personal"`, the
  *   same `owner`), or one started for that person's workers (`onDemand: "worker"`), or, on a Gram that runs work itself, a machine started for nothing in particular
- *   (no owner, no kind). Never a machine started for other work (`onDemand: "thread"`, another
+ *   (no owner, no kind), or a worker host it asked a hosted server for (`via`). Never a machine started for other work (`onDemand: "thread"`, another
  *   run's), and on a headless Gram never an unmarked one either, which may be another run's from
  *   before machines said their kind.
  * - On a headless Gram, which runs no work itself, "here" is its orchestrator's machine.
@@ -199,7 +201,10 @@ export const workerMachine = (
     named.owner !== undefined &&
     named.owner === ownOwner;
   const unmarked = named.onDemand === undefined && named.owner === undefined;
-  if (personsOwn || (unmarked && !headless)) return { hostId: named.id };
+  // A worker host this Gram asked a hosted server for, with the desktop's sign-in: this Gram's own.
+  const relayedWorker =
+    named.onDemand === "worker" && named.via !== undefined && named.owner === undefined;
+  if (personsOwn || ((unmarked || relayedWorker) && !headless)) return { hostId: named.id };
   return { error: NOT_THIS_ORCHESTRATIONS_MACHINE };
 };
 

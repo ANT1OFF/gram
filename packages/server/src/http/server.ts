@@ -57,6 +57,7 @@ import { DreamsLive } from "../orchestration/dreams.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
 import { Orchestration, OrchestrationLive } from "../orchestration/service.ts";
 import { WorkerMachineReleaseLive } from "../embedding/worker-machine-release.ts";
+import { SignedInWorkersLive, WorkerMachinePort } from "../embedding/signed-in-workers.ts";
 import { RoutineEventSourcesLive } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
@@ -1007,7 +1008,17 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),
           // On-demand hosts under the orchestration, whose workers' own machines it starts
           // (`worker-machines.ts`).
-          Layer.provideMerge(OrchestrationLive.pipe(Layer.provideMerge(OnDemandLive))),
+          Layer.provideMerge(
+            OrchestrationLive.pipe(
+              Layer.provideMerge(
+                Layer.mergeAll(
+                  OnDemandLive,
+                  // In the desktop app, worker machines from a hosted server it is signed in to.
+                  SignedInWorkersLive.pipe(Layer.provide(WorkerMachinePort.layer)),
+                ),
+              ),
+            ),
+          ),
           // Gram's own full checks, which the solo merge policy accepts in place of CI, under the
           // orchestration whose ledger shows them.
           Layer.provideMerge(LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer))),
