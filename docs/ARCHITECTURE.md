@@ -25,7 +25,13 @@ copying its API declarations.
 Workspace dependencies and build references are explicit in manifests/tsconfigs,
 and `no-restricted-imports` in `.oxlintrc.json` holds source to the same graph:
 web and contracts/themes import no Node or Electron, only the shell imports
-Electron at runtime, and no package imports an app.
+Electron at runtime, and no package imports an app. In the desktop, the preload
+(`apps/desktop/src/preload`) brings in values only from `electron` and the shell's
+preload-safe entries, because a sandboxed preload can load nothing else; the main
+process never imports the web app or agent code, and takes only the server's light
+entries (`logging`, `updates`, `host/launch-args`), because the server runs as its
+own process. `gram/no-cross-package-path` refuses a relative path from one package's
+sources into another, which would skip all of the above.
 Contracts carry shared shape; agent adapters own protocol mechanics; server services
 own application state/authorization; shell owns native process/window behavior;
 web consumes those interfaces. Keep native Electron imports out of server helpers,
