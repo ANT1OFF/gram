@@ -18,6 +18,7 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { eventually, hasGit, makeRepo } from "../git/test-repo.ts";
 import { RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
+import { SIGNAL_STOP_DEADLINE_MS } from "../runtime/shutdown.ts";
 import { HEADLESS_NEEDS_HOSTED, NO_MACHINE_JOINED } from "./headless.ts";
 
 const hasOpenssl = (() => {
@@ -337,6 +338,24 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
           // Nothing was made on the control plane's side.
           expect(existsSync(join(root, ".worktrees"))).toBe(false);
           expect(server.child.exitCode).toBeNull();
+
+          // A container's stop: SIGTERM stops the sessions before the rest closes, and the server
+          // ends by itself, cleanly, inside its bound.
+          const stoppedAt = Date.now();
+          const exitCode = yield* Effect.promise(
+            () =>
+              new Promise<number | null>((resolve) => {
+                server.child.once("exit", (code) => resolve(code));
+                server.child.kill("SIGTERM");
+              }),
+          );
+          expect(Date.now() - stoppedAt).toBeLessThan(SIGNAL_STOP_DEADLINE_MS);
+          expect(exitCode).toBe(0);
+          const stopped = /^\{.*"msg":"shutdown: agent sessions stopped".*\}$/m.exec(
+            server.output(),
+          );
+          expect(JSON.parse(stopped?.[0] ?? "{}")).toMatchObject({ agents: 1 });
+          expect(server.output()).toMatch(/"result":"complete".*"msg":"shutdown: completed"/);
         }).pipe(Effect.scoped),
       180_000,
     );
