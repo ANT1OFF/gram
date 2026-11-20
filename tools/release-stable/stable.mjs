@@ -302,7 +302,7 @@ async function checkLinux(dir, { state, source, verifyAttestation }) {
  */
 export async function verifyDownloads(
   dir,
-  { expected, remote, covers, state, source, verifyApp, verifyAttestation },
+  { expected, remote, covers, state, source, pinnedKey, verifyApp, verifyAttestation },
 ) {
   for (const { name, bytes, sha256 } of expected) {
     const file = join(dir, name);
@@ -316,7 +316,7 @@ export async function verifyDownloads(
   }
   const sums = await checkSums(dir, covers);
   // Signed with the publisher's key once the source pins one: joined machines require it.
-  const pinned = await pinnedReleaseKey(source);
+  const pinned = pinnedKey !== undefined ? pinnedKey : await pinnedReleaseKey(source);
   const signature = join(dir, CHECKSUMS_SIGNATURE);
   if (pinned !== null) {
     if (!expected.some((asset) => asset.name === CHECKSUMS_SIGNATURE) || !existsSync(signature))
@@ -698,8 +698,8 @@ export async function attachLinux(ctx) {
   rmSync(sigPath, { force: true });
   const signed = signReleaseChecksums({
     assets,
-    pinnedKey: await pinnedReleaseKey(ctx.source),
-    readPrivate: ctx.readReleaseKey ?? keychainReleaseKey,
+    pinnedKey: ctx.releaseKey?.pinned ?? (await pinnedReleaseKey(ctx.source)),
+    readPrivate: ctx.releaseKey?.readPrivate ?? keychainReleaseKey,
   });
 
   const row = async (name) => {
@@ -815,6 +815,7 @@ export async function validate(ctx) {
       ),
     state,
     source: ctx.source,
+    pinnedKey: ctx.releaseKey?.pinned,
     verifyApp: ctx.verifyApp,
     verifyAttestation: ctx.verifyAttestation,
   });
@@ -1274,6 +1275,9 @@ export async function runPhase(options, seams = {}) {
     say: seams.say ?? ((line) => process.stdout.write(`${line}\n`)),
     gh: ghRunners({ gh, env: seams.env ?? process.env }),
     verifyApp: seams.verifyApp ?? macVerifyApp({ source }),
+    // The release key the source pins and its private half from your keychain; a test, whose
+    // source is this checkout, gives a key of its own.
+    releaseKey: seams.releaseKey,
     // `gh attestation verify` with your login; a test gives a stand-in for Sigstore's verdict.
     verifyAttestation: null,
     updateCheck:
