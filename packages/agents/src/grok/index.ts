@@ -9,6 +9,10 @@ export { makeGrokMapper, outputText, toolFor, turnUsage, type GrokMapper } from 
 export {
   autoAnswer,
   billingLimits,
+  connectorOf,
+  grokCommands,
+  promptOf,
+  transcriptOf,
   GROK_AGENT_ARGS,
   GROK_CAPABILITIES,
   grokModels,

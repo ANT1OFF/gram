@@ -10,20 +10,41 @@ import {
   type PermissionMode,
   type ReasoningVariant,
   type RequestAnswer,
+  type SessionPreview,
+  type SessionTranscriptMessage,
+  type SlashCommand,
   type SubscriptionLimitReport,
   type UserInput,
+  NotFound,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import { pathToFileURL } from "node:url";
 
 import { APP_TOOLS_SERVER_NAME } from "../app-tools.ts";
-import type { AgentHost, AgentSession, OpenSessionOptions, OutwardGate } from "../host.ts";
+import {
+  BUILT_IN_TOGGLE_REASON,
+  type AgentConnectors,
+  type AgentHost,
+  type AgentSession,
+  type ConnectorStatus,
+  type OpenSessionOptions,
+  type OutwardGate,
+} from "../host.ts";
+import { listsLeaveOut, narrowsMcp, reportedLists } from "../mcp-lists.ts";
 import { gateAsks, gateLevel, outwardKind } from "../outward.ts";
 import { AcpError, type AcpConnection, type AcpHandlers, type StartAcpAgent } from "./acp.ts";
-import { makeGrokMapper, optionFor, type PermissionOption } from "./mapper.ts";
+import {
+  grokToolName,
+  makeGrokMapper,
+  optionFor,
+  toolFor,
+  type PermissionOption,
+} from "./mapper.ts";
 
 export const GROK_CAPABILITIES: AgentCapabilities = {
   fork: false,
@@ -186,14 +207,133 @@ export const autoAnswer = (
   return gateAsks(gate, outwardKind(command)) ? undefined : "allow";
 };
 
-const promptOf = (input: UserInput): ReadonlyArray<Json> => {
-  const names = (input.attachments ?? []).map((attachment) => attachment.name);
-  return [
-    {
-      type: "text",
-      text: names.length === 0 ? input.text : `${input.text}\n\n(Attached: ${names.join(", ")})`,
-    },
-  ];
+/** The largest image sent inline; a bigger one goes as a link to its file. */
+const IMAGE_INLINE_MAX = 10 * 1024 * 1024;
+
+/**
+ * A message as ACP content: its text, each image inline (Grok Build reads images), and every other
+ * attachment as a link to its file, which Grok reads with its own tools.
+ */
+export const promptOf = async (
+  input: UserInput,
+  read: (path: string) => Promise<Uint8Array> = readFile,
+): Promise<ReadonlyArray<Json>> => {
+  const blocks: Array<Json> = [{ type: "text", text: input.text }];
+  for (const attachment of input.attachments ?? []) {
+    const name = attachment.name ?? attachment.path.split(/[\\/]/).at(-1) ?? attachment.path;
+    if (attachment.mediaType?.startsWith("image/") === true) {
+      const bytes = await read(attachment.path).catch(() => undefined);
+      if (bytes !== undefined && bytes.byteLength <= IMAGE_INLINE_MAX) {
+        blocks.push({
+          type: "image",
+          mimeType: attachment.mediaType,
+          data: Buffer.from(bytes).toString("base64"),
+        });
+        continue;
+      }
+    }
+    blocks.push({
+      type: "resource_link",
+      uri: pathToFileURL(attachment.path).href,
+      name,
+      ...(attachment.mediaType === undefined ? {} : { mimeType: attachment.mediaType }),
+    });
+  }
+  return blocks;
+};
+
+/** Grok Build's `available_commands_update` as Gram's slash commands. */
+export const grokCommands = (update: Json): ReadonlyArray<SlashCommand> =>
+  (Array.isArray(update["availableCommands"]) ? update["availableCommands"] : [])
+    .map(record)
+    .flatMap((command): Array<SlashCommand> => {
+      const name = text(command["name"]);
+      if (name === undefined || name === "") return [];
+      const hint = text(record(command["input"])["hint"]);
+      return [
+        {
+          name,
+          description: text(command["description"]) ?? "",
+          ...(hint === undefined ? {} : { argumentHint: hint }),
+        },
+      ];
+    });
+
+/** A server's state in `x.ai/mcp/list` as Gram's connector status. */
+export const connectorOf = (entry: Json): ConnectorStatus | undefined => {
+  const name = text(entry["name"]);
+  if (name === undefined) return undefined;
+  const session = record(entry["session"]);
+  const builtIn = name === APP_TOOLS_SERVER_NAME;
+  const status: ConnectorStatus["status"] =
+    session["enabled"] === false
+      ? "disabled"
+      : session["authRequired"] === true || session["status"] === "setupRequired"
+        ? "needs-auth"
+        : session["status"] === "ready"
+          ? "connected"
+          : session["status"] === "unavailable"
+            ? "failed"
+            : "pending";
+  const tools = (Array.isArray(session["tools"]) ? session["tools"] : [])
+    .map(record)
+    .flatMap((tool) => {
+      const toolName = text(tool["name"]);
+      return toolName === undefined ? [] : [{ name: toolName }];
+    });
+  const blocked = text(session["blockedReason"]);
+  const source = text(entry["source"]);
+  return {
+    name,
+    status,
+    ...(blocked === undefined ? {} : { error: blocked }),
+    ...(source === undefined ? {} : { source }),
+    ...(tools.length > 0 ? { tools } : {}),
+    ...(builtIn ? { builtIn: true, toggleUnavailable: BUILT_IN_TOGGLE_REASON } : {}),
+  };
+};
+
+/**
+ * A past session's main conversation from the updates `session/load` replays: each user message,
+ * and each reply with the calls it made, in order.
+ */
+export const transcriptOf = (updates: ReadonlyArray<Json>): Array<SessionTranscriptMessage> => {
+  const messages: Array<SessionTranscriptMessage> = [];
+  let last:
+    | { role: "user" | "assistant"; text: string; tools: Array<{ name: string }>; at?: number }
+    | undefined;
+  const flush = () => {
+    if (last === undefined) return;
+    if (last.text.trim() !== "" || last.tools.length > 0)
+      messages.push({
+        role: last.role,
+        text: last.text.trim(),
+        ...(last.tools.length > 0 ? { tools: last.tools } : {}),
+        ...(last.at === undefined ? {} : { at: last.at }),
+      });
+    last = undefined;
+  };
+  for (const params of updates) {
+    const update = record(params["update"]);
+    const kind = update["sessionUpdate"];
+    const stamp = record(params["_meta"])["agentTimestampMs"];
+    const at = typeof stamp === "number" ? stamp : undefined;
+    const role =
+      kind === "user_message_chunk"
+        ? "user"
+        : kind === "agent_message_chunk" || kind === "tool_call"
+          ? "assistant"
+          : undefined;
+    if (role === undefined) continue;
+    if (last?.role !== role) {
+      flush();
+      last = { role, text: "", tools: [], ...(at === undefined ? {} : { at }) };
+    }
+    if (kind === "tool_call") last.tools.push({ name: toolFor(grokToolName(update), {}).name });
+    else last.text += text(record(update["content"])["text"]) ?? "";
+  }
+  flush();
+  return messages;
 };
 
 export interface GrokHostConfig {
@@ -256,6 +396,45 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
     return list;
   });
 
+  /** A past session of `cwd`, replayed by `session/load` into a process of its own. */
+  const readPast = (cwd: string, agentSessionId: string) =>
+    Effect.gen(function* () {
+      const replayed: Array<Json> = [];
+      const connection = yield* launchWith(config, cwd, {
+        notification: (method, params) => {
+          if (method === "session/update" && text(params["sessionId"]) === agentSessionId)
+            replayed.push(params);
+        },
+        request: () => Promise.reject(new AcpError(-32601, "Not supported")),
+      });
+      const loaded = yield* Effect.tryPromise({
+        try: async () => {
+          try {
+            await connection.request("initialize", initializeParams);
+            await connection.request("session/load", {
+              sessionId: agentSessionId,
+              cwd,
+              mcpServers: [],
+            });
+            return true;
+          } catch (error) {
+            if (error instanceof AcpError && error.code !== -32000) return false;
+            throw error;
+          } finally {
+            await connection.stop();
+          }
+        },
+        catch: (error) => failure("Couldn't read the Grok Build session", error),
+      });
+      if (!loaded)
+        return yield* new NotFound({
+          entity: "session",
+          id: agentSessionId,
+          message: `No Grok Build session ${agentSessionId} in ${cwd}.`,
+        });
+      return transcriptOf(replayed);
+    });
+
   const open = (options: OpenSessionOptions) =>
     Effect.gen(function* () {
       if (options.dreamFilesOnly === true || options.confineWrites === true)
@@ -280,10 +459,21 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
         { options: ReadonlyArray<PermissionOption>; answer: (result: Json) => void }
       >();
 
+      let commands: ReadonlyArray<SlashCommand> = [];
+      let identity: Extract<AgentEvent, { type: "identity" }> | undefined;
       const onUpdate = (params: Json) => {
+        const update = record(params["update"]);
+        if (update["sessionUpdate"] === "available_commands_update") {
+          commands = grokCommands(update);
+          if (identity !== undefined) {
+            identity = { ...identity, commands };
+            Queue.offerUnsafe(events, identity);
+          }
+          return;
+        }
         if (mapper === undefined) return;
         if (text(params["sessionId"]) !== sessionId) return;
-        emit(mapper.update(record(params["update"])));
+        emit(mapper.update(update));
       };
 
       const handlers: AcpHandlers = {
@@ -338,8 +528,8 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
         yield* call("Grok Build didn't start", "initialize", initializeParams),
       );
       const capabilities = record(initialized["agentCapabilities"]);
-      const mcpServers =
-        options.mcp === undefined
+      const mcpServers = [
+        ...(options.mcp === undefined
           ? []
           : [
               {
@@ -351,8 +541,27 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
                   value,
                 })),
               },
-            ];
-      const base = { cwd: options.cwd, mcpServers };
+            ]),
+        ...(options.mcpServer === undefined
+          ? []
+          : [
+              {
+                type: "http",
+                name: options.mcpServer.name,
+                url: options.mcpServer.url,
+                headers: [],
+              },
+            ]),
+      ];
+      // The role's standing instructions join Grok's system prompt; Grok keeps them with the session.
+      const instructions = options.instructions?.trim();
+      const base = {
+        cwd: options.cwd,
+        mcpServers,
+        ...(instructions === undefined || instructions === ""
+          ? {}
+          : { _meta: { rules: instructions } }),
+      };
       let opened: Json;
       if (options.resumeId !== undefined) {
         const resumable = record(capabilities["sessionCapabilities"])["resume"] !== undefined;
@@ -411,19 +620,64 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
         });
       yield* applyModel(options.model?.model, options.model?.variant);
 
-      Queue.offerUnsafe(events, {
-        type: "identity",
-        agentSessionId: id,
-        model,
-        tools: [],
-        commands: [],
+      identity = { type: "identity", agentSessionId: id, model, tools: [], commands };
+      Queue.offerUnsafe(events, identity);
+
+      const servers = Effect.tryPromise({
+        try: async () => {
+          const answer = record(
+            await connection.request("_x.ai/mcp/list", { sessionId: id, cache: true }),
+          );
+          const body = record(answer["result"] ?? answer);
+          return (Array.isArray(body["servers"]) ? body["servers"] : []).map(record);
+        },
+        catch: (error) => failure("Grok Build couldn't list its connectors", error),
       });
+      const toggle = (name: string, enabled: boolean) =>
+        Effect.tryPromise({
+          try: () =>
+            connection.request("_x.ai/mcp/toggle", { sessionId: id, serverName: name, enabled }),
+          catch: (error) => failure(`Grok Build didn't switch ${name}`, error),
+        });
+      // The thread's lists leave servers out by switching them off for this session alone.
+      if (narrowsMcp(options))
+        for (const entry of yield* servers.pipe(Effect.orElseSucceed(() => []))) {
+          const name = text(entry["name"]);
+          if (name === undefined || name === APP_TOOLS_SERVER_NAME) continue;
+          if (record(entry["session"])["enabled"] === false) continue;
+          if (listsLeaveOut(options, { name })) yield* toggle(name, false).pipe(Effect.ignore);
+        }
+      const connectors: AgentConnectors = {
+        ...reportedLists(options),
+        status: servers.pipe(
+          Effect.map((list) =>
+            list.flatMap((entry) => {
+              const status = connectorOf(entry);
+              return status === undefined ? [] : [status];
+            }),
+          ),
+        ),
+        reconnect: (name) =>
+          toggle(name, false).pipe(Effect.andThen(toggle(name, true)), Effect.asVoid),
+        setEnabled: (name, enabled) =>
+          name === APP_TOOLS_SERVER_NAME
+            ? Effect.fail(unavailable(BUILT_IN_TOGGLE_REASON))
+            : toggle(name, enabled).pipe(Effect.as("applied" as const)),
+        authenticate: (name) =>
+          Effect.tryPromise({
+            try: () =>
+              connection.request("_x.ai/mcp/auth_trigger", { sessionId: id, serverName: name }),
+            catch: (error) => failure(`Grok Build couldn't start signing in to ${name}`, error),
+          }).pipe(Effect.as("started" as const)),
+      };
 
       let turn: Promise<void> | undefined;
       const prompt = (input: UserInput) => {
         emit(current.started());
-        const running = connection
-          .request("session/prompt", { sessionId: id, prompt: promptOf(input) })
+        const running = promptOf(input)
+          .then((content) =>
+            connection.request("session/prompt", { sessionId: id, prompt: content }),
+          )
           .then(
             (result) => emit(current.ended(text(record(result)["stopReason"]))),
             (error: unknown) => {
@@ -482,10 +736,11 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
                 }
                 void prompt(input);
               })
-            : quietly("Grok Build didn't take the message", () =>
+            : quietly("Grok Build didn't take the message", async () =>
                 connection.request("_x.ai/interject", {
                   sessionId: id,
-                  text: promptOf(input)[0]!["text"] as string,
+                  text: input.text,
+                  content: [...(await promptOf(input))],
                 }),
               ),
         interrupt: Effect.sync(cancel),
@@ -534,6 +789,7 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
             Effect.asVoid,
           ),
         processId: Effect.succeed(connection.pid),
+        connectors,
       };
       return agentSession;
     });
@@ -566,6 +822,26 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
         },
       });
     }),
+    readSession: ({ cwd, agentSessionId, limit }) =>
+      readPast(cwd, agentSessionId).pipe(
+        Effect.map((messages) => ({
+          agentSessionId,
+          cwd,
+          messages: limit === undefined ? messages : messages.slice(0, limit),
+        })),
+      ),
+    previewSession: ({ cwd, agentSessionId }) =>
+      readPast(cwd, agentSessionId).pipe(
+        Effect.map((messages): SessionPreview => {
+          const first = messages.find((message) => message.role === "user")?.text;
+          const last = messages.findLast((message) => message.role === "assistant")?.text;
+          return {
+            ...(first === undefined ? {} : { firstPrompt: first }),
+            ...(last === undefined ? {} : { lastReply: last }),
+          };
+        }),
+        Effect.catchTag("NotFound", () => Effect.succeed({})),
+      ),
     listSessions: ({ cwd, limit }) =>
       Effect.gen(function* () {
         const connection = yield* launchWith(config, cwd, ignoring);

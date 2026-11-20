@@ -8,6 +8,10 @@ import type { AcpConnection, AcpHandlers, StartAcpAgent } from "./acp.ts";
 import {
   autoAnswer,
   billingLimits,
+  connectorOf,
+  grokCommands,
+  promptOf,
+  transcriptOf,
   grokPermission,
   makeGrokHost,
   permissionParams,
@@ -88,6 +92,78 @@ describe("Grok Build plan usage", () => {
   });
 });
 
+describe("Grok Build session content", () => {
+  it("sends images inline and other attachments as links to their files", async () => {
+    const blocks = await promptOf(
+      {
+        text: "Look",
+        attachments: [
+          { path: "/work/shot.png", name: "shot.png", mediaType: "image/png" },
+          { path: "/work/notes.md", name: "notes.md" },
+        ],
+      },
+      async () => new Uint8Array([1, 2, 3]),
+    );
+    expect(blocks).toEqual([
+      { type: "text", text: "Look" },
+      { type: "image", mimeType: "image/png", data: "AQID" },
+      { type: "resource_link", uri: "file:///work/notes.md", name: "notes.md" },
+    ]);
+  });
+
+  it("reads Grok's commands as slash commands with their hints", () => {
+    expect(
+      grokCommands({
+        availableCommands: [
+          { name: "compact", description: "Compress history", input: null },
+          { name: "goal", description: "Set a goal", input: { hint: "<objective>" } },
+        ],
+      }),
+    ).toEqual([
+      { name: "compact", description: "Compress history" },
+      { name: "goal", description: "Set a goal", argumentHint: "<objective>" },
+    ]);
+  });
+
+  it("reports each server's state, Gram's own as built in and never switched", () => {
+    expect(
+      connectorOf({ name: "gram", session: { enabled: true, status: "ready" } }),
+    ).toMatchObject({ status: "connected", builtIn: true });
+    expect(
+      connectorOf({
+        name: "x",
+        session: { enabled: true, status: "unavailable", authRequired: true },
+      }),
+    ).toMatchObject({ status: "needs-auth" });
+    expect(connectorOf({ name: "y", session: { enabled: false } })?.status).toBe("disabled");
+    expect(
+      connectorOf({ name: "z", session: { enabled: true, status: "initializing" } })?.status,
+    ).toBe("pending");
+  });
+
+  it("reads a replayed session as alternating messages with the calls made", () => {
+    const update = (sessionUpdate: string, extra: Record<string, unknown>, at: number) => ({
+      sessionId: "s",
+      update: { sessionUpdate, ...extra },
+      _meta: { agentTimestampMs: at },
+    });
+    expect(
+      transcriptOf([
+        update("user_message_chunk", { content: { type: "text", text: "List it" } }, 1),
+        update("agent_thought_chunk", { content: { type: "text", text: "hm" } }, 2),
+        update("agent_message_chunk", { content: { type: "text", text: "Listing" } }, 3),
+        update("tool_call", { title: "list_dir", rawInput: {} }, 4),
+        update("agent_message_chunk", { content: { type: "text", text: " done." } }, 5),
+        update("user_message_chunk", { content: { type: "text", text: "Thanks" } }, 6),
+      ]),
+    ).toEqual([
+      { role: "user", text: "List it", at: 1 },
+      { role: "assistant", text: "Listing done.", tools: [{ name: "LS" }], at: 3 },
+      { role: "user", text: "Thanks", at: 6 },
+    ]);
+  });
+});
+
 /** A stand-in Grok Build: records what Gram sends and answers like the CLI does. */
 const fakeAgent = () => {
   const started: Array<StartAcpAgent> = [];
@@ -110,6 +186,16 @@ const fakeAgent = () => {
             return { sessionId: "new-session", models: { currentModelId: "grok-4.7" } } as T;
           case "session/resume":
             return { models: { currentModelId: "grok-4.7" } } as T;
+          case "_x.ai/mcp/list":
+            return {
+              result: {
+                servers: [
+                  { name: "gram", session: { enabled: true, status: "ready" } },
+                  { name: "github", session: { enabled: true, status: "ready" } },
+                  { name: "linear", session: { enabled: true, status: "ready" } },
+                ],
+              },
+            } as T;
           case "session/prompt": {
             const answer = (await handlers!.request("session/request_permission", {
               sessionId: params["sessionId"],
@@ -192,6 +278,30 @@ describe("Grok Build host", () => {
       method: "answered",
       params: { outcome: { outcome: "selected", optionId: "always-allow" } },
     });
+  });
+
+  it("gives a role's instructions to Grok's system prompt and leaves out the servers a list does", async () => {
+    const agent = fakeAgent();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* hostWith(agent);
+          yield* host.open({
+            threadId: ThreadId.make("t"),
+            cwd: "/work",
+            instructions: "You are a worker.",
+            mcpAllowlist: ["github"],
+          });
+        }),
+      ),
+    );
+    expect(agent.calls.find((call) => call.method === "session/new")?.params).toMatchObject({
+      _meta: { rules: "You are a worker." },
+    });
+    const toggled = agent.calls.filter((call) => call.method === "_x.ai/mcp/toggle");
+    expect(toggled.map((call) => call.params)).toEqual([
+      { sessionId: "new-session", serverName: "linear", enabled: false },
+    ]);
   });
 
   it("resumes the thread's own session rather than starting another", async () => {
