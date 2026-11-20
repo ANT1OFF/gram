@@ -1123,6 +1123,15 @@ export const forgetHostedDevice = async (
   return response.status >= 200 && response.status < 300;
 };
 
+/** `call` under `endpoint`: one path segment more, whether or not the endpoint ends in a slash. */
+const callAddress = (endpoint: string, which: string): string => {
+  const url = new URL(endpoint);
+  let path = url.pathname;
+  while (path.endsWith("/")) path = path.slice(0, -1);
+  url.pathname = `${path}/${which}`;
+  return url.href;
+};
+
 /**
  * One call about a machine of a worker's own, under `worker_machines_endpoint`, with the person's
  * sign-in: its status and its JSON body as received, for this machine's server to read. The server
@@ -1145,7 +1154,7 @@ export const callWorkerMachines = async (
     "machines:workers",
     calls.fetch,
     "POST",
-    `${endpoint.replace(/\/+$/, "")}/${calls.call}`,
+    callAddress(endpoint, calls.call),
     calls.body,
   );
   if ("why" in response) return response;

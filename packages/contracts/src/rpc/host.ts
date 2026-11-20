@@ -225,6 +225,13 @@ export const HostFeature = Schema.Literals([
    * ask a host without it.
    */
   "stop-going",
+  /**
+   * Carries its sessions' app-tool calls to the control plane over its own connection
+   * (`host.appTools.*`): it serves them on an address of its own loopback, and the control plane
+   * answers each. For a host that can't reach the control plane's address, such as one a hosted
+   * server started for a desktop's worker, whose connection that server relays.
+   */
+  "app-tools-tunnel",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -842,6 +849,31 @@ export type HostFilePart = typeof HostFilePart.Type;
  * read; the host only reads it. Paths are the host's own. That holds while the only caller is the
  * host's own parent over a private pipe: a host reached over a network checks paths itself.
  */
+const AppToolsHeaders = Schema.Record(
+  Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/)),
+  Schema.String.check(Schema.isMaxLength(8192)),
+);
+/** The most an app-tool call or answer carries, as text: a tool's whole result fits. */
+export const HOST_APP_TOOLS_MOST_CHARS = 8 * 1024 * 1024;
+
+/** An app-tool call a session made on the host, as it carries it (`host.appTools.requests`). */
+export const HostAppToolsRequest = Schema.Struct({
+  id: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{8,64}$/)),
+  method: Schema.Literals(["POST", "GET", "DELETE"]),
+  headers: AppToolsHeaders,
+  body: Schema.String.check(Schema.isMaxLength(HOST_APP_TOOLS_MOST_CHARS)),
+});
+export type HostAppToolsRequest = typeof HostAppToolsRequest.Type;
+
+/** The control plane's answer to one (`host.appTools.answer`). */
+export const HostAppToolsAnswer = Schema.Struct({
+  id: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{8,64}$/)),
+  status: Schema.Int,
+  headers: AppToolsHeaders,
+  body: Schema.String.check(Schema.isMaxLength(HOST_APP_TOOLS_MOST_CHARS)),
+});
+export type HostAppToolsAnswer = typeof HostAppToolsAnswer.Type;
+
 export const HostRpcs = RpcGroup.make(
   /** The first call on a connection: the host's version, id and capabilities. */
   Rpc.make("host.hello", { success: HostHello }),
@@ -1408,6 +1440,25 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.sessions.addDirectories", {
     payload: { ...session, paths: Schema.Array(Schema.String) },
     success: Schema.Boolean,
+    error: HostFailed,
+  }),
+  /**
+   * Starts serving app-tool calls on the host's loopback, once (`app-tools-tunnel`): the address
+   * its sessions are given, `http://127.0.0.1:<port>`, under which `/host/mcp` takes them.
+   */
+  Rpc.make("host.appTools.open", {
+    success: Schema.Struct({ url: Schema.String.check(Schema.isMaxLength(64)) }),
+    error: HostFailed,
+  }),
+  /** Each app-tool call a session there made, for the control plane to answer by id. */
+  Rpc.make("host.appTools.requests", {
+    success: HostAppToolsRequest,
+    error: HostFailed,
+    stream: true,
+  }),
+  /** The control plane's answer to one call: the host writes it back to the session. */
+  Rpc.make("host.appTools.answer", {
+    payload: HostAppToolsAnswer,
     error: HostFailed,
   }),
   /** Points the session's app tools at `mcp` from now on (`session-retarget`). */

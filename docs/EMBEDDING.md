@@ -385,7 +385,8 @@ frame after it is the host's, both ways, unchanged. `/status` answers `{ phase, 
 publicKey?, platform? }`: once it carries the host's key, the desktop registers the machine itself,
 as a worker host that came through that server, and takes its dial only from that server's relay.
 A machine that isn't online in five minutes is stopped with `/stop`. Release is the same pass as
-above, through the app.
+above, through the app. Its sessions' app tools never go to the server: they are carried over the
+host's own connection (`app-tools-tunnel`), to the desktop that placed them.
 
 ## Memory updates on a headless server
 

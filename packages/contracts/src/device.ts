@@ -942,7 +942,17 @@ export type WorkerMachineOp =
   /** Keep carrying this machine's connection, dialling the relay again whenever it ends. */
   | { readonly op: "relay"; readonly origin: string; readonly name: string }
   /** Stop carrying it. */
-  | { readonly op: "unrelay"; readonly name: string };
+  | { readonly op: "unrelay"; readonly name: string }
+  /**
+   * Carry exactly these, and no others: what the server has registered. `fresh` from a server that
+   * has just started, which knows none of the connections carried for the one before it, so each
+   * is dialled again.
+   */
+  | {
+      readonly op: "relays";
+      readonly machines: ReadonlyArray<{ readonly origin: string; readonly name: string }>;
+      readonly fresh?: true;
+    };
 
 export type WorkerMachineRequestMessage = {
   readonly type: "machines.request";

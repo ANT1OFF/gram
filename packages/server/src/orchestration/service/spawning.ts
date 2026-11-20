@@ -160,6 +160,13 @@ export interface NamedMachine {
   readonly via?: string | undefined;
 }
 
+/**
+ * Why a worker for a machine of its own isn't spawned on another model than the one it was given,
+ * as one elsewhere would be with a warning: the machine runs only what its provider offers.
+ */
+export const sandboxSwapWords = (instead: { readonly of: string; readonly why: string }) =>
+  `${instead.of} can't run there (${instead.why}), so no worker is spawned and no machine is asked for. A worker on a machine of its own runs the model it is given or none: name one that machine runs, or leave out sandbox to run it here on another model.`;
+
 /** Why a worker can't go on a machine its orchestrator named. */
 export const NOT_THIS_ORCHESTRATIONS_MACHINE =
   "A worker goes on its orchestrator's own machine, or on another machine of the same person's own. That one was started for other work.";
@@ -488,6 +495,11 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         input.model,
         yield* workerModelsHere(thread, state.charter, hostId),
       );
+      if (input.placement !== undefined && chosen.instead !== undefined)
+        return yield* toolError(
+          "spawn_worker",
+          refusal("not_admitted", sandboxSwapWords(chosen.instead)),
+        );
       yield* admitMachineModel("spawn_worker", hostId, chosen.model);
     });
   // The model a spawn would run on, as it resolves here before any machine is placed: what a
@@ -502,6 +514,11 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         model,
         yield* workerModelsHere(thread, state.charter, undefined),
       );
+      if (chosen.instead !== undefined)
+        return yield* toolError(
+          "spawn_worker",
+          refusal("not_admitted", sandboxSwapWords(chosen.instead)),
+        );
       return chosen.model;
     });
   const {
@@ -957,6 +974,13 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             yield* workerModelsHere(caller, state.charter, hostId),
           );
           const chosen = picked.model;
+          // On a machine of its own (`sandbox`), a worker runs the model it was given or none: the
+          // machine runs what its provider offers, so another model would be a silent swap.
+          if (input.placement !== undefined && picked.instead !== undefined)
+            return yield* toolError(
+              tool,
+              refusal("not_admitted", sandboxSwapWords(picked.instead)),
+            );
           yield* admitMachineModel(tool, hostId, chosen);
           const mode = startModeFor(
             chosen.agent,

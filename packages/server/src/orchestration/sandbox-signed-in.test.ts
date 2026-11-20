@@ -13,7 +13,12 @@ import {
   signedInSource,
   type WorkerMachinePortShape,
 } from "../embedding/signed-in-workers.ts";
+import { AppToolError, DEFAULT_CHARTER, HostId } from "@gram/contracts";
+import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
+import { makeStopMarks } from "../host/stop-marks.ts";
+import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { Orchestration } from "./service.ts";
 import { makeWorld, openOrchestrator, serverLayer } from "./test-harness.ts";
 
 const SERVER = { origin: "https://hosted.example.test", server: "Example hosted" };
@@ -42,6 +47,7 @@ const fakePort = (
       }),
     relay: () => undefined,
     unrelay: () => undefined,
+    relays: () => undefined,
     onDial: () => undefined,
   };
   return { port, calls };
@@ -231,6 +237,164 @@ describe("sandbox from a signed-in hosted server", () => {
         expect(result._tag).toBe("Failure");
         expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);
         expect(calls.at(-1)!.body).toEqual({ name: machine.name });
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("refuses a named model its machine doesn't run rather than run another", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const { port } = fakePort((call) =>
+        call === "choices" ? { status: 404, body: {} } : { status: 200, body: {} },
+      );
+      // A worker machine from the server, online, whose Claude Code lists only fake-haiku.
+      const machine = {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "worker-0123456789",
+        confirmed: true,
+        onDemand: "worker",
+        via: SERVER.origin,
+        onlineSince: 1,
+        models: [{ id: "fake-haiku", displayName: "Fake Haiku", supportsEffort: false }],
+      };
+      const remote = Layer.succeed(RemoteHosts, {
+        machines: { list: () => [], get: () => undefined },
+        stops: makeStopMarks(),
+        list: () => [machine],
+      } as unknown as RemoteHostsShape);
+      const hosts = {
+        list: () => [machine],
+        remove: () => false,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port, hosts });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(remote),
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session, workspaceId } = yield* openOrchestrator(world);
+        yield* (yield* Orchestration).setCharter(workspaceId, {
+          ...DEFAULT_CHARTER,
+          autonomy: "publish",
+          workerModels: [
+            { agent: "claude", model: "fake-opus" },
+            { agent: "claude", model: "fake-haiku" },
+          ],
+        });
+        const result = yield* session
+          .callTool("spawn_worker", {
+            ...SANDBOX,
+            model: "claude:fake-opus",
+            sandbox: { shareWith: machine.name, reason: "Same build." },
+          })
+          .pipe(Effect.result);
+        expect(result).toMatchObject({
+          _tag: "Failure",
+          failure: {
+            message: expect.stringMatching(
+              /fake-opus can't run there \(.*doesn't list fake-opus.*\), so no worker is spawned/,
+            ),
+          },
+        });
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("starts no machine for a spawn whose approval is denied", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const { port, calls } = fakePort((call) =>
+        call === "choices" ? { status: 404, body: {} } : { status: 202, body: {} },
+      );
+      const hosts = {
+        list: () => [],
+        remove: () => false,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port, hosts });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { thread } = yield* openOrchestrator(world);
+        const registry = yield* AppToolRegistry;
+        const gated = bindAppTools(
+          registry.definitions.map((definition) =>
+            definition.descriptor.name === "spawn_worker"
+              ? { ...definition, alwaysAsks: true }
+              : definition,
+          ),
+          thread.id,
+          {
+            approve: () =>
+              Effect.fail(new AppToolError({ tool: "spawn_worker", message: "The user said no." })),
+          },
+        ).find((tool) => tool.descriptor.name === "spawn_worker")!;
+        const result = yield* gated.run(SANDBOX).pipe(Effect.result);
+        expect(result).toMatchObject({ _tag: "Failure" });
+        // The choices were read for the card; nothing was started.
+        expect(calls.map((each) => each.call)).toEqual(["choices"]);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("stops a machine whose start got no answer", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const calls: Array<{ readonly call: string; readonly body: unknown }> = [];
+      const { port } = fakePort(() => ({ status: 200, body: {} }));
+      const lost: WorkerMachinePortShape = {
+        ...port,
+        call: (_origin, call, body) =>
+          Effect.sync(() => {
+            calls.push({ call, body });
+            return call === "start"
+              ? { ok: false as const, why: "The desktop app didn't answer." }
+              : call === "choices"
+                ? { ok: true as const, status: 404, body: {} }
+                : { ok: true as const, status: 200, body: {} };
+          }),
+      };
+      const hosts = {
+        list: () => [],
+        remove: () => false,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port: lost, hosts });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(
+            signedIn({ port: lost, source: Effect.succeed({ source, server: SERVER }) }),
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session } = yield* openOrchestrator(world);
+        const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
+        expect(result).toMatchObject({
+          _tag: "Failure",
+          failure: {
+            message: expect.stringMatching(/couldn't be asked for: The desktop app didn't answer/),
+          },
+        });
+        expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );

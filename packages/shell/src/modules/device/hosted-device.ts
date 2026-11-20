@@ -336,6 +336,8 @@ export interface HostedDevice {
     | { readonly ok: true; readonly status: number; readonly body: unknown }
     | { readonly ok: false; readonly why: string }
   >;
+  /** Whether the sign-in to `origin` covers carrying its worker machines' connections now. */
+  readonly workerMachineRelayAllowed: (origin: string) => boolean;
   /** The address and headers of one dial of a worker machine's relay. */
   readonly workerMachineRelayDial: (
     origin: string,
@@ -1196,6 +1198,13 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
         };
       return callWorkerMachines({ ...callsOf(server), call, body });
+    },
+
+    workerMachineRelayAllowed: (origin) => {
+      const server = known(origin);
+      return (
+        server !== undefined && !server.keeper.signedOut() && startsWorkerMachines(server.discovery)
+      );
     },
 
     workerMachineRelayDial: async (origin, name) => {

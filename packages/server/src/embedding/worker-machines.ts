@@ -65,7 +65,12 @@ export type WorkerMachineStart =
       readonly total?: Resources;
       readonly machines: ReadonlyArray<WorkerMachineHeld>;
     }
-  | { readonly kind: "refused"; readonly message: string };
+  | {
+      readonly kind: "refused";
+      readonly message: string;
+      /** No answer came: the provider may have started it all the same. */
+      readonly unknown?: true;
+    };
 
 const SHORT = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const NAME = /^worker-[a-z0-9]{8,16}$/;
@@ -233,6 +238,7 @@ export const askWorkerMachine = <R>(
       return {
         kind: "refused",
         message: `The machine couldn't be asked for: ${answered.failed}`,
+        unknown: true,
       } as const;
     const { status, body } = answered;
     if (status === 409) return parseOverTotal(body);

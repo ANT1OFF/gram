@@ -34,6 +34,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Schedule from "effect/Schedule";
+import * as Duration from "effect/Duration";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { Socket } from "../platform/unstable.ts";
 import { CHOICES_TTL_MS, type OnDemandChoices, parseChoices } from "./on-demand.ts";
@@ -69,6 +71,14 @@ export interface WorkerMachinePortShape {
   /** Asks the app to carry this machine's connection, dialling its relay again whenever it ends. */
   readonly relay: (origin: string, name: string) => void;
   readonly unrelay: (name: string) => void;
+  /**
+   * Tells the app to carry exactly these and no others; `fresh` from a server just started, so
+   * every connection the app carried for the one before is dialled again.
+   */
+  readonly relays: (
+    machines: ReadonlyArray<{ readonly origin: string; readonly name: string }>,
+    fresh?: boolean,
+  ) => void;
   /** Where each relayed connection the app opens is handed: one handler, the latest set. */
   readonly onDial: (handler: (dial: RelayedDial) => void) => void;
 }
@@ -289,6 +299,14 @@ export const bridgeWorkerMachines = (
     relay: (origin, name) =>
       post({ type: "machines.request", id: randomUUID(), op: "relay", origin, name }),
     unrelay: (name) => post({ type: "machines.request", id: randomUUID(), op: "unrelay", name }),
+    relays: (machines, fresh) =>
+      post({
+        type: "machines.request",
+        id: randomUUID(),
+        op: "relays",
+        machines,
+        ...(fresh === true ? { fresh: true } : {}),
+      }),
     onDial: (next) => {
       handler = next;
     },
@@ -304,6 +322,7 @@ export const NO_WORKER_MACHINES: WorkerMachinePortShape = {
   call: () => refusedHere,
   relay: () => undefined,
   unrelay: () => undefined,
+  relays: () => undefined,
   onDial: () => undefined,
 };
 
@@ -323,6 +342,13 @@ export class WorkerMachinePort extends Context.Service<WorkerMachinePort, Worker
 /** Why `sandbox` is refused on a desktop with no signed-in server that starts worker machines. */
 export const NO_SIGNED_IN_SERVER =
   "Sign in to a hosted server that offers worker machines (Settings → Machines → Hosted servers) for workers to have machines of their own.";
+
+/** The most machines from hosted servers this Gram registers at once (and the app relays). */
+export const RELAYED_MOST = 32;
+
+/** How many times a machine given back is asked to stop, and the wait between. */
+const STOP_ATTEMPTS = 3;
+const STOP_RETRY_MS = 2_000;
 
 /** How long a desktop waits for a hosted machine to join before it stops it. */
 export const ARRIVE_TIMEOUT_MS = 5 * 60_000;
@@ -360,6 +386,20 @@ export const parseMachineStatus = (
   };
 };
 
+/**
+ * A server's name as an orchestrator reads it, in its prompt and its tools' words: one line of
+ * printable text, at most 60 characters, so a name can't pass for instructions.
+ */
+export const plainName = (name: string): string => {
+  const flat = [...name]
+    .map((char) => (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(char) ? " " : char))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  const cut = [...flat].slice(0, 60).join("");
+  return cut === "" ? "The hosted server" : cut;
+};
+
 /** What an orchestrator is told when the signed-in server's answer stops a machine joining. */
 const failedWords = (name: string, why: string) => `The machine ${name} didn't join: ${why}`;
 
@@ -372,6 +412,7 @@ export interface SignedInDeps {
   readonly now?: () => number;
   readonly timeoutMs?: number;
   readonly everyMs?: number;
+  readonly stopRetryMs?: number;
   /** What each server offered, kept across sources a short while; none kept when left out. */
   readonly offered?: OfferedByServer;
 }
@@ -414,25 +455,39 @@ export const signedInSource = (
     offered.set(origin, fresh);
     return fresh;
   });
+  /**
+   * Stops a machine there, a few times if need be, and forgets it here once it is stopped (or the
+   * server knows it no more). One that couldn't be stopped stays registered here, so the release
+   * pass still tells the server its work is over, and the server reclaims it as it does an idle
+   * one. Whether it was stopped.
+   */
   const forget = (name: string) =>
     Effect.gen(function* () {
+      let stopped = false;
+      let last = "";
+      for (let attempt = 0; attempt < STOP_ATTEMPTS && !stopped; attempt += 1) {
+        if (attempt > 0) yield* Effect.sleep(deps.stopRetryMs ?? STOP_RETRY_MS);
+        const answered = yield* port.call(origin, "stop", { name });
+        stopped = answered.ok && (answered.status < 300 || answered.status === 404);
+        // Only the status: what a server answers isn't written to the log.
+        last = answered.ok ? `answered ${answered.status}` : "no answer";
+      }
+      if (!stopped) {
+        yield* Effect.logWarning("a worker machine given back could not be stopped").pipe(
+          Effect.annotateLogs({ machine: name, reason: last }),
+        );
+        return false;
+      }
       port.unrelay(name);
       const machine = named(name);
       if (machine !== undefined) hosts.remove(HostId.make(machine.id));
-      const stopped = yield* port.call(origin, "stop", { name });
-      if (!stopped.ok || stopped.status >= 300)
-        yield* Effect.logWarning("a worker machine given back could not be stopped").pipe(
-          Effect.annotateLogs({
-            machine: name,
-            reason: stopped.ok ? `answered ${stopped.status}` : stopped.why,
-          }),
-        );
+      return true;
     });
   return {
-    label: server.server,
+    label: plainName(server.server),
     choices: Effect.map(asked, (kept) => kept.value),
     models: Effect.map(asked, (kept) => kept.models),
-    abandon: forget,
+    abandon: (name) => Effect.asVoid(forget(name)),
     start: (ask) =>
       askWorkerMachine(
         ask,
@@ -460,17 +515,33 @@ export const signedInSource = (
           const machine = named(name);
           if (machine?.onlineSince !== undefined) return machine.id;
           if (machine === undefined) {
-            const answered = yield* port.call(origin, "status", { name });
-            if (!answered.ok) return { failed: failedWords(name, answered.why) };
-            const status = parseMachineStatus(answered.body);
-            if (answered.status === 404 || status.phase === "failed" || status.phase === "stopped")
+            // No later than the deadline, however long the app or the server takes to answer.
+            const left = deadline - now();
+            if (left <= 0) return { failed: "timeout" };
+            const read = yield* port
+              .call(origin, "status", { name })
+              .pipe(Effect.timeoutOption(left));
+            if (read._tag === "None") return { failed: "timeout" };
+            const answered = read.value;
+            // A call that went wrong on the way is asked again, until the deadline.
+            const status = answered.ok ? parseMachineStatus(answered.body) : {};
+            if (
+              answered.ok &&
+              (answered.status === 404 || status.phase === "failed" || status.phase === "stopped")
+            )
               return {
                 failed: failedWords(
                   name,
                   status.message ?? `${server.server} says it isn't starting.`,
                 ),
               };
-            if (status.publicKey !== undefined) {
+            if (answered.ok && answered.status < 300 && status.publicKey !== undefined) {
+              // So many relays at once is a leak, not work: refused, and this one given back.
+              const held = hosts.list().filter((each) => each.via !== undefined).length;
+              if (held >= RELAYED_MOST)
+                return {
+                  failed: `This Gram already has ${held} machines from hosted servers. Remove ones no worker uses under Settings → Machines, then spawn again.`,
+                };
               // Registered here by this Gram, for the name it asked for, from the server it asked.
               const result = hosts.machines.provision({
                 name,
@@ -491,10 +562,12 @@ export const signedInSource = (
         }
       }),
     timedOut: (name) =>
-      Effect.as(
-        forget(name),
-        `The machine ${name} didn't join within ${Math.round((deps.timeoutMs ?? ARRIVE_TIMEOUT_MS) / 60_000)} minutes, so it was stopped. Spawn again to ask for a new one, or leave out sandbox to run the worker on your machine.`,
-      ),
+      Effect.map(forget(name), (stopped) => {
+        const within = `The machine ${name} didn't join within ${Math.round((deps.timeoutMs ?? ARRIVE_TIMEOUT_MS) / 60_000)} minutes`;
+        return stopped
+          ? `${within}, so it was stopped. Spawn again to ask for a new one, or leave out sandbox to run the worker on your machine.`
+          : `${within}, and ${server.server} didn't confirm stopping it: it stays listed under Machines until the server reclaims it. Leave out sandbox to run the worker on your machine.`;
+      }),
   };
 };
 
@@ -514,8 +587,9 @@ export const tellSignedInRelease = (
       Effect.flatMap((answered) =>
         answered.ok && (answered.status < 300 || answered.status === 404)
           ? Effect.void
-          : Effect.fail(
-              new Error(answered.ok ? `the server answered ${answered.status}` : answered.why),
+          : // Only the status: what a server answers isn't written to the log.
+            Effect.fail(
+              new Error(answered.ok ? `the server answered ${answered.status}` : "no answer"),
             ),
       ),
     );
@@ -533,6 +607,30 @@ export class SignedInWorkers extends Context.Service<
   }
 >()("@gram/server/SignedInWorkers") {}
 
+/** How often the app is told the whole list of machines it carries, whether or not it changed. */
+export const RELAYS_RESYNC = Duration.minutes(1);
+/** How often offline relayed machines are asked after, to forget one the server reclaimed. */
+export const RECLAIMED_EVERY = Duration.minutes(10);
+
+/**
+ * Forgets each relayed worker machine that is offline and that its server answers it doesn't know
+ * (`…/status` 404): reclaimed there once released, or removed. Online ones aren't asked.
+ */
+export const forgetReclaimed = (
+  port: WorkerMachinePortShape,
+  hosts: Pick<RemoteHostsShape, "list" | "remove">,
+) =>
+  Effect.gen(function* () {
+    for (const machine of hosts.list()) {
+      if (machine.via === undefined || machine.onDemand !== "worker") continue;
+      if (machine.onlineSince !== undefined) continue;
+      const answered = yield* port.call(machine.via, "status", { name: machine.name });
+      if (!answered.ok || answered.status !== 404) continue;
+      port.unrelay(machine.name);
+      hosts.remove(HostId.make(machine.id));
+    }
+  });
+
 /** Takes one relayed connection as its machine's dial, or ends it with why. */
 export const takeRelayedDial = (hosts: RemoteHostsShape, dial: RelayedDial) =>
   Effect.gen(function* () {
@@ -544,6 +642,11 @@ export const takeRelayedDial = (hosts: RemoteHostsShape, dial: RelayedDial) =>
     const decision = hosts.machines.authorizeConnect(dial.origin, dial.headers, "relayed");
     if (decision.kind === "refused") {
       dial.end(4000 + decision.status, decision.message);
+      return;
+    }
+    // The relay for one machine carries that machine's dial alone, never another's it holds.
+    if (decision.machine.id !== machine.id) {
+      dial.end(4401, "unauthorized: another machine's dial");
       return;
     }
     yield* hosts.attach(hosts.admit(decision.machine, dial.origin), yield* dial.socket);
@@ -577,9 +680,36 @@ export const SignedInWorkersLive = Layer.effect(
       Effect.forever,
       Effect.forkScoped,
     );
-    for (const machine of hosts.list())
-      if (machine.via !== undefined && machine.onDemand === "worker")
-        port.relay(machine.via, machine.name);
+    // What the app carries is what is registered here: told whole at start (`fresh`, since a new
+    // server knows none of the connections carried for the last), on every change of the machines,
+    // and every minute besides, in case the app missed one.
+    const relayed = () =>
+      hosts
+        .list()
+        .filter((machine) => machine.via !== undefined && machine.onDemand === "worker")
+        .map((machine) => ({ origin: machine.via!, name: machine.name }));
+    let told = "";
+    const sync = (fresh: boolean) => {
+      const machines = relayed();
+      const said = JSON.stringify(machines);
+      if (!fresh && said === told) return;
+      told = said;
+      port.relays(machines, fresh);
+    };
+    sync(true);
+    const unwatch = hosts.watch(() => sync(false));
+    yield* Effect.addFinalizer(() => Effect.sync(unwatch));
+    yield* Effect.sync(() => {
+      told = "";
+      sync(false);
+    }).pipe(Effect.repeat(Schedule.spaced(RELAYS_RESYNC)), Effect.forkScoped);
+    // A machine the server no longer knows (reclaimed after its release, or removed there) is
+    // forgotten here, so its relay stops and its name is free.
+    yield* forgetReclaimed(port, hosts).pipe(
+      Effect.catchCause((cause) => Effect.logWarning("the reclaimed-machine pass failed", cause)),
+      Effect.repeat(Schedule.spaced(RECLAIMED_EVERY)),
+      Effect.forkScoped,
+    );
     return {
       port,
       source: port.server().pipe(

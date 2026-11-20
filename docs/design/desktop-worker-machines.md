@@ -131,6 +131,17 @@ and copies frames between them:
 6. The machine is online. The worker is placed on it by name, as an embedded worker is, and its
    worktree and session run there.
 
+**App tools go over the host's own connection.** A session on a joined machine reaches its
+thread's app tools at `<the address it dialled>/host/mcp`; a relayed machine dialled the hosted
+server, which can't answer for the desktop. So for a relayed machine the desktop asks its host to
+serve `/host/mcp` on the machine's own loopback (`host.appTools.open`, the `app-tools-tunnel`
+feature), gives its sessions that address, and answers each call the host carries back over the
+connection (`host.appTools.requests`, `host.appTools.answer`) from its own app-tools endpoint, as a
+session on the desktop calls it. The desktop lets a call through only with a token issued for a
+thread whose session is on that machine, as it does for a call over the tailnet. The hosted server
+relays these calls as host frames and serves no app tools; a relayed machine is never given the
+hosted server's address for them, so no thread's token goes there.
+
 No HTTP route is added for it: only the app's main process, which started the server, can hand it a
 relayed connection. Even so, it can only hand over a dial signed by a key the desktop registered,
 for the server that key came through, once. The app reads nothing of the frames but the first,
@@ -156,6 +167,23 @@ Claude or Codex sign-in. The existing per-machine sign-in (Settings → Machines
 subscription token reaches a machine, with its own consent.
 
 ## 5. Release, an expired sign-in, and a sleeping desktop
+
+- **Only once the spawn goes ahead.** The machine is asked for in the tool's handler, after any
+  approval card, so a denied or refused spawn starts nothing. One that came for a spawn that is
+  then refused, held or interrupted is given back (`…/stop`); a start that got no answer is given
+  back too, since the server may have started it. A stop is tried three times; one that never
+  succeeds leaves the machine registered here, so the release pass still tells the server, and the
+  orchestrator is told it wasn't confirmed.
+- **The relays follow the registry.** The desktop's server tells the app the whole list of machines
+  to carry (`relays`): at start (`fresh`, so every connection carried for a server that has since
+  restarted is dialled again), on every change of its machines (a removal under Settings stops its
+  relay), and every minute besides. The app keeps that list even while its sign-in is still being
+  restored, and dials each once the sign-in covers it. A machine the server no longer knows
+  (`…/status` 404, reclaimed after its release) is forgotten, so relays never pile up; past 32
+  relayed machines a new one is refused with what to remove.
+- **Revocation.** Signing out, the sign-in ending, or hosted features turning off closes every live
+  relay the sign-in no longer covers, at once and in a check every 30 seconds; none dials again
+  until it is covered.
 
 - **Release** is `worker-machine-release.ts`'s pass, run against whichever provider there is: a
   worker machine with no worker left at work is told released (`…/release`), and told again,
@@ -196,7 +224,13 @@ in the keychain, with one more scope; the machine's public key in `machines.json
 Tokens and dial headers are never logged.
 
 **Untrusted text stays text.** What the server answers (choice labels, refusals, status messages)
-is cut to length and shown as data, as the embedded provider's answers are.
+is cut to length and shown as data, as the embedded provider's answers are. The app passes on only
+the fields each answer is read for, so a token a server echoes never leaves the app, and logs keep
+statuses, never a server's words. The server's name reaches the orchestrator's prompt as one plain
+line of at most 60 characters.
+
+**A model is never swapped.** A worker on a machine of its own runs the model it was given or
+none: a named model the machine doesn't run is refused, not replaced with another the roster has.
 
 ## 7. What a server needs
 

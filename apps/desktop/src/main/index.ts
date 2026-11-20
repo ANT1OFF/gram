@@ -262,7 +262,11 @@ const vaultCrypto: VaultCrypto = {
 let deviceChanged = (): void => undefined;
 const deviceHost = createDeviceHost({
   ready: () => app.whenReady(),
-  changed: () => deviceChanged(),
+  changed: () => {
+    deviceChanged();
+    // Signed out, the sign-in ended, or hosted features off: no relay outlives what covered it.
+    workerMachineRelays.revalidate();
+  },
   failed: (error) =>
     log.error({ source: "device", err: error }, "the personal device didn't start"),
   make: async () => {
@@ -317,7 +321,11 @@ const deviceHost = createDeviceHost({
             : "linux",
         now: () => Date.now(),
         elapsed: () => performance.now(),
-        changed: () => deviceChanged(),
+        changed: () => {
+          deviceChanged();
+          // Signed out, the sign-in ended, or hosted features off: no relay outlives what covered it.
+          workerMachineRelays.revalidate();
+        },
       });
       return { device, end: ended };
     } catch (error) {

@@ -9,6 +9,7 @@ import { Socket as NetSocket } from "node:net";
 import { join } from "node:path";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import { makeAppToolsTunnel } from "./app-tools-tunnel.ts";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
 import { AgentUnavailable, HOST_PROTOCOL_VERSION, LOCAL_HOST_ID } from "@gram/contracts";
 import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
@@ -262,6 +263,9 @@ const hostService = (
       reads: fileReadsOn(proc),
       attachments: yield* attachmentsOnHost(hostAttachments()),
       shared: sharedOnHost(hostShared()),
+      // Its sessions' app-tool calls over its connection, for a machine that reaches no address
+      // of the control plane's; its listener starts only once a control plane asks for it.
+      appTools: yield* makeAppToolsTunnel,
       threadPlaces: threadPlacesOnHost(proc, hostRepos()),
       repos: {
         ensure: (url) =>

@@ -31,6 +31,9 @@ const fakeSocket = () => {
     readyState: 1,
     send: (data) => sent.push(data),
     close: (code, reason) => {
+      // As Node's WebSocket: only 1000 and 3000–4999 may be sent.
+      if (code !== undefined && code !== 1000 && (code < 3000 || code > 4999))
+        throw new Error("InvalidAccessError");
       closed.push({
         ...(code === undefined ? {} : { code }),
         ...(reason === undefined ? {} : { reason }),
@@ -44,8 +47,13 @@ const fakeSocket = () => {
   return { socket, sent, closed, fire };
 };
 
-const deviceFor = (dials: Array<{ origin: string; name: string }>) =>
+const deviceFor = (
+  dials: Array<{ origin: string; name: string }>,
+  covered: { on: boolean } = { on: true },
+  answer: unknown = { name: NAME },
+) =>
   ({
+    workerMachineRelayAllowed: () => covered.on,
     workerMachineRelayDial: async (origin: string, name: string) => {
       dials.push({ origin, name });
       return {
@@ -55,7 +63,7 @@ const deviceFor = (dials: Array<{ origin: string; name: string }>) =>
       };
     },
     workerMachineServer: () => ({ ok: true, server: { origin: ORIGIN, server: "Example" } }),
-    workerMachineCall: async () => ({ ok: true, status: 202, body: { name: NAME } }),
+    workerMachineCall: async () => ({ ok: true, status: 202, body: answer }),
   }) as unknown as HostedDevice;
 
 afterEach(() => {
@@ -71,6 +79,7 @@ describe("a worker machine's relay", () => {
     > = [];
     const posted: WorkerMachineRelayMessage[] = [];
     const relays = makeWorkerMachineRelays({
+      watch: false,
       device: () => deviceFor(dials),
       post: (message) => posted.push(message),
       open: (url, headers) => {
@@ -122,6 +131,7 @@ describe("a worker machine's relay", () => {
     const posted: WorkerMachineRelayMessage[] = [];
     const opened: Array<ReturnType<typeof fakeSocket>> = [];
     const relays = makeWorkerMachineRelays({
+      watch: false,
       device: () => deviceFor([]),
       post: (message) => posted.push(message),
       open: () => {
@@ -145,7 +155,11 @@ describe("a worker machine's relay", () => {
 
 describe("the server's worker machine requests", () => {
   it("answers which server, and makes a call only of a known kind", async () => {
-    const relays = makeWorkerMachineRelays({ device: () => undefined, post: () => undefined });
+    const relays = makeWorkerMachineRelays({
+      watch: false,
+      device: () => undefined,
+      post: () => undefined,
+    });
     const device = deviceFor([]);
     expect(
       await answerWorkerMachines(
@@ -193,5 +207,149 @@ describe("the server's worker machine requests", () => {
         relays,
       ),
     ).toMatchObject({ result: { ok: false, why: "Hosted features are off in this app." } });
+  });
+});
+
+const harness = (device: () => HostedDevice | undefined) => {
+  const opened: Array<ReturnType<typeof fakeSocket>> = [];
+  const posted: WorkerMachineRelayMessage[] = [];
+  const relays = makeWorkerMachineRelays({
+    watch: false,
+    device,
+    post: (message) => posted.push(message),
+    open: () => {
+      const made = fakeSocket();
+      opened.push(made);
+      return made.socket;
+    },
+  });
+  return { relays, opened, posted };
+};
+
+describe("the relays the app keeps", () => {
+  const OTHER = "worker-abcdef0123";
+
+  it("keeps what to carry while the sign-in is still being restored, and dials it once there", async () => {
+    vi.useFakeTimers();
+    let device: HostedDevice | undefined;
+    const dials: Array<{ origin: string; name: string }> = [];
+    const { relays, opened } = harness(() => device);
+    expect(
+      await answerWorkerMachines(
+        {
+          type: "machines.request",
+          id: "1",
+          op: "relays",
+          machines: [{ origin: ORIGIN, name: NAME }],
+          fresh: true,
+        },
+        undefined,
+        relays,
+      ),
+    ).toMatchObject({ result: { ok: true } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened).toHaveLength(0);
+    device = deviceFor(dials);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(dials).toEqual([{ origin: ORIGIN, name: NAME }]);
+    expect(opened).toHaveLength(1);
+    relays.close();
+  });
+
+  it("dials every live relay again for a server that just started", async () => {
+    vi.useFakeTimers();
+    const dials: Array<{ origin: string; name: string }> = [];
+    const { relays, opened } = harness(() => deviceFor(dials));
+    relays.sync([{ origin: ORIGIN, name: NAME }], false);
+    await vi.advanceTimersByTimeAsync(0);
+    opened[0]!.fire("open", {});
+    // The same list from a new server: its connection is the old server's, so it starts again.
+    relays.sync([{ origin: ORIGIN, name: NAME }], true);
+    expect(opened[0]!.closed).toEqual([{ code: 4503, reason: "Gram restarted" }]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(dials).toHaveLength(2);
+    relays.close();
+  });
+
+  it("stops the relays a list leaves out", async () => {
+    vi.useFakeTimers();
+    const dials: Array<{ origin: string; name: string }> = [];
+    const { relays, opened } = harness(() => deviceFor(dials));
+    relays.sync(
+      [
+        { origin: ORIGIN, name: NAME },
+        { origin: ORIGIN, name: OTHER },
+      ],
+      false,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened).toHaveLength(2);
+    relays.sync([{ origin: ORIGIN, name: NAME }], false);
+    expect(opened[1]!.closed).toEqual([{ code: 1000, reason: "no longer relayed" }]);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(dials.filter((each) => each.name === OTHER)).toHaveLength(1);
+    relays.close();
+  });
+
+  it("closes a live relay once the sign-in no longer covers it, and dials none until it does", async () => {
+    vi.useFakeTimers();
+    const dials: Array<{ origin: string; name: string }> = [];
+    const covered = { on: true };
+    const { relays, opened } = harness(() => deviceFor(dials, covered));
+    relays.relay(ORIGIN, NAME);
+    await vi.advanceTimersByTimeAsync(0);
+    covered.on = false;
+    relays.revalidate();
+    expect(opened[0]!.closed).toEqual([{ code: 4401, reason: "signed out" }]);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(dials).toHaveLength(1);
+    covered.on = true;
+    // Within the longest wait between dials, and before a dial with no host behind it times out.
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(dials).toHaveLength(2);
+    relays.close();
+  });
+
+  it("closes a relay that sends a frame too large with a code it can send", async () => {
+    vi.useFakeTimers();
+    const { relays, opened } = harness(() => deviceFor([]));
+    relays.relay(ORIGIN, NAME);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(() =>
+      opened[0]!.fire("message", { data: "x".repeat(16 * 1024 * 1024 + 1) }),
+    ).not.toThrow();
+    expect(opened[0]!.closed).toEqual([{ code: 4009, reason: "frame too large" }]);
+    relays.close();
+  });
+
+  it("passes on only the fields the server reads of an answer", async () => {
+    const relays = makeWorkerMachineRelays({
+      device: () => undefined,
+      post: () => undefined,
+      watch: false,
+    });
+    const device = deviceFor(
+      [],
+      { on: true },
+      { name: NAME, access_token: "echoed", message: "Started." },
+    );
+    expect(
+      await answerWorkerMachines(
+        {
+          type: "machines.request",
+          id: "9",
+          op: "call",
+          origin: ORIGIN,
+          call: "start",
+          body: { name: NAME },
+        },
+        device,
+        relays,
+      ),
+    ).toEqual({
+      type: "machines.response",
+      id: "9",
+      result: { ok: true, status: 202, body: { name: NAME, message: "Started." } },
+    });
   });
 });

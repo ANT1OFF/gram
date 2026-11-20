@@ -212,7 +212,15 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       },
       sandbox: WorkerSandbox,
     ): Effect.Effect<
-      { readonly name: string; readonly abandon?: Effect.Effect<void> | undefined } | undefined,
+      | {
+          readonly name: string;
+          /** Starts it and waits for it to come: run once the spawn goes ahead. */
+          readonly prepare?: Effect.Effect<
+            { readonly abandon?: Effect.Effect<void> | undefined },
+            AppToolError
+          >;
+        }
+      | undefined,
       AppToolError
     > =>
       Effect.gen(function* () {
@@ -293,45 +301,58 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           caller,
           input.clientRequestId ?? `${input.project}\n${input.feature}\n${input.title}`,
         );
-        // Asked for already (a retry, or the approval's read of this call): wait for that one.
-        const asked = joined().some((each) => each.name === name && theirs(each))
-          ? ({ kind: "started", name } as const)
-          : yield* source.start({
-              name,
-              orchestrator: caller,
-              title: input.title,
-              size: picks.size,
-              architecture: picks.architecture,
-              isolation: picks.isolation,
-              environment: picks.environment,
-            });
-        if (asked.kind === "refused") return yield* fail(asked.message);
-        if (asked.kind === "over-total") {
-          const threads = yield* store.listThreads;
-          const workersOn = (machineName: string) => {
-            const machine = joined().find((each) => each.name === machineName);
-            return machine === undefined
-              ? []
-              : threads
-                  .filter(
-                    (thread) =>
-                      thread.spawnedBy?.threadId === caller &&
-                      !thread.parked &&
-                      hostOf(effectiveCheckout(thread)) === machine.id,
-                  )
-                  .map((thread) => `${thread.title} [thread ${thread.id}]`);
-          };
-          return yield* fail(refusal("over_total", overTotalWords(asked, workersOn)));
-        }
-        const fresh = asked.kind === "started" && !joined().some((each) => each.name === name);
-        const arrived = yield* source.arrive(name);
-        if (typeof arrived !== "string") {
-          if (arrived.failed === "timeout") return yield* fail(yield* source.timedOut(name));
-          yield* source.abandon(name);
-          return yield* fail(arrived.failed);
-        }
-        // Given back if the spawn is refused after it came, so none is left running for nothing.
-        return { name, ...(fresh ? { abandon: source.abandon(name) } : {}) };
+        // Online already (a retry): nothing to start. Otherwise it is started only once the spawn
+        // goes ahead, after any approval (`handle`), so a refused or denied spawn starts nothing.
+        const already = joined().find((each) => each.name === name && theirs(each));
+        if (already?.onlineSince !== undefined) return { name };
+        const prepare = Effect.gen(function* () {
+          const asked =
+            already !== undefined
+              ? ({ kind: "started", name } as const)
+              : yield* source.start({
+                  name,
+                  orchestrator: caller,
+                  title: input.title,
+                  size: picks.size,
+                  architecture: picks.architecture,
+                  isolation: picks.isolation,
+                  environment: picks.environment,
+                });
+          if (asked.kind === "refused") {
+            // No answer may still have started it: given back, so none runs for nothing.
+            if (asked.unknown === true) yield* source.abandon(name);
+            return yield* fail(asked.message);
+          }
+          if (asked.kind === "over-total") {
+            const threads = yield* store.listThreads;
+            const workersOn = (machineName: string) => {
+              const machine = joined().find((each) => each.name === machineName);
+              return machine === undefined
+                ? []
+                : threads
+                    .filter(
+                      (thread) =>
+                        thread.spawnedBy?.threadId === caller &&
+                        !thread.parked &&
+                        hostOf(effectiveCheckout(thread)) === machine.id,
+                    )
+                    .map((thread) => `${thread.title} [thread ${thread.id}]`);
+            };
+            return yield* fail(refusal("over_total", overTotalWords(asked, workersOn)));
+          }
+          const arrived = yield* source.arrive(name).pipe(
+            // A spawn stopped while it waits gives back what it asked for.
+            Effect.onInterrupt(() => (already === undefined ? source.abandon(name) : Effect.void)),
+          );
+          if (typeof arrived !== "string") {
+            if (arrived.failed === "timeout") return yield* fail(yield* source.timedOut(name));
+            yield* source.abandon(name);
+            return yield* fail(arrived.failed);
+          }
+          // Given back if the spawn is refused after it came, so none is left running for nothing.
+          return already === undefined ? { abandon: source.abandon(name) } : {};
+        });
+        return { name, prepare };
       });
     /**
      * A question's pictures and mock, confined to the asking thread's folders and made absolute
@@ -356,6 +377,11 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           Effect.mapError((refused) => new AppToolError({ tool, message: refused.message })),
         );
       });
+    /** Each resolved spawn's machine to start, kept from its resolve to its handler. */
+    const sandboxStarts = new WeakMap<
+      object,
+      Effect.Effect<{ readonly abandon?: Effect.Effect<void> | undefined }, AppToolError>
+    >();
     /** One `schedule_wake` at a time, from its count of the other store to its write. */
     const wakeScheduleLock = yield* Semaphore.make(1);
 
@@ -416,9 +442,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             placed === undefined || sandbox === undefined
               ? asked
               : { ...asked, machine: placed.name, placement: placementOf(placed.name, sandbox) };
-          yield* orchestration
-            .checkSpawnMachine(caller, input)
-            .pipe(Effect.tapError(() => placed?.abandon ?? Effect.void));
+          // A machine not started yet is checked once it has come, as the spawn places it.
+          if (placed?.prepare === undefined) yield* orchestration.checkSpawnMachine(caller, input);
           // The workspace's standing instructions, then the user's words, which stay last.
           const brief = yield* attachUserWords(
             store,
@@ -434,13 +459,15 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             input.project,
             ...(input.alsoIn ?? []),
           ]);
-          return {
+          const resolved = {
             ...input,
             brief,
             project,
             ...(input.alsoIn === undefined ? {} : { alsoIn }),
             identities,
           };
+          if (placed?.prepare !== undefined) sandboxStarts.set(resolved, placed.prepare);
+          return resolved;
         }),
       needsApproval: (caller, _input, pinned) => orchestration.spawnNeedsApproval(caller, pinned),
       describe: (caller, input) => orchestration.describeSpawn(caller, input),
@@ -458,7 +485,20 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         },
       }),
       handle: (caller, input) =>
-        orchestration.spawnWorker(caller, input).pipe(
+        Effect.gen(function* () {
+          // Its own machine, started now that the spawn goes ahead, and given back if it doesn't.
+          const prepare = sandboxStarts.get(input);
+          sandboxStarts.delete(input);
+          const prepared = prepare === undefined ? undefined : yield* prepare;
+          const giveBack = prepared?.abandon ?? Effect.void;
+          const spawned = yield* orchestration.spawnWorker(caller, input).pipe(
+            Effect.tapError(() => giveBack),
+            Effect.onInterrupt(() => giveBack),
+          );
+          // A held brief, or one a limit sends back, starts nothing now: nor does its machine run.
+          if ("held" in spawned || "routeOffer" in spawned) yield* giveBack;
+          return spawned;
+        }).pipe(
           Effect.tap((spawned) =>
             // A held brief keeps its plan and is seeded with it when it starts.
             input.plan === undefined || "held" in spawned || "routeOffer" in spawned

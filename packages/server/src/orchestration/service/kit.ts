@@ -685,7 +685,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       : signedInWorkers === undefined || !signedInWorkers.port.available
         ? Effect.succeed(undefined)
         : signedInWorkers.source.pipe(
-            Effect.map((found) => ("refused" in found ? undefined : found.server.server)),
+            Effect.map((found) => ("refused" in found ? undefined : found.source.label)),
             Effect.timeoutOption("3 seconds"),
             Effect.map(Option.getOrUndefined),
           );

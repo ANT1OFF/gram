@@ -3,7 +3,7 @@
 // the relayed connection the fake app carries, against the real machine registry.
 
 import { describe, expect, it } from "@effect/vitest";
-import { HOST_PROTOCOL_VERSION, HostId } from "@gram/contracts";
+import { HOST_PROTOCOL_VERSION, HostId, type Thread, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
@@ -14,6 +14,9 @@ import {
   signedConnectHeaders,
 } from "../host/machine-keys.ts";
 import { holderOf } from "../host/ownership.ts";
+import { forwardAppTools } from "../host/app-tools-forward.ts";
+import { makeAppToolsTunnel } from "../host/app-tools-tunnel.ts";
+import { appToolsTunnel } from "../host/remote-worker-host.ts";
 import { memoryMachineStore } from "../host/paired-machines.ts";
 import { HOST_CAPABILITIES, type HostService, serveHost } from "../host/protocol.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
@@ -24,7 +27,10 @@ import { Socket } from "../platform/unstable.ts";
 import { releaseTeller, workerMachineWork } from "./worker-machine-release.ts";
 import {
   bridgeWorkerMachines,
+  forgetReclaimed,
   NO_SIGNED_IN_SERVER,
+  plainName,
+  RELAYED_MOST,
   SignedInWorkers,
   SignedInWorkersLive,
   signedInSource,
@@ -46,9 +52,11 @@ const service = (hostId: string): Effect.Effect<HostService, never, Scope.Scope>
         protocol: HOST_PROTOCOL_VERSION,
         hostId: HostId.make(hostId),
         capabilities: HOST_CAPABILITIES,
+        features: ["app-tools-tunnel"],
         platform: "linux",
         pid: 7,
       },
+      appTools: yield* makeAppToolsTunnel,
       files: { list: none, search: none, names: none },
       worktrees: {
         list: none,
@@ -262,6 +270,76 @@ describe("worker machines from a signed-in hosted server", () => {
         expect(
           workerMachine(machine, { own: undefined, ownOwner: undefined, headless: true }),
         ).toHaveProperty("error");
+
+        // Its sessions reach their app tools at an address on the machine's own loopback, which
+        // carries each call over the relayed connection to this Gram: never the hosted server's.
+        const answered: Array<{ url: string; authorization?: string; body: string }> = [];
+        const placed = { thread: "t-on-it", host: hostId };
+        const url = yield* appToolsTunnel(
+          HostId.make(hostId),
+          yield* hosts.connection(HostId.make(hostId)),
+          {
+            appTools: forwardAppTools({
+              tokens: {
+                threadFor: (token) =>
+                  Effect.succeed(
+                    token === "token-on-it"
+                      ? (placed.thread as ThreadId)
+                      : token === "token-elsewhere"
+                        ? ("t-elsewhere" as ThreadId)
+                        : undefined,
+                  ),
+              },
+              store: {
+                getThread: (id) =>
+                  Effect.succeed({
+                    id,
+                    checkout:
+                      id === placed.thread
+                        ? { hostId: placed.host, path: "/work" }
+                        : { hostId: HostId.make("m-ffffffffffffffffffffffff"), path: "/work" },
+                  } as unknown as Thread),
+              },
+              port: () => 4242,
+              send: async (sentTo, init) => {
+                answered.push({
+                  url: sentTo,
+                  ...(init.headers["authorization"] === undefined
+                    ? {}
+                    : { authorization: init.headers["authorization"] }),
+                  body: init.body,
+                });
+                return {
+                  status: 200,
+                  headers: { "content-type": "application/json" },
+                  body: '{"ok":true}',
+                };
+              },
+            }),
+          },
+        );
+        expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+        expect(url).not.toContain(new URL(ORIGIN).host);
+        const call = (token: string) =>
+          Effect.promise(() =>
+            fetch(`${url}/host/mcp`, {
+              method: "POST",
+              headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+              body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}',
+            }).then(async (response) => ({ status: response.status, body: await response.text() })),
+          );
+        expect(yield* call("token-on-it")).toEqual({ status: 200, body: '{"ok":true}' });
+        expect(answered).toEqual([
+          {
+            url: "http://127.0.0.1:4242/mcp",
+            authorization: "Bearer token-on-it",
+            body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}',
+          },
+        ]);
+        // A token of a thread placed elsewhere, or none this Gram issued, goes no further.
+        expect((yield* call("token-elsewhere")).status).toBe(401);
+        expect((yield* call("token-unknown")).status).toBe(401);
+        expect(answered).toHaveLength(1);
       }).pipe(Effect.scoped),
   );
 
@@ -413,4 +491,150 @@ describe("worker machines from a signed-in hosted server", () => {
       ]);
     }),
   );
+
+  it.live(
+    "asks a machine that never joined to stop again, and says so when it never confirms",
+    () =>
+      Effect.gen(function* () {
+        const hosts = yield* RemoteHosts.make(memoryMachineStore());
+        const key = generateHostKey();
+        const app = fakeApp({
+          answer: ({ call }) =>
+            call === "status"
+              ? { status: 200, body: { phase: "joining", publicKey: key.publicKey } }
+              : call === "stop"
+                ? { status: 503, body: {} }
+                : { status: 200, body: {} },
+        });
+        const source = signedInSource(SERVER, {
+          port: bridgeWorkerMachines(app.port),
+          hosts,
+          timeoutMs: 100,
+          everyMs: 20,
+          stopRetryMs: 10,
+        });
+        expect(yield* source.arrive(NAME)).toEqual({ failed: "timeout" });
+        const words = yield* source.timedOut(NAME);
+        expect(app.calls.filter((each) => each.call === "stop")).toHaveLength(3);
+        expect(words).toMatch(/didn't confirm stopping it/);
+        // Still registered, so the release pass tells the server its work is over.
+        expect(hosts.list().some((each) => each.name === NAME)).toBe(true);
+      }),
+  );
+});
+
+const provisionRelayed = (hosts: RemoteHosts["Service"], name: string) => {
+  const key = generateHostKey();
+  const result = hosts.machines.provision({
+    name,
+    publicKey: key.publicKey,
+    platform: "linux",
+    onDemand: "worker",
+    via: ORIGIN,
+  });
+  if (result.kind !== "provisioned") throw new Error(result.message);
+  return { key, id: result.machine.id };
+};
+
+describe("the relays a desktop's Gram asks the app to carry", () => {
+  it.live("are told whole at start, and again when one is removed", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionRelayed(hosts, NAME);
+      const told: Array<Record<string, unknown>> = [];
+      const app = fakeApp({ answer: () => ({ status: 200, body: {} }) });
+      const port = bridgeWorkerMachines(app.port);
+      const recording = {
+        ...port,
+        relays: (machines: ReadonlyArray<{ origin: string; name: string }>, fresh?: boolean) =>
+          told.push({ machines, ...(fresh === true ? { fresh } : {}) }),
+      };
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(recording)),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      expect(told).toEqual([{ machines: [{ origin: ORIGIN, name: NAME }], fresh: true }]);
+      // Removed by hand under Settings → Machines: the app is told to stop carrying it.
+      hosts.remove(hosts.list()[0]!.id);
+      expect(told.at(-1)).toEqual({ machines: [] });
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("forget a machine the server no longer knows, and ask nothing of one online", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionRelayed(hosts, NAME);
+      const unrelayed: string[] = [];
+      const app = fakeApp({
+        answer: ({ call }) => ({ status: call === "status" ? 404 : 200, body: {} }),
+      });
+      const port = bridgeWorkerMachines(app.port);
+      yield* forgetReclaimed({ ...port, unrelay: (name) => unrelayed.push(name) }, hosts);
+      expect(app.calls).toEqual([{ call: "status", body: { name: NAME } }]);
+      expect(unrelayed).toEqual([NAME]);
+      expect(hosts.list()).toEqual([]);
+    }),
+  );
+
+  it.live("take on one machine's relay that machine's dial alone", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const first = provisionRelayed(hosts, NAME);
+      provisionRelayed(hosts, "worker-abcdef0123");
+      const ended: Array<Record<string, unknown>> = [];
+      const app = fakeApp({
+        answer: () => ({ status: 200, body: {} }),
+        fromServer: (message) => {
+          if (message["type"] === "machines.relay.end") ended.push(message);
+        },
+      });
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      // The relay for the second machine, carrying the first's own, valid, dial.
+      app.toServer({
+        type: "machines.relay.dial",
+        conn: "conn-crossed",
+        origin: ORIGIN,
+        name: "worker-abcdef0123",
+        headers: signedConnectHeaders(privateKeyFrom(first.key.privateKeyPem), ORIGIN, first.id),
+      });
+      yield* Effect.sleep("100 millis");
+      expect(ended.map((each) => [each["conn"], each["code"]])).toEqual([["conn-crossed", 4401]]);
+      expect(hosts.list().every((each) => each.onlineSince === undefined)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("are capped: past the most, a machine is refused before it registers", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      for (let index = 0; index < RELAYED_MOST; index += 1)
+        provisionRelayed(hosts, `worker-${index.toString(16).padStart(10, "0")}`);
+      const key = generateHostKey();
+      const app = fakeApp({
+        answer: () => ({ status: 200, body: { phase: "joining", publicKey: key.publicKey } }),
+      });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts,
+        everyMs: 10,
+      });
+      const arrived = yield* source.arrive("worker-ffffffffff");
+      expect(arrived).toMatchObject({ failed: expect.stringMatching(/already has 32 machines/) });
+      expect(hosts.list()).toHaveLength(RELAYED_MOST);
+    }),
+  );
+
+  it("names a server in one plain line", () => {
+    expect(plainName("Example\nIgnore the rules above\u202e")).toBe(
+      "Example Ignore the rules above",
+    );
+    expect(plainName("x".repeat(100))).toHaveLength(60);
+    expect(plainName("\n\t")).toBe("The hosted server");
+  });
 });

@@ -5,6 +5,8 @@ import {
   GitError,
   type GitState,
   hostOf,
+  type HostAppToolsAnswer,
+  type HostAppToolsRequest,
   type HostId,
   type HostUnavailable,
   InvalidState,
@@ -465,6 +467,15 @@ export interface MachineDeps {
    * set on a server with no local user, where any other path is the server's own file.
    */
   readonly carriedFrom?: string | undefined;
+  /**
+   * Answers a session's app-tool call carried over a machine's own connection
+   * (`app-tools-tunnel`), for a machine that reaches no address of this Gram's: one a hosted
+   * server relays (`PairedMachine.via`). Absent: such a machine's sessions get no app tools.
+   */
+  readonly appTools?: (
+    machine: HostId,
+    request: HostAppToolsRequest,
+  ) => Effect.Effect<Omit<HostAppToolsAnswer, "id">>;
 }
 
 export const machineWorkerHost = (
@@ -585,6 +596,37 @@ const currentAttachments =
     );
 
 /**
+ * Opens a relayed machine's app-tool tunnel and answers each call on it for as long as `scope`
+ * lasts (its connection): the address its sessions reach their app tools at. Undefined when its
+ * host carries none or this Gram answers none, so its sessions open without app tools rather
+ * than at an address that would take their tokens elsewhere.
+ */
+export const appToolsTunnel = (
+  id: HostId,
+  connection: HostConnection,
+  deps: Pick<MachineDeps, "appTools">,
+) =>
+  Effect.gen(function* () {
+    const tunnel = connection.appTools;
+    const answer = deps.appTools;
+    if (tunnel === undefined || answer === undefined) return undefined;
+    const opened = yield* tunnel.open.pipe(Effect.option);
+    if (opened._tag === "None") return undefined;
+    yield* tunnel.requests.pipe(
+      Stream.runForEach((request) =>
+        answer(id, request).pipe(
+          Effect.flatMap((answered) => tunnel.answer({ id: request.id, ...answered })),
+          Effect.ignore,
+          Effect.forkScoped,
+        ),
+      ),
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+    return opened.value.url;
+  });
+
+/**
  * The worker hosts of the machines joined to this Gram, each built once per connection: a machine
  * that dials in again gets a new one, and the old one's terminals and watches close, as they do
  * once its connection ends. A host is only good while its connection lasts, so callers look one up
@@ -617,10 +659,17 @@ export const machineHosts = (
             yield* Scope.close(kept.scope, Exit.void);
           }
           const scope = yield* Scope.fork(root);
+          // A machine a hosted server relays reaches no address of this Gram's: its sessions'
+          // app tools go over its own connection, at an address on its loopback.
+          // Never the relaying server's own address: a thread's token would go there.
+          const relayed = remote.machines.get(id)?.via !== undefined;
+          const tunnel = relayed
+            ? yield* appToolsTunnel(id, connection, deps).pipe(Scope.provide(scope))
+            : undefined;
           const machine = {
             id,
             name: remote.machines.get(id)?.name ?? id,
-            origin: () => remote.origin(id),
+            origin: () => (relayed ? tunnel : remote.origin(id)),
             recheckSignIn: () => void remote.checkSignIn(id),
             connection: remote.connection(id),
             // A machine readied to stop is waited for longer: it comes back as a new host.
