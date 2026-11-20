@@ -2087,6 +2087,62 @@ describe.skipIf(!hasGit)("GitStatePublisher", () => {
     }).pipe(Effect.provide(publisherLayer())),
   );
 
+  it.live("wakes a worker with its failing CI, and tells the user nothing of its PR's CI or merge", () =>
+    Effect.gen(function* () {
+      const root = repo();
+      const hub = yield* EventHub;
+      const runtimes = yield* ThreadRuntimes;
+      const publisher = yield* GitStatePublisher;
+      const fake = yield* FakeAgentControl;
+      const notices: Array<Extract<ServerEvent, { type: "notify" }>> = [];
+      yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            if (event.type === "notify") notices.push(event);
+          }),
+        ),
+        Effect.forkScoped,
+      );
+      const thread = yield* runtimes.create({
+        projectRoot: root,
+        checkout: { kind: "main", path: root },
+        input: { text: "work" },
+      });
+      const session = yield* eventually(
+        "the running turn",
+        fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+      );
+      // A worker, with no watch of its own on the PR.
+      yield* runtimes.updateThread(thread.id, (t) => ({
+        ...t,
+        spawnedBy: { threadId: "t-invented-orchestrator" as ThreadId, feature: "invented" },
+      }));
+
+      current.badge = badge({ checks: "pending" });
+      yield* publisher.refresh(root, { remote: true });
+      current.badge = badge({ checks: "failing" });
+      yield* publisher.refresh(root, { remote: true });
+      const told = yield* eventually(
+        "the worker told of its failing CI",
+        Effect.sync(() =>
+          [...session.steered, ...session.sent].find((input) => /CI failed on #7/.test(input.text)),
+        ),
+      );
+      expect(told.text).toMatch(ciFailed(7, ["build"]));
+
+      current.badge = badge({ checks: "passing", headRefOid: "b2" });
+      yield* publisher.refresh(root, { remote: true });
+      current.badge = badge({ state: "MERGED", checks: "passing", headRefOid: "b2" });
+      yield* publisher.refresh(root, { remote: true });
+      yield* publisher.refresh(root, { remote: true });
+      yield* Effect.sleep("800 millis");
+      expect(notices).toEqual([]);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(publisherLayer({ config: { monitorSettleDelay: Duration.millis(300) } })),
+    ),
+  );
+
   it.effect("notifies the user once per head commit when an open PR's checks settle", () =>
     Effect.gen(function* () {
       const root = repo();

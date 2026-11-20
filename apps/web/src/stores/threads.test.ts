@@ -47,7 +47,7 @@ const base: ThreadSummary = {
 };
 
 const makeStore = () => {
-  const store = createStore<ThreadsState>()((set) => createThreadsSlice(set));
+  const store = createStore<ThreadsState>()((set, get) => createThreadsSlice(set, get));
   store.getState().applyEvent({ type: "threads.snapshot", threads: [base] });
   return store;
 };
@@ -269,6 +269,34 @@ describe("threads store events", () => {
       { kind: "needsInput", title: "Review round 4: changes requested" },
       { kind: "done", title: "Review round 5: approved", body: "No unresolved findings" },
     ]);
+  });
+
+  it("leaves a worker's review round to the worker, toasting nothing", () => {
+    const store = createStore<ThreadsState>()((set, get) => createThreadsSlice(set, get));
+    store.getState().applyEvent({
+      type: "threads.snapshot",
+      threads: [
+        {
+          ...base,
+          thread: {
+            ...base.thread,
+            spawnedBy: { threadId: "t-invented-orchestrator" as ThreadId, feature: "invented" },
+          },
+        },
+      ],
+    });
+    store.getState().applyEvent({
+      type: "pr.reviewRound",
+      threadId: T,
+      round: {
+        number: 2,
+        reviewId: "PRR_2",
+        verdict: "changesRequested",
+        verdictOnHead: "changesRequested",
+        counts: { unresolved: 1, blockers: 1, suggestions: 0, outdatedUnresolved: 0 },
+      },
+    });
+    expect(store.getState().notifications).toEqual([]);
   });
 
   it("toasts a rate limit with its reset on the limits' clock and its window by its one name", () => {

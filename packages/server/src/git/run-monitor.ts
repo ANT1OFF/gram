@@ -11,6 +11,7 @@
 // PR sweeps. With nothing watched the loop waits for a watch rather than reading every thread.
 
 import {
+  agentOwnsPrEvents,
   AppToolError,
   isLocalHost,
   MAX_RUN_WATCHES,
@@ -413,6 +414,8 @@ export const RunMonitorLive = Layer.effect(
           // Only a completion still queued is ever put back, so the oldest are let go.
           if (told.size > TOLD_KEPT) told.delete(told.keys().next().value!);
           yield* drop(thread.id, same);
+          // The agent was just told; a worker's run isn't the user's to hear about.
+          if (agentOwnsPrEvents(thread)) return;
           yield* hub.publish({
             type: "notify",
             kind: failed ? "error" : "done",

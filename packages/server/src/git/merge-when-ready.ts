@@ -10,6 +10,7 @@
 // so a restart keeps it. Every `gh` goes through `Proc`, bounded like any other.
 
 import {
+  agentOwnsPrEvents,
   AppToolError,
   currentBaseOf,
   isLocalHost,
@@ -1399,13 +1400,15 @@ export const MergeWhenReadyLive = Layer.effect(
           bound,
           mergedText(bound, intent, head, launchedLocalCheck, gateNotice),
         );
-        yield* hub.publish({
-          type: "notify",
-          kind: "done",
-          title: `Merged ${prName(bound)}`,
-          body: thread.value.title,
-          threadId,
-        });
+        // The agent was just told; a worker's merge isn't the user's to hear about.
+        if (!agentOwnsPrEvents(thread.value))
+          yield* hub.publish({
+            type: "notify",
+            kind: "done",
+            title: `Merged ${prName(bound)}`,
+            body: thread.value.title,
+            threadId,
+          });
       }).pipe(
         Effect.catch((e) =>
           Effect.logWarning("merge_when_ready attempt failed").pipe(

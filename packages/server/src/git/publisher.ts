@@ -2,6 +2,7 @@
 // sweeps (PR badge, throttled fetch), `git.state` events, auto-settle, and the PR check monitor.
 
 import {
+  agentOwnsPrEvents,
   anyPrOpen,
   type Checkout,
   effectiveCheckout,
@@ -922,6 +923,16 @@ export const GitStatePublisherLive = Layer.effectContext(
             const failing = failed
               ? yield* failingRuns(thread, badge, boundElsewhere(thread, state)?.repo)
               : [];
+            // A worker's CI is its own to fix: it's woken with the failure, unless a watch it
+            // set already tells it, and the user isn't told either way.
+            if (agentOwnsPrEvents(thread)) {
+              if (!failed || hasWatch(thread)) return;
+              return yield* runtimes
+                .sendNotice(thread.id, `${CI_NOTICE}worker:${badge.url}`, {
+                  text: ciMessage("pending", badge.checks, failing, badge.number) ?? "CI failed",
+                })
+                .pipe(Effect.ignore);
+            }
             yield* hub.publish({
               type: "notify",
               kind: failed ? "error" : "done",
@@ -1086,7 +1097,8 @@ export const GitStatePublisherLive = Layer.effectContext(
           }
         });
         const applied = decided.step;
-        if (!changed || applied.kind !== "settle") return;
+        // A worker's merge is reported by the worker or its orchestrator, not as a notification.
+        if (!changed || applied.kind !== "settle" || agentOwnsPrEvents(thread)) return;
         yield* hub.publish({
           type: "notify",
           kind: "done",
