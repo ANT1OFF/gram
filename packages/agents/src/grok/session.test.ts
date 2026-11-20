@@ -92,6 +92,12 @@ describe("Grok Build plan usage", () => {
   });
 });
 
+const replayed = (sessionUpdate: string, extra: Record<string, unknown>, at: number) => ({
+  sessionId: "s",
+  update: { sessionUpdate, ...extra },
+  _meta: { agentTimestampMs: at },
+});
+
 describe("Grok Build session content", () => {
   it("sends images inline and other attachments as links to their files", async () => {
     const blocks = await promptOf(
@@ -142,19 +148,14 @@ describe("Grok Build session content", () => {
   });
 
   it("reads a replayed session as alternating messages with the calls made", () => {
-    const update = (sessionUpdate: string, extra: Record<string, unknown>, at: number) => ({
-      sessionId: "s",
-      update: { sessionUpdate, ...extra },
-      _meta: { agentTimestampMs: at },
-    });
     expect(
       transcriptOf([
-        update("user_message_chunk", { content: { type: "text", text: "List it" } }, 1),
-        update("agent_thought_chunk", { content: { type: "text", text: "hm" } }, 2),
-        update("agent_message_chunk", { content: { type: "text", text: "Listing" } }, 3),
-        update("tool_call", { title: "list_dir", rawInput: {} }, 4),
-        update("agent_message_chunk", { content: { type: "text", text: " done." } }, 5),
-        update("user_message_chunk", { content: { type: "text", text: "Thanks" } }, 6),
+        replayed("user_message_chunk", { content: { type: "text", text: "List it" } }, 1),
+        replayed("agent_thought_chunk", { content: { type: "text", text: "hm" } }, 2),
+        replayed("agent_message_chunk", { content: { type: "text", text: "Listing" } }, 3),
+        replayed("tool_call", { title: "list_dir", rawInput: {} }, 4),
+        replayed("agent_message_chunk", { content: { type: "text", text: " done." } }, 5),
+        replayed("user_message_chunk", { content: { type: "text", text: "Thanks" } }, 6),
       ]),
     ).toEqual([
       { role: "user", text: "List it", at: 1 },
