@@ -715,7 +715,10 @@ describe.skipIf(!hasGit)("merge freezes", () => {
             repo: "acme/app",
             reason: "release 1.6 cut",
           });
-          expect(set).toMatchObject({ frozen: true });
+          expect(set).toMatchObject({
+            frozen: true,
+            autoMergeStillArmed: [expect.stringContaining("#14: a thread binds it")],
+          });
           expect(world.autoMergeCalls).not.toContain("disable acme/app#14");
           expect(world.autoMerges.has("acme/app#14")).toBe(true);
         }),

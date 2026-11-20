@@ -504,13 +504,15 @@ export const MergeFreezesLive = Layer.effect(
       });
 
     /**
-     * Whether PR `number` of the frozen repo is the own PR of a Gram worker the freeze holds, by the rule the merge tools hold to
-     * (`workerOwnsPr`), so a freeze may take its GitHub auto-merge down. A PR a thread only binds
-     * or follows is someone else's to arm, and isn't touched; a doubt is a no.
+     * Whose PR `number` of the frozen repo is, among the threads the freeze holds: `owned`, a Gram
+     * worker's own by the rule the merge tools hold to (`workerOwnsPr`), so a freeze may take its
+     * GitHub auto-merge down; `bound`, a thread binds it but owns it by no proof, so it isn't
+     * touched; or `none`. A doubt is no proof.
      */
     const gramOwns = (set: StoredFreeze, number: number) =>
       Effect.gen(function* () {
         const repo = set.repo;
+        let claimed = false;
         for (const thread of yield* store.listThreads) {
           const bound = thread.boundPr;
           if (bound === undefined || !sameRepo(bound.repo, repo) || bound.number !== number)
@@ -523,9 +525,10 @@ export const MergeFreezesLive = Layer.effect(
             withMachines(machines),
             Effect.catchCause(() => Effect.succeed(false)),
           );
-          if (owns) return true;
+          if (owns) return "owned" as const;
+          claimed = true;
         }
-        return false;
+        return claimed ? ("bound" as const) : ("none" as const);
       });
 
     /**
@@ -543,7 +546,12 @@ export const MergeFreezesLive = Layer.effect(
         }
         const failed: Array<string> = [];
         for (const pr of armed) {
-          if ((set.allow ?? []).includes(pr.number) || !(yield* gramOwns(set, pr.number))) continue;
+          if ((set.allow ?? []).includes(pr.number)) continue;
+          const whose = yield* gramOwns(set, pr.number);
+          // Bound by a thread but no worker's own: someone else's to arm, and the caller is told.
+          if (whose === "bound")
+            failed.push(`#${pr.number}: a thread binds it, but it isn't a Gram worker's own`);
+          if (whose !== "owned") continue;
           // On the freeze's record before GitHub is asked, under its lock: a quit partway leaves
           // at worst a PR recorded that wasn't turned off, which arming again does no harm to,
           // never one turned off that nothing arms again. Ended meanwhile: nothing more is taken.
