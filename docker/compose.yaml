@@ -15,6 +15,12 @@ services:
     volumes:
       # Gram's state, the agents' logins and settings, and the code the threads work on.
       - gram-home:/home/gram
+    # The agent browser, which the image leaves off. Its agents run in this container as the same
+    # user, so Chromium runs without its own sandbox here; it opens no page for a thread on another
+    # machine (docs/DOCKER.md#the-agent-browser).
+    environment:
+      GRAM_HEADLESS_BROWSER: /opt/gram/packages/shell/src/modules/agent-browser/headless-host.ts
+      GRAM_BROWSER_SANDBOX: "0"
     init: false
     restart: unless-stopped
 volumes:

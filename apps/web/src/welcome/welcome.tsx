@@ -1,6 +1,6 @@
 import { RECOMMENDED, type Project, type RepositoryCandidate } from "@gram/contracts";
 import { Menu } from "@base-ui/react/menu";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronDown,
@@ -48,6 +48,7 @@ import { Switch } from "@/components/ui/switch";
 
 import { matchRepos, RECENT_LIMIT } from "./repo-search";
 import { runsWith, toolRows, type ToolRow, type ToolState } from "./tools";
+import { useFirstRunRepos } from "./first-run-repos";
 import { useFirstRun, useWelcome } from "./welcome-state";
 
 /**
@@ -187,7 +188,7 @@ function FirstRun() {
     }
   };
 
-  const { projects, all } = useFirstRunRepos();
+  const { projects, all, listed } = useFirstRunRepos();
   // With no agent ready, installing or signing in one is the next step, and opening a repository
   // only sets it up: nothing can start on it yet.
   const { checks } = useLaunchChecks();
@@ -219,6 +220,9 @@ function FirstRun() {
     useWelcome.setState({ open: false });
     void keepRecommended().then(record);
   };
+
+  // Drawn whole once the repositories are listed: centred, a list arriving later moved it up.
+  if (!listed) return null;
 
   return (
     <section
@@ -533,21 +537,6 @@ function RepoSearch({
       />
     </label>
   );
-}
-
-/** The repositories the first run offers, shared by the picker and the session import. */
-function useFirstRunRepos() {
-  const api = useApi();
-  const { data: projects = [] } = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => api.listProjects(),
-  });
-  const { data } = useQuery({
-    queryKey: ["projects", "repositories"],
-    queryFn: () => api.listRepositories(),
-  });
-  const all = data?.repos ?? [];
-  return { projects, all, repos: all.slice(0, RECENT_LIMIT) };
 }
 
 /**

@@ -114,6 +114,9 @@
   --color-edge: var(--edge-raised);
   --color-edge-action: var(--edge-action);
   --color-edge-group: var(--edge-group);
+  --color-rail: var(--rail-bg);
+  --color-rail-edge: var(--rail-edge);
+  --color-rail-row-active: var(--rail-row-active);
   --color-input: var(--border-strong);
   --color-ring: var(--focus-ring);
   --color-scrim: var(--scrim);
