@@ -921,6 +921,8 @@ export interface OrchestrationShape {
       readonly prUrl?: string | undefined;
       readonly interface?: string | undefined;
       readonly learned?: string | undefined;
+      /** Gram's record of the required verify drivers, never the worker's input. */
+      readonly verify?: WorkerReport["verify"] | undefined;
     },
   ): Effect.Effect<WorkerReport | undefined>;
   /** The orchestrator → worker loop guard, in place of `checkSend` for a delegated send. */

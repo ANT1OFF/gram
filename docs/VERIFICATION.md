@@ -194,6 +194,12 @@ These synthetic runs qualify browser UI paths only.
 | `bun run check:ci`             | The complete check (scaffold included), then web/desktop bundles on the same source                  |
 | `bun run build`                | Standalone typecheck plus bundles                                                                    |
 
+Gram's own [verify recipe](AGENTS_AND_FEATURES.md#verify-recipes), `.gram/verify.json`, names the
+same checks as drivers an agent runs with `verify`: `static` for every change, and the Vitest
+projects (`contracts`, `server`, `web`, `shell`) for the paths they cover. Each starts with
+`bun install --frozen-lockfile`, since Gram runs it in a fresh worktree of the commit. `bun run check`
+stays the merge gate.
+
 The docs checker covers tracked/staged files; stage new docs before checking.
 Use `node tools/check-docs.mjs --self-test` when changing its parser/check policy.
 It is offline and checks the authored Markdown subset, not external URL availability.

@@ -1,6 +1,7 @@
 import type { RequestId, TrayAction, TrayMenu } from "@gram/contracts";
 import { expect, test, type Page } from "@playwright/test";
 
+import { frames } from "./settled";
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // The menu bar's (tray's) asks. The desktop shell is a fake:
@@ -14,6 +15,8 @@ const LONG = `${PUSH} && npm run release -- --tag next --dry-run=false`;
 
 interface Recorded {
   readonly menus: TrayMenu[];
+  /** How often the page asked whether the shell keeps the tray. */
+  readonly asked: number;
   readonly pick: (action: TrayAction) => void;
   readonly sent: unknown[];
 }
@@ -21,7 +24,7 @@ interface Recorded {
 const recorded = (page: Page) =>
   page.evaluate(() => {
     const tray = (window as unknown as { tray: Recorded }).tray;
-    return { menus: [...tray.menus], sent: [...tray.sent] };
+    return { menus: [...tray.menus], asked: tray.asked, sent: [...tray.sent] };
   });
 
 const pick = (page: Page, action: TrayAction) =>
@@ -37,11 +40,13 @@ const start = async (page: Page, { trayOn = true } = {}) => {
   await page.addInitScript((on) => {
     const menus: unknown[] = [];
     let onAction: ((action: unknown) => void) | undefined;
-    (window as unknown as { tray: unknown }).tray = {
+    const tray = {
       menus,
+      asked: 0,
       sent: [],
       pick: (action: unknown) => onAction?.(action),
     };
+    (window as unknown as { tray: unknown }).tray = tray;
     Object.defineProperty(window, "gram", {
       configurable: true,
       value: {
@@ -59,7 +64,14 @@ const start = async (page: Page, { trayOn = true } = {}) => {
         listFonts: async () => [],
         openExternal: async () => true,
         copyText: async () => {},
-        keepInTray: { get: async () => on, set: async () => {}, onChange: () => () => {} },
+        keepInTray: {
+          get: async () => {
+            tray.asked += 1;
+            return on;
+          },
+          set: async () => {},
+          onChange: () => () => {},
+        },
         tray: {
           show: (menu: unknown) => menus.push(menu),
           onAction: (callback: (action: unknown) => void) => {
@@ -184,7 +196,10 @@ test("the rest of the asks open Quiet, and a workspace opens its orchestrator", 
 
 test("with the menu bar item off, the page sends no menu", async ({ page }) => {
   await start(page, { trayOn: false });
-  await page.waitForTimeout(1_000);
+  // The page has heard the tray is off, and drawn the asks a menu would have listed.
+  await expect.poll(async () => (await recorded(page)).asked).toBeGreaterThan(0);
+  await expect(page.getByTestId("overview-needs-you")).toBeVisible();
+  await frames(page);
   expect((await recorded(page)).menus).toEqual([]);
 });
 

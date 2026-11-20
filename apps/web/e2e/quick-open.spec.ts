@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { openLayout } from "./layout";
+import { motionDone, steady } from "./settled";
 import { openOrchestrator } from "./thread-row";
 import { openMoreOptions } from "./new-thread-options";
 
@@ -110,7 +111,9 @@ test("a ⌘K jump to a solo thread says Solo in the header, opens Solo threads a
   // Folding it again while there keeps it folded; jumping back to a worker marks its workspace.
   await soloTitle.click();
   await expect(soloTitle).toHaveAttribute("aria-expanded", "false");
-  await page.waitForTimeout(300);
+  // Folded and done folding, it is still folded.
+  await motionDone(sidebar);
+  await steady(sidebar.getByTestId("overview-section-solo"));
   await expect(soloTitle).toHaveAttribute("aria-expanded", "false");
   await openOrchestrator(page, made.orchestratorThreadId);
   await expect(switcher).toHaveText("Gram");

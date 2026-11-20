@@ -44,7 +44,7 @@ import { ReviewRequestAppToolsLive } from "../app-tools/review-request-tools.ts"
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ReviewAppToolsLive } from "../babysit/review-tools.ts";
 import { BrowserFamilyAppToolsLive } from "../browser/app-tools.ts";
-import { VerifyAppToolsLive } from "../verify/verify-tools.ts";
+import { VerifyAppToolsLive, VerifyStatusLive } from "../verify/verify-tools.ts";
 import { PrCommentWakesLive } from "../babysit/pr-comments.ts";
 import { PrCommentReads } from "../git/pr-comments.ts";
 import { BabysitLive } from "../babysit/service.ts";
@@ -1008,6 +1008,8 @@ export const ServerCore = Layer.unwrap(
       )
         // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.
         .pipe(Layer.provideMerge(PrDependenciesLive))
+        // Read by `report`, which notes the required verify drivers without a pass.
+        .pipe(Layer.provideMerge(VerifyStatusLive))
         .pipe(
           Layer.provideMerge(MergeWhenReadyLive),
           // The connectors' handlers, which the RPCs serve and `mcp_server_propose` writes through.

@@ -6,7 +6,6 @@ import { AppToolError, effectiveCheckout, hostOf, type ThreadId } from "@gram/co
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { OnDemand } from "../embedding/on-demand.ts";
@@ -26,27 +25,11 @@ import {
 } from "../embedding/worker-machines.ts";
 import { refusal } from "./rules.ts";
 import type { Orchestration } from "./service.ts";
+import type { WorkerSandbox } from "./tool-inputs.ts";
 
 /** Why a spawn can't reuse a machine the server reclaimed since: its name isn't given out again. */
 const reclaimedWords = (name: string) =>
   `The machine ${name} was reclaimed by the server since its work was over, so it isn't there to reuse, and its name isn't given out again. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`;
-
-/**
- * Where a worker runs: on a machine of its own (`own`, with the size and processor its work needs,
- * as the host provider offers them), on one its orchestrator already has (`shareWith`, by its name
- * or a worker's thread id on it), or on its orchestrator's own (left out, or `own: false`).
- */
-export const WorkerSandbox = Schema.Struct({
-  own: Schema.optionalKey(Schema.Boolean),
-  size: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  architecture: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  isolation: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  environment: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  shareWith: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
-  /** Why it goes there rather than your machine, in a sentence the user reads on its row. */
-  reason: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(400))),
-});
-export type WorkerSandbox = typeof WorkerSandbox.Type;
 
 /**
  * One machine name's bring-up (`makeWorkerSandbox`): how many tries of its spawn hold it, and,

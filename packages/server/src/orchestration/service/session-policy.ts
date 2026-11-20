@@ -4,10 +4,15 @@ import {
   autonomyOf,
   orchestratorConnectors,
   orchestratorPeerMessaging,
+  effectiveCheckout,
+  isLocalHost,
+  VERIFY_FILE,
   type PermissionMode,
   type Thread,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { type SessionPolicy } from "../../runtime/thread-runtimes.ts";
 import { dreamRolePromptFor } from "../dream-prompt.ts";
 import { plainPrompt, rolePrompt, workerPrompt } from "../prompt.ts";
@@ -20,6 +25,15 @@ import {
   toolAudience,
 } from "../rules.ts";
 import { worktreesOf, type OrchestrationKit } from "./kit.ts";
+
+/**
+ * Whether the thread's repository has a verify recipe, read in its own clone as `verify` reads it.
+ * Only on this machine: a worker elsewhere isn't told, though its `verify` tool still works.
+ */
+const hasVerifyRecipe = (thread: Thread): boolean => {
+  const checkout = effectiveCheckout(thread);
+  return isLocalHost(checkout) && existsSync(join(checkout.repoRoot ?? checkout.path, VERIFY_FILE));
+};
 /** The session policy each thread opens with. */
 export const makeSessionPolicy = (kit: OrchestrationKit) => {
   const { store, findWorkspace, findThread, openedInAuto, workerMachinesOffered } = kit;
@@ -120,6 +134,7 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
                   : "full",
             agent: thread.model.agent,
             gated: outwardGate !== undefined,
+            ...(hasVerifyRecipe(thread) ? { verifyRecipe: true } : {}),
             ...(extras.length === 0
               ? {}
               : { alsoIn: worktreesOf(yield* store.listProjects, extras) }),
