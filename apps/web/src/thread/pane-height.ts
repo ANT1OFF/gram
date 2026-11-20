@@ -1,4 +1,5 @@
-import { useLayoutEffect, useState } from "react";
+import { useState } from "react";
+import { useLayoutSync } from "@/lib/effects";
 
 /** The thread view a pane shows, whose height is the pane's. */
 const PANE_ROOT = "[data-pane-root]";
@@ -23,7 +24,7 @@ export const trackPaneHeight = (el: HTMLDivElement | null) => {
  */
 export function useTallerThanPaneShare(content: HTMLElement | null, share: number): boolean {
   const [taller, setTaller] = useState(false);
-  useLayoutEffect(() => {
+  useLayoutSync(() => {
     const pane = content?.closest<HTMLElement>(PANE_ROOT);
     if (!content || !pane) return;
     const measure = () => {

@@ -11,10 +11,11 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useSubscription } from "@/lib/effects";
 import { formatClockTime, formatLogTime } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -176,7 +177,7 @@ export function TraceView({
   const selected =
     trace?.steps.find((step) => step.id === picked) ??
     (picked === undefined ? trace?.steps.find((step) => step.tone === "failed") : undefined);
-  useEffect(() => {
+  useSubscription(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !event.defaultPrevented) onClose();
     };

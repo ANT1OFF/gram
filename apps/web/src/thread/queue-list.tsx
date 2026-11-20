@@ -10,12 +10,13 @@ import {
   Send,
   X,
 } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import { agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { useLayoutSync } from "@/lib/effects";
 import { cn } from "@/lib/utils";
 import { PresenceItem, PresenceList } from "@/motion";
 import { queueOps, useThreadsStore } from "@/stores/threads";
@@ -181,7 +182,7 @@ function ScrollFade({
   const box = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ above: false, below: false });
-  useLayoutEffect(() => {
+  useLayoutSync(() => {
     const el = box.current;
     if (el === null) return;
     const measure = () => {

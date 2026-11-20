@@ -1,4 +1,5 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useState, type RefObject } from "react";
+import { useSubscription } from "@/lib/effects";
 
 /**
  * Whether anybody can see `anchor`, kept current: false while the window is in the background or
@@ -8,7 +9,7 @@ import { useEffect, useState, type RefObject } from "react";
 export function useInSight(anchor: RefObject<Element | null>): boolean {
   const [shown, setShown] = useState(true);
   const [foreground, setForeground] = useState(() => !document.hidden);
-  useEffect(() => {
+  useSubscription(() => {
     const onVisibility = () => setForeground(!document.hidden);
     document.addEventListener("visibilitychange", onVisibility);
     const element = anchor.current;

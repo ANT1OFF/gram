@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+
+import { useSubscription } from "@/lib/effects";
 
 import type { HeldDelivery } from "./send-action";
 
@@ -11,7 +13,7 @@ const heldOf = (event: KeyboardEvent): HeldDelivery =>
  */
 export function useHeldDelivery(active: boolean): HeldDelivery {
   const [held, setHeld] = useState<HeldDelivery>(undefined);
-  useEffect(() => {
+  useSubscription(() => {
     if (!active) return;
     const read = (event: KeyboardEvent) => setHeld(heldOf(event));
     // Switching away with the key down never delivers its key-up.

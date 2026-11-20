@@ -41,9 +41,38 @@ The code is what an agent reads most, so a rule works best when the code enforce
 - **A new rule clears its existing violations** in the same change. When there are too many, it starts with a shrink-only allowlist, as `tools/oxlint/allowlists.mjs` and the design-tokens check do, so new code cannot add any.
 - **Pull weeds early.** A workaround left in the tree becomes the pattern the next agent copies. Check that a pattern is the current one before you copy it.
 - **A timer is not a way to wait.** Never use `setTimeout`, `requestAnimationFrame`, `queueMicrotask` or a sleep to wait for state to settle or a test to catch up. Wait on the thing itself: a promise, an event, a locator, `expect.poll`. Timers are for real time: debounce, backoff, polling, clocks.
-- **Derive in render.** A React effect talks to something outside React. A value that follows from props or state is computed while rendering, not copied into state by an effect.
+- **Derive in render.** A React effect talks to something outside React. A value that follows from props or state is computed while rendering, not copied into state by an effect. See [React effects](#react-effects).
 - **A comment says why, never excuses a shortcut.** "For now", "workaround" and "temporary" come with a linked issue or a fix. Delete a comment the code no longer matches.
 - **Prove the change by running it**: the checks the [verification matrix](docs/VERIFICATION.md#task-verification-matrix) calls for, and for behaviour, the app itself (`bun run dev:preview`, `pr:shots`).
+
+## React effects
+
+The web app's product code has no raw `useEffect` or `useLayoutEffect` (`gram/no-raw-effect`). They
+take any code and any dependencies, and most of what gets written in one belongs elsewhere. First
+see whether you need an effect at all:
+
+- A value that follows from props or state: compute it in render, with `useMemo` if it is costly.
+- Something that happens because the person did something: do it in that event's handler.
+- State that starts over for a new thread or item: give the component a `key`.
+- A value from a store or the browser: the store's hook, or `useSyncExternalStore`.
+- Data from the server: the query hooks (TanStack Query), not a fetch in an effect.
+
+When the effect is real, name it with a hook from `apps/web/src/lib/effects.ts`:
+
+| Hook                               | For                                                                                                                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `useSubscription(subscribe, deps)` | Attaching to something outside React: a store's `subscribe`, the bridge's `onChange`, a DOM event with `listen(target, type, handler)`, an observer. `subscribe` returns the detach. |
+| `useExternalSync(sync, deps?)`     | Pushing this render's values out to the DOM, storage, the desktop bridge or a store another tree reads. Not for this component's own state or telling a parent.                      |
+| `useLayoutSync(sync, deps?)`       | The same before paint: measuring or placing the DOM without a flicker.                                                                                                               |
+| `useMountEffect(effect)`           | Once after the first render, with its cleanup on unmount.                                                                                                                            |
+| `useLatest(value)`                 | A ref holding the last committed value, for a handler or subscription that must not re-attach.                                                                                       |
+
+Timers (a clock, a debounce, a flash, waiting for a frame) are `useNow` (`lib/use-now.ts`) and
+`lib/timers.ts`. `react/exhaustive-deps` checks the dependencies of the hooks that take them, and
+`gram/no-raw-effect` refuses a state update in their bodies as `react/set-state-in-effect` does in a
+raw effect. An effect that calls a `useEffectEvent` stays raw for now: React's linter only lets one be
+called from `useEffect`. Files that still have raw effects are listed with their counts in
+`tools/oxlint/allowlists.mjs`; move one and lower its count in the same change.
 
 ## Pull requests
 

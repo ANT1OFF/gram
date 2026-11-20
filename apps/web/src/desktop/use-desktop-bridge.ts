@@ -7,6 +7,7 @@ import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { useBindingsStore } from "@/keyboard/bindings-store";
 import { isMac } from "@/keyboard/registry";
+import { useSubscription } from "@/lib/effects";
 import { copyText } from "@/settings/copy-text";
 import { useServerSettings } from "@/settings-sync/store";
 import { loadWhatsNew } from "@/whats-new";
@@ -230,14 +231,14 @@ export function useDesktopBridge() {
   }, [navigate, api]);
 
   // macOS's window buttons keep their room in the overview's header and the title bar.
-  useEffect(() => {
+  useSubscription(() => {
     const bridge = window.gram;
     if (!bridge) return;
     return watchWindowLights(bridge);
   }, []);
 
   // The menu's accelerators follow keybindings.json, like the renderer's shortcuts.
-  useEffect(() => {
+  useSubscription(() => {
     const bridge = window.gram;
     if (!bridge?.setMenuShortcuts) return;
     const sync = () =>

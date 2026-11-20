@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { showInboxAsk } from "@/inbox/inbox-store";
+import { useExternalSync, useMountEffect } from "@/lib/effects";
 import { checkAwayAction } from "@/orchestration/ask-actions";
 import { holdAnswer } from "@/orchestration/ask-answer";
 import { useOpenThread, useWorkspaceAsks } from "@/orchestration/ask-stack";
@@ -65,7 +66,7 @@ function MenuBarAsks() {
     states.length === 0 ? undefined : allWorkspacesPaused(states),
   );
   const text = useRef("");
-  useEffect(() => {
+  useExternalSync(() => {
     // A new object with the same menu sends nothing.
     const next = JSON.stringify(built.menu);
     if (next === text.current) return;
@@ -74,7 +75,7 @@ function MenuBarAsks() {
     window.gram?.tray?.show(built.menu);
   });
   // Off, or this window gone: nothing of it is left in the menu.
-  useEffect(() => () => window.gram?.tray?.show(EMPTY_TRAY_MENU), []);
+  useMountEffect(() => () => window.gram?.tray?.show(EMPTY_TRAY_MENU));
 
   const openWorkspace = async (workspaceId: WorkspaceId, orchestrator: ThreadId | undefined) => {
     useViewStore.getState().setQuiet(false);

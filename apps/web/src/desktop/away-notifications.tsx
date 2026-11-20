@@ -14,6 +14,7 @@ import { useEffect, useRef } from "react";
 import { useApi } from "@/api/context";
 import { showInboxAsk } from "@/inbox/inbox-store";
 import type { Api } from "@/api/types";
+import { useMountEffect } from "@/lib/effects";
 import type { Ask } from "@/orchestration/ask-model";
 import {
   askFingerprint,
@@ -95,9 +96,9 @@ export function AwayNotifications({
   /** The asks the one shared notification stands for, by their own notice's id; empty when it isn't up. */
   const gathered = useRef(new Map<string, AwayNotice>());
 
-  useEffect(() => {
+  useMountEffect(() => {
     mountedAt.current = performance.now();
-  }, []);
+  });
 
   useEffect(() => {
     latest.current = all;

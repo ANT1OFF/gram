@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { appPathname } from "@/lib/app-path";
+import { useExternalSync } from "@/lib/effects";
 import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -107,10 +108,10 @@ export function useRememberOrchestrator(): void {
   const shown = workspaces.find(
     ({ workspace }) => threadId !== undefined && workspace.orchestratorThreadId === threadId,
   )?.workspace.id;
-  useEffect(() => {
+  useExternalSync(() => {
     if (shown !== undefined) writeLast(shown);
   }, [shown]);
-  useEffect(() => {
+  useExternalSync(() => {
     if (threadId !== undefined) writeLastThread(threadId);
   }, [threadId]);
 }
