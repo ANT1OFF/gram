@@ -327,16 +327,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         Effect.gen(function* () {
           // Its own machine, started now that the spawn goes ahead, and given back if it doesn't.
           // A worker placed by `machine` on one a hosted server started is held to the same rule.
-          const named = input.machine?.trim();
-          const relayedByName =
-            named !== undefined &&
-            joined().some(
-              (each) =>
-                each.via !== undefined &&
-                each.onDemand === "worker" &&
-                (each.name === named || each.id === named),
-            );
-          const plan = sandboxPlans.get(input) ?? (relayedByName ? { givesBack: true } : undefined);
+          // Placed by name, it holds the machine's bring-up as any placement does.
+          const plan = sandboxPlans.get(input) ?? workerSandbox.byName(input.machine);
           sandboxPlans.delete(input);
           const prepared = plan?.prepare === undefined ? undefined : yield* plan.prepare;
           const giveBack = prepared?.abandon ?? Effect.void;

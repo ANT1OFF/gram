@@ -58,12 +58,17 @@ export const stopOutcome = (
  */
 export const UNSETTLED_START_MS = 15 * 60_000;
 
-/** A stop a server never confirmed. `unsettled`: its start's outcome wasn't known when it was owed. */
+/**
+ * A stop a server never confirmed. `unsettled`: its start's outcome wasn't known when it was owed.
+ * `start`: a start's own, written before the start was sent, so one accepted there is given back
+ * even if this Gram stops before the machine is registered here; let go once it is.
+ */
 export interface OwedStop {
   readonly origin: string;
   readonly name: string;
   readonly since: number;
   readonly unsettled?: true;
+  readonly start?: true;
 }
 
 /**
@@ -107,6 +112,7 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
             name: each.name,
             since: each.since,
             ...(each.unsettled === true ? { unsettled: true as const } : {}),
+            ...(each.start === true ? { start: true as const } : {}),
           });
   } catch {
     // An unreadable file owes nothing; the next stop owed writes it again.
@@ -144,6 +150,8 @@ export const settleOwedStops = (
   claimed: (name: string) => boolean = () => false,
   now: () => number = Date.now,
   locks?: NameLocks,
+  /** Names a start of this Gram's is on its way for: a start's own debt is kept while it is. */
+  startingNow: (name: string) => boolean = () => false,
 ) =>
   Effect.gen(function* () {
     for (const stop of owed.list())
@@ -153,6 +161,8 @@ export const settleOwedStops = (
         Effect.gen(function* () {
           // Looked at again once the name is this pass's alone: a start may have taken it.
           if (claimed(stop.name) || !owed.list().some((each) => each.name === stop.name)) {
+            // A start's own, still on its way here: kept, so a restart now still gives it back.
+            if (stop.start === true && startingNow(stop.name)) return;
             owed.remove(stop.name);
             return;
           }

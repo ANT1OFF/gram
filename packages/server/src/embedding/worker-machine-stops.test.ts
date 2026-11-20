@@ -2,12 +2,16 @@
 // that never overlap, with a fake app over the port: no network, no real machine.
 
 import { describe, expect, it } from "@effect/vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { fakeApp, NAME, ORIGIN, SERVER } from "./signed-in-fixtures.ts";
 import {
   bridgeWorkerMachines,
+  fileOwedStops,
   memoryOwedStops,
   type NameLocks,
   settleOwedStops,
@@ -186,6 +190,35 @@ describe("stops a server never confirmed", () => {
       }).pipe(Effect.scoped),
   );
 
+  it.effect("give back a machine started just before this Gram stopped, once it is back", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({
+        answer: ({ call }) => ({ status: call === "start" ? 202 : 200, body: { stopped: true } }),
+      });
+      const port = bridgeWorkerMachines(app.port);
+      const dir = mkdtempSync(join(tmpdir(), "gram-owed-"));
+      try {
+        // The start is sent, and this Gram stops before the machine is registered here.
+        const source = signedInSource(SERVER, {
+          port,
+          hosts: unregistered,
+          owed: fileOwedStops(dir),
+          starting: new Set(),
+        });
+        expect((yield* source.start({ name: NAME, orchestrator: "o", title: "Heavy" })).kind).toBe(
+          "started",
+        );
+        // Started again: nothing registered, no start on its way, what was kept on disk.
+        const kept = fileOwedStops(dir);
+        yield* settleOwedStops(port, kept, () => false);
+        expect(app.calls.map((each) => each.call)).toEqual(["start", "stop"]);
+        expect(kept.list()).toEqual([]);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }),
+  );
+
   it.effect("never stop a machine a later start took the name of", () =>
     Effect.gen(function* () {
       // Its stops never go through; a start does.
@@ -205,9 +238,22 @@ describe("stops a server never confirmed", () => {
       // The first try's machine couldn't be stopped: owed.
       yield* source.abandon(NAME);
       expect(owed.list().map((each) => each.name)).toEqual([NAME]);
-      // A retry of the same spawn asks for the same name: the machine is its now.
+      // A retry of the same spawn asks for the same name: the machine is its now. The old stop is
+      // gone; only the start's own is owed, kept while the start is on its way.
       yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" });
-      expect(owed.list()).toEqual([]);
+      expect(owed.list()).toEqual([
+        { origin: ORIGIN, name: NAME, since: expect.any(Number), unsettled: true, start: true },
+      ]);
+      const started = app.calls.length;
+      yield* settleOwedStops(
+        port,
+        owed,
+        (name) => starting.has(name),
+        Date.now,
+        undefined,
+        (name) => starting.has(name),
+      );
+      expect(app.calls.slice(started)).toEqual([]);
       // Owed again, then claimed by a start on its way: settling stops nothing.
       owed.add({ origin: ORIGIN, name: NAME, since: 0 });
       const before = app.calls.length;

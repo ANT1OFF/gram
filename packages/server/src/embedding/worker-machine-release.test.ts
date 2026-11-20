@@ -22,6 +22,9 @@ const machine = (id: string, extra: object = {}) => ({
   onlineSince: now - 2 * WORKER_RELEASE_SETTLE_MS,
   ...extra,
 });
+/** A machine from a hosted server the desktop app is signed in to, rather than an embedder's. */
+const relayed = (id: string, extra: object = {}) =>
+  machine(id, { owner: undefined, via: "https://hosted.example.test", ...extra });
 type Placed = Pick<Thread, "id" | "checkout" | "currentCheckout" | "spawnedBy" | "parked">;
 const on = (id: string, hostId: string, extra: Partial<Placed> = {}): Placed =>
   ({
@@ -126,7 +129,7 @@ describe("a worker machine's work", () => {
   it("tells a machine at work it is working once each run, even with nothing kept of an earlier release", () => {
     // After a restart nothing is kept of what was told; the server may still hold a release.
     const decided = releaseDecisions(
-      [machine("aaaa"), machine("bbbb", { onlineSince: now - 60_000 })],
+      [relayed("aaaa"), relayed("bbbb", { onlineSince: now - 60_000 })],
       [on("t1", "aaaa"), on("t2", "bbbb")],
       new Set(),
       now,
@@ -142,7 +145,7 @@ describe("a worker machine's work", () => {
   it("judges a machine's work over only once it has settled, and says nothing twice", () => {
     const told = new Map([["cccc", { released: true, at: now - 60_000 }]]);
     const decided = releaseDecisions(
-      [machine("aaaa", { onlineSince: now - 60_000 }), machine("bbbb"), machine("cccc")],
+      [relayed("aaaa", { onlineSince: now - 60_000 }), relayed("bbbb"), relayed("cccc")],
       [],
       new Set(),
       now,
@@ -150,6 +153,29 @@ describe("a worker machine's work", () => {
     );
     // aaaa has just come online: not yet. cccc was told already.
     expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([["bbbb", true]]);
+  });
+
+  it("tells an embedder's provider of a machine only what changed, once it has settled", () => {
+    const decided = releaseDecisions(
+      [
+        // Never told, at work: nothing to take back.
+        machine("aaaa"),
+        // Just online, at work: not yet.
+        machine("bbbb", { onlineSince: now - 60_000 }),
+        // Told released two hours ago, and still over: its provider keeps what it was told.
+        machine("cccc"),
+        // Told released, and at work again: told it is working.
+        machine("dddd"),
+      ],
+      [on("t1", "aaaa"), on("t2", "bbbb"), on("t4", "dddd")],
+      new Set(),
+      now,
+      new Map([
+        ["cccc", { released: true, at: now - 2 * 60 * 60_000 }],
+        ["dddd", { released: true, at: now - 60_000 }],
+      ]),
+    );
+    expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([["dddd", false]]);
   });
 
   it("keeps a worker whose pull request merged but whose turn still runs at work", () => {
@@ -164,7 +190,7 @@ describe("a worker machine's work", () => {
   it("tells again, after a while, a release a reuse since may have taken back", () => {
     // Told released two hours ago; a reuse that failed since took the release back there.
     const decided = releaseDecisions(
-      [machine("aaaa")],
+      [relayed("aaaa")],
       [],
       new Set(),
       now,
@@ -174,7 +200,7 @@ describe("a worker machine's work", () => {
     // Told a minute ago: not again.
     expect(
       releaseDecisions(
-        [machine("aaaa")],
+        [relayed("aaaa")],
         [],
         new Set(),
         now,

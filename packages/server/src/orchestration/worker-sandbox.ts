@@ -88,6 +88,80 @@ export const makeWorkerSandbox = ({
     const machineFlights = new Map<string, Flight>();
     const flightScope = yield* Effect.scope;
     /**
+     * Holds `name`'s bring-up for this try, in its scope: waits out one being given back (its stop
+     * answered included), then joins the one under way, or begins `start` when there is none and
+     * it is given one. Whether it waited, and the bring-up held, if any. Every placement on a
+     * machine goes through here (`fence`), so none lands on one being given back.
+     */
+    const holdFlight = (
+      name: string,
+      start?: Effect.Effect<{ readonly startedHere: boolean }, AppToolError>,
+    ) =>
+      Effect.gen(function* () {
+        let waited = false;
+        for (;;) {
+          const taken = yield* Effect.acquireRelease(
+            Effect.gen(function* () {
+              const joining = machineFlights.get(name);
+              if (joining?.closing !== undefined) return { wait: joining.closing };
+              if (joining !== undefined) {
+                joining.holders += 1;
+                return { held: joining };
+              }
+              if (start === undefined) return { none: true as const };
+              const made: Flight = { fiber: yield* Effect.forkIn(start, flightScope), holders: 1 };
+              machineFlights.set(name, made);
+              return { held: made };
+            }),
+            (got) =>
+              Effect.gen(function* () {
+                if (!("held" in got)) return;
+                const held = got.held;
+                held.holders -= 1;
+                if (held.holders > 0) return;
+                // No try holds it: stopped, giving back what it started, and closed to every
+                // try until that is over, its stop answered included.
+                const closing = yield* Deferred.make<void>();
+                held.closing = closing;
+                yield* Fiber.interrupt(held.fiber).pipe(
+                  Effect.ensuring(
+                    Effect.suspend(() => {
+                      if (machineFlights.get(name) === held) machineFlights.delete(name);
+                      held.closing = undefined;
+                      return Deferred.succeed(closing, undefined);
+                    }),
+                  ),
+                );
+              }),
+          );
+          if ("wait" in taken) {
+            waited = true;
+            yield* Deferred.await(taken.wait);
+          } else return { waited, flight: "held" in taken ? taken.held : undefined };
+        }
+      });
+    /**
+     * A worker placed on a machine there is already (shared, or named): held as a try of its
+     * bring-up while one is under way, so a give-back never stops it under this worker, and
+     * refused when one given back meanwhile took the machine with it.
+     */
+    const fence = (
+      name: string,
+    ): Effect.Effect<
+      { readonly abandon?: Effect.Effect<void> | undefined },
+      AppToolError,
+      Scope.Scope
+    > =>
+      Effect.gen(function* () {
+        const { waited } = yield* holdFlight(name);
+        if (waited && !joined().some((each) => each.name === name))
+          return yield* new AppToolError({
+            tool: "spawn_worker",
+            message: `${name} was given back as this worker was placed, so it isn't there to place it on. Spawn again on a machine of its own, or leave out sandbox to run the worker on your machine.`,
+          });
+        return {};
+      });
+    /**
      * Where `sandbox` puts a worker: the name of a machine of its own, started now, or of one its
      * orchestrator already has; or nothing, for the orchestrator's own machine.
      */
@@ -180,12 +254,18 @@ export const makeWorkerSandbox = ({
           readonly name: string;
           readonly onlineSince?: number | undefined;
         }) =>
-          machine.onlineSince !== undefined
+          machine.onlineSince !== undefined && !source.givesBack
             ? { name: machine.name, givesBack: source.givesBack }
             : {
                 name: machine.name,
                 givesBack: source.givesBack,
                 prepare: Effect.gen(function* () {
+                  // Its give-back, from a spawn that brought it up, is waited out first.
+                  if (source.givesBack) yield* fence(machine.name);
+                  if (
+                    joined().find((each) => each.name === machine.name)?.onlineSince !== undefined
+                  )
+                    return {};
                   if ((yield* source.unrelease(machine.name)) === "gone")
                     return yield* fail(reclaimedWords(machine.name));
                   const arrived = yield* source.arrive(machine.name);
@@ -358,51 +438,29 @@ export const makeWorkerSandbox = ({
         const prepare = Effect.gen(function* () {
           // One being given back takes no one: waited out, then joined if it was kept, or begun
           // afresh once it is gone.
-          let flight: Flight | undefined;
-          while (flight === undefined) {
-            const taken = yield* Effect.acquireRelease(
-              Effect.gen(function* () {
-                const joining = machineFlights.get(name);
-                if (joining?.closing !== undefined) return { wait: joining.closing };
-                if (joining !== undefined) {
-                  joining.holders += 1;
-                  return { held: joining };
-                }
-                const made: Flight = {
-                  fiber: yield* Effect.forkIn(bringUp, flightScope),
-                  holders: 1,
-                };
-                machineFlights.set(name, made);
-                return { held: made };
-              }),
-              (got) =>
-                Effect.gen(function* () {
-                  if (!("held" in got)) return;
-                  const held = got.held;
-                  held.holders -= 1;
-                  if (held.holders > 0) return;
-                  // No try holds it: stopped, giving back what it started, and closed to every
-                  // try until that is over, its stop answered included.
-                  const closing = yield* Deferred.make<void>();
-                  held.closing = closing;
-                  yield* Fiber.interrupt(held.fiber).pipe(
-                    Effect.ensuring(
-                      Effect.suspend(() => {
-                        if (machineFlights.get(name) === held) machineFlights.delete(name);
-                        held.closing = undefined;
-                        return Deferred.succeed(closing, undefined);
-                      }),
-                    ),
-                  );
-                }),
-            );
-            if ("wait" in taken) yield* Deferred.await(taken.wait);
-            else flight = taken.held;
-          }
+          const { flight } = yield* holdFlight(name, bringUp);
+          if (flight === undefined) return {};
           const brought = yield* Fiber.join(flight.fiber);
           return brought.startedHere ? { abandon: giveBack(flight) } : {};
         });
         return { name, givesBack: source.givesBack, prepare };
       });
-    return workerSandbox;
+    /**
+     * The plan for a worker `spawn_worker` places by `machine` on one a hosted server started: it
+     * holds that machine's bring-up (`fence`), and its machine is given back by its provider.
+     */
+    const byName = (machine: string | undefined) => {
+      const named = machine?.trim();
+      const relayed =
+        named === undefined
+          ? undefined
+          : joined().find(
+              (each) =>
+                each.via !== undefined &&
+                each.onDemand === "worker" &&
+                (each.name === named || each.id === named),
+            );
+      return relayed === undefined ? undefined : { givesBack: true, prepare: fence(relayed.name) };
+    };
+    return Object.assign(workerSandbox, { fence, byName });
   });

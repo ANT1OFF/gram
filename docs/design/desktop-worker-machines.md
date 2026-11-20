@@ -236,6 +236,11 @@ subscription token reaches a machine, with its own consent.
   `machines:workers` token never handed out before, so a sign-in that expired or was revoked on
   the server ends its relays within that long, whatever token is cached. The server is still
   the one that enforces it: a relay it carries is one it may end itself.
+- **A start is owed a stop before it is sent.** Each start of a new machine is written to the stops
+  owed first, marked as a start's; it is let go once the machine is registered here or the start
+  is clearly refused, and kept while the start is on its way. So a start the server accepted just
+  before this Gram stopped is given back at its next start, with the grace a start of unknown
+  outcome has, instead of running unregistered until the server reclaims it.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
   When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way), the
@@ -274,7 +279,9 @@ subscription token reaches a machine, with its own consent.
   and giving back on its own, even once the machine is online while that try still places its
   worker. Once a try has decided to give the machine back, no try joins its bring-up: one that
   comes meanwhile waits until the give-back is over, then joins it if it was kept, or brings one
-  up afresh once it is gone. So it is while a bring-up no try holds any more is stopped and gives
+  up afresh once it is gone. So does a worker placed on that machine by `shareWith` or by
+  `machine`: it holds the bring-up while one is under way, and is refused if a give-back took the
+  machine. So it is while a bring-up no try holds any more is stopped and gives
   its machine back, until its stop is answered. The bring-up outlives the try that began it, and is stopped, giving
   back what it started, only once no try holds it. After it came, a try whose spawn fails gives it
   back only when no other try holds it and no thread is placed on it.

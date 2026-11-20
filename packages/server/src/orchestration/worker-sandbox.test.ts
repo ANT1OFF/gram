@@ -148,6 +148,40 @@ describe("a worker's machine brought up for a spawn", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("keeps a worker shared onto it out while its give-back waits for the stop", () =>
+    Effect.gen(function* () {
+      const held = yield* Deferred.make<void>();
+      const { plan, calls } = yield* setup({ stop: Deferred.await(held) });
+      const first = yield* prepared(plan);
+      // The first try is cancelled: it gives its machine back, and its stop is on its way.
+      const giving = yield* Effect.forkScoped(first.ready.abandon ?? Effect.void);
+      yield* Effect.addFinalizer(() => Deferred.succeed(held, undefined));
+      while (!calls.includes("stop")) yield* Effect.yieldNow;
+      // Another worker of the orchestrator is placed on it by name meanwhile.
+      const sharing = yield* Effect.forkScoped(
+        Effect.gen(function* () {
+          const planned = yield* plan(
+            CALLER,
+            { ...INPUT, clientRequestId: "other-1" },
+            { shareWith: NAME, reason: "Same build." },
+          );
+          const scope = yield* Scope.make();
+          return planned?.prepare === undefined
+            ? {}
+            : yield* planned.prepare.pipe(Scope.provide(scope));
+        }),
+      );
+      for (let each = 0; each < 20; each += 1) yield* Effect.yieldNow;
+      expect(sharing.pollUnsafe()).toBeUndefined();
+      yield* Deferred.succeed(held, undefined);
+      yield* Fiber.join(giving);
+      // Given back meanwhile: it isn't placed on a machine that is gone.
+      const placed = yield* Fiber.await(sharing);
+      expect(Exit.isFailure(placed)).toBe(true);
+      yield* Scope.close(first.scope, Exit.void);
+    }).pipe(Effect.scoped),
+  );
+
   for (const [during, gate] of [
     ["reads which threads are placed on it", "threads"],
     ["waits for its stop", "stop"],

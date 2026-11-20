@@ -258,7 +258,15 @@ export const signedInSource = (
       Effect.suspend(() => {
         // This start takes the name: no stop owed for an earlier one may end the machine it makes.
         deps.starting?.add(ask.name);
-        deps.owed?.remove(ask.name);
+        // Written before the start is sent, kept across a restart: a machine started there that
+        // this Gram never registers is given back by the stops owed, never left running.
+        deps.owed?.add({
+          origin,
+          name: ask.name,
+          since: now(),
+          unsettled: true,
+          start: true,
+        });
         // Asked for again: it may come back, so it is relayed once more.
         deps.asleep?.delete(ask.name);
         let unavailable = false;
@@ -316,13 +324,14 @@ export const signedInSource = (
             Effect.sync(() => {
               offered.delete(origin);
               // A clear refusal made nothing; one with no answer is the spawn's to give back.
+              // A clear refusal made nothing: nothing to start, nothing owed.
               if (
-                started.kind !== "started" &&
-                started.kind === "refused" &&
-                started.unknown !== true
-              )
+                (started.kind === "refused" && started.unknown !== true) ||
+                started.kind === "over-total"
+              ) {
                 deps.starting?.delete(ask.name);
-              if (started.kind === "over-total") deps.starting?.delete(ask.name);
+                deps.owed?.remove(ask.name);
+              }
             }),
           ),
         );
@@ -409,6 +418,8 @@ export const signedInSource = (
                 via: origin,
               });
               if (result.kind === "refused") return { failed: failedWords(name, result.message) };
+              // Registered here: the release pass looks after it from now on.
+              deps.owed?.remove(name);
             }
           }
           if (named(name) !== undefined && !relayed) {
@@ -663,7 +674,9 @@ export const SignedInWorkersLive = Layer.effect(
     yield* forgetReclaimed(port, hosts, misses, asleep, sent).pipe(
       // One the pass found stopped or failed is no longer among the relays told.
       Effect.tap(() => Effect.sync(() => sync(false))),
-      Effect.andThen(settleOwedStops(port, owed, claimed, Date.now, locks)),
+      Effect.andThen(
+        settleOwedStops(port, owed, claimed, Date.now, locks, (name) => starting.has(name)),
+      ),
       Effect.catchCause((cause) => Effect.logWarning("the reclaimed-machine pass failed", cause)),
       Effect.repeat(Schedule.spaced(RECLAIMED_EVERY)),
       Effect.forkScoped,

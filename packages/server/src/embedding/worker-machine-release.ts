@@ -101,7 +101,8 @@ export const workerMachineWork = (
     }));
 
 /**
- * What to tell the provider of each worker machine this pass. One at work is told it is working
+ * What to tell the provider of each worker machine this pass. An embedder's provider is told only
+ * what changed, as it always was. A hosted server's: one at work is told it is working
  * unless that was told this run already: after a restart nothing is kept of what was told, and a
  * release the provider still holds would have it reclaim a machine its worker came back to. One
  * whose work is over is told it is released once it has settled (`WORKER_RELEASE_SETTLE_MS`, so
@@ -128,8 +129,20 @@ export const releaseDecisions = (
           !finished.has(thread.id) &&
           !(thread.spawnedBy === undefined && thread.parked === true),
       );
-      // What was told is trusted a while only: a reuse that failed may have taken a release back.
       const said = told.get(machine.id);
+      // An embedder's provider: told only what changed, once the machine has settled, and never
+      // that one it hasn't been told is released is working (as it always has been).
+      if (machine.via === undefined) {
+        const settled =
+          machine.onlineSince === undefined ||
+          now - machine.onlineSince >= WORKER_RELEASE_SETTLE_MS;
+        const released = !atWork;
+        return !settled || said?.released === released || (!released && said === undefined)
+          ? []
+          : [{ machine, released }];
+      }
+      // A hosted server's: what was told is trusted a while only, as a reuse that failed may have
+      // taken a release back, and after a restart one at work is told so once.
       const fresh = (released: boolean) =>
         said !== undefined && said.released === released && now - said.at < TOLD_FOR_MS;
       if (atWork) return fresh(false) ? [] : [{ machine, released: false }];
