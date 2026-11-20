@@ -51,6 +51,7 @@ import {
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -204,6 +205,18 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const joined = () => (remoteHosts === undefined ? [] : remoteHosts.list());
     /**
+     * Each machine name's bring-up under way (`workerSandbox`), with how many tries of its spawn
+     * hold it. Run in the tools' own scope, so it outlives the try that began it.
+     */
+    const machineFlights = new Map<
+      string,
+      {
+        readonly fiber: Fiber.Fiber<{ readonly startedHere: boolean }, AppToolError>;
+        holders: number;
+      }
+    >();
+    const flightScope = yield* Effect.scope;
+    /**
      * Where `sandbox` puts a worker: the name of a machine of its own, started now, or of one its
      * orchestrator already has; or nothing, for the orchestrator's own machine.
      */
@@ -346,30 +359,16 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         // goes ahead, after any approval (`handle`), so a refused or denied spawn starts nothing.
         const seen = joined().find((each) => each.name === name && theirs(each));
         if (seen?.onlineSince !== undefined) return { name, givesBack: source.givesBack };
-        const prepare = Effect.gen(function* () {
-          // This try's hold on the name, kept until its spawn is over (`handle`'s scope): only the
-          // first try to hold it may start the machine or give it back. A retry of the same
-          // request while that try is still at work waits for its machine and, stopped or refused
-          // itself, ends nothing: what is started under the name is the first try's.
-          const hold = yield* Effect.acquireRelease(
-            Effect.sync(() => source.hold(name)),
-            (held) => Effect.sync(held.release),
-          );
-          // Read again as the spawn goes ahead, after any card: what is registered now decides
-          // whether this try starts the machine (and may give it back) or waits for one it found.
+        // Brings the machine up: started (or, registered from an earlier spawn, told it is
+        // working) and waited for. Whether this bring-up started it, and so may give it back.
+        const bringUp = Effect.gen(function* () {
+          // Read as the spawn goes ahead, after any card: what is registered now decides whether
+          // this starts the machine (and may give it back) or waits for one it found.
           const already = joined().find((each) => each.name === name && theirs(each));
           // Reused, it may have been released once its earlier work was over, and sleeps until it
           // is told it is working: told so before it is waited for.
           if (already !== undefined && (yield* source.unrelease(name)) === "gone")
             return yield* fail(reclaimedWords(name));
-          if (already === undefined && !hold.first) {
-            const arrived = yield* source.arrive(name);
-            if (typeof arrived !== "string")
-              return yield* fail(
-                `Another try of this spawn is starting the machine ${name}, and it didn't come online for this one, so this one stopped nothing. Wait for that try to finish, then spawn again with the same clientRequestId, or leave out sandbox to run the worker on your machine.`,
-              );
-            return {};
-          }
           const asked =
             already !== undefined
               ? ({ kind: "started", name } as const)
@@ -408,7 +407,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             return yield* fail(refusal("over_total", overTotalWords(asked, workersOn)));
           }
           const arrived = yield* source.arrive(name).pipe(
-            // A spawn stopped while it waits gives back what it asked for.
+            // Stopped while it waits, with no try left to want it: what it asked for is given back.
             Effect.onInterrupt(() => (already === undefined ? source.abandon(name) : Effect.void)),
           );
           if (typeof arrived !== "string") {
@@ -424,13 +423,15 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             yield* source.abandon(name);
             return yield* fail(arrived.failed);
           }
-          // Given back if the spawn is refused after it came, so none is left running for nothing:
-          // never while a thread is placed on it, the spawn's own worker made before it failed
-          // included, nor when that can't be read.
-          const giveBack = Effect.gen(function* () {
-            // A retry of the same request waiting for it now: left for that one, and, should it
-            // not place a worker either, to the release pass, as a registered machine.
-            if (hold.others()) return;
+          return { startedHere: already === undefined };
+        });
+        // Given back if the spawn is refused after it came, so none is left running for nothing:
+        // never while another try of the same request still holds it, nor while a thread is
+        // placed on it (the spawn's own worker made before it failed included), nor when that
+        // can't be read.
+        const giveBack = (othersHold: () => boolean) =>
+          Effect.gen(function* () {
+            if (othersHold()) return;
             const id = source.idOf(name);
             if (id !== undefined) {
               const threads = yield* store.listThreads.pipe(Effect.option);
@@ -450,7 +451,42 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             }
             yield* source.abandon(name);
           });
-          return already === undefined ? { abandon: giveBack } : {};
+        // An embedder's provider keeps its machines and gives none back: each try brings up its
+        // own, as it always has.
+        if (!source.givesBack)
+          return {
+            name,
+            givesBack: false,
+            prepare: Effect.map(bringUp, (brought) =>
+              brought.startedHere ? { abandon: giveBack(() => false) } : {},
+            ),
+          };
+        // One bring-up of a name at a time (`machineFlights`): a try of the same request while
+        // one is under way (a reconnect, a tool call tried again) joins it rather than starting,
+        // waiting and giving back on its own. The bring-up outlives any one try, and is stopped,
+        // giving back what it started, only once no try holds it.
+        const prepare = Effect.gen(function* () {
+          const flight = yield* Effect.acquireRelease(
+            Effect.gen(function* () {
+              const joining = machineFlights.get(name);
+              if (joining !== undefined) {
+                joining.holders += 1;
+                return joining;
+              }
+              const made = { fiber: yield* Effect.forkIn(bringUp, flightScope), holders: 1 };
+              machineFlights.set(name, made);
+              return made;
+            }),
+            (held) =>
+              Effect.suspend(() => {
+                held.holders -= 1;
+                if (held.holders > 0) return Effect.void;
+                if (machineFlights.get(name) === held) machineFlights.delete(name);
+                return Fiber.interrupt(held.fiber);
+              }),
+          );
+          const brought = yield* Fiber.join(flight.fiber);
+          return brought.startedHere ? { abandon: giveBack(() => flight.holders > 1) } : {};
         });
         return { name, givesBack: source.givesBack, prepare };
       });

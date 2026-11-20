@@ -157,8 +157,8 @@ If the machine isn't online within five minutes, the desktop asks `…/stop`, fo
 the spawn fails with "The machine worker-… didn't join within 5 minutes, so it was stopped". No
 machine is left running for a spawn that failed. A server that says the machine failed
 (`phase: "failed"`), or stopped before its host joined, ends the wait at once with its own words.
-One stopped after its host joined (`phase: "stopped"` with its key) is registered all the same,
-and started again as below.
+One the server says is stopped, which it says of a machine paused before this desktop registered
+it, is started again once as below, and waited for.
 
 **No dial wakes a machine there.** A relay's dial only keeps a running, unreleased machine at
 work. One the server says is paused (`phase: "stopped"`, stopped while idle) or failed stays so
@@ -174,14 +174,24 @@ that start itself whenever work here needs the machine:
   the spawn is told at once in the server's words.
 - Each wake is the spawn's start: the name's lock, a release taken back first, a `503` asked again
   a few times. Nothing else starts a machine: never a dial, a relay, or a pass.
+- Whether work still wants the machine is read under the name's lock as each start would go, not
+  when the wake was queued: once the last session waiting has gone, no start is sent. One already
+  sent is left to the server's idle stop.
+- Only an answered `stopped` or `failed` uses up a wake. A `…/status` with no answer or a `5xx`,
+  or a start answered so (a `502` while the machine is still being stopped there), is tried again
+  five seconds later, for as long as the machine is wanted.
+- A `…/status` answer asked for before this Gram's latest start of that name is older than the
+  start, and is taken as saying nothing: it never stops a woken machine's relay. An answer that
+  says the machine is up again carries it once more.
 
 A machine registered here that the server says is stopped or failed isn't relayed while it is
 (a failed one is said once in the log): it stays registered, since it may hold an earlier spawn's
 work, and a wake or a start of its name relays it again.
 
-A start answered `503` (`busy` or `unavailable`) started nothing: it is asked again after two
-seconds, then four, three times in all, and then refused as the server unavailable, never as over
-the total or gone, with nothing to give back.
+A start answered `503` (`busy` or `unavailable`) is asked again after two seconds, then four:
+three asks in all across the whole start, plus the one a take-back of a release allows. Still
+`503`, it is refused as the server unavailable, never as over the total or gone, and given back as
+a start whose outcome isn't known, since a `503` can come back for a call that reached its machines.
 
 ## 4. Who owns and pays for it
 
@@ -254,11 +264,11 @@ subscription token reaches a machine, with its own consent.
 - **A retry of the same spawn.** A machine registered here before the try (an earlier spawn of the
   same `clientRequestId`) is waited for but never stopped by that try, however long it stays
   offline: it may hold the earlier spawn's work. Only a machine a try started is given back.
-  Each try holds its machine's name until its spawn is over, and only the first try to hold it
-  starts the machine or gives it back: a retry that comes while that try is still at work (a
-  reconnect, a tool call tried again) waits for its machine and, refused or cancelled itself,
-  stops nothing. A first try whose spawn fails while such a retry waits leaves the machine to it,
-  and to the release pass should it not place a worker either.
+  A name's machine is brought up once at a time: a retry that comes while a try is still bringing
+  it up (a reconnect, a tool call tried again) joins that bring-up rather than starting, waiting
+  and giving back on its own. The bring-up outlives the try that began it, and is stopped, giving
+  back what it started, only once no try holds it. After it came, a try whose spawn fails gives it
+  back only when no other try holds it and no thread is placed on it.
 - **A lost workspace role.** Every call about a machine whose workspace the person no longer has
   a role in is answered `404 { code: "not_found" }`, and its relay's handshake is refused: read
   as the machine gone wherever a call is made for it, and forgotten by the pass above.

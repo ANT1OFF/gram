@@ -469,14 +469,6 @@ export interface WorkerMachineSource {
   /** The id of the machine registered here under `name`, when there is one. */
   readonly idOf: (name: string) => string | undefined;
   /**
-   * Holds `name` for one try of a spawn, until `release`. `first`: no other try held it, so this
-   * try may start the machine and give back what it started. A try that finds another holding it
-   * (a retry of the same request while the first is still at work) starts nothing and gives
-   * nothing back: whatever is started under the name is the other try's. `others`: whether another
-   * try holds it now.
-   */
-  readonly hold: (name: string) => MachineHold;
-  /**
    * Gives back a machine started for a spawn that was then refused: stopped there and forgotten
    * here, where this provider does so. `unsettled`: its start's outcome isn't known, so the server
    * not knowing it yet ends nothing.
@@ -486,37 +478,6 @@ export interface WorkerMachineSource {
     options?: { readonly unsettled?: boolean },
   ) => Effect.Effect<void>;
 }
-
-/** One try's hold on a machine name (`WorkerMachineSource.hold`). */
-export interface MachineHold {
-  readonly first: boolean;
-  readonly others: () => boolean;
-  readonly release: () => void;
-}
-
-/**
- * Holds on names, counted by name, shared by every try that asks a provider for a machine: the
- * first try to hold a name is the one that may start it and give it back.
- */
-export const makeMachineHolds = () => {
-  const held = new Map<string, number>();
-  return (name: string): MachineHold => {
-    const before = held.get(name) ?? 0;
-    held.set(name, before + 1);
-    let released = false;
-    return {
-      first: before === 0,
-      others: () => (held.get(name) ?? 0) > 1,
-      release: () => {
-        if (released) return;
-        released = true;
-        const left = (held.get(name) ?? 1) - 1;
-        if (left <= 0) held.delete(name);
-        else held.set(name, left);
-      },
-    };
-  };
-};
 
 /** A model a provider's machines run, as its choices list it: `opus` running `claude-opus-…`. */
 export interface OfferedModel {
@@ -652,7 +613,5 @@ export const embeddedSource = (
       (machine) =>
         machine.name === name && machine.owner === owner && machine.onDemand === "worker",
     )?.id,
-  // Its provider keeps a machine a retry waits for, and nothing is given back: every try is first.
-  hold: () => ({ first: true, others: () => false, release: () => undefined }),
   abandon: () => Effect.void,
 });

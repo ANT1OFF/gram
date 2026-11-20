@@ -47,8 +47,6 @@ import { CHOICES_TTL_MS, type OnDemandChoices, parseChoices } from "./on-demand.
 import {
   askWorkerMachine,
   choicesOfAsk,
-  type MachineHold,
-  makeMachineHolds,
   type OfferedModel,
   parseOfferedModels,
   type ProvidedMachine,
@@ -367,6 +365,8 @@ const STOP_RETRY_MS = 2_000;
 /** How many times a start the server is unavailable for (`503`) is asked, and the first wait. */
 export const START_ATTEMPTS = 3;
 const START_RETRY_MS = 2_000;
+/** How long a wake that met only a passing error waits before it is tried again. */
+export const WAKE_RETRY_MS = 5_000;
 
 /** How long a desktop waits for a hosted machine to join before it stops it. */
 export const ARRIVE_TIMEOUT_MS = 5 * 60_000;
@@ -443,8 +443,6 @@ export interface SignedInDeps {
   readonly starting?: Set<string>;
   /** One lock per name, shared with the settling of stops owed (`withName`). */
   readonly locks?: NameLocks;
-  /** Each spawn try's hold on its name, shared by every source (`makeMachineHolds`). */
-  readonly holds?: (name: string) => MachineHold;
   /** How long a start the server is unavailable for waits before it is asked again, doubled. */
   readonly startRetryMs?: number;
   /**
@@ -452,6 +450,8 @@ export interface SignedInDeps {
    * a start of the name wakes it (`forgetReclaimed`, `wakeSignedIn`, `SignedInWorkersLive`).
    */
   readonly asleep?: Set<string>;
+  /** The starts sent of each name, shared by every source and pass (`StartsSent`). */
+  readonly sent?: StartsSent;
 }
 
 /**
@@ -628,7 +628,6 @@ export const signedInSource = (
   const now = deps.now ?? Date.now;
   const origin = server.origin;
   const offered: OfferedByServer = deps.offered ?? new Map();
-  const holds = deps.holds ?? makeMachineHolds();
   const mine = (machine: ProvidedMachine) =>
     machine.onDemand === "worker" && machine.via === origin && machine.owner === undefined;
   const named = (name: string) => hosts.list().find((each) => each.name === name && mine(each));
@@ -726,7 +725,6 @@ export const signedInSource = (
         ),
       ),
     idOf: (name) => named(name)?.id,
-    hold: holds,
     abandon: (name, options) => Effect.asVoid(forget(name, options?.unsettled === true)),
     start: (ask) =>
       Effect.suspend(() => {
@@ -774,7 +772,10 @@ export const signedInSource = (
               : unavailable
                 ? {
                     kind: "refused" as const,
-                    message: `${server.server} can't start machines now, and nothing was started. Spawn again in a few minutes with the same clientRequestId, or leave out sandbox to run the worker on your machine.`,
+                    message: `${server.server} can't start machines now. Spawn again in a few minutes with the same clientRequestId, or leave out sandbox to run the worker on your machine.`,
+                    // A `503` may come back for a call that reached its machines all the same:
+                    // given back as a start whose outcome isn't known.
+                    unknown: true as const,
                   }
                 : spent
                   ? {
@@ -819,65 +820,47 @@ export const signedInSource = (
               return { failed: noAppToolsTunnel(name) };
             return machine.id;
           }
-          if (machine !== undefined) {
-            // Registered and offline: one the server says is stopped or failed stays so whatever
-            // dials it, until a start of its name. Woken so once; failed again after that, it is
-            // told now, not waited on.
-            const left = deadline - now();
-            if (left <= 0) return { failed: "timeout" };
-            const read = yield* port
-              .call(origin, "status", { name })
-              .pipe(Effect.timeoutOption(left));
-            if (read._tag === "None") return { failed: "timeout" };
-            const answered = read.value;
-            const status = answered.ok ? parseMachineStatus(answered.body) : {};
-            const asleep =
-              answered.ok &&
-              answered.status < 300 &&
-              (status.phase === "stopped" || status.phase === "failed");
-            if (asleep && !woken) {
-              woken = true;
+          // No later than the deadline, however long the app or the server takes to answer.
+          const left = deadline - now();
+          if (left <= 0) return { failed: "timeout" };
+          const before = sentOf(deps.sent, name);
+          const read = yield* port
+            .call(origin, "status", { name })
+            .pipe(Effect.timeoutOption(left));
+          if (read._tag === "None") return { failed: "timeout" };
+          const answered = read.value;
+          // A call that went wrong on the way, or an answer asked for before a start of the name
+          // since, says nothing: asked again, until the deadline.
+          const fresh = answered.ok && sentOf(deps.sent, name) === before;
+          const status = fresh ? parseMachineStatus(answered.body) : {};
+          const why = status.message ?? `${server.server} says it isn't starting.`;
+          if (fresh && answered.status === 404 && machine === undefined)
+            return { failed: failedWords(name, why) };
+          if (fresh && answered.status < 300) {
+            // Failed on the start this spawn asked for, or again after it was started once more:
+            // nothing to wait for. One registered here isn't relayed while it is so.
+            if (status.phase === "failed" && (woken || machine === undefined)) {
+              if (machine !== undefined) {
+                deps.asleep?.add(name);
+                port.unrelay(name);
+              }
+              return {
+                failed: woken
+                  ? `The machine ${name} failed there after it was started again: ${why}`
+                  : failedWords(name, why),
+              };
+            }
+            // Stopped or failed there, which no dial wakes: started once more, under its name.
+            // Only a settled wake counts; a passing error leaves it to the next look.
+            if ((status.phase === "stopped" || status.phase === "failed") && !woken) {
               const woke = yield* wakeSignedIn(port, { name, via: origin }, deps);
-              if (woke === "refused")
+              if (woke !== "retry") woken = true;
+              if (woke === "refused" || woke === "gone")
                 return {
                   failed: `The machine ${name} is ${status.phase} there and couldn't be started again.`,
                 };
-            } else if (asleep && status.phase === "failed") {
-              deps.asleep?.add(name);
-              port.unrelay(name);
-              return {
-                failed: `The machine ${name} failed there after it was started again: ${status.message ?? `${server.server} says it failed.`}`,
-              };
             }
-          }
-          if (machine === undefined) {
-            // No later than the deadline, however long the app or the server takes to answer.
-            const left = deadline - now();
-            if (left <= 0) return { failed: "timeout" };
-            const read = yield* port
-              .call(origin, "status", { name })
-              .pipe(Effect.timeoutOption(left));
-            if (read._tag === "None") return { failed: "timeout" };
-            const answered = read.value;
-            // A call that went wrong on the way is asked again, until the deadline.
-            const status = answered.ok ? parseMachineStatus(answered.body) : {};
-            // Stopped after its host joined (it has a key): registered and relayed all the same,
-            // and woken by a start of its name below. Failed, gone, or stopped before it joined,
-            // there is nothing to wait for.
-            const wakes = status.phase === "stopped" && status.publicKey !== undefined;
-            if (
-              answered.ok &&
-              (answered.status === 404 ||
-                status.phase === "failed" ||
-                (status.phase === "stopped" && !wakes))
-            )
-              return {
-                failed: failedWords(
-                  name,
-                  status.message ?? `${server.server} says it isn't starting.`,
-                ),
-              };
-            if (answered.ok && answered.status < 300 && status.publicKey !== undefined) {
+            if (machine === undefined && status.publicKey !== undefined) {
               // So many relays at once is a leak, not work: refused, and this one given back.
               const held = hosts.list().filter((each) => each.via !== undefined).length;
               if (held >= RELAYED_MOST)
@@ -923,33 +906,62 @@ export const isHostedWorkerName = (name: string) => HOSTED_WORKER_NAME.test(name
 type Answered = { readonly ok: true; readonly status: number; readonly body: unknown } | Refused;
 
 /**
+ * How many starts this Gram has sent for each name. A `…/status` answer asked for before the
+ * latest start of its name is older than that start, and is read as saying nothing.
+ */
+export type StartsSent = Map<string, number>;
+
+const sentOf = (sent: StartsSent | undefined, name: string) => sent?.get(name) ?? 0;
+
+/**
  * One start of `name` there, its name's alone (`withName`) from its first ask to its last. A `503`
- * started nothing, so it is asked again after a wait that doubles, `START_ATTEMPTS` times at most,
- * and is never read as over the total or gone. A `409 released` takes the release back and asks
- * once more, never again; a take-back the server answers `404` (the release is due for reclaim)
- * spends the name, answered as `409 name_in_use`, and nothing is asked again under it.
+ * started nothing, so it is asked again after a wait that doubles, `START_ATTEMPTS` asks in all
+ * across the whole start, and is never read as over the total or gone. A `409 released` takes the
+ * release back and asks once more, never again; a take-back the server answers `404` (the release
+ * is due for reclaim) spends the name, answered as `409 name_in_use`, and nothing is asked again
+ * under it. `go`, read under the lock before each ask: whether it is still wanted; when it isn't,
+ * nothing more is sent (`skipped`).
  */
 export const sendSignedInStart = (
   port: WorkerMachinePortShape,
   origin: string,
   name: string,
   body: Readonly<Record<string, unknown>>,
-  options: { readonly locks?: NameLocks | undefined; readonly startRetryMs?: number | undefined },
-): Effect.Effect<{ readonly answered: Answered; readonly unavailable: boolean }> =>
+  options: {
+    readonly locks?: NameLocks | undefined;
+    readonly startRetryMs?: number | undefined;
+    readonly sent?: StartsSent | undefined;
+    readonly go?: (() => boolean) | undefined;
+  },
+): Effect.Effect<{
+  readonly answered: Answered;
+  readonly unavailable: boolean;
+  readonly skipped?: true;
+}> =>
   withName(
     options.locks,
     name,
     Effect.gen(function* () {
       let unavailable = false;
+      let asks = 0;
+      const skipped = {
+        answered: { ok: false as const, why: "no longer wanted" },
+        unavailable: false,
+        skipped: true as const,
+      };
       const send = Effect.gen(function* () {
-        for (let attempt = 1; ; attempt += 1) {
+        for (;;) {
+          if (options.go !== undefined && !options.go()) return undefined;
+          asks += 1;
+          options.sent?.set(name, sentOf(options.sent, name) + 1);
           const answered = yield* port.call(origin, "start", body);
           unavailable = answered.ok && answered.status === 503;
-          if (!unavailable || attempt >= START_ATTEMPTS) return answered;
-          yield* Effect.sleep((options.startRetryMs ?? START_RETRY_MS) * 2 ** (attempt - 1));
+          if (!unavailable || asks >= START_ATTEMPTS) return answered;
+          yield* Effect.sleep((options.startRetryMs ?? START_RETRY_MS) * 2 ** (asks - 1));
         }
       });
       const first = yield* send;
+      if (first === undefined) return skipped;
       if (!first.ok || first.status !== 409 || codeOf(first.body) !== "released")
         return { answered: first, unavailable };
       const told = yield* tellSignedInRelease(port, { name, via: origin }, false).pipe(
@@ -962,13 +974,21 @@ export const sendSignedInStart = (
           unavailable: false,
         };
       }
+      // Asked once more, within what is left of the asks.
+      if (asks >= START_ATTEMPTS) asks = START_ATTEMPTS - 1;
       const second = yield* send;
+      if (second === undefined) return skipped;
       return { answered: second, unavailable };
     }),
   );
 
-/** What a wake did: started it there, found it awake or not there, or was refused. */
-export type WakeOutcome = "started" | "awake" | "refused";
+/**
+ * What a wake did. `started`, `awake` (the server says it is up, or starting), `gone` (it knows it
+ * no more), `unwanted` (no one wants it by the time the start would go) and `refused` (an answered
+ * refusal) are settled; `retry` isn't: no answer, or a passing error, before or from the start, so
+ * it may be woken again while it is still wanted.
+ */
+export type WakeOutcome = "started" | "awake" | "gone" | "unwanted" | "refused" | "retry";
 
 /**
  * Wakes a worker machine that work here wants (a session about to open on it: a worker resumed,
@@ -986,28 +1006,40 @@ export const wakeSignedIn = (
     readonly startRetryMs?: number | undefined;
     /** Names not relayed while asleep: a wake that started one relays it again. */
     readonly asleep?: Set<string> | undefined;
+    readonly sent?: StartsSent | undefined;
+    /** Whether work here still wants it, read as the start would go: none is sent once not. */
+    readonly wanted?: (() => boolean) | undefined;
   } = {},
 ): Effect.Effect<WakeOutcome> =>
   Effect.gen(function* () {
     if (!isHostedWorkerName(machine.name)) return "refused" as const;
+    const before = sentOf(options.sent, machine.name);
     const read = yield* port.call(machine.via, "status", { name: machine.name });
-    if (!read.ok || read.status >= 300) return "awake" as const;
+    // Passing errors settle nothing: asked again while it is still wanted.
+    if (!read.ok || read.status >= 500) return "retry" as const;
+    if (read.status === 404) return "gone" as const;
+    if (read.status >= 300) return "refused" as const;
+    // A start of it went since this was asked: the answer is older than that start.
+    if (sentOf(options.sent, machine.name) !== before) return "awake" as const;
     const phase = parseMachineStatus(read.body).phase;
     if (phase !== "stopped" && phase !== "failed") {
       options.asleep?.delete(machine.name);
       return "awake" as const;
     }
-    const { answered } = yield* sendSignedInStart(
+    const sent = yield* sendSignedInStart(
       port,
       machine.via,
       machine.name,
       { name: machine.name },
-      options,
+      { ...options, go: options.wanted },
     );
+    if (sent.skipped === true) return "unwanted" as const;
+    const answered = sent.answered;
     if (answered.ok && answered.status >= 200 && answered.status < 300) {
       options.asleep?.delete(machine.name);
       return "started" as const;
     }
+    if (!answered.ok || answered.status >= 500) return "retry" as const;
     // Only the status: what a server answers isn't written to the log.
     yield* Effect.logWarning("a worker machine work wants could not be woken").pipe(
       Effect.annotateLogs({
@@ -1103,6 +1135,8 @@ export const forgetReclaimed = (
    * in the log. One that comes back is relayed again.
    */
   asleep?: Set<string>,
+  /** The starts sent of each name: an answer asked for before a later one says nothing. */
+  sent?: StartsSent,
 ) =>
   Effect.gen(function* () {
     for (const machine of hosts.list()) {
@@ -1112,9 +1146,15 @@ export const forgetReclaimed = (
         asleep?.delete(machine.name);
         continue;
       }
+      const before = sentOf(sent, machine.name);
       const answered = yield* port.call(machine.via, "status", { name: machine.name });
+      // Started again while this was asked: what it says is older than that start.
+      if (sentOf(sent, machine.name) !== before) continue;
       const phase =
         answered.ok && answered.status < 300 ? parseMachineStatus(answered.body).phase : undefined;
+      // Up, or coming up, there: carried again.
+      if (phase !== undefined && phase !== "stopped" && phase !== "failed")
+        asleep?.delete(machine.name);
       if (asleep !== undefined && (phase === "stopped" || phase === "failed")) {
         misses.delete(machine.id);
         if (!asleep.has(machine.name)) {
@@ -1181,8 +1221,8 @@ export const SignedInWorkersLive = Layer.effect(
     /** Names a start is on its way for: no stop owed for an earlier one may end what it makes. */
     const starting = new Set<string>();
     const locks: NameLocks = makeKeyedLock<string>();
-    const holds = makeMachineHolds();
     const asleep = new Set<string>();
+    const sent: StartsSent = new Map();
     const claimed = (name: string) =>
       starting.has(name) ||
       hosts.list().some((machine) => machine.name === name && machine.via !== undefined);
@@ -1230,8 +1270,10 @@ export const SignedInWorkersLive = Layer.effect(
     // A worker machine that work here wants (a session about to open on it waits for it, as a
     // worker resumed or a message to one does: `stops.wanting`) and that is offline is woken
     // there by a start of its name, once each time it comes to be wanted. Only a want does: never
-    // a dial, nor the relays.
+    // a dial, nor the relays. Whether it is still wanted is read again as the start would go, and
+    // a wake that met only a passing error is tried again a little later, while it is wanted.
     const wokenFor = new Map<string, number>();
+    const wants = yield* Queue.unbounded<void>();
     const wakeWanted = Effect.suspend(() =>
       Effect.forEach(
         hosts.list(),
@@ -1249,13 +1291,22 @@ export const SignedInWorkersLive = Layer.effect(
           }
           if (wokenFor.get(machine.id) === since) return Effect.void;
           wokenFor.set(machine.id, since);
+          const id = HostId.make(machine.id);
           return wakeSignedIn(
             port,
             { name: machine.name, via: machine.via },
-            { locks, asleep },
+            { locks, asleep, sent, wanted: () => hosts.stops.wanted(id) },
           ).pipe(
-            // Woken, or awake there already: carried again.
-            Effect.tap(() => Effect.sync(() => sync(false))),
+            Effect.flatMap((woke) =>
+              Effect.gen(function* () {
+                // Woken, or awake there already: carried again.
+                sync(false);
+                if (woke !== "retry") return;
+                yield* Effect.sleep(WAKE_RETRY_MS);
+                if (wokenFor.get(machine.id) === since) wokenFor.delete(machine.id);
+                Queue.offerUnsafe(wants, undefined);
+              }),
+            ),
             Effect.catchCause((cause) => Effect.logWarning("a worker machine wake failed", cause)),
             Effect.forkScoped,
           );
@@ -1263,7 +1314,6 @@ export const SignedInWorkersLive = Layer.effect(
         { discard: true },
       ),
     );
-    const wants = yield* Queue.unbounded<void>();
     const unwatchWants = hosts.watch(() => {
       Queue.offerUnsafe(wants, undefined);
     });
@@ -1272,7 +1322,7 @@ export const SignedInWorkersLive = Layer.effect(
     // A machine the server no longer knows (reclaimed after its release, or removed there) is
     // forgotten here, so its relay stops and its name is free.
     const misses = new Map<string, number>();
-    yield* forgetReclaimed(port, hosts, misses, asleep).pipe(
+    yield* forgetReclaimed(port, hosts, misses, asleep, sent).pipe(
       // One the pass found stopped or failed is no longer among the relays told.
       Effect.tap(() => Effect.sync(() => sync(false))),
       Effect.andThen(settleOwedStops(port, owed, claimed, Date.now, locks)),
@@ -1293,8 +1343,8 @@ export const SignedInWorkersLive = Layer.effect(
                   owed,
                   starting,
                   locks,
-                  holds,
                   asleep,
+                  sent,
                 }),
                 server: answered.server,
               }

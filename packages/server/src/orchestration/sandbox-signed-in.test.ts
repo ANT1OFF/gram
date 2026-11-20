@@ -515,6 +515,65 @@ describe("sandbox from a signed-in hosted server", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("a cancelled first try stops nothing a retry of the same request still waits for", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const calls: Array<{ readonly call: string; readonly body: unknown }> = [];
+      const { port } = fakePort(() => ({ status: 200, body: {} }));
+      // Started there at once, and starting for as long as the tries wait.
+      const answering: WorkerMachinePortShape = {
+        ...port,
+        call: (_origin, call, body) =>
+          Effect.sync(() => {
+            calls.push({ call, body });
+            return call === "start"
+              ? { ok: true as const, status: 202, body: { name: "x" } }
+              : call === "choices"
+                ? { ok: true as const, status: 404, body: {} }
+                : { ok: true as const, status: 200, body: { phase: "starting" } };
+          }),
+      };
+      const hosts = {
+        list: () => [],
+        remove: () => false,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, {
+        port: answering,
+        hosts,
+        locks: makeKeyedLock<string>(),
+        everyMs: 10,
+      });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(
+            signedIn({ port: answering, source: Effect.succeed({ source, server: SERVER }) }),
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session } = yield* openOrchestrator(world);
+        const first = yield* Effect.forkScoped(session.callTool("spawn_worker", SANDBOX));
+        while (!calls.some((each) => each.call === "status")) yield* Effect.sleep("10 millis");
+        // A retry of the same request while the first waits for its machine.
+        const retry = yield* Effect.forkScoped(session.callTool("spawn_worker", SANDBOX));
+        yield* Effect.sleep("100 millis");
+        // The first try is cancelled: the retry still wants the machine.
+        yield* Fiber.interrupt(first);
+        yield* Effect.sleep("100 millis");
+        expect(calls.map((each) => each.call)).not.toContain("stop");
+        expect(calls.filter((each) => each.call === "start")).toHaveLength(1);
+        // Once no try holds it, what was started is given back.
+        yield* Fiber.interrupt(retry);
+        while (!calls.some((each) => each.call === "stop")) yield* Effect.sleep("10 millis");
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("lets go of a held brief whose machine it gave back, and says to spawn again", () =>
     Effect.gen(function* () {
       const world = yield* makeWorld;

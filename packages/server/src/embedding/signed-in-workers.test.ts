@@ -10,10 +10,12 @@ import {
   type Thread,
   type ThreadId,
 } from "@gram/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
+import * as TestClock from "effect/testing/TestClock";
 import {
   generateHostKey,
   hostIdOf,
@@ -45,6 +47,7 @@ import {
   isHostedWorkerName,
   settleOwedStops,
   START_ATTEMPTS,
+  WAKE_RETRY_MS,
   tellSignedInRelease,
   plainName,
   RELAYED_MOST,
@@ -690,20 +693,28 @@ describe("worker machines from a signed-in hosted server", () => {
     }),
   );
 
-  it.live("says a machine stopped before its host joined didn't join", () =>
+  it.live("starts once a machine the server says is paused before it registered here", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
-      const app = fakeApp({ answer: () => ({ status: 200, body: { phase: "stopped" } }) });
+      // The server says phase alone of a machine that isn't running, key or not.
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "status"
+            ? { status: 200, body: { phase: "stopped" } }
+            : { status: 202, body: {} },
+      });
       const source = signedInSource(SERVER, {
         port: bridgeWorkerMachines(app.port),
         hosts,
-        timeoutMs: 2_000,
+        timeoutMs: 300,
         everyMs: 20,
       });
-      // Refused at once, with nothing registered: not waited on to the deadline.
-      const arrived = yield* source.arrive(NAME);
-      expect(typeof arrived === "object" && arrived.failed !== "timeout").toBe(true);
-      expect(hosts.list()).toEqual([]);
+      expect(yield* source.arrive(NAME)).toEqual({ failed: "timeout" });
+      // Woken once with a start of its name, never stopped: still stopped after, it is waited for.
+      expect(app.calls.filter((each) => each.call === "start").map((each) => each.body)).toEqual([
+        { name: NAME },
+      ]);
+      expect(app.calls.map((each) => each.call)).not.toContain("stop");
     }),
   );
 
@@ -1332,7 +1343,7 @@ describe("a hosted server's answers about one machine", () => {
     }),
   );
 
-  it.live("refuses a start the server stays unavailable for, as nothing started", () =>
+  it.live("refuses a start the server stays unavailable for, as one that may have started", () =>
     Effect.gen(function* () {
       const app = fakeApp({
         answer: () => ({ status: 503, body: { code: "unavailable" } }),
@@ -1343,12 +1354,40 @@ describe("a hosted server's answers about one machine", () => {
         startRetryMs: 5,
       });
       const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
-      // Not over the total, and not unknown: there is nothing to give back.
-      expect(started).toMatchObject({ kind: "refused" });
-      expect(started).not.toHaveProperty("unknown");
+      // Not over the total, nor gone; and a 503 may come back for a call that reached its
+      // machines, so it is given back as a start whose outcome isn't known.
+      expect(started).toMatchObject({ kind: "refused", unknown: true });
       expect(app.calls.map((each) => each.call)).toEqual(
         Array.from({ length: START_ATTEMPTS }, () => "start"),
       );
+    }),
+  );
+
+  it.live("asks a start three times in all, a release taken back between them included", () =>
+    Effect.gen(function* () {
+      // 503, 503, released; taken back; then 503 for good.
+      const starts = [503, 503, 409];
+      const app = fakeApp({
+        answer: ({ call }) => {
+          if (call !== "start") return { status: 200, body: {} };
+          const status = starts.shift() ?? 503;
+          return { status, body: { code: status === 409 ? "released" : "unavailable" } };
+        },
+      });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: noMachines,
+        startRetryMs: 5,
+      });
+      yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
+      // The three asks, and the one more a take-back allows: never three more after it.
+      expect(app.calls.map((each) => each.call)).toEqual([
+        "start",
+        "start",
+        "start",
+        "release",
+        "start",
+      ]);
     }),
   );
 
@@ -1450,6 +1489,129 @@ describe("a worker machine that work here wants", () => {
         { name: NAME },
       ]);
       yield* Fiber.interrupt(opening);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("sends no start once the last session waiting for it has gone", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const { id } = provisionRelayed(hosts, NAME);
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "status"
+            ? { status: 200, body: { phase: "stopped" } }
+            : { status: 202, body: {} },
+      });
+      const bridged = bridgeWorkerMachines(app.port);
+      // Every status answer waits until let through.
+      const through = yield* Deferred.make<void>();
+      const asked = { count: 0 };
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          call === "status"
+            ? Effect.sync(() => (asked.count += 1)).pipe(
+                Effect.andThen(Deferred.await(through)),
+                Effect.andThen(bridged.call(origin, call, body)),
+              )
+            : bridged.call(origin, call, body),
+      };
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(port)),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      const forSession = awaitedMachines(
+        (hostId) => Effect.fail(new HostUnavailable({ hostId, message: "away" })),
+        hosts,
+        { getSettings: Effect.succeed({ experimental: { embedding: true } } as never) },
+        60_000,
+      );
+      const opening = yield* Effect.forkScoped(forSession(HostId.make(id), "t-1" as ThreadId));
+      // The pass's status read and the wake's are both on their way.
+      while (asked.count < 2) yield* Effect.sleep("10 millis");
+      // The only session waiting gives up, then the server answers: stopped.
+      yield* Fiber.interrupt(opening);
+      yield* Deferred.succeed(through, undefined);
+      yield* Effect.sleep("100 millis");
+      expect(app.calls.map((each) => each.call)).not.toContain("start");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("wakes it once a passing error has passed, while it is still wanted", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const { id } = provisionRelayed(hosts, NAME);
+      // The pass's read and the wake's first are a passing 503; then it says stopped.
+      let reads = 0;
+      const app = fakeApp({
+        answer: ({ call }) => {
+          if (call !== "status") return { status: 202, body: {} };
+          reads += 1;
+          return reads <= 2
+            ? { status: 503, body: { code: "unavailable" } }
+            : { status: 200, body: { phase: "stopped" } };
+        },
+      });
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      const forSession = awaitedMachines(
+        (hostId) => Effect.fail(new HostUnavailable({ hostId, message: "away" })),
+        hosts,
+        { getSettings: Effect.succeed({ experimental: { embedding: true } } as never) },
+        60_000,
+      );
+      const opening = yield* Effect.forkScoped(forSession(HostId.make(id), "t-1" as ThreadId));
+      yield* TestClock.adjust("1 second");
+      expect(reads).toBe(2);
+      expect(app.calls.map((each) => each.call)).not.toContain("start");
+      yield* TestClock.adjust(WAKE_RETRY_MS + 1_000);
+      expect(app.calls.filter((each) => each.call === "start").map((each) => each.body)).toEqual([
+        { name: NAME },
+      ]);
+      yield* Fiber.interrupt(opening);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("takes no status asked for before a start of its name as the machine's", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionRelayed(hosts, NAME);
+      const asleep = new Set<string>();
+      const sent = new Map<string, number>();
+      const unrelayed: string[] = [];
+      let phase = "stopped";
+      const through = yield* Deferred.make<void>();
+      const asked = { count: 0 };
+      const app = fakeApp({ answer: () => ({ status: 200, body: { phase } }) });
+      const bridged = bridgeWorkerMachines(app.port);
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        unrelay: (name) => unrelayed.push(name),
+        call: (origin, call, body) =>
+          Effect.sync(() => (asked.count += 1)).pipe(
+            Effect.andThen(Deferred.await(through)),
+            Effect.andThen(bridged.call(origin, call, body)),
+          ),
+      };
+      const pass = yield* Effect.forkScoped(forgetReclaimed(port, hosts, new Map(), asleep, sent));
+      while (asked.count < 1) yield* Effect.yieldNow;
+      // A wake's start goes out while the pass's read is on its way, then the old answer comes.
+      sent.set(NAME, 1);
+      yield* Deferred.succeed(through, undefined);
+      yield* Fiber.join(pass);
+      expect([...asleep]).toEqual([]);
+      expect(unrelayed).toEqual([]);
+      // Asleep, then up again there: carried once more.
+      asleep.add(NAME);
+      phase = "running";
+      yield* forgetReclaimed(port, hosts, new Map(), asleep, sent);
+      expect([...asleep]).toEqual([]);
     }).pipe(Effect.scoped),
   );
 
