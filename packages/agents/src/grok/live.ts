@@ -22,6 +22,11 @@ import { makeGrokHost } from "./session.ts";
 export class GrokHost extends Context.Service<GrokHost, AgentHost>()("@gram/agents/GrokHost") {}
 
 export interface GrokHostLiveConfig {
+  /**
+   * The environment Grok starts with, given the login shell's: a home of Gram's own, so the
+   * person's Claude Code, Cursor and Grok settings, servers, plugins and allow rules stay out.
+   */
+  readonly ownedHome: (env: Record<string, string>) => Effect.Effect<Record<string, string>>;
   /** Login shell for the PATH probe; defaults to `$SHELL`, then the platform's. */
   readonly shell?: string;
   /** A `grok` to use instead of the one on the login-shell PATH. */
@@ -38,7 +43,7 @@ const inherited = (): Record<string, string> =>
  * with that shell's environment, on the user's own sign-in. Nothing is looked for until a session
  * or a list needs it.
  */
-export const GrokHostLive = (config: GrokHostLiveConfig = {}): Layer.Layer<GrokHost> =>
+export const GrokHostLive = (config: GrokHostLiveConfig): Layer.Layer<GrokHost> =>
   Layer.effect(GrokHost)(
     Effect.gen(function* () {
       const probe = yield* resettableOnSuccess(
@@ -57,6 +62,7 @@ export const GrokHostLive = (config: GrokHostLiveConfig = {}): Layer.Layer<GrokH
       );
       const env = probe.get.pipe(
         Effect.map((probed) => (Object.keys(probed.env).length > 0 ? probed.env : inherited())),
+        Effect.flatMap(config.ownedHome),
       );
       const binary = Effect.gen(function* () {
         const probed = yield* probe.get;

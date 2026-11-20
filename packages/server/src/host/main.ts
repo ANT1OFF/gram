@@ -41,7 +41,9 @@ import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { codexStatusOf, hostCodexLive } from "./codex-on-host.ts";
 import { CodexHost } from "@gram/agents/codex";
+import { homedir } from "node:os";
 import { GrokHost, GrokHostLive } from "@gram/agents/grok";
+import { prepareOwnedGrokHome } from "../gateway/grok-owned-home.ts";
 import { OpenCodeHost } from "@gram/agents/opencode";
 import { grokStatusOf } from "./grok-on-host.ts";
 import { hostOpenCodeLive, openCodeStatusOf } from "./opencode-on-host.ts";
@@ -137,7 +139,13 @@ const hostAgents = (
         // OpenCode as well on a joined machine (the one whose host has a folder of its own).
         Layer.provide(codexData === undefined ? Layer.empty : hostOpenCodeLive()),
         // And Grok Build, on that machine's own sign-in or its environment's token command.
-        Layer.provide(codexData === undefined ? Layer.empty : GrokHostLive()),
+        Layer.provide(
+          codexData === undefined
+            ? Layer.empty
+            : GrokHostLive({
+                ownedHome: (userEnv) => prepareOwnedGrokHome(codexData, homedir(), userEnv),
+              }),
+        ),
       );
 
 /** What could stop a host's update: what is running in it now (`HostBusy`). */

@@ -26,6 +26,7 @@ import {
   syncCodexInstructions,
 } from "./gateway/codex-home.ts";
 import { ownedCodexProvider, prepareOwnedCodexHome } from "./gateway/codex-owned-home.ts";
+import { prepareOwnedGrokHome } from "./gateway/grok-owned-home.ts";
 import { GatewayCredentials } from "./gateway/credentials.ts";
 import { GitPlatformLive } from "./git/platform.ts";
 import { GitTurnHooksLive } from "./git/turn-hooks.ts";
@@ -125,7 +126,11 @@ const ClaudeAgents: Layer.Layer<AgentHosts, never, AgentNeeds> = Layer.effect(
   Layer.provide(ClaudeHostLive()),
   Layer.provide(CodexAgent),
   Layer.provide(OpenCodeHostLive()),
-  Layer.provide(GrokHostLive()),
+  Layer.provide(
+    GrokHostLive({
+      ownedHome: (userEnv) => prepareOwnedGrokHome(config.dataDir, homedir(), userEnv),
+    }),
+  ),
   Layer.provide(GatewayCredentials.layerProvider),
 );
 

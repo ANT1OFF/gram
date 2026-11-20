@@ -421,9 +421,12 @@ never reads or copies its credentials; sign in with `grok login` in a terminal. 
 starts while the CLI is signed out fails with that instruction in the Inbox.
 
 Each thread runs its own `grok --permission-mode default agent --no-leader stdio` and drives it
-over the [Agent Client Protocol](https://agentclientprotocol.com). The permission mode is always
-given, and the session is then put in the thread's mode, so an always-approve default in your own
-`~/.grok` config never applies to a Gram thread. How the composer's modes map:
+over the [Agent Client Protocol](https://agentclientprotocol.com). It runs in a home of Gram's own,
+in Gram's data folder, whose `.grok` shares only your `auth.json`, by path. So none of your own
+setup reaches a Gram thread: not your `~/.grok` config, MCP servers, plugins, hooks or memory, and
+not the Claude Code and Cursor settings, allow rules, MCP servers, skills and rules Grok would
+otherwise read. Commands it runs still see your `HOME`. The session takes the thread's permission
+mode, as Claude Code and Codex do, never a default of Grok's own. How the composer's modes map:
 
 | Mode         | Grok Build                                                                      |
 | ------------ | ------------------------------------------------------------------------------- |
@@ -443,8 +446,7 @@ Grok keeps the conversation; Gram resumes it by id after a restart. Models and t
 the ones the CLI lists. Each turn reports its tokens, reasoning tokens and context, and a price
 Grok works out, which Gram adds up as it does Claude Code's. On the desktop Grok Build runs plain
 threads only: it takes no orchestrator, worker or memory-update role, can't hand its session to
-another agent, and runs on no gateway profile. A deployment whose sessions load no user config of
-their own (a sandbox) can admit it as orchestrator and worker with `GRAM_ROLE_AGENTS=grok`; see
+another agent, and runs on no gateway profile. A deployment can admit it as orchestrator and worker with `GRAM_ROLE_AGENTS=grok`; see
 [the embedded web app](EMBEDDED_WEB_APP.md). A role's standing instructions reach it through its
 system prompt (`_meta.rules`), and Gram's app tools, the thread's MCP server lists, its slash
 commands, attachments (images inline) and its past sessions all work as for the other agents.
