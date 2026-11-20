@@ -377,7 +377,8 @@ refused before a machine is asked for), `/start` `{ name, title, orchestrator, c
 `known: false`) and `/stop` `{ name }` (answered
 `{ stopped }`: `false`, or a 404, when it holds no machine of that name). No call names an
 owner: the server takes the person from the token, and answers each as `/hosts/*` does (`409` over
-the person's total, `403` or `404` not allowed).
+the person's total, or `409 { code: "name_in_use" }` for a name a reclaimed machine had; `403` or
+`404` not allowed).
 
 The desktop can't be dialled, so the machine's `gram-host` is provisioned for the hosted server's
 own origin and dials it at `/host/connect`; the app dials `worker_machine_connect?name=<name>`, and

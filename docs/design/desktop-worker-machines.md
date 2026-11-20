@@ -211,6 +211,12 @@ subscription token reaches a machine, with its own consent.
   it (not a 404, nor a 2xx saying it knows no such machine), so one that wasn't is told again.
 - **A machine the server no longer knows** is forgotten here after three passes in a row answer
   404, since the same answer comes while its workspace is out of reach for a while.
+- **Reusing a machine.** A machine a spawn reuses (one an earlier spawn of the same id left
+  registered, or one it shares that is offline) is told it is working (`released: false`) before
+  it is waited for: one released once its work was over sleeps until then.
+- **A reclaimed name.** A start answered `409 { code: "name_in_use" }` (the name was a machine's
+  the server has since reclaimed) is refused once, saying to spawn with another
+  `clientRequestId`; it is never asked again, nor read as being over the total.
 - **A retry of the same spawn.** A machine registered here before the try (an earlier spawn of the
   same `clientRequestId`) is waited for but never stopped by that try, however long it stays
   offline: it may hold the earlier spawn's work. Only a machine a try started is given back.

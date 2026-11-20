@@ -685,6 +685,14 @@ export const signedInSource = (
     choices: Effect.map(asked, (kept) => kept.value),
     models: Effect.map(asked, (kept) => kept.models),
     givesBack: true,
+    unrelease: (name) =>
+      tellSignedInRelease(port, { name, via: origin }, false).pipe(
+        Effect.catch(() =>
+          Effect.logWarning("a worker machine reused could not be told it is working").pipe(
+            Effect.annotateLogs({ machine: name }),
+          ),
+        ),
+      ),
     idOf: (name) => named(name)?.id,
     abandon: (name, options) => Effect.asVoid(forget(name, options?.unsettled === true)),
     start: (ask) =>

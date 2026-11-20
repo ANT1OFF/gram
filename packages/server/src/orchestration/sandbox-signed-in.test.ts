@@ -704,4 +704,98 @@ describe("sandbox from a signed-in hosted server", () => {
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );
+
+  it.effect("refuses, once and in words, a name the server says a reclaimed machine had", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const { port, calls } = fakePort((call) =>
+        call === "choices"
+          ? { status: 404, body: {} }
+          : call === "start"
+            ? { status: 409, body: { code: "name_in_use", message: "That name was used." } }
+            : { status: 200, body: {} },
+      );
+      const hosts = {
+        list: () => [],
+        remove: () => false,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port, hosts });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session } = yield* openOrchestrator(world);
+        const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
+        expect(result).toMatchObject({
+          _tag: "Failure",
+          failure: { message: expect.stringMatching(/another clientRequestId/) },
+        });
+        expect(result).not.toMatchObject({
+          failure: { message: expect.stringMatching(/over_total/) },
+        });
+        expect(calls.map((each) => each.call)).toEqual(["choices", "start"]);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("lifts a release before it waits on a machine an earlier spawn left registered", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const machine = {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "",
+        confirmed: true,
+        onDemand: "worker",
+        via: SERVER.origin,
+        onlineSince: undefined as number | undefined,
+      };
+      // A released machine wakes only once it is told it is working again.
+      const { port, calls } = fakePort((call) => {
+        if (call === "release") machine.onlineSince = 1;
+        return call === "choices" ? { status: 404, body: {} } : { status: 200, body: {} };
+      });
+      const remote = Layer.succeed(RemoteHosts, {
+        machines: { list: () => [], get: () => undefined },
+        stops: makeStopMarks(),
+        watch: () => () => undefined,
+        list: () => [machine],
+      } as unknown as RemoteHostsShape);
+      const hosts = {
+        list: () => [machine],
+        remove: () => true,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port, hosts, timeoutMs: 1_000, everyMs: 10 });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(remote),
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session, thread } = yield* openOrchestrator(world);
+        machine.name = workerMachineName(thread.id, SANDBOX.clientRequestId);
+        yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
+        expect(calls.find((each) => each.call === "release")?.body).toEqual({
+          name: machine.name,
+          released: false,
+          reason: "working",
+        });
+        // It came back: nothing timed out, and nothing of it was stopped or started anew.
+        expect(calls.map((each) => each.call)).not.toContain("stop");
+        expect(calls.map((each) => each.call)).not.toContain("start");
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
 });

@@ -241,6 +241,18 @@ export const askWorkerMachine = <R>(
         unknown: true,
       } as const;
     const { status, body } = answered;
+    // The name was a machine's the server has since reclaimed: it isn't given out again. Asked
+    // once, never again under the same name, so the orchestrator picks another request id.
+    if (
+      status === 409 &&
+      typeof body === "object" &&
+      body !== null &&
+      (body as { code?: unknown }).code === "name_in_use"
+    )
+      return {
+        kind: "refused",
+        message: `The machine name ${ask.name} was a machine's that the server has since reclaimed, so it isn't used again. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
+      } as const;
     if (status === 409) return parseOverTotal(body);
     if (status === 403 || status === 404)
       return {
@@ -427,6 +439,11 @@ export interface WorkerMachineSource {
    * held keeps its brief.
    */
   readonly givesBack: boolean;
+  /**
+   * Tells the provider a machine this spawn reuses is working again, before it is waited on: one
+   * released once its work was over sleeps until it is told so. Never fails.
+   */
+  readonly unrelease: (name: string) => Effect.Effect<void>;
   /** The id of the machine registered here under `name`, when there is one. */
   readonly idOf: (name: string) => string | undefined;
   /**
@@ -567,6 +584,8 @@ export const embeddedSource = (
     ),
   // Its provider pauses an idle machine and reclaims it once released (`worker-machine-release.ts`).
   givesBack: false,
+  // Its provider wakes a machine on the next message, released or not.
+  unrelease: () => Effect.void,
   idOf: (name) =>
     machines().find(
       (machine) =>

@@ -281,13 +281,37 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             );
           if (refused !== undefined) return yield* fail(refused);
         }
+        /**
+         * A machine of its workers it shares: online, as it is; offline (it may be released once
+         * its work was over, and sleeps until told otherwise), told it is working and waited for
+         * as the spawn goes ahead. Never given back: it is the other workers' too.
+         */
+        const shared = (machine: {
+          readonly name: string;
+          readonly onlineSince?: number | undefined;
+        }) =>
+          machine.onlineSince !== undefined
+            ? { name: machine.name, givesBack: source.givesBack }
+            : {
+                name: machine.name,
+                givesBack: source.givesBack,
+                prepare: Effect.gen(function* () {
+                  yield* source.unrelease(machine.name);
+                  const arrived = yield* source.arrive(machine.name);
+                  if (typeof arrived !== "string")
+                    return yield* fail(
+                      `${machine.name} is offline and didn't come back, so the worker wasn't placed on it. It was left as it is: wait for it, or spawn on a machine of its own.`,
+                    );
+                  return {};
+                }),
+              };
         if (sandbox.shareWith !== undefined) {
           const named = sandbox.shareWith.trim();
           if (isWorkerMachineName(named)) {
             const machine = joined().find((each) => each.name === named && theirs(each));
             if (machine === undefined)
               return yield* fail(`No machine of your workers is named ${named}.`);
-            return { name: machine.name, givesBack: source.givesBack };
+            return shared(machine);
           }
           const worker = yield* store
             .getThread(named as ThreadId)
@@ -300,7 +324,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             return yield* fail(
               `${worker.title} runs on your machine, not one of its own: leave out sandbox to put this worker there too.`,
             );
-          return { name: machine.name, givesBack: source.givesBack };
+          return shared(machine);
         }
         // Picks by the provider's option ids, or by their labels ("No Internet"), as it offers them.
         const offered = yield* source.choices;
@@ -319,6 +343,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           // Read again as the spawn goes ahead, after any card: what is registered now decides
           // whether this try starts the machine (and may give it back) or waits for one it found.
           const already = joined().find((each) => each.name === name && theirs(each));
+          // Reused, it may have been released once its earlier work was over, and sleeps until it
+          // is told it is working: told so before it is waited for.
+          if (already !== undefined) yield* source.unrelease(name);
           const asked =
             already !== undefined
               ? ({ kind: "started", name } as const)
