@@ -114,4 +114,5 @@ export const fakeVerifyStatus = (world: World) =>
   Layer.succeed(VerifyStatus)({
     requiredOnHead: () => Effect.sync(() => world.verifyRequired),
     stateFor: () => Effect.succeed({ recipe: "none", drivers: [] }),
+    evidence: () => Effect.succeed(undefined),
   });
