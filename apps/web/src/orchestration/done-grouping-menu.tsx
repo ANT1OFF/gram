@@ -1,4 +1,5 @@
 import { CalendarDays, Network, type LucideIcon } from "lucide-react";
+import { useRef, useState } from "react";
 
 import {
   Menu,
@@ -33,10 +34,28 @@ export function DoneGroupingMenu({
   const setGrouping = useLayoutStore((s) => s.setDoneGrouping);
   const current = DONE_GROUPINGS.find((each) => each.id === grouping) ?? DONE_GROUPINGS[0]!;
   const Icon = ICONS[current.id];
+  // The menu's trigger acts on the pointer going down, from the next animation frame, and lets the
+  // click after it go by. A page too busy to draw that frame (History mounting its rows) left the
+  // press showing nothing, so the click finishes the press too: it leaves the menu as the press
+  // meant, open if it went down on a shut menu, and the frame's own change then finds it so.
+  const [open, setOpen] = useState(false);
+  const pressedOpen = useRef<boolean | undefined>(undefined);
   return (
-    <Menu>
+    <Menu open={open} onOpenChange={setOpen}>
       <MenuTrigger
         {...stop}
+        onPointerDown={(event) => {
+          pressedOpen.current = event.button === 0 ? open : undefined;
+        }}
+        onKeyDown={() => {
+          pressedOpen.current = undefined;
+        }}
+        onClick={() => {
+          const was = pressedOpen.current;
+          pressedOpen.current = undefined;
+          // A click from the keyboard has no press before it: the trigger's own handler opens it.
+          if (was !== undefined) setOpen(!was);
+        }}
         data-testid="done-grouping"
         data-grouping={current.id}
         aria-label={`${current.hint}. Change grouping`}
