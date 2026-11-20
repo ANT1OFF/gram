@@ -361,12 +361,41 @@ const MODELS_TTL_MS = 5 * 60_000;
  * The Grok Build host: one `grok agent stdio` per session, on the user's own sign-in, driven over
  * the Agent Client Protocol. Grok keeps the session; Gram resumes it by id.
  */
+/**
+ * `connection` signing in headless right after `initialize` when its environment hands the CLI a
+ * token command (`GROK_AUTH_PROVIDER_COMMAND`), as a sandbox's does: there the CLI holds no login of
+ * its own and must be told to take the command's token.
+ */
+export const withHeadlessSignIn = (
+  connection: AcpConnection,
+  env: Readonly<Record<string, string | undefined>>,
+): AcpConnection => {
+  const command = env["GROK_AUTH_PROVIDER_COMMAND"];
+  if (command === undefined || command.trim() === "") return connection;
+  return {
+    ...connection,
+    request: async <T>(method: string, params: Record<string, unknown>) => {
+      const result = await connection.request<T>(method, params);
+      if (method === "initialize")
+        await connection.request("authenticate", {
+          methodId: "grok.com",
+          _meta: { headless: true },
+        });
+      return result;
+    },
+  };
+};
+
 const launchWith = (config: GrokHostConfig, cwd: string, handlers: AcpHandlers) =>
   Effect.gen(function* () {
     const binary = yield* config.binary;
     const env = yield* config.env;
     return yield* Effect.try({
-      try: () => config.start({ binary, args: GROK_AGENT_ARGS, env, cwd, handlers }),
+      try: () =>
+        withHeadlessSignIn(
+          config.start({ binary, args: GROK_AGENT_ARGS, env, cwd, handlers }),
+          env,
+        ),
       catch: (error) => failure("Grok Build didn't start", error),
     });
   });

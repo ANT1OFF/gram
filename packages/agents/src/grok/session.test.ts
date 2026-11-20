@@ -12,6 +12,7 @@ import {
   grokCommands,
   promptOf,
   transcriptOf,
+  withHeadlessSignIn,
   grokPermission,
   makeGrokHost,
   permissionParams,
@@ -321,5 +322,36 @@ describe("Grok Build host", () => {
       sessionId: "old-session",
       cwd: "/work",
     });
+  });
+});
+
+describe("Grok Build in a sandbox", () => {
+  const recording = () => {
+    const methods: Array<string> = [];
+    const connection: AcpConnection = {
+      request: async <T>(method: string) => {
+        methods.push(method);
+        return {} as T;
+      },
+      notify: () => {},
+      ended: new Promise(() => {}),
+      pid: 1,
+      stop: async () => {},
+    };
+    return { methods, connection };
+  };
+
+  it("signs in headless on the token command's login when the environment names one", async () => {
+    const { methods, connection } = recording();
+    const wrapped = withHeadlessSignIn(connection, { GROK_AUTH_PROVIDER_COMMAND: "printf token" });
+    await wrapped.request("initialize", {});
+    await wrapped.request("session/new", {});
+    expect(methods).toEqual(["initialize", "authenticate", "session/new"]);
+  });
+
+  it("leaves a desktop CLI on its own sign-in", async () => {
+    const { methods, connection } = recording();
+    await withHeadlessSignIn(connection, {}).request("initialize", {});
+    expect(methods).toEqual(["initialize"]);
   });
 });
