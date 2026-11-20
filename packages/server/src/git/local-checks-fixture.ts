@@ -5,7 +5,6 @@ import { type Proc, ProcLive } from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { execFileSync } from "node:child_process";
 import * as nodePath from "node:path";
 import { expect } from "@effect/vitest";
 
@@ -19,7 +18,7 @@ import {
   type LocalCheck,
   type LocalCheckRunnerShape,
 } from "./local-checks.ts";
-import { makeRepo, run, tempDir, write } from "./test-repo.ts";
+import { hashObject, makeRepo, run, tempDir, write } from "./test-repo.ts";
 
 /** A repo with `main` one commit past where `feature` branched, each adding its own file. */
 export const fixture = (protectedBlob = false) => {
@@ -27,11 +26,7 @@ export const fixture = (protectedBlob = false) => {
   const repo = makeRepo(dir);
   let protectedOid: string | undefined;
   if (protectedBlob) {
-    protectedOid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
-      cwd: repo,
-      input: "synthetic protected fixture",
-      encoding: "utf8",
-    }).trim();
+    protectedOid = hashObject(repo, "synthetic protected fixture");
     run(repo, "update-index", "--add", "--cacheinfo", `100644,${protectedOid},.env.example`);
     run(repo, "commit", "-qm", "synthetic protected ancestor");
   }

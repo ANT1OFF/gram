@@ -23,7 +23,7 @@ import {
 import { makeGrokHost, withHeadlessSignIn } from "./session.ts";
 
 const command = (text: string) => ({ kind: "execute", rawInput: { command: text } });
-const ROOTS = ["/work/thread"];
+const ROOTS = [tmpdir()];
 const edit = (rawInput: Json, locations?: ReadonlyArray<Json>): Json => ({
   kind: "edit",
   rawInput,
@@ -78,6 +78,14 @@ describe("Grok Build permissions", () => {
     symlinkSync(join(top, "made-outside.sh"), join(cwd, "notes.sh"));
     expect(answer(edit({ file_path: "notes.sh" }))).toBeUndefined();
     expect(answer(edit({ file_path: "new/dir/c.ts" }))).toBe("allow");
+    symlinkSync(join(top, "missing"), join(cwd, "gone"));
+    expect(answer(edit({ file_path: "gone/x.ts" }))).toBeUndefined();
+    // A root that is itself a link counts as where it points.
+    symlinkSync(cwd, join(top, "linked-thread"));
+    const viaLink = join(top, "linked-thread");
+    expect(autoAnswer("acceptEdits", undefined, edit({ file_path: "a.ts" }), [viaLink])).toBe(
+      "allow",
+    );
     expect(answer(edit({ file_path: "a.ts" }, [{ path: "/etc/profile" }]))).toBeUndefined();
     expect(answer(edit({}))).toBeUndefined();
     expect(answer(edit({ file_path: 7 }))).toBeUndefined();
@@ -85,7 +93,7 @@ describe("Grok Build permissions", () => {
 
   it("refuses in dontAsk, passes edits in acceptEdits, and shows the rest", () => {
     expect(autoAnswer("dontAsk", undefined, command("ls"), ROOTS)).toBe("deny");
-    const inside = edit({ file_path: "/work/thread/src/a.ts" });
+    const inside = edit({ file_path: join(tmpdir(), "src/a.ts") });
     expect(autoAnswer("acceptEdits", undefined, inside, ROOTS)).toBe("allow");
     expect(autoAnswer("acceptEdits", undefined, command("ls"), ROOTS)).toBeUndefined();
     expect(autoAnswer("default", undefined, command("ls"), ROOTS)).toBeUndefined();

@@ -29,7 +29,12 @@ const HARMLESS_KEYS = new Set([
 const NARROWING_PERMISSIONS = new Set(["allow", "deny", "ask"]);
 
 /** What under `.claude` is read above or loads nothing that runs: every other entry counts. */
-const KNOWN_CLAUDE_ENTRIES = new Set(["settings.json", "settings.local.json", "CLAUDE.md"]);
+const KNOWN_CLAUDE_ENTRIES = new Set([
+  "settings.json",
+  "settings.local.json",
+  "CLAUDE.md",
+  ".DS_Store",
+]);
 
 type Json = Record<string, unknown>;
 

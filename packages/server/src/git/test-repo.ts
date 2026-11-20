@@ -92,6 +92,15 @@ export const run = (cwd: string, ...args: Array<string>): string =>
     stdio: ["ignore", "pipe", "pipe"],
   });
 
+/** Writes `input` as a blob in the repo at `cwd`, and gives its id. */
+export const hashObject = (cwd: string, input: string): string =>
+  execFileSync("git", ["hash-object", "-w", "--stdin"], {
+    cwd,
+    input,
+    encoding: "utf8",
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  }).trim();
+
 export const write = (path: string, content: string): void => {
   fs.mkdirSync(nodePath.dirname(path), { recursive: true });
   fs.writeFileSync(path, content);

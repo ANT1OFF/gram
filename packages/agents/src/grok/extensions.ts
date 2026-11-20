@@ -159,7 +159,13 @@ export const editWithin = (call: Json, roots: ReadonlyArray<string>): boolean =>
     ...EDIT_PATH_KEYS.map((key) => input[key]),
   ].filter((path) => path !== undefined);
   if (named.length === 0) return false;
-  const inside = roots.flatMap((root) => landing(resolve(root)) ?? []);
+  const inside = roots.flatMap((root) => {
+    try {
+      return [realpathSync(resolve(root))];
+    } catch {
+      return [];
+    }
+  });
   return named.every((path) => {
     if (typeof path !== "string" || path === "" || path.split(/[\\/]/).includes("..")) return false;
     const real = landing(resolve(cwd, path));
