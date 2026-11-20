@@ -37,6 +37,7 @@
     {
       "files": ["apps/web/src/**"],
       "rules": {
+        "gram/clock-24h": "error",
         "no-restricted-imports": [
           "error",
           {
