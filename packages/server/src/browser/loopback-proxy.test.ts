@@ -28,9 +28,11 @@ const remoteThread = {
 /** A server that answers what it is sent upper-cased, standing in for a dev server. */
 const upper = () =>
   new Promise<{ server: Server; port: number }>((resolve) => {
-    const server = createServer((socket) =>
-      socket.on("data", (chunk) => socket.write(chunk.toString().toUpperCase())),
-    );
+    const server = createServer((socket) => {
+      // A proxy that closes resets this side; that is the test's business, not an uncaught error.
+      socket.on("error", () => {});
+      socket.on("data", (chunk) => socket.write(chunk.toString().toUpperCase()));
+    });
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       resolve({ server, port: typeof address === "object" && address ? address.port : 0 });
@@ -141,9 +143,13 @@ describe("a remote thread's loopback proxy", () => {
     proxies = loopbackProxies(() => Effect.succeed({ tunnels: tunnels() }), run);
     const proxy = (await Effect.runPromise(proxies.proxyFor(remoteThread)))!;
     const idle = connect(Number(new URL(proxy).port), "127.0.0.1");
+    // Closing the proxy may reset the idle connection (macOS does); wait for it to end either way.
+    const ended = new Promise<void>((resolve) => idle.once("close", () => resolve()));
+    idle.on("error", () => {});
     await new Promise((resolve) => idle.once("connect", resolve));
     await proxies.close();
     proxies = undefined;
+    await ended;
     expect(port).toBeGreaterThan(0);
   });
 
