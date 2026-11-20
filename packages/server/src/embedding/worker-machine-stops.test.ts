@@ -26,6 +26,8 @@ import {
   OWED_MOST,
   type NameLocks,
   RECLAIMED_AFTER_MISSES,
+  SERVER_ACTS_WITHIN_MS,
+  STOP_HOLD_MS,
   stopHoldUntil,
   STOPS_FILE_MOST,
   settleOwedStops,
@@ -366,43 +368,57 @@ describe("stops a server never confirmed", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("hold a name for as long as the server may still act on a stop it took", () =>
+  it.live("hold a name for as long as the server may still act on a stop it took, no longer", () =>
     Effect.gen(function* () {
-      const log: string[] = [];
-      const base = bridgeWorkerMachines(
-        fakeApp({ answer: () => ({ status: 202, body: {} }) }).port,
-      );
-      // Every stop is taken there and its answer lost; a start is answered.
-      const port: WorkerMachinePortShape = {
-        ...base,
-        call: (_origin, call) =>
-          Effect.sync(() => {
-            log.push(call);
-            return call === "stop"
-              ? { ok: false as const, why: "no answer" }
-              : { ok: true as const, status: 202, body: {} };
-          }),
-      };
-      let clock = Date.now();
-      const owed = memoryOwedStops(
-        [],
-        () => true,
-        () => clock,
-      );
-      const deps = {
-        port,
-        hosts: unregistered,
-        owed,
-        starting: new Set<string>(),
-        now: () => clock,
-      };
-      yield* signedInSource(SERVER, { ...deps, stopRetryMs: 0, unansweredHoldMs: 0 }).abandon(NAME);
-      // Two minutes on, after a restart: the server's call down may still be waiting to act.
-      clock += 2 * 60_000;
-      const after = signedInSource(SERVER, { ...deps, locks: makeKeyedLock<string>() });
-      yield* Effect.forkScoped(after.start({ name: NAME, orchestrator: "o", title: "Retry" }));
-      yield* Effect.sleep("200 millis");
-      expect(log).toEqual(["stop", "stop", "stop"]);
+      // As long as the server's cell call (120 s) and lock wait (10 s) take, and margins besides.
+      expect(SERVER_ACTS_WITHIN_MS).toBe(130_000);
+      for (const [after, held] of [
+        [2 * 60_000, true],
+        [STOP_HOLD_MS - 1, true],
+        [STOP_HOLD_MS, false],
+      ] as const) {
+        const log: string[] = [];
+        const base = bridgeWorkerMachines(
+          fakeApp({ answer: () => ({ status: 202, body: {} }) }).port,
+        );
+        // Every stop is taken there and its answer lost; a start is answered.
+        const port: WorkerMachinePortShape = {
+          ...base,
+          call: (_origin, call) =>
+            Effect.sync(() => {
+              log.push(call);
+              return call === "stop"
+                ? { ok: false as const, why: "no answer" }
+                : { ok: true as const, status: 202, body: {} };
+            }),
+        };
+        const sentAt = Date.now();
+        let clock = sentAt;
+        const owed = memoryOwedStops(
+          [],
+          () => true,
+          () => clock,
+        );
+        const deps = {
+          port,
+          hosts: unregistered,
+          owed,
+          starting: new Set<string>(),
+          now: () => clock,
+        };
+        yield* signedInSource(SERVER, { ...deps, stopRetryMs: 0, unansweredHoldMs: 0 }).abandon(
+          NAME,
+        );
+        // Later, after a restart: the server may still be acting on the stop, or no longer.
+        clock = sentAt + after;
+        const retry = signedInSource(SERVER, { ...deps, locks: makeKeyedLock<string>() });
+        const starting = yield* Effect.forkScoped(
+          retry.start({ name: NAME, orchestrator: "o", title: "Retry" }),
+        );
+        yield* Effect.sleep("200 millis");
+        expect(log.includes("start")).toBe(!held);
+        yield* Fiber.interrupt(starting);
+      }
     }).pipe(Effect.scoped),
   );
 

@@ -31,20 +31,27 @@ export const stopSendBy = (sentAt: number) => sentAt + 30_000;
 const STOP_REQUEST_MS = 15_000;
 
 /**
- * How long a hosted server may still act on a stop it has taken: its call down to the workspace
- * may wait up to two minutes, and the stop then waits for the person's lock. Past that only the
- * server can say (a stop that carried its own expiry, or named the disk it meant).
+ * How long a hosted server may still act on a stop it has taken: its call down to the workspace's
+ * cell may wait up to 120 s, and the stop then waits up to 10 s for the person's lock. Past that
+ * only the server can say (a stop that carried its own expiry, or named the disk it meant).
  */
-export const SERVER_ACTS_WITHIN_MS = 130_000;
+export const SERVER_ACTS_WITHIN_MS = 120_000 + 10_000;
 
 /**
- * Until when a stop sent of a name may still act there: the last time it may leave the app
- * (`stopSendBy`), its request's own time, the time the server may take to act on it, then
- * `UNANSWERED_STOP_HOLD_MS`. Kept with the stops owed, across a restart, and let go only by that
- * stop's own answer: no start of the name is sent before then (`StopHolds`).
+ * How long a stop sent of a name holds it, from when it is asked for: until the last time it may
+ * leave the app (`stopSendBy`, 30 s), its request's own time (15 s), the time the server may take
+ * to act on it (`SERVER_ACTS_WITHIN_MS`, 130 s), and `UNANSWERED_STOP_HOLD_MS` (30 s) besides as a
+ * margin: 205 s in all.
  */
-export const stopHoldUntil = (sentAt: number) =>
-  stopSendBy(sentAt) + STOP_REQUEST_MS + SERVER_ACTS_WITHIN_MS + UNANSWERED_STOP_HOLD_MS;
+export const STOP_HOLD_MS =
+  stopSendBy(0) + STOP_REQUEST_MS + SERVER_ACTS_WITHIN_MS + UNANSWERED_STOP_HOLD_MS;
+
+/**
+ * Until when a stop asked for at `sentAt` may still act there (`STOP_HOLD_MS`). Kept with the
+ * stops owed, across a restart, and let go only by that stop's own answer: no start of the name is
+ * sent before then (`StopHolds`).
+ */
+export const stopHoldUntil = (sentAt: number) => sentAt + STOP_HOLD_MS;
 
 /**
  * One lock per machine name: a start and a stop of the same name never overlap, so a stop already
