@@ -626,6 +626,12 @@ describe("import boundaries", () => {
     ["packages/server/src", 'import "@gram/shell";'],
     ["packages/git/src", 'import "@gram/server";'],
     ["packages/shell/src", 'import "@gram/web/lib/time";'],
+    ["apps/desktop/src/preload", 'import "node:fs";'],
+    ["apps/desktop/src/preload", 'import { Channels } from "@gram/shell/core";'],
+    ["apps/desktop/src/preload", 'import { createLogger } from "@gram/server/logging";'],
+    ["apps/desktop/src/main", 'import "@gram/web";'],
+    ["apps/desktop/src/main", 'import "@gram/agents";'],
+    ["apps/desktop/src/main", 'import "@gram/server/main";'],
   ])("refuses in %s: %s", (dir, source) => {
     expect(restricted(dir, source)).toBe(true);
   });
@@ -635,7 +641,27 @@ describe("import boundaries", () => {
     ["packages/server/src", 'import type { App } from "electron";'],
     ["packages/server/src", 'import "@gram/git";'],
     ["packages/shell/src", 'import { app } from "electron";'],
+    ["apps/desktop/src/preload", 'import { contextBridge } from "electron";'],
+    ["apps/desktop/src/preload", 'import { Channels } from "@gram/shell/channels";'],
+    ["apps/desktop/src/preload", 'import type { DesktopBridge } from "@gram/contracts";'],
+    ["apps/desktop/src/main", 'import { createLogger } from "@gram/server/logging";'],
   ])("allows in %s: %s", (dir, source) => {
     expect(restricted(dir, source)).toBe(false);
+  });
+});
+
+const crosses = (dir, specifier) =>
+  probeConfig(dir, `import { x } from "${specifier}";\nexport const probe = x;\n`).includes(
+    "gram(no-cross-package-path)",
+  );
+
+describe("no-cross-package-path", () => {
+  it("refuses a relative path out of one package's sources into another package or app", () => {
+    expect(crosses("packages/git/src", "../../server/src/main")).toBe(true);
+    expect(crosses("packages/server/src", "../../../apps/web/src/main")).toBe(true);
+  });
+
+  it("allows a relative path that stays inside the package", () => {
+    expect(crosses("packages/server/src", "./main")).toBe(false);
   });
 });
