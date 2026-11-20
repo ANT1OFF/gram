@@ -32,7 +32,7 @@ const STOP_REQUEST_MS = 15_000;
 
 /**
  * How long a hosted server may still act on a stop it has taken: its call down to the workspace's
- * cell may wait up to 120 s, and the stop then waits up to 10 s for the person's lock. Past that
+ * backend may wait up to 120 s, and the stop then waits up to 10 s for the person's lock. Past that
  * only the server can say (a stop that carried its own expiry, or named the disk it meant).
  */
 export const SERVER_ACTS_WITHIN_MS = 120_000 + 10_000;
@@ -81,8 +81,8 @@ export const codeOf = (body: unknown): unknown =>
 
 /**
  * Whether an answer is a `404 { code: "not_found" }`, the one a server gives a name it doesn't
- * know. Alone it proves nothing: the server answers the same while it has no cell manager, or the
- * workspace no cell, for a while. Only `RECLAIMED_AFTER_MISSES` of them in a row, asked a pass
+ * know. Alone it proves nothing: the server answers the same while it has no backend, or the
+ * workspace no backend, for a while. Only `RECLAIMED_AFTER_MISSES` of them in a row, asked a pass
  * apart, are taken as the machine gone; any other 404 is a passing error.
  */
 export const isNotFound = (

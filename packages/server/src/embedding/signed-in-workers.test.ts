@@ -747,7 +747,7 @@ describe("worker machines from a signed-in hosted server", () => {
         via: ORIGIN,
       };
       expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
-      // Nor a 404: the server answers it for every machine while its cell is out of reach.
+      // Nor a 404: the server answers it for every machine while its backend is out of reach.
       answer = { status: 404, body: { code: "not_found" } };
       expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
       answer = { status: 200, body: { known: true, released: false } };

@@ -209,7 +209,7 @@ export const wakeSignedIn = (
     // and says nothing, so the wake is left to be tried again rather than spent.
     if (!settledSince(options.sent, machine.name, before)) return "retry" as const;
     if (isNotFound(read)) return "gone" as const;
-    // Any other 404 (a route or a cell not there for now) says nothing of the machine.
+    // Any other 404 (a route or a backend not there for now) says nothing of the machine.
     if (read.status === 404) return "retry" as const;
     if (read.status >= 300) return "refused" as const;
     const phase = parseMachineStatus(read.body).phase;
@@ -231,7 +231,7 @@ export const wakeSignedIn = (
       return "started" as const;
     }
     // Passing, as the status read's are: no answer, busy or throttled, and a 404 (the server says
-    // so while its cell is out of reach), the start's own or its take-back's. Woken later, while
+    // so while its backend is out of reach), the start's own or its take-back's. Woken later, while
     // it is still wanted; only the three-pass rule forgets it.
     if (
       !answered.ok ||
@@ -254,7 +254,7 @@ export const wakeSignedIn = (
 /**
  * Tells a signed-in server a worker machine's work is over, or going on again. `missing`: answered
  * `404 not_found`, which a server says of a machine it reclaimed, but also for a while of every
- * machine while it has no cell manager or the workspace no cell: never taken as the machine gone
+ * machine while it has no backend or the workspace no backend: never taken as the machine gone
  * (`isNotFound`). Any other 404 is asked again, as a busy server is.
  */
 export const tellSignedInRelease = (

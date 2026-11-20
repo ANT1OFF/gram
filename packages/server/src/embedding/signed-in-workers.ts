@@ -39,6 +39,7 @@ import {
   type ProvidedMachine,
   type WorkerMachineSource,
   type WorkerMachineStart,
+  workerMachineIdentity,
 } from "./worker-machines.ts";
 import {
   claimedHere,
@@ -153,7 +154,10 @@ export interface SignedInDeps {
   readonly sent?: StartsSent;
 }
 
-/** The choices and models each server offered, kept a short while, by origin. */
+/**
+ * The choices and models each server offered, kept a short while, by origin and the sign-in they
+ * were asked under (`workerMachineIdentity`): another sign-in's offer is never another's.
+ */
 export type OfferedByServer = Map<
   string,
   {
@@ -174,6 +178,7 @@ export const signedInSource = (
   /** The sign-in this source asks under: every call carries it, and everything it makes. */
   const account = server.account;
   const offered: OfferedByServer = deps.offered ?? new Map();
+  const offeredKey = workerMachineIdentity(origin, account);
   // One registered under another sign-in there is that sign-in's, never this one's to act on;
   // one registered before sign-ins were kept is taken as this one's, but never forgotten on what
   // another sign-in might say of it (`isLegacyRelayed`).
@@ -206,7 +211,7 @@ export const signedInSource = (
   };
   /** One `…/choices` call, kept a short while: the picks it offers and the models it runs. */
   const asked = Effect.gen(function* () {
-    const kept = offered.get(origin);
+    const kept = offered.get(offeredKey);
     if (kept !== undefined && now() - kept.at < CHOICES_TTL_MS) return kept;
     const answered = yield* port.call(origin, "choices", {}, { account });
     const body = answered.ok && answered.status === 200 ? answered.body : undefined;
@@ -217,7 +222,7 @@ export const signedInSource = (
       ...(value === undefined ? {} : { value }),
       ...(models === undefined ? {} : { models }),
     };
-    offered.set(origin, fresh);
+    offered.set(offeredKey, fresh);
     return fresh;
   });
   /**
@@ -325,10 +330,11 @@ export const signedInSource = (
     choices: Effect.map(asked, (kept) => kept.value),
     models: Effect.map(asked, (kept) => kept.models),
     givesBack: true,
+    identity: workerMachineIdentity(origin, account),
     unrelease: (name) =>
       Effect.gen(function* () {
         // Answered `not_found` `RECLAIMED_AFTER_MISSES` times in a row, a little apart: this
-        // spawn doesn't wait for it. Fewer is no proof (a cell out of reach answers so too), and
+        // spawn doesn't wait for it. Fewer is no proof (a backend out of reach answers so too), and
         // it is waited for as any reused machine. Either way it stays registered and relayed:
         // only `forgetReclaimed` forgets one.
         for (let missed = 1; ; missed += 1) {
@@ -453,7 +459,7 @@ export const signedInSource = (
           ),
           Effect.tap((started) =>
             Effect.sync(() => {
-              offered.delete(origin);
+              offered.delete(offeredKey);
               // A clear refusal made nothing; one with no answer is the spawn's to give back.
               // A clear refusal made nothing: nothing to start, nothing owed.
               if (
@@ -738,7 +744,7 @@ export const SignedInWorkersLive = Layer.effect(
                 // `RECLAIMED_AFTER_MISSES` times in a row for this want. Otherwise it is looked
                 // at again while it is wanted and still offline and registered here, since one up
                 // there now may be stopped while idle before its host dials, and only a start
-                // wakes it; and one `not_found` may be a cell out of reach for a while.
+                // wakes it; and one `not_found` may be a backend out of reach for a while.
                 const missed = woke === "gone" ? (goneFor.get(machine.id) ?? 0) + 1 : 0;
                 if (missed === 0) goneFor.delete(machine.id);
                 else goneFor.set(machine.id, missed);

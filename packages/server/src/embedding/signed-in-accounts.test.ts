@@ -145,6 +145,33 @@ describe("a machine registered under another sign-in", () => {
   );
 });
 
+describe("what a server offers a sign-in", () => {
+  it.effect("is kept for that sign-in alone, never read for another's", () =>
+    Effect.gen(function* () {
+      const asked: Array<string | undefined> = [];
+      const base = bridgeWorkerMachines(
+        fakeApp({
+          answer: () => ({ status: 200, body: { models: [{ agent: "claude", id: "opus" }] } }),
+        }).port,
+      );
+      const port: WorkerMachinePortShape = {
+        ...base,
+        call: (origin, call, body, options) => {
+          asked.push(options?.account);
+          return base.call(origin, call, body, options);
+        },
+      };
+      const offered = new Map();
+      yield* signedInSource(SERVER, { port, hosts: unregistered, offered }).models;
+      // Kept a while for the same sign-in; another's is asked under its own.
+      yield* signedInSource(SERVER, { port, hosts: unregistered, offered }).models;
+      yield* signedInSource({ ...SERVER, account: OTHER }, { port, hosts: unregistered, offered })
+        .models;
+      expect(asked).toEqual([ACCOUNT, OTHER]);
+    }),
+  );
+});
+
 describe("a stop owed under one sign-in", () => {
   it.live("isn't let go of when another sign-in registers a machine of its name", () =>
     Effect.gen(function* () {

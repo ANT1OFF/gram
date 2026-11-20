@@ -21,6 +21,7 @@ import {
   pinRefusal,
   resolveWorkerPicks,
   type WorkerMachineSource,
+  workerMachineIdentity,
   workerMachineName,
 } from "../embedding/worker-machines.ts";
 import { refusal } from "./rules.ts";
@@ -36,10 +37,16 @@ const reclaimedWords = (name: string) =>
  * while one gives it back, what the rest wait for before they join it or begin again.
  */
 interface Flight {
+  /** The machine's name, and the sign-in it is brought up under (`WorkerMachineSource.identity`). */
+  readonly name: string;
+  readonly identity: string;
   readonly fiber: Fiber.Fiber<{ readonly startedHere: boolean }, AppToolError>;
   holders: number;
   closing?: Deferred.Deferred<void> | undefined;
 }
+
+/** A bring-up's key: the sign-in it is under (`WorkerMachineSource.identity`) and the name. */
+const flightKey = (identity: string, name: string) => JSON.stringify([identity, name]);
 
 /** What the sandbox planner reads: the tools' own services, as `tools.ts` has them. */
 export interface WorkerSandboxDeps {
@@ -66,9 +73,16 @@ export const makeWorkerSandbox = ({
   Effect.gen(function* () {
     /**
      * Each machine name's bring-up under way (`workerSandbox`), with how many tries of its spawn
-     * hold it. Run in the tools' own scope, so it outlives the try that began it.
+     * hold it, by the sign-in it is brought up under and the name (`flightKey`): a try under
+     * another sign-in never joins it. Run in the tools' own scope, so it outlives the try that
+     * began it.
      */
     const machineFlights = new Map<string, Flight>();
+    /** A bring-up of `name` under another sign-in than `identity`, still under way. */
+    const otherFlight = (identity: string, name: string) =>
+      [...machineFlights.values()].some(
+        (flight) => flight.name === name && flight.identity !== identity,
+      );
     const flightScope = yield* Effect.scope;
     /**
      * Holds `name`'s bring-up for this try, in its scope: waits out one being given back (its stop
@@ -78,22 +92,29 @@ export const makeWorkerSandbox = ({
      */
     const holdFlight = (
       name: string,
+      identity: string,
       start?: Effect.Effect<{ readonly startedHere: boolean }, AppToolError>,
     ) =>
       Effect.gen(function* () {
+        const key = flightKey(identity, name);
         let waited = false;
         for (;;) {
           const taken = yield* Effect.acquireRelease(
             Effect.gen(function* () {
-              const joining = machineFlights.get(name);
+              const joining = machineFlights.get(key);
               if (joining?.closing !== undefined) return { wait: joining.closing };
               if (joining !== undefined) {
                 joining.holders += 1;
                 return { held: joining };
               }
               if (start === undefined) return { none: true as const };
-              const made: Flight = { fiber: yield* Effect.forkIn(start, flightScope), holders: 1 };
-              machineFlights.set(name, made);
+              const made: Flight = {
+                name,
+                identity,
+                fiber: yield* Effect.forkIn(start, flightScope),
+                holders: 1,
+              };
+              machineFlights.set(key, made);
               return { held: made };
             }),
             (got) =>
@@ -109,7 +130,7 @@ export const makeWorkerSandbox = ({
                 yield* Fiber.interrupt(held.fiber).pipe(
                   Effect.ensuring(
                     Effect.suspend(() => {
-                      if (machineFlights.get(name) === held) machineFlights.delete(name);
+                      if (machineFlights.get(key) === held) machineFlights.delete(key);
                       held.closing = undefined;
                       return Deferred.succeed(closing, undefined);
                     }),
@@ -130,13 +151,14 @@ export const makeWorkerSandbox = ({
      */
     const fence = (
       name: string,
+      identity: string,
     ): Effect.Effect<
       { readonly abandon?: Effect.Effect<void> | undefined },
       AppToolError,
       Scope.Scope
     > =>
       Effect.gen(function* () {
-        const { waited } = yield* holdFlight(name);
+        const { waited } = yield* holdFlight(name, identity);
         if (waited && !joined().some((each) => each.name === name))
           return yield* new AppToolError({
             tool: "spawn_worker",
@@ -246,7 +268,7 @@ export const makeWorkerSandbox = ({
                 name: machine.name,
                 givesBack: true,
                 prepare: Effect.gen(function* () {
-                  yield* fence(machine.name);
+                  yield* fence(machine.name, source.identity ?? "");
                   if (
                     joined().find((each) => each.name === machine.name)?.onlineSince !== undefined
                   )
@@ -298,7 +320,11 @@ export const makeWorkerSandbox = ({
         // spawn starts nothing; an embedder's is started and waited for here, before any card, so
         // the spawn's machine and model are admitted before it asks, as they always were.
         const seen = joined().find((each) => each.name === name && theirs(each));
-        if (seen?.onlineSince !== undefined && !(source.givesBack && machineFlights.has(name)))
+        const identity = source.identity ?? "";
+        if (
+          seen?.onlineSince !== undefined &&
+          !(source.givesBack && machineFlights.has(flightKey(identity, name)))
+        )
           return { name, givesBack: source.givesBack };
         // Brings the machine up: started (or, registered from an earlier spawn, told it is
         // working) and waited for. Whether this bring-up started it, and so may give it back.
@@ -385,7 +411,8 @@ export const makeWorkerSandbox = ({
             let stopped = false;
             const open = Effect.suspend(() => {
               // Given back: the next try brings one up afresh. Kept: tries join it again.
-              if (stopped && machineFlights.get(name) === flight) machineFlights.delete(name);
+              const key = flightKey(identity, name);
+              if (stopped && machineFlights.get(key) === flight) machineFlights.delete(key);
               flight.closing = undefined;
               return Deferred.succeed(closing, undefined);
             });
@@ -418,7 +445,13 @@ export const makeWorkerSandbox = ({
         const prepare = Effect.gen(function* () {
           // One being given back takes no one: waited out, then joined if it was kept, or begun
           // afresh once it is gone.
-          const { flight } = yield* holdFlight(name, bringUp);
+          // One under another sign-in is never joined, nor raced: its machine may be the same
+          // disk there, and this sign-in neither reuses nor stops another's.
+          if (otherFlight(identity, name))
+            return yield* fail(
+              `The machine ${name} for this request is being brought up under another sign-in to ${source.label}, so this one leaves it alone. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
+            );
+          const { flight } = yield* holdFlight(name, identity, bringUp);
           if (flight === undefined) return {};
           const brought = yield* Fiber.join(flight.fiber);
           return brought.startedHere ? { abandon: giveBack(flight) } : {};
@@ -440,7 +473,12 @@ export const makeWorkerSandbox = ({
                 each.onDemand === "worker" &&
                 (each.name === named || each.id === named),
             );
-      return relayed === undefined ? undefined : { givesBack: true, prepare: fence(relayed.name) };
+      return relayed === undefined
+        ? undefined
+        : {
+            givesBack: true,
+            prepare: fence(relayed.name, workerMachineIdentity(relayed.via!, relayed.viaAccount)),
+          };
     };
     return Object.assign(workerSandbox, { fence, byName });
   });

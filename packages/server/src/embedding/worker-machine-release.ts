@@ -208,7 +208,7 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
  * How a machine's release is told: to the hosted server a desktop's worker host came through, or
  * to the embedder's provider. Undefined: there is no one to tell. A signed-in server's `404
  * not_found` is a release not applied, told again next pass, and forgets nothing here: a server
- * answers it for every machine while its cell is out of reach, and only `forgetReclaimed`, a few
+ * answers it for every machine while its backend is out of reach, and only `forgetReclaimed`, a few
  * passes in a row, forgets one.
  */
 export const releaseTeller = (

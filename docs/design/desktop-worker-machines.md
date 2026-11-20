@@ -184,7 +184,7 @@ that start itself whenever work here needs the machine:
   a few times. Nothing else starts a machine: never a dial, a relay, or a pass. A wake answered
   `404` (its `…/status`, its start, or the take-back of its release) is tried again while the
   machine is wanted and still registered here, as one that met a passing error is: the server
-  answers so while the workspace has no cell. A want stops after three `not_found` wakes in a
+  answers so while the workspace has no backend. A want stops after three `not_found` wakes in a
   row; only the three-pass rule below forgets the machine. A spawn waiting for a machine it asked
   for fails on `not_found` only after three answers in a row (one that got no answer starts the
   count afresh), and otherwise waits to its deadline. A spawn reusing a machine whose release
@@ -280,7 +280,7 @@ subscription token reaches a machine, with its own consent.
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
   The server's "no such machine" is a 2xx with `stopped: false`, or `404 { code: "not_found" }` on
   three passes in a row: one such 404 is no proof, since the server answers it for every machine
-  while it has no cell manager or the workspace no cell, and any other 404 is a passing error.
+  while it has no backend or the workspace no backend, and any other 404 is a passing error.
   When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way),
   "no such machine" settles nothing for fifteen minutes, since the start may still make it. A
   start and a stop of one name never overlap here: a give-back keeps the name through every
@@ -326,7 +326,10 @@ subscription token reaches a machine, with its own consent.
   frozen for this one: a start of its name (a retry of the same request after signing in again,
   say) is refused in words before anything is sent, no give-back of the name sends a stop, and its
   relay is carried, dialled and leased only under the sign-in it was asked for under, so it is
-  never kept awake by another. So signing in there as someone else, or in another organisation,
+  never kept awake by another. A name's bring-up is shared only within the sign-in that began
+  it: a retry under another is refused while it is under way, never joined. A relay's dial is
+  checked against the sign-in again as it opens, after any wait to prepare it. What a server
+  offers (its choices and models) is kept a short while for the sign-in it was asked under alone. So signing in there as someone else, or in another organisation,
   neither forgets, reuses nor deletes the first sign-in's machines, nor settles their stops.
   A machine or a stop owed from before marks were kept is never forgotten or settled on a "no such
   machine", which another sign-in may be answering; only a stop answered done settles one.

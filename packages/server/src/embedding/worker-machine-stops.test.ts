@@ -102,8 +102,8 @@ describe("stops a server never confirmed", () => {
 
   it.effect("keep a stop owed through a 404 until it comes passes in a row, not_found alone", () =>
     Effect.gen(function* () {
-      // As a server answers every call while it has no cell manager, then once it has one again.
-      const away = { status: 404, body: { code: "not_found", message: "No cell manager here." } };
+      // As a server answers every call while it has no backend, then once it has one again.
+      const away = { status: 404, body: { code: "not_found", message: "No backend here." } };
       const answers = [away, away, away, { status: 200, body: { stopped: true } }];
       const app = fakeApp({ answer: () => answers.shift() ?? { status: 503, body: {} } });
       const port = bridgeWorkerMachines(app.port);
@@ -340,7 +340,7 @@ describe("stops a server never confirmed", () => {
 
   it.live("hold a name for as long as the server may still act on a stop it took, no longer", () =>
     Effect.gen(function* () {
-      // As long as the server's cell call (120 s) and lock wait (10 s) take, and margins besides.
+      // As long as the server's backend call (120 s) and lock wait (10 s) take, and margins besides.
       expect(SERVER_ACTS_WITHIN_MS).toBe(130_000);
       for (const [after, held] of [
         [2 * 60_000, true],

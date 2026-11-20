@@ -944,7 +944,7 @@ describe("sandbox from a signed-in hosted server", () => {
         if (releases === 1)
           return {
             status: 404,
-            body: { code: "not_found", message: "The workspace has no cell." },
+            body: { code: "not_found", message: "The workspace has no backend." },
           };
         machine.onlineSince = 1;
         return { status: 200, body: { known: true, released: false } };
@@ -1039,7 +1039,7 @@ describe("sandbox from a signed-in hosted server", () => {
           failure: { message: expect.stringMatching(/reclaimed/) },
         });
         // Told at once, not after the wait; nothing stopped. One 404 is no proof it is gone (a
-        // server answers it while its cell is out of reach): it stays, for `forgetReclaimed`.
+        // server answers it while its backend is out of reach): it stays, for `forgetReclaimed`.
         // Asked three times in a row, a little apart, before the spawn gives up on it.
         expect(calls.map((each) => each.call)).toEqual([
           "choices",

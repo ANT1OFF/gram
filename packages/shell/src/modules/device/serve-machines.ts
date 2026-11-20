@@ -167,7 +167,9 @@ export const makeWorkerMachineRelays = (options: {
             .workerMachineRelayDial(entry.origin, name, entry.account)
             .catch(() => undefined);
     if (entry.stopped) return;
-    if (prepared === undefined || !prepared.ok) {
+    // Covered again as it opens: a sign-out or another sign-in while the dial was prepared (a
+    // token renewal, a nonce) opens nothing under the old one.
+    if (prepared === undefined || !prepared.ok || !covered(entry)) {
       again(name, entry, undefined);
       return;
     }

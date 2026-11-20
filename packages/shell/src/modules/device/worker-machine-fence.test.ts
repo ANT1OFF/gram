@@ -188,3 +188,42 @@ describe("a worker machine's relay, under the sign-in it was asked for under", (
     }
   });
 });
+
+describe("a worker machine's relay, as its dial is prepared", () => {
+  it("opens nothing when the sign-in changed while the dial was being prepared", async () => {
+    const signedIn = { covered: true };
+    let prepared!: () => void;
+    const preparing = new Promise<void>((done) => (prepared = done));
+    const device = {
+      workerMachineRelayAllowed: () => signedIn.covered,
+      workerMachineRelayLease: async () => signedIn.covered,
+      // A token renewal or a nonce keeps the dial waiting.
+      workerMachineRelayDial: async () => {
+        await preparing;
+        return { ok: true, url: `${ORIGIN.replace("https", "wss")}/relay`, headers: {} };
+      },
+    } as unknown as HostedDevice;
+    const opened: string[] = [];
+    const relays = makeWorkerMachineRelays({
+      watch: false,
+      leaseMs: 60_000,
+      device: () => device,
+      post: () => undefined,
+      open: (url) => {
+        opened.push(url);
+        return { close: () => undefined, send: () => undefined } as never;
+      },
+    });
+    try {
+      relays.sync([{ origin: ORIGIN, name: NAME }], true);
+      for (let each = 0; each < 10; each += 1) await Promise.resolve();
+      // Signed out, or in as someone else, before the dial was ready: nothing opens under it.
+      signedIn.covered = false;
+      prepared();
+      for (let each = 0; each < 50; each += 1) await Promise.resolve();
+      expect(opened).toEqual([]);
+    } finally {
+      relays.close();
+    }
+  });
+});

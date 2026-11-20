@@ -174,9 +174,9 @@ describe("a hosted server's answers about one machine", () => {
 
   it.live("tells a release answered not_found again later, and forgets nothing of it", () =>
     Effect.gen(function* () {
-      // The server has no cell manager for a while, as during a deployment, then is back.
+      // The server has no backend for a while, as during a deployment, then is back.
       const answers = [
-        { status: 404, body: { code: "not_found", message: "No cell manager here." } },
+        { status: 404, body: { code: "not_found", message: "No backend here." } },
         { status: 200, body: { known: true, released: false } },
       ];
       const app = fakeApp({ answer: () => answers.shift() ?? { status: 503, body: {} } });
@@ -229,7 +229,7 @@ describe("a hosted server's answers about one machine", () => {
 describe("a machine asked for, as it comes", () => {
   it.live("fails only once the server answers not_found three times in a row", () =>
     Effect.gen(function* () {
-      // Accepted, then its status meets a cell out of reach once, then the machine is starting.
+      // Accepted, then its status meets a backend out of reach once, then the machine is starting.
       const reads = [404, 200, 404, 404, 404];
       const app = fakeApp({
         answer: ({ call }) =>
@@ -433,19 +433,19 @@ describe("a worker machine that work here wants", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("keeps waking a wanted machine through a not_found while its cell is away", () =>
+  it.effect("keeps waking a wanted machine through a not_found while its backend is away", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
       const { id } = provisionRelayed(hosts, NAME);
-      // The pass's read and the wake's first come while the workspace has no cell; then the
-      // cell is back, and the machine is stopped there.
+      // The pass's read and the wake's first come while the workspace has no backend; then the
+      // backend is back, and the machine is stopped there.
       let reads = 0;
       const app = fakeApp({
         answer: ({ call }) => {
           if (call !== "status") return { status: 202, body: {} };
           reads += 1;
           return reads <= 2
-            ? { status: 404, body: { code: "not_found", message: "The workspace has no cell." } }
+            ? { status: 404, body: { code: "not_found", message: "The workspace has no backend." } }
             : { status: 200, body: { phase: "stopped" } };
         },
       });
@@ -465,7 +465,7 @@ describe("a worker machine that work here wants", () => {
       yield* TestClock.adjust("1 second");
       expect(reads).toBe(2);
       expect(app.calls.map((each) => each.call)).not.toContain("start");
-      // Asked again while it is wanted and registered: woken once its cell is back.
+      // Asked again while it is wanted and registered: woken once its backend is back.
       yield* TestClock.adjust(WAKE_RETRY_MS + 1_000);
       expect(app.calls.filter((each) => each.call === "start").map((each) => each.body)).toEqual([
         { name: NAME },
@@ -672,9 +672,9 @@ describe("a worker machine that work here wants", () => {
   it.live("wakes again later a machine whose start, or its take-back, is answered 404", () =>
     Effect.gen(function* () {
       for (const answers of [
-        // The start meets a cell out of reach.
+        // The start meets a backend out of reach.
         { start: { status: 404, body: { code: "not_found" } }, release: 200 },
-        // Still released there, and the take-back meets a cell out of reach.
+        // Still released there, and the take-back meets a backend out of reach.
         { start: { status: 409, body: { code: "released" } }, release: 404 },
       ]) {
         const app = fakeApp({

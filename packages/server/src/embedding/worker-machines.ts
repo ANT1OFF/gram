@@ -469,6 +469,12 @@ export interface WorkerMachineSource {
    */
   readonly givesBack: boolean;
   /**
+   * Whose machines these are, as a bring-up of one is shared by name (`worker-sandbox.ts`): a
+   * hosted server's, the server and the sign-in they are asked for under
+   * (`workerMachineIdentity`). A try under another sign-in never joins a bring-up of this one's.
+   */
+  readonly identity?: string;
+  /**
    * Tells the provider a machine this spawn reuses is working again, before it is waited on: one
    * released once its work was over sleeps until it is told so. Never fails. `gone`: the server
    * says it holds no such machine, so this spawn isn't placed there; nothing is forgotten of it.
@@ -486,6 +492,10 @@ export interface WorkerMachineSource {
     options?: { readonly unsettled?: boolean },
   ) => Effect.Effect<void>;
 }
+
+/** A hosted server's machines' `WorkerMachineSource.identity`: its origin and the sign-in's mark. */
+export const workerMachineIdentity = (origin: string, account: string | undefined) =>
+  JSON.stringify([origin, account ?? null]);
 
 /** A model a provider's machines run, as its choices list it: `opus` running `claude-opus-…`. */
 export interface OfferedModel {
