@@ -168,6 +168,10 @@ describe("gateway helpers", () => {
     expect(gatewayModelForAgent(openRouter, { id: "openai/gpt-6.1" }, "claude")).toBe(false);
     expect(gatewayModelForAgent(openRouter, { id: "openai/gpt-6.1" }, "codex")).toBe(true);
     expect(gatewayModelForAgent(openRouter, { id: "moonshotai/kimi-k3" }, "codex")).toBe(false);
+    const xai = { kind: "xai" as const };
+    expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "codex")).toBe(true);
+    expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "opencode")).toBe(true);
+    expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "claude")).toBe(false);
     // A LiteLLM-style gateway offers everything to everyone.
     expect(gatewayModelForAgent({}, { id: "gpt-6.1" }, "claude")).toBe(true);
   });
