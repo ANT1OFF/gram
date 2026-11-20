@@ -366,7 +366,8 @@ at every armed merge in the repo, and fires `freezeLifted` wakes.
 
 ## Accounts, models and speed
 
-Codex and Claude Code are the only executable harnesses. Select one when starting a thread. Signed-out agents remain selectable and
+Claude Code and Codex run every role; OpenCode and Grok Build run chat threads (see
+[Grok Build](#grok-build)). Select one when starting a thread. Signed-out agents remain selectable and
 explain login/retry. New defaults come from CLI discovery; an explicit saved model,
 effort, speed or gateway profile remains authoritative. **Retry models** and
 **Re-check** refresh discovery after login changes without interrupting held Codex
@@ -410,6 +411,44 @@ subscription choice or grants helper-context consent.
 Source: [Claude adapter](../packages/agents/src/claude/index.ts),
 [Codex adapter](../packages/agents/src/codex/index.ts),
 [gateway credentials](../packages/server/src/gateway/credentials.ts).
+
+## Grok Build
+
+Grok Build is xAI's coding CLI (`grok`). Gram runs the one on your login-shell `PATH`, on the
+sign-in it already has, so a thread on it spends your Grok subscription, not an API key. Gram
+never reads or copies its credentials; sign in with `grok login` in a terminal. A thread that
+starts while the CLI is signed out fails with that instruction in the Inbox.
+
+Each thread runs its own `grok --permission-mode default agent --no-leader stdio` and drives it
+over the [Agent Client Protocol](https://agentclientprotocol.com). The permission mode is always
+given, and the session is then put in the thread's mode, so an always-approve default in your own
+`~/.grok` config never applies to a Gram thread. How the composer's modes map:
+
+| Mode         | Grok Build                                                                      |
+| ------------ | ------------------------------------------------------------------------------- |
+| Ask          | `ask`: every call its own policy doesn't clear comes to you as an approval card |
+| Accept edits | `ask`, with Gram allowing edits itself                                          |
+| Plan         | Grok's plan mode, asking                                                        |
+| Auto         | Grok's auto classifier                                                          |
+| Bypass       | always-approve                                                                  |
+
+Under the outward gate (a supervised orchestrator's push, PR and merge checks) the session always
+asks, whatever the mode, and Gram lets through what the gate doesn't stop. Grok's own policy
+clears some calls without asking even in `ask`, such as writes inside the folder, as Codex's
+sandbox does. An approval card offers once, and the session or always grants Grok offers for that
+call.
+
+Grok keeps the conversation; Gram resumes it by id after a restart. Models and their efforts are
+the ones the CLI lists. Each turn reports its tokens, reasoning tokens and context, and a price
+Grok works out, which Gram adds up as it does Claude Code's. Grok Build runs plain threads only: it
+takes no orchestrator, worker or memory-update role, can't hand its session to another agent,
+reports no subscription windows to the Usage page, and runs on no gateway profile.
+
+For xAI's API on a key instead, add a gateway on `https://api.x.ai/v1` in Settings → Gateways.
+Codex and OpenCode are offered its models there (Claude Code isn't: xAI no longer serves the
+Anthropic API), with the prices xAI lists, which OpenCode threads show as cost.
+
+Source: [Grok Build adapter](../packages/agents/src/grok/index.ts).
 
 ## Orchestration context
 
