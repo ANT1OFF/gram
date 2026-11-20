@@ -398,6 +398,127 @@ describe("no-sleep", () => {
   });
 });
 
+describe("no-raw-effect", () => {
+  const rule = "gram/no-raw-effect";
+
+  it("refuses React's effects however they are imported", () => {
+    const found = lint(
+      `import React, { useEffect, useLayoutEffect as before } from "react";
+      import * as R from "react";
+      export function A() {
+        useEffect(() => {}, []);
+        before(() => {});
+        React.useEffect(() => {});
+        R.useLayoutEffect(() => {}, []);
+        R.useInsertionEffect(() => {});
+      }
+    `,
+      rule,
+      ".tsx",
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([4, 5, 6, 7, 8]);
+  });
+
+  it("names the hook that fits what the effect does", () => {
+    const [subscribes, timer, mount, latest] = lintEach(
+      [
+        "useEffect(() => store.subscribe(read), [store]);",
+        "useEffect(() => { const t = setTimeout(go, 9); return () => clearTimeout(t); }, []);",
+        "useEffect(() => { focus(); }, []);",
+        "useEffect(() => { latest.current = value; });",
+      ].map((body) => `import { useEffect } from "react";\nexport function A() { ${body} }`),
+      rule,
+      ".tsx",
+    ).map(([diagnostic]) => diagnostic.message);
+    expect(subscribes).toContain("useSubscription(");
+    expect(timer).toContain("@/lib/timers");
+    expect(mount).toContain("useMountEffect(fn)");
+    expect(latest).toContain("useLatest(value)");
+    expect(subscribes).toContain("CONTRIBUTING.md#react-effects");
+  });
+
+  it("allows the named effects, another module's useEffect, and tests", () => {
+    const source = `import { useEffect } from "./my-effects";
+      import { useSubscription, useMountEffect } from "@/lib/effects";
+      export function A() {
+        useEffect(() => {});
+        useSubscription(() => store.subscribe(read), [store]);
+        useMountEffect(() => {});
+      }
+    `;
+    const raw = `import { useEffect } from "react";\nuseEffect(() => {});\n`;
+    const found = lintEach([source, raw], rule, ".tsx", "error", ["a.tsx", "a.test.tsx"]);
+    expect(found).toEqual([[], []]);
+  });
+
+  it("refuses a state update as a named effect runs, not one in its callbacks", () => {
+    const found = lint(
+      `import { useState } from "react";
+      import { useExternalSync, useSubscription } from "@/lib/effects";
+      export function A({ value }) {
+        const [shown, setShown] = useState(false);
+        const [, dispatch] = React.useReducer(reduce, 0);
+        useExternalSync(() => {
+          if (value) setShown(true);
+          dispatch(1);
+          useStore.setState({ value });
+        }, [value]);
+        useSubscription(() => store.subscribe(() => setShown(true)), []);
+        return shown;
+      }
+    `,
+      rule,
+      ".tsx",
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([7, 8]);
+    expect(found[0].message).toContain("Compute the value in render");
+  });
+
+  it("is on under the repository's own config, with the named effects' dependencies checked", () => {
+    const file = join(root, "apps/web/src", `.gram-effect-probe-${process.pid}.tsx`);
+    writeFileSync(
+      file,
+      `import { useEffect } from "react";
+import { useSubscription } from "@/lib/effects";
+export function Probe({ store }: { store: { subscribe: () => () => void } }) {
+  useEffect(() => {});
+  useSubscription(() => store.subscribe(), []);
+  return null;
+}
+`,
+    );
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [join(root, "node_modules/oxlint/bin/oxlint"), "--format", "json", file],
+        { cwd: root, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" },
+      );
+      if (result.error) throw result.error;
+      const codes = JSON.parse(result.stdout).diagnostics.map((d) => d.code);
+      expect(codes).toContain("gram(no-raw-effect)");
+      expect(codes.some((code) => /exhaustive-deps/.test(code))).toBe(true);
+    } finally {
+      rmSync(file, { force: true });
+    }
+  });
+
+  // The allowance only shrinks: a file that has lost a raw effect lowers its count in the same change.
+  const pending = Object.entries(ALLOWLISTS["no-raw-effect"].pending);
+  const found = new Map();
+  for (const extension of new Set(pending.map(([file]) => extname(file)))) {
+    const files = pending.map(([file]) => file).filter((file) => extname(file) === extension);
+    const diagnostics = lintEach(
+      files.map((file) => readFileSync(join(root, file), "utf8")),
+      rule,
+      extension,
+    );
+    files.forEach((file, i) => found.set(file, diagnostics[i].length));
+  }
+  it.each(pending)("%s keeps exactly the %i raw effects it is allowed", (file, count) => {
+    expect(found.get(file), `lower ${file}'s count in tools/oxlint/allowlists.mjs`).toBe(count);
+  });
+});
+
 describe("disable-reason", () => {
   const rule = "gram/disable-reason";
 

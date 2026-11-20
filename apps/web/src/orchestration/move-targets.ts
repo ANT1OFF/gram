@@ -1,8 +1,9 @@
 // Where a workspace can move, apart from the sheet that moves it: a workspace's menu asks this on
 // the first screen, and the sheet loads only when it opens.
 import { embeddingOn, type HostedDeviceView } from "@gram/contracts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
+import { useSubscription } from "@/lib/effects";
 import { useServerSettings } from "@/settings-sync/store";
 
 type Bridge = NonNullable<NonNullable<Window["gram"]>["hostedDevice"]>;
@@ -66,7 +67,7 @@ export function useMoveTargets(): {
     if (bridge === undefined || mover === undefined) return;
     void bridge.state().then(setView, () => setView(null));
   }, [bridge, mover]);
-  useEffect(() => {
+  useSubscription(() => {
     if (bridge === undefined || mover === undefined) return undefined;
     read();
     return bridge.onChange(read);

@@ -5,9 +5,10 @@ import {
   hostedMachineReady,
   NO_MACHINE_RUNNING,
 } from "@gram/contracts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { serverUrl } from "@/api/server-base";
+import { useSubscription } from "@/lib/effects";
 import { useServerSettings } from "@/settings-sync/store";
 
 // New task sending a task to a hosted workspace (docs/design/mocks/hosted-send-and-move, v1,
@@ -59,7 +60,7 @@ export function useSendTargets(): readonly SendTarget[] {
     if (bridge === undefined) return;
     void bridge.state().then(setView, () => setView(null));
   }, [bridge]);
-  useEffect(() => {
+  useSubscription(() => {
     if (!hosted || bridge === undefined) return undefined;
     read();
     return bridge.onChange(read);

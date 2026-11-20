@@ -16,7 +16,10 @@
     "import/no-duplicates": "error",
     "import/no-unassigned-import": ["warn", { "allow": ["**/*.css"] }],
     "react/rules-of-hooks": "error",
-    "react/exhaustive-deps": "warn",
+    "react/exhaustive-deps": [
+      "warn",
+      { "additionalHooks": "^(useSubscription|useExternalSync|useLayoutSync)$" }
+    ],
     "react/set-state-in-effect": "error",
     "react/react-in-jsx-scope": "off",
     "typescript/consistent-type-imports": "error",
@@ -26,6 +29,7 @@
     "gram/no-bare-fork": "error",
     "gram/no-focused-tests": "error",
     "gram/no-sleep": "error",
+    "gram/no-raw-effect": "error",
     "gram/max-lines": "error"
   },
   "overrides": [

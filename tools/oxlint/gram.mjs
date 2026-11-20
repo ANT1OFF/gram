@@ -28,12 +28,15 @@
 // And one optical stroke for Lucide icons: the `lucide` class sets it per size (styles/base.css),
 // so a `strokeWidth` on the icon is outranked and does nothing.
 //
+// And no raw React effects in product code: see `no-raw-effect.mjs`.
+//
 // And a 24-hour clock in the web app: a time formatted with `hour` or `timeStyle` and no
 // `hourCycle: "h23"` reads `2:05 PM` wherever the locale's default is 12-hour.
 
-import { dirname, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { relative } from "node:path";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
+import { importOf, isFunction, isTestFile, propertyName, REPO, soleExpression } from "./ast.mjs";
+import { noRawEffect } from "./no-raw-effect.mjs";
 
 const BARE_FORKS = new Set([
   "fork",
@@ -47,15 +50,6 @@ const RUNNERS = new Set(["runFork", "runForkWith"]);
 /** What a test file calls its cases and groups, Vitest's and @effect/vitest's alike. */
 const TEST_ROOTS = new Set(["it", "test", "describe", "suite", "bench"]);
 
-const propertyName = (node) =>
-  node.computed
-    ? node.property.type === "Literal" && typeof node.property.value === "string"
-      ? node.property.value
-      : undefined
-    : node.property.type === "Identifier"
-      ? node.property.name
-      : undefined;
-
 /** The identifier a member/call chain like `it.effect.only` or `describe.skipIf(x).only` starts at. */
 const chainRoot = (node) => {
   for (;;) {
@@ -64,8 +58,6 @@ const chainRoot = (node) => {
     else return node.type === "Identifier" ? node.name : undefined;
   }
 };
-
-const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Whether `rule` doesn't apply to the file being linted: a test, the primitive's owner, or pending. */
 const exempt = (rule, context) => {
@@ -100,25 +92,6 @@ const SPLIT_HINT =
 
 const FS_MODULES = new Set(["fs", "node:fs", "fs/promises", "node:fs/promises"]);
 const REALPATHS = new Set(["realpath", "realpathSync"]);
-
-/** The import an identifier is bound to, as `{ module, name }` (`name` `*` for a namespace). */
-const importOf = (sourceCode, node) => {
-  if (node?.type !== "Identifier") return undefined;
-  for (let scope = sourceCode.getScope(node); scope; scope = scope.upper) {
-    const variable = scope.variables.find((value) => value.name === node.name);
-    if (!variable) continue;
-    const definition = variable.defs.find((value) => value.type === "ImportBinding");
-    if (!definition) return undefined;
-    const specifier = definition.node;
-    return {
-      module: definition.parent.source.value,
-      name:
-        specifier.type === "ImportSpecifier"
-          ? (specifier.imported.name ?? specifier.imported.value)
-          : "*",
-    };
-  }
-};
 
 /** The identifier a member chain like `fs.promises.realpath` starts at. */
 const memberRoot = (node) => {
@@ -193,18 +166,6 @@ const isSetTimeout = (callee) =>
     callee.object.type === "Identifier" &&
     TIMER_HOSTS.has(callee.object.name));
 
-/** The one expression a function's body is: `x => e`, `x => { e; }` or `x => { return e; }`. */
-const soleExpression = (fn) => {
-  if (fn.body.type !== "BlockStatement") return fn.body;
-  if (fn.body.body.length !== 1) return undefined;
-  const [statement] = fn.body.body;
-  if (statement.type === "ExpressionStatement") return statement.expression;
-  if (statement.type === "ReturnStatement") return statement.argument ?? undefined;
-};
-
-const isFunction = (node) =>
-  node?.type === "ArrowFunctionExpression" || node?.type === "FunctionExpression";
-
 /** `settle` itself, or a function whose whole body calls it: `() => settle("timeout")`. */
 const settles = (node, settle) => {
   if (node?.type === "Identifier") return node.name === settle;
@@ -232,10 +193,6 @@ const isSleepPromise = (node) => {
     settles(timer.arguments[0], executor.params[0].name)
   );
 };
-
-/** Test code: unit tests, Playwright specs and the e2e folders' fixtures and helpers. */
-const isTestFile = (file) =>
-  /\.(test|spec)\.[cm]?[jt]sx?$/.test(file) || /(^|\/)(e2e[^/]*|test|tests|__tests__)\//.test(file);
 
 const SLEEP_HELPERS =
   "For a real-time wait in product code (backoff, polling, a grace period) use the one helper: `setTimeout` from `node:timers/promises` in Node code (`await setTimeout(ms)`, `setTimeout(ms, value)` for a race), `sleep` from `apps/web/src/lib/sleep.ts` in the web app.";
@@ -657,6 +614,7 @@ export default {
         };
       },
     },
+    "no-raw-effect": noRawEffect,
     "no-focused-tests": {
       meta: {
         type: "problem",

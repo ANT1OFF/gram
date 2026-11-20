@@ -15,15 +15,7 @@ import {
   MessageSquare,
   type LucideIcon,
 } from "lucide-react";
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type RefObject,
-} from "react";
+import { useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
 import { EmptyState } from "@/components/empty-state";
@@ -31,6 +23,7 @@ import { Hint } from "@/components/hint";
 import { QueryError } from "@/components/not-available";
 import { Button } from "@/components/ui/button";
 import { revealLabel, useRevealInFileManager } from "@/editor/use-open-in-editor";
+import { useSubscription } from "@/lib/effects";
 import { radioGroupKeyDown } from "@/lib/list-keys";
 import { useNow } from "@/lib/use-now";
 import { SegmentSlab } from "@/motion";
@@ -113,7 +106,7 @@ function Segments<T extends string>({
 /** True once `anchor` has come near the viewport, so a thumbnail reads its bytes only then. */
 function useSeen(anchor: RefObject<Element | null>): boolean {
   const [seen, setSeen] = useState(() => typeof IntersectionObserver === "undefined");
-  useEffect(() => {
+  useSubscription(() => {
     const element = anchor.current;
     if (seen || element === null) return;
     const observer = new IntersectionObserver(

@@ -17,6 +17,7 @@ import { useEmbedShell, useThreadsListed } from "@/embed/store";
 import { StripOpen, useStripOpen } from "@/embed/strip-open";
 import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { useMountEffect, useSubscription } from "@/lib/effects";
 import { cn } from "@/lib/utils";
 import { pointerMovedFor, trackPointerMoves } from "@/lib/pointer-moved";
 import { useMotionLevel } from "@/motion";
@@ -125,7 +126,7 @@ export function OverviewRail() {
   const overlay = useRef<HTMLDivElement>(null);
   const width = useLayoutStore((s) => s.sidebarWidth);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  useEffect(trackPointerMoves, []);
+  useMountEffect(trackPointerMoves);
   // Where the strip ends, which the sidebar opens beside: read as it opens.
   const [left, setLeft] = useState(0);
   const show = (next: boolean) => {
@@ -142,7 +143,7 @@ export function OverviewRail() {
   };
   useEffect(() => () => clearTimeout(timer.current), []);
   // The column may still be narrowing to the strip as it opens: the sidebar keeps beside its edge.
-  useEffect(() => {
+  useSubscription(() => {
     const element = strip.current;
     if (!open || element === null) return;
     const observer = new ResizeObserver(() => setLeft(element.getBoundingClientRect().right));

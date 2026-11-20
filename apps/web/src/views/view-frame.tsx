@@ -5,6 +5,7 @@ import { useEffect, useId, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { useExternalSync } from "@/lib/effects";
 import { radioGroupKeyDown } from "@/lib/list-keys";
 import { lazyPart } from "@/lib/lazy-part";
 import { cn } from "@/lib/utils";
@@ -50,7 +51,7 @@ export function ViewOutlet({ children }: { children: ReactNode }) {
   const view = useViewStore((s) => s.view);
   const workspace = useViewWorkspace();
   const pathname = useLocation({ select: (location) => location.pathname });
-  useEffect(() => {
+  useExternalSync(() => {
     useViewStore.getState().routeChanged(pathname);
   }, [pathname]);
   // A workspace removed under Board leaves nothing to show it for.

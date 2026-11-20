@@ -21,6 +21,7 @@ import { errorMessage } from "@/api/errors";
 import { useAvailableAgents } from "@/composer/agent-fields";
 import { keyLabel } from "@/keyboard/registry";
 import { KEY_CAP } from "@/keyboard/use-shortcut-hint";
+import { useMountEffect } from "@/lib/effects";
 import { groupStarts, listIndexForKey } from "@/lib/list-keys";
 import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
@@ -151,10 +152,10 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
   const setFilter = useHistoryStore((s) => s.setFilter);
   // Read, not subscribed, and let go of once it opened, so the next open starts empty.
   const [query, setQuery] = useState(() => useHistoryStore.getState().seed ?? "");
-  useEffect(() => {
+  useMountEffect(() => {
     if (useHistoryStore.getState().seed !== undefined)
       useHistoryStore.setState({ seed: undefined });
-  }, []);
+  });
   const [active, setActive] = useState(0);
   const [limit, setLimit] = useState(DONE_PAGE);
   const [resuming, setResuming] = useState<string>();

@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { Meter } from "@/components/ui/meter";
+import { useSubscription } from "@/lib/effects";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/motion";
 import { useThreadsStore } from "@/stores/threads";
@@ -91,7 +92,7 @@ export function MoveWorkspaceDialog({
       current = false;
     };
   }, [mover, target, key, workspaceId]);
-  useEffect(() => mover?.onProgress(setProgress), [mover]);
+  useSubscription(() => mover?.onProgress(setProgress), [mover]);
 
   if (state === undefined || mover === undefined || target === undefined) return null;
   const { workspace } = state;
