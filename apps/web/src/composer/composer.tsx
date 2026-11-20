@@ -353,7 +353,7 @@ export function Composer({
   useEffect(() => {
     if (shown && useSuggestionsStore.getState().count(threadId)) record("shown");
     // `record` is recreated every render and only reads `api`.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- `record` is recreated every render and only reads `api`
   }, [shown, threadId]);
 
   // Turns started in this thread since the composer mounted: an answer asked for before the latest

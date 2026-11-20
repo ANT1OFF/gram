@@ -180,7 +180,7 @@ const RESERVED_SERVER_NAMES: ReadonlySet<string> = new Set(["gram"]);
 export const profilePathProblem = (path: string): string | undefined => {
   if (path === "" || path.length > 300) return "A file's path is 1 to 300 characters.";
   // Control characters and a backslash have no place in a name that is the same on every system.
-  // oxlint-disable-next-line no-control-regex
+  // oxlint-disable-next-line no-control-regex -- control characters are what it refuses
   if (/[\u0000-\u001f\u007f\\]/.test(path))
     return `${JSON.stringify(path)} has a backslash or a control character in it.`;
   // Invisible and direction characters make one name read as another (`.g\u200cit` is `.git` on

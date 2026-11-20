@@ -8,11 +8,11 @@ import { ALLOWLISTS } from "./allowlists.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Lints each source as a file of its own in one oxlint run, and returns each file's diagnostics. */
-const lintEach = (sources, rule = "gram/no-bare-fork") => {
+const lintEach = (sources, rule = "gram/no-bare-fork", ext = "ts") => {
   const dir = mkdtempSync(join(tmpdir(), "gram-fork-rule-"));
   try {
     const files = sources.map((source, i) => {
-      const file = join(dir, `fixture-${i}.ts`);
+      const file = join(dir, `fixture-${i}.${ext}`);
       writeFileSync(file, source);
       return file;
     });
@@ -49,7 +49,7 @@ const lintEach = (sources, rule = "gram/no-bare-fork") => {
     rmSync(dir, { recursive: true, force: true });
   }
 };
-const lint = (source, rule) => lintEach([source], rule)[0];
+const lint = (source, rule, ext) => lintEach([source], rule, ext)[0];
 
 /** The rule codes the repository's own config reports for a probe file placed in `dir`. */
 const probeConfig = (dir) => {
@@ -304,4 +304,48 @@ describe("no-adhoc-lock", () => {
   it.each(ALLOWLISTS["no-adhoc-lock"].pending)("still has an unmoved site in %s", (file) => {
     expect(lint(readFileSync(join(root, file), "utf8"), rule).length).toBeGreaterThan(0);
   });
+});
+
+describe("disable-reason", () => {
+  const rule = "gram/disable-reason";
+
+  it("refuses a directive that turns a rule off without saying why", () => {
+    const found = lint(
+      `// oxlint-disable-next-line no-debugger
+      debugger;
+      /* eslint-disable no-console */
+      const a = 1; // oxlint-disable-line no-unused-vars
+      // eslint-disable-next-line no-debugger --
+      debugger;
+      // oxlint-disable-next-line react-hooks/exhaustive-deps -- reads refs only
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 3, 4, 5, 7]);
+    expect(found[4].message).toContain("react/exhaustive-deps");
+  });
+
+  it("allows a directive with its reason, re-enabling, and prose about directives", () => {
+    expect(
+      lint(
+        `// oxlint-disable-next-line no-debugger -- a breakpoint the test needs
+        debugger;
+        /* eslint-disable no-console -- a CLI's output */
+        /* eslint-enable no-console */
+        // Directives here say why: see oxlint-disable-next-line in the docs.
+        export const a = <div>{/* oxlint-disable-next-line x -- in JSX too */}</div>;
+      `,
+        rule,
+        "tsx",
+      ),
+    ).toEqual([]);
+  });
+
+  it.each(ALLOWLISTS["disable-reason"].pending)(
+    "still has a directive without a reason in %s",
+    (file) => {
+      const ext = file.split(".").at(-1);
+      expect(lint(readFileSync(join(root, file), "utf8"), rule, ext).length).toBeGreaterThan(0);
+    },
+  );
 });

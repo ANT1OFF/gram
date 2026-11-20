@@ -86,7 +86,7 @@ export function useSettingsScroll({
     });
     return () => cancelAnimationFrame(frame);
     // Only a new history entry moves the scroll; `highlight` is read from the entry it arrived with.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- only a new history entry moves the scroll; `highlight` comes with the entry
   }, [entry, page]);
 
   const wasSearching = useRef(searching);
@@ -101,7 +101,7 @@ export function useSettingsScroll({
     // Cleared on the same page: back to where it was. A tab picked from the list scrolls itself.
     if (beforeSearch.current?.entry === entry) scroller.scrollTop = beforeSearch.current.top;
     beforeSearch.current = undefined;
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- runs when a search starts or ends; `entry` is read as it is then
   }, [searching]);
 
   useEffect(() => {

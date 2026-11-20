@@ -157,6 +157,6 @@ export function useFindHighlight(
       publish();
     };
     // `target` by its key: a new search result with the same current match marks, but doesn't jump.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- `target` by its key, so the same current match doesn't jump again
   }, [query, target?.key]);
 }

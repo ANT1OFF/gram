@@ -83,7 +83,7 @@ export function FileRefsProvider({
     () => resolver.refresh(threadId),
     // Signals, not inputs: a turn starting or ending may have written, moved or deleted a file, and
     // a thread whose checkouts change has its paths in other places.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `status` and `rootsKey` are signals to refresh, not inputs
     [resolver, threadId, status, rootsKey],
   );
   return <FileRefsContext value={scope}>{children}</FileRefsContext>;

@@ -163,7 +163,6 @@ export function CommentEditorRow({
       <td colSpan={span} className={ROW_CELL}>
         <textarea
           // The editor opens because the user asked to write in it.
-          // oxlint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           aria-label={`Comment on ${label}`}
           placeholder="A note for the agent: it goes with your next message"

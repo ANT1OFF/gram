@@ -32,7 +32,7 @@ const fakeServer = (fails = false) => {
   const controls: Array<string> = [];
   const api = {
     browserViewFeed: fails
-      ? // eslint-disable-next-line require-yield
+      ? // eslint-disable-next-line require-yield -- a feed that fails on its first read
         async function* () {
           throw Object.assign(new Error("none"), { _tag: "InvalidState" });
         }

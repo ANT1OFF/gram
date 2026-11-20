@@ -11,6 +11,10 @@
 // only through `git/keyed-lock.ts`, which frees a key once nobody holds it.
 // Each primitive's owner and the files not moved onto it yet are in `allowlists.mjs`; `.oxlintrc.json`
 // scopes the rules to those packages, and test files are exempt.
+//
+// And every `oxlint-disable` (or `eslint-disable`) directive says why after ` -- `: an exception
+// with its reason reads as a decision, one without reads as a silenced bug. The files not given
+// their reasons yet are in `allowlists.mjs`.
 
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -143,9 +147,44 @@ const namesSemaphore = (type) =>
 
 const MAPS = new Set(["Map", "WeakMap", "ReadonlyMap"]);
 
+/** A directive that turns rules off: `oxlint-disable`, `eslint-disable-next-line` and the rest. */
+const DISABLE = /^\s*(?:oxlint|eslint)-disable(?:-next-line|-line)?(?:\s|$)/;
+/** Its reason, after ` -- `, ESLint's own place for one. */
+const REASON = /\s--\s*\S/;
+
 export default {
   meta: { name: "gram" },
   rules: {
+    "disable-reason": {
+      meta: {
+        type: "problem",
+        docs: { description: "Give every oxlint-disable directive its reason after ` -- `" },
+      },
+      create(context) {
+        const file = relative(REPO, context.filename).replaceAll("\\", "/");
+        if (ALLOWLISTS["disable-reason"].pending.includes(file)) return {};
+        return {
+          Program() {
+            for (const comment of context.sourceCode.getAllComments()) {
+              if (!DISABLE.test(comment.value)) continue;
+              const [rules] = comment.value.split(/\s--(?:\s|$)/);
+              if (rules.includes("react-hooks/"))
+                context.report({
+                  loc: comment.loc,
+                  message:
+                    "Name the rule as .oxlintrc.json does, `react/exhaustive-deps`: oxlint takes `react-hooks/` too, but one name keeps the directives searchable.",
+                });
+              if (!REASON.test(comment.value))
+                context.report({
+                  loc: comment.loc,
+                  message:
+                    "Say why the rule is wrong here: end the directive with ` -- <reason>` (what the rule can't see, or why this site is the exception). If the rule is right, fix the code instead.",
+                });
+            }
+          },
+        };
+      },
+    },
     "no-adhoc-lock": {
       meta: {
         type: "problem",

@@ -21,6 +21,7 @@
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
     "no-underscore-dangle": ["warn", { "allow": ["_tag", "__flicker", "__gutters"] }],
+    "gram/disable-reason": "error",
     "gram/no-bare-fork": "error",
     "gram/no-focused-tests": "error"
   },

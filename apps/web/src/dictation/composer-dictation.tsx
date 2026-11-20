@@ -201,7 +201,7 @@ export function useMirrorFit(
     field.style.minHeight = `${Number.isFinite(cap) ? Math.min(wanted, cap) : wanted}px`;
     setOverflows(Number.isFinite(cap) && wanted > cap);
     // `deps` are what else moves the mirror's height: the draft, a ghost's position.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- see above
+    // oxlint-disable-next-line react/exhaustive-deps -- see above
   }, [fieldRef, mirrorRef, rest, ...deps]);
   return overflows;
 }

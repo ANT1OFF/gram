@@ -134,7 +134,7 @@ function apcaY(hex: string): number {
   const [r, g, b] = hexToRgb(hex);
   const raw = 0.2126729 * r ** 2.4 + 0.7151522 * g ** 2.4 + 0.072175 * b ** 2.4;
   // APCA's black-clamp exponent, not √2.
-  // oxlint-disable-next-line oxc/approx-constant
+  // oxlint-disable-next-line oxc/approx-constant -- APCA's black-clamp exponent, not √2
   return raw < 0.022 ? raw + (0.022 - raw) ** 1.414 : raw;
 }
 

@@ -48,7 +48,6 @@ async function olderServer(options: {
   scopes.push(scope);
   const client = await Effect.runPromise(
     Effect.gen(function* () {
-      // oxlint-disable-next-line prefer-const
       let made!: Effect.Success<ReturnType<typeof RpcClient.makeNoSerialization<never, never>>>;
       const server = yield* RpcServer.makeNoSerialization(group as never, {
         disableFatalDefects: true,
