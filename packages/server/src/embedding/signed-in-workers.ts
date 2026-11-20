@@ -61,6 +61,7 @@ import {
   codeOf,
   fileOwedStops,
   memoryOwedStops,
+  OWED_MOST,
   type NameLocks,
   type OwedStops,
   settleOwedStops,
@@ -259,6 +260,13 @@ export const signedInSource = (
     abandon: (name, options) => Effect.asVoid(forget(name, options?.unsettled === true)),
     start: (ask) =>
       Effect.suspend(() => {
+        // No room to owe it a stop: started, it couldn't be given back after a restart.
+        const owedNow = deps.owed?.list() ?? [];
+        if (owedNow.length >= OWED_MOST && !owedNow.some((each) => each.name === ask.name))
+          return Effect.succeed<WorkerMachineStart>({
+            kind: "refused",
+            message: `This Gram is still owed stops for ${owedNow.length} machines that ${server.server} never confirmed stopping, so it starts no more until it is: try again later, or leave out sandbox to run the worker on your machine.`,
+          });
         // This start takes the name: no stop owed for an earlier one may end the machine it makes.
         deps.starting?.add(ask.name);
         // Written before the start is sent, kept across a restart: a machine started there that
@@ -274,6 +282,8 @@ export const signedInSource = (
         // Asked for again: it may come back, so it is relayed once more.
         deps.asleep?.delete(ask.name);
         let unavailable = false;
+        // Whether this start's owing is its own, rather than one owed of the name before it.
+        let owned = false;
         let spent = false;
         // A name the server doesn't take is never sent (it would answer `400 invalid_request`).
         if (!isHostedWorkerName(ask.name))
@@ -295,7 +305,12 @@ export const signedInSource = (
             },
             // Owed beside any before it, once the name is this start's: no stop settled meanwhile
             // lets go of it, and none written later replaces it.
-            { ...deps, onLocked: () => deps.owed?.add(owing) },
+            {
+              ...deps,
+              onLocked: () => {
+                owned = deps.owed?.add(owing) === true;
+              },
+            },
           ).pipe(
             Effect.map((sent) => {
               unavailable = sent.unavailable;
@@ -337,7 +352,7 @@ export const signedInSource = (
               ) {
                 deps.starting?.delete(ask.name);
                 // Its own owing alone: any owed of the name before it is about a machine still there.
-                deps.owed?.remove(ask.name, owing);
+                if (owned) deps.owed?.remove(ask.name, owing);
               }
             }),
           ),

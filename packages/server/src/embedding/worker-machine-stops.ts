@@ -80,14 +80,21 @@ export interface OwedStop {
  */
 export interface OwedStops {
   readonly list: () => ReadonlyArray<OwedStop>;
-  /** Kept beside any owed before it, its name's included: one owing never replaces another. */
-  readonly add: (stop: OwedStop) => void;
+  /**
+   * Kept, unless its name is owed a stop already: that owing stands for the machine of the name,
+   * and is never replaced, so one name is owed once however often its give-backs fail. Whether it
+   * was kept as a new owing.
+   */
+  readonly add: (stop: OwedStop) => boolean;
   /**
    * With `attempt`, lets go of that owing alone; without, of every owing of `name` (its machine is
    * registered here, or confirmed stopped under its name's lock).
    */
   readonly remove: (name: string, attempt?: OwedStop) => void;
 }
+
+/** The most stops kept owed at once: a start that would need one more is refused. */
+export const OWED_MOST = 256;
 
 /** Which owing a stop is: its attempt id, or, for one kept before ids, its name and time. */
 const owingOf = (stop: OwedStop) => stop.attempt ?? `${stop.name}@${stop.since}`;
@@ -96,7 +103,11 @@ export const memoryOwedStops = (): OwedStops => {
   const owed = new Map<string, OwedStop>();
   return {
     list: () => [...owed.values()],
-    add: (stop) => void owed.set(owingOf(stop), stop),
+    add: (stop) => {
+      for (const each of owed.values()) if (each.name === stop.name) return false;
+      owed.set(owingOf(stop), stop);
+      return true;
+    },
     remove: (name, attempt) => {
       if (attempt !== undefined) owed.delete(owingOf(attempt));
       else for (const [key, each] of owed) if (each.name === name) owed.delete(key);
@@ -106,12 +117,14 @@ export const memoryOwedStops = (): OwedStops => {
 
 /** `memoryOwedStops` kept in `<dataDir>/remote-access/worker-machine-stops.json`. */
 export const fileOwedStops = (dataDir: string): OwedStops => {
-  const file = privateJsonFile(dataDir, "worker-machine-stops.json", 64 * 1024);
+  // Room for every stop that may be owed (`OWED_MOST`), long origins included: one past it, or a
+  // file too large to read, would lose them all.
+  const file = privateJsonFile(dataDir, "worker-machine-stops.json", 512 * 1024);
   const owed = memoryOwedStops();
   try {
     const kept = file.read() as { version?: unknown; owed?: unknown } | undefined;
     if (kept?.version === 1 && Array.isArray(kept.owed))
-      for (const each of kept.owed.slice(0, 256))
+      for (const each of kept.owed.slice(0, OWED_MOST))
         if (
           typeof each === "object" &&
           each !== null &&
@@ -143,8 +156,9 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
   return {
     list: owed.list,
     add: (stop) => {
-      owed.add(stop);
-      save();
+      const added = owed.add(stop);
+      if (added) save();
+      return added;
     },
     remove: (name, attempt) => {
       const before = owed.list().length;
