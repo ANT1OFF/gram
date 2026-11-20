@@ -26,6 +26,7 @@ import {
   type Thread,
   type VerifyDriver,
   type VerifyDriverState,
+  type FileImage,
   type VerifyState,
   type WorkerReportVerify,
 } from "@gram/contracts";
@@ -48,6 +49,7 @@ import {
   type LocalCheckRun,
   type LocalChecksShape,
 } from "../git/local-checks.ts";
+import { evidenceImage, listEvidence } from "../git/check-evidence.ts";
 import { fence, FENCE_OPENER } from "../git/untrusted-fence.ts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { folderBringsNothing, projectFolderTrusted } from "../settings/folder-trust.ts";
@@ -285,7 +287,33 @@ const stateRow = (
   ...(check?.status === "failed" ? { reason: check.reason ?? "it didn't pass" } : {}),
   ...(check === undefined ? {} : { startedAt: check.startedAt }),
   ...(check?.finishedAt === undefined ? {} : { finishedAt: check.finishedAt }),
+  ...evidenceOf(check),
 });
+
+/** The run's evidence folder, kept beside its log on this machine only. */
+const localLog = (check: LocalCheck | undefined) =>
+  check?.machine === undefined ? check?.log : undefined;
+
+const evidenceOf = (check: LocalCheck | undefined) => {
+  const log = localLog(check);
+  const evidence = log === undefined ? [] : listEvidence(log);
+  return evidence.length === 0 ? {} : { evidence };
+};
+
+/** One picture `driver`'s run on the thread's head left, `undefined` for anything else. */
+export const verifyEvidenceOf = (
+  deps: VerifyDeps,
+  thread: Thread,
+  name: string,
+  file: string,
+): Effect.Effect<FileImage | undefined> =>
+  Effect.gen(function* () {
+    const driver = ((yield* readRecipe(deps, thread)) ?? []).find((d) => d.name === name);
+    if (driver === undefined) return undefined;
+    const { rows } = yield* driversOnHead(deps, thread, [driver]);
+    const log = localLog(rows[0]?.check);
+    return log === undefined ? undefined : evidenceImage(log, file);
+  }).pipe(Effect.orElseSucceed(() => undefined));
 
 /** What other tools ask of a thread's verify recipe. */
 export interface VerifyStatusShape {
@@ -293,6 +321,11 @@ export interface VerifyStatusShape {
     threadId: Thread["id"],
   ) => Effect.Effect<WorkerReportVerify | undefined>;
   readonly stateFor: (thread: Thread) => Effect.Effect<VerifyState>;
+  readonly evidence: (
+    thread: Thread,
+    driver: string,
+    file: string,
+  ) => Effect.Effect<FileImage | undefined>;
 }
 
 export class VerifyStatus extends Context.Service<VerifyStatus, VerifyStatusShape>()(
@@ -319,6 +352,7 @@ export const VerifyStatusLive = Layer.effect(
     VerifyStatus.of({
       requiredOnHead: (threadId) => requiredOnHead(deps, threadId),
       stateFor: (thread) => verifyStateOf(deps, thread),
+      evidence: (thread, driver, file) => verifyEvidenceOf(deps, thread, driver, file),
     }),
   ),
 );

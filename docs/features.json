@@ -526,17 +526,20 @@
     },
     {
       "name": "Verify recipes and Proof",
-      "purpose": "A repository's .gram/verify.json drivers, the verify tool that runs them, Gram's record of them on a done report, and a worker's Proof tool.",
+      "purpose": "A repository's .gram/verify.json drivers, the verify tool that runs them, Gram's record of them on a done report, and a worker's Proof tool with the screenshots each run kept.",
       "code": [
         "packages/server/src/verify/**",
         "packages/contracts/src/verify-recipe.ts",
         "packages/server/src/rpc/handlers/checks.ts",
         "apps/web/src/panels/proof-panel.tsx",
+        "packages/server/src/git/check-evidence.ts",
         ".gram/verify.json"
       ],
       "tests": [
         "packages/server/src/verify/**/*.test.ts",
-        "packages/server/src/orchestration/report-verify.test.ts"
+        "packages/server/src/orchestration/report-verify.test.ts",
+        "packages/server/src/git/check-evidence.test.ts",
+        "apps/web/src/panels/proof-panel.test.tsx"
       ],
       "docs": ["docs/AGENTS_AND_FEATURES.md#verify-recipes"]
     },

@@ -1,8 +1,9 @@
-import type { ThreadSummary, VerifyState } from "@gram/contracts";
+import type { FileImage, ThreadSummary, VerifyState } from "@gram/contracts";
 
 /**
  * A worker's verify recipe as the mock serves it: three drivers passed on the worker's head, one
- * passed only on an older commit and so not run on this one, and one that failed. A thread
+ * passed only on an older commit and so not run on this one, and one that failed, leaving two
+ * screenshots and a video. A thread
  * outside git, or that no orchestrator started, has no recipe.
  */
 export const mockVerifyState = (summary: ThreadSummary): VerifyState => {
@@ -43,6 +44,16 @@ export const mockVerifyState = (summary: ThreadSummary): VerifyState => {
         reason: "exited with 1",
         startedAt: at,
         finishedAt: at + 62_000,
+        evidence: [
+          {
+            file: "01-tour-start.svg",
+            kind: "screenshot",
+            caption: "Tour, first step",
+            size: 1_200,
+          },
+          { file: "02-tour-end.svg", kind: "screenshot", caption: "Tour, last step", size: 1_200 },
+          { file: "tour.webm", kind: "video", caption: "The whole tour", size: 2_400_000 },
+        ],
       },
       {
         name: "lint",
@@ -59,5 +70,20 @@ export const mockVerifyState = (summary: ThreadSummary): VerifyState => {
         status: "notRun",
       },
     ],
+  };
+};
+
+/** A mock screenshot the failed driver left: a drawn frame with its step's name. */
+export const mockVerifyEvidence = (driver: string, file: string): FileImage => {
+  const step = /^\d+-(.+)\.svg$/.exec(file)?.[1];
+  if (driver !== "shots" || step === undefined)
+    throw new Error(`No picture ${file} from ${driver}`);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#f4f4f5"/><rect width="640" height="36" fill="#e4e4e7"/><rect x="24" y="64" width="180" height="300" rx="8" fill="#e4e4e7"/><rect x="228" y="64" width="388" height="300" rx="8" fill="#ffffff"/><text x="420" y="220" font-family="sans-serif" font-size="24" text-anchor="middle" fill="#52525b">${step}</text></svg>`;
+  return {
+    path: file,
+    mediaType: "image/svg+xml",
+    size: svg.length,
+    tooLarge: false,
+    base64: btoa(svg),
   };
 };
