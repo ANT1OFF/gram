@@ -117,6 +117,8 @@ test("a dock at the top sits above the page, and arrow keys move along it", asyn
 });
 
 test("an auto-hidden sidebar comes back at its edge, and goes again", async ({ page }) => {
+  await mounted(page);
+  await page.mouse.move(400, 300);
   const errors = await mounted(page, "/?auto-hide");
   const held = page.getByTestId("nav-auto-hide");
   await expect(held).toHaveAttribute("data-edge", "left");
