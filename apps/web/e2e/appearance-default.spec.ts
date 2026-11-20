@@ -104,7 +104,7 @@ for (const mode of ["system", "light"] as const) {
       await expect(root).toHaveAttribute("data-mode", dark ? "dark" : "light");
       expect(
         await root.evaluate((el) => getComputedStyle(el).getPropertyValue("--p-bg").trim()),
-      ).toBe(dark ? "#1a1b26" : "#d5d6db");
+      ).toBe(dark ? "#1a1b26" : "#e6e7eb");
     }
     await page.reload();
     await expect(root).toHaveAttribute("data-look", "glass");

@@ -396,7 +396,10 @@ the lighter of the other two, 3.5% on mid-tone ones that already separate), so a
 fill; Neutral Dark is near-black (`#131313` page, `#0b0b0b`
 chrome), not black. Light has the same order: the chrome is furthest back, the page a step under
 white (Neutral is `#e9e9e9` chrome, `#f3f3f4` page) and the raised step is white, so a card clears
-its page by about 1.1:1, as dark's do (`palette.test.ts` holds every light preset to it). Hover sits a shade past the raised step. One step for every secondary
+its page by about 1.1:1, as dark's do (`palette.test.ts` holds every light preset to both:
+chrome under the page, card off it). A modest chrome step reads best; a heavy slate or grey band
+does not, and the settings groups keep their hairline, which blind rounds preferred to a softer
+one or none. Hover sits a shade past the raised step. One step for every secondary
 surface: a card, a panel's block, a popover and a menu
 take `bg-card` or `bg-popover` (both `--surface-raised`, which is `surface-3`: the palettes hold
 muted text at AA there) and the edge `border-edge`, which carries the step in dark where a shadow
