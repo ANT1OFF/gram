@@ -32,6 +32,7 @@ workers for you, each in its own git worktree, from task to merged pull request.
 - [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) and/or the
   [Codex CLI](https://github.com/openai/codex), installed and signed in (`claude /login`,
   `codex login`). Gram runs them on your own subscriptions; no API key is needed.
+- Optional: xAI's Grok Build CLI (`grok login`) for chat threads on your Grok subscription.
 - Optional: the [GitHub CLI](https://cli.github.com) (`gh auth login`) for pull requests, checks
   and merges.
 

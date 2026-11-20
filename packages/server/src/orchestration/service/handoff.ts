@@ -28,12 +28,8 @@ import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Option from "effect/Option";
 import { randomUUID } from "node:crypto";
-import {
-  AGENT_NAMES,
-  checkFreshTarget,
-  checkSwitchTarget,
-  turnNote,
-} from "../../runtime/agent-switch.ts";
+import { AGENT_NAMES } from "../../runtime/agent-names.ts";
+import { checkFreshTarget, checkSwitchTarget, turnNote } from "../../runtime/agent-switch.ts";
 import {
   type ObservedTurnEnd,
   type SystemDelivery,

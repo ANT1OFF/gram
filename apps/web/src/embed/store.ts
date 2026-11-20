@@ -14,6 +14,7 @@ import type {
   ShellPageProps,
   ShellPanel,
   ShellRepositories,
+  ShellAgent,
   ShellSettings,
   ShellSidebar,
   ShellSlotProps,
@@ -60,6 +61,8 @@ export interface EmbedShellState {
   readonly repositories: ShellRepositories | undefined;
   /** Which of Gram's Settings pages stay and the app's own: all of Gram's while empty. Set once. */
   readonly settings: ShellSettings;
+  /** Agents the embedding app adds to the orchestrator and worker roles. Set once, at mount. */
+  readonly roleAgents: readonly ShellAgent[];
 }
 
 export const useEmbedShell = create<EmbedShellState>()(() => ({
@@ -73,6 +76,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   threadsPage: {},
   machines: {},
   models: {},
+  roleAgents: [],
   newEntry: undefined,
   home: undefined,
   sidebar: {},
@@ -94,6 +98,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   threadsPage: {},
   machines: {},
   models: {},
+  roleAgents: [],
   newEntry: undefined,
   home: undefined,
   sidebar: {},

@@ -11,11 +11,15 @@ import { create } from "zustand";
 type UsageLimitEvent = Extract<ServerEvent, { type: "usageLimit" }>;
 
 /** The subscriptions the meter knows: the CLIs' own logins, never a gateway's. */
-export const LIMIT_PROVIDERS = ["claude", "codex"] as const;
+export const LIMIT_PROVIDERS = ["claude", "codex", "grok"] as const;
 export type LimitProvider = (typeof LIMIT_PROVIDERS)[number];
 
 export const LIMIT_WINDOWS = ["fiveHour", "weekly"] as const;
 export type LimitWindow = (typeof LIMIT_WINDOWS)[number];
+
+/** The windows a provider's plan has: Grok's credits run by the week, with no 5-hour window. */
+export const windowsOf = (provider: LimitProvider): readonly LimitWindow[] =>
+  provider === "grok" ? ["weekly"] : LIMIT_WINDOWS;
 
 /**
  * The share of a window used from which the meter turns warning-coloured. Below it the meter stays

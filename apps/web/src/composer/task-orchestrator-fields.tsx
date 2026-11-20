@@ -1,4 +1,4 @@
-import { ADMITTED_AGENTS } from "@/orchestration/admitted";
+import { useAdmittedAgents } from "@/orchestration/admitted";
 
 import { AgentFields, type AgentChoice } from "./agent-fields";
 
@@ -14,5 +14,6 @@ export default function TaskOrchestratorFields({
   value: AgentChoice;
   onChange: (choice: AgentChoice) => void;
 }) {
-  return <AgentFields ghost value={value} allowed={ADMITTED_AGENTS} onChange={onChange} />;
+  const admitted = useAdmittedAgents();
+  return <AgentFields ghost value={value} allowed={admitted} onChange={onChange} />;
 }

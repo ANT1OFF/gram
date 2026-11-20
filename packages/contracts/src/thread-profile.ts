@@ -173,6 +173,7 @@ export const PROFILE_SKILLS_DIR: Readonly<Record<AgentKind, string>> = {
   claude: ".claude/skills",
   codex: ".agents/skills",
   opencode: ".opencode/skills",
+  grok: ".grok/skills",
 };
 
 const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/i;

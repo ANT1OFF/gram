@@ -282,7 +282,7 @@ export interface ShellMachines {
  * is offered; the deployment still has to refuse a model it does not allow.
  */
 /** The agents whose models the prompt box lists. */
-export type ShellAgent = "claude" | "codex" | "opencode";
+export type ShellAgent = "claude" | "codex" | "opencode" | "grok";
 
 /** One model the prompt box lists, as the embedding app's `ShellModels.offered` is given it. */
 export interface ShellModelChoice {
@@ -693,6 +693,12 @@ export interface ShellContributions {
   readonly repositories?: ShellRepositories;
   /** Which of Gram's Settings pages stay, and the app's own. Read once, when the app mounts. */
   readonly settings?: ShellSettings;
+  /**
+   * Agents beyond Claude Code and Codex the pickers offer for the orchestrator and worker roles,
+   * where the server admits them too (`GRAM_ROLE_AGENTS`): only `grok` is taken. Read once, when
+   * the app mounts.
+   */
+  readonly roleAgents?: readonly ShellAgent[];
 }
 
 /** The server one mount talks to. */

@@ -223,6 +223,17 @@ export const gatewayConfig = (credentials: GatewayCredentials): string => {
               ...(model.contextWindow === undefined
                 ? {}
                 : { limit: { context: model.contextWindow } }),
+              ...(model.price === undefined
+                ? {}
+                : {
+                    cost: {
+                      input: model.price.input,
+                      output: model.price.output,
+                      ...(model.price.cachedInput === undefined
+                        ? {}
+                        : { cache: { read: model.price.cachedInput } }),
+                    },
+                  }),
             },
           ]),
         ),

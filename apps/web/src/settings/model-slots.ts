@@ -141,9 +141,9 @@ export const followOfPinned = (
   entry: PinnedWorkerModel,
   available: AvailableModels,
 ): WorkerModel | undefined => {
-  // The table names no OpenCode models, so a pin there has no tier to follow.
+  // The table names no OpenCode or Grok models, so a pin there has no tier to follow.
   const agent = entry.agent;
-  if (entry.profileId !== undefined || agent === "opencode") return undefined;
+  if (entry.profileId !== undefined || agent === "opencode" || agent === "grok") return undefined;
   const listed = findListed(agent, available[agent] ?? [], entry.model);
   if (listed === undefined) return undefined;
   const runs = TIERS.flatMap((tier): TierRef[] => [{ tier }, { tier, agent }])

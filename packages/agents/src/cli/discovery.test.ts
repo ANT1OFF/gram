@@ -48,4 +48,17 @@ describe("CLI discovery", () => {
       "No executable on the login-shell PATH (skipped: /unreadable, /wrapper)",
     );
   });
+
+  it("runs a multicall binary under the name it was linked as", async () => {
+    const elf = new Uint8Array([0x7f, 0x45, 0x4c, 0x46]);
+    const fs: BinaryFs = {
+      realpath: (path) =>
+        Effect.succeed(path.endsWith("/grok") ? "/usr/bin/mise" : "/opt/codex/codex"),
+      readHead: () => Effect.succeed(elf),
+    };
+    const multicall = await Effect.runPromise(resolveBinary(["/wrappers/grok"], fs));
+    expect(multicall.path).toBe("/wrappers/grok");
+    const plain = await Effect.runPromise(resolveBinary(["/bin/codex"], fs));
+    expect(plain.path).toBe("/opt/codex/codex");
+  });
 });
