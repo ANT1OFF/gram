@@ -309,6 +309,57 @@ describe("no-adhoc-lock", () => {
   });
 });
 
+describe("clock-24h", () => {
+  const rule = "gram/clock-24h";
+
+  it("refuses a time of day formatted without a 24-hour cycle", () => {
+    const found = lint(
+      `new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit" });
+      dateTimeFormat(undefined, { hour: "numeric" });
+      new Date(at).toLocaleTimeString();
+      new Date(at).toLocaleTimeString("en-US", { minute: "2-digit" });
+      new Date(at).toLocaleDateString("en-US", { day: "numeric", hour: "numeric" });
+      const OPTIONS = { hour: "2-digit", minute: "2-digit" } as const;
+      Intl.DateTimeFormat(undefined, OPTIONS);
+      new Intl.DateTimeFormat(undefined, { hour: "numeric", hourCycle: "h12" });
+      new Intl.DateTimeFormat(undefined, { hour: "numeric", hour12: true });
+      new Intl.DateTimeFormat(undefined, { hour: "numeric", hourCycle: "h24" });
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 2, 3, 4, 5, 6, 8, 9, 10, 11]);
+    expect(found[0].message).toContain("CLOCK_TIME");
+  });
+
+  it("allows a pinned 24-hour cycle, options it can't see, and dates and numbers alone", () => {
+    expect(
+      lint(
+        `import { CLOCK_TIME } from "@/lib/time";
+        const LOCAL = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
+        new Intl.DateTimeFormat("en-US", { hour: "2-digit", hourCycle: "h23" });
+        new Intl.DateTimeFormat("en-US", { timeStyle: "short", hour12: false });
+        dateTimeFormat("en-GB", { ...LOCAL, second: "2-digit" });
+        dateTimeFormat("en-GB", { ...CLOCK_TIME, ...(zone ? { timeZone: zone } : {}) });
+        new Date(at).toLocaleTimeString(undefined, { ...LOCAL });
+        new Date(at).toLocaleDateString(undefined, { dateStyle: "medium" });
+        dateTimeFormat("en-GB", { month: "long", year: "numeric" });
+        new Intl.DateTimeFormat(locale, options);
+        count.toLocaleString("en-US", { maximumFractionDigits: 0 });
+        count.toLocaleString();
+      `,
+        rule,
+      ),
+    ).toEqual([]);
+  });
+
+  it("is on for the web app under the repository's own config", () => {
+    const source = "export const t = new Date(0).toLocaleTimeString();\n";
+    expect(probeConfig("apps/web/src", source)).toContain("gram(clock-24h)");
+    expect(probeConfig("packages/server/src", source)).not.toContain("gram(clock-24h)");
+  });
+});
+
 // The runtime graph in docs/ARCHITECTURE.md: the renderer and the shared packages load no Node or
 // Electron, only the shell imports Electron at runtime, and no package imports an app.
 const restricted = (dir, source) =>
