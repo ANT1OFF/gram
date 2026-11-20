@@ -13,6 +13,9 @@ free ports and cleans up only what it started. Run from the checkout's physical 
 ## To see a UI change
 
 - Without a server or agent: `bun run dev:mock` (Vite with `VITE_API=mock`).
+- A feature by its name in `docs/features.json`, headless: `bun run drive <feature>` (`--list`
+  names them, `--all` reaches every one). Read `<slug>.aria.yml` first, the picture second; see
+  [reaching a feature](../../../docs/VERIFICATION.md#reaching-a-feature-by-name).
 - One picture of one route, headless, in a fresh browser:
   `bun run dev:preview --capture --path /settings/agents --output /tmp/<new-dir>`. The output
   directory must not exist yet. Read `initial.png`/`final.png`, the errors in `browser.jsonl` and

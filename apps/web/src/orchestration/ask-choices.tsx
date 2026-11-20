@@ -1,15 +1,9 @@
-import {
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { RecommendedTag } from "@/components/recommended-tag";
 import { Button } from "@/components/ui/button";
 import { shortcutHint } from "@/keyboard/bindings";
+import { useLayoutSync } from "@/lib/effects";
 import { cn } from "@/lib/utils";
 
 import { answerRule, choiceLayout, type AskOption } from "./ask-model";
@@ -79,8 +73,8 @@ export function MoreText({
     const element = ref.current;
     if (element !== null && !open) setClipped(element.scrollHeight > element.clientHeight + 1);
   };
-  useLayoutEffect(measure);
-  useLayoutEffect(() => {
+  useLayoutSync(measure);
+  useLayoutSync(() => {
     const element = ref.current;
     if (element === null || open || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() =>

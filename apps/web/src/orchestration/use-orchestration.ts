@@ -1,9 +1,10 @@
 import { type OrchestratorLedger, type WorkspaceId, type WorkspaceState } from "@gram/contracts";
 import { useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 
 import { useApi } from "@/api/context";
 import type { Api } from "@/api/types";
+import { useSubscription } from "@/lib/effects";
 import { useAttentionStore } from "@/sidebar/attention";
 
 import { createLedgerWatch, type LedgerWatch } from "./ledger-watch";
@@ -79,7 +80,7 @@ function useLedgerWatch(workspaceIds: readonly WorkspaceId[]) {
   const api = useApi();
   const queryClient = useQueryClient();
   const key = workspaceIds.join(" ");
-  useEffect(() => {
+  useSubscription(() => {
     const watch = watchFor(api, queryClient);
     const releases = (key === "" ? [] : (key.split(" ") as WorkspaceId[])).map((id) =>
       watch.retain(id),

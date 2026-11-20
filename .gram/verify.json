@@ -1,0 +1,10 @@
+{
+  "drivers": [
+    {
+      "name": "features",
+      "run": "bun install --frozen-lockfile && bun run drive --all",
+      "covers": ["apps/web/**", "docs/features.json"],
+      "kind": "flow"
+    }
+  ]
+}
