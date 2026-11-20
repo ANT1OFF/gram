@@ -636,7 +636,10 @@ export const SignedInWorkersLive = Layer.effect(
               Effect.gen(function* () {
                 // Woken, or awake there already: carried again.
                 sync(false);
-                if (woke !== "retry") return;
+                // Settled for good: gone there, refused, or no longer wanted. Otherwise it is
+                // looked at again while it is wanted and still offline here, since one up there
+                // now may be stopped while idle before its host dials, and only a start wakes it.
+                if (woke === "gone" || woke === "refused" || woke === "unwanted") return;
                 yield* Effect.sleep(WAKE_RETRY_MS);
                 if (wokenFor.get(machine.id) === since) wokenFor.delete(machine.id);
                 Queue.offerUnsafe(wants, undefined);

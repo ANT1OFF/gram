@@ -339,6 +339,44 @@ describe("a worker machine that work here wants", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect(
+    "keeps looking at a wanted machine it found up there, until it joins or must wake",
+    () =>
+      Effect.gen(function* () {
+        const hosts = yield* RemoteHosts.make(memoryMachineStore());
+        const { id } = provisionRelayed(hosts, NAME);
+        // Up there when first asked, then stopped there while idle before its host dialled here.
+        let reads = 0;
+        const app = fakeApp({
+          answer: ({ call }) => {
+            if (call !== "status") return { status: 202, body: {} };
+            reads += 1;
+            return { status: 200, body: { phase: reads <= 2 ? "running" : "stopped" } };
+          },
+        });
+        yield* Layer.build(
+          SignedInWorkersLive.pipe(
+            Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+            Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+          ),
+        );
+        const forSession = awaitedMachines(
+          (hostId) => Effect.fail(new HostUnavailable({ hostId, message: "away" })),
+          hosts,
+          { getSettings: Effect.succeed({ experimental: { embedding: true } } as never) },
+          60_000,
+        );
+        const opening = yield* Effect.forkScoped(forSession(HostId.make(id), "t-1" as ThreadId));
+        yield* TestClock.adjust("1 second");
+        expect(app.calls.map((each) => each.call)).not.toContain("start");
+        yield* TestClock.adjust(WAKE_RETRY_MS + 1_000);
+        expect(app.calls.filter((each) => each.call === "start").map((each) => each.body)).toEqual([
+          { name: NAME },
+        ]);
+        yield* Fiber.interrupt(opening);
+      }).pipe(Effect.scoped),
+  );
+
   it.live("keeps its wake for a spawn when another start of the name overlapped its look", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());

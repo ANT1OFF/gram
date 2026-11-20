@@ -30,10 +30,13 @@ const SANDBOX = { own: true, reason: "A long build." };
 const setup = (gates: {
   readonly threads?: Effect.Effect<void>;
   readonly stop?: Effect.Effect<void>;
+  /** False: started the first time, it joins here only once the test says (`join`). */
+  readonly joinsOnStart?: boolean;
 }) =>
   Effect.gen(function* () {
     const calls: string[] = [];
     let online = false;
+    let starts = 0;
     const machine = {
       id: "m-0123456789abcdef01234567",
       name: NAME,
@@ -48,7 +51,7 @@ const setup = (gates: {
         Effect.gen(function* () {
           calls.push(call);
           if (call === "stop") yield* gates.stop ?? Effect.void;
-          if (call === "start") online = true;
+          if (call === "start" && (gates.joinsOnStart !== false || ++starts > 1)) online = true;
           if (call === "stop") online = false;
           const status = call === "start" ? 202 : call === "choices" ? 404 : 200;
           return { ok: true as const, status, body: {} };
@@ -81,7 +84,13 @@ const setup = (gates: {
       // Only the fields the planner reads of a joined machine.
       joined: () => hosts.list() as never,
     });
-    return { plan, calls };
+    return {
+      plan,
+      calls,
+      join: () => {
+        online = true;
+      },
+    };
   });
 
 /** A try's prepare in a scope of its own, which the test closes as that try ends. */
@@ -105,6 +114,36 @@ describe("a worker's machine brought up for a spawn", () => {
       yield* first.ready.abandon ?? Effect.void;
       yield* Scope.close(first.scope, Exit.void);
       expect(calls).not.toContain("stop");
+      yield* Scope.close(retry.scope, Exit.void);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps a retry out while a bring-up stopped as it waited is given back", () =>
+    Effect.gen(function* () {
+      const held = yield* Deferred.make<void>();
+      const { plan, calls, join } = yield* setup({
+        stop: Deferred.await(held),
+        joinsOnStart: false,
+      });
+      const planned = yield* plan(CALLER, INPUT, SANDBOX);
+      const scope = yield* Scope.make();
+      // The first try waits for its machine to join.
+      yield* Effect.forkScoped(planned!.prepare!.pipe(Scope.provide(scope)));
+      while (!calls.includes("status")) yield* Effect.yieldNow;
+      // It is cancelled: its bring-up is stopped, and gives its machine back.
+      const closing = yield* Effect.forkScoped(Scope.close(scope, Exit.void));
+      // The stop is let through however the test ends, so no fiber waits on it for good.
+      yield* Effect.addFinalizer(() => Deferred.succeed(held, undefined));
+      while (!calls.includes("stop")) yield* Effect.yieldNow;
+      // Its host joins here while the stop is on its way, and a retry of the request comes.
+      join();
+      const retrying = yield* Effect.forkScoped(prepared(plan));
+      for (let each = 0; each < 20; each += 1) yield* Effect.yieldNow;
+      expect(retrying.pollUnsafe()).toBeUndefined();
+      yield* Deferred.succeed(held, undefined);
+      yield* Fiber.join(closing);
+      const retry = yield* Fiber.join(retrying);
+      expect(calls.lastIndexOf("start")).toBeGreaterThan(calls.indexOf("stop"));
       yield* Scope.close(retry.scope, Exit.void);
     }).pipe(Effect.scoped),
   );

@@ -376,13 +376,24 @@ export const makeWorkerSandbox = ({
                 return { held: made };
               }),
               (got) =>
-                Effect.suspend(() => {
-                  if (!("held" in got)) return Effect.void;
+                Effect.gen(function* () {
+                  if (!("held" in got)) return;
                   const held = got.held;
                   held.holders -= 1;
-                  if (held.holders > 0) return Effect.void;
-                  if (machineFlights.get(name) === held) machineFlights.delete(name);
-                  return Fiber.interrupt(held.fiber);
+                  if (held.holders > 0) return;
+                  // No try holds it: stopped, giving back what it started, and closed to every
+                  // try until that is over, its stop answered included.
+                  const closing = yield* Deferred.make<void>();
+                  held.closing = closing;
+                  yield* Fiber.interrupt(held.fiber).pipe(
+                    Effect.ensuring(
+                      Effect.suspend(() => {
+                        if (machineFlights.get(name) === held) machineFlights.delete(name);
+                        held.closing = undefined;
+                        return Deferred.succeed(closing, undefined);
+                      }),
+                    ),
+                  );
                 }),
             );
             if ("wait" in taken) yield* Deferred.await(taken.wait);

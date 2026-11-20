@@ -177,6 +177,9 @@ that start itself whenever work here needs the machine:
 - Whether work still wants the machine is read under the name's lock as each start would go, not
   when the wake was queued: once the last session waiting has gone, no start is sent. One already
   sent is left to the server's idle stop.
+- A machine still wanted and still offline here is looked at again every five seconds, whatever
+  the last look found, until it joins, is no longer wanted, or is gone or refused there: one up
+  there may be stopped while idle before its host dials, and only a start wakes it.
 - Only an answered `stopped` or `failed` uses up a wake. A `…/status` with no answer or a `5xx`,
   or a start answered so (a `502` while the machine is still being stopped there), is tried again
   five seconds later, for as long as the machine is wanted.
@@ -271,7 +274,8 @@ subscription token reaches a machine, with its own consent.
   and giving back on its own, even once the machine is online while that try still places its
   worker. Once a try has decided to give the machine back, no try joins its bring-up: one that
   comes meanwhile waits until the give-back is over, then joins it if it was kept, or brings one
-  up afresh once it is gone. The bring-up outlives the try that began it, and is stopped, giving
+  up afresh once it is gone. So it is while a bring-up no try holds any more is stopped and gives
+  its machine back, until its stop is answered. The bring-up outlives the try that began it, and is stopped, giving
   back what it started, only once no try holds it. After it came, a try whose spawn fails gives it
   back only when no other try holds it and no thread is placed on it.
 - **A lost workspace role.** Every call about a machine whose workspace the person no longer has
