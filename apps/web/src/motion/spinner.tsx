@@ -2,7 +2,7 @@
  * The arc is the running phase of `StatusMark` (svg-spinners' `90-ring`, notice in
  * `THIRD-PARTY-NOTICES.md` beside this file): a quarter-and-a-bit of its ring, from three o'clock.
  */
-import { createLucideIcon, type LucideIcon, type LucideProps } from "lucide-react";
+import { createLucideIcon, type LucideIcon } from "lucide-react";
 import { forwardRef, useCallback } from "react";
 
 import { spin } from "./spin";
@@ -49,7 +49,8 @@ export const Spinner: LucideIcon = spinningIcon(Arc, "Spinner");
 /*
  * A thin ring with a faint track and one quarter arc, for a turn under way (Stop's ring). Its
  * strokes are 1.5 CSS px whatever size the glyph is drawn at, so it reads as thin at `size-3` as it
- * would at 24.
+ * would at 24. The width sits on each stroke, not the icon: the `lucide` class's stroke (base.css)
+ * outranks a `strokeWidth` prop on the svg, but not a width the stroke carries itself.
  */
 const Ring = createLucideIcon({
   name: "ring-spinner",
@@ -62,31 +63,45 @@ const Ring = createLucideIcon({
         cy: "12",
         r: "10",
         opacity: "0.25",
+        strokeWidth: "1.5",
         vectorEffect: "non-scaling-stroke",
         key: "track",
       },
     ],
-    ["path", { d: "M12 2a10 10 0 0 1 10 10", vectorEffect: "non-scaling-stroke", key: "arc" }],
+    [
+      "path",
+      {
+        d: "M12 2a10 10 0 0 1 10 10",
+        strokeWidth: "1.5",
+        vectorEffect: "non-scaling-stroke",
+        key: "arc",
+      },
+    ],
   ],
 });
-
-const ThinRing = forwardRef<SVGSVGElement, LucideProps>((props, ref) => (
-  <Ring ref={ref} strokeWidth={1.5} {...props} />
-));
-ThinRing.displayName = "ThinRing";
 
 /**
  * The running ring: a faint ring with one arc, turning on the shared clock while it is mounted and
  * standing still under Reduced or Off motion. Only for a turn under way (the ring round Stop), never
  * for a wait: a PR can wait on CI for an hour, and a turning mark keeps the renderer drawing.
  */
-export const RingSpinner: LucideIcon = spinningIcon(ThinRing, "RingSpinner");
+export const RingSpinner: LucideIcon = spinningIcon(Ring, "RingSpinner");
 
 const Hollow = createLucideIcon({
   name: "pending-ring",
   size: 24,
   node: [
-    ["circle", { cx: "12", cy: "12", r: "9", vectorEffect: "non-scaling-stroke", key: "ring" }],
+    [
+      "circle",
+      {
+        cx: "12",
+        cy: "12",
+        r: "9",
+        strokeWidth: "1.5",
+        vectorEffect: "non-scaling-stroke",
+        key: "ring",
+      },
+    ],
   ],
 });
 
@@ -96,8 +111,4 @@ const Hollow = createLucideIcon({
  * waits on something outside it), at the running ring's thin stroke. It never moves, so a PR
  * waiting on CI costs the renderer nothing; the words beside it say queued or running.
  */
-const PendingRingIcon = forwardRef<SVGSVGElement, LucideProps>((props, ref) => (
-  <Hollow ref={ref} strokeWidth={1.5} {...props} />
-));
-PendingRingIcon.displayName = "PendingRing";
-export const PendingRing: LucideIcon = PendingRingIcon;
+export const PendingRing: LucideIcon = Hollow;
