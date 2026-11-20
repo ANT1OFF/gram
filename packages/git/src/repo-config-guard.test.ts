@@ -305,6 +305,36 @@ describe.skipIf(!hasGit)("Gram's own git and a submodule's config", () => {
       }).pipe(provide),
   );
 
+  it.live("sees a nested repository's shared config change after Gram's last call", () =>
+    Effect.gen(function* () {
+      const { repo, root, ran, marker } = setup();
+      const inner = nodePath.join(repo, "inner");
+      fs.mkdirSync(inner);
+      run(inner, "init", "-q", "-b", "main");
+      fs.writeFileSync(nodePath.join(inner, ".gitattributes"), "*.txt filter=nested\n");
+      fs.writeFileSync(nodePath.join(inner, "n.txt"), "one\n");
+      run(inner, "add", "-A");
+      run(inner, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "n");
+      run(repo, "add", "inner");
+      run(repo, "commit", "-qm", "gitlink");
+      // The nested repository's git folder is a worktree's: its config is in the common dir its
+      // `commondir` names.
+      const common = nodePath.join(root, "common");
+      fs.renameSync(nodePath.join(inner, ".git"), common);
+      const own = nodePath.join(root, "own");
+      fs.mkdirSync(own);
+      fs.writeFileSync(nodePath.join(own, "commondir"), `${common}\n`);
+      for (const file of ["HEAD", "index"])
+        fs.copyFileSync(nodePath.join(common, file), nodePath.join(own, file));
+      fs.writeFileSync(nodePath.join(inner, ".git"), `gitdir: ${own}\n`);
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+      run(inner, "config", "filter.nested.clean", `touch '${marker("common-clean")}'; cat`);
+      fs.writeFileSync(nodePath.join(inner, "n.txt"), "two\n");
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
   it.live.skipIf(process.platform === "win32")("gives the git that gh starts the same guard", () =>
     Effect.gen(function* () {
       const { repo, root, plant, ran } = setup();
