@@ -309,13 +309,9 @@ route's size. Raise a budget in the pull request that means the growth.
 `tools/perf/ci-flake-rate.mjs` reads GitHub's listing of the trunk's check runs and says how many
 went red, which on a trunk of reviewed commits is mostly tests that fail some of the time.
 
-On CI, a Vitest shard that fails in at most five files runs those files once more, alone
-(`tools/check/rerun.mjs`). If they pass, the shard passes and each test that failed first is named
-as a "Flaky test" warning on its file and in the job's summary: a flake then costs a rerun of its
-file instead of the shard, and stays listed until it is fixed. More failed files is a break and
-fails at once. A local check, and the local checks a merge accepts, never rerun.
-`GRAM_CHECK_RERUN=0` turns it off. The e2e shards' Playwright already retries a failed test once
-and reports it as flaky.
+A Vitest failure fails its shard, on CI and locally: nothing is run again, because a test that
+needs a second run has a bug to find. The e2e shards' Playwright still retries a failed test once
+and reports it as flaky; those flakes are being fixed so that retry can go too.
 
 ## Protocol, native and live checks
 
