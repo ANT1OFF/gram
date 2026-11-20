@@ -6,6 +6,7 @@ import {
   redactText,
   DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
   type ProjectLocalCheck,
+  VERIFY_EVIDENCE_ENV,
 } from "@gram/contracts";
 import { canonicalizeOrOwned, isInside } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -22,6 +23,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import * as nodePath from "node:path";
+
+import { freshEvidenceDir } from "./check-evidence.ts";
 
 /** All configuration affecting reuse; a record without a project never authorizes a project's gate. */
 export interface LocalCheckRun {
@@ -309,6 +312,12 @@ export const spawnCheck = (
       if (run.preparation.inputConfigSha256 !== undefined) {
         env["GRAM_CHECK_APPROVED_INPUT_SHA256"] = run.preparation.inputConfigSha256;
       }
+    }
+    // A verify driver's run gets an empty folder of its own for what it wants shown; nothing
+    // else gets one, and `checkEnv` already keeps the server's own value out.
+    if (run.profile?.startsWith("verify/") === true) {
+      const evidence = yield* Effect.sync(() => freshEvidenceDir(log));
+      if (evidence !== undefined) env[VERIFY_EVIDENCE_ENV] = evidence;
     }
     const timeoutMs = run.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS;
     const graceMs = environment.killGraceMs ?? KILL_GRACE_MS;

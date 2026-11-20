@@ -207,6 +207,28 @@ export const verifyReportLine = (verify: WorkerReportVerify): string => {
 export const VerifyRunStatus = Schema.Literals(["notRun", "running", "passed", "failed"]);
 export type VerifyRunStatus = typeof VerifyRunStatus.Type;
 
+/** The folder Gram gives each verify run, empty, outside the checkout, for what it shows. */
+export const VERIFY_EVIDENCE_ENV = "GRAM_VERIFY_EVIDENCE_DIR";
+/** The optional list a driver writes into that folder: `{"items": [{file, caption, kind}]}`. */
+export const VERIFY_EVIDENCE_MANIFEST = "manifest.json";
+/** The most items a run's evidence shows. */
+export const VERIFY_EVIDENCE_MAX_ITEMS = 24;
+/** The most of one evidence file the Proof tab reads. */
+export const VERIFY_EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
+
+export const VerifyEvidenceKind = Schema.Literals(["screenshot", "video", "snapshot", "log"]);
+export type VerifyEvidenceKind = typeof VerifyEvidenceKind.Type;
+
+/** One file a driver left in its evidence folder, by its name there. */
+export const VerifyEvidence = Schema.Struct({
+  file: Schema.String,
+  kind: VerifyEvidenceKind,
+  caption: Schema.optionalKey(Schema.String),
+  /** Bytes on disk. */
+  size: Schema.Int,
+});
+export type VerifyEvidence = typeof VerifyEvidence.Type;
+
 /** One driver of a thread's recipe, with how it ran on the thread's head. */
 export const VerifyDriverState = Schema.Struct({
   name: Schema.String,
@@ -221,6 +243,8 @@ export const VerifyDriverState = Schema.Struct({
   /** Epoch ms the run started and, once it ended, finished. */
   startedAt: Schema.optionalKey(Schema.Number),
   finishedAt: Schema.optionalKey(Schema.Number),
+  /** What the run left in its evidence folder: the driver's own pictures, never a check's word. */
+  evidence: Schema.optionalKey(Schema.Array(VerifyEvidence)),
 });
 export type VerifyDriverState = typeof VerifyDriverState.Type;
 

@@ -8,6 +8,7 @@ import type {
   DiffChunk,
   DiffChunkRequest,
   DiffScope,
+  FileImage,
   HiddenPr,
   MergeStrategy,
   PrChecksResult,
@@ -36,6 +37,8 @@ export interface PullRequestsApi {
   prDetail(threadId: ThreadId): Promise<PrDetailResult>;
   /** The thread's verify recipe and Gram's record of each driver on its committed head. */
   verifyState(threadId: ThreadId): Promise<VerifyState>;
+  /** One picture a driver's run on that head left in its evidence folder, by `verifyState`'s name. */
+  verifyEvidence(threadId: ThreadId, driver: string, file: string): Promise<FileImage>;
   /** The PR's checks alone, one small request where `prDetail` fetches the whole PR and its diff. */
   prChecks(threadId: ThreadId): Promise<PrChecksResult>;
   prCheckDiagnostic(threadId: ThreadId, selection: CiDiagnosticSelection): Promise<CiJobDiagnostic>;

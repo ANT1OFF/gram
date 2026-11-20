@@ -84,6 +84,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { dropOldest } from "../bounded.ts";
 import { DAY_MS } from "../zone-time.ts";
+import { evidenceBytes, removeEvidence } from "./check-evidence.ts";
 import { makeAdmission } from "./keyed-lock.ts";
 
 export {
@@ -684,6 +685,16 @@ const fileStat = (path: string) => {
   try {
     const stat = lstatSync(path);
     return stat.isFile() ? stat : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** A folder's stat, links not followed, or undefined when it isn't a folder. */
+const dirStat = (path: string) => {
+  try {
+    const stat = lstatSync(path);
+    return stat.isDirectory() ? stat : undefined;
   } catch {
     return undefined;
   }
@@ -2057,8 +2068,10 @@ export const LocalChecksLive = Layer.effect(
 
         const named = new Set<string>();
         for (const record of records.values()) if (record.log !== undefined) named.add(record.log);
+        // A log goes with its run's evidence folder, and the budget counts both.
         const unlink = (path: string, size: number) =>
           Effect.sync(() => {
+            removeEvidence(path);
             try {
               unlinkSync(path);
               logs++;
@@ -2068,15 +2081,24 @@ export const LocalChecksLive = Layer.effect(
             }
           });
         for (const name of entries(checksDir)) {
-          if (!name.endsWith(".log")) continue;
           const path = nodePath.join(checksDir, name);
+          if (name.endsWith(".log.evidence")) {
+            const log = path.slice(0, -".evidence".length);
+            const since = dirStat(path)?.mtimeMs ?? now;
+            if (!named.has(log) && fileStat(log) === undefined && since < now - ABANDONED_MS)
+              logBytes += removeEvidence(log);
+            continue;
+          }
+          if (!name.endsWith(".log")) continue;
           const stat = fileStat(path);
           if (stat !== undefined && !named.has(path) && stat.mtimeMs < now - ABANDONED_MS)
-            yield* unlink(path, stat.size);
+            yield* unlink(path, stat.size + evidenceBytes(path));
         }
         const sized = [...records].flatMap(([key, record]) => {
           const size = record.log === undefined ? undefined : fileStat(record.log)?.size;
-          return size === undefined ? [] : [{ key, check: record, size }];
+          return size === undefined
+            ? []
+            : [{ key, check: record, size: size + evidenceBytes(record.log!) }];
         });
         for (const key of logsOverBudget(sized)) {
           const listed = sized.find((each) => each.key === key)!;
