@@ -38,6 +38,7 @@ import {
   useOtherText,
   useWorkspaceAsks,
 } from "@/orchestration/ask-stack";
+import { askFingerprint } from "@/orchestration/ask-actions";
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import { NeedsYouEntry } from "@/orchestration/needs-you-entry";
@@ -134,16 +135,19 @@ export function QuietView({ workspaceId }: ViewProps) {
   const card = deck[0];
   // The choice picked on the top card and not sent yet.
   const [pick, setPick] = useState<{ key: string; index: number }>();
-  const picked = card !== undefined && pick?.key === card.ask.key ? pick.index : undefined;
+  // The request on top as it reads: another one, or the same one changed, starts afresh.
+  const shown = card === undefined ? undefined : askFingerprint(card.ask);
+  const picked = shown !== undefined && pick?.key === shown ? pick.index : undefined;
   // When the top card last changed by itself, and when Quiet last answered: a key in either's wake
   // is a slip, not a decision.
   const stepped = useRef<string | undefined>(undefined);
   const topSince = useRef(0);
   const answeredAt = useRef(0);
-  useEffect(() => {
-    topSince.current = card?.ask.key === stepped.current ? 0 : clock();
+  const arrived = useEffectEvent((now: string | undefined) => {
+    topSince.current = now !== undefined && card?.ask.key === stepped.current ? 0 : clock();
     stepped.current = undefined;
-  }, [card?.ask.key]);
+  });
+  useEffect(() => arrived(shown), [shown]);
 
   const sendBack = (key: string) => {
     const live = new Set(deck.map((each) => each.ask.key));
@@ -250,7 +254,7 @@ export function QuietView({ workspaceId }: ViewProps) {
       // "Other…": its number picks it and puts the cursor in its field, ⌘⏎ sends what is typed.
       take();
       if (!sending) {
-        setPick({ key: card.ask.key, index: at });
+        setPick({ key: shown!, index: at });
         replyRef.current?.focus();
         return;
       }
@@ -262,7 +266,7 @@ export function QuietView({ workspaceId }: ViewProps) {
     if (option === undefined || at === undefined) return;
     take();
     if (sending) choose(card, option);
-    else setPick({ key: card.ask.key, index: at });
+    else setPick({ key: shown!, index: at });
   });
   useEffect(() => {
     const listener = (event: KeyboardEvent) => onKey(event);
@@ -304,7 +308,7 @@ export function QuietView({ workspaceId }: ViewProps) {
               total={deck.length}
               problem={problem}
               picked={picked}
-              onPick={(index) => setPick({ key: card.ask.key, index })}
+              onPick={(index) => setPick({ key: shown!, index })}
               onChoose={(option) => choose(card, option)}
               onReply={(text) => reply(card.ask, text)}
               onLater={deck.length > 1 ? () => sendBack(card.ask.key) : undefined}
