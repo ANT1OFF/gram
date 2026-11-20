@@ -3,6 +3,9 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
+import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { AcpConnection, AcpHandlers, StartAcpAgent } from "./acp.ts";
@@ -12,6 +15,7 @@ import {
   connectorOf,
   grokCommands,
   grokPermission,
+  type Json,
   permissionParams,
   promptOf,
   transcriptOf,
@@ -19,6 +23,12 @@ import {
 import { makeGrokHost, withHeadlessSignIn } from "./session.ts";
 
 const command = (text: string) => ({ kind: "execute", rawInput: { command: text } });
+const ROOTS = ["/work/thread"];
+const edit = (rawInput: Json, locations?: ReadonlyArray<Json>): Json => ({
+  kind: "edit",
+  rawInput,
+  ...(locations === undefined ? {} : { locations }),
+});
 
 describe("Grok Build permissions", () => {
   it("asks under an outward gate whatever the mode, so Gram sees every command", () => {
@@ -31,28 +41,49 @@ describe("Grok Build permissions", () => {
   });
 
   it("lets through what a gated bypass session would run, except what the gate asks about", () => {
-    expect(autoAnswer("bypassPermissions", "all", command("ls -la"))).toBe("allow");
-    expect(autoAnswer("bypassPermissions", "all", command("git push origin main"))).toBeUndefined();
+    expect(autoAnswer("bypassPermissions", "all", command("ls -la"), ROOTS)).toBe("allow");
     expect(
-      autoAnswer("bypassPermissions", "irreversible", command("gh pr merge 12")),
+      autoAnswer("bypassPermissions", "all", command("git push origin main"), ROOTS),
     ).toBeUndefined();
-    expect(autoAnswer("auto", "all", { kind: "edit", rawInput: {} })).toBe("allow");
+    expect(
+      autoAnswer("bypassPermissions", "irreversible", command("gh pr merge 12"), ROOTS),
+    ).toBeUndefined();
+    expect(autoAnswer("auto", "all", { kind: "edit", rawInput: {} }, ROOTS)).toBe("allow");
   });
 
   it("lets Gram's own app tools through in every mode, and no other server's", () => {
     const gram = { kind: "other", rawInput: { tool_name: "gram__list_open_prs", tool_input: {} } };
     const other = { kind: "other", rawInput: { tool_name: "github__merge_pr", tool_input: {} } };
     for (const mode of ["default", "dontAsk", "plan"] as const)
-      expect(autoAnswer(mode, "all", gram)).toBe("allow");
-    expect(autoAnswer("default", "all", other)).toBeUndefined();
-    expect(autoAnswer("dontAsk", undefined, other)).toBe("deny");
+      expect(autoAnswer(mode, "all", gram, ROOTS)).toBe("allow");
+    expect(autoAnswer("default", "all", other, ROOTS)).toBeUndefined();
+    expect(autoAnswer("dontAsk", undefined, other, ROOTS)).toBe("deny");
+  });
+
+  it("shows the card in acceptEdits for an edit outside the thread's folders, or naming none", () => {
+    const top = mkdtempSync(join(tmpdir(), "grok-edit-"));
+    const cwd = join(top, "thread");
+    const granted = join(top, "granted");
+    mkdirSync(cwd);
+    mkdirSync(granted);
+    symlinkSync(top, join(cwd, "up"));
+    const answer = (call: Json) => autoAnswer("acceptEdits", undefined, call, [cwd, granted]);
+    expect(answer(edit({ file_path: "a.ts" }))).toBe("allow");
+    expect(answer(edit({ file_path: join(granted, "b.ts") }))).toBe("allow");
+    expect(answer(edit({ file_path: "../.bashrc" }))).toBeUndefined();
+    expect(answer(edit({ file_path: "/home/me/.ssh/authorized_keys" }))).toBeUndefined();
+    expect(answer(edit({ file_path: "up/.bashrc" }))).toBeUndefined();
+    expect(answer(edit({ file_path: "a.ts" }, [{ path: "/etc/profile" }]))).toBeUndefined();
+    expect(answer(edit({}))).toBeUndefined();
+    expect(answer(edit({ file_path: 7 }))).toBeUndefined();
   });
 
   it("refuses in dontAsk, passes edits in acceptEdits, and shows the rest", () => {
-    expect(autoAnswer("dontAsk", undefined, command("ls"))).toBe("deny");
-    expect(autoAnswer("acceptEdits", undefined, { kind: "edit", rawInput: {} })).toBe("allow");
-    expect(autoAnswer("acceptEdits", undefined, command("ls"))).toBeUndefined();
-    expect(autoAnswer("default", undefined, command("ls"))).toBeUndefined();
+    expect(autoAnswer("dontAsk", undefined, command("ls"), ROOTS)).toBe("deny");
+    const inside = edit({ file_path: "/work/thread/src/a.ts" });
+    expect(autoAnswer("acceptEdits", undefined, inside, ROOTS)).toBe("allow");
+    expect(autoAnswer("acceptEdits", undefined, command("ls"), ROOTS)).toBeUndefined();
+    expect(autoAnswer("default", undefined, command("ls"), ROOTS)).toBeUndefined();
   });
 });
 

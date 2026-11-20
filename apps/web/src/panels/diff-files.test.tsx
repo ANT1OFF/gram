@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { mockDiff, withoutWhitespaceChanges } from "@/api/mock-git";
 
-import { DiffFileList, pathParts } from "./diff-files";
+import { DiffFileList, diffCommand, pathParts } from "./diff-files";
 import { ROW_BUDGET } from "./patch-view";
 
 afterEach(cleanup);
@@ -57,6 +57,36 @@ describe("pathParts", () => {
       folders: "src/timers.ts → src/",
       name: "clock.ts",
     });
+  });
+});
+
+describe("diffCommand", () => {
+  it("quotes a path for the shell as one argument", () => {
+    expect(diffCommand(file("a b/it's $(x) `y` & %z%.ts"))).toBe(
+      `git diff -- 'a b/it'\\''s $(x) \`y\` & %z%.ts'`,
+    );
+    expect(diffCommand({ ...file("new.ts"), status: "untracked" })).toBe(
+      "git diff --no-index -- /dev/null new.ts",
+    );
+  });
+
+  it("offers no command for a path a terminal would act on before the shell reads it", () => {
+    for (const path of [
+      "a\u0003b",
+      "a\rb",
+      "a\nrm -rf ~",
+      "a\u001b[201~b",
+      "a\u009bb",
+      "a\u007fb",
+    ]) {
+      expect(diffCommand(file(path))).toBeUndefined();
+    }
+  });
+
+  it("leaves the copy button out of a too-large note for such a path", () => {
+    render(<DiffFileList files={[{ ...file("big\nrm -rf ~"), tooLarge: true }]} />);
+    expect(screen.getByTestId("diff-too-large")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copy git diff command" })).toBeNull();
   });
 });
 

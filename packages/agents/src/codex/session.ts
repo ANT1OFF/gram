@@ -50,7 +50,7 @@ import {
   type OutwardGate,
 } from "../host.ts";
 import { codexServerEntry, describeCodexEntry } from "../mcp-native.ts";
-import { listsLeaveOut, narrowsMcp, reportedLists, type McpLists } from "../mcp-lists.ts";
+import { listsLeaveOut, narrowsMcp, reportedLists } from "../mcp-lists.ts";
 import { gateLevel } from "../outward.ts";
 import { acquireHeld } from "../servers-hold.ts";
 import { startupDiagnostic } from "./startup-diagnostic.ts";
@@ -77,6 +77,13 @@ import type { TurnStartParams } from "./protocol/v2/TurnStartParams.ts";
 import { GATE_ACCEPT, gateVerdict, responseFor, toPendingRequest } from "./requests.ts";
 import { isServerRequest, type CodexRpc, type CodexRpcError } from "./rpc.ts";
 import { makeCodexHelper } from "./helper.ts";
+import {
+  confinedConfig,
+  leftOutConfig,
+  loadedProjectLayers,
+  switchedOff,
+  unconfinedServers,
+} from "./thread-config.ts";
 import { CodexServers, SERVER_WIDE, type CodexServer, type CodexServersConfig } from "./servers.ts";
 import { toCodexTranscript } from "./transcript.ts";
 import { codexAutoReviewSupported } from "./version.ts";
@@ -421,60 +428,6 @@ const configuredServers = (
   });
 };
 
-const switchedOff = (keys: ReadonlyArray<string>) =>
-  Object.fromEntries(keys.map((name) => [name, { enabled: false }]));
-
-/**
- * The thread config that switches off every MCP server and ChatGPT app `config/read` names for
- * `cwd`, project layers included, except `own`: Gram's app tools, which the session states
- * itself. Codex starts them itself, outside the sandbox, so a confined
- * session can't keep them. Each goes by name: a `mcp_servers` table in the thread config merges
- * into the user's rather than replacing it (measured on codex 0.158.0). Plugin servers are loaded
- * separately and aren't all named by `config/read`; confined threads disable plugin loading too.
- * ChatGPT's built-in apps server is feature-owned, so app policy alone doesn't stop it starting.
- */
-export const confinedConfig = (read: ConfigReadResponse, own: string | undefined) => {
-  const names = (key: string) => {
-    const table = read.config[key];
-    return typeof table === "object" && table !== null && !Array.isArray(table)
-      ? Object.keys(table)
-      : [];
-  };
-  return {
-    mcp_servers: switchedOff(names("mcp_servers").filter((name) => name !== own)),
-    features: { plugins: false, apps: false },
-    apps: {
-      ...switchedOff(names("apps").filter((name) => name !== "_default")),
-      _default: { enabled: false },
-    },
-  };
-};
-
-/**
- * The thread config that switches off each MCP server `config/read` names for `cwd` that the
- * session's lists leave out (`listsLeaveOut`), matched by its name and the `url` its table gives;
- * `own` is Gram's, which stays. ChatGPT apps aren't MCP servers here, and keep to the user's
- * config.
- */
-export const leftOutConfig = (
-  read: ConfigReadResponse,
-  lists: McpLists,
-  own: string | undefined,
-): Record<string, { enabled: boolean }> => {
-  const tables = read.config["mcp_servers"];
-  if (typeof tables !== "object" || tables === null || Array.isArray(tables)) return {};
-  return switchedOff(
-    Object.entries(tables)
-      .filter(([name]) => name !== own)
-      .filter(([name, table]) => {
-        const url =
-          typeof table === "object" && table !== null && "url" in table ? table.url : undefined;
-        return listsLeaveOut(lists, { name, url: typeof url === "string" ? url : undefined });
-      })
-      .map(([name]) => name),
-  );
-};
-
 /**
  * The plugins that bring Codex computer use (codex-cli 0.167.1, the ChatGPT app's bundle):
  * `unified-computer-use` serves `cua_repl`, which drives the user's browsers and Mac apps; the
@@ -607,19 +560,6 @@ export const scopeConfig = (
         },
       }),
 });
-
-/**
- * The servers a confined thread still has running that aren't Gram's own, by name: a
- * plugin's, or anything else `confinedConfig` couldn't name beforehand.
- */
-export const unconfinedServers = (
-  statuses: ReadonlyArray<McpServerStatus>,
-  ownServer: boolean,
-): ReadonlyArray<string> =>
-  statuses
-    .filter((status) => !(ownServer && status.name === APP_TOOLS_NAME))
-    .filter((status) => status.runtimeStatus !== "disabled")
-    .map((status) => status.name);
 
 /**
  * Every page of a thread's MCP server statuses. With no thread Codex starts and connects every
@@ -939,6 +879,21 @@ export const makeCodexHost = (
           return yield* new AgentUnavailable({ agent: "codex", message: problem });
       }
       const roots = o.additionalDirectories ?? [];
+      // Someone else's tree (a fork's PR head): a project layer the user's Codex trusts would bring
+      // its author's MCP servers, hooks and rules, so the session doesn't open on one.
+      if (o.untrustedTree === true) {
+        const loaded = loadedProjectLayers(
+          yield* server.rpc
+            .request("config/read", { includeLayers: true, cwd: o.cwd })
+            .pipe(Effect.mapError(unavailableNaming("Codex couldn't read its config", needs))),
+        );
+        if (loaded.length > 0)
+          return yield* new AgentUnavailable({
+            agent: "codex",
+            reason: "startup-failed",
+            message: `This checkout is someone else's code, and your Codex config trusts its ${loaded.join(", ")}, so Codex would run the settings in it. Remove that project's trust from your Codex config, or use Claude Code, to run here.`,
+          });
+      }
       const confined =
         o.confineWrites === true
           ? confinedConfig(

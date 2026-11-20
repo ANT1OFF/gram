@@ -11,11 +11,13 @@ import type {
   UserInput,
 } from "@gram/contracts";
 import { readFile } from "node:fs/promises";
+import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { APP_TOOLS_SERVER_NAME } from "../app-tools.ts";
 import { BUILT_IN_TOGGLE_REASON, type ConnectorStatus, type OutwardGate } from "../host.ts";
 import { gateAsks, outwardKind } from "../outward.ts";
+import { canonicalSessionHome } from "../session-home.ts";
 import { grokToolName, toolFor } from "./mapper.ts";
 
 /** A JSON object as ACP carries it. */
@@ -114,22 +116,51 @@ export const permissionParams = (permission: "ask" | "auto" | "always-approve"):
   permission_mode: permission,
 });
 
+const EDIT_PATH_KEYS = ["file_path", "target_file", "path", "notebook_path", "target_directory"];
+
+/**
+ * Whether every path an edit request names (its `locations` and its input's path keys) is, once
+ * links are followed, inside one of `roots`, the first of which relative paths are read from. A
+ * request naming no path is not.
+ */
+export const editWithin = (call: Json, roots: ReadonlyArray<string>): boolean => {
+  const [cwd] = roots;
+  if (cwd === undefined) return false;
+  const input = record(call["rawInput"]);
+  const named = [
+    ...(Array.isArray(call["locations"]) ? call["locations"] : []).map((at) => record(at)["path"]),
+    ...EDIT_PATH_KEYS.map((key) => input[key]),
+  ].filter((path) => path !== undefined);
+  if (named.length === 0) return false;
+  const inside = roots.map((root) => canonicalSessionHome(resolve(root)));
+  return named.every((path) => {
+    if (typeof path !== "string" || path === "") return false;
+    const real = canonicalSessionHome(resolve(cwd, path));
+    return inside.some((root) => {
+      const rest = relative(root, real);
+      return rest === "" || (!rest.startsWith("..") && !isAbsolute(rest));
+    });
+  });
+};
+
 /**
  * The answer Gram gives a permission request itself, without a card: Gram's own app tools go
- * through, as their registry raises its own card where one is needed; `dontAsk` refuses, edits go
- * through in `acceptEdits`, and a mode that would have run the call unasked lets it through when
- * the outward gate doesn't ask about it. `undefined` shows the card.
+ * through, as their registry raises its own card where one is needed; `dontAsk` refuses, edits
+ * inside the thread's folders (`roots`, `editWithin`) go through in `acceptEdits`, and a mode that
+ * would have run the call unasked lets it through when the outward gate doesn't ask about it.
+ * `undefined` shows the card.
  */
 export const autoAnswer = (
   mode: PermissionMode,
   gate: OutwardGate | undefined,
   call: Json,
+  roots: ReadonlyArray<string>,
 ): "allow" | "deny" | undefined => {
   const tool = text(record(call["rawInput"])["tool_name"]);
   if (tool?.startsWith(`${APP_TOOLS_SERVER_NAME}__`) === true) return "allow";
   if (mode === "dontAsk") return "deny";
   const kind = text(call["kind"]);
-  if (mode === "acceptEdits" && kind === "edit") return "allow";
+  if (mode === "acceptEdits" && kind === "edit" && editWithin(call, roots)) return "allow";
   if (mode !== "bypassPermissions" && mode !== "auto") return undefined;
   if (gate === undefined) return "allow";
   if (kind !== "execute") return "allow";

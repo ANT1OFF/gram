@@ -23,6 +23,7 @@ import type { DiffLayout } from "@/stores/layout";
 
 import { ChunkedPatch, useDiffChunkSource } from "./diff-chunks";
 import { PatchView } from "./patch-view";
+import { quoteShellPath, typablePath } from "./terminal/shell-quote";
 
 /**
  * Changed lines past which a file starts collapsed, however few files there are; a diff with fewer in
@@ -378,15 +379,18 @@ function DiffFileRow({
   );
 }
 
-/** `path` quoted for a POSIX shell. */
-const shellQuote = (path: string) =>
-  /^[\w./@+-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
-
-/** The command that prints `file`'s patch from its checkout, as the Diff panel would show it. */
-export const diffCommand = (file: DiffFile) =>
-  file.status === "untracked" || file.status === "added"
-    ? `git diff --no-index -- /dev/null ${shellQuote(file.path)}`
-    : `git diff -- ${shellQuote(file.path)}`;
+/**
+ * The command that prints `file`'s patch from its checkout, as the Diff panel would show it, or
+ * nothing when its path holds a character a terminal acts on before the shell reads it
+ * (`typablePath`): such a command is never offered to paste.
+ */
+export const diffCommand = (file: DiffFile): string | undefined => {
+  if (!typablePath(file.path)) return undefined;
+  const path = quoteShellPath(file.path, "posix");
+  return file.status === "untracked" || file.status === "added"
+    ? `git diff --no-index -- /dev/null ${path}`
+    : `git diff -- ${path}`;
+};
 
 /**
  * A patch past the view limit: what it changed, what is still reviewable here, and the ways to read
@@ -410,9 +414,10 @@ function TooLargeNote({
 }) {
   const source = useDiffChunkSource();
   const [copied, setCopied] = useState<string>();
-  const copy = async () => {
+  const command = diffCommand(file);
+  const copy = async (text: string) => {
     try {
-      await copyText(diffCommand(file));
+      await copyText(text);
       setCopied("Copied. Run it in the checkout to see the whole patch.");
     } catch (error) {
       setCopied(`Couldn't copy: ${errorMessage(error)}`);
@@ -448,9 +453,11 @@ function TooLargeNote({
             Show in Files
           </Button>
         )}
-        <Button type="button" size="xs" variant="ghost" onClick={() => void copy()}>
-          Copy git diff command
-        </Button>
+        {command !== undefined && (
+          <Button type="button" size="xs" variant="ghost" onClick={() => void copy(command)}>
+            Copy git diff command
+          </Button>
+        )}
       </div>
       {copied && (
         <p role="status" className="text-muted-foreground">
