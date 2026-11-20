@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const OUT = process.env.CODEX_FIXTURES ?? new URL("../fixtures/codex/", import.meta.url).pathname;
 const ONLY = process.env.CODEX_SCENARIOS?.split(",");
@@ -14,7 +15,6 @@ const DUMMY_KEY = "gram-dummy-not-a-key";
 mkdirSync(OUT, { recursive: true });
 const cliVersion = execFileSync("codex", ["--version"]).toString().trim().split(" ").at(-1);
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const usage = {
   input_tokens: 42,
   input_tokens_details: { cached_tokens: 0 },

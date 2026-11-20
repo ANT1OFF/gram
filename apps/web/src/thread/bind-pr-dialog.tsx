@@ -56,7 +56,6 @@ export function BindPrDialog({ threadId, onClose }: { threadId: ThreadId; onClos
       >
         <input
           aria-label="Pull request number or URL"
-          // oxlint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           placeholder={origin ? "#12 or a PR URL" : "https://github.com/owner/repo/pull/12"}

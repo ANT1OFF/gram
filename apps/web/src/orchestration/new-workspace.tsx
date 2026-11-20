@@ -72,6 +72,7 @@ import { RepositoryChecklist } from "./repository-checklist";
 import { sendDiscover } from "./use-board-actions";
 import { useWorkspacesQuery } from "./use-orchestration";
 import { parentFolder } from "./workspace-repos";
+import { sleep } from "@/lib/sleep";
 
 /** How often a sheet waiting for the person's machine asks whether it is up. */
 const MACHINE_POLL_MS = 1000;
@@ -284,7 +285,7 @@ function SheetForm({
         if (!alive.current) return;
         if (!needsMachine(status)) break;
         if (status?.progress?.phase === "failed") return setWaiting(false);
-        await new Promise((resolve) => setTimeout(resolve, MACHINE_POLL_MS));
+        await sleep(MACHINE_POLL_MS);
       }
     } catch (e) {
       setWaiting(false);

@@ -194,7 +194,6 @@ export function PrPeople({ threadId, detail }: { threadId: ThreadId; detail: PrD
             <div className="flex items-center gap-1">
               <input
                 aria-label="Logins or teams to ask"
-                // oxlint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
                 className={inputCls}
                 placeholder="login or org/team, comma-separated"

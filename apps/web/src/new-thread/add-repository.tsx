@@ -23,7 +23,7 @@ import {
 } from "react";
 
 import { useApi } from "@/api/context";
-import { errorMessage } from "@/api/errors";
+import { errorHelp, errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
 import { Shimmer } from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
@@ -127,7 +127,10 @@ function useRegisterRepository(onAdded: (project: Project) => void | Promise<voi
   );
   /** Set while a repository is registered; `cloning` names the clone under way. */
   const [pending, setPending] = useState<{ cloning?: string }>();
-  const [error, setError] = useState<string>();
+  const [failure, setFailure] = useState<{ message: string; help?: ErrorHelp }>();
+  const error = failure?.message;
+  const setError = (message: string | undefined) =>
+    setFailure(message === undefined ? undefined : { message });
 
   // A ref, not `pending`: a folder dialog opened before a clone began still answers after it did.
   const running = useRef(false);
@@ -164,7 +167,13 @@ function useRegisterRepository(onAdded: (project: Project) => void | Promise<voi
       await onAdded(project);
       return true;
     } catch (e) {
-      if (!signal.aborted) setError(errorMessage(e) || "Couldn't add the repository. Try again.");
+      if (!signal.aborted) {
+        const help = errorHelp(e);
+        setFailure({
+          message: errorMessage(e) || "Couldn't add the repository. Try again.",
+          ...(help === undefined ? {} : { help }),
+        });
+      }
       return false;
     } finally {
       running.current = false;
@@ -195,6 +204,7 @@ function useRegisterRepository(onAdded: (project: Project) => void | Promise<voi
   return {
     pending,
     error,
+    help: failure?.help,
     setError,
     cloneFolder,
     asking,
@@ -210,6 +220,26 @@ function useRegisterRepository(onAdded: (project: Project) => void | Promise<voi
       return register((signal) => api.cloneProject(remote, { signal }), `Cloning ${label}${into}…`);
     },
   };
+}
+
+type ErrorHelp = NonNullable<ReturnType<typeof errorHelp>>;
+
+/** Where a refused add says the person can put it right, after its reason. */
+function HelpLink({ help }: { help: ErrorHelp | undefined }) {
+  if (help === undefined) return null;
+  return (
+    <>
+      {" "}
+      <a
+        href={help.url}
+        target="_blank"
+        rel="noreferrer"
+        className="text-link underline-offset-2 hover:underline"
+      >
+        {help.label}
+      </a>
+    </>
+  );
 }
 
 /**
@@ -230,7 +260,7 @@ export function CloneOffer({
   onCloned: (project: Project) => void;
   children?: ReactNode;
 }) {
-  const { pending, error, cloneFolder, clone } = useRegisterRepository(onCloned);
+  const { pending, error, help, cloneFolder, clone } = useRegisterRepository(onCloned);
   if (pending?.cloning !== undefined) return <CloneProgress label={pending.cloning} />;
   if (!offered && error === undefined) return children;
   return (
@@ -256,6 +286,7 @@ export function CloneOffer({
       {error !== undefined && (
         <p role="alert" className="text-meta text-destructive">
           {error}
+          <HelpLink help={help} />
         </p>
       )}
     </div>
@@ -301,7 +332,7 @@ export function AddRepository({
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  const { pending, error, setError, cloneFolder, asking, answer, addFolder, clone } =
+  const { pending, error, help, setError, cloneFolder, asking, answer, addFolder, clone } =
     useRegisterRepository(async (project) => {
       await onAdded(project);
       setText("");
@@ -583,6 +614,7 @@ export function AddRepository({
       ) : error !== undefined ? (
         <p id={hintId} role="alert" className="text-meta text-destructive">
           {error}
+          <HelpLink help={help} />
         </p>
       ) : input.kind === "folder" && typed?.kind === "repo" ? (
         <p

@@ -40,6 +40,7 @@ import { CheckoutService } from "../../../packages/server/src/runtime/hooks.ts";
 import { ServerConfig } from "../../../packages/server/src/config.ts";
 import { AuthMiddleware, LaunchToken } from "../../../packages/server/src/http/server.ts";
 import { HttpRouter } from "../../../packages/server/src/platform/unstable.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const output = resolvePath(process.argv[2]);
 mkdirSync(output); // Refuse overwriting evidence.
@@ -383,7 +384,7 @@ try {
         assert.equal(await status(), "Palette opened");
         ok(await codex("browser_press_key", { key: "9", modifiers: ["meta", "shift"] }));
         ok(await codex("browser_press_key", { key: "9", modifiers: ["ctrl", "shift"] }));
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await sleep(500);
         assert(
           !messages.some((m) => m.type === "fixture.accelerator"),
           "A synthetic key reached the app menu",

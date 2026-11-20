@@ -3,15 +3,13 @@ import { CloudUpload, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { formatStamp } from "@/lib/time";
 import { useThreadsStore } from "@/stores/threads";
 
 import { bringBackFrom } from "./move-thread-model";
 import { settledThere } from "./thread-transfer-api";
 import { useThreadDialogs } from "./thread-dialogs-store";
 import { useThreadMove } from "./use-thread-move";
-
-const when = (at: number): string =>
-  new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 /**
  * Above the composer once the thread moved to another Gram: it carries on there, and this copy is
@@ -35,7 +33,7 @@ export function MovedAwayNotice({ threadId }: { threadId: ThreadId }) {
     >
       <CloudUpload aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
       <p className="min-w-0 flex-1">
-        Moved to {moved.name} on {when(moved.at)}.{" "}
+        Moved to {moved.name} at {formatStamp(moved.at)}.{" "}
         <span className="text-muted-foreground">
           It carries on there with its edits. This copy is read-only, and its folder stays here.
         </span>

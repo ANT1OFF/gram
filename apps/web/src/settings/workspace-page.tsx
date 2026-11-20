@@ -29,6 +29,7 @@ import { Expand } from "@/motion";
 import { AddRepository } from "@/new-thread/add-repository";
 import { AutonomyChip } from "@/orchestration/autonomy-chip";
 import { RepositoryChecklist } from "@/orchestration/repository-checklist";
+import { ModelsAllowedBy } from "@/composer/models";
 import { SwitchOrchestratorAction } from "@/orchestration/switch-orchestrator";
 import { ProjectScriptsEditor } from "@/scripts/project-scripts-editor";
 import { useThreadsStore } from "@/stores/threads";
@@ -157,19 +158,22 @@ export function WorkspaceSettingsPage({
         description="Which models the orchestrator and its workers run on."
         keywords={["roster", "worker models", "other models", "orchestrator model", "brief footer"]}
       >
-        {orchestrator !== undefined && (
-          <SwitchOrchestratorAction
-            thread={orchestrator}
-            state={state}
-            saved={ownModel((changes.charter ?? state.charter).orchestratorModel)}
-            disabled={changes.busy}
+        {/* An orchestrator whose profile limits its models is offered only those. */}
+        <ModelsAllowedBy profile={orchestrator?.profile}>
+          {orchestrator !== undefined && (
+            <SwitchOrchestratorAction
+              thread={orchestrator}
+              state={state}
+              saved={ownModel((changes.charter ?? state.charter).orchestratorModel)}
+              disabled={changes.busy}
+            />
+          )}
+          <RosterEditor
+            charter={changes.charter ?? state.charter}
+            disabled={changes.busy || orchestrator?.sessionSwitch !== undefined}
+            onChange={(next) => void changes.saveCharter(next, "Models saved")}
           />
-        )}
-        <RosterEditor
-          charter={changes.charter ?? state.charter}
-          disabled={changes.busy || orchestrator?.sessionSwitch !== undefined}
-          onChange={(next) => void changes.saveCharter(next, "Models saved")}
-        />
+        </ModelsAllowedBy>
         <OtherWorkerModelsField
           charter={changes.charter ?? state.charter}
           disabled={changes.busy}

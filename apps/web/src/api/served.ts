@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcSchema from "effect/rpc/RpcSchema";
 import * as Stream from "effect/Stream";
+import { sleep } from "@/lib/sleep";
 
 /** One RPC of the whole wire surface, by its tag. */
 export type GramRpcTag = RpcGroup.Rpcs<typeof GramRpcs>["_tag"];
@@ -162,10 +163,7 @@ export function startHandshake(
       // it refuses are struck off one by one. Anything else (a dropped socket) is asked again.
       () => undefined,
     );
-  const wait = Promise.race([
-    once(),
-    new Promise<void>((resolve) => setTimeout(resolve, waitMs)),
-  ]).then(() => {
+  const wait = Promise.race([once(), sleep(waitMs)]).then(() => {
     settled = true;
   });
   reopened(() => void once());

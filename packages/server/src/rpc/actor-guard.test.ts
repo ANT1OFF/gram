@@ -78,8 +78,10 @@ describe("what a member may call", () => {
   });
 
   test("keeps a headless server's own disk from its members", () => {
-    for (const tag of ["fs.browse", "fs.tree", "projects.add", "projects.clone"])
+    for (const tag of ["fs.browse", "fs.tree", "projects.add"])
       expect(memberMay(tag, { path: "/" }, true)).toBe(false);
+    // A clone there files the repository's origin and reaches nothing: New project adds one so.
+    expect(memberMay("projects.clone", { remote: "acme/web" }, true)).toBe(true);
     // A listing lists a thread's folder, never the server's.
     expect(memberMay("fs.list", { path: "/" }, true)).toBe(false);
     expect(memberMay("fs.files", {}, true)).toBe(false);

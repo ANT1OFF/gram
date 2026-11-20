@@ -78,7 +78,7 @@ export function useRuntimeInstall(agent: RuntimeAgent, enabled: boolean) {
     return () => abort.abort();
     // A replaced connection brings a new `api`, which must resubscribe, and the query client is used
     // inside; the rule treats both as stable context values and can't see that.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `api` and `client` are context values the rule takes for stable, and a new `api` must resubscribe
   }, [api, client, watched]);
   return { state };
 }
@@ -115,7 +115,7 @@ export function useCliUpdate(agent: RuntimeAgent) {
     return () => abort.abort();
     // A replaced connection brings a new `api`, which must resubscribe, and the query client is used
     // inside; the rule treats both as stable context values and can't see that.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `api` and `client` are context values the rule takes for stable, and a new `api` must resubscribe
   }, [api, client, agent]);
   return { state };
 }

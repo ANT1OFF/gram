@@ -188,4 +188,29 @@ describe("the stop status of a machine back after a stop", () => {
       expect((yield* stopStatus(deps))[0]?.resuming).toBeUndefined();
     }),
   );
+
+  it.effect("names each thread a resume couldn't put back, with why", () =>
+    Effect.gen(function* () {
+      const stops = makeStopMarks();
+      const deps = {
+        hosts: {
+          machines: { list: () => [{ id: ID, name: "box", confirmedAt: 1 }] },
+          connection: () => Effect.succeed({}),
+          stops,
+        } as never,
+      };
+      stops.stopped(ID, []);
+      stops.away(ID);
+      stops.back(ID);
+      const generation = stops.resumeStarted(ID);
+      stops.block(ID, ThreadId.make("t-one"), "Its folder couldn't be fetched.", generation);
+      stops.resumed(ID, generation, true);
+      expect((yield* stopStatus(deps))[0]).toMatchObject({
+        blocked: [{ threadId: "t-one", reason: "Its folder couldn't be fetched." }],
+      });
+      // A later resume that puts it back lifts it.
+      stops.threadBack(ID, ThreadId.make("t-one"));
+      expect((yield* stopStatus(deps))[0]?.blocked).toBeUndefined();
+    }),
+  );
 });

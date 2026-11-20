@@ -508,6 +508,13 @@ export interface PaneRequest {
   readonly threadId: string;
   readonly limits: PaneLimits;
   readonly command: PaneCommand;
+  /**
+   * Where the thread's loopback is when its session runs on another machine: a SOCKS5 proxy on
+   * the server's own loopback (`socks5://127.0.0.1:<port>`) that reaches that machine's loopback
+   * through its host. Absent for a thread on this machine. The headless browser host gives the
+   * thread's page that proxy; the desktop app's Preview ignores it.
+   */
+  readonly loopbackProxy?: string;
 }
 
 /** One console line the page logged. */

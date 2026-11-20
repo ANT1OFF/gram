@@ -22,6 +22,7 @@ import type { GrantLedger } from "./grants.ts";
 import type { TokenKeeper } from "./hosted.ts";
 import type { AskLimits } from "./limits.ts";
 import { type DeviceServeEnd, serveDevice } from "./serve.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 /**
  * Lending this machine to one hosted server's workspaces: one connection per lent workspace,
@@ -237,9 +238,7 @@ export const makeServerLending = (
         gate.stopAll(why);
         let timer: NodeJS.Timeout | undefined;
         await Promise.race([
-          gate
-            .idle()
-            .then(() => new Promise((later) => setTimeout(later, LENDING_HANG_UP_GRACE_MS))),
+          gate.idle().then(() => sleep(LENDING_HANG_UP_GRACE_MS)),
           new Promise((later) => {
             timer = setTimeout(later, LENDING_HANG_UP_MOST_MS);
           }),

@@ -91,7 +91,7 @@ test.describe("the ask window's page", () => {
     // Too soon, a script's click, and a key on the button: none of them allow.
     await allow.click({ force: true });
     await page.evaluate(() => (document.getElementById("allow") as HTMLButtonElement).click());
-    await page.waitForTimeout(ASK_ARM_MS + 200);
+    // Armed: the button comes on once the ask has been up for ASK_ARM_MS.
     await expect(allow).toBeEnabled();
     await page.evaluate(() => (document.getElementById("allow") as HTMLButtonElement).click());
     await allow.focus();
@@ -109,7 +109,9 @@ test.describe("the ask window's page", () => {
         ),
       view("npm test"),
     );
-    await page.waitForTimeout(ASK_ARM_MS + 200);
+    // A new ask arms afresh: off at once, on again once it has been up for ASK_ARM_MS.
+    await expect(allow).toBeDisabled();
+    await expect(allow).toBeEnabled();
     for (let click = 0; click < 3; click += 1) {
       await page.mouse.down();
       await page.mouse.up();

@@ -23,6 +23,7 @@ import { claudeTokenIn } from "./claude-token.ts";
 import { checksOn } from "./checks.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { sharedOnHost } from "../shared/host-shared.ts";
+import { hostLoopback } from "./loopback.ts";
 import { threadPlacesOnHost } from "./thread-places.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import {
@@ -274,6 +275,7 @@ const hostService = (
       reads: fileReadsOn(proc),
       attachments: yield* attachmentsOnHost(hostAttachments()),
       shared: sharedOnHost(hostShared()),
+      loopback: hostLoopback(),
       threadPlaces: threadPlacesOnHost(proc, hostRepos()),
       repos: {
         ensure: (url) =>

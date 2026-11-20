@@ -1,6 +1,7 @@
 import { createSocket } from "node:dgram";
 import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import { connect as netConnect, createServer as createNetServer } from "node:net";
 import { networkInterfaces } from "node:os";
 import { PassThrough } from "node:stream";
 
@@ -570,6 +571,53 @@ describe.skipIf(executable === undefined || executable === "")("headless panes i
   afterAll(() => {
     server.close();
   });
+
+  it("sends a thread's loopback to the proxy its request names, and others' to this machine", async () => {
+    // A SOCKS5 proxy standing in for the server's tunnel to another machine: whatever port is
+    // asked for, it connects to the fixture, as that machine's own dev server.
+    const asked: string[] = [];
+    const proxy = createNetServer((socket) => {
+      socket.once("data", () => {
+        socket.write(Buffer.from([0x05, 0x00]));
+        socket.once("data", (request: Buffer) => {
+          const name = request.subarray(5, 5 + request[4]!).toString();
+          asked.push(`${name}:${request.readUInt16BE(5 + request[4]!)}`);
+          const upstream = netConnect(Number(new URL(origin).port), "127.0.0.1", () => {
+            socket.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+            socket.pipe(upstream).pipe(socket);
+          });
+          upstream.on("error", () => socket.destroy());
+        });
+      });
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const address = proxy.address();
+    const loopbackProxy = `socks5://127.0.0.1:${typeof address === "object" && address !== null ? address.port : 0}`;
+    const { panes, close } = headlessPanes({ executable: executable!, sandbox: false });
+    try {
+      // Nothing listens on port 4999 here: only the other machine answers it.
+      const elsewhere = await panes.serve({
+        threadId: "remote",
+        limits: { actOnLoopbackOnly: true },
+        command: { op: "navigate", url: "http://localhost:4999/" },
+        loopbackProxy,
+      });
+      expect(elsewhere).toMatchObject({ ok: true, page: { title: "Owned fixture" } });
+      expect(asked).toContain("localhost:4999");
+      // Another thread's page, with no proxy, is this machine's loopback.
+      asked.length = 0;
+      const here = await panes.serve({
+        threadId: "local",
+        limits: { actOnLoopbackOnly: true },
+        command: { op: "navigate", url: `${origin}/` },
+      });
+      expect(here).toMatchObject({ ok: true, page: { title: "Owned fixture" } });
+      expect(asked).toEqual([]);
+    } finally {
+      await close();
+      proxy.close();
+    }
+  }, 60_000);
 
   it("navigates, reads, clicks and captures a loopback page", async () => {
     const { panes, close } = headlessPanes({ executable: executable!, sandbox: false });

@@ -88,6 +88,9 @@ let relaying = false;
 export const ghThreadEnv = (threadId: ThreadId | string): Readonly<Record<string, string>> =>
   relaying && THREAD_ID.test(threadId) ? { GH_TOKEN: `${THREAD_PREFIX}${threadId}` } : {};
 
+/** Whether this server's `gh` goes through a relay: true once one started. */
+export const githubRelayed = (): boolean => relaying;
+
 /** The thread a request's `Authorization` names, if it names one. */
 export const threadOfAuthorization = (value: string | undefined): string | undefined => {
   const match = /^(?:token|bearer)\s+(\S+)$/i.exec(value?.trim() ?? "");

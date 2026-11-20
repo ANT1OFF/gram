@@ -22,6 +22,7 @@ import {
   runProblems,
   verifyAttestations,
 } from "./linux-lib.mjs";
+import { setTimeout as sleepFor } from "node:timers/promises";
 
 const RUN_FIELDS = "databaseId,displayTitle,headSha,headBranch,event,status,conclusion";
 const VIEW_FIELDS =
@@ -31,8 +32,6 @@ const VIEW_FIELDS =
 export const RUN_APPEAR_MS = 10 * 60_000;
 export const RUN_FINISH_MS = 90 * 60_000;
 export const POLL_MS = 20_000;
-
-const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Dispatches the Linux build of `version` from `sha`. Returns what `collectLinuxBuild` needs to

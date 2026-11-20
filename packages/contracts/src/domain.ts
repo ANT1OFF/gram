@@ -838,8 +838,47 @@ export const ThreadProfileBinding = Schema.Struct({
       Schema.Struct({ model: Schema.String, effort: Schema.optionalKey(ReasoningVariant) }),
     ),
   ),
+  /**
+   * The only models the thread's sessions may run, lower-cased: the profile's model, fallbacks and
+   * choices, where it named choices (`ProfileModel.choices`). Absent: any model.
+   */
+  models: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type ThreadProfileBinding = typeof ThreadProfileBinding.Type;
+
+/** A model id as a profile's `models` are matched: lower-cased, with no `[1m]` window or date. */
+const plainModelId = (id: string): string =>
+  id
+    .trim()
+    .toLowerCase()
+    .replace(/\[1m\]$/, "")
+    .replace(/-\d{8}$/, "");
+
+/**
+ * Whether a thread's profile lets its sessions run a model: named by `id`, or by `runs`, the pinned
+ * id a catalogue row runs. Every model where the profile sets no limit.
+ */
+export const profileAllowsModel = (
+  binding: Pick<ThreadProfileBinding, "models"> | undefined,
+  id: string,
+  runs?: string,
+): boolean => {
+  const models = binding?.models;
+  if (models === undefined) return true;
+  const allowed = new Set(models.map(plainModelId));
+  return allowed.has(plainModelId(id)) || (runs !== undefined && allowed.has(plainModelId(runs)));
+};
+
+/** Why a thread's profile refuses `model`, naming the models it allows; read with `profileAllowsModel`. */
+export const profileModelRefusal = (
+  binding: Pick<ThreadProfileBinding, "models">,
+  model: string,
+): string => {
+  const models = binding.models ?? [];
+  return models.length === 0
+    ? `This thread's profile allows no model, so ${model} can't run here.`
+    : `This thread's profile doesn't allow ${model}. It runs only ${models.join(", ")}. Nothing was changed.`;
+};
 
 /** The level a thread's profile works at: `publish` when it names none. */
 export const profileAutonomyOf = (

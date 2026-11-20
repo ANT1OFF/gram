@@ -1572,7 +1572,7 @@ describe("the ledger watch", () => {
     const watch = createLedgerWatch({
       keepWarmMs: 0,
       publish: () => {},
-      // oxlint-disable-next-line require-yield
+      // oxlint-disable-next-line require-yield -- a stream that ends by itself without yielding is the case under test
       open: async function* () {
         opens++;
       },

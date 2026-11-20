@@ -258,7 +258,6 @@ function RenameFeatureDialog({
       >
         <input
           aria-label="Feature name"
-          // oxlint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           value={name}
@@ -320,7 +319,6 @@ function NewGroupDialog({
       >
         <input
           aria-label="Group name"
-          // oxlint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           placeholder="release-0-4"
           className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"

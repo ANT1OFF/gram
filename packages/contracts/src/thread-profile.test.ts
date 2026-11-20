@@ -13,7 +13,13 @@ import {
   type ThreadProfile,
 } from "./thread-profile.ts";
 import * as Schema from "effect/Schema";
-import { AwaitingMachine, ProfileAutonomy, profileAutonomyOf } from "./domain.ts";
+import {
+  AwaitingMachine,
+  ProfileAutonomy,
+  profileAllowsModel,
+  profileAutonomyOf,
+  profileModelRefusal,
+} from "./domain.ts";
 import { AWAITED_HOST_ID, LOCAL_HOST_ID } from "./hosts.ts";
 import { Autonomy } from "./workspaces.ts";
 
@@ -277,6 +283,31 @@ describe("ThreadProfile", () => {
       server: { name: "w", url: "https://mcp.example.test" },
       fallbacks: [{ model: "n" }],
     });
+  });
+
+  it("limits a thread to its profile's models only when the profile names choices", () => {
+    expect(profileBindingOf(minimal).models).toBeUndefined();
+    expect(profileAllowsModel(profileBindingOf(minimal), "anything")).toBe(true);
+    const binding = profileBindingOf({
+      ...minimal,
+      model: { model: "claude-haiku-5-5", fallbacks: [{ model: "claude-haiku-5-5" }], choices: [] },
+    });
+    expect(binding.models).toEqual(["claude-haiku-5-5"]);
+    expect(profileAllowsModel(binding, "claude-haiku-5-5")).toBe(true);
+    // A windowed or dated id is the same model; an alias counts by the model its row runs.
+    expect(profileAllowsModel(binding, "claude-haiku-5-5[1m]")).toBe(true);
+    expect(profileAllowsModel(binding, "claude-haiku-5-5-20261101")).toBe(true);
+    expect(profileAllowsModel(binding, "haiku", "claude-haiku-5-5")).toBe(true);
+    expect(profileAllowsModel(binding, "claude-sonnet-5-5")).toBe(false);
+    expect(profileAllowsModel(binding, "sonnet", "claude-sonnet-5-5")).toBe(false);
+    expect(profileModelRefusal(binding, "gpt-6.2-sol")).toContain("runs only claude-haiku-5-5");
+    expect(
+      problemsOf({ ...minimal, model: { model: "m", choices: ["Claude-Sonnet-5-5"] } }),
+    ).toEqual([]);
+    expect(
+      profileBindingOf({ ...minimal, model: { model: "m", choices: ["Claude-Sonnet-5-5"] } })
+        .models,
+    ).toEqual(["m", "claude-sonnet-5-5"]);
   });
 
   it("has a workspace's autonomy levels, publish when it names none", () => {

@@ -1,6 +1,6 @@
 import { fileEditsOf, MessageId, type AgentEvent } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
-import { codexFailure, httpFailure } from "../failure.ts";
+import { claudeFailure, codexFailure, httpFailure } from "../failure.ts";
 import { autoReviewNotice, hunksOf, makeCodexMapper, type CodexCompactionPhase } from "./mapper.ts";
 import type { ServerNotification } from "./protocol/ServerNotification.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
@@ -860,6 +860,29 @@ describe("makeCodexMapper failures", () => {
     });
     expect(httpFailure(403, "Model 'x' is restricted for this API key")).toMatchObject({
       kind: "modelUnavailable",
+    });
+    // A gateway that grants the caller only some models: not a refused key, and no retry helps.
+    const notGranted = "This agent is not allowed to use the model gpt-6.2-sol.";
+    expect(
+      codexFailure(
+        {
+          message: notGranted,
+          codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 403 } },
+          additionalDetails: null,
+        },
+        false,
+      ),
+    ).toEqual({
+      kind: "modelUnavailable",
+      httpStatus: 403,
+      code: "httpConnectionFailed",
+      retryable: false,
+    });
+    expect(claudeFailure(403, "authentication_failed", `API Error: 403 ${notGranted}`)).toEqual({
+      kind: "modelUnavailable",
+      httpStatus: 403,
+      code: "authentication_failed",
+      retryable: false,
     });
     expect(httpFailure(undefined, "connect ECONNREFUSED 127.0.0.1:4000")).toEqual({
       kind: "network",

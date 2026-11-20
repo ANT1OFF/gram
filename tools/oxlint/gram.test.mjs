@@ -1,18 +1,24 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ALLOWLISTS } from "./allowlists.mjs";
+import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Lints each source as a file of its own in one oxlint run, and returns each file's diagnostics. */
-const lintEach = (sources, rule = "gram/no-bare-fork") => {
+const lintEach = (
+  sources,
+  rule = "gram/no-bare-fork",
+  extension = ".ts",
+  setting = "error",
+  names,
+) => {
   const dir = mkdtempSync(join(tmpdir(), "gram-fork-rule-"));
   try {
     const files = sources.map((source, i) => {
-      const file = join(dir, `fixture-${i}.ts`);
+      const file = join(dir, names?.[i] ?? `fixture-${i}${extension}`);
       writeFileSync(file, source);
       return file;
     });
@@ -22,7 +28,7 @@ const lintEach = (sources, rule = "gram/no-bare-fork") => {
       JSON.stringify({
         categories: { correctness: "off" },
         jsPlugins: [join(root, "tools/oxlint/gram.mjs")],
-        rules: { [rule]: "error" },
+        rules: { [rule]: setting },
       }),
     );
     // Standalone lint fixtures must work without Effect or built workspace packages.
@@ -49,12 +55,15 @@ const lintEach = (sources, rule = "gram/no-bare-fork") => {
     rmSync(dir, { recursive: true, force: true });
   }
 };
-const lint = (source, rule) => lintEach([source], rule)[0];
+const lint = (source, rule, extension) => lintEach([source], rule, extension)[0];
 
 /** The rule codes the repository's own config reports for a probe file placed in `dir`. */
-const probeConfig = (dir) => {
+const probeConfig = (
+  dir,
+  source = 'import { realpath } from "node:fs/promises";\nexport const r = realpath;\n',
+) => {
   const file = join(root, dir, `.gram-lint-probe-${process.pid}.ts`);
-  writeFileSync(file, 'import { realpath } from "node:fs/promises";\nexport const r = realpath;\n');
+  writeFileSync(file, source);
   try {
     const result = spawnSync(
       process.execPath,
@@ -303,5 +312,288 @@ describe("no-adhoc-lock", () => {
 
   it.each(ALLOWLISTS["no-adhoc-lock"].pending)("still has an unmoved site in %s", (file) => {
     expect(lint(readFileSync(join(root, file), "utf8"), rule).length).toBeGreaterThan(0);
+  });
+});
+
+describe("no-sleep", () => {
+  const rule = "gram/no-sleep";
+
+  it("refuses waitForTimeout and every spelling of a promise that is only a timer", () => {
+    const found = lint(
+      `await page.waitForTimeout(500);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((r) => { setTimeout(r, 20); });
+      const sleep = (ms) => new Promise(function (done) { return setTimeout(done, ms); });
+      await Promise.race([work, new Promise((resolve) => setTimeout(() => resolve("late"), 9))]);
+      await new Promise((resolve) => window.setTimeout(resolve, 5));
+      await new Promise<void>((resolve) => globalThis.setTimeout(() => { resolve(); }, 5));
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it("says what to wait on instead, in tests and in product code", () => {
+    const sleep = "await new Promise((resolve) => setTimeout(resolve, 20));";
+    const [inTest, inProduct] = [".test.ts", ".ts"].map((extension) =>
+      lint(sleep, rule, extension),
+    );
+    expect(inTest[0].message).toContain("vi.useFakeTimers()");
+    expect(inProduct[0].message).toContain("node:timers/promises");
+    expect(lint("await page.waitForTimeout(5);", rule)[0].message).toContain("expect.poll");
+  });
+
+  it("allows bounded waits that keep their timer, waits on events and the shared helpers", () => {
+    expect(
+      lint(
+        `import { setTimeout as sleep } from "node:timers/promises";
+        await sleep(20);
+        let timer;
+        await Promise.race([work, new Promise((resolve) => { timer = setTimeout(resolve, 9); })]);
+        clearTimeout(timer);
+        await new Promise((resolve) => {
+          child.once("exit", resolve);
+          setTimeout(resolve, 1_000);
+        });
+        await new Promise((resolve) => setTimeout(() => console.log("x"), 5));
+        await new Promise((resolve) => setImmediate(resolve));
+        await expect(locator).toBeVisible();
+      `,
+        rule,
+      ),
+    ).toEqual([]);
+  });
+
+  it("is on everywhere under the repository's own config", () => {
+    const file = join(root, "apps/web/src", `.gram-sleep-probe-${process.pid}.ts`);
+    writeFileSync(file, "export const s = new Promise((r) => setTimeout(r, 1));\n");
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [join(root, "node_modules/oxlint/bin/oxlint"), "--format", "json", file],
+        { cwd: root, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" },
+      );
+      if (result.error) throw result.error;
+      expect(JSON.parse(result.stdout).diagnostics.map((d) => d.code)).toContain("gram(no-sleep)");
+    } finally {
+      rmSync(file, { force: true });
+    }
+  });
+
+  // The allowance only shrinks: a file that has lost a sleep must lower its count in the same change.
+  // One oxlint run per extension, so the parser is the file's own.
+  const pending = Object.entries(ALLOWLISTS["no-sleep"].pending);
+  const found = new Map();
+  for (const extension of new Set(pending.map(([file]) => extname(file)))) {
+    const files = pending.map(([file]) => file).filter((file) => extname(file) === extension);
+    const diagnostics = lintEach(
+      files.map((file) => readFileSync(join(root, file), "utf8")),
+      rule,
+      extension,
+    );
+    files.forEach((file, i) => found.set(file, diagnostics[i].length));
+  }
+  it.each(pending)("%s keeps exactly the %i sleeps it is allowed", (file, count) => {
+    expect(found.get(file), `lower ${file}'s count in tools/oxlint/allowlists.mjs`).toBe(count);
+  });
+});
+
+describe("disable-reason", () => {
+  const rule = "gram/disable-reason";
+
+  it("refuses a directive that turns a rule off without saying why", () => {
+    const found = lint(
+      `// oxlint-disable-next-line no-debugger
+      debugger;
+      /* eslint-disable no-console */
+      const a = 1; // oxlint-disable-line no-unused-vars
+      // eslint-disable-next-line no-debugger --
+      debugger;
+      // oxlint-disable-next-line react-hooks/exhaustive-deps -- reads refs only
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 3, 4, 5, 7]);
+    expect(found[4].message).toContain("react/exhaustive-deps");
+  });
+
+  it("allows a directive with its reason, re-enabling, and prose about directives", () => {
+    expect(
+      lint(
+        `// oxlint-disable-next-line no-debugger -- a breakpoint the test needs
+        debugger;
+        /* eslint-disable no-console -- a CLI's output */
+        /* eslint-enable no-console */
+        // Directives here say why: see oxlint-disable-next-line in the docs.
+        export const a = <div>{/* oxlint-disable-next-line x -- in JSX too */}</div>;
+      `,
+        rule,
+        ".tsx",
+      ),
+    ).toEqual([]);
+  });
+
+  it.each(ALLOWLISTS["disable-reason"].pending)(
+    "still has a directive without a reason in %s",
+    (file) => {
+      expect(
+        lint(readFileSync(join(root, file), "utf8"), rule, extname(file)).length,
+      ).toBeGreaterThan(0);
+    },
+  );
+});
+
+const codeLines = (n) =>
+  Array.from({ length: n }, (_, i) => `export const v${i} = ${i};`).join("\n");
+
+describe("max-lines", () => {
+  const rule = "gram/max-lines";
+  const small = ["error", { limit: 3, testLimit: 5, pending: {} }];
+
+  it("counts code lines only and holds source and tests to their own limits", () => {
+    const padded = `// a comment\n\n${codeLines(2)}\n/*\n * a block\n */\n\nexport const t = 1; // trailing\n`;
+    const found = lintEach([padded, codeLines(4), codeLines(5), codeLines(6)], rule, ".ts", small, [
+      "padded.ts",
+      "over.ts",
+      "fits.test.ts",
+      "over.spec.ts",
+    ]);
+    expect(found.map((d) => d.length)).toEqual([0, 1, 0, 1]);
+  });
+
+  // The list only shrinks: a listed file may not grow past its count, and one that fits under the
+  // limit again comes off the list. One oxlint run counts every listed file.
+  const counts = () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-max-lines-"));
+    try {
+      const config = join(dir, "oxlint.json");
+      const setting = ["error", { limit: 0, testLimit: 0, pending: {} }];
+      writeFileSync(
+        config,
+        JSON.stringify({
+          categories: { correctness: "off" },
+          jsPlugins: [join(root, "tools/oxlint/gram.mjs")],
+          rules: { [rule]: setting },
+        }),
+      );
+      const result = spawnSync(
+        process.execPath,
+        [
+          join(root, "node_modules/oxlint/bin/oxlint"),
+          "--config",
+          config,
+          "--format",
+          "json",
+          ...Object.keys(MAX_LINES.pending),
+        ],
+        { cwd: root, encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 8 << 20 },
+      );
+      if (result.error) throw result.error;
+      return new Map(
+        JSON.parse(result.stdout).diagnostics.map((d) => [
+          d.filename,
+          Number(/has (\d+) lines/.exec(d.message)[1]),
+        ]),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it("keeps every listed file over the limit and within its count", () => {
+    const lines = counts();
+    const wrong = Object.entries(MAX_LINES.pending).flatMap(([file, count]) => {
+      const limit = /\.(test|spec)\.[cm]?[jt]sx?$/.test(file)
+        ? MAX_LINES.testLimit
+        : MAX_LINES.limit;
+      const now = lines.get(file) ?? 0;
+      if (now <= limit) return [`${file} fits under ${limit} now (${now}): remove its entry`];
+      if (now > count) return [`${file} grew to ${now}, past its entry ${count}: split it`];
+      return [];
+    });
+    expect(wrong, "MAX_LINES.pending in tools/oxlint/allowlists.mjs").toEqual([]);
+  });
+});
+
+describe("clock-24h", () => {
+  const rule = "gram/clock-24h";
+
+  it("refuses a time of day formatted without a 24-hour cycle", () => {
+    const found = lint(
+      `new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit" });
+      dateTimeFormat(undefined, { hour: "numeric" });
+      new Date(at).toLocaleTimeString();
+      new Date(at).toLocaleTimeString("en-US", { minute: "2-digit" });
+      new Date(at).toLocaleDateString("en-US", { day: "numeric", hour: "numeric" });
+      const OPTIONS = { hour: "2-digit", minute: "2-digit" } as const;
+      Intl.DateTimeFormat(undefined, OPTIONS);
+      new Intl.DateTimeFormat(undefined, { hour: "numeric", hourCycle: "h12" });
+      new Intl.DateTimeFormat(undefined, { hour: "numeric", hour12: true });
+      new Intl.DateTimeFormat(undefined, { hour: "numeric", hourCycle: "h24" });
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 2, 3, 4, 5, 6, 8, 9, 10, 11]);
+    expect(found[0].message).toContain("CLOCK_TIME");
+  });
+
+  it("allows a pinned 24-hour cycle, options it can't see, and dates and numbers alone", () => {
+    expect(
+      lint(
+        `import { CLOCK_TIME } from "@/lib/time";
+        const LOCAL = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
+        new Intl.DateTimeFormat("en-US", { hour: "2-digit", hourCycle: "h23" });
+        new Intl.DateTimeFormat("en-US", { timeStyle: "short", hour12: false });
+        dateTimeFormat("en-GB", { ...LOCAL, second: "2-digit" });
+        dateTimeFormat("en-GB", { ...CLOCK_TIME, ...(zone ? { timeZone: zone } : {}) });
+        new Date(at).toLocaleTimeString(undefined, { ...LOCAL });
+        new Date(at).toLocaleDateString(undefined, { dateStyle: "medium" });
+        dateTimeFormat("en-GB", { month: "long", year: "numeric" });
+        new Intl.DateTimeFormat(locale, options);
+        count.toLocaleString("en-US", { maximumFractionDigits: 0 });
+        count.toLocaleString();
+      `,
+        rule,
+      ),
+    ).toEqual([]);
+  });
+
+  it("is on for the web app under the repository's own config", () => {
+    const source = "export const t = new Date(0).toLocaleTimeString();\n";
+    expect(probeConfig("apps/web/src", source)).toContain("gram(clock-24h)");
+    expect(probeConfig("packages/server/src", source)).not.toContain("gram(clock-24h)");
+  });
+});
+
+// The runtime graph in docs/ARCHITECTURE.md: the renderer and the shared packages load no Node or
+// Electron, only the shell imports Electron at runtime, and no package imports an app.
+const restricted = (dir, source) =>
+  probeConfig(dir, `${source}\nexport const probe = 1;\n`).includes(
+    "eslint(no-restricted-imports)",
+  );
+
+describe("import boundaries", () => {
+  it.each([
+    ["apps/web/src", 'import "node:path";'],
+    ["apps/web/src", 'import { app } from "electron";'],
+    ["apps/web/src", 'import "@gram/server";'],
+    ["packages/contracts/src", 'import "node:fs";'],
+    ["packages/contracts/src", 'import "@gram/git";'],
+    ["packages/server/src", 'import { app } from "electron";'],
+    ["packages/server/src", 'import "@gram/shell";'],
+    ["packages/git/src", 'import "@gram/server";'],
+    ["packages/shell/src", 'import "@gram/web/lib/time";'],
+  ])("refuses in %s: %s", (dir, source) => {
+    expect(restricted(dir, source)).toBe(true);
+  });
+
+  it.each([
+    ["apps/web/src", 'import "@gram/contracts";'],
+    ["packages/server/src", 'import type { App } from "electron";'],
+    ["packages/server/src", 'import "@gram/git";'],
+    ["packages/shell/src", 'import { app } from "electron";'],
+  ])("allows in %s: %s", (dir, source) => {
+    expect(restricted(dir, source)).toBe(false);
   });
 });

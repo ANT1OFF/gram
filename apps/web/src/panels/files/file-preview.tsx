@@ -89,7 +89,7 @@ export function FilePreview({
       ?.querySelector(`[data-line="${line}"]`)
       ?.scrollIntoView({ block: "center", behavior: "auto" });
     // `reveals` changes when the same line is opened again, which should scroll back to it.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `reveals` is a signal to scroll again, not an input
   }, [line, content, markdown, view, reveals]);
 
   let body;

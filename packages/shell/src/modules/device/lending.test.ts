@@ -18,7 +18,7 @@ import * as Stream from "effect/Stream";
 import * as RpcClient from "effect/rpc/RpcClient";
 import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Socket from "effect/socket/Socket";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkLendable } from "./folders.ts";
 import type { AskAnswer, AskRequest, GateFolder } from "./gate.ts";
 import { makeGrantLedger } from "./grants.ts";
@@ -129,10 +129,10 @@ afterEach(async () => {
   await fs.rm(base, { recursive: true, force: true });
 });
 
-const until = async (done: () => boolean, what: string) => {
-  for (let i = 0; i < 400 && !done(); i += 1) await new Promise((next) => setTimeout(next, 5));
-  if (!done()) throw new Error(`Never: ${what}`);
-};
+const until = (done: () => boolean, what: string) =>
+  vi.waitUntil(done, { timeout: 2_000, interval: 5 }).catch(() => {
+    throw new Error(`Never: ${what}`);
+  });
 
 /** The device lending to a fake control plane, which takes each dial as the device makes it. */
 const setUp = async (options: { lastsMs?: number; dialFails?: boolean } = {}) => {

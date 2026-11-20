@@ -1,5 +1,5 @@
 import { connect as dialPort } from "node:net";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dpopProof } from "./dpop.ts";
 import { browser, fakeServer } from "./hosted-fake.ts";
 import {
@@ -66,9 +66,7 @@ const keeperFor = async (more: Partial<Parameters<typeof makeTokenKeeper>[0]> = 
 };
 
 /** Waits, on the real clock, until something under way has happened. */
-const waitFor = async (done: () => boolean) => {
-  for (let i = 0; i < 500 && !done(); i += 1) await new Promise((later) => setTimeout(later, 2));
-};
+const waitFor = (done: () => boolean) => vi.waitUntil(done, { timeout: 1_000, interval: 2 });
 
 /** Sends raw bytes to a port and answers with whatever comes back. */
 const raw = (port: number, text: string) =>

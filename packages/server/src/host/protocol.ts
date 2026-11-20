@@ -40,6 +40,8 @@ import {
   type HostHello,
   type HostId,
   type HostPortScan,
+  type LoopbackEvent,
+  type LoopbackHost,
   HostRpcs,
   HostUnavailable,
   InvalidState,
@@ -95,6 +97,7 @@ import {
 import { HOST_DROP_MS, HOST_RESTORE_MS, HOST_STOP_MS } from "./budgets.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
+import type { HostLoopback } from "./loopback.ts";
 import type {
   OpenSettings,
   OpenTerminal,
@@ -164,6 +167,8 @@ export interface HostService {
   readonly stop?: HostStop;
   /** Its mirrors of workspaces' shared folders; a test's host may leave them out. */
   readonly shared?: HostShared<InvalidState | HostFailed>;
+  /** Its loopback tunnels (`loopback.ts`); a test's host may leave them out. */
+  readonly loopback?: HostLoopback;
 }
 
 /** A host's update of itself, as it serves `host.update.*`. */
@@ -228,6 +233,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "shared-folders",
   "dream-sessions",
   "stop-going",
+  "loopback-tunnels",
 ];
 
 /** Why a memory update isn't opened on a host that doesn't name `dream-sessions`. */
@@ -341,6 +347,7 @@ const defined = <A extends object>(value: A): Defined<A> =>
 
 const noFolders = new HostFailed({ message: "This host doesn't list its folders." });
 const noShared = new HostFailed({ message: "This host keeps no shared folders." });
+const noLoopback = new HostFailed({ message: "This host opens no loopback tunnels." });
 const noThreadPlaces = new HostFailed({
   message: "This host makes no folders for threads started from a profile.",
 });
@@ -452,6 +459,13 @@ const handlersFor = (host: HostService) => {
           Effect.map(scanToWire),
           Effect.mapError((error) => new HostFailed({ message: failureText(error) })),
         ),
+      "host.loopback.open": ({ tunnelId, host: address, port }) =>
+        host.loopback === undefined
+          ? Stream.fail(noLoopback)
+          : host.loopback.open(tunnelId, address, port),
+      "host.loopback.send": ({ tunnelId, data }) =>
+        host.loopback === undefined ? Effect.fail(noLoopback) : host.loopback.send(tunnelId, data),
+      "host.loopback.end": ({ tunnelId }) => host.loopback?.end(tunnelId) ?? Effect.void,
       "host.repos.ensure": ({ url }) =>
         gated(host.repos.ensure(url).pipe(Effect.mapError(worktreeToWire))),
       "host.repos.identify": ({ repoRoot, path }) => host.repos.identify(repoRoot, path),
@@ -689,6 +703,20 @@ export interface HostGitConnection {
  * and reads its settings. A host that has gone has no terminals: its reads come back empty, a
  * close finds nothing to do, and a subscription ends with its shell's exit.
  */
+/** A host's loopback tunnels as the control plane reaches them (`host.loopback.*`). */
+export interface HostLoopbackConnection {
+  readonly open: (
+    tunnelId: string,
+    host: LoopbackHost,
+    port: number,
+  ) => Stream.Stream<LoopbackEvent, HostFailed | HostUnavailable>;
+  readonly send: (
+    tunnelId: string,
+    data: string,
+  ) => Effect.Effect<void, HostFailed | HostUnavailable>;
+  readonly end: (tunnelId: string) => Effect.Effect<void>;
+}
+
 export interface HostTerminalsConnection {
   /** Without `settings`, the host's own default shell on its own PATH. */
   readonly open: (
@@ -855,6 +883,8 @@ export interface HostConnection {
   readonly terminals: HostTerminalsConnection;
   readonly sessions: HostSessionsConnection;
   readonly scan: Effect.Effect<PortScan, unknown>;
+  /** Absent for a host from a build that doesn't serve `loopback-tunnels`. */
+  readonly loopback?: HostLoopbackConnection | undefined;
   /**
    * The machine's Claude token. A host built before these calls, or one that doesn't answer,
    * fails with `HostFailed` saying so; no failure carries the token.
@@ -1418,6 +1448,40 @@ export const connectHost = (
       guarded(call).pipe(
         Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
       );
+    const loopback: HostLoopbackConnection = {
+      // A tunnel the host refused is that tunnel's failure; anything else is the host's.
+      open: (tunnelId, address, port) =>
+        Stream.suspend((): Stream.Stream<LoopbackEvent, HostFailed | HostUnavailable> =>
+          ended
+            ? Stream.fail(unavailable("This machine's host has stopped."))
+            : client["host.loopback.open"]({ tunnelId, host: address, port }).pipe(
+                Stream.catch((error): Stream.Stream<never, HostFailed | HostUnavailable> =>
+                  error instanceof HostFailed
+                    ? Stream.fail(error)
+                    : Stream.fromEffect(
+                        Effect.andThen(
+                          markEnded(failureText(error)),
+                          Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+                        ),
+                      ),
+                ),
+                Stream.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Stream.fail(stoppedByHost())
+                    : Stream.failCause(cause),
+                ),
+                Stream.interruptWhen(gone),
+              ),
+        ),
+      send: (tunnelId, data) =>
+        guarded(client["host.loopback.send"]({ tunnelId, data })).pipe(
+          Effect.mapError((error) =>
+            error._tag === "RpcClientError" ? unavailable(HOST_NOT_ANSWERING) : error,
+          ),
+        ),
+      // A host that went took its tunnels with it.
+      end: (tunnelId) => guarded(client["host.loopback.end"]({ tunnelId })).pipe(Effect.ignore),
+    };
     const terminals: HostTerminalsConnection = {
       open: (request, settings) =>
         fileCall(
@@ -1725,6 +1789,7 @@ export const connectHost = (
       attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
       threadPlaces: hostServes(hello, "thread-places") ? threadPlaces : undefined,
       shared: hostServes(hello, "shared-folders") ? shared : undefined,
+      loopback: hostServes(hello, "loopback-tunnels") ? loopback : undefined,
       ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: {
         ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })),

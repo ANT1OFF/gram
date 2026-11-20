@@ -66,6 +66,13 @@ export const ProfileModel = Schema.Struct({
   gatewayProfile: Schema.optionalKey(ProfileId),
   /** Models to fall back to, in order (`ThreadProfileBinding.fallbacks`). */
   fallbacks: Schema.optionalKey(Schema.Array(ProfileModelChoice)),
+  /**
+   * The other models the thread may be moved to, for a supplier whose deployment serves it only
+   * some. Given, even empty, the thread's sessions run only `model`, `fallbacks` and these
+   * (`ThreadProfileBinding.models`): its pickers offer no other, and a model change, a switch or a
+   * fresh session onto another is refused. Absent: no limit.
+   */
+  choices: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
 });
 export type ProfileModel = typeof ProfileModel.Type;
 
@@ -181,7 +188,7 @@ const RESERVED_SERVER_NAMES: ReadonlySet<string> = new Set(["gram"]);
 export const profilePathProblem = (path: string): string | undefined => {
   if (path === "" || path.length > 300) return "A file's path is 1 to 300 characters.";
   // Control characters and a backslash have no place in a name that is the same on every system.
-  // oxlint-disable-next-line no-control-regex
+  // oxlint-disable-next-line no-control-regex -- control characters are what it refuses
   if (/[\u0000-\u001f\u007f\\]/.test(path))
     return `${JSON.stringify(path)} has a backslash or a control character in it.`;
   // Invisible and direction characters make one name read as another (`.g\u200cit` is `.git` on
@@ -337,6 +344,19 @@ export const profileBindingOf = (profile: ThreadProfile): ThreadProfileBinding =
   ...(profile.model.fallbacks === undefined || profile.model.fallbacks.length === 0
     ? {}
     : { fallbacks: profile.model.fallbacks }),
+  ...(profile.model.choices === undefined
+    ? {}
+    : {
+        models: [
+          ...new Set(
+            [
+              profile.model.model,
+              ...(profile.model.fallbacks ?? []).map((each) => each.model),
+              ...profile.model.choices,
+            ].map((id) => id.toLowerCase()),
+          ),
+        ],
+      }),
 });
 
 /**

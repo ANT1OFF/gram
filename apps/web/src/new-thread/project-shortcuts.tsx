@@ -1,5 +1,5 @@
 import type { Project } from "@gram/contracts";
-import { Bookmark, FolderOpen, History } from "lucide-react";
+import { Bookmark, Folder, FolderOpen, History } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 
 import { BookmarkToggle } from "./bookmark-toggle";
@@ -68,9 +68,35 @@ export function ProjectLists({
     .toSorted((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))
     .slice(0, 6);
   const bookmarks = projects.filter((p) => p.bookmarked);
+  // The folder in use when neither list holds it (a default folder, or one not opened before), so
+  // the menu still says which folder the thread runs in.
+  const unlisted =
+    current !== undefined && ![...bookmarks, ...recents].some((p) => p.root === current)
+      ? current
+      : undefined;
 
   return (
     <div className="flex flex-col gap-3">
+      {unlisted !== undefined && (
+        <Section title="In use" icon={Folder}>
+          {[
+            <li key={unlisted} className="flex min-w-0 items-center gap-0.5">
+              <button
+                type="button"
+                aria-pressed
+                title={unlisted}
+                onClick={() => onChoose(unlisted)}
+                className={rowCls}
+              >
+                <span className="shrink-0 font-medium">{folderLabel(unlisted)}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
+                  {unlisted.slice(0, unlisted.length - baseName(unlisted).length)}
+                </span>
+              </button>
+            </li>,
+          ]}
+        </Section>
+      )}
       {bookmarks.length > 0 && (
         <Section title="Bookmarks" icon={Bookmark}>
           {bookmarks.map((project) => (

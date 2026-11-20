@@ -231,6 +231,13 @@ export const HostFeature = Schema.Literals([
    * ask a host without it.
    */
   "stop-going",
+  /**
+   * Opens a TCP connection to one of the machine's own loopback ports for the control plane
+   * (`host.loopback.*`), so the browser a thread's tools drive on the control plane reaches a dev
+   * server the thread started on this machine. Loopback ports from 1024 up only. A control plane
+   * points no thread's page at a host without it.
+   */
+  "loopback-tunnels",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -563,6 +570,27 @@ export const HostPortScan = Schema.Struct({
   processes: Schema.optionalKey(Schema.Array(HostProcess)),
 });
 export type HostPortScan = typeof HostPortScan.Type;
+
+/** A loopback address `host.loopback.open` connects to; `localhost` tries IPv4, then IPv6. */
+export const LoopbackHost = Schema.Literals(["127.0.0.1", "::1", "localhost"]);
+export type LoopbackHost = typeof LoopbackHost.Type;
+
+/** The ports a loopback tunnel reaches: a dev server's, never a system service's. */
+export const LoopbackPort = Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65_535 }));
+
+/** One tunnel, named by the control plane that opens it. */
+export const LoopbackTunnelId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{8,64}$/));
+
+/** What a loopback tunnel carries from the host: `connected` once, then the port's bytes. */
+export const LoopbackEvent = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("connected") }),
+  /** Base64, at most `LOOPBACK_CHUNK_BYTES` bytes before encoding. */
+  Schema.Struct({ type: Schema.Literal("data"), data: Schema.String }),
+]);
+export type LoopbackEvent = typeof LoopbackEvent.Type;
+
+/** The most bytes one `data` event or one `host.loopback.send` carries. */
+export const LOOPBACK_CHUNK_BYTES = 64 * 1024;
 
 /**
  * A worktree operation the host refused or couldn't finish: `invalidRequest`, `conflict` or
@@ -1069,6 +1097,25 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.threadPlaces.remove", { payload: { threadId: ThreadId } }),
   /** One sweep of the host's listening ports and processes. */
   Rpc.make("host.ports.scan", { success: HostPortScan, error: HostFailed }),
+  /**
+   * Served with `loopback-tunnels`: a TCP connection to `host`:`port` on the machine itself, named
+   * `tunnelId`. `connected` once it is made, then what the port sends; the stream ends when the
+   * port closes its side, and ending the stream closes the connection. A port nothing listens on
+   * fails with `HostFailed`.
+   */
+  Rpc.make("host.loopback.open", {
+    payload: { tunnelId: LoopbackTunnelId, host: LoopbackHost, port: LoopbackPort },
+    success: LoopbackEvent,
+    error: HostFailed,
+    stream: true,
+  }),
+  /** Writes base64 `data` to an open tunnel; `HostFailed` for one that isn't open. */
+  Rpc.make("host.loopback.send", {
+    payload: { tunnelId: LoopbackTunnelId, data: Schema.String },
+    error: HostFailed,
+  }),
+  /** Ends this side of an open tunnel, as a TCP half-close; the port's side still arrives. */
+  Rpc.make("host.loopback.end", { payload: { tunnelId: LoopbackTunnelId } }),
   /**
    * What this machine can run: whether its own Claude Code is signed in to a subscription (its
    * `claude auth status`, the classification only, never the output or a credential) and whether
