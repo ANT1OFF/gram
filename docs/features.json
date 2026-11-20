@@ -560,7 +560,7 @@
         "docs/AGENTS_AND_FEATURES.md#events-instead-of-polling"
       ],
       "ui": {
-        "where": "Settings → Routines",
+        "where": "Settings → Workspaces & merging → Routines",
         "route": "/settings/routines",
         "landmark": {
           "role": "region",
@@ -588,7 +588,7 @@
         "docs/AGENTS_AND_FEATURES.md#project-scripts"
       ],
       "ui": {
-        "where": "The right panel's Terminal tab",
+        "where": "The right panel's More tabs → Terminal, a tab of its own once opened",
         "route": "/",
         "steps": [
           {
@@ -659,7 +659,7 @@
       ],
       "docs": ["docs/AGENTS_AND_FEATURES.md#overview"],
       "ui": {
-        "where": "Settings → Connectors",
+        "where": "Settings → Agents & models → Connectors",
         "route": "/settings/connectors",
         "landmark": {
           "role": "region",
@@ -744,7 +744,7 @@
       "tests": ["apps/web/src/settings/phone-access-page.test.tsx"],
       "docs": ["docs/REMOTE_ACCESS.md"],
       "ui": {
-        "where": "Settings → Phones and browsers",
+        "where": "Settings → Machines → Phones and browsers",
         "route": "/settings/phones",
         "landmark": {
           "role": "region",
@@ -754,7 +754,7 @@
     },
     {
       "name": "Settings",
-      "purpose": "Every setting page: General, Agents, Appearance, Notifications, Storage, Updates, Voice input and the rest.",
+      "purpose": "Every setting page: General, Agents & models, Usage, Workspaces & merging, Machines, Appearance, Notifications, Keyboard, Voice and About, and the pages under them.",
       "code": [
         "apps/web/src/settings/**",
         "apps/web/src/routes/settings*.tsx",
