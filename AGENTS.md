@@ -10,16 +10,15 @@ Codex CLIs on their own subscriptions. [README](README.md) introduces it,
 - Keep personal infrastructure, private hosts and repositories, recorded private data and
   corporate defaults out of the tree. Fixtures are synthetic and set provider, auth and CLI
   state explicitly; they never inherit the host's GitHub login or a paid account.
-- Never read `.env` files, key files or credential stores, and never put secrets, environment
-  dumps or boot URLs in logs, commits or PRs.
+- Never read `.env` files, key files or credential stores (`.claude/settings.json` denies them),
+  and never put secrets, environment dumps or boot URLs in logs, commits or PRs.
 - Preserve exact dependency pins, the workspace catalog, native overrides and the Effect patch
   unless the task needs a change.
 - Run `bun run check:scaffold` and the relevant checks from the
   [verification matrix](docs/VERIFICATION.md#task-verification-matrix). Focused checks while
   iterating; `bun run check` is the full integration check.
-- Never stop processes by pattern (`pkill -f`, `killall`, or `kill` on `pgrep` matches): other
-  checkouts may share the machine. Stop your own check with `bun run check:cancel`, or kill only
-  the exact PIDs your command started.
+- Stop only what you started: `bun run check:cancel`, Ctrl-C or the exact PIDs. The Bash guard
+  ([guard-bash](tools/agent-guards/guard-bash.mjs)) refuses `pkill`, `killall` and `kill` on `pgrep`.
 - Fix demonstrated causes, with a before/after reproduction where feasible. Never weaken
   assertions, skips, timeouts or permission guards to get a pass. Claim only what was tested:
   synthetic success is not live-provider qualification.
@@ -35,8 +34,8 @@ Codex CLIs on their own subscriptions. [README](README.md) introduces it,
   change removes, renames or re-words something they can see (a screen, a mount option, a kit
   control, a theme name, a `data-testid`), follow
   [keeping embedders in step](docs/EMBEDDED_WEB_APP.md#keeping-embedders-in-step).
-- Never push directly to `main`, including force pushes. Push a feature branch and open a PR
-  with a conventional title (`feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `chore:`). Put
-  commands, results and known limits in the PR description.
+- Push a feature branch, never `main` (the Bash guard refuses it), and open a PR with a
+  conventional title (`feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `chore:`). Put commands,
+  results and known limits in the PR description.
 - Risky, cross-cutting or security-sensitive changes get an independent review of the current
   head before they merge; see [contributing](CONTRIBUTING.md#security-sensitive-changes).
