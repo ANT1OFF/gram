@@ -58,6 +58,12 @@ export function FolderSettingsList({ settings }: { settings: FolderSettings }) {
       label: count(settings.unreadable.length, "file Gram couldn't read"),
       detail: settings.unreadable.join(", "),
     });
+  if (settings.other.length > 0)
+    rows.push({
+      key: "other",
+      label: count(settings.other.length, "other setting"),
+      detail: settings.other.join(", "),
+    });
   return (
     <ul className="flex flex-col gap-0.5 text-meta" data-testid="folder-settings">
       {rows.map((row) => (

@@ -236,6 +236,11 @@ export const FolderSettings = Schema.Struct({
   ),
   /** Files that exist but couldn't be read; they'd load once trusted, so they count. */
   unreadable: Schema.Array(Schema.String),
+  /**
+   * The rest that would load as the user's: settings keys not known to be harmless (`file: key`),
+   * and whatever else `.claude` holds, such as agents, skills and commands.
+   */
+  other: Schema.Array(Schema.String),
   none: Schema.Boolean,
 });
 export type FolderSettings = typeof FolderSettings.Type;
