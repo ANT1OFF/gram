@@ -7,6 +7,10 @@
 //
 //   node tools/feature-map/check.mjs
 //
+// A feature's optional `ui` block (where a person finds it, and the route, steps and landmark
+// `bun run drive` reaches it by) must be well formed, and each test id it names must still be in
+// the web app's source. Whether the landmark shows is `apps/web/e2e/feature-map.spec.ts`'s job.
+//
 // Globs are relative to the repository root: `*` and `?` stay inside one path segment, `**` crosses
 // them, `{a,b}` is either. A path with no wildcard matches that file or anything under that folder.
 
@@ -14,6 +18,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { uiProblems, uiTestIds } from "../../apps/web/scripts/feature-ui.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const MAP = "docs/features.json";
@@ -80,8 +86,13 @@ const headings = (body) => {
   return found;
 };
 
-/** @type {{ features: Array<{ name: string, purpose: string, code?: string[], tests?: string[], docs?: string[] }> }} */
+/** @type {{ features: Array<{ name: string, purpose: string, code?: string[], tests?: string[], docs?: string[], ui?: unknown }> }} */
 const map = JSON.parse(readFileSync(join(REPO, MAP), "utf8"));
+
+const webSource = files
+  .filter((file) => /^apps\/web\/src\/.*\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
+  .map((file) => readFileSync(join(REPO, file), "utf8"))
+  .join("\n");
 
 const problems = [];
 const names = new Set();
@@ -114,6 +125,15 @@ for (const feature of map.features) {
         );
       }
       if (field === "code") for (const file of matched) owned.add(file);
+    }
+  }
+  if (feature.ui !== undefined) {
+    problems.push(...uiProblems(where, feature.ui));
+    for (const id of uiTestIds(feature.ui)) {
+      if (!webSource.includes(`"${id}"`))
+        problems.push(
+          `${where}: ui names test id "${id}", which apps/web/src no longer has. Use the element's current test id, or its role and name.`,
+        );
     }
   }
 }
