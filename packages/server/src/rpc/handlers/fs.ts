@@ -25,6 +25,7 @@ import {
   mayBeOutside,
   mentionForms,
   mentionHints,
+  openForRead,
   type OutsideGate,
   previewTarget,
   readFilePreview,
@@ -34,7 +35,12 @@ import {
   writesPath,
 } from "../../fs/files.ts";
 import { browseFolders, expandHome } from "../../fs/folders.ts";
-import { isSecretPath, refuseSecretPath } from "../../fs/secret-paths.ts";
+import {
+  isSecretPath,
+  realSecretPaths,
+  refuseSecretHandle,
+  refuseSecretPath,
+} from "../../fs/secret-paths.ts";
 import { ServerConfig } from "../../config.ts";
 import { openerFenced } from "../../platform/opener.ts";
 import { IMAGE_MAX_BYTES, readImage } from "../../fs/images.ts";
@@ -85,6 +91,7 @@ export const fsHandlers = Effect.gen(function* () {
   const nameOf = yield* machineNames;
   const config = yield* ServerConfig;
   const secrets = config.secretPaths ?? [];
+  const realSecrets = realSecretPaths(secrets);
   /**
    * Whether a thread's transcript may vouch for a path outside its folders on this disk: only on
    * a server with a local user, for a thread whose session runs here. Anywhere else whoever writes
@@ -179,7 +186,13 @@ export const fsHandlers = Effect.gen(function* () {
     gate: Gate = inMessages,
   ) =>
     readPreview(path, roots, gateFor(thread.id, path, gateOf(thread, gate)), (target, opened) =>
-      Effect.andThen(refuseSecretPath(target, secrets), read(target, opened)),
+      Effect.scoped(
+        Effect.gen(function* () {
+          const handle = opened ?? (yield* openForRead(target));
+          yield* refuseSecretHandle(handle, target, realSecrets);
+          return yield* read(target, handle);
+        }),
+      ),
     );
 
   /**

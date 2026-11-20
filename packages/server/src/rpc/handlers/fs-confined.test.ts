@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { type GramUIMessage, HostId, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerConfigShape } from "../../config.ts";
@@ -141,5 +141,50 @@ describe("a preview outside a thread's folders", () => {
         ),
       ),
     ),
+  );
+
+  it.effect.skipIf(process.platform === "win32")(
+    "never reads a secret inside the thread's folder, or one a link there leads to",
+    () => {
+      const base = realpathSync(mkdtempSync(join(tmpdir(), "gram-secret-inside-")));
+      const folder = join(base, "thread");
+      const inside = join(folder, "secrets");
+      const elsewhere = join(base, "mounted");
+      mkdirSync(inside, { recursive: true });
+      mkdirSync(elsewhere);
+      writeFileSync(join(inside, "token"), "inside secret");
+      writeFileSync(join(elsewhere, "token"), "mounted secret");
+      symlinkSync(join(elsewhere, "token"), join(folder, "link.txt"));
+      symlinkSync(join(inside, "token"), join(folder, "alias.txt"));
+      writeFileSync(join(folder, "open.txt"), "the thread's own");
+      return Effect.gen(function* () {
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(base, { recursive: true })));
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const created = yield* runtimes.create({
+          deferOpen: true,
+          projectRoot: folder,
+          checkout: { kind: "main", path: folder },
+        });
+        const threadId = (yield* store.insertThread(created)).id as ThreadId;
+        const handlers = yield* fsHandlers;
+        for (const path of ["secrets/token", "alias.txt", "link.txt"]) {
+          expect(yield* Effect.flip(handlers["fs.file"]({ path, threadId }))).toMatchObject({
+            _tag: "InvalidState",
+            message: expect.stringMatching(/credentials|outside/),
+          });
+        }
+        expect(
+          (yield* handlers["fs.resolve"]({ threadId, paths: ["alias.txt", "secrets/token"] }))
+            .files,
+        ).toEqual([]);
+        expect((yield* handlers["fs.file"]({ path: "open.txt", threadId })).content).toBe(
+          "the thread's own",
+        );
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(layerWith({ ...TEST_CONFIG, secretPaths: [inside, elsewhere] })),
+      );
+    },
   );
 });

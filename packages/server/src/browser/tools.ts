@@ -927,6 +927,8 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
     }),
     handle: (threadId, input) =>
       Effect.gen(function* () {
+        // Refused before recording or stopping, so nothing is captured that couldn't be saved.
+        if (input.action !== "discard") yield* checkoutOf("browser_record", threadId);
         if (input.action === "start") {
           const result = yield* run("browser_record", threadId, {
             op: "recordStart",
@@ -943,7 +945,6 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
           return yield* recordRefusal(
             'Stopping needs a path ending in .gif; or use action "discard".',
           );
-        yield* checkoutOf("browser_record", threadId);
         const result = yield* run("browser_record", threadId, { op: "recordStop" });
         if (result.file === undefined)
           return yield* recordRefusal("This shell returned no recording.");

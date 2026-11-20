@@ -785,6 +785,9 @@ describe("labels, local-only debugging and evidence files", () => {
           call("browser_record", { action: "stop", path: "clips/x.gif" }),
         );
         expect(clip.message).toContain("another machine");
+        const start = yield* Effect.flip(call("browser_record", { action: "start" }));
+        expect(start.message).toContain("another machine");
+        expect(world.sent.map((each) => each.command.op)).not.toContain("recordStart");
         expect(world.recorded).toEqual([]);
       }
       expect(readdirSync(root)).toEqual([]);

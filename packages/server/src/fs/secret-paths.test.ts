@@ -27,4 +27,10 @@ describe.skipIf(process.platform === "win32")("a deployment's secret paths", () 
       ].toSorted(),
     );
   });
+
+  it("stops the server on a relative GRAM_SECRET_PATHS entry", () => {
+    expect(() => secretPathsFrom({ GRAM_SECRET_PATHS: "run/secrets" }, "/data")).toThrow(
+      /absolute/,
+    );
+  });
 });
