@@ -221,10 +221,14 @@ export const makeWorkerSandbox = ({
           caller,
           input.clientRequestId ?? `${input.project}\n${input.feature}\n${input.title}`,
         );
-        // Online already (a retry): nothing to start. Otherwise it is started only once the spawn
-        // goes ahead, after any approval (`handle`), so a refused or denied spawn starts nothing.
+        // Online already (a retry): nothing to start, unless a try that brought it up is still
+        // placing its worker, which this one then joins (`machineFlights`), so that try's
+        // cancellation never gives it back under this one. Otherwise it is started only once the
+        // spawn goes ahead, after any approval (`handle`), so a refused or denied spawn starts
+        // nothing.
         const seen = joined().find((each) => each.name === name && theirs(each));
-        if (seen?.onlineSince !== undefined) return { name, givesBack: source.givesBack };
+        if (seen?.onlineSince !== undefined && !(source.givesBack && machineFlights.has(name)))
+          return { name, givesBack: source.givesBack };
         // Brings the machine up: started (or, registered from an earlier spawn, told it is
         // working) and waited for. Whether this bring-up started it, and so may give it back.
         const bringUp = Effect.gen(function* () {

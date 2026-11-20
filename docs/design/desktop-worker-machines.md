@@ -180,8 +180,10 @@ that start itself whenever work here needs the machine:
 - Only an answered `stopped` or `failed` uses up a wake. A `…/status` with no answer or a `5xx`,
   or a start answered so (a `502` while the machine is still being stopped there), is tried again
   five seconds later, for as long as the machine is wanted.
-- A `…/status` answer asked for before this Gram's latest start of that name is older than the
-  start, and is taken as saying nothing: it never stops a woken machine's relay. An answer that
+- A `…/status` answer asked for before this Gram's latest start of that name, or while a start of
+  it was on its way, is older than the start, and is taken as saying nothing: it never stops a
+  woken machine's relay. A wake a spawn waits on stays within that spawn's five minutes, its start
+  and retries included. An answer that
   says the machine is up again carries it once more.
 
 A machine registered here that the server says is stopped or failed isn't relayed while it is
@@ -266,7 +268,8 @@ subscription token reaches a machine, with its own consent.
   offline: it may hold the earlier spawn's work. Only a machine a try started is given back.
   A name's machine is brought up once at a time: a retry that comes while a try is still bringing
   it up (a reconnect, a tool call tried again) joins that bring-up rather than starting, waiting
-  and giving back on its own. The bring-up outlives the try that began it, and is stopped, giving
+  and giving back on its own, even once the machine is online while that try still places its
+  worker. The bring-up outlives the try that began it, and is stopped, giving
   back what it started, only once no try holds it. After it came, a try whose spawn fails gives it
   back only when no other try holds it and no thread is placed on it.
 - **A lost workspace role.** Every call about a machine whose workspace the person no longer has

@@ -49,12 +49,18 @@ export const isHostedWorkerName = (name: string) => HOSTED_WORKER_NAME.test(name
 type Answered = { readonly ok: true; readonly status: number; readonly body: unknown } | Refused;
 
 /**
- * How many starts this Gram has sent for each name. A `…/status` answer asked for before the
- * latest start of its name is older than that start, and is read as saying nothing.
+ * Each name's starts, counted once as each is sent and once as it is answered (or given up on), so
+ * an odd count is a start on its way. A `…/status` answer is read only when no start of its name was
+ * on its way, sent or answered while it was asked (`settledSince`): one asked before a start, or
+ * while one was outstanding, is older than that start, and says nothing.
  */
 export type StartsSent = Map<string, number>;
 
 export const sentOf = (sent: StartsSent | undefined, name: string) => sent?.get(name) ?? 0;
+
+/** Whether a status asked for when the count was `before` is still the machine's: see above. */
+export const settledSince = (sent: StartsSent | undefined, name: string, before: number) =>
+  before % 2 === 0 && sentOf(sent, name) === before;
 
 /**
  * One start of `name` there, its name's alone (`withName`) from its first ask to its last. A `503`
@@ -96,8 +102,9 @@ export const sendSignedInStart = (
         for (;;) {
           if (options.go !== undefined && !options.go()) return undefined;
           asks += 1;
-          options.sent?.set(name, sentOf(options.sent, name) + 1);
-          const answered = yield* port.call(origin, "start", body);
+          const bump = Effect.sync(() => options.sent?.set(name, sentOf(options.sent, name) + 1));
+          yield* bump;
+          const answered = yield* port.call(origin, "start", body).pipe(Effect.ensuring(bump));
           unavailable = answered.ok && answered.status === 503;
           if (!unavailable || asks >= START_ATTEMPTS) return answered;
           yield* Effect.sleep((options.startRetryMs ?? START_RETRY_MS) * 2 ** (asks - 1));
@@ -162,8 +169,8 @@ export const wakeSignedIn = (
     if (!read.ok || read.status >= 500) return "retry" as const;
     if (read.status === 404) return "gone" as const;
     if (read.status >= 300) return "refused" as const;
-    // A start of it went since this was asked: the answer is older than that start.
-    if (sentOf(options.sent, machine.name) !== before) return "awake" as const;
+    // A start of it was on its way, or went, while this was asked: the answer is older than it.
+    if (!settledSince(options.sent, machine.name, before)) return "awake" as const;
     const phase = parseMachineStatus(read.body).phase;
     if (phase !== "stopped" && phase !== "failed") {
       options.asleep?.delete(machine.name);

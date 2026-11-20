@@ -50,6 +50,7 @@ import {
   parseMachineStatus,
   sendSignedInStart,
   sentOf,
+  settledSince,
   type StartsSent,
   tellSignedInRelease,
   wakeSignedIn,
@@ -358,7 +359,7 @@ export const signedInSource = (
           const answered = read.value;
           // A call that went wrong on the way, or an answer asked for before a start of the name
           // since, says nothing: asked again, until the deadline.
-          const fresh = answered.ok && sentOf(deps.sent, name) === before;
+          const fresh = answered.ok && settledSince(deps.sent, name, before);
           const status = fresh ? parseMachineStatus(answered.body) : {};
           const why = status.message ?? `${server.server} says it isn't starting.`;
           if (fresh && answered.status === 404 && machine === undefined)
@@ -380,7 +381,12 @@ export const signedInSource = (
             // Stopped or failed there, which no dial wakes: started once more, under its name.
             // Only a settled wake counts; a passing error leaves it to the next look.
             if ((status.phase === "stopped" || status.phase === "failed") && !woken) {
-              const woke = yield* wakeSignedIn(port, { name, via: origin }, deps);
+              // Within what is left of this wait, however long the start or its retries take.
+              const waking = yield* wakeSignedIn(port, { name, via: origin }, deps).pipe(
+                Effect.timeoutOption(Math.max(0, deadline - now())),
+              );
+              if (waking._tag === "None") return { failed: "timeout" };
+              const woke = waking.value;
               if (woke !== "retry") woken = true;
               if (woke === "refused" || woke === "gone")
                 return {
@@ -477,8 +483,8 @@ export const forgetReclaimed = (
       }
       const before = sentOf(sent, machine.name);
       const answered = yield* port.call(machine.via, "status", { name: machine.name });
-      // Started again while this was asked: what it says is older than that start.
-      if (sentOf(sent, machine.name) !== before) continue;
+      // A start was on its way, or went, while this was asked: what it says is older than it.
+      if (!settledSince(sent, machine.name, before)) continue;
       const phase =
         answered.ok && answered.status < 300 ? parseMachineStatus(answered.body).phase : undefined;
       // Up, or coming up, there: carried again.

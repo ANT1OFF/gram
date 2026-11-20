@@ -8,6 +8,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 import { memoryMachineStore } from "../host/paired-machines.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
@@ -338,6 +339,73 @@ describe("a worker machine that work here wants", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("keeps a wake a spawn waits on within the spawn's own deadline", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionRelayed(hosts, NAME);
+      const app = fakeApp({
+        answer: () => ({ status: 200, body: { phase: "stopped" } }),
+      });
+      const bridged = bridgeWorkerMachines(app.port);
+      // Its start is never answered.
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          call === "start" ? Effect.never : bridged.call(origin, call, body),
+      };
+      const source = signedInSource(SERVER, { port, hosts, timeoutMs: 100, everyMs: 10 });
+      const arrived = yield* source.arrive(NAME).pipe(Effect.timeoutOption("2 seconds"));
+      expect(arrived).toEqual(Option.some({ failed: "timeout" }));
+    }),
+  );
+
+  it.effect("takes no status asked for while a start of its name is on its way", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionRelayed(hosts, NAME);
+      const asleep = new Set<string>();
+      const sent = new Map<string, number>();
+      const unrelayed: string[] = [];
+      const started = yield* Deferred.make<void>();
+      const answered = yield* Deferred.make<void>();
+      const calls: string[] = [];
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "status"
+            ? { status: 200, body: { phase: "stopped" } }
+            : { status: 202, body: {} },
+      });
+      const bridged = bridgeWorkerMachines(app.port);
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        unrelay: (name) => unrelayed.push(name),
+        call: (origin, call, body) =>
+          Effect.gen(function* () {
+            calls.push(call);
+            const statuses = calls.filter((each) => each === "status").length;
+            // The wake's start waits for its answer, and so does the pass's read, the second.
+            if (call === "start") yield* Deferred.await(started);
+            if (call === "status" && statuses === 2) yield* Deferred.await(answered);
+            return yield* bridged.call(origin, call, body);
+          }),
+      };
+      const wake = yield* Effect.forkScoped(
+        wakeSignedIn(port, { name: NAME, via: ORIGIN }, { asleep, sent }),
+      );
+      while (!calls.includes("start")) yield* Effect.yieldNow;
+      // The pass asks while the start is on its way: the server still says stopped.
+      const pass = yield* Effect.forkScoped(forgetReclaimed(port, hosts, new Map(), asleep, sent));
+      while (calls.filter((each) => each === "status").length < 2) yield* Effect.yieldNow;
+      // The start is answered, then the pass's old answer comes.
+      yield* Deferred.succeed(started, undefined);
+      expect(yield* Fiber.join(wake)).toBe("started");
+      yield* Deferred.succeed(answered, undefined);
+      yield* Fiber.join(pass);
+      expect([...asleep]).toEqual([]);
+      expect(unrelayed).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("takes no status asked for before a start of its name as the machine's", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
@@ -362,7 +430,8 @@ describe("a worker machine that work here wants", () => {
       const pass = yield* Effect.forkScoped(forgetReclaimed(port, hosts, new Map(), asleep, sent));
       while (asked.count < 1) yield* Effect.yieldNow;
       // A wake's start goes out while the pass's read is on its way, then the old answer comes.
-      sent.set(NAME, 1);
+      // Sent and answered: counted once each.
+      sent.set(NAME, 2);
       yield* Deferred.succeed(through, undefined);
       yield* Fiber.join(pass);
       expect([...asleep]).toEqual([]);
