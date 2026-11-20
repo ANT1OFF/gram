@@ -28,7 +28,7 @@ Codex CLIs on their own subscriptions. [README](README.md) introduces it,
   or the same thing at two layers; never cut security, approvals, egress, migrations, data loss,
   the API/MCP contract or the merge and release paths. See
   [what earns a test](docs/VERIFICATION.md#what-earns-a-test).
-- Use 24-hour times in product UI and documentation.
+- Use 24-hour times in product UI and documentation; `gram/clock-24h` holds the web app to it.
 - For a UI change whose look is open, follow [DESIGN.md](DESIGN.md) and the
   [mock-first playbook](docs/orchestration/playbooks/mock-first.md); most tasks skip the mock.
 - Gram's web app is also mounted inside other apps, which ship a pinned commit of it. When a

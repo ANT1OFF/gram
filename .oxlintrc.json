@@ -32,6 +32,12 @@
         "gram/no-day-math": "error",
         "gram/no-adhoc-lock": "error"
       }
+    },
+    {
+      "files": ["apps/web/src/**"],
+      "rules": {
+        "gram/clock-24h": "error"
+      }
     }
   ],
   "ignorePatterns": [
