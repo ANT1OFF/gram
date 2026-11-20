@@ -10,6 +10,7 @@ import * as Schema from "effect/Schema";
 import { afterEach } from "vitest";
 
 import type { AppToolDefinition } from "../app-tools/definition.ts";
+import { evidenceDirOf } from "../git/check-evidence.ts";
 import {
   localCheckRunFor,
   runIdOf,
@@ -20,6 +21,7 @@ import {
   driverRun,
   requiredOnHead,
   verifyProfile,
+  verifyEvidenceOf,
   verifyStateOf,
   verifyTools,
 } from "./verify-tools.ts";
@@ -46,6 +48,8 @@ const harness = (
   answers: Array<"allow" | "deny">,
   trust: Project["folderTrust"] = "trusted",
   passed: ReadonlySet<string> = new Set(),
+  /** More of a passed run's record, by its profile: its log, the machine it ran on. */
+  more: Record<string, Partial<LocalCheck>> = {},
 ) => {
   const cards: Omit<ApprovalRequest, "kind" | "id">[] = [];
   const runs: LocalCheckRun[] = [];
@@ -94,6 +98,7 @@ const harness = (
                 isolation: run.isolation,
                 startedAt: 0,
                 host: "here",
+                ...more[run.profile ?? ""],
               } satisfies LocalCheck)
             : undefined,
         ),
@@ -125,7 +130,11 @@ const harness = (
   };
   const state = () =>
     Effect.flatMap(deps.store.getThread(THREAD), (thread) => verifyStateOf(deps, thread));
-  return { call, cards, runs, required: () => requiredOnHead(deps, THREAD), state };
+  const evidence = (driver: string, file: string) =>
+    Effect.flatMap(deps.store.getThread(THREAD), (thread) =>
+      verifyEvidenceOf(deps, thread, driver, file),
+    );
+  return { call, cards, runs, required: () => requiredOnHead(deps, THREAD), state, evidence };
 };
 
 describe("verify", () => {
@@ -222,6 +231,35 @@ describe("the Proof tab's state", () => {
           error: expect.stringContaining('needs a "name" and a "run"'),
         });
       }),
+  );
+});
+
+describe("a driver's evidence", () => {
+  it.effect("shows what its run on the head kept, and only on this machine", () =>
+    Effect.gen(function* () {
+      const root = repoWith([
+        { name: "flow", run: "f" },
+        { name: "far", run: "r" },
+      ]);
+      const log = join(root, "flow.log");
+      mkdirSync(evidenceDirOf(log));
+      writeFileSync(join(evidenceDirOf(log), "shot.png"), "png");
+      const far = join(root, "far.log");
+      mkdirSync(evidenceDirOf(far));
+      writeFileSync(join(evidenceDirOf(far), "shot.png"), "png");
+      const flow = verifyProfile({ name: "flow" });
+      const remote = verifyProfile({ name: "far" });
+      const run = harness(root, [], "trusted", new Set([flow, remote]), {
+        [flow]: { log },
+        [remote]: { log: far, machine: "joined" },
+      });
+      const [shown, elsewhere] = (yield* run.state()).drivers;
+      expect(shown?.evidence).toEqual([{ file: "shot.png", kind: "screenshot", size: 3 }]);
+      expect(elsewhere).not.toHaveProperty("evidence");
+      expect(yield* run.evidence("flow", "shot.png")).toMatchObject({ base64: "cG5n" });
+      expect(yield* run.evidence("far", "shot.png")).toBeUndefined();
+      expect(yield* run.evidence("missing", "shot.png")).toBeUndefined();
+    }),
   );
 });
 
