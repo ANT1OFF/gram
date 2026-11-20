@@ -474,6 +474,46 @@ describe("this machine as a personal device", () => {
     expect(marks[2]).not.toBe(marks[0]);
   });
 
+  it("takes a sign-in's organisation mark from its renewal, its own records moving with it", async () => {
+    const stored = (store: Map<string, string>) =>
+      JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as {
+        machineMark?: string;
+        formerMarks?: string[];
+      };
+    // The organisation's mark, as signing in there gives it.
+    // One keychain throughout, as one computer's.
+    const keychain = new Map<string, string>();
+    fake.state.organization = "org-a";
+    const fresh = await setUp({}, keychain);
+    await fresh.device.signIn(origin);
+    const orgMark = stored(fresh.store).machineMark;
+    await fresh.device.signOut(origin);
+    await fresh.device.close();
+    for (const before of ["kept from before marks", "marked as its own"] as const) {
+      // Signed in where the server named no organisation: one of its own, or none yet.
+      fake.state.organization = undefined;
+      const first = await setUp({}, keychain);
+      await first.device.signIn(origin);
+      const own = stored(first.store).machineMark;
+      if (before === "kept from before marks") {
+        const { machineMark: _gone, ...kept } = stored(first.store);
+        first.store.set(`device-sign-in ${origin}`, JSON.stringify(kept));
+      }
+      await first.device.close();
+      // Restored after the server began naming it: its renewal gives the organisation's mark.
+      fake.state.organization = "org-a";
+      const restored = await setUp({}, first.store);
+      await restored.waitFor(() => restored.device.state().servers[0]?.problem === undefined);
+      await vi.waitFor(() => expect(stored(first.store).machineMark).toBe(orgMark));
+      // What was made under its own mark is its own, and moves with it.
+      expect(stored(first.store).formerMarks).toEqual(
+        before === "marked as its own" ? [own] : undefined,
+      );
+      await restored.device.signOut(origin);
+      await restored.device.close();
+    }
+  });
+
   it("keeps a pause across a restart until the person lifts it", async () => {
     const first = await setUp();
     await first.device.signIn(origin);

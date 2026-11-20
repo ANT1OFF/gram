@@ -179,6 +179,11 @@ export interface OwedStops {
   readonly release: (origin: string, name: string, account: string | undefined) => void;
   /** The holds of stops on their way (`stopHoldUntil`), kept beside what is owed. */
   readonly holds: StopHolds;
+  /**
+   * Moves every owing on `origin` under the sign-in mark `from` to `to`, in one write: the same
+   * sign-in, whose mark became its organisation's. No other owing changes.
+   */
+  readonly remark: (origin: string, from: string, to: string) => void;
 }
 
 /**
@@ -285,6 +290,11 @@ export const memoryOwedStops = (
     },
     release: (origin, name, account) => {
       for (const [key, each] of owed) if (ownsOwing(each, origin, name, account)) owed.delete(key);
+    },
+    remark: (origin, from, to) => {
+      for (const [key, each] of owed)
+        if (each.origin === origin && each.legacy !== true && each.account === from)
+          owed.set(key, { ...each, account: to });
     },
     remove: (name, attempt) => {
       if (attempt !== undefined) owed.delete(owingOf(attempt));
@@ -414,6 +424,11 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       if (save()) return true;
       owed.remove(stop.name, stop);
       return false;
+    },
+    remark: (origin, from, to) => {
+      const moved = owed.list().some((each) => each.origin === origin && each.account === from);
+      owed.remark(origin, from, to);
+      if (moved) save();
     },
     release: (origin, name, account) => {
       const before = owed.list().length;

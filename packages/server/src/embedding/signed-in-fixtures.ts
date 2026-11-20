@@ -18,7 +18,10 @@ export type Call = { readonly call: string; readonly body: Record<string, unknow
  * server's answer to each call; `relayed` runs when the server asks the app to carry a machine.
  */
 export const fakeApp = (options: {
-  readonly server?: { readonly server?: typeof SERVER; readonly why?: string };
+  readonly server?: {
+    readonly server?: typeof SERVER & { readonly formerAccounts?: ReadonlyArray<string> };
+    readonly why?: string;
+  };
   readonly answer: (call: Call) => { readonly status: number; readonly body: unknown };
   readonly relayed?: (name: string, toServer: (message: unknown) => void) => void;
   readonly fromServer?: (message: Record<string, unknown>) => void;

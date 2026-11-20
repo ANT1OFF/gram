@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { generateHostKey } from "../host/machine-keys.ts";
 import { memoryMachineStore } from "../host/paired-machines.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
@@ -13,7 +14,10 @@ import {
   claimedHere,
   memoryOwedStops,
   settleOwedStops,
+  SignedInWorkers,
+  SignedInWorkersLive,
   signedInSource,
+  WorkerMachinePort,
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 
@@ -169,6 +173,53 @@ describe("what a server offers a sign-in", () => {
         .models;
       expect(asked).toEqual([ACCOUNT, OTHER]);
     }),
+  );
+});
+
+describe("a sign-in whose mark became its organisation's", () => {
+  it.live("takes its own machines and stops to the new mark, and no other sign-in's", () =>
+    Effect.gen(function* () {
+      const FORMER = "mark-own-before-0123456789";
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      for (const [name, viaAccount] of [
+        [NAME, FORMER],
+        ["worker-abcdef0123", OTHER],
+      ] as const)
+        hosts.machines.provision({
+          name,
+          publicKey: generateHostKey().publicKey,
+          platform: "linux",
+          onDemand: "worker",
+          via: ORIGIN,
+          viaAccount,
+        });
+      // The app says this sign-in's mark is now its organisation's, and what it had before.
+      const app = fakeApp({
+        server: { server: { ...SERVER, formerAccounts: [FORMER] } },
+        answer: () => ({ status: 200, body: {} }),
+      });
+      const context = yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const workers = yield* SignedInWorkers;
+        yield* workers.source;
+      }).pipe(Effect.provide(context));
+      // Moved before any source asks under it; another sign-in's is left as it is.
+      expect(hosts.list().map((each) => [each.name, each.viaAccount])).toEqual([
+        [NAME, ACCOUNT],
+        ["worker-abcdef0123", OTHER],
+      ]);
+      // As are the stops owed.
+      const owed = memoryOwedStops();
+      owed.add({ origin: ORIGIN, name: NAME, since: 0, account: FORMER });
+      owed.add({ origin: ORIGIN, name: NAME, since: 1, account: OTHER });
+      owed.remark(ORIGIN, FORMER, ACCOUNT);
+      expect(owed.list().map((each) => each.account)).toEqual([ACCOUNT, OTHER]);
+    }).pipe(Effect.scoped),
   );
 });
 

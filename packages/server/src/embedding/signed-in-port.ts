@@ -273,6 +273,13 @@ export const bridgeWorkerMachines = (
                 ...(typeof server.account === "string" && server.account.length <= 64
                   ? { account: server.account }
                   : {}),
+                ...(Array.isArray(server.formerAccounts) &&
+                server.formerAccounts.length <= 8 &&
+                server.formerAccounts.every(
+                  (each: unknown) => typeof each === "string" && each.length <= 64,
+                )
+                  ? { formerAccounts: server.formerAccounts as ReadonlyArray<string> }
+                  : {}),
               },
             };
           const why = "why" in result && typeof result.why === "string" ? result.why : undefined;

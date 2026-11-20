@@ -318,7 +318,11 @@ subscription token reaches a machine, with its own consent.
   is for, the mark is the server, that organisation and the person, hashed: the same for every
   sign-in as that person there, so signing in again reaches what was made before. Where it
   doesn't, each sign-in has a mark of its own, so a later sign-in leaves what an earlier one made
-  alone. Everything made under a sign-in carries its mark: every start, the machine registered
+  alone. When a renewal of that same sign-in first names its organisation, the sign-in takes the
+  organisation's mark, and keeps its own as a former mark: this Gram moves the machines and stops
+  made under the former mark to the new one, in one step, before any source asks under it, and
+  touches no other sign-in's. One kept from before marks were takes its mark from its first
+  renewal; until then nothing is asked for under it. Everything made under a sign-in carries its mark: every start, the machine registered
   (`PairedMachine.viaAccount`) and every stop owed. Each call about one carries it, and the app
   sends nothing for a mark that isn't its sign-in's now. A stop owed is let go of, settled or
   skipped only by its own sign-in's answers and registrations: while another sign-in's machine

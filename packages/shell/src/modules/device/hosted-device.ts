@@ -24,7 +24,6 @@ import {
   importHostedThread,
   settleHostedThread,
   listHostedWorkspaces,
-  makeTokenKeeper,
   messageHostedThread,
   startHostedThread,
   checkHostedRepositories,
@@ -36,7 +35,8 @@ import {
 } from "./hosted.ts";
 import { forgetHostedDevice, registerHostedDevice } from "./hosted-registration.ts";
 import { capabilitiesOf, folderId, hostOf } from "./hosted-device-parts.ts";
-import { machineMarkFor, markedSignIn, type StoredSignIn } from "./stored-sign-in.ts";
+import { signInKeeper } from "./sign-in-keeper.ts";
+import { machineMarkFor, parseSignIn, type StoredSignIn } from "./stored-sign-in.ts";
 import {
   type HostedWorkerMachines,
   hostedWorkerMachines,
@@ -382,8 +382,14 @@ interface Server {
   readonly deviceId: DeviceId;
   readonly deviceRegistered: boolean;
   readonly keeper: TokenKeeper;
-  /** The mark worker machines asked for under this sign-in carry (`StoredSignIn.machineMark`). */
-  readonly machineMark: string;
+  /**
+   * The mark worker machines asked for under this sign-in carry (`StoredSignIn.machineMark`);
+   * undefined for one restored from before marks were, until its first renewal says its
+   * organisation (`keeperFor`).
+   */
+  machineMark: string | undefined;
+  /** The marks it had before (`StoredSignIn.formerMarks`). */
+  formerMarks: ReadonlyArray<string>;
   readonly limits: AskLimits;
   readonly grants: GrantLedger;
   workspaces: ReadonlyArray<HostedWorkspace>;
@@ -627,17 +633,18 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     key: KeyObject,
     signIn: StoredSignIn,
     ended: () => void,
+    marked?: (mark: string, formerMarks: ReadonlyArray<string>) => void,
   ): TokenKeeper =>
-    makeTokenKeeper({
+    signInKeeper({
+      origin,
       discovery,
       key,
-      subject: signIn.subject,
-      refreshToken: signIn.refreshToken,
-      saveRefreshToken: (refreshToken) =>
-        secrets.set(signInName(origin), JSON.stringify({ ...signIn, refreshToken })),
+      signIn,
+      keep: (stored) => secrets.set(signInName(origin), JSON.stringify(stored)),
       fetch: options.fetch,
       now: options.elapsed,
       ended,
+      ...(marked === undefined ? {} : { marked }),
     });
 
   const makeServer = (
@@ -654,8 +661,18 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       key,
       deviceId: signIn.deviceId,
       deviceRegistered: signIn.deviceRegistered !== false,
-      keeper: keeper ?? keeperFor(origin, discovery, key, signIn, () => endedByServer(server)),
-      machineMark: signIn.machineMark ?? machineMarkFor(origin, signIn.subject),
+      keeper:
+        keeper ??
+        keeperFor(
+          origin,
+          discovery,
+          key,
+          signIn,
+          () => endedByServer(server),
+          (mark, former) => Object.assign(server, { machineMark: mark, formerMarks: former }),
+        ),
+      machineMark: signIn.machineMark,
+      formerMarks: signIn.formerMarks ?? [],
       limits: makeAskLimits(options.elapsed, { paused: saved?.paused ?? false }, () => {
         // Paused: everything waiting on the person goes, as paused, and the pause is kept.
         void server.lending?.stop("paused");
@@ -729,7 +746,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       return { ok: false, why };
     };
     try {
-      const signIn = await markedSignIn(saved.origin, secrets, signInName(saved.origin));
+      const signIn = parseSignIn(await secrets.get(signInName(saved.origin)));
       const pem = await secrets.get(keyName(saved.origin));
       if (signIn === undefined || pem === undefined) {
         return keep("Signed out. Sign in again.");
@@ -860,6 +877,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         deviceId: deviceIdOf(devicePublicKeyText(key)),
         ...(registerDevice ? {} : { deviceRegistered: false }),
         machineMark: machineMarkFor(origin, signed.tokens.subject, signed.tokens.organization),
+        ...(signed.tokens.organization === undefined ? {} : { machineMarkOrg: true as const }),
       };
       // A sign-in kept from before goes back if this one doesn't finish.
       const previous = await secrets.get(signInName(origin));

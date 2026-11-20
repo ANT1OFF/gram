@@ -14,9 +14,16 @@ export interface StoredSignIn {
   /**
    * The opaque mark of this sign-in that worker machines asked for under it carry
    * (`WorkerMachineServer.account`, `machineMarkFor`): set once, as it is signed in, and kept for
-   * as long as the sign-in lasts. Absent on one kept from before: given one as it is restored.
+   * as long as the sign-in lasts. Absent on one kept from before: given one at its first renewal.
    */
   readonly machineMark?: string;
+  /** Whether `machineMark` is its organisation's (`machineMarkFor`), not one of its own. */
+  readonly machineMarkOrg?: true;
+  /**
+   * The marks this sign-in had before `machineMark`: one of its own, until a renewal named its
+   * organisation. What was made under them is its own, and moves to `machineMark`.
+   */
+  readonly formerMarks?: ReadonlyArray<string>;
 }
 
 /**
@@ -34,6 +41,8 @@ export const machineMarkFor = (origin: string, subject: string, organization?: s
         .digest("base64url")
         .slice(0, 32);
 
+const MARK = /^[A-Za-z0-9_-]{8,64}$/;
+
 export const parseSignIn = (text: string | undefined): StoredSignIn | undefined => {
   if (text === undefined) return undefined;
   try {
@@ -43,29 +52,15 @@ export const parseSignIn = (text: string | undefined): StoredSignIn | undefined 
       typeof value.deviceId === "string" &&
       (value.deviceRegistered === undefined || typeof value.deviceRegistered === "boolean") &&
       (value.machineMark === undefined ||
-        (typeof value.machineMark === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(value.machineMark)))
+        (typeof value.machineMark === "string" && MARK.test(value.machineMark))) &&
+      (value.machineMarkOrg === undefined || value.machineMarkOrg === true) &&
+      (value.formerMarks === undefined ||
+        (Array.isArray(value.formerMarks) &&
+          value.formerMarks.length <= 8 &&
+          value.formerMarks.every((each) => typeof each === "string" && MARK.test(each))))
       ? (value as StoredSignIn)
       : undefined;
   } catch {
     return undefined;
   }
-};
-
-/**
- * The sign-in kept for a server, read back, with its mark (`machineMark`): one kept from before
- * marks were is given its own now, and kept with it from then on.
- */
-export const markedSignIn = async (
-  origin: string,
-  secrets: {
-    readonly get: (name: string) => Promise<string | undefined>;
-    readonly set: (name: string, value: string) => Promise<void>;
-  },
-  name: string,
-): Promise<StoredSignIn | undefined> => {
-  const kept = parseSignIn(await secrets.get(name));
-  if (kept === undefined || kept.machineMark !== undefined) return kept;
-  const marked = { ...kept, machineMark: machineMarkFor(origin, kept.subject) };
-  await secrets.set(name, JSON.stringify(marked));
-  return marked;
 };

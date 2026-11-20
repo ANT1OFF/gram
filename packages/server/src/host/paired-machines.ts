@@ -717,6 +717,21 @@ export const createPairedMachines = (
       save([...machines, machine]);
       return { kind: "provisioned", machine, created: true };
     },
+    /**
+     * Moves every machine relayed from `origin` under the sign-in mark `from` to the mark `to`,
+     * in one write: the same sign-in, whose mark became its organisation's. No other changes.
+     */
+    remark: (origin: string, from: string, to: string): number => {
+      if (!isAccountMark(to)) return 0;
+      let moved = 0;
+      const next = machines.map((machine) => {
+        if (machine.via !== origin || machine.viaAccount !== from) return machine;
+        moved += 1;
+        return { ...machine, viaAccount: to };
+      });
+      if (moved > 0) save(next);
+      return moved;
+    },
     confirm: (id: string): PairedMachine | undefined => {
       const machine = byId(id);
       if (machine === undefined) return undefined;

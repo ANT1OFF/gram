@@ -942,6 +942,11 @@ export interface WorkerMachineServer {
    * server, as the app hashes it). What is made under one sign-in is acted on only under it.
    */
   readonly account?: string;
+  /**
+   * The marks this same sign-in had before `account` (one of its own, until a renewal named its
+   * organisation): what was made under them is this sign-in's, and is moved to `account`.
+   */
+  readonly formerAccounts?: ReadonlyArray<string>;
 }
 
 export type WorkerMachineOp =

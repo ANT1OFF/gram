@@ -261,8 +261,13 @@ interface WorkerMachineServerSide {
   readonly discovery: HostedDiscovery;
   readonly key: KeyObject;
   readonly keeper: TokenKeeper;
-  /** The mark of this sign-in (`StoredSignIn.machineMark`, `WorkerMachineServer.account`). */
-  readonly machineMark: string;
+  /**
+   * The mark of this sign-in (`StoredSignIn.machineMark`, `WorkerMachineServer.account`):
+   * undefined while one restored from before marks were awaits its first renewal.
+   */
+  readonly machineMark: string | undefined;
+  /** The marks this sign-in had before (`StoredSignIn.formerMarks`). */
+  readonly formerMarks?: ReadonlyArray<string>;
   readonly limits: { readonly paused: () => boolean };
 }
 
@@ -281,14 +286,24 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
         (server) => !server.keeper.signedOut() && startsWorkerMachines(server.discovery),
       );
       const open = signedIn.find((server) => !server.limits.paused());
-      if (open !== undefined)
+      const mark = open?.machineMark;
+      if (open !== undefined && mark !== undefined)
         return {
           ok: true,
           server: {
             origin: open.origin,
             server: open.discovery.name,
-            account: open.machineMark,
+            account: mark,
+            ...(open.formerMarks === undefined || open.formerMarks.length === 0
+              ? {}
+              : { formerAccounts: open.formerMarks }),
           },
+        };
+      // No machine is asked for under a sign-in whose mark isn't known yet.
+      if (open !== undefined)
+        return {
+          ok: false,
+          why: "Gram is still restoring the sign-in to that server. Try again in a moment.",
         };
       if (signedIn.length > 0)
         return {
