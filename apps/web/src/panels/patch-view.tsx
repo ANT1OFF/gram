@@ -497,7 +497,6 @@ function UnifiedHunk({
         const picked = isPicked(review, row) || undefined;
         return (
           // Rows have no stable identity beyond their position within the hunk.
-          // oxlint-disable-next-line react/no-array-index-key
           <Fragment key={row}>
             <tr
               data-kind={line.kind}
@@ -562,14 +561,12 @@ function SplitHunk({ index, hunk, current, limit, review }: HunkProps) {
       <HunkHeader index={index} hunk={hunk} current={current} span={6} />
       {shown.map((row, position) =>
         row.kind === "note" ? (
-          // oxlint-disable-next-line react/no-array-index-key
           <tr key={position} data-kind="note" className={ROW.note}>
             <td colSpan={6} className="px-2">
               {row.text}
             </td>
           </tr>
         ) : (
-          // oxlint-disable-next-line react/no-array-index-key
           <Fragment key={position}>
             <tr data-kind={row.left === row.right ? "ctx" : "change"}>
               <Side line={row.left} number={row.left?.oldNo} {...side(row.left)} />

@@ -88,7 +88,6 @@ export function CheckoutPrDialog({
         </select>
         <input
           aria-label="Pull request number or URL"
-          // oxlint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           className={cn(fieldCls, "font-mono")}
           placeholder="#12, owner/repo#12 or a PR URL"

@@ -28,12 +28,8 @@ import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Option from "effect/Option";
 import { randomUUID } from "node:crypto";
-import {
-  AGENT_NAMES,
-  checkFreshTarget,
-  checkSwitchTarget,
-  turnNote,
-} from "../../runtime/agent-switch.ts";
+import { AGENT_NAMES } from "../../runtime/agent-names.ts";
+import { checkFreshTarget, checkSwitchTarget, turnNote } from "../../runtime/agent-switch.ts";
 import {
   type ObservedTurnEnd,
   type SystemDelivery,
@@ -762,7 +758,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
         return yield* new InvalidState({
           message: "Choose Codex or Claude Code for the orchestrator.",
         });
-      yield* checkFreshTarget(store, hosts, model);
+      yield* checkFreshTarget(store, hosts, model, thread);
       const mode = thread.mode;
       if (mode === "plan" && model.agent !== thread.model.agent)
         return yield* new InvalidState({

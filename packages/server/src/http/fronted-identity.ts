@@ -130,7 +130,7 @@ const plainText = (value: unknown): string | undefined =>
   value.length > 0 &&
   value.length <= MAX_TEXT_LENGTH &&
   value.trim() === value &&
-  // oxlint-disable-next-line no-control-regex
+  // oxlint-disable-next-line no-control-regex -- control and invisible characters are what it refuses
   !/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/.test(value)
     ? value
     : undefined;

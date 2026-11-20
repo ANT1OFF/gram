@@ -581,6 +581,7 @@ export const machineWorkerHost = (
       threadPlaces: connection.threadPlaces,
       identify: connection.repos.identify,
       shared: connection.shared,
+      loopback: connection.loopback,
     };
   });
 

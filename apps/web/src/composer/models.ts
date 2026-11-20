@@ -3,15 +3,24 @@ import {
   CUSTOM_MODEL_DESCRIPTION,
   GATEWAY_UNLISTED_WARNING,
   listedRow,
+  profileAllowsModel,
   supersededModels,
   type AgentKind,
   type AgentModel,
   type ModelRef,
   type ProfileId,
   type ReasoningVariant,
+  type ThreadProfileBinding,
 } from "@gram/contracts";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useMemo,
+  type ReactNode,
+} from "react";
 
 import { agentLabel } from "@/agents/agent-label";
 import { useApi } from "@/api/context";
@@ -22,10 +31,55 @@ import { DEFAULT_MODEL_OPTIONS, EFFORT_OPTIONS } from "./options";
 import type { PickerOption } from "./picker";
 
 /**
+ * The thread the pickers inside pick for, where its profile limits the models it may run
+ * (`ThreadProfileBinding.models`): every model list under it lists only those, as the server
+ * refuses any other.
+ */
+const ModelsAllowed = createContext<Pick<ThreadProfileBinding, "models"> | undefined>(undefined);
+
+/** Narrows the model lists under it to what `profile` lets a thread run; nothing without a limit. */
+export function ModelsAllowedBy({
+  profile,
+  children,
+}: {
+  profile: Pick<ThreadProfileBinding, "models"> | undefined;
+  children: ReactNode;
+}) {
+  return createElement(
+    ModelsAllowed.Provider,
+    { value: profile?.models === undefined ? undefined : profile },
+    children,
+  );
+}
+
+/** `models` as the thread the pickers pick for may run them (`ModelsAllowedBy`). */
+export const allowedModels = (
+  models: readonly AgentModel[] | undefined,
+  agent: AgentKind,
+  profile: Pick<ThreadProfileBinding, "models"> | undefined,
+): readonly AgentModel[] | undefined =>
+  models === undefined || profile?.models === undefined
+    ? models
+    : models.filter((model) => profileAllowsModel(profile, model.id, modelRuns(agent, model)));
+
+/** The limit `ModelsAllowedBy` sets here, if any. */
+export const useModelsAllowed = () => useContext(ModelsAllowed);
+
+/**
  * `models.list` for an agent, through `profileId` for a gateway agent; `undefined` until it resolves
- * or while the server lacks it.
+ * or while the server lacks it. Under `ModelsAllowedBy`, only the models its thread may run.
  */
 export function useModelsQuery(agent: AgentKind, profileId?: ProfileId, enabled = true) {
+  const limit = useModelsAllowed();
+  const query = useListedModelsQuery(agent, profileId, enabled);
+  const models = query.data?.models;
+  const narrowed = useMemo(() => allowedModels(models, agent, limit), [models, agent, limit]);
+  return limit === undefined || query.data === undefined || narrowed === models
+    ? query
+    : { ...query, data: { ...query.data, models: narrowed ?? [] } };
+}
+
+function useListedModelsQuery(agent: AgentKind, profileId?: ProfileId, enabled = true) {
   const api = useApi();
   const query = useQuery({
     queryKey: ["models", agent, profileId ?? null],

@@ -366,7 +366,8 @@ at every armed merge in the repo, and fires `freezeLifted` wakes.
 
 ## Accounts, models and speed
 
-Codex and Claude Code are the only executable harnesses. Select one when starting a thread. Signed-out agents remain selectable and
+Claude Code and Codex run every role; OpenCode and Grok Build run chat threads (see
+[Grok Build](#grok-build)). Select one when starting a thread. Signed-out agents remain selectable and
 explain login/retry. New defaults come from CLI discovery; an explicit saved model,
 effort, speed or gateway profile remains authoritative. **Retry models** and
 **Re-check** refresh discovery after login changes without interrupting held Codex
@@ -377,7 +378,8 @@ entitlement, remaining quota or proof that a turn will succeed.
 
 Subscription limits come from CLI-owned account queries at startup and about every
 minute while idle, with refresh from the Usage page. Claude Code supplies structured
-`/usage` data; Codex supplies `account/rateLimits/read`. Turn events update the same
+`/usage` data; Codex supplies `account/rateLimits/read`; Grok Build supplies its plan's credit share
+for the week (`x.ai/billing`), which shows as a weekly window only, since Grok has no 5-hour one. Turn events update the same
 kept readings between polls. Usage cards, the title bar and overview sidebar use
 the same five-hour and weekly windows, with 24-hour reset times. A successful
 sign-out or unavailable response removes that provider's readings; temporary query
@@ -410,6 +412,50 @@ subscription choice or grants helper-context consent.
 Source: [Claude adapter](../packages/agents/src/claude/index.ts),
 [Codex adapter](../packages/agents/src/codex/index.ts),
 [gateway credentials](../packages/server/src/gateway/credentials.ts).
+
+## Grok Build
+
+Grok Build is xAI's coding CLI (`grok`). Gram runs the one on your login-shell `PATH`, on the
+sign-in it already has, so a thread on it spends your Grok subscription, not an API key. Gram
+never reads or copies its credentials; sign in with `grok login` in a terminal. A thread that
+starts while the CLI is signed out fails with that instruction in the Inbox.
+
+Each thread runs its own `grok --permission-mode default agent --no-leader stdio` and drives it
+over the [Agent Client Protocol](https://agentclientprotocol.com). It runs in a home of Gram's own,
+in Gram's data folder, whose `.grok` shares only your `auth.json`, by path. So none of your own
+setup reaches a Gram thread: not your `~/.grok` config, MCP servers, plugins, hooks or memory, and
+not the Claude Code and Cursor settings, allow rules, MCP servers, skills and rules Grok would
+otherwise read. Commands it runs still see your `HOME`. The session takes the thread's permission
+mode, as Claude Code and Codex do, never a default of Grok's own. How the composer's modes map:
+
+| Mode         | Grok Build                                                                      |
+| ------------ | ------------------------------------------------------------------------------- |
+| Ask          | `ask`: every call its own policy doesn't clear comes to you as an approval card |
+| Accept edits | `ask`, with Gram allowing edits itself                                          |
+| Plan         | Grok's plan mode, asking                                                        |
+| Auto         | Grok's auto classifier                                                          |
+| Bypass       | always-approve                                                                  |
+
+Under the outward gate (a supervised orchestrator's push, PR and merge checks) the session always
+asks, whatever the mode, and Gram lets through what the gate doesn't stop. Grok's own policy
+clears some calls without asking even in `ask`, such as writes inside the folder, as Codex's
+sandbox does. An approval card offers once, and the session or always grants Grok offers for that
+call.
+
+Grok keeps the conversation; Gram resumes it by id after a restart. Models and their efforts are
+the ones the CLI lists. Each turn reports its tokens, reasoning tokens and context, and a price
+Grok works out, which Gram adds up as it does Claude Code's. On the desktop Grok Build runs plain
+threads only: it takes no orchestrator, worker or memory-update role, can't hand its session to
+another agent, and runs on no gateway profile. A deployment can admit it as orchestrator and worker with `GRAM_ROLE_AGENTS=grok`; see
+[the embedded web app](EMBEDDED_WEB_APP.md). A role's standing instructions reach it through its
+system prompt (`_meta.rules`), and Gram's app tools, the thread's MCP server lists, its slash
+commands, attachments (images inline) and its past sessions all work as for the other agents.
+
+For xAI's API on a key instead, add a gateway on `https://api.x.ai/v1` in Settings → Gateways.
+Codex and OpenCode are offered its models there (Claude Code isn't: xAI no longer serves the
+Anthropic API), with the prices xAI lists, which OpenCode threads show as cost.
+
+Source: [Grok Build adapter](../packages/agents/src/grok/index.ts).
 
 ## Orchestration context
 
@@ -1418,6 +1464,49 @@ Definitions are read from the project's own folder each time, not from the threa
 an agent editing its worktree's copy changes nothing. No agent tool runs a script: only the
 user's click or key does.
 
+## Verify recipes
+
+A repository can name the commands an agent runs to check its work, its verify drivers, in
+`.gram/verify.json`. The file is optional: without it nothing changes, and Gram adds none of its
+own.
+
+```json
+{
+  "drivers": [
+    { "name": "unit", "run": "bun install --frozen-lockfile && bun run test", "kind": "unit" },
+    {
+      "name": "shots",
+      "run": "bun install --frozen-lockfile && bun run --filter @gram/web pr:shots --set tour",
+      "covers": ["apps/web/**"],
+      "kind": "shots",
+      "required": true,
+      "timeoutMinutes": 20
+    }
+  ]
+}
+```
+
+`name` (lowercase letters, digits and `. _ -`) and `run` (one line) are required. `covers` lists
+path patterns (`*` within a folder name, `**` across folders, a trailing `/` for everything under a
+folder) of the changes a driver checks; without it a driver covers every change. `kind` is one of
+`unit`, `types`, `lint`, `e2e`, `shots`, `flow` and `other`, for reading the recipe at a glance.
+`required` says the repository asks that a worker pass it before it reports done; Gram tells the
+worker so and refuses nothing. `timeoutMinutes` is 1 to 120, 30 when absent.
+
+Agents run drivers with the `verify` tool. Without `driver` it lists them, which cover what the
+branch changed since its base, which are required and how each last ran on the current commit.
+With `driver` it runs that one on the thread's latest commit through
+[Gram's own local checks](#project-local-merge-checks): in a clean worktree outside the agent's
+checkout, on the machine the thread is on, with the record keyed by that commit and the command.
+Uncommitted changes aren't in the run. The thread is told how it ended, with the end of its
+output fenced as data. A pass is reused for that commit only. A driver's records key apart from
+the project's merge check, so no driver's pass counts for `merge_when_ready`.
+
+The recipe is read from the repository's own clone, not the thread's worktree, so an agent editing
+its worktree's copy changes nothing until it is merged and pulled. A folder the user hasn't
+trusted runs no drivers. The first run of each command in a project asks the user, naming the
+command; a changed command asks again. That approval lasts until Gram restarts.
+
 ## Agents after Gram quits
 
 Off by default. **Settings → General → Running work → Run agents after quit** runs this machine's
@@ -1652,6 +1741,19 @@ sends no UDP. Each of the
 page's requests is also paused and put to the pane's rules, then to the Preview's local-session
 rules; a worker's requests get the local-session rules. A page's script can't open a window, and a window that opens all the same (a link, a shifted click) is closed at once, since no command drives it; its first request may still reach loopback, and nothing else. A `browser_navigate` anywhere else is refused
 before any card, and a navigation the page itself starts off loopback ends where it began.
+
+A thread whose session runs on another machine reaches that machine's loopback instead, so
+`localhost:3000` is the dev server the thread started where it runs. This needs the machine's
+host to name the `loopback-tunnels` feature; with an older host the page reaches the server's
+loopback, as before. The server keeps one SOCKS5 listener on its own `127.0.0.1` for each such
+thread (32 at most), and the thread's browser context sends every request there, loopback's
+included. The listener passes on only a connection to `localhost`, `127.0.0.1` or `[::1]` at a
+port from 1024 up, and carries it to that machine's own loopback through its host
+(`host.loopback.*`). The host refuses anything else too. Nothing new runs on the other machine,
+and every rule above still applies in the server. Chromium sends a SOCKS proxy no password, so
+while a listener is open, any process on the server's machine can reach that machine's loopback
+ports through it, and nothing more. The desktop app's Preview pane still reaches only the
+computer it runs on.
 
 Each thread's page is a browser context of its own, sharing no cookies or storage. Four threads
 keep a page at once; the one whose last command is oldest closes for the next, never one with a

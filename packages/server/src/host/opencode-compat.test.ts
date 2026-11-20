@@ -1,7 +1,7 @@
 import type { UserInput } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { withoutOpenCodeAgents } from "./protocol.ts";
+import { withoutOpenCodeAgents } from "./session-gates.ts";
 
 const worker = (agent: "claude" | "opencode") => ({ threadId: `t-${agent}`, agent });
 

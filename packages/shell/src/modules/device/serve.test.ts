@@ -1,5 +1,5 @@
 import { type DeviceExecEvent, type DeviceHello, DeviceRpcs } from "@gram/contracts";
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Redacted from "effect/Redacted";
@@ -145,9 +145,7 @@ const connected = (connection: DeviceConnection, options?: { readonly tokenWaitM
 
 /** Waits, on the real clock, for something the other side of the socket does. */
 const until = (done: () => boolean) =>
-  Effect.promise(async () => {
-    for (let i = 0; i < 200 && !done(); i += 1) await new Promise((next) => setTimeout(next, 5));
-  });
+  Effect.promise(() => vi.waitUntil(done, { timeout: 1_000, interval: 5 }));
 
 describe("serving a device", () => {
   it.effect("says hello, and runs, lists and reads through the gate", () =>

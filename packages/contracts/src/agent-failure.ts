@@ -20,6 +20,12 @@ export const AgentFailureKind = Schema.Literals([
 ]);
 export type AgentFailureKind = typeof AgentFailureKind.Type;
 
+/**
+ * A gateway's refusal of a model it grants the caller no use of ("This agent is not allowed to use
+ * the model …"), a `modelUnavailable` failure that its status (403) would read as a refused key.
+ */
+export const MODEL_NOT_GRANTED = /not allowed to use (?:the )?model\b/i;
+
 /** The classified part of an agent's error: no text of the agent's or the API's. */
 export const AgentFailure = Schema.Struct({
   kind: AgentFailureKind,

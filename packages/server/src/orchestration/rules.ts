@@ -93,6 +93,8 @@ import {
 import { createHash } from "node:crypto";
 import { SENDS_PER_MINUTE, WINDOW_MS as SEND_WINDOW_MS } from "../app-tools/loop-guard.ts";
 import { redactText } from "../logging/redact.ts";
+import { AGENT_NAMES } from "../runtime/agent-names.ts";
+import { ROLE_AGENTS } from "./role-agents.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Authority, delegation, audience
@@ -102,14 +104,15 @@ import { redactText } from "../logging/redact.ts";
 export type OrchestrationRole = ThreadRole | "worker";
 
 /**
- * Only Codex and Claude Code may take executable orchestration roles. Claude uses its outward hook and strict
- * Dream file bridge. Codex requires an isolated gateway home for outward approval enforcement;
- * its Dreams use guided native permissions rather than a file-only guarantee. Server app-tool
- * approval, thread audience, ownership and confirmed system delivery remain authoritative.
+ * Codex and Claude Code take executable orchestration roles, and the agents a deployment adds
+ * (`ROLE_AGENTS`). Claude uses its outward hook and strict Dream file bridge. Codex requires an
+ * isolated gateway home for outward approval enforcement; its Dreams use guided native permissions
+ * rather than a file-only guarantee. Server app-tool approval, thread audience, ownership and
+ * confirmed system delivery remain authoritative.
  */
 export const ADMITTED: Readonly<Record<OrchestrationRole, ReadonlyArray<AgentKind>>> = {
-  orchestrator: ["claude", "codex"],
-  worker: ["claude", "codex"],
+  orchestrator: ["claude", "codex", ...ROLE_AGENTS],
+  worker: ["claude", "codex", ...ROLE_AGENTS],
   dream: AgentKind.literals.filter((agent) => {
     const mode = dreamSupportFor(agent, { kind: "implementation" }).mode;
     return mode === "confined" || mode === "guided";
@@ -1366,13 +1369,6 @@ const QUIET_STATES: ReadonlySet<WorkerState> = new Set<WorkerState>(["briefed", 
 /** Statuses of a worker that isn't doing anything and won't until someone writes to it. */
 const AT_REST: ReadonlySet<ThreadStatus> = new Set<ThreadStatus>(["idle", "cold"]);
 
-/** What the user calls each agent, for a digest's line on a worker the user switched. */
-const AGENT_WORDS: Readonly<Record<AgentKind, string>> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  opencode: "OpenCode",
-};
-
 const WENT_QUIET = "ended its turn without reporting; read its last messages with get_thread";
 
 const WORKTREE_GONE =
@@ -1581,7 +1577,7 @@ export const digestDiff = (input: {
       const switched =
         before?.agent !== undefined && worker.agent !== undefined && before.agent !== worker.agent;
       if (switched)
-        remarks.push(`continues in ${AGENT_WORDS[worker.agent!]} (the user switched it)`);
+        remarks.push(`continues in ${AGENT_NAMES[worker.agent!]} (the user switched it)`);
       if (newOverlaps.length > 0) {
         const files = worker.overlapFiles ?? [];
         remarks.push(

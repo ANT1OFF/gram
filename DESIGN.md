@@ -176,7 +176,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   glyph is no thinner than an 18 px toolbar one. A glyph stands in for a word, never beside the
   word it repeats: a button that says "Edit" or "Restore defaults", a status line's counts and
   a picker that shows its words take no glyph, and a picker's glyph draws only once its words
-  give way. A mark that says something its words don't (a row's state dot) stays. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
+  give way. A mark that says something its words don't (a row's state dot) stays. Don't set `strokeWidth` on a Lucide icon (`gram/lucide-stroke`): the class outranks it. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
   sidebar's header and the composer's toolbar), `size-icon-row` 16 px beside UI text (rows, cards,
   menus, docks, buttons, the panel's tabs, which keep their names and fold into More by width
   rather than turn into bare glyphs, the rarer ones always under More so Focus review keeps the same tabs, and its action, whose words give way to its glyph), and `size-icon-chip` 14 px beside meta text (a chip,

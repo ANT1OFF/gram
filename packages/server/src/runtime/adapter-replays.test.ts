@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import { makeMapper as makeClaudeMapper } from "@gram/agents/claude";
 import { fixtureMessages as claudeFixture } from "@gram/agents/claude/testing";
 import { makeCodexMapper, type CodexMapper } from "@gram/agents/codex";
@@ -126,9 +126,9 @@ const replay = (
     // A recorded tool image is written to disk mid-turn, and `yieldNow` doesn't move a fiber parked
     // on real I/O along: Windows CI reached the assertions with the turn still open. Real time,
     // since `it.effect`'s clock is the test clock.
-    for (let i = 0; i < 2000 && statusesSoFar().at(-1) === "running"; i++) {
-      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5)));
-    }
+    yield* Effect.promise(() =>
+      vi.waitUntil(() => statusesSoFar().at(-1) !== "running", { timeout: 10_000, interval: 5 }),
+    );
     for (let i = 0; i < 500; i++) yield* Effect.yieldNow;
 
     const statuses = statusesSoFar();

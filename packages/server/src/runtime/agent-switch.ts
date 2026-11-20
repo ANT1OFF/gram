@@ -9,6 +9,8 @@ import {
   effectiveCheckout,
   InvalidState,
   isLocalHost,
+  profileAllowsModel,
+  profileModelRefusal,
   type AgentKind,
   type GitState,
   type GramUIMessage,
@@ -57,13 +59,26 @@ import {
   turnsBudgetTokens,
   type HandoffLimit,
 } from "./switch-handoff.ts";
+import { AGENT_NAMES } from "./agent-names.ts";
 
-/** What the user calls each agent. */
-export const AGENT_NAMES: Readonly<Record<AgentKind, string>> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  opencode: "OpenCode",
-};
+/**
+ * Refuses a model the thread's profile doesn't let its sessions run (`ProfileModel.choices`): by
+ * the name asked for, or by what the listed row runs. Nothing where the profile sets no limit.
+ */
+export const checkProfileModel = (
+  thread: Pick<Thread, "profile"> | undefined,
+  model: string,
+  row?: { readonly id: string; readonly resolvedId?: string | undefined },
+) =>
+  Effect.gen(function* () {
+    const profile = thread?.profile;
+    if (profile?.models === undefined) return;
+    if (profileAllowsModel(profile, model)) return;
+    if (row !== undefined && profileAllowsModel(profile, row.id, row.resolvedId)) return;
+    // Named by an alias the profile doesn't list: wait for the row, which says what it runs.
+    if (row === undefined) return;
+    return yield* new InvalidState({ message: profileModelRefusal(profile, model) });
+  });
 
 /**
  * Whether `target` can take over `thread`'s session: a build that can stop and start one cleanly,
@@ -74,11 +89,12 @@ export const AGENT_NAMES: Readonly<Record<AgentKind, string>> = {
 export const checkSwitchTarget = (
   store: Pick<ThreadStoreShape, "listProfiles" | "getSettings">,
   hosts: AgentHosts["Service"],
-  thread: Pick<Thread, "model" | "mode">,
+  thread: Pick<Thread, "model" | "mode" | "profile">,
   target: ModelRef,
 ) =>
   Effect.gen(function* () {
     const name = AGENT_NAMES[target.agent];
+    yield* checkProfileModel(thread, target.model);
     const sourceHost = yield* hosts
       .get(thread.model.agent)
       .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
@@ -124,6 +140,7 @@ export const checkSwitchTarget = (
       return yield* new InvalidState({
         message: `The installed ${name} CLI does not list ${target.model}. Select a listed model, or add that exact custom ID in Settings → Agents first. No model was substituted.`,
       });
+    yield* checkProfileModel(thread, target.model, selected);
     if (target.variant !== undefined && !selected.efforts.includes(target.variant))
       return yield* new InvalidState({
         message:
@@ -155,9 +172,11 @@ export const checkFreshTarget = (
   store: Pick<ThreadStoreShape, "listProfiles" | "getSettings">,
   hosts: AgentHosts["Service"],
   target: ModelRef,
+  thread?: Pick<Thread, "profile">,
 ) =>
   Effect.gen(function* () {
     const name = AGENT_NAMES[target.agent];
+    yield* checkProfileModel(thread, target.model);
     const models = yield* selectableModels(store, hosts, target.agent, target.profileId).pipe(
       Effect.mapError((e) => new InvalidState({ message: e.message })),
     );
@@ -166,6 +185,7 @@ export const checkFreshTarget = (
       return yield* new InvalidState({
         message: `${name} does not list ${target.model} here. Select a listed model. No model was substituted.`,
       });
+    yield* checkProfileModel(thread, target.model, selected);
     if (target.variant !== undefined && !selected.efforts.includes(target.variant))
       return yield* new InvalidState({
         message:
@@ -186,13 +206,13 @@ export const checkFreshTarget = (
 export const moveKindOf = (
   store: Pick<ThreadStoreShape, "listProfiles" | "getSettings">,
   hosts: AgentHosts["Service"],
-  thread: Pick<Thread, "model" | "mode">,
+  thread: Pick<Thread, "model" | "mode" | "profile">,
   target: ModelRef,
 ) =>
   checkSwitchTarget(store, hosts, thread, target).pipe(
     Effect.as("switch" as const),
     Effect.catchTag("InvalidState", () =>
-      checkFreshTarget(store, hosts, target).pipe(Effect.as("fresh" as const)),
+      checkFreshTarget(store, hosts, target, thread).pipe(Effect.as("fresh" as const)),
     ),
   );
 
@@ -1031,7 +1051,16 @@ export const makeAgentSwitch = ({
             threadId,
             message: "Retry the orchestrator's switch from its own Continue in… sheet.",
           });
-        yield* checkSwitchTarget(store, hosts, { model: previous, mode: thread.mode }, target);
+        yield* checkSwitchTarget(
+          store,
+          hosts,
+          {
+            model: previous,
+            mode: thread.mode,
+            ...(thread.profile === undefined ? {} : { profile: thread.profile }),
+          },
+          target,
+        );
         const { id } = yield* retry(thread, target);
         yield* FiberMap.run(switches, threadId, run(threadId, id, previous));
         return yield* store.getThread(threadId);

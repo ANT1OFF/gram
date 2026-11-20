@@ -20,7 +20,8 @@ import {
 import { sameSlot } from "./model-slots";
 import { agentLabel } from "@/agents/agent-label";
 import type { SaveWorkspaceInput } from "@/api/types";
-import { ADMITTED_AGENTS } from "@/orchestration/admitted";
+import { useEmbedShell } from "@/embed/store";
+import { admittedAgents } from "@/orchestration/admitted";
 
 import type { ConnectorSuggestion } from "./connector-entries";
 
@@ -431,7 +432,7 @@ export const workerModelIssues = (
     (profile.models ?? []).some((each) => each.id === model.model) ||
     (context.customModels?.[model.agent] ?? []).includes(model.model);
   return (charter.workerModels ?? []).flatMap((model, index): WorkerModelIssue[] => {
-    if (!ADMITTED_AGENTS.includes(model.agent)) {
+    if (!admittedAgents(useEmbedShell.getState().roleAgents).includes(model.agent)) {
       return [{ index, message: "This agent can't run as a worker, so a spawn on it is refused." }];
     }
     const name = agentLabel(model.agent);

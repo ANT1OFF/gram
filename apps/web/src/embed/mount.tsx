@@ -135,6 +135,7 @@ export const mountGram: MountGram = async (options) => {
       document: shell.document ?? {},
       repositories: shell.repositories,
       settings: shell.settings ?? {},
+      roleAgents: (shell.roleAgents ?? []).filter((agent) => agent === "grok"),
       titles: Object.fromEntries([
         ...(shell.routes ?? []).flatMap((route) =>
           route.title === undefined ? [] : [[route.path, route.title] as const],

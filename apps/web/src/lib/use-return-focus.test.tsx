@@ -9,7 +9,6 @@ afterEach(cleanup);
 
 function Surface({ fallback }: { fallback?: () => Element | null }) {
   useReturnFocus(fallback);
-  // oxlint-disable-next-line jsx-a11y/no-autofocus
   return <input aria-label="Surface" autoFocus />;
 }
 

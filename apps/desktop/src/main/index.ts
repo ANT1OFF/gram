@@ -184,6 +184,7 @@ import { processStart, sparedNow, watchTree, type TreeCheckDeps } from "./update
 import { probeSignature, runGh } from "./update/process.ts";
 import { normaliseUserEnv } from "./user-env.ts";
 import { reloadOnto } from "./window-reload.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const WEB_DEV_URL = process.env["GRAM_WEB_URL"] ?? "http://localhost:5173";
 /** The fixed dev server port the web Vite proxy targets (see scripts/dev.mjs). */
@@ -351,7 +352,7 @@ const treeCheckDeps: TreeCheckDeps = {
   platform: process.platform,
   run: runSync,
   signal: (pid, signal) => process.kill(pid, signal),
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep,
   now: () => Date.now(),
 };
 

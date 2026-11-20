@@ -25,6 +25,7 @@ import {
   LIMIT_PROVIDERS,
   LIMIT_WARN_AT,
   LIMIT_WINDOWS,
+  windowsOf,
   limitSpent,
   limitStale,
   limitWarns,
@@ -118,8 +119,8 @@ export function UsageSettingsPage() {
       )}
       {providers.length === 0 ? (
         <p className="text-reading text-muted-foreground" data-testid="usage-settings-none">
-          Limits appear here once Claude Code or Codex reports one. Gram reads them while a window
-          is open and as your agents work, and keeps 35 days of history.
+          Limits appear here once Claude Code, Codex or Grok Build reports one. Gram reads them
+          while a window is open and as your agents work, and keeps 35 days of history.
         </p>
       ) : (
         <div className={cn("flex flex-col gap-8", query.isPlaceholderData && "opacity-60")}>
@@ -219,7 +220,7 @@ function ProviderUsage({
         </span>
       </div>
       <div className="grid grid-cols-1 gap-3 @2xl/settings:grid-cols-2">
-        {LIMIT_WINDOWS.map((window) => (
+        {windowsOf(provider).map((window) => (
           <WindowCard
             key={window}
             provider={provider}

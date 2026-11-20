@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { runCommand } from "./process.ts";
 
 // BSD ps (macOS) has no `sid` keyword and reports `sess` as 0, so a session id is only readable on
@@ -79,11 +79,7 @@ it.skipIf(process.platform === "win32")(
           return false;
         }
       };
-      const deadline = Date.now() + 2_000;
-      while (running() && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(running()).toBe(false);
+      await vi.waitFor(() => expect(running()).toBe(false), { timeout: 2_000, interval: 10 });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

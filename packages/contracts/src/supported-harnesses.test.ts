@@ -23,9 +23,12 @@ describe("agent harness admission", () => {
       }
     });
   }
-  it("runs no other harness: Grok was removed, and nothing admits it", () => {
-    expect(() => Schema.decodeUnknownSync(AgentKind)("grok")).toThrow();
-    expect(() => Schema.decodeUnknownSync(ModelRef)({ agent: "grok", model: "m" })).toThrow();
+  it("runs Grok Build on its own sign-in, with no managed runtime and no MCP config of Gram's", () => {
+    expect(Schema.decodeUnknownSync(AgentKind)("grok")).toBe("grok");
+    expect(Schema.decodeUnknownSync(ModelRef)({ agent: "grok", model: "m" })).toEqual({
+      agent: "grok",
+      model: "m",
+    });
     expect(() => Schema.decodeUnknownSync(RuntimeAgent)("grok")).toThrow();
     expect(() => Schema.decodeUnknownSync(McpTarget)("grok")).toThrow();
   });

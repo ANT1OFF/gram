@@ -5,13 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "@effect/vitest";
-import type {
-  GatewayProfile,
-  ProfileId,
-  SlashCommand,
-  GramUIMessage,
-  Thread,
-  ThreadId,
+import {
+  gatewayEfforts,
+  gatewayModelUsable,
+  type GatewayProfile,
+  type ProfileId,
+  type SlashCommand,
+  type GramUIMessage,
+  type Thread,
+  type ThreadId,
 } from "@gram/contracts";
 import type * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -215,6 +217,70 @@ describe("model discovery", () => {
       },
       { id: "litellm-style", name: "litellm-style" },
     ]);
+  });
+
+  it("reads xAI's prices, context and efforts, and leaves out its media models", () => {
+    const body = {
+      object: "list",
+      data: [
+        {
+          id: "grok-4.7",
+          object: "model",
+          context_length: 500_000,
+          prompt_text_token_price: 20_000,
+          cached_prompt_text_token_price: 5_000,
+          completion_text_token_price: 60_000,
+          capabilities: {
+            reasoning_effort: ["low", "medium", "high", "xhigh"],
+            default_reasoning_effort: "high",
+          },
+        },
+        {
+          id: "grok-4.20-0309-non-reasoning",
+          context_length: 1_000_000,
+          prompt_text_token_price: 12_500,
+          completion_text_token_price: 25_000,
+          capabilities: { reasoning_effort: [] },
+        },
+        { id: "grok-imagine-image", prompt_text_token_price: 0, image_price: 200 },
+      ],
+    };
+    const models = mergeModels(
+      [{ id: "grok-4.7", name: "Grok", price: { input: 9, output: 9 } }],
+      parseModelIds(body)!,
+      undefined,
+      parseInlineModels(body),
+    );
+    expect(models).toEqual([
+      {
+        id: "grok-4.7",
+        name: "Grok",
+        contextWindow: 500_000,
+        info: {
+          mode: "chat",
+          tools: true,
+          reasoning: true,
+          noneEffort: false,
+          xhighEffort: true,
+          maxEffort: false,
+        },
+        price: { input: 2, cachedInput: 0.5, output: 6 },
+      },
+      {
+        id: "grok-4.20-0309-non-reasoning",
+        name: "grok-4.20-0309-non-reasoning",
+        contextWindow: 1_000_000,
+        info: { mode: "chat", tools: true, reasoning: false },
+        price: { input: 1.25, output: 2.5 },
+      },
+      { id: "grok-imagine-image", name: "grok-imagine-image", info: { mode: "image_generation" } },
+    ]);
+    expect(models.filter(gatewayModelUsable).map((model) => model.id)).toEqual([
+      "grok-4.7",
+      "grok-4.20-0309-non-reasoning",
+    ]);
+    expect(gatewayEfforts(models[0]!, "responses")).toEqual(["low", "medium", "high", "xhigh"]);
+    expect(gatewayEfforts(models[1]!, "chat")).toEqual([]);
   });
 
   it.effect("calls {baseURL}/models with the key and returns merged models", () =>

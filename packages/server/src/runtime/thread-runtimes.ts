@@ -22,6 +22,8 @@ import {
   type Checkout,
   type WorktreeDirty,
   sessionHostOf,
+  listedRow,
+  profileAllowsModel,
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -107,7 +109,9 @@ import { DecisionHook } from "../embedding/decision-hook.ts";
 import { EventSink } from "../embedding/event-sink.ts";
 import { makeHookedRequests } from "../embedding/hooked-requests.ts";
 import { makeSessionSwitch, makeSwitchMethods } from "./session-switch.ts";
-import { AGENT_NAMES, checkFreshTarget, makeAgentSwitch } from "./agent-switch.ts";
+import { AGENT_NAMES } from "./agent-names.ts";
+import { checkFreshTarget, checkProfileModel, makeAgentSwitch } from "./agent-switch.ts";
+import { selectableModels } from "./model-efforts.ts";
 import { makeSessionLifecycle } from "./session-lifecycle.ts";
 import type { InputUndelivered } from "./undelivered.ts";
 
@@ -1898,7 +1902,7 @@ const make = Effect.gen(function* () {
             threadId,
             message: `${AGENT_NAMES[thread.model.agent]} still has background work running.`,
           });
-        yield* checkFreshTarget(store, hosts, model);
+        yield* checkFreshTarget(store, hosts, model, thread);
         if (thread.mode === "plan" && model.agent !== thread.model.agent) {
           const host = yield* hosts
             .get(model.agent)
@@ -1974,6 +1978,16 @@ const make = Effect.gen(function* () {
           });
         const otherAgent = otherAgentRefusal(threadId, before.model, model);
         if (otherAgent !== undefined) return yield* otherAgent;
+        // A profile that limits the thread's models: by the name, else by the row it names.
+        if (!profileAllowsModel(before.profile, model.model)) {
+          const listed = yield* selectableModels(store, hosts, model.agent, model.profileId).pipe(
+            Effect.orElseSucceed(() => undefined),
+          );
+          const row = listedRow(listed, model.model);
+          yield* checkProfileModel(before, model.model, row ?? { id: model.model }).pipe(
+            Effect.mapError((e) => new InvalidState({ threadId, message: e.message })),
+          );
+        }
         if (model.speed === "fast") {
           const host = yield* hosts.get(model.agent);
           const problem = fastSelectionProblem(

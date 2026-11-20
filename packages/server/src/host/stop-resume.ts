@@ -1079,6 +1079,14 @@ export interface StopState {
    * it was started: resume it (`POST /machines/stop/resume`), as its sessions wait for that.
    */
   readonly resuming?: boolean;
+  /**
+   * Threads whose session doesn't open on it, because a resume couldn't put their folders back
+   * (`StopMarks.block`), each with why: what an embedder that started the machine says when it
+   * runs but its threads can't use it. Absent when there are none.
+   */
+  readonly blocked?: ReadonlyArray<{ readonly threadId: string; readonly reason: string }>;
+  /** Its resume made no progress for too long (`StopMarks.stalled`), epoch ms since. */
+  readonly stalledSince?: number;
 }
 
 /** Each joined machine: whether it is dialled in, readied to stop, and wanted. */
@@ -1095,6 +1103,11 @@ export const stopStatus = (
           Effect.orElseSucceed(() => false),
         );
         const stoppedAt = deps.hosts.stops.stoppedAt(id);
+        const blocked = Object.entries(deps.hosts.stops.blocks(id)).map(([threadId, reason]) => ({
+          threadId,
+          reason,
+        }));
+        const stalledSince = deps.hosts.stops.stalled(id);
         return {
           id,
           name: machine.name,
@@ -1102,6 +1115,8 @@ export const stopStatus = (
           ...(stoppedAt === undefined ? {} : { stoppedAt }),
           wanted: deps.hosts.stops.wanted(id),
           ...(online && deps.hosts.stops.owes(id) ? { resuming: true } : {}),
+          ...(blocked.length === 0 ? {} : { blocked }),
+          ...(stalledSince === undefined ? {} : { stalledSince }),
         };
       }),
   );

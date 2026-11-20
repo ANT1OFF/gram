@@ -43,7 +43,7 @@ export class UsageLimitPoller extends Context.Service<
           if (at - lastAt < LIMIT_REFRESH_QUIET_MS) return;
           lastAt = at;
           yield* Effect.forEach(
-            ["claude", "codex"] as const,
+            ["claude", "codex", "grok"] as const,
             (agent) =>
               Effect.gen(function* () {
                 const host = yield* hosts.get(agent).pipe(Effect.option);

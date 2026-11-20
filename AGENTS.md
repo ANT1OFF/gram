@@ -5,6 +5,9 @@ Codex CLIs on their own subscriptions. [README](README.md) introduces it,
 [contributing](CONTRIBUTING.md) covers branches, checks and pull requests, and the
 [docs map](docs/README.md) leads to the rest.
 
+- Start from `docs/features.json` to find the code, tests and docs for a feature the person
+  named, in the app's own words. `tools/feature-map/check.mjs` (in `bun run lint`) fails when a
+  path or heading there matches nothing: fix the entry in the change that moves the code.
 - Keep gateways opt-in, subscription credentials isolated, helper context consent separate per
   provider and scope, and approval and ownership boundaries intact.
 - Keep personal infrastructure, private hosts and repositories, recorded private data and

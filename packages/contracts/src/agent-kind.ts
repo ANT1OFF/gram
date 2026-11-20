@@ -3,6 +3,6 @@
 
 import * as Schema from "effect/Schema";
 
-/** The coding agents Gram runs: Claude Code, Codex and OpenCode. */
-export const AgentKind = Schema.Literals(["claude", "codex", "opencode"]);
+/** The coding agents Gram runs: Claude Code, Codex, OpenCode and Grok Build. */
+export const AgentKind = Schema.Literals(["claude", "codex", "opencode", "grok"]);
 export type AgentKind = typeof AgentKind.Type;

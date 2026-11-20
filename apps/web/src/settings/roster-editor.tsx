@@ -15,10 +15,9 @@ import {
   type TierRef,
   type WorkerModel,
 } from "@gram/contracts";
-import { Popover } from "@base-ui/react/popover";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { CircleHelp, Star, TriangleAlert, X } from "lucide-react";
+import { Star, TriangleAlert, X } from "lucide-react";
 import { useId, useState } from "react";
 import { flushSync } from "react-dom";
 
@@ -37,10 +36,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ExpandPresence, PresenceItem, PresenceList } from "@/motion";
-import { ADMITTED_AGENTS } from "@/orchestration/admitted";
+import { useAdmittedAgents } from "@/orchestration/admitted";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { Field, inputCls, LONG_COPY, WhyDisabled } from "./fields";
+import { Field, inputCls, WhyDisabled } from "./fields";
+import { HarnessNotes } from "./harness-notes";
 import {
   followOfPinned,
   sameSlot,
@@ -56,7 +56,6 @@ import { FollowButton, SlotGlyph, useRecommendedOn } from "./slot-glyph";
 import {
   addWorkerModel,
   defaultWorkerIndex,
-  DREAM_HARNESS_NOTE,
   HARNESS_GENERAL_NOTE,
   harnessNotes,
   withDefaultWorker,
@@ -272,6 +271,7 @@ function OrchestratorModelField({
   onChange: (charter: OrchestratorCharter) => void;
   description?: string | undefined;
 }) {
+  const admitted = useAdmittedAgents();
   const selectId = useId();
   const inherited = useDefaultHere();
   const defaultModel = inherited.model;
@@ -333,7 +333,7 @@ function OrchestratorModelField({
                 onChange(withOrchestratorModel(charter, undefined));
                 return;
               }
-              pick(ADMITTED_AGENTS.includes(shown.agent) ? shown : START);
+              pick(admitted.includes(shown.agent) ? shown : START);
             }}
           >
             <option value="follow">{follows}</option>
@@ -347,7 +347,7 @@ function OrchestratorModelField({
             <AgentFields
               value={shown}
               onChange={pick}
-              allowed={ADMITTED_AGENTS}
+              allowed={admitted}
               follows={pending === undefined && ownFollows}
             />
             {pending === undefined && (
@@ -368,58 +368,6 @@ function OrchestratorModelField({
         )}
       </div>
     </Field>
-  );
-}
-
-/**
- * "How Codex differs": what to know before letting a harness take a role, and how a Dream is held
- * on each, behind a ? on the worker models' line while such a harness is in use.
- */
-function HarnessNotes({
-  notes,
-}: {
-  notes: readonly {
-    readonly agent: AgentKind;
-    readonly notes: readonly string[];
-  }[];
-}) {
-  if (notes.length === 0) return null;
-  const label = `How ${notes.map((each) => agentLabel(each.agent)).join(" and ")} differs`;
-  return (
-    <Popover.Root>
-      <Popover.Trigger
-        data-testid="harness-notes"
-        className="flex items-center gap-1 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <CircleHelp aria-hidden className="size-icon-row" />
-        {label}
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner side="bottom" align="end" sideOffset={6} className="isolate z-50">
-          <Popover.Popup
-            data-surface="overlay"
-            aria-label={label}
-            {...{ [LONG_COPY]: "learn more" }}
-            className="flex max-h-(--available-height) max-w-md origin-(--transform-origin) flex-col gap-2 overflow-y-auto rounded-md border border-edge bg-popover px-3 py-2 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
-          >
-            {notes.map(({ agent, notes: lines }) => (
-              <section key={agent} data-testid={`harness-note-${agent}`}>
-                <h4 className="font-medium">{agentLabel(agent)}</h4>
-                <ul className="flex list-disc flex-col gap-0.5 pt-1 pl-4 text-muted-foreground">
-                  {lines.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              </section>
-            ))}
-            <section data-testid="harness-note-dreams">
-              <h4 className="font-medium">Memory updates</h4>
-              <p className="pt-1 text-muted-foreground">{DREAM_HARNESS_NOTE}</p>
-            </section>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
   );
 }
 
@@ -512,6 +460,7 @@ export function RosterEditor({
   onChange,
   orchestratorDescription,
 }: RosterEditorProps) {
+  const admitted = useAdmittedAgents();
   const api = useApi();
   const { data: profiles } = useQuery({
     queryKey: ["profiles"],
@@ -751,7 +700,7 @@ export function RosterEditor({
               className="flex flex-col gap-2 rounded-md border border-edge bg-card/40 p-2.5"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <AgentFields value={choice} onChange={setChoice} allowed={ADMITTED_AGENTS} />
+                <AgentFields value={choice} onChange={setChoice} allowed={admitted} />
               </div>
               <input
                 data-testid="worker-model-form-note"

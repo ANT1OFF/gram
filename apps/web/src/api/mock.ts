@@ -268,6 +268,7 @@ import type {
   ForkThreadOptions,
   SearchThreadsOptions,
 } from "./types";
+import { sleep } from "@/lib/sleep";
 
 export interface MockApiOptions {
   /** Multiplier for scripted delays; 0 runs scripts as fast as the event loop allows. */
@@ -740,7 +741,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
   }
 
   #delay(ms: number) {
-    return new Promise<void>((resolve) => setTimeout(resolve, ms * this.#speed));
+    return sleep(ms * this.#speed);
   }
 
   #putMessage(runtime: ThreadRuntime, message: GramUIMessage) {
@@ -1763,7 +1764,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
    */
   async turnEnded(threadId: ThreadId): Promise<void> {
     const runtime = this.#runtime(threadId);
-    while (runtime.running) await new Promise((resolve) => setTimeout(resolve, 25));
+    while (runtime.running) await sleep(25);
   }
 
   /** `simulateTurnError` (`mock-thread-sims.ts`). */

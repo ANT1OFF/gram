@@ -12,12 +12,31 @@
 // Each primitive's owner and the files not moved onto it yet are in `allowlists.mjs`; `.oxlintrc.json`
 // scopes the rules to those packages, and test files are exempt.
 //
+// And no sleeping to synchronise: a fixed wait (`page.waitForTimeout`, a hand-rolled
+// `new Promise((r) => setTimeout(r, ms))`) races the thing it waits for, so it flakes when the
+// machine is slow and wastes time when it's fast. Tests wait on the condition; product code that
+// does mean real time (backoff, polling) uses the one shared helper. The files not moved yet are
+// in `allowlists.mjs` with how many each may keep.
+//
+// And every `oxlint-disable` (or `eslint-disable`) directive says why after ` -- `: an exception
+// with its reason reads as a decision, one without reads as a silenced bug. The files not given
+// their reasons yet are in `allowlists.mjs`.
+//
+// And a file-size ceiling: a file's lines of code (blank and comment-only lines aside) stay under
+// `MAX_LINES` in `allowlists.mjs`, and the files already over it may only shrink.
+//
+// And no relative path from one workspace package's sources into another's: `../../server/src/x`
+// would skip the package's declared exports and every import fence in `.oxlintrc.json`.
+//
+// And one optical stroke for Lucide icons: the `lucide` class sets it per size (styles/base.css),
+// so a `strokeWidth` on the icon is outranked and does nothing.
+//
 // And a 24-hour clock in the web app: a time formatted with `hour` or `timeStyle` and no
 // `hourCycle: "h23"` reads `2:05 PM` wherever the locale's default is 12-hour.
 
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ALLOWLISTS } from "./allowlists.mjs";
+import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 
 const BARE_FORKS = new Set([
   "fork",
@@ -58,6 +77,29 @@ const exempt = (rule, context) => {
   const list = ALLOWLISTS[rule];
   return list !== undefined && (list.owners.includes(file) || list.pending.includes(file));
 };
+
+const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
+
+/** Lines holding code: not blank and not only comments, as ESLint's `max-lines` counts them with
+ * `skipBlankLines` and `skipComments`. */
+const linesOfCode = (sourceCode) => {
+  // Blank every comment out, keeping its line breaks, so what is left on a line is code.
+  const { text } = sourceCode;
+  const pieces = [];
+  let at = 0;
+  for (const { range } of sourceCode.getAllComments()) {
+    pieces.push(text.slice(at, range[0]), text.slice(range[0], range[1]).replace(/[^\r\n]/g, ""));
+    at = range[1];
+  }
+  pieces.push(text.slice(at));
+  return pieces
+    .join("")
+    .split(/\r\n|\r|\n|\u2028|\u2029/)
+    .filter((line) => line.trim() !== "").length;
+};
+
+const SPLIT_HINT =
+  "Split it by responsibility: move one cohesive seam into its own module beside it (a feature's handlers, one table's queries, a sub-component or panel, pure helpers apart from the effectful wiring, fixtures and builders out of a test) and import it back.";
 
 const FS_MODULES = new Set(["fs", "node:fs", "fs/promises", "node:fs/promises"]);
 const REALPATHS = new Set(["realpath", "realpathSync"]);
@@ -146,6 +188,82 @@ const namesSemaphore = (type) =>
 
 const MAPS = new Set(["Map", "WeakMap", "ReadonlyMap"]);
 
+const TIMER_HOSTS = new Set(["window", "globalThis", "self"]);
+const isSetTimeout = (callee) =>
+  (callee.type === "Identifier" && callee.name === "setTimeout") ||
+  (callee.type === "MemberExpression" &&
+    propertyName(callee) === "setTimeout" &&
+    callee.object.type === "Identifier" &&
+    TIMER_HOSTS.has(callee.object.name));
+
+/** The one expression a function's body is: `x => e`, `x => { e; }` or `x => { return e; }`. */
+const soleExpression = (fn) => {
+  if (fn.body.type !== "BlockStatement") return fn.body;
+  if (fn.body.body.length !== 1) return undefined;
+  const [statement] = fn.body.body;
+  if (statement.type === "ExpressionStatement") return statement.expression;
+  if (statement.type === "ReturnStatement") return statement.argument ?? undefined;
+};
+
+const isFunction = (node) =>
+  node?.type === "ArrowFunctionExpression" || node?.type === "FunctionExpression";
+
+/** `settle` itself, or a function whose whole body calls it: `() => settle("timeout")`. */
+const settles = (node, settle) => {
+  if (node?.type === "Identifier") return node.name === settle;
+  if (!isFunction(node)) return false;
+  const call = soleExpression(node);
+  return (
+    call?.type === "CallExpression" &&
+    call.callee.type === "Identifier" &&
+    call.callee.name === settle
+  );
+};
+
+/**
+ * `new Promise((r) => setTimeout(r, ms))` and its spellings: a promise that is only a timer. One
+ * that keeps its timer to clear (`timer = setTimeout(…)`) is a bounded wait's timeout, not a sleep.
+ */
+const isSleepPromise = (node) => {
+  if (node.callee.type !== "Identifier" || node.callee.name !== "Promise") return false;
+  const [executor] = node.arguments;
+  if (!isFunction(executor) || executor.params[0]?.type !== "Identifier") return false;
+  const timer = soleExpression(executor);
+  return (
+    timer?.type === "CallExpression" &&
+    isSetTimeout(timer.callee) &&
+    settles(timer.arguments[0], executor.params[0].name)
+  );
+};
+
+/** Test code: unit tests, Playwright specs and the e2e folders' fixtures and helpers. */
+const isTestFile = (file) =>
+  /\.(test|spec)\.[cm]?[jt]sx?$/.test(file) || /(^|\/)(e2e[^/]*|test|tests|__tests__)\//.test(file);
+
+const SLEEP_HELPERS =
+  "For a real-time wait in product code (backoff, polling, a grace period) use the one helper: `setTimeout` from `node:timers/promises` in Node code (`await setTimeout(ms)`, `setTimeout(ms, value)` for a race), `sleep` from `apps/web/src/lib/sleep.ts` in the web app.";
+const SLEEP_IN_TESTS =
+  "A test that sleeps races what it waits for: it flakes on a slow machine and wastes time on a fast one. Wait on the thing itself: await the real promise or event, `vi.waitFor(() => expect(…))` for a condition, or `vi.useFakeTimers()` with `await vi.advanceTimersByTimeAsync(ms)` when time is the input. Don't swap in a sleep helper: that hides the same race.";
+const WAIT_FOR_TIMEOUT =
+  "`waitForTimeout` races the page: wait on what you need instead, with a web-first assertion (`await expect(locator).toBeVisible()`, `.toHaveText()`, `.toHaveCount()`), `await expect.poll(() => value).toBe(…)`, `await expect(async () => {…}).toPass()`, `page.waitForResponse`/`waitForFunction`, or `page.clock` when time is the input.";
+
+/** A directive that turns rules off: `oxlint-disable`, `eslint-disable-next-line` and the rest. */
+const DISABLE = /^\s*(?:oxlint|eslint)-disable(?:-next-line|-line)?(?:\s|$)/;
+/** Its reason, after ` -- `, ESLint's own place for one. */
+const REASON = /\s--\s*\S/;
+
+/** Lucide's props that set an icon's stroke, which the `lucide` class's stroke outranks. */
+const LUCIDE_STROKES = new Set(["strokeWidth", "absoluteStrokeWidth"]);
+const CREATORS = new Set(["createLucideIcon"]);
+
+/** Whether a binding is an import from lucide-react (one of `names`, when given). */
+const fromLucide = (definition, names) =>
+  definition?.type === "ImportBinding" &&
+  definition.parent.source.value === "lucide-react" &&
+  (names === undefined ||
+    (definition.node.type === "ImportSpecifier" &&
+      names.has(definition.node.imported.name ?? definition.node.imported.value)));
+
 /** The Date methods that format with locale options; `toLocaleTimeString` always shows the hour. */
 const LOCALE_FORMATS = new Set(["toLocaleString", "toLocaleDateString", "toLocaleTimeString"]);
 
@@ -213,6 +331,158 @@ const clockOf = (sourceCode, node, seen = new Set()) => {
 export default {
   meta: { name: "gram" },
   rules: {
+    "no-sleep": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow fixed waits (`waitForTimeout`, hand-rolled `new Promise(… setTimeout …)` sleeps); wait on the condition, or use the shared helper",
+        },
+      },
+      create(context) {
+        const file = relative(REPO, context.filename).replaceAll("\\", "/");
+        const list = ALLOWLISTS["no-sleep"];
+        if (list.owners.includes(file)) return {};
+        const allowed = list.pending[file] ?? 0;
+        const test = isTestFile(file);
+        const found = [];
+        return {
+          NewExpression(node) {
+            if (isSleepPromise(node))
+              found.push({ node, message: test ? SLEEP_IN_TESTS : SLEEP_HELPERS });
+          },
+          CallExpression(node) {
+            if (
+              node.callee.type === "MemberExpression" &&
+              propertyName(node.callee) === "waitForTimeout"
+            )
+              found.push({ node, message: WAIT_FOR_TIMEOUT });
+          },
+          "Program:exit"() {
+            if (found.length <= allowed) return;
+            const note =
+              allowed > 0
+                ? ` (${file} may keep ${allowed} in tools/oxlint/allowlists.mjs, which only shrinks; it has ${found.length}.)`
+                : "";
+            for (const { node, message } of found)
+              context.report({ node, message: message + note });
+          },
+        };
+      },
+    },
+    "no-cross-package-path": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow a relative import from one workspace package's sources into another package or app",
+        },
+      },
+      create(context) {
+        const file = relative(REPO, context.filename).replaceAll("\\", "/");
+        const own = /^((?:apps|packages)\/[^/]+)\/src\//.exec(file)?.[1];
+        if (own === undefined || isTestFile(file)) return {};
+        const check = (source) => {
+          if (typeof source?.value !== "string" || !source.value.startsWith(".")) return;
+          const target = relative(
+            REPO,
+            resolve(dirname(context.filename), source.value),
+          ).replaceAll("\\", "/");
+          const unit = /^((?:apps|packages)\/[^/]+)(?:\/|$)/.exec(target)?.[1];
+          if (unit === undefined || unit === own) return;
+          context.report({
+            node: source,
+            message: `\`${source.value}\` reaches from ${own} into ${unit} by a relative path, which skips its package.json and the import fences in .oxlintrc.json. Import it by the package's name and one of its declared "exports" (add an export if the piece is meant to be shared, and the dependency to ${own}/package.json), or move the piece into the package that owns it.`,
+          });
+        };
+        return {
+          ImportDeclaration: (node) => check(node.source),
+          ExportNamedDeclaration: (node) => check(node.source),
+          ExportAllDeclaration: (node) => check(node.source),
+          ImportExpression: (node) => check(node.source),
+        };
+      },
+    },
+    "disable-reason": {
+      meta: {
+        type: "problem",
+        docs: { description: "Give every oxlint-disable directive its reason after ` -- `" },
+      },
+      create(context) {
+        const file = relative(REPO, context.filename).replaceAll("\\", "/");
+        if (ALLOWLISTS["disable-reason"].pending.includes(file)) return {};
+        return {
+          Program() {
+            for (const comment of context.sourceCode.getAllComments()) {
+              if (!DISABLE.test(comment.value)) continue;
+              const [rules] = comment.value.split(/\s--(?:\s|$)/);
+              if (rules.includes("react-hooks/"))
+                context.report({
+                  loc: comment.loc,
+                  message:
+                    "Name the rule as .oxlintrc.json does, `react/exhaustive-deps`: oxlint takes `react-hooks/` too, but one name keeps the directives searchable.",
+                });
+              if (!REASON.test(comment.value))
+                context.report({
+                  loc: comment.loc,
+                  message:
+                    "Say why the rule is wrong here: end the directive with ` -- <reason>` (what the rule can't see, or why this site is the exception). If the rule is right, fix the code instead.",
+                });
+            }
+          },
+        };
+      },
+    },
+    "lucide-stroke": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Don't set strokeWidth on a Lucide icon: the `lucide` class draws one optical stroke per size",
+        },
+      },
+      create(context) {
+        if (exempt("lucide-stroke", context)) return {};
+        const sourceCode = context.sourceCode;
+        /** The definition `name` is bound to where `node` is. */
+        const definitionOf = (node, name) => {
+          for (let scope = sourceCode.getScope(node); scope; scope = scope.upper) {
+            const variable = scope.variables.find((value) => value.name === name);
+            if (variable) return variable.defs[0];
+          }
+        };
+        /** Whether a JSX name is a lucide-react icon, imported or made with its createLucideIcon. */
+        const lucide = (name) => {
+          while (name.type === "JSXMemberExpression") name = name.object;
+          if (name.type !== "JSXIdentifier") return false;
+          const definition = definitionOf(name, name.name);
+          if (fromLucide(definition)) return true;
+          if (definition?.type !== "Variable" || definition.parent.kind !== "const") return false;
+          let init = definition.node.init;
+          while (init?.type === "TSAsExpression" || init?.type === "TSSatisfiesExpression")
+            init = init.expression;
+          return (
+            init?.type === "CallExpression" &&
+            init.callee.type === "Identifier" &&
+            fromLucide(definitionOf(init.callee, init.callee.name), CREATORS)
+          );
+        };
+        return {
+          JSXOpeningElement(node) {
+            const props = node.attributes.filter(
+              (attribute) =>
+                attribute.type === "JSXAttribute" && LUCIDE_STROKES.has(attribute.name.name),
+            );
+            if (props.length === 0 || !lucide(node.name)) return;
+            for (const prop of props)
+              context.report({
+                node: prop,
+                message: `\`${prop.name.name}\` does nothing on a Lucide icon: its \`lucide\` class sets the stroke from --icon-stroke for each size (styles/base.css), and DESIGN.md keeps one optical stroke. Drop it and pick the size token; a glyph of Gram's own that needs a thinner line sets \`strokeWidth\` on its strokes in createLucideIcon's node, as motion/spinner.tsx's rings do.`,
+              });
+          },
+        };
+      },
+    },
     "clock-24h": {
       meta: {
         type: "problem",
@@ -380,6 +650,45 @@ export default {
                 node,
                 "A spelling's prefix isn't a folder: a link, `/tmp` for `/private/tmp` or `a//b` defeat it.",
               );
+          },
+        };
+      },
+    },
+    "max-lines": {
+      meta: {
+        type: "suggestion",
+        docs: {
+          description: "Keep files small enough to read whole; listed large files only shrink",
+        },
+        schema: [
+          {
+            type: "object",
+            properties: {
+              limit: { type: "number" },
+              testLimit: { type: "number" },
+              pending: { type: "object" },
+            },
+            additionalProperties: false,
+          },
+        ],
+      },
+      create(context) {
+        const { limit, testLimit, pending } = { ...MAX_LINES, ...context.options[0] };
+        return {
+          Program(node) {
+            const file = relative(REPO, context.filename).replaceAll("\\", "/");
+            const ceiling = TEST_FILE.test(file) ? testLimit : limit;
+            const count = linesOfCode(context.sourceCode);
+            const listed = Object.hasOwn(pending, file) ? pending[file] : undefined;
+            if (count <= (listed ?? ceiling)) return;
+            context.report({
+              node,
+              loc: { line: 1, column: 0 },
+              message:
+                listed === undefined
+                  ? `This file has ${count} lines of code, over the limit of ${ceiling}. ${SPLIT_HINT} Don't raise the limit or add the file to MAX_LINES in tools/oxlint/allowlists.mjs.`
+                  : `This file has ${count} lines of code, past its ratchet of ${listed} in tools/oxlint/allowlists.mjs (the limit is ${ceiling}); listed files may only shrink. ${SPLIT_HINT} Don't raise its entry.`,
+            });
           },
         };
       },

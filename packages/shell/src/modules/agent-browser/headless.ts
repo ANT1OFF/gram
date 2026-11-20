@@ -20,6 +20,7 @@ import type { ViewInput } from "@gram/contracts/link-trust";
 import { previewNavigation, previewRequest } from "../../core/preview-rules.ts";
 import type { PreviewRequestDetails } from "../preview/main.ts";
 import type { PaneContents, PaneViews } from "./pane.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 // ---------------------------------------------------------------------------------------------
 // The protocol connection.
@@ -210,7 +211,7 @@ export const launchHeadless = (options: {
         rmSync(userDataDir, { recursive: true, force: true });
         return;
       } catch {
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await sleep(200);
       }
     }
   };
@@ -245,6 +246,10 @@ export const launchHeadless = (options: {
 
 // ---------------------------------------------------------------------------------------------
 // Each thread's page.
+
+/** A proxy a page's loopback may go to: a SOCKS5 listener on this machine's own IPv4 loopback. */
+export const isLoopbackProxy = (proxy: string): boolean =>
+  /^socks5:\/\/127\.0\.0\.1:\d{1,5}$/.test(proxy);
 
 /**
  * The pane's checks, which decide first; `undefined` leaves a request to the desktop Preview's own
@@ -292,10 +297,19 @@ interface FrameEvent {
 export const openHeadlessPage = async (
   connection: CdpConnection,
   gate: () => HeadlessGate | undefined,
+  /**
+   * Where the page's loopback is, when it isn't this machine's: a SOCKS proxy on this machine's
+   * loopback (`isLoopbackProxy`) that the server holds to the thread's own machine. Every
+   * request then goes to it, loopback's included.
+   */
+  loopbackProxy?: string,
 ): Promise<PaneContents> => {
   const held = await holdNewTargets(connection);
   const { browserContextId } = (await connection.send("Target.createBrowserContext", {
     disposeOnDetach: true,
+    ...(loopbackProxy !== undefined && isLoopbackProxy(loopbackProxy)
+      ? { proxyServer: loopbackProxy, proxyBypassList: "<-loopback>" }
+      : {}),
   })) as { browserContextId: string };
   held.contexts.set(browserContextId, undefined);
   const dispose = () => {
@@ -1009,14 +1023,20 @@ export const headlessViews = (
   closed: (threadId: string) => void = () => {},
   /** Whether a command is running on the thread's page, which is then never the one closed. */
   busy: (threadId: string) => boolean = () => false,
+  /** Where a thread's loopback is, when not this machine's (`openHeadlessPage`). */
+  loopbackProxyOf: (threadId: string) => string | undefined = () => undefined,
 ): PaneViews & {
   touch(threadId: string): void;
   close(threadId: string): Promise<void>;
   /** The thread's page if it has one, without counting as a use of it. */
   peek(threadId: string): Promise<PaneContents | undefined>;
+  /** The loopback proxy the thread's page was made with; `undefined` when it has no page. */
+  builtWith(threadId: string): { readonly proxy: string | undefined } | undefined;
 } => {
   // In order of use, the least recent first.
   const pages = new Map<string, Promise<PaneContents | undefined>>();
+  /** The proxy each page in `pages` was made with. */
+  const proxies = new WeakMap<Promise<PaneContents | undefined>, string | undefined>();
   const touch = (threadId: string) => {
     const page = pages.get(threadId);
     if (page === undefined) return;
@@ -1033,15 +1053,21 @@ export const headlessViews = (
         closed(other);
       });
     }
-    const made = openHeadlessPage(connection, gate).catch((error: unknown) => {
+    const proxy = loopbackProxyOf(threadId);
+    const made = openHeadlessPage(connection, gate, proxy).catch((error: unknown) => {
       failed(error);
       return undefined;
     });
+    proxies.set(made, proxy);
     pages.set(threadId, made);
     return made;
   };
   return {
     touch,
+    builtWith: (threadId) => {
+      const page = pages.get(threadId);
+      return page === undefined ? undefined : { proxy: proxies.get(page) };
+    },
     peek: async (threadId) => {
       const page = await pages.get(threadId);
       return page === undefined || page.isDestroyed() ? undefined : page;

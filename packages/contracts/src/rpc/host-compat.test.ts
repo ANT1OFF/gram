@@ -37,7 +37,6 @@ const ROOT_PACKAGE = join(import.meta.dirname, "../../../../package.json");
  */
 type Accepted = WireBreak & { readonly because: string };
 
-const OPENCODE = 'it now also takes "opencode"';
 /** The first release that speaks OpenCode: its protocol already takes it, so nothing breaks. */
 const FIRST_WITH_OPENCODE = "1.26.0";
 const OPENED_ELSEWHERE =
@@ -78,17 +77,44 @@ const OPENCODE_BREAKS: ReadonlyArray<
  * Breaks of a released protocol taken on purpose, by release, each with why no build of that
  * release meets it.
  */
-const ACCEPTED = (released: Released): ReadonlyArray<Accepted> =>
-  OPENCODE_BREAKS.filter(
-    ([call, , , since]) =>
-      call in released.calls &&
-      (since === undefined || byRelease(released.release, since) >= 0) &&
-      byRelease(released.release, FIRST_WITH_OPENCODE) < 0,
-  ).map(([call, at, because]) => ({
+/**
+ * Grok Build, the fourth agent kind, at each place OpenCode's grew: no release speaks it. A control
+ * plane opens a Grok session, reloads Grok config or names a Grok worker only to a host that names
+ * `agent-grok` (host/session-gates.ts, `withoutAgents`), which no released host does.
+ */
+const GROK_BECAUSE =
+  "A control plane sends Grok Build only to a host that names agent-grok, which no host of that release does, and never opens a Grok session there.";
+
+/** The agent kinds `released` doesn't know, as a break names them. */
+const unknownKinds = (released: Released): ReadonlyArray<string> => [
+  ...(byRelease(released.release, FIRST_WITH_OPENCODE) < 0 ? ["opencode"] : []),
+  "grok",
+];
+
+/** Calls whose agent grew only by Grok, as every release that has them already took OpenCode. */
+const GROK_ONLY_BREAKS: ReadonlyArray<readonly [call: string, at: string]> = [
+  ["host.sessions.accountScope", "payload.agent"],
+  ["host.sessions.accountScope", 'error(_tag "AgentUnavailable").agent'],
+];
+
+const ACCEPTED = (released: Released): ReadonlyArray<Accepted> => [
+  ...GROK_ONLY_BREAKS.filter(([call]) => call in released.calls).map(([call, at]) => ({
     at: `${call} ${at}`,
-    what: OPENCODE,
-    because,
-  }));
+    what: 'it now also takes "grok"',
+    because: GROK_BECAUSE,
+  })),
+  ...OPENCODE_BREAKS.filter(
+    ([call, , , since]) =>
+      call in released.calls && (since === undefined || byRelease(released.release, since) >= 0),
+  ).map(([call, at, because]) => {
+    const kinds = unknownKinds(released);
+    return {
+      at: `${call} ${at}`,
+      what: `it now also takes ${kinds.map((kind) => JSON.stringify(kind)).join(", ")}`,
+      because: kinds.includes("opencode") ? `${because} ${GROK_BECAUSE}` : GROK_BECAUSE,
+    };
+  }),
+];
 
 interface Released extends HostWire {
   /** The Gram release whose protocol this is. */

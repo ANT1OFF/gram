@@ -37,7 +37,7 @@ async function useGlass(page: Page) {
 /** Samples a 12px lattice over the grid, skipping points a pane covers, on every other frame. */
 // Runs in the page through addInitScript, so its helpers must live inside it.
 const MONITOR = () => {
-  // oxlint-disable-next-line unicorn/consistent-function-scoping
+  // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page, so it lives inside MONITOR
   const alphaOf = (color: string) => {
     if (color === "transparent") return 0;
     const slash = /\/\s*([\d.]+)\s*\)$/.exec(color);
@@ -46,7 +46,7 @@ const MONITOR = () => {
     const parts = rgba?.[1]?.split(",") ?? [];
     return parts.length === 4 ? Number(parts[3]) : 1;
   };
-  // oxlint-disable-next-line unicorn/consistent-function-scoping
+  // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page, so it lives inside MONITOR
   const name = (el: Element) =>
     el.tagName.toLowerCase() +
     (el.getAttribute("data-testid") ? `[${el.getAttribute("data-testid")}]` : "");
@@ -107,9 +107,9 @@ const fit = (page: Page) =>
     );
     const boxes = panes.map((el) => el.getBoundingClientRect());
     const styles = panes.map((el) => getComputedStyle(el));
-    // oxlint-disable-next-line unicorn/consistent-function-scoping
+    // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page: Playwright serialises only the evaluated function
     const distinct = (values: number[]) => new Set(values.map((v) => Math.round(v))).size;
-    // oxlint-disable-next-line unicorn/consistent-function-scoping
+    // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page: Playwright serialises only the evaluated function
     const px = (value: number) => Math.round(value);
     const covered = boxes.reduce((sum, box) => sum + box.width * box.height, 0);
     return {
@@ -174,7 +174,7 @@ test("Glass panes stay flush and painted over native vibrancy while they split, 
   await expectPainted(page, "one pane");
   // The pane meets the overview sidebar and the title bar, with no gap or inset between them.
   const meets = await page.evaluate(() => {
-    // oxlint-disable-next-line unicorn/consistent-function-scoping
+    // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page: Playwright serialises only the evaluated function
     const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
     const pane = box('[data-testid="pane"]');
     return {

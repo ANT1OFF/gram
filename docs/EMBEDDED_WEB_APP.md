@@ -247,6 +247,12 @@ is asked again, from the first page, a moment after typing rests, and for the ne
 list is scrolled or walked to its end. A rejection's message is shown in the list. Any other
 `owner/repo` or URL can still be typed and cloned. Read once, at mount.
 
+**More agents for the roles.** `roleAgents: ["grok"]` offers Grok Build beside Claude Code and
+Codex where a workspace's orchestrator and workers are picked. The server decides: it admits Grok
+to those roles only when it runs with `GRAM_ROLE_AGENTS=grok`, and refuses a pick otherwise. Grok
+runs in a home of Gram's own wherever it runs, so no allow rule of the person's clears its calls.
+Read once, at mount.
+
 **The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
 quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while
 anything waits), Search, your `main` groups' icons a gap apart, then at the foot your `foot`

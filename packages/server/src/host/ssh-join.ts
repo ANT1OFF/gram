@@ -40,7 +40,7 @@ export class SshJoinFailed extends Error {
 /** The session's output as text a person reads: no colour codes, progress bars or blank lines. */
 export const readableOutput = (raw: string): string =>
   raw
-    // eslint-disable-next-line no-control-regex
+    // eslint-disable-next-line no-control-regex -- strips terminal colour codes
     .replaceAll(/\u001b\[[0-9;?]*[A-Za-z]/g, "")
     .split("\n")
     .map((line) => line.split("\r").at(-1)?.trimEnd() ?? "")

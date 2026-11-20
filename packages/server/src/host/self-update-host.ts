@@ -26,6 +26,7 @@ import {
   unpackRelease,
 } from "./self-update.ts";
 import { installService, serviceCommand, servicePlatform } from "./service.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 /**
  * The host's updater, for a joined machine's host: `undefined` where it can't update (no release,
@@ -126,7 +127,7 @@ export const superviseHere = (home: string, args: ReadonlyArray<string>): Effect
             Effect.runPromise(installService(platform, command).pipe(Effect.asVoid)),
           shim: join(homedir(), ".local", "bin", "gram-host"),
           now: Date.now,
-          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          sleep,
           log: (line) => process.stdout.write(`${line}\n`),
         },
         id,

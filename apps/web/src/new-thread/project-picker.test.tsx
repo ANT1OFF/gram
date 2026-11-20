@@ -395,6 +395,26 @@ describe("adding a repository", () => {
     expect(onAdded).not.toHaveBeenCalled();
   });
 
+  it("offers the page a refused clone says puts it right", async () => {
+    const help = { url: "https://example.com/install", label: "Install the app" };
+    const cloneProject = vi.fn(async () => {
+      throw Object.assign(new Error("Couldn't add EXAMPLE/web: not reachable"), {
+        _tag: "InvalidState",
+        help,
+      });
+    });
+    const { input, onAdded } = renderAdd((mock) => Object.assign(mock, { cloneProject }));
+    type(input, "EXAMPLE/web");
+    fireEvent.click(screen.getByRole("button", { name: "Clone" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Couldn't add EXAMPLE/web: not reachable");
+    expect(within(alert).getByRole("link", { name: "Install the app" })).toHaveProperty(
+      "href",
+      help.url,
+    );
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+
   it("takes no folder from the system dialog while a clone runs", async () => {
     const dialog = Promise.withResolvers<string>();
     const chooseFolder = vi.fn(() => dialog.promise);

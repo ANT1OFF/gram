@@ -160,7 +160,6 @@ function FileEditRow({
   return (
     <div data-testid="file-edit" data-kind={edit.kind} data-open={open}>
       {/* The chevron is the row's control; the rest of the row is a larger target for a mouse. */}
-      {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         onClick={toggle}
         className={cn(

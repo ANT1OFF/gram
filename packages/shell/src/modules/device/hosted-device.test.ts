@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browser, fakeServer } from "./hosted-fake.ts";
 import {
   type DeviceSecrets,
@@ -810,16 +810,18 @@ describe("this machine as a personal device", () => {
       const starting = setUp({ fetch: slow }, first.store);
       // The first server's workspace is let go meanwhile, which saves.
       fake.state.workspaces = [];
-      await settle();
-      await settle();
-      const mid = await readDeviceSettings(file, key);
+      // Once that save has happened (the first server's workspace is gone from it)…
+      const mid = await vi.waitFor(async () => {
+        const read = await readDeviceSettings(file, key);
+        expect(
+          read.ok && read.settings.servers.find((server) => server.origin === origin)?.workspaces,
+        ).toEqual([]);
+        return read;
+      });
+      // …the server start is still finding is in it too.
       expect(mid.ok && mid.settings.servers.map((server) => server.origin).toSorted()).toEqual(
         [origin, otherOrigin].toSorted(),
       );
-      // The save did happen: the first server's workspace is gone from it.
-      expect(
-        mid.ok && mid.settings.servers.find((server) => server.origin === origin)?.workspaces,
-      ).toEqual([]);
       release();
       await starting;
     } finally {
