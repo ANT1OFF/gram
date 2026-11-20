@@ -24,7 +24,13 @@ import {
 
 import { createBrowseHostList } from "../../core/browse-rules.ts";
 import type { ShellLog } from "../../core/log.ts";
-import { headlessPage, headlessViews, launchHeadless, type HeadlessBrowser } from "./headless.ts";
+import {
+  headlessPage,
+  headlessViews,
+  isLoopbackProxy,
+  launchHeadless,
+  type HeadlessBrowser,
+} from "./headless.ts";
 import { createAgentPanes, type AgentPanes } from "./pane.ts";
 import { servePaneMessage } from "./serve.ts";
 import { createViews, type Views } from "./view.ts";
@@ -98,6 +104,8 @@ export const headlessPanes = (options: {
   const running = new Map<string, number>();
   /** Why a thread has no page yet: its first command is making one, or couldn't. */
   const phases = new Map<string, ViewStatus>();
+  /** Where each thread's loopback is, as its latest request said, when not this machine's. */
+  const loopbackProxies = new Map<string, string>();
   let browser: HeadlessBrowser | undefined;
   let views: ReturnType<typeof headlessViews> | undefined;
   const viewsNow = () => {
@@ -110,6 +118,7 @@ export const headlessPanes = (options: {
       (error) => log.warn({ source: "headless-browser", error: String(error) }, "no page"),
       (threadId) => panes.closed(threadId),
       (threadId) => (running.get(threadId) ?? 0) > 0,
+      (threadId) => loopbackProxies.get(threadId),
     );
     views = made;
     started.connection.onClose(() => {
@@ -145,9 +154,26 @@ export const headlessPanes = (options: {
   const served: AgentPanes = {
     ...panes,
     serve: async (raw, requestId) => {
-      const threadId = (raw as { threadId?: unknown } | null)?.threadId;
+      const { threadId, loopbackProxy } = (raw ?? {}) as {
+        threadId?: unknown;
+        loopbackProxy?: unknown;
+      };
       const thread = typeof threadId === "string" ? threadId : undefined;
       if (thread !== undefined) {
+        // A page made for another machine's loopback, or for this one's, isn't the thread's now:
+        // the thread moved, or its machine's host came or went. The next command makes another.
+        const proxy =
+          typeof loopbackProxy === "string" && isLoopbackProxy(loopbackProxy)
+            ? loopbackProxy
+            : undefined;
+        if (proxy !== loopbackProxies.get(thread)) {
+          if (proxy === undefined) loopbackProxies.delete(thread);
+          else loopbackProxies.set(thread, proxy);
+          if ((running.get(thread) ?? 0) === 0 && (await views?.peek(thread)) !== undefined) {
+            await views?.close(thread);
+            panes.closed(thread);
+          }
+        }
         running.set(thread, (running.get(thread) ?? 0) + 1);
         views?.touch(thread);
         if ((await views?.peek(thread)) === undefined) {

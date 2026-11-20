@@ -18,7 +18,7 @@ import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import type { HostAttachments, HostFileReads } from "./file-reads.ts";
 import type { HostThreadPlaces } from "./thread-places.ts";
-import type { HostRepoIdentify } from "./protocol.ts";
+import type { HostLoopbackConnection, HostRepoIdentify } from "./protocol.ts";
 import { filesOn, type HostFiles } from "./files.ts";
 import type { HostFolders } from "./folders.ts";
 import { type HeadlessPlacement, headlessLocal, headlessPlacement } from "./headless.ts";
@@ -134,6 +134,11 @@ export interface WorkerHost {
    * use the control plane's own folder, and for a host whose build doesn't keep them.
    */
   readonly shared?: HostShared | undefined;
+  /**
+   * Another machine's loopback ports, reached through its host for the browser a thread there
+   * drives on this machine. Absent for this machine, and for a host whose build doesn't serve them.
+   */
+  readonly loopback?: HostLoopbackConnection | undefined;
 }
 
 export interface WorkerHostsShape {

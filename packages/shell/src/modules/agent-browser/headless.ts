@@ -246,6 +246,10 @@ export const launchHeadless = (options: {
 // ---------------------------------------------------------------------------------------------
 // Each thread's page.
 
+/** A proxy a page's loopback may go to: a SOCKS5 listener on this machine's own IPv4 loopback. */
+export const isLoopbackProxy = (proxy: string): boolean =>
+  /^socks5:\/\/127\.0\.0\.1:\d{1,5}$/.test(proxy);
+
 /**
  * The pane's checks, which decide first; `undefined` leaves a request to the desktop Preview's own
  * local-session rules (`previewNavigation`, `previewRequest`): loopback and the page's own data.
@@ -292,10 +296,19 @@ interface FrameEvent {
 export const openHeadlessPage = async (
   connection: CdpConnection,
   gate: () => HeadlessGate | undefined,
+  /**
+   * Where the page's loopback is, when it isn't this machine's: a SOCKS proxy on this machine's
+   * loopback (`isLoopbackProxy`) that the server holds to the thread's own machine. Every
+   * request then goes to it, loopback's included.
+   */
+  loopbackProxy?: string,
 ): Promise<PaneContents> => {
   const held = await holdNewTargets(connection);
   const { browserContextId } = (await connection.send("Target.createBrowserContext", {
     disposeOnDetach: true,
+    ...(loopbackProxy !== undefined && isLoopbackProxy(loopbackProxy)
+      ? { proxyServer: loopbackProxy, proxyBypassList: "<-loopback>" }
+      : {}),
   })) as { browserContextId: string };
   held.contexts.set(browserContextId, undefined);
   const dispose = () => {
@@ -1009,6 +1022,8 @@ export const headlessViews = (
   closed: (threadId: string) => void = () => {},
   /** Whether a command is running on the thread's page, which is then never the one closed. */
   busy: (threadId: string) => boolean = () => false,
+  /** Where a thread's loopback is, when not this machine's (`openHeadlessPage`). */
+  loopbackProxyOf: (threadId: string) => string | undefined = () => undefined,
 ): PaneViews & {
   touch(threadId: string): void;
   close(threadId: string): Promise<void>;
@@ -1033,10 +1048,12 @@ export const headlessViews = (
         closed(other);
       });
     }
-    const made = openHeadlessPage(connection, gate).catch((error: unknown) => {
-      failed(error);
-      return undefined;
-    });
+    const made = openHeadlessPage(connection, gate, loopbackProxyOf(threadId)).catch(
+      (error: unknown) => {
+        failed(error);
+        return undefined;
+      },
+    );
     pages.set(threadId, made);
     return made;
   };

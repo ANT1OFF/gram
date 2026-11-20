@@ -42,12 +42,14 @@ import {
   type PanePage,
   type PanePoint,
   type PaneResult,
+  sessionHostOf,
   type Thread,
   type ThreadId,
 } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -62,6 +64,8 @@ import { PreviewFiles } from "../preview/files.ts";
 import { PageFiles } from "../pages/page-files.ts";
 import { EvidencePathError, writeEvidence } from "./evidence.ts";
 import { PanePort, type PanePortShape } from "./pane-port.ts";
+import { loopbackProxies, type LoopbackProxies } from "./loopback-proxy.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { WorkspaceOutputs, type WorkspaceOutputsShape } from "../outputs/workspace-outputs.ts";
 
 /** What every tool's description ends with: where an agent may and may not browse. */
@@ -154,6 +158,8 @@ interface BrowserDeps {
   readonly appOrigins: Effect.Effect<ReadonlyArray<string>>;
   /** Where saved evidence is listed for the workspace's Files view; absent in tool-only tests. */
   readonly outputs?: Pick<WorkspaceOutputsShape, "record"> | undefined;
+  /** Threads' own machines' loopback, where the pane takes it (`loopback-proxy.ts`). */
+  readonly loopbackProxies?: Pick<LoopbackProxies, "proxyFor"> | undefined;
 }
 
 /** Page-derived text fenced as the page's data, under the page it came from. */
@@ -244,10 +250,21 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
         actOnLoopbackOnly: yield* actsOnLoopbackOnly(store, thread),
         ...(origins.length === 0 ? {} : { appOrigins: [...origins] }),
       };
+      // Where the thread's loopback is: its own machine's, when it runs on another one.
+      const loopbackProxy =
+        deps.loopbackProxies === undefined
+          ? undefined
+          : yield* deps.loopbackProxies.proxyFor(thread);
+      const routed = loopbackProxy === undefined ? {} : { loopbackProxy };
       let current = command;
       let observedAction: BrowserAction | undefined;
       for (let cards = 0; ; cards++) {
-        let result: PaneResult = yield* pane.send({ threadId, limits, command: current });
+        let result: PaneResult = yield* pane.send({
+          threadId,
+          limits,
+          command: current,
+          ...routed,
+        });
         observedAction = result.inspection?.action ?? observedAction;
         if (observedAction !== undefined && result.inspection !== undefined)
           result = { ...result, inspection: { ...result.inspection, action: observedAction } };
@@ -281,6 +298,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
           const granted = yield* pane.send({
             threadId,
             limits,
+            ...routed,
             command: { op: "grant", host, scope: answer.scope === "always" ? "always" : "once" },
           });
           if (!granted.ok) return yield* new AppToolError({ tool, message: granted.message });
@@ -1069,7 +1087,32 @@ export const BrowserAppToolsLive = Layer.effectDiscard(
           [previewFiles?.origin, pageFiles?.origin].filter((origin) => origin !== undefined),
         ),
         outputs: Option.getOrUndefined(yield* Effect.serviceOption(WorkspaceOutputs)),
+        loopbackProxies: yield* loopbackProxiesHere,
       }),
     );
   }),
 );
+
+/**
+ * Proxies to threads' own machines' loopback, for the headless browser, the one that takes them;
+ * none in the desktop app, whose Preview pane reaches this machine's loopback alone, nor where no
+ * other machine's host is reachable.
+ */
+const loopbackProxiesHere = Effect.gen(function* () {
+  const pane = yield* PanePort;
+  const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
+  if (pane.view === undefined || hosts === undefined) return undefined;
+  const store = yield* ThreadStore;
+  const run = yield* FiberSet.makeRuntime();
+  const proxies = loopbackProxies(
+    (threadId) =>
+      store.getThread(threadId as ThreadId).pipe(
+        Effect.flatMap((thread) => hosts.get(sessionHostOf(thread))),
+        Effect.map((host) => host.loopback),
+        Effect.orElseSucceed(() => undefined),
+      ),
+    run,
+  );
+  yield* Effect.addFinalizer(() => Effect.promise(() => proxies.close()));
+  return proxies;
+});
