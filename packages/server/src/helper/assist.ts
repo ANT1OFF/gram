@@ -38,6 +38,7 @@ import { HelperScheduler } from "./scheduler.ts";
 import { makeStucks } from "./stuck.ts";
 import { makeSuggestions, suggestibleEnd } from "./suggest.ts";
 import { makeWaitHelper } from "./wait.ts";
+import { readableWorkspacesOnly } from "../embedding/readable-by.ts";
 
 const isPlanOrRemoval = (
   event: ServerEvent,
@@ -337,13 +338,18 @@ export const ThreadAssistLive = Layer.effect(
           ),
         ),
       paletteFilters: (threadId, query) =>
-        Effect.flatMap(store.listWorkspaces, (states) =>
-          proposePaletteFilters(
-            scheduler.schedule,
-            threadId,
-            query,
-            states.map(({ workspace }) => ({ id: workspace.id, name: workspace.name })),
+        // Only workspaces the caller may see are offered to the helper, or taken from its answer.
+        Effect.flatMap(
+          Effect.flatMap(store.listWorkspaces, (all) =>
+            readableWorkspacesOnly(all, (state) => state.workspace),
           ),
+          (states) =>
+            proposePaletteFilters(
+              scheduler.schedule,
+              threadId,
+              query,
+              states.map(({ workspace }) => ({ id: workspace.id, name: workspace.name })),
+            ),
         ),
       catchUp: catchUps.onOpen,
       whyStuck: stucks.onAsk,
