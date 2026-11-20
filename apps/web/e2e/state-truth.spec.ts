@@ -43,9 +43,7 @@ const workersPanel = async (page: Page) => {
 const count = async (locator: ReturnType<Page["locator"]>, attribute: string) =>
   Number(await locator.getAttribute(attribute));
 
-test("the sidebar, the Workers panel, the Inbox and Quiet agree on what needs you", async ({
-  page,
-}) => {
+test("the sidebar, the Workers panel and Quiet agree on what needs you", async ({ page }) => {
   const made = await openRealistic(page);
 
   // The sidebar: the one total, and each workspace's share of it.
@@ -81,14 +79,8 @@ test("the sidebar, the Workers panel, the Inbox and Quiet agree on what needs yo
     made.asking,
   );
 
-  // The Inbox lists the whole count; the needs-you pill opens it.
-  await page.getByTestId("overview-needs-you").click();
-  const inbox = page.getByTestId("inbox");
-  await expect(inbox).toBeVisible();
-  await expect(inbox.getByTestId("inbox-count")).toHaveText(`${total} need you`);
-  await expect(inbox.getByTestId("inbox-item")).toHaveCount(total);
-  await page.keyboard.press("Escape");
-  await expect(inbox).toBeHidden();
+  // That the Inbox lists the pill's count, and keeps it through answers, Undo and the Board, is
+  // needs-you-properties.spec.ts's.
 
   // Quiet answers asks one card at a time and says where the rest is: the two add up to the pill.
   await page.getByTestId("titlebar-overflow").click();
