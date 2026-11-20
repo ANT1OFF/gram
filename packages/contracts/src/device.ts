@@ -934,6 +934,11 @@ export interface WorkerMachineServer {
   readonly origin: string;
   /** What the server calls itself, as the app shows it. */
   readonly server: string;
+  /**
+   * An opaque mark of the sign-in machines are asked for under there (who the person is on that
+   * server, as the app hashes it). What is made under one sign-in is acted on only under it.
+   */
+  readonly account?: string;
 }
 
 export type WorkerMachineOp =
@@ -951,6 +956,11 @@ export type WorkerMachineOp =
        * can never land after the time its sender held the name for.
        */
       readonly sendBy?: number;
+      /**
+       * The sign-in it is for (`WorkerMachineServer.account`): signed in there as someone else,
+       * the app sends nothing and says so.
+       */
+      readonly account?: string;
     }
   /** Keep carrying this machine's connection, dialling the relay again whenever it ends. */
   | { readonly op: "relay"; readonly origin: string; readonly name: string }

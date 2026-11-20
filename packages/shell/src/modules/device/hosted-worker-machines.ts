@@ -2,7 +2,7 @@
 // one under the server's `worker_machines_endpoint`, a dial of the relay that carries its
 // connection, a relay's lease, and the device's side of them (`hosted-device.ts`).
 
-import type { KeyObject } from "node:crypto";
+import { createHash, type KeyObject } from "node:crypto";
 
 import {
   type HostedDiscovery,
@@ -76,7 +76,8 @@ export const callWorkerMachines = async (
     callAddress(endpoint, calls.call),
     calls.body,
   );
-  calls.fence?.done(!("why" in response));
+  // Settled only by an answer below 500: a 5xx (a 503 included) may still act later.
+  calls.fence?.done(!("why" in response) && response.status < 500);
   if (heldBack !== undefined) return failed(heldBack);
   if ("why" in response) return response;
   // What a server echoes of the sign-in never leaves the app: the token it was called with, and
@@ -202,6 +203,19 @@ const NO_WORKER_MACHINE_SERVER =
 
 export const NOT_SIGNED_IN = { ok: false as const, why: "Sign in to the server first." };
 
+/** Why a call made for one sign-in wasn't sent: the app is signed in there as someone else. */
+export const ANOTHER_ACCOUNT = {
+  ok: false as const,
+  why: "This computer is signed in to that server as someone else now, so nothing was sent for this machine: sign in as the person it was started for.",
+};
+
+/**
+ * The opaque mark of a sign-in (`WorkerMachineServer.account`): the server and who the person
+ * is there, hashed, so no one's id leaves the app.
+ */
+export const accountOf = (origin: string, subject: string) =>
+  createHash("sha256").update(`${origin}\n${subject}`).digest("base64url").slice(0, 32);
+
 /** A device's worker-machine calls, each to the server signed in at its origin. */
 export interface HostedWorkerMachines {
   /**
@@ -221,6 +235,8 @@ export interface HostedWorkerMachines {
     body: Readonly<Record<string, unknown>>,
     /** Not sent at all past this time (`WorkerMachineOp`'s `sendBy`). */
     sendBy?: number,
+    /** The sign-in it is for (`WorkerMachineServer.account`): another's, it isn't sent. */
+    account?: string,
   ) => Promise<
     | { readonly ok: true; readonly status: number; readonly body: unknown }
     | { readonly ok: false; readonly why: string }
@@ -267,7 +283,14 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
       );
       const open = signedIn.find((server) => !server.limits.paused());
       if (open !== undefined)
-        return { ok: true, server: { origin: open.origin, server: open.discovery.name } };
+        return {
+          ok: true,
+          server: {
+            origin: open.origin,
+            server: open.discovery.name,
+            account: accountOf(open.origin, open.keeper.subject),
+          },
+        };
       if (signedIn.length > 0)
         return {
           ok: false,
@@ -276,9 +299,11 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
       return { ok: false, why: NO_WORKER_MACHINE_SERVER };
     },
 
-    workerMachineCall: async (origin, call, body, sendBy) => {
+    workerMachineCall: async (origin, call, body, sendBy, account) => {
       const server = known(origin);
       if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
+      if (account !== undefined && account !== accountOf(origin, server.keeper.subject))
+        return ANOTHER_ACCOUNT;
       if (call === "start" && server.limits.paused())
         return {
           ok: false,

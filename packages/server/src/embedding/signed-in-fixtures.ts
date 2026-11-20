@@ -6,7 +6,9 @@ import type { RemoteHosts } from "../host/remote-hosts.ts";
 import type { WorkerMachineMessagePort } from "./signed-in-port.ts";
 
 export const ORIGIN = "https://hosted.example.test";
-export const SERVER = { origin: ORIGIN, server: "Example hosted" };
+/** The sign-in machines are asked for under there (`WorkerMachineServer.account`). */
+export const ACCOUNT = "account-ada-0123456789";
+export const SERVER = { origin: ORIGIN, server: "Example hosted", account: ACCOUNT };
 export const NAME = "worker-0123456789";
 
 export type Call = { readonly call: string; readonly body: Record<string, unknown> };
@@ -68,6 +70,7 @@ export const provisionRelayed = (hosts: RemoteHosts["Service"], name: string) =>
     platform: "linux",
     onDemand: "worker",
     via: ORIGIN,
+    viaAccount: ACCOUNT,
   });
   if (result.kind !== "provisioned") throw new Error(result.message);
   return { key, id: result.machine.id };

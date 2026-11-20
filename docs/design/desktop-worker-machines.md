@@ -289,7 +289,9 @@ subscription token reaches a machine, with its own consent.
   short once begun, whoever stops waiting for it. Each stop sent is held besides, in the stops
   owed file, from before it is sent until its own answer comes, or until the time it may still
   act has passed: its send-by, its request, the two minutes and more the hosted server may take
-  to act on a stop it took, and half a minute more. No start of the name, after a restart
+  to act on a stop it took, and half a minute more. Only an answer below 500 lets a hold go: a
+  5xx (a `503` included, as the server's own call down may have broken after it went out) is no
+  answer here, nor to the app's fence. No start of the name, after a restart
   included, goes out before. A stop whose hold can't be written down isn't sent; it is owed.
   Holds whose time is up are pruned before every write, and nothing is written past what a
   restart reads back; a file grown past that before is still read, its owings kept, and one that
@@ -310,6 +312,13 @@ subscription token reaches a machine, with its own consent.
   it (not a 404, nor a 2xx saying it knows no such machine), so one that wasn't is told again. A
   release answered 404 forgets nothing: a `404 not_found` is told again next pass, any other 404
   is asked again at once, as a busy server is.
+- **One sign-in's machines are its own.** The app hands this Gram an opaque mark of the sign-in
+  it asks under (who the person is there, hashed), and everything made under it carries the mark:
+  the machine registered (`PairedMachine.viaAccount`) and every stop owed. Each call about one
+  carries it, and the app sends nothing for a mark that isn't its sign-in's now, so signing in
+  there as someone else neither forgets the first person's machines nor settles their stops.
+  A machine or a stop owed from before marks were kept is never forgotten or settled on a "no such
+  machine", which another sign-in may be answering; only a stop answered done settles one.
 - **A machine the server no longer knows** is forgotten here only after three passes in a row
   answer its `…/status` `404 { code: "not_found" }`, since the same answer comes while its
   workspace is out of reach for a while. Nothing else forgets a machine a server started.

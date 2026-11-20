@@ -4,7 +4,7 @@
 import type { HostedDiscovery } from "@gram/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { TokenKeeper } from "./hosted.ts";
-import { hostedWorkerMachines } from "./hosted-worker-machines.ts";
+import { accountOf, ANOTHER_ACCOUNT, hostedWorkerMachines } from "./hosted-worker-machines.ts";
 import { devicePrivateKeyFrom, generateDeviceKey } from "./keys.ts";
 import { STOP_TOO_LATE, SUPERSEDED } from "./worker-machine-fence.ts";
 
@@ -21,7 +21,9 @@ const discovery = {
  * The app's calls over one signed-in server whose token renewal waits on `renewed`, and whose
  * answers wait on `answer`, recording each request as it goes out.
  */
-const setup = (gates: { renewed?: Promise<void>; answer?: Promise<void> } = {}) => {
+const setup = (
+  gates: { renewed?: Promise<void>; answer?: Promise<void>; stopStatus?: number } = {},
+) => {
   const sent: string[] = [];
   const keeper = {
     subject: "ada",
@@ -36,10 +38,11 @@ const setup = (gates: { renewed?: Promise<void>; answer?: Promise<void> } = {}) 
     signedOut: () => false,
   } as unknown as TokenKeeper;
   const fetch = async (url: string | URL | Request) => {
-    sent.push(String(url).split("/").at(-1) ?? "");
+    const call = String(url).split("/").at(-1) ?? "";
+    sent.push(call);
     await gates.answer;
     return new Response(JSON.stringify({ stopped: true }), {
-      status: 200,
+      status: call === "stop" ? (gates.stopStatus ?? 200) : 200,
       headers: { "content-type": "application/json" },
     });
   };
@@ -90,11 +93,54 @@ describe("a worker machine's stop, as the app sends it", () => {
     expect(sent).toEqual(["stop", "start"]);
   });
 
+  it("holds a start of its name back after it was answered 503, which settles nothing", async () => {
+    const { machines, sent } = setup({ stopStatus: 503 });
+    expect(await machines.workerMachineCall(ORIGIN, "stop", { name: NAME })).toMatchObject({
+      ok: true,
+      status: 503,
+    });
+    let started = false;
+    void machines.workerMachineCall(ORIGIN, "start", { name: NAME }).then(() => (started = true));
+    for (let each = 0; each < 50; each += 1) await Promise.resolve();
+    // The server's call down may still act on the stop: the start waits out the settling time.
+    expect(sent).toEqual(["stop"]);
+    expect(started).toBe(false);
+  });
+
   it("is never sent past its sendBy, however long it waited", async () => {
     const { machines, sent } = setup();
     expect(
       await machines.workerMachineCall(ORIGIN, "stop", { name: NAME }, Date.now() - 1),
     ).toEqual({ ok: false, why: STOP_TOO_LATE });
     expect(sent).toEqual([]);
+  });
+});
+
+describe("a worker machine's call, as the app sends it for one sign-in", () => {
+  it("is sent only while the app is signed in there as that person", async () => {
+    const { machines, sent } = setup();
+    // The server is handed the sign-in's mark, never who the person is.
+    const found = machines.workerMachineServer();
+    const mine = accountOf(ORIGIN, "ada");
+    expect(found).toEqual({
+      ok: true,
+      server: { origin: ORIGIN, server: "Example hosted", account: mine },
+    });
+    // Asked for a machine of another sign-in there: nothing goes out.
+    for (const call of ["status", "stop", "release"] as const)
+      expect(
+        await machines.workerMachineCall(
+          ORIGIN,
+          call,
+          { name: NAME },
+          undefined,
+          accountOf(ORIGIN, "grace"),
+        ),
+      ).toEqual(ANOTHER_ACCOUNT);
+    expect(sent).toEqual([]);
+    expect(
+      (await machines.workerMachineCall(ORIGIN, "status", { name: NAME }, undefined, mine)).ok,
+    ).toBe(true);
+    expect(sent).toEqual(["status"]);
   });
 });

@@ -65,6 +65,8 @@ export interface ReleaseMachine {
   readonly onDemand?: string | undefined;
   /** The hosted server a desktop's worker host came through (`signed-in-workers.ts`). */
   readonly via?: string | undefined;
+  /** The sign-in there it was asked for under: told only under it. */
+  readonly viaAccount?: string | undefined;
   readonly onlineSince?: number | undefined;
 }
 
@@ -218,7 +220,11 @@ export const releaseTeller = (
     machine.via !== undefined
       ? signedIn === undefined
         ? Effect.fail(new Error("no desktop app to tell"))
-        : tellSignedInRelease(signedIn, { name: machine.name, via: machine.via }, released).pipe(
+        : tellSignedInRelease(
+            signedIn,
+            { name: machine.name, via: machine.via, account: machine.viaAccount },
+            released,
+          ).pipe(
             Effect.flatMap((told) =>
               told === "missing"
                 ? Effect.fail(new Error("the server answered that it holds no such machine"))

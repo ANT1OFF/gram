@@ -430,6 +430,8 @@ export interface ProvidedMachine {
   readonly owner?: string | undefined;
   readonly onDemand?: string | undefined;
   readonly via?: string | undefined;
+  /** The sign-in there it was asked for under (`PairedMachine.viaAccount`). */
+  readonly viaAccount?: string | undefined;
   readonly onlineSince?: number | undefined;
 }
 

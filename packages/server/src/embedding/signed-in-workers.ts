@@ -70,6 +70,7 @@ import {
   stopHoldUntil,
   stopOutcome,
   stopSendBy,
+  stopSettled,
   UNANSWERED_STOP_HOLD_MS,
   withName,
 } from "./worker-machine-stops.ts";
@@ -154,6 +155,17 @@ export type OfferedByServer = Map<
   }
 >;
 
+/**
+ * Whether a relayed machine was registered before the sign-in it was asked under was kept: what a
+ * server answers of it may be about another sign-in's, so it is never forgotten on a "no such
+ * machine" (`forgetReclaimed`, a give-back's stop).
+ */
+export const isLegacyRelayed = (
+  machine:
+    | { readonly via?: string | undefined; readonly viaAccount?: string | undefined }
+    | undefined,
+) => machine?.via !== undefined && machine.viaAccount === undefined;
+
 /** A hosted server the app is signed in to, as `sandbox`'s provider. */
 export const signedInSource = (
   server: WorkerMachineServer,
@@ -162,9 +174,17 @@ export const signedInSource = (
   const { port, hosts } = deps;
   const now = deps.now ?? Date.now;
   const origin = server.origin;
+  /** The sign-in this source asks under: every call carries it, and everything it makes. */
+  const account = server.account;
   const offered: OfferedByServer = deps.offered ?? new Map();
+  // One registered under another sign-in there is that sign-in's, never this one's to act on;
+  // one registered before sign-ins were kept is taken as this one's, but never forgotten on what
+  // another sign-in might say of it (`isLegacyRelayed`).
   const mine = (machine: ProvidedMachine) =>
-    machine.onDemand === "worker" && machine.via === origin && machine.owner === undefined;
+    machine.onDemand === "worker" &&
+    machine.via === origin &&
+    machine.owner === undefined &&
+    (machine.viaAccount === undefined || machine.viaAccount === account);
   const named = (name: string) => hosts.list().find((each) => each.name === name && mine(each));
   /** How long a stop of `name` sent there may still land (`StopHolds`): no start goes before. */
   const heldFor = (name: string) => {
@@ -175,7 +195,7 @@ export const signedInSource = (
   const asked = Effect.gen(function* () {
     const kept = offered.get(origin);
     if (kept !== undefined && now() - kept.at < CHOICES_TTL_MS) return kept;
-    const answered = yield* port.call(origin, "choices", {});
+    const answered = yield* port.call(origin, "choices", {}, { account });
     const body = answered.ok && answered.status === 200 ? answered.body : undefined;
     const value = parseChoices(body);
     const models = parseOfferedModels(body);
@@ -234,15 +254,17 @@ export const signedInSource = (
                 origin,
                 "stop",
                 { name },
-                { sendBy: stopSendBy(sentAt) },
+                { sendBy: stopSendBy(sentAt), account },
               );
-              if (answered.ok && held !== undefined) deps.owed?.holds.answered(held);
-              // "No such machine" ends nothing while a start of it may still be on its way.
+              if (stopSettled(answered) && held !== undefined) deps.owed?.holds.answered(held);
+              // "No such machine" ends nothing while a start of it may still be on its way, nor
+              // for one registered before sign-ins were kept, which another may be asking after.
               const outcome = stopOutcome(answered);
-              stopped = outcome === "stopped" || (outcome === "absent" && !unsettled);
+              const legacy = isLegacyRelayed(named(name));
+              stopped = outcome === "stopped" || (outcome === "absent" && !unsettled && !legacy);
               // A stop no one answered may still land late: a later attempt's answer is its own,
               // not that one's, so the name is held after it whatever comes next.
-              if (!answered.ok) unanswered = true;
+              if (!stopSettled(answered)) unanswered = true;
               // Only the status: what a server answers isn't written to the log.
               last = answered.ok ? `answered ${answered.status}` : "no answer";
             }
@@ -264,6 +286,7 @@ export const signedInSource = (
               name,
               since: now(),
               ...(unsettled ? { unsettled: true as const } : {}),
+              ...(account === undefined ? {} : { account }),
               attempt: randomUUID(),
             });
           return false;
@@ -287,7 +310,7 @@ export const signedInSource = (
         // it is waited for as any reused machine. Either way it stays registered and relayed:
         // only `forgetReclaimed` forgets one.
         for (let missed = 1; ; missed += 1) {
-          const told = yield* tellSignedInRelease(port, { name, via: origin }, false);
+          const told = yield* tellSignedInRelease(port, { name, via: origin, account }, false);
           if (told === "applied") return undefined;
           if (missed >= RECLAIMED_AFTER_MISSES) return "gone" as const;
           yield* Effect.sleep(deps.everyMs ?? ARRIVE_EVERY_MS);
@@ -314,6 +337,7 @@ export const signedInSource = (
           since: now(),
           unsettled: true as const,
           start: true as const,
+          ...(account === undefined ? {} : { account }),
           attempt: randomUUID(),
         };
         // Asked for again: it may come back, so it is relayed once more.
@@ -440,7 +464,7 @@ export const signedInSource = (
           if (left <= 0) return { failed: "timeout" };
           const before = sentOf(deps.sent, name);
           const read = yield* port
-            .call(origin, "status", { name })
+            .call(origin, "status", { name }, { account })
             .pipe(Effect.timeoutOption(left));
           if (read._tag === "None") return { failed: "timeout" };
           const answered = read.value;
@@ -476,7 +500,7 @@ export const signedInSource = (
               // Within what is left of this wait, however long the start or its retries take.
               const waking = yield* wakeSignedIn(
                 port,
-                { name, via: origin },
+                { name, via: origin, account },
                 { ...deps, heldFor },
               ).pipe(Effect.timeoutOption(Math.max(0, deadline - now())));
               if (waking._tag === "None") return { failed: "timeout" };
@@ -502,6 +526,7 @@ export const signedInSource = (
                 platform: status.platform ?? "linux",
                 onDemand: "worker",
                 via: origin,
+                ...(account === undefined ? {} : { viaAccount: account }),
               });
               if (result.kind === "refused") return { failed: failedWords(name, result.message) };
               // Registered here: the release pass looks after it from now on.
@@ -578,7 +603,12 @@ export const forgetReclaimed = (
         continue;
       }
       const before = sentOf(sent, machine.name);
-      const answered = yield* port.call(machine.via, "status", { name: machine.name });
+      const answered = yield* port.call(
+        machine.via,
+        "status",
+        { name: machine.name },
+        { account: machine.viaAccount },
+      );
       // A start was on its way, or went, while this was asked: what it says is older than it.
       if (!settledSince(sent, machine.name, before)) continue;
       const phase =
@@ -598,7 +628,9 @@ export const forgetReclaimed = (
         }
         continue;
       }
-      if (!isNotFound(answered)) {
+      // One registered before sign-ins were kept may be another sign-in's there, which a 404
+      // says nothing of: never forgotten here on it (Settings → Machines removes it).
+      if (!isNotFound(answered) || isLegacyRelayed(machine)) {
         misses.delete(machine.id);
         continue;
       }
@@ -728,7 +760,7 @@ export const SignedInWorkersLive = Layer.effect(
           const id = HostId.make(machine.id);
           return wakeSignedIn(
             port,
-            { name: machine.name, via: machine.via },
+            { name: machine.name, via: machine.via, account: machine.viaAccount },
             {
               locks,
               asleep,

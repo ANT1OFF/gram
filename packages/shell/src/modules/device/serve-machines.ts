@@ -442,11 +442,15 @@ export const answerWorkerMachines = async (
       return respond(MALFORMED);
     const sendBy = Reflect.get(message, "sendBy");
     if (sendBy !== undefined && !Number.isSafeInteger(sendBy)) return respond(MALFORMED);
+    const account = Reflect.get(message, "account");
+    if (account !== undefined && (typeof account !== "string" || account.length > 64))
+      return respond(MALFORMED);
     const answered = await device.workerMachineCall(
       origin,
       call as WorkerMachineCall,
       body as Record<string, unknown>,
       sendBy as number | undefined,
+      account,
     );
     // Only the fields this machine's server reads of each answer: nothing else a server sends,
     // a token it echoed say, leaves the app.

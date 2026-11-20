@@ -38,7 +38,7 @@ export interface WorkerMachinePortShape {
     call: WorkerMachineCall,
     body: Readonly<Record<string, unknown>>,
     /** The latest time the app may send it (`WorkerMachineOp`'s `sendBy`). */
-    options?: { readonly sendBy?: number },
+    options?: { readonly sendBy?: number; readonly account?: string | undefined },
   ) => Effect.Effect<
     { readonly ok: true; readonly status: number; readonly body: unknown } | Refused
   >;
@@ -258,7 +258,16 @@ export const bridgeWorkerMachines = (
             typeof server.origin === "string" &&
             typeof server.server === "string"
           )
-            return { ok: true as const, server: { origin: server.origin, server: server.server } };
+            return {
+              ok: true as const,
+              server: {
+                origin: server.origin,
+                server: server.server,
+                ...(typeof server.account === "string" && server.account.length <= 64
+                  ? { account: server.account }
+                  : {}),
+              },
+            };
           const why = "why" in result && typeof result.why === "string" ? result.why : undefined;
           return { ok: false as const, why: why ?? NO_SIGNED_IN_SERVER };
         }),
@@ -270,6 +279,7 @@ export const bridgeWorkerMachines = (
         call,
         body,
         ...(options?.sendBy === undefined ? {} : { sendBy: options.sendBy }),
+        ...(options?.account === undefined ? {} : { account: options.account }),
       }).pipe(
         Effect.map((result) =>
           result.ok && "status" in result && typeof result.status === "number"

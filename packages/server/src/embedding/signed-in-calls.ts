@@ -84,6 +84,8 @@ export const sendSignedInStart = (
     readonly go?: (() => boolean) | undefined;
     /** How long a stop of the name may still land there (`StopHolds`): waited out before each ask. */
     readonly heldFor?: ((name: string) => number) | undefined;
+    /** The sign-in it is asked under (`WorkerMachineServer.account`). */
+    readonly account?: string | undefined;
     /**
      * Run once the name is this start's alone, before anything is sent: an answer it gives is
      * the start's, and nothing is sent.
@@ -124,7 +126,9 @@ export const sendSignedInStart = (
           asks += 1;
           const bump = Effect.sync(() => options.sent?.set(name, sentOf(options.sent, name) + 1));
           yield* bump;
-          const answered = yield* port.call(origin, "start", body).pipe(Effect.ensuring(bump));
+          const answered = yield* port
+            .call(origin, "start", body, { account: options.account })
+            .pipe(Effect.ensuring(bump));
           // Busy (503) or throttled (429) there: asked again after a wait. Any 5xx may have reached
           // its machines (a 502 comes from a start that failed after its machine was written), so
           // the start's outcome stays unknown, whatever is answered after it, and asked again or
@@ -139,9 +143,11 @@ export const sendSignedInStart = (
       if (first === undefined) return skipped;
       if (!first.ok || first.status !== 409 || codeOf(first.body) !== "released")
         return { answered: first, unavailable };
-      const told = yield* tellSignedInRelease(port, { name, via: origin }, false).pipe(
-        Effect.option,
-      );
+      const told = yield* tellSignedInRelease(
+        port,
+        { name, via: origin, account: options.account },
+        false,
+      ).pipe(Effect.option);
       // What came before stays: a 503 first leaves the start's outcome unknown all the same.
       if (told._tag === "Some" && told.value === "missing")
         return {
@@ -176,7 +182,7 @@ export type WakeOutcome = "started" | "awake" | "gone" | "unwanted" | "refused" 
  */
 export const wakeSignedIn = (
   port: WorkerMachinePortShape,
-  machine: { readonly name: string; readonly via: string },
+  machine: { readonly name: string; readonly via: string; readonly account?: string | undefined },
   options: {
     readonly locks?: NameLocks | undefined;
     readonly startRetryMs?: number | undefined;
@@ -191,7 +197,12 @@ export const wakeSignedIn = (
   Effect.gen(function* () {
     if (!isHostedWorkerName(machine.name)) return "refused" as const;
     const before = sentOf(options.sent, machine.name);
-    const read = yield* port.call(machine.via, "status", { name: machine.name });
+    const read = yield* port.call(
+      machine.via,
+      "status",
+      { name: machine.name },
+      { account: machine.account },
+    );
     // Passing errors settle nothing: asked again while it is still wanted.
     if (!read.ok || read.status >= 500 || read.status === 429) return "retry" as const;
     // A start of it was on its way, or went, while this was asked: the answer is older than it,
@@ -211,7 +222,7 @@ export const wakeSignedIn = (
       machine.via,
       machine.name,
       { name: machine.name },
-      { ...options, go: options.wanted },
+      { ...options, go: options.wanted, account: machine.account },
     );
     if (sent.skipped === true) return "unwanted" as const;
     const answered = sent.answered;
@@ -248,7 +259,7 @@ export const wakeSignedIn = (
  */
 export const tellSignedInRelease = (
   port: WorkerMachinePortShape,
-  machine: { readonly name: string; readonly via: string },
+  machine: { readonly name: string; readonly via: string; readonly account?: string | undefined },
   released: boolean,
   options: { readonly retryMs?: number; readonly attempts?: number } = {},
 ): Effect.Effect<"applied" | "missing", Error> =>
@@ -259,11 +270,12 @@ export const tellSignedInRelease = (
       // A server too busy, or no answer: asked again after a wait that doubles.
       if (attempt > 0)
         yield* Effect.sleep((options.retryMs ?? RELEASE_RETRY_MS) * 2 ** (attempt - 1));
-      const answered = yield* port.call(machine.via, "release", {
-        name: machine.name,
-        released,
-        reason: released ? "finished" : "working",
-      });
+      const answered = yield* port.call(
+        machine.via,
+        "release",
+        { name: machine.name, released, reason: released ? "finished" : "working" },
+        { account: machine.account },
+      );
       if (!answered.ok) {
         last = "no answer";
         continue;

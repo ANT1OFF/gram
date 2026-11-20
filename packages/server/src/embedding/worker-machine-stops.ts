@@ -66,6 +66,15 @@ export const withName = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> => (locks === undefined ? effect : locks.withLock(name, effect));
 
+/**
+ * Whether a stop's answer settles whether it can still act there: any answer below 500. No
+ * answer, or a 5xx (a 503 included: the server's own call down may have broken after it went
+ * out), leaves it free to act later, so its hold stays its full time.
+ */
+export const stopSettled = (
+  answered: { readonly ok: true; readonly status: number } | { readonly ok: false },
+) => answered.ok && answered.status < 500;
+
 /** A server's answer's `code`, where it gives one. */
 export const codeOf = (body: unknown): unknown =>
   typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
@@ -126,6 +135,16 @@ export interface OwedStop {
   readonly unsettled?: true;
   readonly start?: true;
   readonly attempt?: string;
+  /**
+   * The sign-in it was owed under (`WorkerMachineServer.account`): asked again, and settled, only
+   * under it.
+   */
+  readonly account?: string;
+  /**
+   * Read back from before sign-ins were kept: whose it is isn't known, so only a stop answered
+   * done settles it, never a "no such machine", which another sign-in may be answering.
+   */
+  readonly legacy?: true;
 }
 
 /**
@@ -328,6 +347,13 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
             ...(typeof each.attempt === "string" && each.attempt.length <= 64
               ? { attempt: each.attempt }
               : {}),
+            ...(typeof each.account === "string" && each.account.length <= 64
+              ? { account: each.account }
+              : {}),
+            // Written since sign-ins were kept, each says so: one that doesn't is from before.
+            ...(each.legacy === true || (each.account === undefined && each.noAccount !== true)
+              ? { legacy: true as const }
+              : {}),
           });
   } catch {
     // An owing that can't be read is left out; the rest are kept.
@@ -340,7 +366,18 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
   function save() {
     if (keepFile) return false;
     try {
-      const value = { version: 1, owed: owed.list(), holds: owed.heldList() };
+      const value = {
+        version: 1,
+        // One owed under no sign-in says so, so it isn't read back as one from before.
+        owed: owed
+          .list()
+          .map((each) =>
+            each.account === undefined && each.legacy !== true
+              ? { ...each, noAccount: true }
+              : each,
+          ),
+        holds: owed.heldList(),
+      };
       if (Buffer.byteLength(JSON.stringify(value)) > STOPS_FILE_MOST) return false;
       file.write(value);
       return true;
@@ -416,19 +453,21 @@ export const settleOwedStops = (
             stop.origin,
             "stop",
             { name: stop.name },
-            { sendBy: stopSendBy(sentAt) },
+            { sendBy: stopSendBy(sentAt), account: stop.account },
           );
-          // Its own answer came: its hold goes. Unanswered, it may still land: held its time out.
-          if (answered.ok) owed.holds.answered(held);
+          // Its own answer came: its hold goes. Unanswered or a 5xx, it may still act: held.
+          if (stopSettled(answered)) owed.holds.answered(held);
           const outcome = stopOutcome(answered);
           const key = owingOf(stop);
           const missed = outcome === "missing" ? (misses.get(key) ?? 0) + 1 : 0;
           if (missed === 0) misses.delete(key);
           else misses.set(key, missed);
-          // Unanswered, it may still reach the server: the name is kept a while more.
-          if (!answered.ok) yield* Effect.sleep(UNANSWERED_STOP_HOLD_MS);
+          // Unanswered or a 5xx, it may still act there: its hold, kept above, keeps every start
+          // of the name back until it can't.
+          // One from before sign-ins were kept is settled by its stop alone (`OwedStop.legacy`).
           const absent =
-            outcome === "absent" || (outcome === "missing" && missed >= RECLAIMED_AFTER_MISSES);
+            stop.legacy !== true &&
+            (outcome === "absent" || (outcome === "missing" && missed >= RECLAIMED_AFTER_MISSES));
           // Only what this pass settled: a start owed since, its name's lock waited for, stays.
           if (outcome === "stopped") owed.remove(stop.name, stop);
           else if (absent && (stop.unsettled !== true || now() - stop.since >= UNSETTLED_START_MS))
