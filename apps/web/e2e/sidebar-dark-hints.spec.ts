@@ -87,7 +87,8 @@ for (const mode of ["light", "dark"] as const) {
       expect(icon.shadow).not.toBe("none");
     } else {
       expect(icon.background).toBe("rgb(12, 14, 18)");
-      expect(icon.foreground).toBe("rgb(255, 255, 255)");
+      // The page's own colour (Minimal Ocean's, a step under white so its cards show).
+      expect(icon.foreground).toBe("rgb(243, 243, 244)");
     }
     await page.mouse.move(1000, 1000);
     await expect(hint).toHaveCount(0);
