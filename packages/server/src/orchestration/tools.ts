@@ -10,19 +10,14 @@ import {
   FEATURE_STAGE_NOTE_MAX,
   FEATURE_STAGE_MAX,
   MAX_PLAN_STEPS,
-  PlanStepId,
   QUESTIONS_FILE,
-  QuestionChoice,
+  type QuestionChoice,
   QUESTION_TEXT_MAX,
   QUESTION_CONTEXT_MAX,
-  QUESTION_LABEL_MAX,
-  QUESTION_DESCRIPTION_MAX,
-  QUESTION_OPTIONS_MAX,
   FORWARD_CONTEXT_MAX,
   WORKER_RECOMMENDATION_MAX,
   questionDate,
   QuestionHow,
-  type QuestionEdit,
   ReasoningVariant,
   WORKER_ANSWER_MAX,
   WORKER_REPORT_INTERFACE_MAX,
@@ -35,7 +30,6 @@ import {
   WAKE_MAX_MINUTES,
   WAKE_NOTE_MAX,
   WAKES_PER_THREAD_MAX,
-  WakeCondition,
   WakeConditionInput,
   wakeConditionWhen,
   WorkerReportState,
@@ -58,7 +52,7 @@ import * as Semaphore from "effect/Semaphore";
 import { randomUUID } from "node:crypto";
 import { defineAppTool, failed } from "../app-tools/definition.ts";
 import { inputAliases } from "../app-tools/input.ts";
-import { VerifyStatus } from "../verify/verify-tools.ts";
+import { VerifyStatus, verifyMissingNote } from "../verify/verify-tools.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { parsePrRef } from "../git/merge-when-ready.ts";
@@ -85,71 +79,21 @@ import { WakeConditions } from "../wakes/conditions.ts";
 import { ThreadWakes, type WakeInput } from "../wakes/thread-wakes.ts";
 import { compactWorkerRow } from "./ledger.ts";
 import {
-  appendEntry,
-  editPassage,
-  MEMORY_REVISION_NEW,
-  memoryRevision,
-  OrchestrationMemory,
-} from "./memory.ts";
+  checkRevision,
+  decodeWakeCondition,
+  hasVisuals,
+  newStepId,
+  NOT_AN_ORCHESTRATOR,
+  questionEdit,
+  questionOptions,
+  underPrefix,
+  VISUALS_HELP,
+  WorkerSandbox,
+} from "./tool-inputs.ts";
+import { appendEntry, editPassage, memoryRevision, OrchestrationMemory } from "./memory.ts";
 import { prWakeEventOf, prWatchSeenOf, refusal } from "./rules.ts";
 import { MAX_WORKER_REPOS, Orchestration } from "./service.ts";
 import { attachUserWords, USER_MESSAGES_MAX, withBriefFooter } from "./user-words.ts";
-
-/** An edit of `questions.md` as `modify` takes it, or the tool's refusal in the edit's words. */
-const questionEdit = (tool: string, edit: QuestionEdit) =>
-  edit.ok
-    ? Effect.succeed({ content: edit.content, result: edit })
-    : Effect.fail(new AppToolError({ tool, message: edit.problem }));
-
-/** What a question's options show, as `ask_user` and `ask_question` describe it to the agent. */
-const VISUALS_HELP =
-  " When the options are a mock's directions, give each an `image` (a screenshot, such as shots/a-inbox-dark.png) and a `preview` (its page and board, such as v1.html#a-inbox), and name the mock in `mock` (its mock.json or a page): the card shows each thumbnail and opens its board in Preview. Paths are relative to your folder or absolute, inside your worktree or repo.";
-
-// Tool limits apply before question persistence/visual confinement. Stored historical choices
-// remain readable through the broader contract schema.
-const questionOptions = Schema.Array(
-  Schema.Struct({
-    ...QuestionChoice.fields,
-    label: Schema.String.check(Schema.isMaxLength(QUESTION_LABEL_MAX)),
-    description: Schema.optionalKey(
-      Schema.String.check(Schema.isMaxLength(QUESTION_DESCRIPTION_MAX)),
-    ),
-  }),
-).check(Schema.isMaxLength(QUESTION_OPTIONS_MAX));
-
-const hasVisuals = (option: QuestionChoice): boolean =>
-  option.image !== undefined || option.preview !== undefined;
-
-const NOT_AN_ORCHESTRATOR =
-  "This thread is not its workspace's orchestrator, so its memory isn't open here.";
-
-/** Whether a memory file is under `prefix`, or any file without one. */
-const underPrefix =
-  (prefix: string | undefined) =>
-  (file: { readonly path: string }): boolean =>
-    prefix === undefined || file.path.startsWith(prefix);
-
-/**
- * Refuses a change made from a revision the file has moved on from, with the file's current text
- * and revision, so the caller can merge its change into it and write again.
- */
-const checkRevision = (
-  tool: string,
-  path: string,
-  revision: string | undefined,
-  current: string | undefined,
-): Effect.Effect<void, AppToolError> => {
-  const now = current === undefined ? MEMORY_REVISION_NEW : memoryRevision(current);
-  if (revision === undefined || revision === now) return Effect.void;
-  const message =
-    current === undefined
-      ? `${path} isn't in memory any more (you read revision ${revision}). Write it again with revision "${MEMORY_REVISION_NEW}" if it should still exist.`
-      : `${path} changed since you read it (you read revision ${revision}; it is now ${now}). Merge your change into its current text below, keeping what you aren't changing, and write again with revision ${now}.\n\n${current}`;
-  return Effect.fail(new AppToolError({ tool, message: refusal("stale_revision", message) }));
-};
-
-/** `schedule_wake` lists its condition flat (`WakeConditionInput`); this decodes it as the union. */
-const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
 
 /**
  * The tools only an orchestrator or a worker is bound, and the wake
@@ -157,24 +101,6 @@ const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
  * them out of every other thread's context, and it is only the first line: a session keeps the tool
  * list it opened with, so each handler asks the service for authority again.
  */
-/**
- * Where a worker runs: on a machine of its own (`own`, with the size and processor its work needs,
- * as the host provider offers them), on one its orchestrator already has (`shareWith`, by its name
- * or a worker's thread id on it), or on its orchestrator's own (left out, or `own: false`).
- */
-const WorkerSandbox = Schema.Struct({
-  own: Schema.optionalKey(Schema.Boolean),
-  size: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  architecture: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  isolation: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  environment: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  shareWith: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
-  /** Why it goes there rather than your machine, in a sentence the user reads on its row. */
-  reason: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(400))),
-});
-type WorkerSandbox = typeof WorkerSandbox.Type;
-
-const newStepId = () => Schema.decodeSync(PlanStepId)(randomUUID().slice(0, 8));
 
 export const OrchestratorAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -579,14 +505,11 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           yield* runtimes
             .emitChunk(worker, { type: "data-worker-report", id: randomUUID(), data: stored })
             .pipe(Effect.ignore);
+          const note = verifyMissingNote(verify);
           return {
             reported: true,
             state: stored.state,
-            ...(verify === undefined || verify.missing.length === 0
-              ? {}
-              : {
-                  note: `Gram has no pass on ${verify.head.slice(0, 7)} for ${verify.missing.map((name) => `"${name}"`).join(", ")}, which this repository marks required. Your orchestrator sees that with your report; run them with \`verify\` if you can, and report again.`,
-                }),
+            ...(note === undefined ? {} : { note }),
           };
         }),
     });

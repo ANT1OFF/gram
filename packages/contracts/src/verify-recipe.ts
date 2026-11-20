@@ -5,6 +5,7 @@
 // server, the mock and the tests read the file the same way.
 
 import * as Schema from "effect/Schema";
+import { inline } from "./agent-text.ts";
 
 /** Where a repository keeps its verify recipe, relative to its folder. */
 export const VERIFY_FILE = ".gram/verify.json";
@@ -179,3 +180,25 @@ export const driversCovering = (
           driver.covers === undefined ||
           driver.covers.some((pattern) => paths.some((path) => pathMatches(pattern, path))),
       );
+
+/** The required verify drivers on a worker's head, as Gram recorded their runs. */
+export const WorkerReportVerify = Schema.Struct({
+  head: Schema.String,
+  passed: Schema.Array(Schema.String),
+  missing: Schema.Array(Schema.String),
+});
+export type WorkerReportVerify = typeof WorkerReportVerify.Type;
+
+const driverNames = (names: ReadonlyArray<string>): string =>
+  names.map((name) => inline(name)).join(", ");
+
+/** A report's verify record as its orchestrator reads it: Gram's word, never the worker's. */
+export const verifyReportLine = (verify: WorkerReportVerify): string => {
+  const parts = [
+    ...(verify.passed.length === 0 ? [] : [`passed ${driverNames(verify.passed)}`]),
+    ...(verify.missing.length === 0
+      ? []
+      : [`no pass yet on required ${driverNames(verify.missing)}`]),
+  ];
+  return `verify (recorded by Gram on ${verify.head.slice(0, 7)}, not the worker's word): ${parts.join("; ")}`;
+};

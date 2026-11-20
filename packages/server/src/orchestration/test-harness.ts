@@ -63,7 +63,7 @@ import { SentWorkersLive } from "./sent-workers.ts";
 import { decodeOutbox } from "./outbox.ts";
 import { wrapUpText } from "./rules.ts";
 import { Orchestration, OrchestrationLive } from "./service.ts";
-import { type EventLook, type EventLookContext, RoutineEventSources } from "../routines/events.ts";
+import { type EventLook, type EventLookContext } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
@@ -73,15 +73,23 @@ import { OrchestratorAppToolsLive } from "./tools.ts";
 import { TranscriptSearchAppToolsLive } from "./transcript-search-tool.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
-import { BranchHeads } from "../wakes/branch-heads.ts";
-import { CiJobs, type CiState } from "../wakes/ci-stuck.ts";
-import { type DiskSpace, MachineState } from "../wakes/machine.ts";
-import { AutoMerges } from "../git/auto-merges.ts";
+import { type CiState } from "../wakes/ci-stuck.ts";
+import { type DiskSpace } from "../wakes/machine.ts";
 import { wakeConditionsLayer } from "../wakes/condition-sources.ts";
-import { InstalledVersions } from "../wakes/installed-versions.ts";
-import { VerifyStatus } from "../verify/verify-tools.ts";
-import { UpstreamReleases, type UpstreamRelease } from "../wakes/upstream-releases.ts";
+import { type UpstreamRelease } from "../wakes/upstream-releases.ts";
 import { setTimeout as sleep } from "node:timers/promises";
+import {
+  fakeAutoMerges,
+  fakeBranchHeads,
+  fakeCiJobs,
+  fakeInstalled,
+  fakeMachine,
+  fakeReleases,
+  fakeRoutineEvents,
+  fakeVerifyStatus,
+} from "./world-fakes.ts";
+
+export { autoMergeHead } from "./world-fakes.ts";
 
 /** What outlives a layer: the temp dir with the repo, the database and the memory, and the fake git states. */
 export interface World {
@@ -474,102 +482,6 @@ const localChecksOf = (world: World) =>
         Layer.provide(ProcLive),
       )) as Layer.Layer<never, never, SqlClient.SqlClient | ServerConfig | ThreadStore>;
 
-/** GitHub's branches as `world` has them. */
-const fakeBranchHeads = (world: World) =>
-  Layer.succeed(BranchHeads, {
-    defaultBranch: (_cwd, repo) => Effect.sync(() => world.defaultBranches.get(repo.toLowerCase())),
-    head: (_cwd, repo, branch) =>
-      Effect.sync(() => world.branchHeads.get(`${repo.toLowerCase()}#${branch}`)),
-  });
-
-/** GitHub's CI as `world` has it. */
-const fakeCiJobs = (world: World) =>
-  Layer.succeed(CiJobs, {
-    pr: (_cwd, repo, number) =>
-      Effect.sync(() => world.ciStates.get(`${repo.toLowerCase()}#${number}`) ?? undefined),
-    run: (_cwd, repo, runId) =>
-      Effect.sync(() => world.ciStates.get(`${repo.toLowerCase()}@${runId}`)),
-  });
-
-/** This machine as `world` has it. */
-const fakeMachine = (world: World) =>
-  Layer.succeed(MachineState, {
-    loadAverages: Effect.sync(() => world.machineLoad),
-    cpus: 8,
-    disk: (path) => Effect.sync(() => world.diskSpace.get(path) ?? world.diskSpace.get("*")),
-  });
-
-/** The head of PR `number` in the fake GitHub's auto-merges, unless `autoMergePrHeads` moved it. */
-export const autoMergeHead = (number: number) => String(number).padStart(40, "0");
-
-/** GitHub's auto-merges and the checkouts' origins as `world` has them; each change is recorded. */
-const fakeAutoMerges = (world: World) => {
-  const headNow = (repo: string, number: number) =>
-    world.autoMergePrHeads.get(`${repo.toLowerCase()}#${number}`) ?? autoMergeHead(number);
-  return Layer.succeed(AutoMerges, {
-    repoOf: (cwd) => Effect.sync(() => world.originRepos.get(cwd)),
-    armed: (_cwd, repo, base) =>
-      Effect.sync(() =>
-        [...world.autoMerges].flatMap(([key, armed]) => {
-          const [r, n] = key.split("#");
-          return r === repo.toLowerCase() && armed.base === base
-            ? [{ number: Number(n), method: armed.method, head: headNow(repo, Number(n)) }]
-            : [];
-        }),
-      ),
-    headOf: (_cwd, repo, number) =>
-      Effect.sync(() => ({ open: true as const, head: headNow(repo, number) })),
-    disable: (_cwd, repo, number) =>
-      (world.autoMergeDisableGate?.(number) ?? Effect.void).pipe(
-        Effect.andThen(
-          Effect.sync(() => {
-            world.autoMergeCalls.push(`disable ${repo}#${number}`);
-            world.autoMerges.delete(`${repo.toLowerCase()}#${number}`);
-            return undefined;
-          }),
-        ),
-      ),
-    enable: (_cwd, repo, number, method, head) =>
-      Effect.sync(() => {
-        if (head !== headNow(repo, number))
-          return "Head branch was modified. Review and try again.";
-        world.autoMergeCalls.push(`enable ${repo}#${number} ${method}`);
-        world.autoMerges.set(`${repo.toLowerCase()}#${number}`, { base: "main", method, head });
-        return undefined;
-      }),
-  });
-};
-
-/** npm's and GitHub's releases as `world` has them. */
-const fakeReleases = (world: World) =>
-  Layer.succeed(UpstreamReleases, {
-    list: (source, name) =>
-      Effect.sync(() => {
-        const key = `${source}:${name}`;
-        world.releaseReads.push(key);
-        return world.releases.get(key);
-      }),
-  });
-
-/** What event routines' looks find, as `world` has it. */
-const fakeRoutineEvents = (world: World) =>
-  Layer.succeed(RoutineEventSources, {
-    look: (on, context) =>
-      Effect.suspend(() => {
-        world.eventLooks.push(`${on.event} ${context.baseline ?? "-"}`);
-        const found = world.routineEvents.get(on.event);
-        return typeof found === "function" ? found(context) : Effect.succeed(found);
-      }),
-  });
-
-/** Gram's and the CLIs' versions as `world` has them. */
-const fakeInstalled = (world: World) =>
-  Layer.succeed(InstalledVersions, {
-    current: (target) => Effect.sync(() => world.installed.get(target)),
-    baseline: (target) => Effect.sync(() => world.installed.get(target)),
-    changes: Stream.fromPubSub(world.installedChanged),
-  });
-
 /** The condition wakes' engine over the real sources, reading GitHub, npm, versions and the machine from `world`. */
 const conditionsOf = (world: World) =>
   wakeConditionsLayer(
@@ -658,11 +570,7 @@ export const serverLayer = (
     ),
     OrchestratorAppToolsLive.pipe(
       Layer.provideMerge(PrDependenciesLive),
-      Layer.provide(
-        Layer.succeed(VerifyStatus)({
-          requiredOnHead: () => Effect.sync(() => world.verifyRequired),
-        }),
-      ),
+      Layer.provide(fakeVerifyStatus(world)),
     ),
     TranscriptSearchAppToolsLive,
     RoutineAppToolsLive,

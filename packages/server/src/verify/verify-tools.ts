@@ -388,3 +388,9 @@ export const VerifyAppToolsLive = Layer.effectDiscard(
     yield* registry.register(verifyTools(yield* verifyDeps));
   }),
 );
+
+/** The note a worker's `done` report gets back when a required driver has no pass on its head. */
+export const verifyMissingNote = (verify: WorkerReportVerify | undefined): string | undefined =>
+  verify === undefined || verify.missing.length === 0
+    ? undefined
+    : `Gram has no pass on ${verify.head.slice(0, 7)} for ${verify.missing.map((name) => `"${name}"`).join(", ")}, which this repository marks required. Your orchestrator sees that with your report; run them with \`verify\` if you can, and report again.`;
