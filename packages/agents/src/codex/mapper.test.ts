@@ -1,7 +1,8 @@
 import { fileEditsOf, MessageId, type AgentEvent } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 import { claudeFailure, codexFailure, httpFailure } from "../failure.ts";
-import { autoReviewNotice, hunksOf, makeCodexMapper, type CodexCompactionPhase } from "./mapper.ts";
+import { autoReviewNotice } from "./auto-review-notice.ts";
+import { hunksOf, makeCodexMapper, type CodexCompactionPhase } from "./mapper.ts";
 import type { ServerNotification } from "./protocol/ServerNotification.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import { codexFixture, serverMessages } from "./testing.ts";
