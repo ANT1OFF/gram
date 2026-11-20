@@ -693,6 +693,12 @@ export interface ShellContributions {
   readonly repositories?: ShellRepositories;
   /** Which of Gram's Settings pages stay, and the app's own. Read once, when the app mounts. */
   readonly settings?: ShellSettings;
+  /**
+   * Agents beyond Claude Code and Codex the pickers offer for the orchestrator and worker roles,
+   * where the server admits them too (`GRAM_ROLE_AGENTS`): only `grok` is taken. Read once, when
+   * the app mounts.
+   */
+  readonly roleAgents?: readonly ShellAgent[];
 }
 
 /** The server one mount talks to. */

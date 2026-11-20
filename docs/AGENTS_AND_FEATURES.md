@@ -441,9 +441,13 @@ call.
 
 Grok keeps the conversation; Gram resumes it by id after a restart. Models and their efforts are
 the ones the CLI lists. Each turn reports its tokens, reasoning tokens and context, and a price
-Grok works out, which Gram adds up as it does Claude Code's. Grok Build runs plain threads only: it
-takes no orchestrator, worker or memory-update role, can't hand its session to another agent,
-and runs on no gateway profile.
+Grok works out, which Gram adds up as it does Claude Code's. On the desktop Grok Build runs plain
+threads only: it takes no orchestrator, worker or memory-update role, can't hand its session to
+another agent, and runs on no gateway profile. A deployment whose sessions load no user config of
+their own (a sandbox) can admit it as orchestrator and worker with `GRAM_ROLE_AGENTS=grok`; see
+[the embedded web app](EMBEDDED_WEB_APP.md). A role's standing instructions reach it through its
+system prompt (`_meta.rules`), and Gram's app tools, the thread's MCP server lists, its slash
+commands, attachments (images inline) and its past sessions all work as for the other agents.
 
 For xAI's API on a key instead, add a gateway on `https://api.x.ai/v1` in Settings → Gateways.
 Codex and OpenCode are offered its models there (Claude Code isn't: xAI no longer serves the

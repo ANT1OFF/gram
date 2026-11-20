@@ -101,15 +101,32 @@ import { redactText } from "../logging/redact.ts";
 /** The parts a thread can play in orchestration. A worker has no `Thread.role`: it is any thread with `spawnedBy`. */
 export type OrchestrationRole = ThreadRole | "worker";
 
+/** The agents a deployment may add to the orchestrator and worker roles (`GRAM_ROLE_AGENTS`). */
+const OPTIONAL_ROLE_AGENTS: ReadonlyArray<AgentKind> = ["grok"];
+
 /**
- * Only Codex and Claude Code may take executable orchestration roles. Claude uses its outward hook and strict
- * Dream file bridge. Codex requires an isolated gateway home for outward approval enforcement;
- * its Dreams use guided native permissions rather than a file-only guarantee. Server app-tool
- * approval, thread audience, ownership and confirmed system delivery remain authoritative.
+ * The agents `GRAM_ROLE_AGENTS` (a comma list) adds to the orchestrator and worker roles. Only
+ * Grok Build may be named, and only a deployment whose sessions load no user config of their own
+ * should: on a desktop, Grok reads the user's allow rules, which could let a push through
+ * unasked. Its outward gate is the adapter's: under a gate the session asks about every call.
+ */
+export const roleAgentsFrom = (value: string | undefined): ReadonlyArray<AgentKind> =>
+  OPTIONAL_ROLE_AGENTS.filter((agent) =>
+    (value ?? "").split(",").some((entry) => entry.trim().toLowerCase() === agent),
+  );
+
+const ROLE_AGENTS = roleAgentsFrom(process.env["GRAM_ROLE_AGENTS"]);
+
+/**
+ * Codex and Claude Code take executable orchestration roles, and the agents a deployment adds
+ * (`roleAgentsFrom`). Claude uses its outward hook and strict Dream file bridge. Codex requires an
+ * isolated gateway home for outward approval enforcement; its Dreams use guided native permissions
+ * rather than a file-only guarantee. Server app-tool approval, thread audience, ownership and
+ * confirmed system delivery remain authoritative.
  */
 export const ADMITTED: Readonly<Record<OrchestrationRole, ReadonlyArray<AgentKind>>> = {
-  orchestrator: ["claude", "codex"],
-  worker: ["claude", "codex"],
+  orchestrator: ["claude", "codex", ...ROLE_AGENTS],
+  worker: ["claude", "codex", ...ROLE_AGENTS],
   dream: AgentKind.literals.filter((agent) => {
     const mode = dreamSupportFor(agent, { kind: "implementation" }).mode;
     return mode === "confined" || mode === "guided";

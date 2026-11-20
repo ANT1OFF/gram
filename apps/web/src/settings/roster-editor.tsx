@@ -37,7 +37,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ExpandPresence, PresenceItem, PresenceList } from "@/motion";
-import { ADMITTED_AGENTS } from "@/orchestration/admitted";
+import { useAdmittedAgents } from "@/orchestration/admitted";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { Field, inputCls, LONG_COPY, WhyDisabled } from "./fields";
@@ -272,6 +272,7 @@ function OrchestratorModelField({
   onChange: (charter: OrchestratorCharter) => void;
   description?: string | undefined;
 }) {
+  const admitted = useAdmittedAgents();
   const selectId = useId();
   const inherited = useDefaultHere();
   const defaultModel = inherited.model;
@@ -333,7 +334,7 @@ function OrchestratorModelField({
                 onChange(withOrchestratorModel(charter, undefined));
                 return;
               }
-              pick(ADMITTED_AGENTS.includes(shown.agent) ? shown : START);
+              pick(admitted.includes(shown.agent) ? shown : START);
             }}
           >
             <option value="follow">{follows}</option>
@@ -347,7 +348,7 @@ function OrchestratorModelField({
             <AgentFields
               value={shown}
               onChange={pick}
-              allowed={ADMITTED_AGENTS}
+              allowed={admitted}
               follows={pending === undefined && ownFollows}
             />
             {pending === undefined && (
@@ -512,6 +513,7 @@ export function RosterEditor({
   onChange,
   orchestratorDescription,
 }: RosterEditorProps) {
+  const admitted = useAdmittedAgents();
   const api = useApi();
   const { data: profiles } = useQuery({
     queryKey: ["profiles"],
@@ -751,7 +753,7 @@ export function RosterEditor({
               className="flex flex-col gap-2 rounded-md border border-edge bg-card/40 p-2.5"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <AgentFields value={choice} onChange={setChoice} allowed={ADMITTED_AGENTS} />
+                <AgentFields value={choice} onChange={setChoice} allowed={admitted} />
               </div>
               <input
                 data-testid="worker-model-form-note"
