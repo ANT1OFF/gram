@@ -3,7 +3,9 @@
 // network, and no machine is ever started.
 
 import { describe, expect, it } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -19,7 +21,8 @@ import { makeStopMarks } from "../host/stop-marks.ts";
 import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { Orchestration } from "./service.ts";
-import { makeWorld, openOrchestrator, serverLayer } from "./test-harness.ts";
+import { makeWorld, openOrchestrator, outboxOf, serverLayer, waitReal } from "./test-harness.ts";
+import { UsageLimitReadings } from "../usage/limit-readings.ts";
 
 const SERVER = { origin: "https://hosted.example.test", server: "Example hosted" };
 
@@ -260,6 +263,7 @@ describe("sandbox from a signed-in hosted server", () => {
       const remote = Layer.succeed(RemoteHosts, {
         machines: { list: () => [], get: () => undefined },
         stops: makeStopMarks(),
+        watch: () => () => undefined,
         list: () => [machine],
       } as unknown as RemoteHostsShape);
       const hosts = {
@@ -395,6 +399,129 @@ describe("sandbox from a signed-in hosted server", () => {
           },
         });
         expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("stops a machine whose spawn is stopped while its start is on its way", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const calls: Array<{ readonly call: string; readonly body: unknown }> = [];
+      const { port } = fakePort(() => ({ status: 200, body: {} }));
+      // The app has sent the start; its answer never comes back before the spawn is stopped.
+      const slow: WorkerMachinePortShape = {
+        ...port,
+        call: (_origin, call, body) =>
+          Effect.suspend(() => {
+            calls.push({ call, body });
+            return call === "start"
+              ? Effect.never
+              : call === "choices"
+                ? Effect.succeed({ ok: true as const, status: 404, body: {} })
+                : Effect.succeed({ ok: true as const, status: 200, body: {} });
+          }),
+      };
+      const hosts = {
+        list: () => [],
+        remove: () => false,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port: slow, hosts });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(
+            signedIn({ port: slow, source: Effect.succeed({ source, server: SERVER }) }),
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session } = yield* openOrchestrator(world);
+        const spawning = yield* Effect.forkScoped(session.callTool("spawn_worker", SANDBOX));
+        while (!calls.some((each) => each.call === "start")) yield* Effect.sleep("10 millis");
+        yield* Fiber.interrupt(spawning);
+        expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("lets go of a held brief whose machine it gave back, and says to spawn again", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      let started = false;
+      const { port, calls } = fakePort((call) => {
+        if (call === "start") started = true;
+        return call === "choices" ? { status: 404, body: {} } : { status: 202, body: {} };
+      });
+      // It comes online as soon as it is asked for, here and in this Gram's machines.
+      const machine = {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "",
+        confirmed: true,
+        onDemand: "worker",
+        via: SERVER.origin,
+        onlineSince: 1,
+      };
+      const listed = () => (started ? [machine] : []);
+      const remote = Layer.succeed(RemoteHosts, {
+        machines: { list: () => [], get: () => undefined },
+        stops: makeStopMarks(),
+        watch: () => () => undefined,
+        list: listed,
+      } as unknown as RemoteHostsShape);
+      const hosts = {
+        list: listed,
+        remove: () => true,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const base = signedInSource(SERVER, { port, hosts });
+      const source = {
+        ...base,
+        start: (ask: Parameters<typeof base.start>[0]) => {
+          machine.name = ask.name;
+          return base.start(ask);
+        },
+      };
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(remote),
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const readings = yield* UsageLimitReadings;
+        const { session, workspaceId } = yield* openOrchestrator(world);
+        // A real refusal on the agent: a low-priority brief is held until it resets.
+        yield* session.emit({
+          type: "rateLimit",
+          status: "rejected",
+          window: "five_hour",
+          resetsAt: (yield* Clock.currentTimeMillis) + 3_600_000,
+        });
+        yield* waitReal(
+          "the refusal",
+          readings.current.pipe(
+            Effect.map((all) => all.some((each) => each.status === "rejected")),
+          ),
+        );
+        const result = yield* session
+          .callTool("spawn_worker", { ...SANDBOX, priority: "low" })
+          .pipe(Effect.result);
+        expect(result).toMatchObject({
+          _tag: "Failure",
+          failure: {
+            message: expect.stringMatching(/A worker on a machine of its own isn't held/),
+          },
+        });
+        expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);
+        expect((yield* outboxOf(workspaceId)).heldBriefs ?? []).toEqual([]);
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );

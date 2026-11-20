@@ -472,6 +472,31 @@ export const parseOfferedModels = (value: unknown): ReadonlyArray<OfferedModel> 
   return models.length === 0 ? undefined : models;
 };
 
+/** A pin on one model's own id (`claude-opus-5-5`), not a tier, a name or an alias (`opus`). */
+const CONCRETE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9.]+)*-[0-9][a-z0-9.[\]-]*$/;
+
+/**
+ * Why a worker pinned to one model's own id (`named`) can't run on a machine whose listing runs it
+ * as `chosen.model` through another id: a desktop alias matched the pin, and the machine's own
+ * alias runs another model. Undefined when it runs what was named, or nothing concrete was named.
+ */
+export const pinRefusal = (
+  label: string,
+  rows: ReadonlyArray<{ readonly id: string; readonly resolvedId?: string }>,
+  named: string | undefined,
+  chosen: { readonly agent: string; readonly model: string },
+): string | undefined => {
+  if (named === undefined) return undefined;
+  const colon = named.indexOf(":");
+  const wanted = (colon === -1 ? named : named.slice(colon + 1)).trim();
+  if (!CONCRETE_ID.test(wanted)) return undefined;
+  const row = hostListing(rows, chosen.model);
+  if (row === undefined) return undefined;
+  const runs = row.resolvedId ?? row.id;
+  if (hostListing([{ id: runs }], wanted) !== undefined) return undefined;
+  return `${label} runs ${chosen.agent}:${chosen.model} as ${runs}, not ${wanted}, so no worker is spawned and no machine is asked for. Name a model it runs as itself, or leave out sandbox to run it here.`;
+};
+
 /**
  * Why a worker on `chosen` can't have a machine from a provider whose machines run `models`, or
  * undefined when it can: the agent and model, by id or the id an alias runs, and never through a

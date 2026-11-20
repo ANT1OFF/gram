@@ -16,7 +16,7 @@ import {
 import { holderOf } from "../host/ownership.ts";
 import { forwardAppTools } from "../host/app-tools-forward.ts";
 import { makeAppToolsTunnel, noAppToolsTunnel } from "../host/app-tools-tunnel.ts";
-import { appToolsTunnel } from "../host/remote-worker-host.ts";
+import { appToolsTunnel, machineHosts, type MachineDeps } from "../host/remote-worker-host.ts";
 import { memoryMachineStore } from "../host/paired-machines.ts";
 import { HOST_CAPABILITIES, type HostService, serveHost } from "../host/protocol.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
@@ -28,7 +28,9 @@ import { releaseTeller, workerMachineWork } from "./worker-machine-release.ts";
 import {
   bridgeWorkerMachines,
   forgetReclaimed,
+  memoryOwedStops,
   NO_SIGNED_IN_SERVER,
+  settleOwedStops,
   plainName,
   RELAYED_MOST,
   SignedInWorkers,
@@ -72,6 +74,17 @@ const service = (hostId: string, tunnel = true): Effect.Effect<HostService, neve
       scan: Effect.succeed({ listening: new Map(), children: new Map() }),
     } as unknown as HostService;
   });
+
+/** One app-tool call at a tunnel's address, as a session there makes it. */
+const callTunnel = (url: string) =>
+  Effect.tryPromise(() =>
+    fetch(`${url}/host/mcp`, {
+      method: "POST",
+      headers: { authorization: "Bearer t", "content-type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(3_000),
+    }).then((response) => response.status),
+  );
 
 type Call = { readonly call: string; readonly body: Record<string, unknown> };
 
@@ -404,6 +417,79 @@ describe("worker machines from a signed-in hosted server", () => {
       }).pipe(Effect.scoped),
   );
 
+  it.live("answers a relayed machine's app-tool calls on each connection, a redial's too", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const key = generateHostKey();
+      const hostId = HostId.make(hostIdOf(key.publicKey));
+      expect(
+        hosts.machines.provision({
+          name: NAME,
+          publicKey: key.publicKey,
+          platform: "linux",
+          onDemand: "worker",
+          via: ORIGIN,
+        }).kind,
+      ).toBe("provisioned");
+      const routes = new Map<string, ReturnType<typeof relayedHost>>();
+      const app = fakeApp({
+        answer: () => ({ status: 200, body: {} }),
+        fromServer: (message) => routes.get(message["conn"] as string)?.fromServer(message),
+      });
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      // This Gram's machines as its server keeps them: no worker host is ever built here.
+      yield* machineHosts(hosts, {
+        appTools: () =>
+          Effect.succeed({
+            status: 200,
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          }),
+      } as unknown as MachineDeps);
+      // One host process, which keeps its tunnel across its dials, as `dialForever` does.
+      const hostService = yield* service(hostId);
+      const connect = (conn: string) =>
+        Effect.gen(function* () {
+          const host = relayedHost(conn, app.toServer);
+          routes.set(conn, host);
+          const made = yield* Socket.fromWebSocket(
+            Effect.succeed(host.ws as unknown as Socket.WebSocketLike),
+          );
+          yield* Effect.forkScoped(serveHost(made, hostService).pipe(Effect.ignore));
+          app.toServer({
+            type: "machines.relay.dial",
+            conn,
+            origin: ORIGIN,
+            name: NAME,
+            headers: signedConnectHeaders(privateKeyFrom(key.privateKeyPem), ORIGIN, hostId),
+          });
+          return host;
+        });
+      const onlineAs = (previous: unknown) =>
+        Effect.gen(function* () {
+          for (;;) {
+            const now = yield* hosts.connection(hostId).pipe(Effect.option);
+            if (now._tag === "Some" && now.value !== previous) return now.value;
+            yield* Effect.sleep("20 millis");
+          }
+        }).pipe(Effect.timeout("10 seconds"));
+      const first = yield* connect("conn-first");
+      const before = yield* onlineAs(undefined);
+      const url = (yield* before.appTools!.open).url;
+      expect(yield* callTunnel(url)).toBe(200);
+      // The relay drops and the host dials in again on a new connection.
+      first.ws.close();
+      yield* connect("conn-again");
+      yield* onlineAs(before);
+      expect(yield* callTunnel(url)).toBe(200);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("ends a relayed dial from another server, or signed for another, and takes no host", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
@@ -698,4 +784,36 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
     expect(plainName("x".repeat(100))).toHaveLength(60);
     expect(plainName("\n\t")).toBe("The hosted server");
   });
+});
+
+describe("stops a server never confirmed", () => {
+  it.effect(
+    "are owed for a machine never registered here, and settled once the server confirms",
+    () =>
+      Effect.gen(function* () {
+        const hosts = {
+          list: () => [],
+          remove: () => false,
+          machines: {
+            provision: () => {
+              throw new Error("not registered here");
+            },
+          },
+        };
+        let stopStatus = 503;
+        const app = fakeApp({
+          answer: ({ call }) => ({ status: call === "stop" ? stopStatus : 200, body: {} }),
+        });
+        const port = bridgeWorkerMachines(app.port);
+        const owed = memoryOwedStops();
+        const source = signedInSource(SERVER, { port, hosts, owed, stopRetryMs: 0 });
+        yield* source.abandon(NAME);
+        expect(owed.list()).toEqual([{ origin: ORIGIN, name: NAME }]);
+        yield* settleOwedStops(port, owed);
+        expect(owed.list()).toHaveLength(1);
+        stopStatus = 200;
+        yield* settleOwedStops(port, owed);
+        expect(owed.list()).toEqual([]);
+      }),
+  );
 });

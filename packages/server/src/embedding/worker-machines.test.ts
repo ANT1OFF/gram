@@ -8,6 +8,7 @@ import {
   isWorkerMachineName,
   overTotalWords,
   parseOverTotal,
+  pinRefusal,
   resolveWorkerPicks,
   startWorkerMachine,
   workerMachineName,
@@ -265,5 +266,25 @@ describe("resolveWorkerPicks", () => {
     expect(resolveWorkerPicks(undefined, { architecture: "arm64" })).toEqual({
       picks: { architecture: "arm64" },
     });
+  });
+});
+
+describe("pinRefusal", () => {
+  // The machine's `opus` runs another model than the one the orchestrator pinned by its own id.
+  const rows = [{ id: "opus", resolvedId: "claude-opus-5-6" }];
+  const chosen = { agent: "claude", model: "opus" };
+
+  it("refuses a pin on one model's own id that the machine's alias runs as another", () => {
+    expect(pinRefusal("Example", rows, "claude:claude-opus-5-5", chosen)).toMatch(
+      /runs claude:opus as claude-opus-5-6, not claude-opus-5-5/,
+    );
+    expect(pinRefusal("Example", rows, "claude-opus-5-5", chosen)).toBeDefined();
+  });
+
+  it("lets a pin through that the machine runs, or a name that pins no id", () => {
+    expect(pinRefusal("Example", rows, "claude-opus-5-6", chosen)).toBeUndefined();
+    expect(pinRefusal("Example", rows, "opus", chosen)).toBeUndefined();
+    expect(pinRefusal("Example", rows, "tier:lead", chosen)).toBeUndefined();
+    expect(pinRefusal("Example", rows, undefined, chosen)).toBeUndefined();
   });
 });

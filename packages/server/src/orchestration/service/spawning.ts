@@ -2,6 +2,7 @@
 // the approval an outside repo or a gated mode needs, through the gates near a limit, to the thread,
 // its worktrees and its brief.
 
+import { pinRefusal } from "../../embedding/worker-machines.ts";
 import type { makeSpawnBreaker } from "../spawn-breaker.ts";
 import {
   listedRow,
@@ -352,6 +353,29 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         return yield* toolError(tool, refusal("not_admitted", OWNERS_DIFFER));
       return hostId;
     });
+  /** Whether a worker goes on a machine a hosted server started for this desktop (`via`). */
+  const relayed = (hostId: HostId | undefined) =>
+    hostId !== undefined && joinedMachines().find((m) => m.id === hostId)?.via !== undefined;
+  /**
+   * On such a machine a pin on one model's own id runs that model, as its host lists it: never
+   * another that an alias of the same name runs there.
+   */
+  const relayedPinRefusal = (
+    hostId: HostId | undefined,
+    named: string | undefined,
+    chosen: ModelRef,
+  ): string | undefined => {
+    if (hostId === undefined) return undefined;
+    const machine = joinedMachines().find((m) => m.id === hostId);
+    if (machine?.via === undefined) return undefined;
+    const rows =
+      chosen.agent === "codex"
+        ? machine.codex?.models
+        : chosen.agent === "opencode"
+          ? machine.opencode?.models
+          : machine.models;
+    return rows === undefined ? undefined : pinRefusal(machine.name, rows, named, chosen);
+  };
   const admitMachineModel = (tool: string, hostId: HostId | undefined, chosen: ModelRef) =>
     Effect.gen(function* () {
       if (hostId === undefined) return;
@@ -495,11 +519,14 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         input.model,
         yield* workerModelsHere(thread, state.charter, hostId),
       );
-      if (input.placement !== undefined && chosen.instead !== undefined)
+      if (relayed(hostId) && chosen.instead !== undefined)
         return yield* toolError(
           "spawn_worker",
           refusal("not_admitted", sandboxSwapWords(chosen.instead)),
         );
+      const pinned = relayedPinRefusal(hostId, input.model, chosen.model);
+      if (pinned !== undefined)
+        return yield* toolError("spawn_worker", refusal("not_admitted", pinned));
       yield* admitMachineModel("spawn_worker", hostId, chosen.model);
     });
   // The model a spawn would run on, as it resolves here before any machine is placed: what a
@@ -976,11 +1003,13 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           const chosen = picked.model;
           // On a machine of its own (`sandbox`), a worker runs the model it was given or none: the
           // machine runs what its provider offers, so another model would be a silent swap.
-          if (input.placement !== undefined && picked.instead !== undefined)
+          if (relayed(hostId) && picked.instead !== undefined)
             return yield* toolError(
               tool,
               refusal("not_admitted", sandboxSwapWords(picked.instead)),
             );
+          const pinned = relayedPinRefusal(hostId, input.model, chosen);
+          if (pinned !== undefined) return yield* toolError(tool, refusal("not_admitted", pinned));
           yield* admitMachineModel(tool, hostId, chosen);
           const mode = startModeFor(
             chosen.agent,

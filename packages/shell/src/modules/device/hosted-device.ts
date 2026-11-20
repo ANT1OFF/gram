@@ -338,6 +338,11 @@ export interface HostedDevice {
   >;
   /** Whether the sign-in to `origin` covers carrying its worker machines' connections now. */
   readonly workerMachineRelayAllowed: (origin: string) => boolean;
+  /**
+   * A live relay's lease: whether a `machines:workers` token can still be had for `origin` now,
+   * renewing it when it is due, so an expired or revoked sign-in ends the relays it covered.
+   */
+  readonly workerMachineRelayLease: (origin: string) => Promise<boolean>;
   /** The address and headers of one dial of a worker machine's relay. */
   readonly workerMachineRelayDial: (
     origin: string,
@@ -1205,6 +1210,18 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       return (
         server !== undefined && !server.keeper.signedOut() && startsWorkerMachines(server.discovery)
       );
+    },
+
+    workerMachineRelayLease: async (origin) => {
+      const server = known(origin);
+      if (
+        server === undefined ||
+        server.keeper.signedOut() ||
+        !startsWorkerMachines(server.discovery)
+      )
+        return false;
+      const held = await server.keeper.token("machines:workers").catch(() => undefined);
+      return held?.ok === true;
     },
 
     workerMachineRelayDial: async (origin, name) => {

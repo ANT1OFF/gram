@@ -1158,13 +1158,55 @@ export const callWorkerMachines = async (
     calls.body,
   );
   if ("why" in response) return response;
-  const body = await jsonOf(response);
+  // What a server echoes of the sign-in never leaves the app: the token it was called with, and
+  // anything shaped like a signed token (a proof, a JWT), wherever it is in the answer.
+  const held = await calls.keeper.token("machines:workers").catch(() => undefined);
+  const secrets = held?.ok === true ? [held.token.accessToken] : [];
+  const body = scrubbed(await jsonOf(response), secrets);
   if (response.status === 401 || response.status >= 500)
     return failed(
-      refusalOf(body) ??
+      scrubbed(refusalOf(body), secrets) ??
         (response.status === 401 ? "The server refused the sign-in." : UNREACHABLE),
     );
   return { ok: true, status: response.status, body };
+};
+
+const BASE64URL = new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-");
+
+/** Whether a word is a signed token: three or more base64url parts of 8 or more, dot-separated. */
+const signedToken = (word: string) => {
+  const parts = word.split(".");
+  return parts.length >= 3 && parts.every((part) => part.length >= 8);
+};
+
+/** `text` with each word that is a signed token replaced, in one pass over it. */
+const withoutSignedTokens = (text: string): string => {
+  let out = "";
+  let word = "";
+  for (const char of text) {
+    if (BASE64URL.has(char) || char === ".") {
+      word += char;
+      continue;
+    }
+    out += signedToken(word) ? "[redacted]" : word;
+    word = "";
+    out += char;
+  }
+  return out + (signedToken(word) ? "[redacted]" : word);
+};
+
+/** `value` with every string's copy of a secret, or of a signed token, replaced. */
+export const scrubbed = <T>(value: T, secrets: ReadonlyArray<string>, depth = 0): T => {
+  if (typeof value === "string") {
+    let text: string = value;
+    for (const secret of secrets) if (secret !== "") text = text.split(secret).join("[redacted]");
+    return withoutSignedTokens(text) as T;
+  }
+  if (typeof value !== "object" || value === null || depth > 16) return value;
+  if (Array.isArray(value)) return value.map((each) => scrubbed(each, secrets, depth + 1)) as T;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, each]) => [key, scrubbed(each, secrets, depth + 1)]),
+  ) as T;
 };
 
 /**

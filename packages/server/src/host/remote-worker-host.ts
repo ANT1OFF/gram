@@ -28,7 +28,9 @@ import {
 } from "@gram/git";
 import { posix, win32 } from "node:path";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
+import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -605,6 +607,9 @@ const currentAttachments =
  * host carries none or this Gram answers none, so its sessions open without app tools rather
  * than at an address that would take their tokens elsewhere.
  */
+/** The one address a host's tunnel may be at: its own loopback, by port. */
+const TUNNEL_ADDRESS = /^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/;
+
 export const appToolsTunnel = (
   id: HostId,
   connection: HostConnection,
@@ -615,7 +620,8 @@ export const appToolsTunnel = (
     const answer = deps.appTools;
     if (tunnel === undefined || answer === undefined) return undefined;
     const opened = yield* tunnel.open.pipe(Effect.option);
-    if (opened._tag === "None") return undefined;
+    // Only the host's own loopback: a session's token goes nowhere else a host might name.
+    if (opened._tag === "None" || !TUNNEL_ADDRESS.test(opened.value.url)) return undefined;
     yield* tunnel.requests.pipe(
       Stream.runForEach((request) =>
         answer(id, request).pipe(
@@ -652,6 +658,56 @@ export const machineHosts = (
       }
     >();
     const lock = yield* Semaphore.make(1);
+    /**
+     * Each relayed machine's app-tool tunnel, one per connection, answered for as long as that
+     * connection lasts: started when the machine comes online (a redial too), not when a worker
+     * host is first built here, since a session that reattaches to the new connection builds none.
+     */
+    const tunnels = new WeakMap<HostConnection, Deferred.Deferred<string | undefined>>();
+    const tunnelOf = (id: HostId, connection: HostConnection) =>
+      Effect.suspend(() => {
+        const kept = tunnels.get(connection);
+        if (kept !== undefined) return Deferred.await(kept);
+        const made = Deferred.makeUnsafe<string | undefined>();
+        tunnels.set(connection, made);
+        return Effect.gen(function* () {
+          const scope = yield* Scope.fork(root);
+          const url = yield* appToolsTunnel(id, connection, deps).pipe(
+            Scope.provide(scope),
+            Effect.catchCause(() => Effect.succeed(undefined)),
+          );
+          Deferred.doneUnsafe(made, Exit.succeed(url));
+          // Its answers end with the connection: the next one opens the tunnel again.
+          yield* Effect.forkIn(
+            Effect.gen(function* () {
+              while (!connection.gone()) yield* Effect.sleep("2 seconds");
+              yield* Scope.close(scope, Exit.void);
+            }),
+            root,
+          );
+          return url;
+        });
+      });
+    const relayedOnline = Effect.gen(function* () {
+      for (const machine of remote.list())
+        if (machine.via !== undefined && machine.onlineSince !== undefined) {
+          const connection = yield* remote.connection(machine.id).pipe(Effect.option);
+          if (connection._tag === "Some") yield* tunnelOf(machine.id, connection.value);
+        }
+    });
+    // Only where this Gram answers app-tool calls at all: without, no machine has a tunnel.
+    if (deps.appTools !== undefined) {
+      const changes = yield* Queue.sliding<void>(1);
+      const unwatch = remote.watch(() => Queue.offerUnsafe(changes, undefined));
+      yield* Effect.addFinalizer(() => Effect.sync(unwatch));
+      yield* Queue.take(changes).pipe(
+        Effect.andThen(relayedOnline),
+        Effect.catchCause(() => Effect.void),
+        Effect.forever,
+        Effect.forkScoped,
+      );
+      Queue.offerUnsafe(changes, undefined);
+    }
     return (id) =>
       lock.withPermits(1)(
         Effect.gen(function* () {
@@ -667,9 +723,7 @@ export const machineHosts = (
           // app tools go over its own connection, at an address on its loopback.
           // Never the relaying server's own address: a thread's token would go there.
           const relayed = remote.machines.get(id)?.via !== undefined;
-          const tunnel = relayed
-            ? yield* appToolsTunnel(id, connection, deps).pipe(Scope.provide(scope))
-            : undefined;
+          const tunnel = relayed ? yield* tunnelOf(id, connection) : undefined;
           const machine = {
             id,
             name: remote.machines.get(id)?.name ?? id,

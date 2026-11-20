@@ -73,6 +73,7 @@ import {
   isWorkerMachineName,
   modelRefusal,
   overTotalWords,
+  pinRefusal,
   placementOf,
   resolveWorkerPicks,
   type WorkerMachineSource,
@@ -268,7 +269,14 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         const models = yield* source.models;
         if (models !== undefined) {
           const chosen = yield* orchestration.spawnModel(caller, input.model);
-          const refused = modelRefusal(source.label, models, chosen);
+          const refused =
+            modelRefusal(source.label, models, chosen) ??
+            pinRefusal(
+              `${source.label}'s worker machines`,
+              models.filter((model) => model.agent === chosen.agent),
+              input.model,
+              chosen,
+            );
           if (refused !== undefined) return yield* fail(refused);
         }
         if (sandbox.shareWith !== undefined) {
@@ -309,15 +317,18 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           const asked =
             already !== undefined
               ? ({ kind: "started", name } as const)
-              : yield* source.start({
-                  name,
-                  orchestrator: caller,
-                  title: input.title,
-                  size: picks.size,
-                  architecture: picks.architecture,
-                  isolation: picks.isolation,
-                  environment: picks.environment,
-                });
+              : yield* source
+                  .start({
+                    name,
+                    orchestrator: caller,
+                    title: input.title,
+                    size: picks.size,
+                    architecture: picks.architecture,
+                    isolation: picks.isolation,
+                    environment: picks.environment,
+                  })
+                  // Stopped while the start is on its way: the server may start it all the same.
+                  .pipe(Effect.onInterrupt(() => source.abandon(name)));
           if (asked.kind === "refused") {
             // No answer may still have started it: given back, so none runs for nothing.
             if (asked.unknown === true) yield* source.abandon(name);
@@ -497,6 +508,17 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           );
           // A held brief, or one a limit sends back, starts nothing now: nor does its machine run.
           if ("held" in spawned || "routeOffer" in spawned) yield* giveBack;
+          // A held brief would keep the machine given back, and could never run there: it is
+          // let go, and the orchestrator told to spawn again once it can.
+          if ("held" in spawned && prepared?.abandon !== undefined) {
+            yield* orchestration
+              .manageHeldSpawn(caller, { id: spawned.id, action: "cancel" })
+              .pipe(Effect.ignore);
+            return yield* new AppToolError({
+              tool: "spawn_worker",
+              message: `${spawned.note} A worker on a machine of its own isn't held, since its machine would sit unused until then: it was given back and nothing is kept. Spawn again once the limit allows (schedule_wake for ${new Date(spawned.until).toISOString()}), or without sandbox to hold it for your machine.`,
+            });
+          }
           return spawned;
         }).pipe(
           Effect.tap((spawned) =>

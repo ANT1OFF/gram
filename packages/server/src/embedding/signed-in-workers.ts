@@ -37,7 +37,9 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
 import * as Duration from "effect/Duration";
+import { ServerConfig } from "../config.ts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
+import { privateJsonFile } from "../http/remote-sessions.ts";
 import { noAppToolsTunnel } from "../host/app-tools-tunnel.ts";
 import { Socket } from "../platform/unstable.ts";
 import { CHOICES_TTL_MS, type OnDemandChoices, parseChoices } from "./on-demand.ts";
@@ -419,7 +421,77 @@ export interface SignedInDeps {
   readonly stopRetryMs?: number;
   /** What each server offered, kept across sources a short while; none kept when left out. */
   readonly offered?: OfferedByServer;
+  /** Stops a server never confirmed, for machines not registered here, to ask again later. */
+  readonly owed?: OwedStops;
 }
+
+/**
+ * The machines a server was asked to stop and never confirmed, with nothing registered here for the
+ * release pass to tell it of: asked again every `RECLAIMED_EVERY` until one is, and kept across a
+ * restart (`fileOwedStops`).
+ */
+export interface OwedStops {
+  readonly list: () => ReadonlyArray<{ readonly origin: string; readonly name: string }>;
+  readonly add: (origin: string, name: string) => void;
+  readonly remove: (name: string) => void;
+}
+
+export const memoryOwedStops = (): OwedStops => {
+  const owed = new Map<string, string>();
+  return {
+    list: () => [...owed].map(([name, origin]) => ({ origin, name })),
+    add: (origin, name) => void owed.set(name, origin),
+    remove: (name) => void owed.delete(name),
+  };
+};
+
+/** `memoryOwedStops` kept in `<dataDir>/remote-access/worker-machine-stops.json`. */
+export const fileOwedStops = (dataDir: string): OwedStops => {
+  const file = privateJsonFile(dataDir, "worker-machine-stops.json", 64 * 1024);
+  const owed = memoryOwedStops();
+  try {
+    const kept = file.read() as { version?: unknown; owed?: unknown } | undefined;
+    if (kept?.version === 1 && Array.isArray(kept.owed))
+      for (const each of kept.owed.slice(0, 256))
+        if (
+          typeof each === "object" &&
+          each !== null &&
+          typeof each.origin === "string" &&
+          typeof each.name === "string" &&
+          WORKER_MACHINE_NAME.test(each.name)
+        )
+          owed.add(each.origin, each.name);
+  } catch {
+    // An unreadable file owes nothing; the next stop owed writes it again.
+  }
+  const save = () => {
+    try {
+      file.write({ version: 1, owed: owed.list() });
+    } catch {
+      // Kept in memory for this run.
+    }
+  };
+  return {
+    list: owed.list,
+    add: (origin, name) => {
+      owed.add(origin, name);
+      save();
+    },
+    remove: (name) => {
+      owed.remove(name);
+      save();
+    },
+  };
+};
+
+/** Asks again for each stop owed; one confirmed (or one the server knows no more) is let go. */
+export const settleOwedStops = (port: WorkerMachinePortShape, owed: OwedStops) =>
+  Effect.gen(function* () {
+    for (const { origin, name } of owed.list()) {
+      const answered = yield* port.call(origin, "stop", { name });
+      if (answered.ok && (answered.status < 300 || answered.status === 404)) owed.remove(name);
+    }
+  });
 
 /** The choices and models each server offered, kept a short while, by origin. */
 export type OfferedByServer = Map<
@@ -480,8 +552,11 @@ export const signedInSource = (
         yield* Effect.logWarning("a worker machine given back could not be stopped").pipe(
           Effect.annotateLogs({ machine: name, reason: last }),
         );
+        // Registered here, the release pass tells the server; otherwise it is owed a stop.
+        if (named(name) === undefined) deps.owed?.add(origin, name);
         return false;
       }
+      deps.owed?.remove(name);
       port.unrelay(name);
       const machine = named(name);
       if (machine !== undefined) hosts.remove(HostId.make(machine.id));
@@ -681,6 +756,8 @@ export const SignedInWorkersLive = Layer.effect(
     if (!port.available || hosts === undefined)
       return { port, source: Effect.succeed({ refused: NO_SIGNED_IN_SERVER } as const) };
     const offered: OfferedByServer = new Map();
+    const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
+    const owed = config === undefined ? memoryOwedStops() : fileOwedStops(config.dataDir);
     // Each relayed connection is served in this layer's scope, and ends with it.
     const dials = yield* Queue.unbounded<RelayedDial>();
     port.onDial((dial) => {
@@ -722,6 +799,7 @@ export const SignedInWorkersLive = Layer.effect(
     // A machine the server no longer knows (reclaimed after its release, or removed there) is
     // forgotten here, so its relay stops and its name is free.
     yield* forgetReclaimed(port, hosts).pipe(
+      Effect.andThen(settleOwedStops(port, owed)),
       Effect.catchCause((cause) => Effect.logWarning("the reclaimed-machine pass failed", cause)),
       Effect.repeat(Schedule.spaced(RECLAIMED_EVERY)),
       Effect.forkScoped,
@@ -732,7 +810,7 @@ export const SignedInWorkersLive = Layer.effect(
         Effect.map((answered) =>
           answered.ok
             ? {
-                source: signedInSource(answered.server, { port, hosts, offered }),
+                source: signedInSource(answered.server, { port, hosts, offered, owed }),
                 server: answered.server,
               }
             : {

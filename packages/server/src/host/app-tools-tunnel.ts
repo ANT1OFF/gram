@@ -48,6 +48,18 @@ const CALL_HEADERS = [
   "mcp-session-id",
   "last-event-id",
 ] as const;
+/**
+ * Headers a proxy that passed a request on adds. Not `sec-fetch-*`: Node's own `fetch`, which an
+ * agent's MCP client may use, sends those too; a page in a browser is refused by its `Origin`.
+ */
+const FORWARDED = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+] as const;
+
 /** The headers an answer carries back. */
 const ANSWER_HEADERS = new Set(["content-type", "mcp-session-id"]);
 
@@ -76,7 +88,12 @@ export const makeAppToolsTunnel: Effect.Effect<HostAppTools, never, Scope.Scope>
       const method = req.method ?? "GET";
       // Only a process on this machine that names this address, never a page in a browser.
       if (url.pathname !== HOST_MCP_PATH) return plain(res, 404, "not found");
-      if (req.headers["host"] !== host || req.headers["origin"] !== undefined)
+      if (
+        req.headers["host"] !== host ||
+        req.headers["origin"] !== undefined ||
+        // Nor one a proxy passed on.
+        FORWARDED.some((name) => req.headers[name] !== undefined)
+      )
         return plain(res, 403, "forbidden");
       if (method !== "POST" && method !== "GET" && method !== "DELETE")
         return plain(res, 405, "method not allowed");

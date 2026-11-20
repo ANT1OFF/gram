@@ -6,6 +6,7 @@ import type { HostedDevice } from "./hosted-device.ts";
 import {
   answerWorkerMachines,
   makeWorkerMachineRelays,
+  RELAY_LEASE_MS,
   type RelaySocket,
 } from "./serve-machines.ts";
 
@@ -49,11 +50,12 @@ const fakeSocket = () => {
 
 const deviceFor = (
   dials: Array<{ origin: string; name: string }>,
-  covered: { on: boolean } = { on: true },
+  covered: { on: boolean; lease?: boolean } = { on: true },
   answer: unknown = { name: NAME },
 ) =>
   ({
     workerMachineRelayAllowed: () => covered.on,
+    workerMachineRelayLease: async () => covered.lease ?? covered.on,
     workerMachineRelayDial: async (origin: string, name: string) => {
       dials.push({ origin, name });
       return {
@@ -307,6 +309,34 @@ describe("the relays the app keeps", () => {
     // Within the longest wait between dials, and before a dial with no host behind it times out.
     await vi.advanceTimersByTimeAsync(25_000);
     expect(dials).toHaveLength(2);
+    relays.close();
+  });
+
+  it("ends a live relay whose sign-in can no longer be renewed, at its next lease", async () => {
+    vi.useFakeTimers();
+    const dials: Array<{ origin: string; name: string }> = [];
+    const covered: { on: boolean; lease?: boolean } = { on: true };
+    const { relays, opened } = harness(() => deviceFor(dials, covered));
+    relays.relay(ORIGIN, NAME);
+    await vi.advanceTimersByTimeAsync(0);
+    opened[0]!.fire("open", {});
+    opened[0]!.fire("message", { data: JSON.stringify({ dial: { headers: HEADERS } }) });
+    // Still signed in as far as the app knows, but the renewal fails: expired, or revoked there.
+    covered.lease = false;
+    await vi.advanceTimersByTimeAsync(RELAY_LEASE_MS);
+    expect(opened[0]!.closed).toEqual([{ code: 4401, reason: "sign-in ended" }]);
+    relays.close();
+  });
+
+  it("keeps a live relay whose lease renews", async () => {
+    vi.useFakeTimers();
+    const { relays, opened } = harness(() => deviceFor([]));
+    relays.relay(ORIGIN, NAME);
+    await vi.advanceTimersByTimeAsync(0);
+    opened[0]!.fire("open", {});
+    opened[0]!.fire("message", { data: JSON.stringify({ dial: { headers: HEADERS } }) });
+    await vi.advanceTimersByTimeAsync(RELAY_LEASE_MS * 3);
+    expect(opened[0]!.closed).toEqual([]);
     relays.close();
   });
 

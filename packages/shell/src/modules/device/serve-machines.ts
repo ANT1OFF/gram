@@ -35,6 +35,11 @@ const FRAME_MOST_BYTES = 16 * 1024 * 1024;
 const RELAYS_MOST = 64;
 /** How often live relays are checked against the sign-in, besides each change of it. */
 const REVALIDATE_MS = 30_000;
+/**
+ * How often a live relay's lease is renewed: a token is had for it again, which renews the sign-in
+ * when due, so a sign-in that expired or was revoked there ends its relays within this long.
+ */
+export const RELAY_LEASE_MS = 5 * 60_000;
 
 /** Closes a socket with a code Node's WebSocket takes (1000, or 3000–4999), never throwing. */
 const closeSafely = (socket: RelaySocket, code: number, reason: string) => {
@@ -122,6 +127,8 @@ export const makeWorkerMachineRelays = (options: {
   readonly now?: () => number;
   /** Whether a timer checks live relays against the sign-in; off in tests that drive it. */
   readonly watch?: boolean;
+  /** How often each live relay's lease is renewed. */
+  readonly leaseMs?: number;
 }): WorkerMachineRelays => {
   const open = options.open ?? nodeRelaySocket;
   const now = options.now ?? Date.now;
@@ -173,7 +180,7 @@ export const makeWorkerMachineRelays = (options: {
     socket.addEventListener("message", (event: { data: unknown }) => {
       const data = event.data instanceof ArrayBuffer ? new Uint8Array(event.data) : event.data;
       if (typeof data !== "string" && !(data instanceof Uint8Array)) return;
-      const size = typeof data === "string" ? data.length : data.byteLength;
+      const size = typeof data === "string" ? Buffer.byteLength(data, "utf8") : data.byteLength;
       if (size > FRAME_MOST_BYTES) {
         // 1009 is the standard's own code, which Node's WebSocket refuses to send.
         closeSafely(socket, 4009, "frame too large");
@@ -250,6 +257,22 @@ export const makeWorkerMachineRelays = (options: {
   };
   const watcher = options.watch === false ? undefined : setInterval(revalidate, REVALIDATE_MS);
   watcher?.unref?.();
+  /** Renews each live relay's lease, closing those whose sign-in can't be had any more. */
+  const renew = async () => {
+    // A copy: the list may change while a renewal is awaited.
+    for (const entry of Array.from(wanted.values())) {
+      const socket = entry.socket;
+      if (socket === undefined) continue;
+      const device = options.device();
+      const leased =
+        device === undefined
+          ? false
+          : await device.workerMachineRelayLease(entry.origin).catch(() => false);
+      if (!leased && entry.socket === socket) closeSafely(socket, 4401, "sign-in ended");
+    }
+  };
+  const leaser = setInterval(() => void renew(), options.leaseMs ?? RELAY_LEASE_MS);
+  leaser.unref?.();
 
   return {
     relay,
@@ -271,6 +294,15 @@ export const makeWorkerMachineRelays = (options: {
       const socket = entry?.socket;
       if (entry === undefined || socket === undefined || entry.conn !== message.conn) return;
       if (message.type === "machines.relay.frame") {
+        const size =
+          typeof message.data === "string"
+            ? Buffer.byteLength(message.data, "utf8")
+            : message.data.byteLength;
+        // Bounded both ways, as what comes from the relay is.
+        if (size > FRAME_MOST_BYTES) {
+          closeSafely(socket, 4009, "frame too large");
+          return;
+        }
         socket.send(message.data);
         return;
       }
@@ -281,6 +313,7 @@ export const makeWorkerMachineRelays = (options: {
     },
     close: () => {
       if (watcher !== undefined) clearInterval(watcher);
+      clearInterval(leaser);
       for (const entry of wanted.values()) stop(entry);
       wanted.clear();
       byConn.clear();

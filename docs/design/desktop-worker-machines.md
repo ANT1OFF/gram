@@ -137,8 +137,12 @@ server, which can't answer for the desktop. So for a relayed machine the desktop
 serve `/host/mcp` on the machine's own loopback (`host.appTools.open`, the `app-tools-tunnel`
 feature), gives its sessions that address, and answers each call the host carries back over the
 connection (`host.appTools.requests`, `host.appTools.answer`) from its own app-tools endpoint, as a
-session on the desktop calls it. The desktop lets a call through only with a token issued for a
-thread whose session is on that machine, as it does for a call over the tailnet. The hosted server
+session on the desktop calls it. Those calls are answered on every connection the machine dials in
+on, a redial's included, from the moment it comes online, whether or not anything here has asked
+for the machine since. The desktop lets a call through only with a token issued for a
+thread whose session is on that machine, as it does for a call over the tailnet; the host takes
+only a call to its own loopback address with no `Origin` and nothing a proxy adds, and its address
+must be `http://127.0.0.1:<port>` for the desktop to use it. The hosted server
 relays these calls as host frames and serves no app tools; a relayed machine is never given the
 hosted server's address for them, so no thread's token goes there. A host that doesn't name `app-tools-tunnel` (an older
 `gram-host`) is refused as soon as it joins, in words that say so, and given back; a session on one
@@ -185,7 +189,15 @@ subscription token reaches a machine, with its own consent.
   relayed machines a new one is refused with what to remove.
 - **Revocation.** Signing out, the sign-in ending, or hosted features turning off closes every live
   relay the sign-in no longer covers, at once and in a check every 30 seconds; none dials again
-  until it is covered.
+  until it is covered. Each live relay holds a lease besides: every five minutes the app has a
+  `machines:workers` token for it again, which renews the sign-in when it is due, so a sign-in
+  that expired or was revoked on the server ends its relays within that long. The server is still
+  the one that enforces it: a relay it carries is one it may end itself.
+- **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
+  (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
+- **Held briefs.** A worker on a machine of its own isn't held: its machine would sit unused until
+  the limit allowed it. A spawn that would be is refused with when to spawn again, its machine
+  given back and nothing kept.
 
 - **Release** is `worker-machine-release.ts`'s pass, run against whichever provider there is: a
   worker machine with no worker left at work is told released (`…/release`), and told again,
@@ -231,8 +243,10 @@ the fields each answer is read for, so a token a server echoes never leaves the 
 statuses, never a server's words. The server's name reaches the orchestrator's prompt as one plain
 line of at most 60 characters.
 
-**A model is never swapped.** A worker on a machine of its own runs the model it was given or
-none: a named model the machine doesn't run is refused, not replaced with another the roster has.
+**A model is never swapped.** A worker on a machine from a hosted server runs the model it was given
+or none: a named model the machine doesn't run is refused, not replaced with another the roster
+has, and a pin on one model's own id (`claude-opus-5-5`) is refused where the machine's alias of
+the model to launch runs another. An embedder's machines keep their roster fallback.
 
 ## 7. What a server needs
 

@@ -130,7 +130,10 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
-    /** What the provider was last told of each machine, by name. */
+    /**
+     * What the provider was last told of each machine, by its id: a machine that takes the name of
+     * one reclaimed before it has another key, and so another id, and is told afresh.
+     */
     const told = new Map<string, boolean>();
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
@@ -143,11 +146,11 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
           for (const id of finishedWorkers(ledger.value.features)) finished.add(id);
       }
       for (const { machine, over } of workerMachineWork(machines, threads, finished, Date.now())) {
-        if (told.get(machine.name) === over) continue;
+        if (told.get(machine.id) === over) continue;
         // A machine never told it was released needs no word that it is at work.
-        if (!over && !told.has(machine.name)) continue;
+        if (!over && !told.has(machine.id)) continue;
         const sent = yield* tell(machine, over).pipe(Effect.result);
-        if (sent._tag === "Success") told.set(machine.name, over);
+        if (sent._tag === "Success") told.set(machine.id, over);
         else
           yield* Effect.logWarning("a worker machine's release could not be told").pipe(
             Effect.annotateLogs({ machine: machine.name, reason: sent.failure.message }),

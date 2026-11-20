@@ -18,6 +18,7 @@ import {
   makeTokenKeeper,
   registerHostedDevice,
   signInHosted,
+  scrubbed,
 } from "./hosted.ts";
 import { deviceIdOf, devicePrivateKeyFrom, generateDeviceKey } from "./keys.ts";
 
@@ -810,5 +811,27 @@ describe("a hosted server", () => {
     });
     expect([...(fake.state.names[0] ?? "")]).toHaveLength(128);
     expect(fake.state.names[0]?.isWellFormed()).toBe(true);
+  });
+});
+
+describe("an answer about a worker machine, as it leaves the app", () => {
+  it("drops the token it was called with, and anything shaped like a signed token", () => {
+    const jwt = "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJwZXJzb24ifQ.c2lnbmF0dXJlLWJ5dGVz";
+    expect(
+      scrubbed(
+        {
+          message: "Bad call with secret-access-token-1234 attached",
+          choices: [{ note: `proof ${jwt}` }],
+          name: "worker-0123456789",
+        },
+        ["secret-access-token-1234"],
+      ),
+    ).toEqual({
+      message: "Bad call with [redacted] attached",
+      choices: [{ note: "proof [redacted]" }],
+      name: "worker-0123456789",
+    });
+    // A model id or a version, with its dots, is left alone.
+    expect(scrubbed("claude-opus-5.5 on 1.32.0", [])).toBe("claude-opus-5.5 on 1.32.0");
   });
 });
