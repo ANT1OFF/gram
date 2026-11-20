@@ -29,6 +29,7 @@ import {
   bridgeWorkerMachines,
   forgetReclaimed,
   memoryOwedStops,
+  UNSETTLED_START_MS,
   NO_SIGNED_IN_SERVER,
   settleOwedStops,
   plainName,
@@ -490,6 +491,76 @@ describe("worker machines from a signed-in hosted server", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("stops answering an app-tool call the session there hung up on", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const key = generateHostKey();
+      const hostId = HostId.make(hostIdOf(key.publicKey));
+      hosts.machines.provision({
+        name: NAME,
+        publicKey: key.publicKey,
+        platform: "linux",
+        onDemand: "worker",
+        via: ORIGIN,
+      });
+      const routes = new Map<string, ReturnType<typeof relayedHost>>();
+      const app = fakeApp({
+        answer: () => ({ status: 200, body: {} }),
+        fromServer: (message) => routes.get(message["conn"] as string)?.fromServer(message),
+      });
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      // A tool that waits on the user: it answers only once stopped, if it is.
+      const seen = { started: 0, stopped: 0 };
+      yield* machineHosts(hosts, {
+        appTools: () =>
+          Effect.sync(() => (seen.started += 1)).pipe(
+            Effect.andThen(Effect.never),
+            Effect.onInterrupt(() => Effect.sync(() => (seen.stopped += 1))),
+          ),
+      } as unknown as MachineDeps);
+      const host = relayedHost("conn-long", app.toServer);
+      routes.set("conn-long", host);
+      const made = yield* Socket.fromWebSocket(
+        Effect.succeed(host.ws as unknown as Socket.WebSocketLike),
+      );
+      yield* Effect.forkScoped(serveHost(made, yield* service(hostId)).pipe(Effect.ignore));
+      app.toServer({
+        type: "machines.relay.dial",
+        conn: "conn-long",
+        origin: ORIGIN,
+        name: NAME,
+        headers: signedConnectHeaders(privateKeyFrom(key.privateKeyPem), ORIGIN, hostId),
+      });
+      const connection = yield* Effect.gen(function* () {
+        for (;;) {
+          const now = yield* hosts.connection(hostId).pipe(Effect.option);
+          if (now._tag === "Some") return now.value;
+          yield* Effect.sleep("20 millis");
+        }
+      }).pipe(Effect.timeout("10 seconds"));
+      const url = (yield* connection.appTools!.open).url;
+      const hangUp = new AbortController();
+      const calling = fetch(`${url}/host/mcp`, {
+        method: "POST",
+        headers: { authorization: "Bearer t", "content-type": "application/json" },
+        body: "{}",
+        signal: hangUp.signal,
+      }).catch(() => "hung up");
+      while (seen.started === 0) yield* Effect.sleep("20 millis");
+      hangUp.abort();
+      expect(yield* Effect.promise(() => calling)).toBe("hung up");
+      yield* Effect.gen(function* () {
+        while (seen.stopped === 0) yield* Effect.sleep("20 millis");
+      }).pipe(Effect.timeout("5 seconds"));
+      expect(seen).toEqual({ started: 1, stopped: 1 });
+    }).pipe(Effect.scoped),
+  );
+
   it.live("ends a relayed dial from another server, or signed for another, and takes no host", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
@@ -787,6 +858,88 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
 });
 
 describe("stops a server never confirmed", () => {
+  const unregistered = {
+    list: () => [],
+    remove: () => false,
+    machines: {
+      provision: () => {
+        throw new Error("not registered here");
+      },
+    },
+  };
+
+  it.effect(
+    "for a start whose outcome wasn't known, aren't settled by a 404 until no start can still come",
+    () =>
+      Effect.gen(function* () {
+        // The server doesn't know the machine yet: its start may still be on its way.
+        const app = fakeApp({
+          answer: ({ call }) => ({ status: call === "stop" ? 404 : 200, body: {} }),
+        });
+        const port = bridgeWorkerMachines(app.port);
+        const owed = memoryOwedStops();
+        let clock = 1_000;
+        const source = signedInSource(SERVER, {
+          port,
+          hosts: unregistered,
+          owed,
+          stopRetryMs: 0,
+          now: () => clock,
+        });
+        yield* source.abandon(NAME, { unsettled: true });
+        expect(owed.list()).toEqual([
+          { origin: ORIGIN, name: NAME, since: 1_000, unsettled: true },
+        ]);
+        // Still within the time a start may take: the 404 settles nothing.
+        yield* settleOwedStops(
+          port,
+          owed,
+          () => false,
+          () => clock + UNSETTLED_START_MS - 1,
+        );
+        expect(owed.list()).toHaveLength(1);
+        clock += UNSETTLED_START_MS;
+        yield* settleOwedStops(
+          port,
+          owed,
+          () => false,
+          () => clock,
+        );
+        expect(owed.list()).toEqual([]);
+      }),
+  );
+
+  it.effect("never stop a machine a later start took the name of", () =>
+    Effect.gen(function* () {
+      // Its stops never go through; a start does.
+      const app = fakeApp({
+        answer: ({ call }) => ({ status: call === "start" ? 202 : 503, body: {} }),
+      });
+      const port = bridgeWorkerMachines(app.port);
+      const owed = memoryOwedStops();
+      const starting = new Set<string>();
+      const source = signedInSource(SERVER, {
+        port,
+        hosts: unregistered,
+        owed,
+        starting,
+        stopRetryMs: 0,
+      });
+      // The first try's machine couldn't be stopped: owed.
+      yield* source.abandon(NAME);
+      expect(owed.list().map((each) => each.name)).toEqual([NAME]);
+      // A retry of the same spawn asks for the same name: the machine is its now.
+      yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" });
+      expect(owed.list()).toEqual([]);
+      // Owed again, then claimed by a start on its way: settling stops nothing.
+      owed.add({ origin: ORIGIN, name: NAME, since: 0 });
+      const before = app.calls.length;
+      yield* settleOwedStops(port, owed, (name) => starting.has(name));
+      expect(app.calls.slice(before)).toEqual([]);
+      expect(owed.list()).toEqual([]);
+    }),
+  );
+
   it.effect(
     "are owed for a machine never registered here, and settled once the server confirms",
     () =>

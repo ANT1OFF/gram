@@ -483,7 +483,7 @@ export const parseOfferedModels = (value: unknown): ReadonlyArray<OfferedModel> 
 };
 
 /** A pin on one model's own id (`claude-opus-5-5`), not a tier, a name or an alias (`opus`). */
-const CONCRETE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9.]+)*-[0-9][a-z0-9.[\]-]*$/;
+const CONCRETE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9.]+)*-[0-9][a-z0-9.[\]-]*$/i;
 
 /**
  * Why a worker pinned to one model's own id (`named`) can't run on a machine whose listing runs it
@@ -498,12 +498,16 @@ export const pinRefusal = (
 ): string | undefined => {
   if (named === undefined) return undefined;
   const colon = named.indexOf(":");
-  const wanted = (colon === -1 ? named : named.slice(colon + 1)).trim();
+  const wanted = (colon === -1 ? named : named.slice(colon + 1)).trim().toLowerCase();
   if (!CONCRETE_ID.test(wanted)) return undefined;
-  const row = hostListing(rows, chosen.model);
+  // The row the launch names exactly first (`opus[1m]`), before one that only matches once a
+  // window is set aside (`opus`).
+  const launched = chosen.model.toLowerCase();
+  const row =
+    rows.find((each) => each.id.toLowerCase() === launched) ?? hostListing(rows, chosen.model);
   if (row === undefined) return undefined;
   const runs = row.resolvedId ?? row.id;
-  if (hostListing([{ id: runs }], wanted) !== undefined) return undefined;
+  if (hostListing([{ id: runs.toLowerCase() }], wanted) !== undefined) return undefined;
   return `${label} runs ${chosen.agent}:${chosen.model} as ${runs}, not ${wanted}, so no worker is spawned and no machine is asked for. Name a model it runs as itself, or leave out sandbox to run it here.`;
 };
 

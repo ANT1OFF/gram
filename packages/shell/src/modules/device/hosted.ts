@@ -1148,6 +1148,9 @@ export const callWorkerMachines = async (
     return failed("This server doesn't start machines for this computer's workers.");
   if (!(WORKER_MACHINE_CALLS as readonly string[]).includes(calls.call))
     return failed("The request isn't one the app sends.");
+  // The token as it stands before the call, and after it: a renewal on the way may replace the
+  // one the call was made with, and neither may leave the app.
+  const before = await calls.keeper.token("machines:workers").catch(() => undefined);
   const response = await authorizedCall(
     calls.keeper,
     calls.key,
@@ -1160,8 +1163,10 @@ export const callWorkerMachines = async (
   if ("why" in response) return response;
   // What a server echoes of the sign-in never leaves the app: the token it was called with, and
   // anything shaped like a signed token (a proof, a JWT), wherever it is in the answer.
-  const held = await calls.keeper.token("machines:workers").catch(() => undefined);
-  const secrets = held?.ok === true ? [held.token.accessToken] : [];
+  const after = await calls.keeper.token("machines:workers").catch(() => undefined);
+  const secrets = [before, after].flatMap((held) =>
+    held?.ok === true ? [held.token.accessToken] : [],
+  );
   const body = scrubbed(await jsonOf(response), secrets);
   if (response.status === 401 || response.status >= 500)
     return failed(
@@ -1243,4 +1248,15 @@ export const workerMachineRelayDial = async (
       }),
     },
   };
+};
+
+/**
+ * A live relay's lease: a `machines:workers` token never handed out before, so the server is asked
+ * each time, and a sign-in it ended or revoked is found now rather than once a cached token runs
+ * out. Whether one was had.
+ */
+export const leaseWorkerMachineRelay = async (keeper: TokenKeeper): Promise<boolean> => {
+  if (keeper.signedOut()) return false;
+  const held = await keeper.fresh("machines:workers").catch(() => undefined);
+  return held?.ok === true;
 };

@@ -189,15 +189,24 @@ subscription token reaches a machine, with its own consent.
   relayed machines a new one is refused with what to remove.
 - **Revocation.** Signing out, the sign-in ending, or hosted features turning off closes every live
   relay the sign-in no longer covers, at once and in a check every 30 seconds; none dials again
-  until it is covered. Each live relay holds a lease besides: every five minutes the app has a
-  `machines:workers` token for it again, which renews the sign-in when it is due, so a sign-in
-  that expired or was revoked on the server ends its relays within that long. The server is still
+  until it is covered. Each live relay holds a lease besides: every five minutes the app asks the server for a
+  `machines:workers` token never handed out before, so a sign-in that expired or was revoked on
+  the server ends its relays within that long, whatever token is cached. The server is still
   the one that enforces it: a relay it carries is one it may end itself.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
-- **Held briefs.** A worker on a machine of its own isn't held: its machine would sit unused until
-  the limit allowed it. A spawn that would be is refused with when to spawn again, its machine
-  given back and nothing kept.
+  When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way), the
+  server's "no such machine" settles nothing for fifteen minutes, since the start may still make
+  it. A name a later start takes, or one registered here since, is that start's: no stop owed for
+  an earlier one ever ends its machine.
+- **A call hung up on.** A session on the machine that gives up on an app-tool call (its
+  connection closed) has the host say so over the connection, and the desktop stops answering it,
+  as it does a session that hangs up on its own endpoint.
+- **Held briefs.** A worker on a machine from a hosted server isn't held: its machine would be
+  stopped, or released once its other work is over, before the brief ran. A spawn that would be is
+  refused with when to spawn again; its brief is let go first, then a machine started for it given
+  back (a shared one stays), whatever interrupts them. An embedder's machines are kept by their
+  provider, so a brief held there (by a limit or the spawn breaker) stays held, as before.
 
 - **Release** is `worker-machine-release.ts`'s pass, run against whichever provider there is: a
   worker machine with no worker left at work is told released (`…/release`), and told again,

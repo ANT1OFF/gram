@@ -833,6 +833,11 @@ export const SignedInWorkersLive = Layer.effect(
     const offered: OfferedByServer = new Map();
     const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
     const owed = config === undefined ? memoryOwedStops() : fileOwedStops(config.dataDir);
+    /** Names a start is on its way for: no stop owed for an earlier one may end what it makes. */
+    const starting = new Set<string>();
+    const claimed = (name: string) =>
+      starting.has(name) ||
+      hosts.list().some((machine) => machine.name === name && machine.via !== undefined);
     // Each relayed connection is served in this layer's scope, and ends with it.
     const dials = yield* Queue.unbounded<RelayedDial>();
     port.onDial((dial) => {
@@ -874,7 +879,7 @@ export const SignedInWorkersLive = Layer.effect(
     // A machine the server no longer knows (reclaimed after its release, or removed there) is
     // forgotten here, so its relay stops and its name is free.
     yield* forgetReclaimed(port, hosts).pipe(
-      Effect.andThen(settleOwedStops(port, owed)),
+      Effect.andThen(settleOwedStops(port, owed, claimed)),
       Effect.catchCause((cause) => Effect.logWarning("the reclaimed-machine pass failed", cause)),
       Effect.repeat(Schedule.spaced(RECLAIMED_EVERY)),
       Effect.forkScoped,
@@ -885,7 +890,7 @@ export const SignedInWorkersLive = Layer.effect(
         Effect.map((answered) =>
           answered.ok
             ? {
-                source: signedInSource(answered.server, { port, hosts, offered, owed }),
+                source: signedInSource(answered.server, { port, hosts, offered, owed, starting }),
                 server: answered.server,
               }
             : {

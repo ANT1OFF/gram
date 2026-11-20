@@ -33,6 +33,7 @@ import {
   messageHostedThread,
   startHostedThread,
   callWorkerMachines,
+  leaseWorkerMachineRelay,
   workerMachineRelayDial,
   checkHostedRepositories,
   hostedMachine,
@@ -1220,8 +1221,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         !startsWorkerMachines(server.discovery)
       )
         return false;
-      const held = await server.keeper.token("machines:workers").catch(() => undefined);
-      return held?.ok === true;
+      return leaseWorkerMachineRelay(server.keeper);
     },
 
     workerMachineRelayDial: async (origin, name) => {

@@ -281,6 +281,27 @@ describe("pinRefusal", () => {
     expect(pinRefusal("Example", rows, "claude-opus-5-5", chosen)).toBeDefined();
   });
 
+  it("reads the row the launch names exactly, and a pin in any case", () => {
+    // `opus` runs 5.5 and `opus[1m]` runs 5.6: a 5.5 pin on a launch of `opus[1m]` is refused.
+    const windowed = [
+      { id: "opus", resolvedId: "claude-opus-5-5" },
+      { id: "opus[1m]", resolvedId: "claude-opus-5-6[1m]" },
+    ];
+    expect(
+      pinRefusal("Example", windowed, "claude-opus-5-5[1m]", {
+        agent: "claude",
+        model: "opus[1m]",
+      }),
+    ).toBeDefined();
+    expect(
+      pinRefusal("Example", windowed, "claude-opus-5-6[1m]", {
+        agent: "claude",
+        model: "opus[1m]",
+      }),
+    ).toBeUndefined();
+    expect(pinRefusal("Example", rows, "Claude-Opus-5-5", chosen)).toBeDefined();
+  });
+
   it("lets a pin through that the machine runs, or a name that pins no id", () => {
     expect(pinRefusal("Example", rows, "claude-opus-5-6", chosen)).toBeUndefined();
     expect(pinRefusal("Example", rows, "opus", chosen)).toBeUndefined();

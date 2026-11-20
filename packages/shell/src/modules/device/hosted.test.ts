@@ -18,6 +18,7 @@ import {
   makeTokenKeeper,
   registerHostedDevice,
   signInHosted,
+  leaseWorkerMachineRelay,
   scrubbed,
 } from "./hosted.ts";
 import { deviceIdOf, devicePrivateKeyFrom, generateDeviceKey } from "./keys.ts";
@@ -833,5 +834,20 @@ describe("an answer about a worker machine, as it leaves the app", () => {
     });
     // A model id or a version, with its dots, is left alone.
     expect(scrubbed("claude-opus-5.5 on 1.32.0", [])).toBe("claude-opus-5.5 on 1.32.0");
+  });
+});
+
+describe("a worker machine relay's lease", () => {
+  it("asks the server each time, so a sign-in it revoked ends the lease at once", async () => {
+    fake.state.workerMachinesScope = true;
+    const keeper = await keeperFor();
+    // A token held and good for its fifteen minutes.
+    expect((await keeper.token("machines:workers")).ok).toBe(true);
+    expect(await leaseWorkerMachineRelay(keeper)).toBe(true);
+    // Revoked there: every refresh token it issued is no good any more.
+    fake.state.refresh.clear();
+    expect(await leaseWorkerMachineRelay(keeper)).toBe(false);
+    // Found now, not once the cached token runs out: the sign-in is over.
+    expect(keeper.signedOut()).toBe(true);
   });
 });

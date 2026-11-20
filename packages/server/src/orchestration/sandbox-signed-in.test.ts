@@ -527,4 +527,74 @@ describe("sandbox from a signed-in hosted server", () => {
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );
+
+  it.effect("lets go of a held brief for a shared machine, which stays for its other work", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const { port, calls } = fakePort(() => ({ status: 404, body: {} }));
+      const machine = {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "worker-0123456789",
+        confirmed: true,
+        onDemand: "worker",
+        via: SERVER.origin,
+        onlineSince: 1,
+      };
+      const remote = Layer.succeed(RemoteHosts, {
+        machines: { list: () => [], get: () => undefined },
+        stops: makeStopMarks(),
+        watch: () => () => undefined,
+        list: () => [machine],
+      } as unknown as RemoteHostsShape);
+      const hosts = {
+        list: () => [machine],
+        remove: () => true,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port, hosts });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(remote),
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const readings = yield* UsageLimitReadings;
+        const { session, workspaceId } = yield* openOrchestrator(world);
+        yield* session.emit({
+          type: "rateLimit",
+          status: "rejected",
+          window: "five_hour",
+          resetsAt: (yield* Clock.currentTimeMillis) + 3_600_000,
+        });
+        yield* waitReal(
+          "the refusal",
+          readings.current.pipe(
+            Effect.map((all) => all.some((each) => each.status === "rejected")),
+          ),
+        );
+        const result = yield* session
+          .callTool("spawn_worker", {
+            ...SANDBOX,
+            priority: "low",
+            sandbox: { shareWith: machine.name, reason: "Same build." },
+          })
+          .pipe(Effect.result);
+        expect(result).toMatchObject({
+          _tag: "Failure",
+          failure: {
+            message: expect.stringMatching(
+              /shared with your other workers and stays\. Nothing is kept\./,
+            ),
+          },
+        });
+        expect(calls.map((each) => each.call)).not.toContain("stop");
+        expect((yield* outboxOf(workspaceId)).heldBriefs ?? []).toEqual([]);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
 });

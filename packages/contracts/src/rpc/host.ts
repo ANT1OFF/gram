@@ -862,6 +862,11 @@ export const HostAppToolsRequest = Schema.Struct({
   method: Schema.Literals(["POST", "GET", "DELETE"]),
   headers: AppToolsHeaders,
   body: Schema.String.check(Schema.isMaxLength(HOST_APP_TOOLS_MOST_CHARS)),
+  /**
+   * The session gave up on the call `id` names before it was answered (its connection closed):
+   * the control plane stops answering it, as it does a session that hangs up on it there.
+   */
+  cancel: Schema.optionalKey(Schema.Literal(true)),
 });
 export type HostAppToolsRequest = typeof HostAppToolsRequest.Type;
 

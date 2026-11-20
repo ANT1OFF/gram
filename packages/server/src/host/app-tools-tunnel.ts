@@ -80,6 +80,8 @@ export const makeAppToolsTunnel: Effect.Effect<HostAppTools, never, Scope.Scope>
   function* () {
     const calls = yield* Queue.unbounded<HostAppToolsRequest>();
     const waiting = new Map<string, Waiting>();
+    /** Calls hung up on before they were handed over: never handed over. */
+    const dropped = new Set<string>();
     let listening: Promise<string> | undefined;
     let server: Server | undefined;
 
@@ -117,7 +119,15 @@ export const makeAppToolsTunnel: Effect.Effect<HostAppTools, never, Scope.Scope>
         }
         const id = randomUUID();
         waiting.set(id, { res, delivered: false });
-        res.once("close", () => waiting.delete(id));
+        res.once("close", () => {
+          const each = waiting.get(id);
+          waiting.delete(id);
+          // Hung up on before its answer: the control plane stops the call, or never starts it.
+          if (each === undefined || res.writableFinished) return;
+          if (each.delivered)
+            Queue.offerUnsafe(calls, { id, method: "POST", headers: {}, body: "", cancel: true });
+          else dropped.add(id);
+        });
         Queue.offerUnsafe(calls, {
           id,
           method: method as HostAppToolsRequest["method"],
@@ -163,6 +173,7 @@ export const makeAppToolsTunnel: Effect.Effect<HostAppTools, never, Scope.Scope>
       // The calls handed to this control plane and not answered when its stream ends (its
       // connection went) are answered 503; those not handed yet wait for the next.
       requests: Stream.fromQueue(calls).pipe(
+        Stream.filter((call) => call.cancel === true || !dropped.delete(call.id)),
         Stream.tap((call) =>
           Effect.sync(() => {
             const each = waiting.get(call.id);

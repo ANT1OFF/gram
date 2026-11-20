@@ -30,6 +30,7 @@ import { posix, win32 } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
+import * as FiberMap from "effect/FiberMap";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
@@ -619,16 +620,25 @@ export const appToolsTunnel = (
     const tunnel = connection.appTools;
     const answer = deps.appTools;
     if (tunnel === undefined || answer === undefined) return undefined;
-    const opened = yield* tunnel.open.pipe(Effect.option);
+    // A host that never answers is given no tunnel, rather than holding up the others.
+    const opened = yield* tunnel.open.pipe(Effect.timeout("10 seconds"), Effect.option);
     // Only the host's own loopback: a session's token goes nowhere else a host might name.
     if (opened._tag === "None" || !TUNNEL_ADDRESS.test(opened.value.url)) return undefined;
+    // Each call answered on a fiber of its own, by its id: a session that hangs up on one there
+    // stops it here (`cancel`), as one that hangs up on this Gram's own endpoint does.
+    const calls = yield* FiberMap.make<string>();
     yield* tunnel.requests.pipe(
       Stream.runForEach((request) =>
-        answer(id, request).pipe(
-          Effect.flatMap((answered) => tunnel.answer({ id: request.id, ...answered })),
-          Effect.ignore,
-          Effect.forkScoped,
-        ),
+        request.cancel === true
+          ? FiberMap.remove(calls, request.id)
+          : FiberMap.run(
+              calls,
+              request.id,
+              answer(id, request).pipe(
+                Effect.flatMap((answered) => tunnel.answer({ id: request.id, ...answered })),
+                Effect.ignore,
+              ),
+            ).pipe(Effect.asVoid),
       ),
       Effect.ignore,
       Effect.forkScoped,
@@ -688,13 +698,22 @@ export const machineHosts = (
           return url;
         });
       });
-    const relayedOnline = Effect.gen(function* () {
-      for (const machine of remote.list())
-        if (machine.via !== undefined && machine.onlineSince !== undefined) {
-          const connection = yield* remote.connection(machine.id).pipe(Effect.option);
-          if (connection._tag === "Some") yield* tunnelOf(machine.id, connection.value);
-        }
-    });
+    // Each at once: one host slow to answer holds up no other's tunnel. Read afresh each time.
+    const relayedOnline = Effect.suspend(() =>
+      Effect.forEach(
+        remote
+          .list()
+          .filter((machine) => machine.via !== undefined && machine.onlineSince !== undefined),
+        (machine) =>
+          remote.connection(machine.id).pipe(
+            Effect.option,
+            Effect.flatMap((connection) =>
+              connection._tag === "Some" ? tunnelOf(machine.id, connection.value) : Effect.void,
+            ),
+          ),
+        { concurrency: "unbounded", discard: true },
+      ),
+    );
     // Only where this Gram answers app-tool calls at all: without, no machine has a tunnel.
     if (deps.appTools !== undefined) {
       const changes = yield* Queue.sliding<void>(1);
