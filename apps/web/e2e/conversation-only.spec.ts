@@ -22,7 +22,8 @@ test("the header's switch hides the agent's tool calls and brings them back", as
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await toggle.click();
   await expect(page.getByTestId("conversation-only")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("conversation-only")).toHaveText("Conversation only");
+  // In the title bar an icon like the rest of the bar: its name is its label and its hover's.
+  await expect(page.getByTestId("conversation-only")).toHaveAccessibleName("Conversation only");
   await expect(work).toHaveCount(0);
   await expect(transcript.getByTestId("message-user").first()).toBeVisible();
 

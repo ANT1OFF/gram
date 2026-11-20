@@ -307,8 +307,13 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   card that asks for a decision. The overview's header holds its own two toggles; Settings sits beside History at
   its foot. A new control goes in the "…" unless it is needed at a glance. A
   thread's title comes before its secondary buttons: the bar folds a worker's actions into "…"
-  before it cuts the title (up to a cap). Settings is a place of its own: Back and its name in place
-  of the workspace and its views, and no overview beside it.
+  before it cuts the title (up to a cap). Still short of room (the title under its least, or
+  anything spilling), it folds the icons with an item in "…" (Conversation only, usage), then
+  Chat · Board and Settings, each in words there as a phone's "…" has them; nothing in the bar
+  ever runs over anything else. Conversation only in the bar is its glyph alone, pressed while on.
+  A dragged panel leaves the bar room for that: the chat's minimum counts from past macOS's window
+  buttons and Show sidebar while no sidebar is beside it. Settings is a place of its own: Back and
+  its name in place of the workspace and its views, and no overview beside it.
 - **A status strip keeps its words:** short of room it drops whole items from its end, never their
   words, so a count never stands alone and no two read the same.
 - **One band above the transcript, one below, and only what nothing else says.** Over the

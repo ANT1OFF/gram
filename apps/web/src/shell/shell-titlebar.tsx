@@ -8,6 +8,7 @@ import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
+import { Foldable } from "@/shell/foldable";
 import { PhoneMenuButton } from "@/shell/phone-drawer";
 import { ROUND } from "@/shell/phone-button-style";
 import { useHostAttention } from "@/embed/attention";
@@ -16,6 +17,8 @@ import { PhoneTitle } from "@/shell/phone-title";
 import { ShellToggle } from "@/shell/shell-toggle";
 import { TitlebarOverflow } from "@/shell/titlebar-fold";
 import {
+  FOLD_ALL,
+  FOLD_ICONS,
   useRouteAgent,
   useSoloRoute,
   useTitlebarFold,
@@ -45,8 +48,10 @@ const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
  * or Board's controls in the slot, then what wants your attention (the Inbox while no column to
  * the left shows the needs-you pill, a setup problem folded from its banner, a paused workspace,
  * and the thread's agent's usage), one "…" with
- * everything else in words, and the panel. Narrow, what the slot carries folds into "…" too. Each
- * destination has one entry here or in the sidebar, never both.
+ * everything else in words, and the panel. Narrow, what the slot carries folds into "…" too, then
+ * the icons that have an item there (Conversation only, usage), and last Chat · Board and Settings,
+ * so nothing runs over anything at the chat's narrowest. Each destination has one entry here or in
+ * the sidebar, never both.
  */
 export function ShellTitlebar({
   sidebarShown,
@@ -236,7 +241,11 @@ export function ShellTitlebar({
             />
           )}
           {/* Settings follows the toggle, as it does in the overview's header. */}
-          {!sidebarShown && navAway === undefined && <TopLeftNav className="mr-2" />}
+          {!sidebarShown && navAway === undefined && (
+            <Foldable level={FOLD_ALL} gap={4}>
+              <TopLeftNav className="mr-2" />
+            </Foldable>
+          )}
           {/* An app in front of Gram's own switcher, while no sidebar is there to carry it. */}
           {(switcherInTitlebar || (!sidebarShown && navAway !== "sidebar")) && (
             <EmbedSwitcher placement="titlebar" />
@@ -260,7 +269,9 @@ export function ShellTitlebar({
           {/* Chat · Board are the workspace's views: a solo thread in Chat is no part of it. */}
           {embedTitle === undefined && !soloBar && !pathBar && (
             <>
-              <ViewSwitcher className="shrink-0 [-webkit-app-region:no-drag]" />
+              <Foldable level={FOLD_ALL} gap={4}>
+                <ViewSwitcher className="shrink-0 [-webkit-app-region:no-drag]" />
+              </Foldable>
               <FakeAgentBadge className="[-webkit-app-region:no-drag]" />
             </>
           )}
@@ -308,11 +319,13 @@ export function ShellTitlebar({
             bar: usage's glyph, with a dot on it once a limit is near or reached; the reading is its
             hover's and its name's. */}
         {!beforeSetup && usageKept && (
-          <UsageMeter
-            agent={settings ? undefined : agent}
-            className="[-webkit-app-region:no-drag]"
-            iconOnly
-          />
+          <Foldable level={FOLD_ICONS} gap={2}>
+            <UsageMeter
+              agent={settings ? undefined : agent}
+              className="[-webkit-app-region:no-drag]"
+              iconOnly
+            />
+          </Foldable>
         )}
       </div>
       <div
@@ -326,6 +339,11 @@ export function ShellTitlebar({
         <TitlebarOverflow
           orchestration={!soloBar}
           hostPage={hostPage}
+          folds={{
+            views: !settings && embedTitle === undefined && !soloBar && !pathBar,
+            settings: !settings && !sidebarShown && navAway === undefined,
+            usage: !beforeSetup && usageKept,
+          }}
           className="[-webkit-app-region:no-drag]"
         />
       </div>
