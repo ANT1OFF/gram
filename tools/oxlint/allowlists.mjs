@@ -233,7 +233,7 @@ export const MAX_LINES = {
     "packages/server/src/host/stop.test.ts": 1261,
     "packages/server/src/http/fronted-sign-in.test.ts": 1406,
     "packages/server/src/http/server.test.ts": 1540,
-    "packages/server/src/http/server.ts": 1103,
+    "packages/server/src/http/server.ts": 1101,
     "packages/server/src/orchestration/dreams.ts": 1762,
     "packages/server/src/orchestration/ledger.ts": 783,
     "packages/server/src/orchestration/memory.ts": 1188,
