@@ -34,6 +34,7 @@ complete application check; browser and native checks have their own setup.
 - Use a conventional title that survives squash merging: `feat:` for features, `fix:` for
   corrections, `perf:` for performance. These drive [release-please](docs/RELEASING.md#versions).
   Documentation and maintenance use `docs:`, `refactor:` or `chore:`.
+  [pr-title.yml](.github/workflows/pr-title.yml) checks the title.
 - Say in the description what changed and why, the commands you ran with their results, and
   what remains untested.
 - UI changes include before and after screenshots, inspected, not just generated.
