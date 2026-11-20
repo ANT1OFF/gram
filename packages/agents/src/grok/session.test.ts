@@ -325,22 +325,22 @@ describe("Grok Build host", () => {
   });
 });
 
-describe("Grok Build in a sandbox", () => {
-  const recording = () => {
-    const methods: Array<string> = [];
-    const connection: AcpConnection = {
-      request: async <T>(method: string) => {
-        methods.push(method);
-        return {} as T;
-      },
-      notify: () => {},
-      ended: new Promise(() => {}),
-      pid: 1,
-      stop: async () => {},
-    };
-    return { methods, connection };
+const recording = () => {
+  const methods: Array<string> = [];
+  const connection: AcpConnection = {
+    request: async <T>(method: string) => {
+      methods.push(method);
+      return {} as T;
+    },
+    notify: () => {},
+    ended: new Promise(() => {}),
+    pid: 1,
+    stop: async () => {},
   };
+  return { methods, connection };
+};
 
+describe("Grok Build in a sandbox", () => {
   it("signs in headless on the token command's login when the environment names one", async () => {
     const { methods, connection } = recording();
     const wrapped = withHeadlessSignIn(connection, { GROK_AUTH_PROVIDER_COMMAND: "printf token" });
