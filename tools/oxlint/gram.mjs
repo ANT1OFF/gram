@@ -35,11 +35,14 @@
 //
 // And a 24-hour clock in the web app: a time formatted with `hour` or `timeStyle` and no
 // `hourCycle: "h23"` reads `2:05 PM` wherever the locale's default is 12-hour.
+//
+// And Settings opened through `settings/open-settings.ts`: see `settings-entry.mjs`.
 
 import { dirname, relative, resolve } from "node:path";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 import { importOf, isFunction, isTestFile, propertyName, REPO, soleExpression } from "./ast.mjs";
 import { noRawEffect } from "./no-raw-effect.mjs";
+import { settingsEntry } from "./settings-entry.mjs";
 
 const BARE_FORKS = new Set([
   "fork",
@@ -480,6 +483,7 @@ export default {
         };
       },
     },
+    "settings-entry": settingsEntry,
     "no-adhoc-lock": {
       meta: {
         type: "problem",

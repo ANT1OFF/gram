@@ -16,6 +16,10 @@ export const ALLOWLISTS = {
     owners: ["packages/server/src/zone-time.ts"],
     pending: [],
   },
+  "settings-entry": {
+    owners: ["apps/web/src/settings/open-settings.ts"],
+    pending: [],
+  },
   // Fixed waits. `pending` maps each file not cleaned up yet to how many it may keep; the test
   // fails when a file has fewer, so the count comes down in the change that removes one.
   "no-sleep": {
