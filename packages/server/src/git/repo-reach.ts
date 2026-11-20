@@ -67,18 +67,22 @@ const conditionRepo = (spec: WakeCondition | undefined): string | undefined =>
         : undefined;
 
 /**
- * Refuses `tool`'s call when a repository it names, a PR's or a wake condition's, is out of reach
+ * Refuses `tool`'s call when a repository it names, a PR's, a run's or a wake condition's, is out of reach
  * of thread `threadId` (`repoOutOfReach`); a thread that can't be found reaches none.
  */
 export const refuseOutOfReach = (
   tool: string,
   store: ThreadStoreShape,
   threadId: ThreadId,
-  named: { readonly prRepo?: string | undefined; readonly condition?: WakeCondition | undefined },
+  named: {
+    readonly prRepo?: string | undefined;
+    readonly condition?: WakeCondition | undefined;
+    readonly repos?: ReadonlyArray<string | undefined>;
+  },
 ): Effect.Effect<void, AppToolError, Proc> =>
   Effect.gen(function* () {
     if (!githubRelayed()) return;
-    const repos = [named.prRepo, conditionRepo(named.condition)].filter(
+    const repos = [named.prRepo, conditionRepo(named.condition), ...(named.repos ?? [])].filter(
       (repo): repo is string => repo !== undefined,
     );
     if (repos.length === 0) return;

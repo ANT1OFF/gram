@@ -54,10 +54,24 @@ describe.skipIf(!hasGit)("repositories an agent names behind a GitHub route", ()
             }),
           ).toContain(outside);
           expect(yield* refused("depends_on", { pr: "someone/private#5" })).toContain(outside);
-          // Nothing of it went to GitHub.
-          expect(world.ghCalls.filter((call) => call.join(" ").includes("someone/private"))).toEqual(
-            [],
+          expect(yield* refused("merge_when_ready", { pr: "someone/private#5" })).toContain(
+            outside,
           );
+          expect(
+            yield* refused("merge_when_ready", { pr: 12, after: ["someone/private#5"] }),
+          ).toContain(outside);
+          expect(
+            yield* refused("run_monitor", {
+              run: "https://github.com/someone/private/actions/runs/77",
+            }),
+          ).toContain(outside);
+          expect(yield* refused("run_monitor", { repo: "someone/private", run: "77" })).toContain(
+            outside,
+          );
+          // Nothing of it went to GitHub.
+          expect(
+            world.ghCalls.filter((call) => call.join(" ").includes("someone/private")),
+          ).toEqual([]);
           // Its own workspace's repository it binds as before.
           expect(
             yield* worker.session.callTool("pr_bind", { repo: "acme/app", number: 12 }),
