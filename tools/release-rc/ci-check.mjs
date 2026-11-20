@@ -11,6 +11,8 @@
 // Everything that runs a process takes it as `gh(args) → { status, stdout, stderr }`, so the
 // tests drive these against a synthetic `gh`.
 
+import { setTimeout as sleepFor } from "node:timers/promises";
+
 /** The workflow whose main push runs count. */
 export const CHECK_WORKFLOW = ".github/workflows/check.yml";
 
@@ -35,8 +37,6 @@ export const CI_FINISH_MS = 60 * 60_000;
 export const CI_POLL_MS = 20_000;
 
 const BAD = new Set(["failure", "cancelled", "timed_out", "action_required", "startup_failure"]);
-
-const sleepFor = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Main's check run on the release commit failed, or isn't one: the release must not go on. */
 export class CheckRunRefused extends Error {}

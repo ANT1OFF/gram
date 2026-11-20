@@ -40,7 +40,11 @@ Don't write, and delete when you meet one:
 
 Keep it cheap:
 
-- No real sleeps. Use the test clock, fake timers, or wait on the signal itself.
+- No real sleeps. Use the test clock, fake timers, or wait on the signal itself. `gram/no-sleep`
+  refuses `page.waitForTimeout` and a hand-rolled `new Promise((r) => setTimeout(r, ms))`; the
+  files not moved yet keep a count each in `tools/oxlint/allowlists.mjs`, which only falls. Product
+  code that does mean real time uses `setTimeout` from `node:timers/promises`, or `sleep` from
+  `apps/web/src/lib/sleep.ts` in the web app.
 - Expensive setup once per file (a started system, a server, a repo, a rendered chart), not once per
   case.
 - Push a check to the cheapest layer that catches it: a unit or component test before an integration

@@ -21,6 +21,7 @@ import { connect, createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import type { DatabaseSync as Database } from "node:sqlite";
 import { tryRealPathSync } from "@gram/git";
+import { setTimeout as sleep } from "node:timers/promises";
 
 // Loaded like the store's own workers load it, so bundling leaves the builtin alone, and only
 // when a lock is asked for: Node notes it as experimental the first time, and most of gram-host's
@@ -182,7 +183,7 @@ const takeLegacy = async (identity: string, purpose: LockPurpose) => {
   for (;;) {
     const release = await bindLegacy(identity, purpose);
     if (release !== undefined || Date.now() >= until) return release;
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await sleep(20);
   }
 };
 

@@ -23,7 +23,8 @@
     "typescript/no-explicit-any": "error",
     "no-underscore-dangle": ["warn", { "allow": ["_tag", "__flicker", "__gutters"] }],
     "gram/no-bare-fork": "error",
-    "gram/no-focused-tests": "error"
+    "gram/no-focused-tests": "error",
+    "gram/no-sleep": "error"
   },
   "overrides": [
     {
