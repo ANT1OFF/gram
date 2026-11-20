@@ -24,7 +24,6 @@ import {
 
 import { useApi } from "@/api/context";
 import { errorHelp, errorMessage } from "@/api/errors";
-import { OutboundLink } from "@/panels/outbound-link";
 import { Button } from "@/components/ui/button";
 import { Shimmer } from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
@@ -231,9 +230,14 @@ function HelpLink({ help }: { help: ErrorHelp | undefined }) {
   return (
     <>
       {" "}
-      <OutboundLink href={help.url} className="text-link underline-offset-2 hover:underline">
+      <a
+        href={help.url}
+        target="_blank"
+        rel="noreferrer"
+        className="text-link underline-offset-2 hover:underline"
+      >
         {help.label}
-      </OutboundLink>
+      </a>
     </>
   );
 }
