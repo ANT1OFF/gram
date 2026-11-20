@@ -6,16 +6,7 @@ import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
-import {
-  createContext,
-  memo,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { BundledLanguage, ThemedToken } from "shiki";
 
 import {
@@ -26,6 +17,7 @@ import {
 } from "@/lib/code-highlighting";
 import { paintEmbedded } from "@/lib/command-tokens";
 import { embeddedScripts, type EmbeddedScript } from "@/lib/embedded-scripts";
+import { useFlash } from "@/lib/timers";
 
 export { highlightCode } from "@/lib/code-highlighting";
 
@@ -412,8 +404,7 @@ export const CodeBlockCopyButton = ({
   className,
   ...props
 }: CodeBlockCopyButtonProps) => {
-  const [isCopied, setIsCopied] = useState(false);
-  const timeoutRef = useRef<number>(0);
+  const [isCopied = false, flash] = useFlash(timeout);
   const { code } = useContext(CodeBlockContext);
 
   const copyToClipboard = useCallback(async () => {
@@ -425,21 +416,13 @@ export const CodeBlockCopyButton = ({
     try {
       if (!isCopied) {
         await navigator.clipboard.writeText(code);
-        setIsCopied(true);
+        flash(true);
         onCopy?.();
-        timeoutRef.current = window.setTimeout(() => setIsCopied(false), timeout);
       }
     } catch (error) {
       onError?.(error as Error);
     }
-  }, [code, onCopy, onError, timeout, isCopied]);
-
-  useEffect(
-    () => () => {
-      window.clearTimeout(timeoutRef.current);
-    },
-    [],
-  );
+  }, [code, onCopy, onError, flash, isCopied]);
 
   const Icon = isCopied ? CheckIcon : CopyIcon;
 

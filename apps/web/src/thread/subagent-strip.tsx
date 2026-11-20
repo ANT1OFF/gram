@@ -11,13 +11,14 @@ import {
   SquareChevronRight,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { ShortcutKbd, useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { DrawnCheck, PresenceItem, PresenceList, Swap } from "@/motion";
+import { useFlash } from "@/lib/timers";
 
 import {
   formatElapsed,
@@ -267,12 +268,7 @@ const code = (text: string) => (
 
 /** Copies a task's whole command, which the line and its tooltip show only the start of. */
 export function CopyButton({ command, testId }: { command: string; testId: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), COPIED_MS);
-    return () => clearTimeout(timer);
-  }, [copied]);
+  const [copied = false, flash] = useFlash(COPIED_MS);
   const label = copied ? "Copied" : "Copy command";
   return (
     <Hint
@@ -283,7 +279,7 @@ export function CopyButton({ command, testId }: { command: string; testId: strin
           data-testid={testId}
           aria-label={label}
           onClick={() => {
-            void copyMarkdown(command).then((ok) => setCopied(ok));
+            void copyMarkdown(command).then((ok) => ok && flash(true));
           }}
           className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
         />
