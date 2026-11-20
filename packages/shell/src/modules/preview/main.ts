@@ -7,6 +7,7 @@
 // agents' pages, and loads nothing off loopback but what the agent browser allows an agent's page;
 // it reaches loopback directly and anything else only through a proxy of its own, which connects
 // only to a host that check just let a page reach, so a socket the check never sees goes no further.
+// Its pages have no shared worker, whose sockets that check never sees either.
 // The web sessions hold the pages the user opens anywhere else, and no agent ever drives or reads
 // them, so what the user signs in to there stays theirs. The shared web session holds pages on the
 // internet, and never reaches loopback or a private network, whatever asks. A page the user opens
@@ -520,6 +521,12 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
         spellcheck: false,
         safeDialogs: true,
         navigateOnDragDrop: false,
+        // A shared worker's requests reach the session with no page to check them against, and
+        // its sockets don't reach the request check at all, so in the local session, which
+        // reaches loopback directly, an agent's page on a public host could talk to this
+        // computer's servers through one. The local session's pages have none; a service worker
+        // can't start there from a public page, since fetching its script is such a request.
+        ...(kind === "local" ? { disableBlinkFeatures: "SharedWorker" } : {}),
       },
     });
     view.setVisible(false);
