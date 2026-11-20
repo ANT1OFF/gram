@@ -207,8 +207,12 @@ Content-Type: application/json
   `/asks/answer` reach it only for its reader.
 - **Its workspace.** A workspace whose threads are private is left out for anyone else wherever
   workspaces are listed or named: `workspace.list`, the usage overview's per-workspace rows, the
-  palette's filters (and what the helper model is shown for them), and the workspace tools an
-  agent calls. Its tokens still count in the usage overview's totals, which name no thread or
+  palette's filters (and what the helper model is shown for them), the workspace tools an agent
+  calls, a finished worker found only in its archive, and a call that names it by its project
+  (opening an orchestrator, a task) or by id (`workspace.save`), which answers as if there were no
+  such workspace. A project whose folder is the thread's own is left out of `projects.list`. Who
+  may read a private thread is kept after it leaves the closed list, so none of this lapses at a
+  restart. Its tokens still count in the usage overview's totals, which name no thread or
   workspace, so a breakdown seen by someone else may sum to less than the totals.
 - **Its folder.** A call that names a path inside the thread's folder or worktrees is refused for anyone else in the same way, however the path is written: through a link that leads there, with `..`, or relative to another thread. A listing of a folder above it leaves it out. Behind a proxy, so is a call that names a path in a repository the thread has a checkout of, because another checkout shares its `.git`. This covers Gram's calls and Gram's own agent tools.
 - **Shells.** A terminal that belongs to no thread is its opener's alone: nobody else lists it, reads it, types into it or closes it. A terminal that runs in a private thread's folder is closed to anyone else, whoever opened it. Behind a proxy, nobody else may open a terminal on a machine that holds the thread. While any thread is private, nobody at all, its reader included, may open a terminal on the server's own machine, wherever that thread's checkouts are, because the server's database holds every transcript. When a private thread is first placed on a machine, the terminals already open there for anyone else are closed, and on the server's own machine every terminal is closed.

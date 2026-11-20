@@ -67,6 +67,7 @@ describe("migration ordering gate", () => {
         [12, "user_messages"],
         [13, "actor_names"],
         [14, "folder_trust"],
+        [15, "private_readers"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -196,6 +197,7 @@ describe("the baseline", () => {
         "table orchestration_outbox",
         "table palettes",
         "table person_settings",
+        "table private_readers",
         "table profiles",
         "table projects",
         "table queue_items",

@@ -613,6 +613,16 @@ const actorNames = Effect.gen(function* () {
   yield* sql`CREATE INDEX IF NOT EXISTS actor_events_actor ON actor_events(actor_id, seq)`;
 });
 
+/**
+ * Who could read each private thread whose row has left the store (`thread-store.ts`
+ * `rememberPrivate`): its archive, memory and workspace outlive the closed list, and so must the
+ * restriction on them. Read at start beside the live and closed rows.
+ */
+const privateReaders = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE private_readers (thread_id TEXT PRIMARY KEY, data TEXT NOT NULL)`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -628,6 +638,7 @@ export const migrations = {
   "0012_user_messages": userMessages,
   "0013_actor_names": actorNames,
   "0014_folder_trust": folderTrust,
+  "0015_private_readers": privateReaders,
 };
 
 /**

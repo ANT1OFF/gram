@@ -84,6 +84,7 @@ import { SqlClient, SqlError } from "../platform/unstable.ts";
 import { MigrationsLayer } from "./migrations.ts";
 import { noteForeignCheckouts } from "../host/foreign-paths.ts";
 import { notePrivacy, noteReaders } from "../embedding/readable-by.ts";
+import { notePrivateThreads, rememberPrivateIn } from "./private-readers.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
@@ -1335,26 +1336,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const sql = yield* SqlClient.SqlClient;
       const reads = withReadWorker(yield* captureReadWorker);
       const unreadable = makeUnreadableLog();
-      // Whose each thread is, open or closed, and where it works, noted before anything asks
-      // (`embedding/readable-by.ts`): a thread no read has touched yet since the server started
-      // is still only its reader's, and so are its folders.
-      for (const row of yield* sql<{ id: string; data: string }>`
-        SELECT id, data FROM threads WHERE json_extract(data, '$.readableBy') IS NOT NULL
-        UNION ALL
-        SELECT thread_id AS id, data FROM closed_threads
-          WHERE json_extract(data, '$.readableBy') IS NOT NULL`.pipe(Effect.orDie)) {
-        const stored = JSON.parse(row.data) as Partial<Thread>;
-        if (typeof stored.readableBy === "string") {
-          const noted = { ...stored, id: row.id as ThreadId, readableBy: stored.readableBy };
-          notePrivacy(noted);
-          noteReaders({
-            ...noted,
-            readers: Array.isArray(stored.readers)
-              ? stored.readers.filter((each): each is string => typeof each === "string")
-              : undefined,
-          });
-        }
-      }
+      yield* notePrivateThreads(sql);
       const receiptScope = yield* Effect.scope;
       // The data methods below use one statement or one top-level transaction; nothing nests.
       // Message receipts own separate reservation/outcome transactions around the runtime action.
@@ -1485,6 +1467,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }
         });
 
+      const rememberPrivate = (table: "threads" | "closed_threads", ids: ReadonlyArray<string>) =>
+        rememberPrivateIn(sql, table, ids);
+
       const keepClosed = (
         id: string,
         closedAt: number,
@@ -1500,6 +1485,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           const evicted = yield* sql<{ thread_id: string }>`SELECT thread_id FROM closed_threads
             ORDER BY closed_at DESC, rowid DESC LIMIT -1 OFFSET ${CLOSED_THREADS_LIMIT}`;
           for (const { thread_id: evictedId } of evicted) {
+            yield* rememberPrivate("closed_threads", [evictedId]);
             yield* sql`DELETE FROM closed_threads WHERE thread_id = ${evictedId}`;
             yield* purgeHistory(evictedId);
           }
@@ -2810,6 +2796,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ]) {
                 yield* sql`DELETE FROM ${sql(table)} WHERE thread_id = ${id}`;
               }
+              yield* rememberPrivate("threads", [id]);
               yield* sql`DELETE FROM threads WHERE id = ${id}`;
               yield* sql`DELETE FROM message_receipts WHERE thread_id = ${id}
                 AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
@@ -2959,6 +2946,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         forgetClosed: (threadId) =>
           tx(
             Effect.gen(function* () {
+              yield* rememberPrivate("closed_threads", [threadId]);
               yield* sql`DELETE FROM closed_threads WHERE thread_id = ${threadId}`;
               yield* sql`DELETE FROM message_receipts WHERE thread_id = ${threadId}
                 AND thread_id NOT IN (SELECT id FROM threads)`;
