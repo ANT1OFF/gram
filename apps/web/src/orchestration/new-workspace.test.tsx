@@ -609,4 +609,47 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     expect(posts).toEqual([expect.stringContaining("/machines/on-demand/start")]);
     expect(open).toHaveBeenCalledOnce();
   });
+
+  it("leaves the person's own machine alone for one with an environment of its own", async () => {
+    const list = vi.fn(async () => ({
+      environments: [
+        { id: "default", label: "Default" },
+        { id: "env-node", label: "Node.js" },
+      ],
+      default: "default",
+    }));
+    useEmbedShell.setState({
+      ...EMPTY_SHELL,
+      hosted: true,
+      machines: { noun: "sandbox", repositories: "theirs" },
+      environments: { list },
+    });
+    const posts: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "POST") posts.push(String(input));
+        return Response.json({ available: true });
+      }),
+    );
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const open = vi.spyOn(api, "openOrchestrator");
+    render({ repo: DOCS });
+    const field = await screen.findByTestId("new-workspace-environment");
+    fireEvent.click(await within(field).findByTestId("new-workspace-environment-pick"));
+    const option = await screen.findByRole("option", { name: /Node\.js/ });
+    fireEvent.pointerDown(option);
+    fireEvent.pointerUp(option);
+    fireEvent.click(option);
+    // Opening its orchestrator starts its own machine, so Start goes straight there.
+    await waitFor(() =>
+      expect(screen.getByTestId("new-workspace-steps").textContent).toContain(
+        "1.Start a sandbox on Node.js and check out the repositories",
+      ),
+    );
+    fireEvent.click(screen.getByTestId("new-workspace-start"));
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(posts).toEqual([]);
+    expect(open).toHaveBeenCalledOnce();
+  });
 });

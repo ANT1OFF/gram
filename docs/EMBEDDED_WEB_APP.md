@@ -252,8 +252,9 @@ in a new workspace and a workspace's settings. `list({ signal })` answers `envir
 `label` and an optional `detail`, a few words on what it is), the `default` one's id, and an
 optional `manage` link (`label`, `to`: a path under your app) shown under the field. The pick is
 saved on the workspace as `environment`; none means the default. A pick no longer listed is shown
-as starting in the default. Gram stores the id and passes it on; what an environment installs and
-may reach is your app's. Without the option the field is not shown. Read once, at mount.
+as starting in the default. A workspace with one of its own runs on a machine of its own, which
+your host provider starts in it ([EMBEDDING.md](EMBEDDING.md#a-workspaces-own-machine)); what an
+environment installs and may reach is your app's. Without the option the field is not shown. Read once, at mount.
 
 **The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
 quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while

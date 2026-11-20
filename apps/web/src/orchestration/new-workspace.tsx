@@ -255,13 +255,16 @@ function SheetForm({
   // Where the deployment starts machines on demand, the person's own runs the orchestrator: with
   // none online the card to start it shows here, and a workspace started meanwhile opens once it
   // is up, rather than failing for want of one.
+  // One with an environment of its own runs on a machine of its own instead, which opening its
+  // orchestrator starts and waits for.
   const onDemand = useOnDemandMachine();
-  const machineWanted = needsMachine(onDemand.status);
+  const environments = useEnvironments();
+  const ownMachine = environments?.data !== undefined && draft.environment !== undefined;
+  const machineWanted = !ownMachine && needsMachine(onDemand.status);
   const [waiting, setWaiting] = useState(false);
   const noun = useMachineNoun();
   const kind = useThreadsWorkspaceNoun();
   const reachesTheirs = useMachineReachesTheirs();
-  const environments = useEnvironments();
   // Stops a wait for the machine when the sheet goes.
   const alive = useRef(true);
   useEffect(() => {
@@ -283,7 +286,7 @@ function SheetForm({
       for (;;) {
         const status = await queryClient.fetchQuery({
           queryKey: ON_DEMAND_QUERY_KEY,
-          queryFn: fetchOnDemandStatus,
+          queryFn: () => fetchOnDemandStatus(),
           staleTime: 0,
         });
         if (!alive.current) return;
@@ -559,7 +562,9 @@ function SheetForm({
             onCheckedChange={setSurvey}
           />
           <StartSteps
-            machine={machineWanted ? noun : undefined}
+            machine={
+              machineWanted || (ownMachine && onDemand.status !== undefined) ? noun : undefined
+            }
             environment={environmentLabel(environments?.data, draft.environment)}
             reads={reads}
             task={firstMessageOf(draft) !== undefined}

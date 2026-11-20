@@ -364,6 +364,31 @@ again, a worker reopened, it asks the same with `released: false, reason: "worki
 provider keeps the disk. Each is told once; after a restart it may be told again, which a provider
 takes as the same word. `404` means the provider keeps none of this.
 
+### A workspace's own machine
+
+A workspace with an environment of its own (`environment`, which the app offers through the web
+app's `environments` mount option, [EMBEDDED_WEB_APP.md](EMBEDDED_WEB_APP.md)) runs its
+orchestrator, and so its workers, on a machine of its own, started in that environment, instead of
+on the person's own. A workspace without one runs on the person's own, as before. The person starts
+it, as they start their own:
+
+- opening its orchestrator with that machine not running is refused with a message that begins
+  `WORKSPACE_MACHINE_NOT_RUNNING`. The web app then asks `POST /machines/on-demand/start` with
+  `{ workspace }`, as the person, waits on `GET /machines/on-demand/status?workspace=…` until it is
+  online, and opens the orchestrator again;
+- the server asks `POST /hosts/start` with `{ kind: "workspace", owner, name, options: { workspace,
+  title, environment, repositories }, proof }`, the proof as for a person's own. `name` is
+  `workspace-` and 10 hex characters, one per person and workspace, so a provider should treat a
+  second ask for a name it holds as the same machine, woken if it is paused. `environment` is the
+  app's own id, as its list gave it: the provider checks the person may use it. A workspace with no
+  environment of its own is `404`, and the provider is not asked;
+- the provider answers `{ hostKey }`, reports progress with `workspace` beside `owner`, and
+  registers the machine on `/machines/provision` under that `name`, with `owner` and
+  `onDemand: "thread"`. Online, the orchestrator is placed on it, and its workers with it.
+
+A change of a workspace's environment applies from its machine's next start. Pausing it when idle,
+waking it and reclaiming it later are the provider's.
+
 ## Memory updates on a headless server
 
 A headless server runs memory updates as the desktop app does, from the same Settings, with Review
