@@ -515,6 +515,48 @@ describe("max-lines", () => {
   });
 });
 
+describe("lucide-stroke", () => {
+  const rule = "gram/lucide-stroke";
+
+  it("refuses a stroke on a Lucide icon, imported, namespaced or made with createLucideIcon", () => {
+    const found = lint(
+      `import { Check, createLucideIcon as make } from "lucide-react";
+      import * as Icons from "lucide-react";
+      const Ring = make({ name: "ring", size: 24, node: [] });
+      export const a = <Check strokeWidth={1.5} />;
+      export const b = <Icons.X absoluteStrokeWidth />;
+      export const c = <Ring className="size-3" strokeWidth={1.5} {...props} />;
+    `,
+      rule,
+      ".tsx",
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([4, 5, 6]);
+    expect(found[0].message).toContain("createLucideIcon");
+  });
+
+  it("allows a stroke on Gram's own svg, on a node, and other props on an icon", () => {
+    expect(
+      lint(
+        `import { Check, createLucideIcon } from "lucide-react";
+        import { Gauge } from "./gauge";
+        const Ring = createLucideIcon({
+          name: "ring",
+          size: 24,
+          node: [["circle", { r: "9", strokeWidth: "1.5", key: "ring" }]],
+        });
+        export const a = <svg strokeWidth={2}><circle strokeWidth="1.5" /></svg>;
+        export const b = <Gauge strokeWidth={2} />;
+        export const c = <Check className="size-icon-row" />;
+        export const d = <Ring />;
+        function Local({ Check }) { return <Check strokeWidth={1} />; }
+      `,
+        rule,
+        ".tsx",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("clock-24h", () => {
   const rule = "gram/clock-24h";
 
