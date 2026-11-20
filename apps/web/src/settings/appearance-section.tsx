@@ -106,7 +106,8 @@ function useThemeAttributes() {
 
 /**
  * Settings → Appearance: the theme's choices as rows (Mode, Density, Contrast, Motion), then
- * Reading, then the palette grid beside a live preview, then fonts. The rows and Reading come
+ * Reading, then the palette grid beside a live preview, then the accent and background over that
+ * palette, then fonts. The rows and Reading come
  * first, so the settings changed most sit above the fold rather than under the palette grid. Glass
  * is the only look; the palette editor opens from the palette grid.
  */
@@ -131,7 +132,6 @@ function AppearancePage({ preview }: { preview: boolean }) {
     <div className={cn("@container", SETTINGS_STACK)}>
       <ThemeRows />
       <NavigationRows />
-      <LookSection />
       <SettingsGroup
         label="Reading"
         description="The size and width of the conversation in threads."
@@ -169,6 +169,8 @@ function AppearancePage({ preview }: { preview: boolean }) {
           </Button>
         </div>
       )}
+      {/* An accent goes over the palette, so it is chosen after it. */}
+      <LookSection />
       <SettingsGroup
         label="Fonts"
         description="The typefaces and sizes for text and code."
