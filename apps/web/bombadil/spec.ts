@@ -236,6 +236,7 @@ const flicker = extract((state) => {
     state.window as Window & typeof globalThis,
   );
   return {
+    virtualClock: "gramMockClock" in state.window,
     count: report.count,
     byKind: { ...report.byKind },
     allowed: { ...report.allowed },
@@ -243,7 +244,11 @@ const flicker = extract((state) => {
   };
 });
 
-export const noFlicker = always(() => flicker.current.count === 0);
+/**
+ * The replayable mock (`window.gramMockClock`) runs a virtual clock and plays timed states in a few
+ * frames, so a 2 s "Loading…" would read as a flicker: there the count is recorded, not judged.
+ */
+export const noFlicker = always(() => flicker.current.virtualClock || flicker.current.count === 0);
 
 // --- Loading ends ------------------------------------------------------------------------------
 // Nothing says "Loading…" or is `aria-busy` for more than 10 s. The mock answers in milliseconds,
@@ -391,7 +396,7 @@ const overlays = extract((state) => {
     doc.addEventListener(
       "keydown",
       (event) => {
-        if (event.key === "Escape") tracked.escapeAt = win.performance.now();
+        if (event.key === "Escape") tracked.escapeAt = event.timeStamp;
       },
       true,
     );
@@ -438,7 +443,10 @@ const overlays = extract((state) => {
     .filter((element) => element.matches(CONTROLS))
     .map(keyOf)
     .filter((key): key is string => key !== null);
-  const sinceEscape = win.performance.now() - tracked.escapeAt;
+  // The frame's time and the key's own timeStamp: a mock's virtual clock leaves both alone.
+  const frameTime = doc.timeline?.currentTime;
+  const sinceEscape =
+    (typeof frameTime === "number" ? frameTime : win.performance.now()) - tracked.escapeAt;
   const closing = doc.querySelector(
     OVERLAY.split(", ")
       .map((overlay) => `${overlay}[data-ending-style]`)

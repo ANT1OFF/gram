@@ -42,7 +42,7 @@ export interface FlickerOffender {
   readonly selector: string;
   /** What changed, such as `"3 need you" → "2 need you" → "3 need you" in 120 ms`. */
   readonly change: string;
-  /** `performance.now()` when it was seen. */
+  /** When it was seen, in ms since the page's time origin (the frame's time, not `performance.now()`). */
   readonly at: number;
   readonly path: string;
 }
@@ -83,9 +83,15 @@ export function installFlickerObserver(
   };
   win.gramFlicker = report;
 
+  // Time is the frame's (`document.timeline`) and the event's own `timeStamp`, never
+  // `performance.now()`: a mock with a virtual clock replaces that, and its 300 ms would not be 300.
+  const clock = () => {
+    const time = doc.timeline?.currentTime;
+    return typeof time === "number" ? time : win.performance.now();
+  };
   let lastInput = -Infinity;
-  const onInput = () => {
-    lastInput = win.performance.now();
+  const onInput = (event: Event) => {
+    lastInput = Math.max(lastInput, event.timeStamp);
   };
   // Typing may arrive as `input` alone, a scroll re-renders virtual lists, and a resize may swap
   // the layout for another.
@@ -126,7 +132,7 @@ export function installFlickerObserver(
       kind,
       selector: describe(element),
       change,
-      at: Math.round(win.performance.now()),
+      at: Math.round(clock()),
       path: win.location.pathname,
     });
     if (report.last.length > keep) report.last.shift();
@@ -181,7 +187,7 @@ export function installFlickerObserver(
   };
 
   new win.MutationObserver((mutations) => {
-    const now = win.performance.now();
+    const now = clock();
     for (const mutation of mutations) {
       const target =
         mutation.target instanceof win.Element ? mutation.target : mutation.target.parentElement;
@@ -208,7 +214,7 @@ export function installFlickerObserver(
     }
   };
   const settleFrame = () => {
-    const now = win.performance.now();
+    const now = clock();
     // Gone: removed, and nothing with its identity in the page a frame later (a move or a
     // remount within one frame is never seen).
     const present = new Set<string>();
