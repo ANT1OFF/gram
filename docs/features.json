@@ -1,0 +1,566 @@
+{
+  "$comment": "The feature map: from the feature a person names to the code, tests and docs that own it, in the app's own words. Paths are globs from the repository root; a docs path may end in #heading. tools/feature-map/check.mjs (bun run lint) fails when a path matches nothing or a heading is gone.",
+  "features": [
+    {
+      "name": "Workspaces and the orchestrator",
+      "purpose": "A workspace is one or more repositories with one orchestrator thread that briefs, spawns and steers workers.",
+      "code": [
+        "packages/server/src/orchestration/**",
+        "apps/web/src/orchestration/**",
+        "apps/web/src/routes/new-workspace.tsx",
+        "apps/web/src/settings/workspace*"
+      ],
+      "tests": [
+        "packages/server/src/orchestration/**/*.test.ts",
+        "apps/web/src/orchestration/**/*.test.{ts,tsx}",
+        "apps/web/e2e/orchestrat*.spec.ts",
+        "apps/web/e2e/workspace*.spec.ts"
+      ],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#overview",
+        "docs/AGENTS_AND_FEATURES.md#orchestration-context",
+        "docs/AGENTS_AND_FEATURES.md#orchestration-tool-inputs"
+      ]
+    },
+    {
+      "name": "Workers and councils",
+      "purpose": "Threads the orchestrator spawns on a brief, in a worktree and branch of their own, and reviewers it asks for.",
+      "code": [
+        "packages/server/src/orchestration/{worker,spawn,council}*",
+        "apps/web/src/orchestration/finished-worker-view.tsx"
+      ],
+      "tests": [
+        "packages/server/src/orchestration/{worker,spawn,council}*.test.ts",
+        "apps/web/e2e/worker*.spec.ts"
+      ],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#workers",
+        "docs/AGENTS_AND_FEATURES.md#other-worker-models"
+      ]
+    },
+    {
+      "name": "Threads",
+      "purpose": "A conversation with one Claude Code, Codex or OpenCode session: its transcript, turns, tool rows and lifecycle.",
+      "code": [
+        "apps/web/src/thread/**",
+        "apps/web/src/threads/**",
+        "apps/web/src/routes/t/**",
+        "apps/web/src/routes/threads.tsx",
+        "packages/server/src/runtime/**"
+      ],
+      "tests": [
+        "apps/web/src/thread/**/*.test.{ts,tsx}",
+        "packages/server/src/runtime/**/*.test.ts",
+        "apps/web/e2e/{thread,turn,tool,conversation}*.spec.ts"
+      ],
+      "docs": ["docs/ARCHITECTURE.md"]
+    },
+    {
+      "name": "Composer",
+      "purpose": "Where a person writes to a thread: models and effort, mentions, slash commands, attachments, steer or queue.",
+      "code": [
+        "apps/web/src/composer/**",
+        "apps/web/src/new-thread/**",
+        "apps/web/src/routes/new*.tsx"
+      ],
+      "tests": [
+        "apps/web/src/composer/**/*.test.{ts,tsx}",
+        "apps/web/e2e/{composer,send,new}*.spec.ts"
+      ],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#accounts-models-and-speed"]
+    },
+    {
+      "name": "Switching a thread's agent",
+      "purpose": "Move a thread between Claude Code, Codex and OpenCode, carrying its context over.",
+      "code": [
+        "packages/server/src/runtime/{agent-switch,switch-handoff,session-switch}.ts",
+        "packages/server/src/orchestration/switch*"
+      ],
+      "tests": ["packages/server/src/runtime/{agent-switch,switch-handoff}.test.ts"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#switching-a-threads-agent"]
+    },
+    {
+      "name": "Harnesses",
+      "purpose": "Adapters that drive the person's own installed Claude Code, Codex and OpenCode CLIs on their own logins.",
+      "code": [
+        "packages/agents/src/**",
+        "packages/server/src/agent-runtime/**",
+        "packages/server/src/agent-support/**",
+        "apps/web/src/agents/**"
+      ],
+      "tests": [
+        "packages/agents/src/**/*.test.ts",
+        "packages/server/src/agent-runtime/**/*.test.ts"
+      ],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#permission-modes-by-harness",
+        "docs/AGENTS_AND_FEATURES.md#codex-ownership-and-reopening"
+      ]
+    },
+    {
+      "name": "Approvals and questions",
+      "purpose": "Cards for actions the autonomy level holds back and questions a worker asks, answered in the thread or the Inbox.",
+      "code": [
+        "apps/web/src/orchestration/ask-*",
+        "packages/server/src/runtime/server-approvals.ts",
+        "packages/server/src/app-tools/**",
+        "packages/server/src/waits/**"
+      ],
+      "tests": [
+        "apps/web/src/orchestration/ask-*.test.ts",
+        "apps/web/e2e/{approval,ask}*.spec.ts",
+        "packages/server/src/app-tools/**/*.test.ts"
+      ],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#app-tool-approval-results",
+        "docs/AGENTS_AND_FEATURES.md#permission-modes"
+      ]
+    },
+    {
+      "name": "Inbox",
+      "purpose": "Questions, approvals, plans, review requests and errors from every workspace in one list, answered beside it.",
+      "code": ["apps/web/src/inbox/**", "apps/web/src/orchestration/inbox-*"],
+      "tests": [
+        "apps/web/src/inbox/**/*.test.{ts,tsx}",
+        "apps/web/src/orchestration/inbox-*.test.ts"
+      ],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"]
+    },
+    {
+      "name": "Board",
+      "purpose": "A workspace's features, workers and pull requests on one surface, with checks, reviews and merge readiness.",
+      "code": [
+        "apps/web/src/views/board-*",
+        "apps/web/src/orchestration/{board,feature}-*",
+        "apps/web/src/orchestration/feature-*"
+      ],
+      "tests": ["apps/web/src/views/board-*.test.{ts,tsx}", "apps/web/e2e/board*.spec.ts"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"]
+    },
+    {
+      "name": "Quiet mode and views",
+      "purpose": "The shell's views of a workspace and solo threads, and the quiet view that holds back what can wait.",
+      "code": ["apps/web/src/views/**", "apps/web/src/shell/**"],
+      "tests": ["apps/web/src/views/*.test.{ts,tsx}", "apps/web/e2e/quiet*.spec.ts"],
+      "docs": ["DESIGN.md"]
+    },
+    {
+      "name": "Sidebar and title bar",
+      "purpose": "Workspaces, threads and the Workspace menu around every screen.",
+      "code": ["apps/web/src/sidebar/**"],
+      "tests": ["apps/web/e2e/{sidebar,titlebar}*.spec.ts"],
+      "docs": ["DESIGN.md"]
+    },
+    {
+      "name": "Command palette and keyboard",
+      "purpose": "Every command by name, and the keyboard shortcuts a person can rebind.",
+      "code": [
+        "apps/web/src/palette/**",
+        "apps/web/src/keyboard/**",
+        "packages/server/src/keybindings/**",
+        "apps/web/src/routes/settings.keyboard.tsx"
+      ],
+      "tests": [
+        "apps/web/src/palette/**/*.test.{ts,tsx}",
+        "apps/web/e2e/{command,keyboard}*.spec.ts"
+      ],
+      "docs": ["docs/README.md"]
+    },
+    {
+      "name": "Workspace memory and memory updates",
+      "purpose": "The orchestrator's file-based memory of goals, decisions and rulings, and the dream run that consolidates it for review.",
+      "code": [
+        "packages/server/src/orchestration/{memory,dream,dreams}*",
+        "apps/web/src/orchestration/{memory,dream}*",
+        "apps/web/src/routes/w/$workspaceId.memory.tsx"
+      ],
+      "tests": ["packages/server/src/orchestration/{memory,dream,dreams}*.test.ts"],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#workspace-memory",
+        "docs/AGENTS_AND_FEATURES.md#memory-updates-and-selected-harness-support"
+      ]
+    },
+    {
+      "name": "Files and the shared folder",
+      "purpose": "A workspace's files and the shared folder its threads read and write.",
+      "code": [
+        "apps/web/src/panels/files/**",
+        "apps/web/src/routes/w/$workspaceId.files.tsx",
+        "packages/server/src/fs/**",
+        "packages/server/src/transfer/**",
+        "packages/server/src/attachments/**"
+      ],
+      "tests": ["packages/server/src/fs/**/*.test.ts", "apps/web/e2e/{files,folder}*.spec.ts"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#workspace-shared-folder"]
+    },
+    {
+      "name": "Diff and review panel",
+      "purpose": "A thread's changes by file and turn, with comments a person sends back to the agent.",
+      "code": [
+        "apps/web/src/panels/{diff,turn-diff,patch}*",
+        "apps/web/src/panels/review/**",
+        "packages/server/src/git/**",
+        "packages/git/src/**"
+      ],
+      "tests": [
+        "apps/web/src/panels/{diff,turn-diff,patch}*.test.{ts,tsx}",
+        "packages/git/src/**/*.test.ts",
+        "apps/web/e2e/review*.spec.ts"
+      ],
+      "docs": ["docs/ARCHITECTURE.md"]
+    },
+    {
+      "name": "Pull requests and review requests",
+      "purpose": "A thread's pull request with checks, blockers and actions; open PRs and the reviews asked of the person.",
+      "code": [
+        "apps/web/src/panels/{pr,ci}-*",
+        "apps/web/src/reviews/**",
+        "packages/server/src/github/**",
+        "packages/server/src/babysit/**"
+      ],
+      "tests": [
+        "apps/web/src/panels/pr-*.test.{ts,tsx}",
+        "apps/web/src/reviews/*.test.ts",
+        "packages/server/src/github/*.test.ts",
+        "packages/server/src/babysit/*.test.ts",
+        "apps/web/e2e/pr*.spec.ts"
+      ],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#watching-the-default-branch-after-merges"]
+    },
+    {
+      "name": "Merge checks and merge freezes",
+      "purpose": "A project's local checks that gate a merge, and freezes that hold merges back.",
+      "code": [
+        "packages/server/src/host/checks.ts",
+        "packages/server/src/launch-checks/**",
+        "apps/web/src/launch-checks/**",
+        "apps/web/src/settings/merge-review-policy-field.tsx"
+      ],
+      "tests": ["packages/server/src/host/checks.test.ts"],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#project-local-merge-checks",
+        "docs/AGENTS_AND_FEATURES.md#merge-freezes"
+      ]
+    },
+    {
+      "name": "Routines and wakes",
+      "purpose": "Scheduled and event routines that start work, and condition wakes that resume a thread when something happens.",
+      "code": [
+        "packages/server/src/routines/**",
+        "packages/server/src/wakes/**",
+        "packages/server/src/events/**",
+        "apps/web/src/routes/settings.routines.tsx"
+      ],
+      "tests": ["packages/server/src/routines/*.test.ts", "packages/server/src/wakes/**/*.test.ts"],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#routines",
+        "docs/AGENTS_AND_FEATURES.md#condition-wakes",
+        "docs/AGENTS_AND_FEATURES.md#events-instead-of-polling"
+      ]
+    },
+    {
+      "name": "Terminal and project scripts",
+      "purpose": "Terminals beside a thread, kept across restarts, and a project's own scripts.",
+      "code": [
+        "apps/web/src/panels/terminal/**",
+        "packages/server/src/terminal/**",
+        "packages/server/src/scripts/**",
+        "packages/shell/src/**",
+        "apps/web/src/routes/settings.terminal.tsx"
+      ],
+      "tests": [
+        "packages/server/src/terminal/**/*.test.ts",
+        "packages/shell/src/**/*.test.ts",
+        "apps/web/e2e/terminal*.spec.ts"
+      ],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#terminals-after-a-restart",
+        "docs/AGENTS_AND_FEATURES.md#project-scripts"
+      ]
+    },
+    {
+      "name": "Agent browser and pinned pages",
+      "purpose": "The in-app browser an agent and a person share, the preview pane, and pages pinned to a thread.",
+      "code": [
+        "packages/server/src/browser/**",
+        "packages/server/src/preview/**",
+        "packages/server/src/pages/**",
+        "apps/web/src/pages/**",
+        "apps/web/src/panels/{preview,server-preview,browser}*"
+      ],
+      "tests": ["packages/server/src/browser/**/*.test.ts", "apps/web/e2e/agent-browser.spec.ts"],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#browser-notifications-and-dictation",
+        "docs/AGENTS_AND_FEATURES.md#pinned-pages"
+      ]
+    },
+    {
+      "name": "Connectors",
+      "purpose": "MCP servers a thread may use, added and signed in to from the panel or Settings.",
+      "code": [
+        "packages/server/src/connectors/**",
+        "apps/web/src/panels/connector*",
+        "apps/web/src/panels/mcp-config.ts",
+        "apps/web/src/settings/connector*",
+        "apps/web/src/routes/settings.connectors.tsx"
+      ],
+      "tests": [
+        "packages/server/src/connectors/*.test.ts",
+        "apps/web/src/panels/connector*.test.tsx",
+        "apps/web/e2e/connectors*.spec.ts"
+      ],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"]
+    },
+    {
+      "name": "Gateways and AI helpers",
+      "purpose": "Opt-in model gateways and keys, and the AI helpers that title threads and draft text, with consent per provider.",
+      "code": [
+        "packages/server/src/gateway/**",
+        "packages/server/src/helper/**",
+        "apps/web/src/settings/{gateways,ai-helpers}-section.tsx",
+        "apps/web/src/routes/settings.{gateways,ai-helpers}.tsx"
+      ],
+      "tests": ["packages/server/src/gateway/*.test.ts", "apps/web/e2e/ai-helpers.spec.ts"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#ai-helpers-and-context-consent"]
+    },
+    {
+      "name": "Usage",
+      "purpose": "Subscription limits, cost and token use by thread and workspace, and pausing at a limit.",
+      "code": [
+        "apps/web/src/usage/**",
+        "packages/server/src/usage/**",
+        "apps/web/src/routes/{usage,settings.usage}.tsx",
+        "packages/server/src/runtime/{cost-ledger,limit-wait,rate-limits}.ts"
+      ],
+      "tests": ["packages/server/src/usage/**/*.test.ts", "apps/web/e2e/usage*.spec.ts"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#when-the-old-agent-is-out-of-usage"]
+    },
+    {
+      "name": "Machines",
+      "purpose": "Running threads on other computers: joining, updating, signing in and resuming a machine's kept disk.",
+      "code": [
+        "apps/web/src/settings/machine*",
+        "apps/web/src/routes/settings.machines.tsx",
+        "packages/server/src/host/**"
+      ],
+      "tests": [
+        "apps/web/src/settings/machine*.test.{ts,tsx}",
+        "packages/server/src/host/**/*.test.ts",
+        "apps/web/e2e/machine*.spec.ts"
+      ],
+      "docs": ["docs/MACHINES.md", "docs/PROVISIONED_HOSTS.md"]
+    },
+    {
+      "name": "Phones and remote access",
+      "purpose": "Opening Gram from a phone or another browser, with sign-in and access a person manages.",
+      "code": [
+        "apps/web/src/settings/phone-access-*",
+        "apps/web/src/routes/settings.phones.tsx",
+        "packages/server/src/http/**"
+      ],
+      "tests": ["apps/web/src/settings/phone-access-page.test.tsx"],
+      "docs": ["docs/REMOTE_ACCESS.md"]
+    },
+    {
+      "name": "Settings",
+      "purpose": "Every setting page: General, Agents, Appearance, Notifications, Storage, Updates, Voice input and the rest.",
+      "code": [
+        "apps/web/src/settings/**",
+        "apps/web/src/routes/settings*.tsx",
+        "packages/server/src/settings/**",
+        "packages/server/src/config.ts",
+        "apps/web/src/settings-sync/**"
+      ],
+      "tests": [
+        "apps/web/src/settings/*.test.{ts,tsx}",
+        "packages/server/src/settings/*.test.ts",
+        "packages/server/src/config.test.ts",
+        "apps/web/e2e/settings*.spec.ts"
+      ],
+      "docs": ["docs/README.md"]
+    },
+    {
+      "name": "Appearance and themes",
+      "purpose": "Palettes, fonts and radii by theme name, the design tokens and the kit every screen draws with.",
+      "code": [
+        "packages/themes/src/**",
+        "apps/web/src/theme/**",
+        "apps/web/src/styles/**",
+        "apps/web/src/components/**",
+        "tools/design-tokens/**",
+        "tools/mock-kit/**"
+      ],
+      "tests": [
+        "packages/themes/src/**/*.test.ts",
+        "tools/design-tokens/check.test.mjs",
+        "apps/web/e2e/appearance*.spec.ts"
+      ],
+      "docs": ["DESIGN.md"]
+    },
+    {
+      "name": "Dictation",
+      "purpose": "Voice input into the composer, with on-device speech models.",
+      "code": [
+        "apps/web/src/dictation/**",
+        "apps/web/src/routes/settings.voice-input.tsx",
+        "tools/sherpa-onnx/**"
+      ],
+      "tests": ["apps/web/src/dictation/**/*.test.{ts,tsx}", "tools/sherpa-onnx/install.test.mjs"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#browser-notifications-and-dictation"]
+    },
+    {
+      "name": "Worktrees",
+      "purpose": "Worktrees and branches Gram makes for each thread, their storage and cleanup.",
+      "code": ["apps/web/src/worktrees/**", "packages/server/src/host/clone-*"],
+      "tests": ["packages/server/src/host/clone-worktrees.test.ts"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#worktree-storage-and-cleanup"]
+    },
+    {
+      "name": "Thread profiles",
+      "purpose": "Saved choices of agent, model and settings a new thread starts from.",
+      "code": ["packages/server/src/thread-profiles/**"],
+      "tests": ["packages/server/src/thread-profiles/**/*.test.ts"],
+      "docs": ["docs/THREAD_PROFILES.md"]
+    },
+    {
+      "name": "Updates and What's new",
+      "purpose": "The app's updater, release channels and the notes shown after an update.",
+      "code": [
+        "apps/web/src/updates/**",
+        "apps/web/src/whats-new/**",
+        "packages/server/src/updates/**",
+        "apps/desktop/src/main/update/**"
+      ],
+      "tests": [
+        "packages/server/src/updates/**/*.test.ts",
+        "apps/desktop/src/main/update/**/*.test.ts"
+      ],
+      "docs": ["docs/UPDATES.md", "docs/RELEASING.md"]
+    },
+    {
+      "name": "Desktop app",
+      "purpose": "The Electron shell: windows, power and keep-awake, folder access, quitting and agents after Gram quits.",
+      "code": ["apps/desktop/src/**", "apps/web/src/desktop/**"],
+      "tests": ["apps/desktop/src/main/*.test.ts"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#agents-after-gram-quits", "docs/DEVELOPMENT.md"]
+    },
+    {
+      "name": "Embedded web app",
+      "purpose": "Gram's web app and server mounted inside another app: mount options, decision hook, event sink and hosts on demand.",
+      "code": [
+        "apps/web/src/embed/**",
+        "packages/server/src/embedding/**",
+        "apps/web/vite.embed.config.ts",
+        "apps/web/vite.kit-lite.config.ts"
+      ],
+      "tests": ["packages/server/src/embedding/*.test.ts", "apps/web/e2e-embed/**"],
+      "docs": ["docs/EMBEDDING.md", "docs/EMBEDDED_WEB_APP.md"]
+    },
+    {
+      "name": "Welcome and resuming sessions",
+      "purpose": "The first screen with recent repositories, and picking up a Claude Code or Codex session started outside Gram.",
+      "code": ["apps/web/src/welcome/**", "apps/web/src/resume/**"],
+      "tests": ["apps/web/src/welcome/*.test.{ts,tsx}", "apps/web/src/resume/*.test.tsx"],
+      "docs": ["README.md"]
+    },
+    {
+      "name": "History and search",
+      "purpose": "Past threads by workspace and full-text search across transcripts.",
+      "code": ["apps/web/src/history/**", "packages/server/src/search/**"],
+      "tests": ["apps/web/src/history/*.test.{ts,tsx}", "packages/server/src/search/*.test.ts"],
+      "docs": ["docs/ARCHITECTURE.md"]
+    },
+    {
+      "name": "Plans",
+      "purpose": "Plans an agent proposes for a person to approve before it works, kept with the thread.",
+      "code": ["packages/server/src/plans/**", "packages/server/src/runtime/history-plans.ts"],
+      "tests": [
+        "packages/server/src/plans/*.test.ts",
+        "packages/server/src/runtime/history-plans.test.ts"
+      ],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"]
+    },
+    {
+      "name": "Docs and outputs",
+      "purpose": "Documents and files a workspace's agents write, shown as chips and panes beside the thread.",
+      "code": [
+        "apps/web/src/docs/**",
+        "packages/server/src/docs/**",
+        "packages/server/src/outputs/**"
+      ],
+      "tests": ["packages/server/src/docs/*.test.ts", "packages/server/src/outputs/*.test.ts"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#workspace-shared-folder"]
+    },
+    {
+      "name": "Open in editor and local ports",
+      "purpose": "Opening a file in the person's own editor, and the local servers a thread starts.",
+      "code": [
+        "apps/web/src/editor/**",
+        "packages/server/src/editor/**",
+        "packages/server/src/ports/**",
+        "packages/server/src/platform/**"
+      ],
+      "tests": ["packages/server/src/editor/*.test.ts", "packages/server/src/ports/*.test.ts"],
+      "docs": ["docs/DEVELOPMENT.md"]
+    },
+    {
+      "name": "Report an issue and diagnostics",
+      "purpose": "A report of what went wrong, written without secrets, and the diagnostics page.",
+      "code": [
+        "apps/web/src/report-issue/**",
+        "packages/server/src/issues/**",
+        "packages/server/src/diagnostics/**",
+        "apps/web/src/routes/settings.diagnostics.tsx"
+      ],
+      "tests": [
+        "packages/server/src/issues/*.test.ts",
+        "packages/server/src/diagnostics/*.test.ts"
+      ],
+      "docs": ["SECURITY.md"]
+    },
+    {
+      "name": "The agent guide",
+      "purpose": "The guide to Gram's own tools that every orchestrator and worker reads.",
+      "code": ["packages/server/src/guide/**"],
+      "tests": ["packages/server/src/guide/*.test.ts"],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#the-agent-guide"]
+    },
+    {
+      "name": "Server and protocol",
+      "purpose": "The local server the app talks to over RPC, its persistence, and the contracts both sides share.",
+      "code": [
+        "packages/server/src/{main,bounded,durable-work}.ts",
+        "packages/server/src/rpc/**",
+        "packages/server/src/persistence/**",
+        "packages/server/src/logging/**",
+        "packages/contracts/src/**",
+        "apps/web/src/api/**",
+        "packages/server/src/shared/**",
+        "apps/web/src/stores/**",
+        "apps/web/src/lib/**"
+      ],
+      "tests": ["packages/server/src/persistence/**/*.test.ts", "packages/contracts/src/*.test.ts"],
+      "docs": ["docs/ARCHITECTURE.md", "docs/PACKAGES.md"]
+    },
+    {
+      "name": "Build, checks and release",
+      "purpose": "The check runner, lint and boundary rules, packaging and the release-candidate and stable release paths.",
+      "code": [
+        "tools/check/**",
+        "tools/oxlint/**",
+        "tools/*.mjs",
+        "tools/packages/**",
+        "tools/packaging/**",
+        "tools/release-*/**",
+        "docker/**",
+        ".github/workflows/**"
+      ],
+      "tests": [
+        "tools/check/*.test.mjs",
+        "tools/oxlint/gram.test.mjs",
+        "tools/release-*/**/*.test.mjs"
+      ],
+      "docs": ["docs/VERIFICATION.md", "docs/RELEASING.md", "docs/DOCKER.md", "CONTRIBUTING.md"]
+    }
+  ]
+}
