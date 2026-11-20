@@ -73,6 +73,11 @@ describe("Grok Build permissions", () => {
     expect(answer(edit({ file_path: "../.bashrc" }))).toBeUndefined();
     expect(answer(edit({ file_path: "/home/me/.ssh/authorized_keys" }))).toBeUndefined();
     expect(answer(edit({ file_path: "up/.bashrc" }))).toBeUndefined();
+    // A link's `..` goes from where the link points, and a dangling link's write creates its target.
+    expect(answer(edit({ file_path: "up/thread/../.bashrc" }))).toBeUndefined();
+    symlinkSync(join(top, "made-outside.sh"), join(cwd, "notes.sh"));
+    expect(answer(edit({ file_path: "notes.sh" }))).toBeUndefined();
+    expect(answer(edit({ file_path: "new/dir/c.ts" }))).toBe("allow");
     expect(answer(edit({ file_path: "a.ts" }, [{ path: "/etc/profile" }]))).toBeUndefined();
     expect(answer(edit({}))).toBeUndefined();
     expect(answer(edit({ file_path: 7 }))).toBeUndefined();

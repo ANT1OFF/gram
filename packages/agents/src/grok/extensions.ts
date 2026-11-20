@@ -11,13 +11,13 @@ import type {
   UserInput,
 } from "@gram/contracts";
 import { readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { lstatSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { APP_TOOLS_SERVER_NAME } from "../app-tools.ts";
 import { BUILT_IN_TOGGLE_REASON, type ConnectorStatus, type OutwardGate } from "../host.ts";
 import { gateAsks, outwardKind } from "../outward.ts";
-import { canonicalSessionHome } from "../session-home.ts";
 import { grokToolName, toolFor } from "./mapper.ts";
 
 /** A JSON object as ACP carries it. */
@@ -118,10 +118,37 @@ export const permissionParams = (permission: "ask" | "auto" | "always-approve"):
 
 const EDIT_PATH_KEYS = ["file_path", "target_file", "path", "notebook_path", "target_directory"];
 
+const exists = (path: string) => {
+  try {
+    return lstatSync(path);
+  } catch {
+    return undefined;
+  }
+};
+
 /**
- * Whether every path an edit request names (its `locations` and its input's path keys) is, once
- * links are followed, inside one of `roots`, the first of which relative paths are read from. A
- * request naming no path is not.
+ * Where a write to absolute `path` lands: its nearest existing ancestor with every link followed,
+ * then the rest, which can hold no link. `undefined` for a path that is itself a link, dangling or
+ * not, or whose links can't be followed.
+ */
+const landing = (path: string): string | undefined => {
+  let at = path;
+  while (exists(at) === undefined) {
+    if (dirname(at) === at) return undefined;
+    at = dirname(at);
+  }
+  if (at === path && exists(at)?.isSymbolicLink() === true) return undefined;
+  try {
+    return join(realpathSync(at), relative(at, path));
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Whether every path an edit request names (its `locations` and its input's path keys) lands,
+ * once links are followed, inside one of `roots`, the first of which relative paths are read
+ * from. A request naming no path, or a path with a `..` step or ending in a link, is not.
  */
 export const editWithin = (call: Json, roots: ReadonlyArray<string>): boolean => {
   const [cwd] = roots;
@@ -132,14 +159,17 @@ export const editWithin = (call: Json, roots: ReadonlyArray<string>): boolean =>
     ...EDIT_PATH_KEYS.map((key) => input[key]),
   ].filter((path) => path !== undefined);
   if (named.length === 0) return false;
-  const inside = roots.map((root) => canonicalSessionHome(resolve(root)));
+  const inside = roots.flatMap((root) => landing(resolve(root)) ?? []);
   return named.every((path) => {
-    if (typeof path !== "string" || path === "") return false;
-    const real = canonicalSessionHome(resolve(cwd, path));
-    return inside.some((root) => {
-      const rest = relative(root, real);
-      return rest === "" || (!rest.startsWith("..") && !isAbsolute(rest));
-    });
+    if (typeof path !== "string" || path === "" || path.split(/[\\/]/).includes("..")) return false;
+    const real = landing(resolve(cwd, path));
+    return (
+      real !== undefined &&
+      inside.some((root) => {
+        const rest = relative(root, real);
+        return rest === "" || (!rest.split(/[\\/]/).includes("..") && !isAbsolute(rest));
+      })
+    );
   });
 };
 

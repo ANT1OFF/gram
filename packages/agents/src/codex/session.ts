@@ -887,11 +887,14 @@ export const makeCodexHost = (
             .request("config/read", { includeLayers: true, cwd: o.cwd })
             .pipe(Effect.mapError(unavailableNaming("Codex couldn't read its config", needs))),
         );
-        if (loaded.length > 0)
+        if (loaded === undefined || loaded.length > 0)
           return yield* new AgentUnavailable({
             agent: "codex",
             reason: "startup-failed",
-            message: `This checkout is someone else's code, and your Codex config trusts its ${loaded.join(", ")}, so Codex would run the settings in it. Remove that project's trust from your Codex config, or use Claude Code, to run here.`,
+            message:
+              loaded === undefined
+                ? "This checkout is someone else's code, and this Codex doesn't say which project settings it would load. Update Codex, or use Claude Code, to run here."
+                : `This checkout is someone else's code, and your Codex config trusts its ${loaded.join(", ")}, so Codex would run the settings in it. Remove that project's trust from your Codex config, or use Claude Code, to run here.`,
           });
       }
       const confined =

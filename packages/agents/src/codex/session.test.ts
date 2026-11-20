@@ -80,7 +80,7 @@ const harness = (
     /** What `config/read` answers with as `config`, in place of the default servers. */
     readonly config?: Record<string, unknown>;
     /** What `config/read` answers with as `layers` when asked for them. */
-    readonly layers?: ReadonlyArray<unknown>;
+    readonly layers?: ReadonlyArray<unknown> | null;
     readonly reload?: Effect.Effect<void, CodexRpcError>;
     readonly account?: "signedOut" | "chatgpt" | "apiKey" | "localProvider";
     readonly modelPages?: ReadonlyArray<ReadonlyArray<Record<string, unknown>>>;
@@ -274,7 +274,7 @@ const harness = (
           version: "v",
         },
       },
-      layers: p.includeLayers === true ? (options.layers ?? []) : null,
+      layers: p.includeLayers === true && options.layers !== null ? (options.layers ?? []) : null,
     }),
     "config/batchWrite": () => ({
       status: "ok",
@@ -1610,6 +1610,12 @@ describe("CodexHost confined sessions", () => {
       );
       expect(refused.message).toContain("/repo/.codex");
       expect(trusted.calls.some(([method]) => method === "thread/start")).toBe(false);
+      const unlisted = harness({ layers: null });
+      const unknown = yield* openSession({ untrustedTree: true }).pipe(
+        Effect.provide(unlisted.layer),
+        Effect.flip,
+      );
+      expect(unknown.message).toContain("doesn't say which project settings");
 
       const untrusted = harness({ layers: [project("/repo/.codex", "project is not trusted")] });
       yield* openSession({ untrustedTree: true }).pipe(Effect.provide(untrusted.layer));

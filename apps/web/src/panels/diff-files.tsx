@@ -23,7 +23,9 @@ import type { DiffLayout } from "@/stores/layout";
 
 import { ChunkedPatch, useDiffChunkSource } from "./diff-chunks";
 import { PatchView } from "./patch-view";
-import { quoteShellPath, typablePath } from "./terminal/shell-quote";
+import { quoteShellPath, type ShellKind, typablePath } from "./terminal/shell-quote";
+
+const SHELL_KINDS: ReadonlyArray<ShellKind> = ["posix", "git-bash", "powershell", "cmd"];
 
 /**
  * Changed lines past which a file starts collapsed, however few files there are; a diff with fewer in
@@ -381,12 +383,14 @@ function DiffFileRow({
 
 /**
  * The command that prints `file`'s patch from its checkout, as the Diff panel would show it, or
- * nothing when its path holds a character a terminal acts on before the shell reads it
- * (`typablePath`): such a command is never offered to paste.
+ * nothing unless its path reads as one plain argument in every shell a terminal here might run
+ * (`quoteShellPath`): a path that needs quoting, or holds a character a terminal acts on before
+ * the shell reads it (`typablePath`), is never offered to paste.
  */
 export const diffCommand = (file: DiffFile): string | undefined => {
-  if (!typablePath(file.path)) return undefined;
-  const path = quoteShellPath(file.path, "posix");
+  const path = file.path;
+  if (!typablePath(path) || SHELL_KINDS.some((kind) => quoteShellPath(path, kind) !== path))
+    return undefined;
   return file.status === "untracked" || file.status === "added"
     ? `git diff --no-index -- /dev/null ${path}`
     : `git diff -- ${path}`;

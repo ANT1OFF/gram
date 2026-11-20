@@ -61,13 +61,16 @@ export const leftOutConfig = (
 /**
  * The `.codex` folders of the project layers Codex loads for a `config/read` with layers: those
  * the user's Codex trusts, whose MCP servers, hooks and rules would run with the session.
+ * `undefined` when Codex didn't list its layers, so what it loads can't be told.
  */
-export const loadedProjectLayers = (read: ConfigReadResponse): ReadonlyArray<string> =>
-  (read.layers ?? []).flatMap((layer) =>
-    layer.name.type === "project" && layer.disabledReason === null
-      ? [layer.name.dotCodexFolder]
-      : [],
-  );
+export const loadedProjectLayers = (read: ConfigReadResponse): ReadonlyArray<string> | undefined =>
+  read.layers === null || !Array.isArray(read.layers)
+    ? undefined
+    : read.layers.flatMap((layer) =>
+        layer.name.type === "project" && typeof layer.disabledReason !== "string"
+          ? [layer.name.dotCodexFolder]
+          : [],
+      );
 
 /**
  * The servers a confined thread still has running that aren't Gram's own, by name: a

@@ -28,8 +28,8 @@ const HARMLESS_KEYS = new Set([
 /** Permission keys that only narrow what runs; `allow` is counted, and any other key is other. */
 const NARROWING_PERMISSIONS = new Set(["allow", "deny", "ask"]);
 
-/** Claude Code's definitions under `.claude`, whose frontmatter can carry hooks and tools. */
-const DEFINITION_DIRS = ["agents", "skills", "commands", "output-styles"];
+/** What under `.claude` is read above or loads nothing that runs: every other entry counts. */
+const KNOWN_CLAUDE_ENTRIES = new Set(["settings.json", "settings.local.json", "CLAUDE.md"]);
 
 type Json = Record<string, unknown>;
 
@@ -64,19 +64,22 @@ const lstat = (path: string) => {
 };
 
 /**
- * The agent, skill, command and output-style folders under `.claude` that hold anything, or
- * `.claude` itself when it is a link or can't be looked in: Claude Code loads each as the user's.
+ * What else `.claude` holds that isn't empty, such as Claude Code's agents, skills and commands,
+ * whose frontmatter can carry hooks and tools; or `.claude` itself when it is a link or can't be
+ * looked in. Each would load as the user's.
  */
 const definitions = (real: string): ReadonlyArray<string> => {
   try {
     const claude = lstat(nodePath.join(real, ".claude"));
     if (claude === undefined || claude.isFile()) return [];
     if (!claude.isDirectory()) return [".claude"];
-    return DEFINITION_DIRS.flatMap((name) => {
+    return fs.readdirSync(nodePath.join(real, ".claude")).flatMap((name) => {
+      if (KNOWN_CLAUDE_ENTRIES.has(name)) return [];
       const path = nodePath.join(real, ".claude", name);
       const found = lstat(path);
-      if (found === undefined) return [];
-      return found.isDirectory() && fs.readdirSync(path).length === 0 ? [] : [`.claude/${name}`];
+      return found?.isDirectory() === true && fs.readdirSync(path).length === 0
+        ? []
+        : [`.claude/${name}`];
     });
   } catch {
     return [".claude"];

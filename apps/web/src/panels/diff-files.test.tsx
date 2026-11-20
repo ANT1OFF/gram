@@ -61,13 +61,13 @@ describe("pathParts", () => {
 });
 
 describe("diffCommand", () => {
-  it("quotes a path for the shell as one argument", () => {
-    expect(diffCommand(file("a b/it's $(x) `y` & %z%.ts"))).toBe(
-      `git diff -- 'a b/it'\\''s $(x) \`y\` & %z%.ts'`,
-    );
+  it("offers a command only for a path that reads as one plain argument in every shell", () => {
+    expect(diffCommand(file("src/a-b_c.ts"))).toBe("git diff -- src/a-b_c.ts");
     expect(diffCommand({ ...file("new.ts"), status: "untracked" })).toBe(
       "git diff --no-index -- /dev/null new.ts",
     );
+    for (const path of ["a b.ts", "it's.ts", "$(x).ts", "`y`.ts", "a&calc.ts", "%PATH%.ts"])
+      expect(diffCommand(file(path))).toBeUndefined();
   });
 
   it("offers no command for a path a terminal would act on before the shell reads it", () => {

@@ -238,7 +238,7 @@ export const FolderSettings = Schema.Struct({
   unreadable: Schema.Array(Schema.String),
   /**
    * The rest that would load as the user's: settings keys not known to be harmless (`file: key`),
-   * and the agents, skills and commands folders under `.claude`.
+   * and whatever else `.claude` holds, such as agents, skills and commands.
    */
   other: Schema.Array(Schema.String),
   none: Schema.Boolean,

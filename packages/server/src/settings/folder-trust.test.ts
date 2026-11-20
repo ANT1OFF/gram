@@ -84,14 +84,20 @@ describe("folderSettings", () => {
     expect(folderSettings(folder({ ".claude/settings.json": '{"model":"opus"}' })).none).toBe(true);
   });
 
-  it("counts Claude Code agents, skills and commands under .claude", () => {
+  it("counts everything else under .claude: agents, skills, and kinds it hasn't met", () => {
     const found = folderSettings(
       folder({
         ".claude/agents/helper.md": "---\nname: helper\n---\n",
         ".claude/skills/s/SKILL.md": "",
+        ".claude/something-new/x": "",
+        ".claude/CLAUDE.md": "notes",
       }),
     );
-    expect(found.other).toEqual([".claude/agents", ".claude/skills"]);
+    expect([...found.other].toSorted()).toEqual([
+      ".claude/agents",
+      ".claude/skills",
+      ".claude/something-new",
+    ]);
     expect(found.none).toBe(false);
     const linked = folder();
     fs.symlinkSync(folder(), nodePath.join(linked, ".claude"));
