@@ -44,6 +44,7 @@ const deviceOf = (servers: ReadonlyArray<HostedServerState>) => {
     waitWork: record("waitWork"),
     messageWork: record("messageWork"),
     stopWork: record("stopWork"),
+    machineWork: record("machineWork"),
   } as unknown as HostedDevice;
   return { device, calls };
 };
@@ -93,6 +94,9 @@ describe("the app answering its server's sent work", () => {
       { ...send, op: "delete" },
       { ...send, op: "check", repositories: ["-x\nrm"] },
       { ...send, op: "check", repositories: [] },
+      // A machine is read or started, never stopped or anything else.
+      { ...send, op: "machine", action: "stop" },
+      { ...send, op: "machine" },
     ]) {
       expect((await answerSentWork(bad, device))?.result.ok).toBe(false);
     }
@@ -101,6 +105,11 @@ describe("the app answering its server's sent work", () => {
     expect(calls.at(-1)).toEqual({
       op: "checkWork",
       args: ["https://a.example.com", "w1", ["acme/shop"]],
+    });
+    await answerSentWork({ ...send, op: "machine", action: "start" }, device);
+    expect(calls.at(-1)).toEqual({
+      op: "machineWork",
+      args: ["https://a.example.com", "w1", "start"],
     });
   });
 

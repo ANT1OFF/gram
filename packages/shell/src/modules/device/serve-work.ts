@@ -66,6 +66,11 @@ export const answerSentWork = async (
     if (repositories === undefined) return respond(MALFORMED);
     return respond(await device.checkWork(origin, workspace, repositories));
   }
+  if (op === "machine") {
+    const action = Reflect.get(message, "action");
+    if (action !== "get" && action !== "start") return respond(MALFORMED);
+    return respond(await device.machineWork(origin, workspace, action));
+  }
   if (op === "send") {
     const work = workToSendOf(message);
     if (work === undefined) return respond(MALFORMED);

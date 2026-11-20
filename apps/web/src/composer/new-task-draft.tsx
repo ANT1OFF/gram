@@ -21,10 +21,15 @@ import { errorMessage } from "@/api/errors";
 import { RunsOnStop } from "./runs-on-chip";
 import {
   checkSend,
+  machineLine,
+  refusedForMachine,
   type SendTarget,
+  SendWorkError,
   sendCheckRows,
+  sendStartsMachine,
   sendTargetKey,
   sendTask,
+  startSendMachine,
   useSendTargets,
 } from "./send-target";
 import { SendChecks, SendTargetPicker } from "./send-target-stop";
@@ -100,6 +105,9 @@ const checkingAgent = (model: { agent: string } | undefined): string =>
  * at the autonomy picked above the goal. A single agent chat, the one-off thread, is the other
  * draft behind the same header.
  */
+/** A wait between asking again, while a send starts the person's machine there. */
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const TaskOrchestratorFields = lazy(() => import("./task-orchestrator-fields"));
 
 /** The `ModelRef` an orchestrator pick starts on, as `choiceModel` makes it. */
@@ -333,6 +341,15 @@ export function NewTaskDraft({
   );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
+  /** While a send starts the person's machine there first: what it is on now. */
+  const [machineStep, setMachineStep] = useState<string>();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const formRef = useRef<HTMLFormElement>(null);
   const [controlsOpen, setControlsOpen] = useState(false);
 
@@ -403,18 +420,47 @@ export function NewTaskDraft({
       if (!sendValid || sending || target === undefined || sendProject === undefined) return;
       setSending(true);
       setError(undefined);
-      try {
-        const sent = await sendTask({
+      // The person's own machine there, started first where the server offers it and it isn't
+      // up: asked again until it runs, saying each step (`/threads/send-machine`).
+      const machineRuns = async (): Promise<boolean> => {
+        for (;;) {
+          const progress = await startSendMachine(sendTo);
+          if (progress.state === "unoffered") return false;
+          if (progress.state === "failed") throw new SendWorkError(progress.why);
+          if (progress.state === "ready") return true;
+          if (!mounted.current) throw new SendWorkError("New task was closed.");
+          setMachineStep(machineLine(progress, sendTo));
+          await pause(2_000);
+        }
+      };
+      const sendIt = () =>
+        sendTask({
           workspaceId: target.workspaceId,
           projectId: sendProject,
           target: sendTo,
           text: prompt.trim(),
           clientRequestId: draftId,
         });
+      try {
+        const started = sendStartsMachine(sendCheck.data) && (await machineRuns());
+        setMachineStep(started ? `Sending to ${sendTo.workspace}…` : undefined);
+        let sent: Awaited<ReturnType<typeof sendIt>> | undefined;
+        // A machine that just came up may not have joined there yet: the same send, a few times.
+        for (let attempt = 0; sent === undefined; attempt += 1) {
+          try {
+            sent = await sendIt();
+          } catch (e) {
+            if (!started || attempt >= 5 || !refusedForMachine(e) || !mounted.current) throw e;
+            setMachineStep(`Waiting for your machine on ${sendTo.host} to join…`);
+            await pause(5_000);
+          }
+        }
         useTaskDraftStore.getState().remember(target);
         void navigate({ to: "/t/$threadId", params: { threadId: sent.threadId } });
       } catch (e) {
+        if (!mounted.current) return;
         setSending(false);
+        setMachineStep(undefined);
         setError(errorMessage(e) || "The task couldn't be sent.");
       }
       return;
@@ -731,6 +777,16 @@ export function NewTaskDraft({
             checking={sendCheck.isFetching}
             onRecheck={() => void sendCheck.refetch()}
           />
+        )}
+
+        {machineStep !== undefined && (
+          <p
+            role="status"
+            data-testid="send-machine"
+            className="flex items-center gap-2 text-reading text-muted-foreground"
+          >
+            <Spinner aria-hidden className="size-3" /> {machineStep}
+          </p>
         )}
 
         {error && (

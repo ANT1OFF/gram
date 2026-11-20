@@ -4,6 +4,7 @@ import {
   type DeviceCapability,
   type DeviceId,
   type HostedDiscovery,
+  type HostedMachine,
   type HostedRepositoryReach,
   type HostedThreadWaited,
   type HostedWorkspace,
@@ -29,6 +30,7 @@ import {
   messageHostedThread,
   startHostedThread,
   checkHostedRepositories,
+  hostedMachine,
   stopHostedThread,
   waitHostedThread,
   registerHostedDevice,
@@ -274,6 +276,18 @@ export interface HostedDevice {
     repositories: readonly string[],
   ) => Promise<
     | { readonly ok: true; readonly reach: HostedRepositoryReach }
+    | { readonly ok: false; readonly why: string }
+  >;
+  /**
+   * The person's own machine in a workspace there, read or started unless it runs, for work sent
+   * with none running. Only for a send the person makes: never stopped from here.
+   */
+  readonly machineWork: (
+    origin: string,
+    workspace: string,
+    action: "get" | "start",
+  ) => Promise<
+    | { readonly ok: true; readonly machine: HostedMachine | "unoffered" }
     | { readonly ok: false; readonly why: string }
   >;
   /** Waits on a thread sent from here: only those, as the server checks again. */
@@ -1087,6 +1101,13 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       const refused = refusedForThreads(server, workspace);
       if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
       return checkHostedRepositories({ ...callsOf(server), workspaceId: workspace, repositories });
+    },
+
+    machineWork: async (origin, workspace, action) => {
+      const server = known(origin);
+      const refused = refusedForThreads(server, workspace);
+      if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
+      return hostedMachine({ ...callsOf(server), workspaceId: workspace, action });
     },
 
     waitWork: async (origin, workspace, threadId, wait) => {

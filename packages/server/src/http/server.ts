@@ -173,6 +173,7 @@ import {
   SentWorkRoutes,
   THREAD_SEND_CHECK_PATH,
   THREAD_SEND_PATH,
+  THREAD_SEND_MACHINE_PATH,
 } from "../orchestration/sent-work-routes.ts";
 import {
   PROFILE_MOVE_PATH,
@@ -603,6 +604,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             WORKSPACE_TRANSFER_PATHS.has(target.path) ||
             target.path === THREAD_SEND_CHECK_PATH ||
             target.path === THREAD_SEND_PATH ||
+            target.path === THREAD_SEND_MACHINE_PATH ||
             target.path === PROFILE_START_PATH ||
             target.path === PROFILE_MOVE_PATH ||
             target.path === PROFILE_WAIT_PATH ||
@@ -763,7 +765,8 @@ export const AuthMiddleware = HttpRouter.middleware(
                       path !== undefined &&
                       (WORKSPACE_TRANSFER_PATHS.has(path) ||
                         path === THREAD_SEND_CHECK_PATH ||
-                        path === THREAD_SEND_PATH)
+                        path === THREAD_SEND_PATH ||
+                        path === THREAD_SEND_MACHINE_PATH)
                     ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
                     : path !== undefined && MACHINE_MANAGEMENT_PATHS.has(path)
                       ? isRemote || remoteHosts === undefined

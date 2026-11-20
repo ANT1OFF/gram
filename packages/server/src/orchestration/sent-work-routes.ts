@@ -5,7 +5,9 @@
 // uncommitted here. The send makes the task the workspace orchestrator's worker on that server
 // (`sendWorker`), as `send_worker` would, by the person's own say. Only the local app reaches them
 // (`http/remote-access.ts`); while the hosted features setting is off they answer as a path that
-// isn't there.
+// isn't there. `POST /threads/send-machine` starts the person's own machine there for a send with
+// none running and says how it stands (`embedding/hosted-machine.ts`): New task asks it again until
+// the machine runs, then sends.
 
 import { embeddingOn, type ProjectId, type WorkspaceId } from "@gram/contracts";
 import { git, Proc } from "@gram/git";
@@ -15,16 +17,21 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { ensureHostedMachine, type HostedMachineProgress } from "../embedding/hosted-machine.ts";
 import { SentWorkPort } from "../embedding/sent-work-port.ts";
 import { authTarget } from "../http/auth-target.ts";
-import { THREAD_SEND_CHECK_PATH, THREAD_SEND_PATH } from "../http/remote-access.ts";
+import {
+  THREAD_SEND_CHECK_PATH,
+  THREAD_SEND_MACHINE_PATH,
+  THREAD_SEND_PATH,
+} from "../http/remote-access.ts";
 import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { repositoryOf, sendWorker, targetName } from "./sent-workers.ts";
 import { Orchestration } from "./service.ts";
 
-export { THREAD_SEND_CHECK_PATH, THREAD_SEND_PATH };
+export { THREAD_SEND_CHECK_PATH, THREAD_SEND_MACHINE_PATH, THREAD_SEND_PATH };
 
 const BODY_MAX = 64 * 1024;
 
@@ -40,6 +47,8 @@ export const SendCheckInput = Schema.Struct({
   /** The hosted workspace picked: the server is asked whether it reaches the repository. */
   target: Schema.optionalKey(Target),
 });
+
+export const SendMachineInput = Schema.Struct({ target: Target });
 
 export const SendInput = Schema.Struct({
   workspaceId: Id,
@@ -196,21 +205,32 @@ export const SentWorkRoutes = Layer.unwrap(
                 each.origin === input.target?.origin &&
                 each.workspaceId === input.target.workspaceId,
             );
-      const reach =
-        picked === undefined || repository === undefined
-          ? undefined
-          : yield* port.check(picked.origin, picked.workspaceId, [repository]);
+      // Whether the server reaches the repository, and how the person's own machine there stands:
+      // both read, neither changes anything there.
+      const [reach, machine] =
+        picked === undefined
+          ? [undefined, undefined]
+          : yield* Effect.all(
+              [
+                repository === undefined
+                  ? Effect.succeed(undefined)
+                  : port.check(picked.origin, picked.workspaceId, [repository]),
+                port.machine(picked.origin, picked.workspaceId, "get"),
+              ],
+              { concurrency: "unbounded" },
+            );
       return HttpServerResponse.jsonUnsafe({
         targets,
         ...(listed.ok ? {} : { unlisted: listed.why }),
         ...(repository === undefined ? {} : { repository }),
         orchestrator: found.state.workspace.orchestratorThreadId !== undefined,
         local,
-        ...(reach === undefined
-          ? {}
-          : reach.ok
-            ? { reach: reach.reach.items[0] ?? { repository, reach: "unknown" } }
-            : { reach: { repository, reach: "unknown", reason: reach.why } }),
+        // A check the server couldn't make (an older server, or one that failed) says nothing:
+        // the send is still the server's to refuse.
+        ...(reach?.ok === true
+          ? { reach: reach.reach.items[0] ?? { repository, reach: "unknown" } }
+          : {}),
+        ...(machine?.ok === true ? { machine: machine.machine } : {}),
         ...(reach?.ok === true && reach.reach.model !== undefined
           ? { model: reach.reach.model }
           : {}),
@@ -253,9 +273,53 @@ export const SentWorkRoutes = Layer.unwrap(
       );
     });
 
+    // Each target's start, while it runs and once it ended: asked again, a running one is only
+    // read, and an ended one is made again (which only reads a machine that runs).
+    const root = yield* Effect.scope;
+    const starts = new Map<string, { progress: HostedMachineProgress; running: boolean }>();
+    const machine = Effect.gen(function* () {
+      const refused = yield* guard(THREAD_SEND_MACHINE_PATH);
+      if (refused !== undefined) return refused;
+      const read = yield* jsonBody;
+      if (read.refused !== undefined) return read.refused;
+      const decoded = Schema.decodeUnknownOption(SendMachineInput)(read.value);
+      if (Option.isNone(decoded)) return refuse(NOT_ONE, 400);
+      const { target } = decoded.value;
+      const key = `${target.origin} ${target.workspaceId}`;
+      const known = starts.get(key);
+      if (known?.running === true) return HttpServerResponse.jsonUnsafe(known.progress);
+      const entry = {
+        progress: { state: "starting", phase: "none" } as HostedMachineProgress,
+        running: true,
+      };
+      starts.set(key, entry);
+      yield* ensureHostedMachine(port, target, {
+        onProgress: (progress) =>
+          Effect.sync(() => {
+            entry.progress = progress;
+          }),
+      }).pipe(
+        Effect.tap((ended) =>
+          Effect.sync(() => {
+            entry.progress = ended;
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            entry.running = false;
+          }),
+        ),
+        Effect.forkIn(root),
+      );
+      // The first reading, so a machine that runs answers ready at once.
+      yield* Effect.yieldNow;
+      return HttpServerResponse.jsonUnsafe(entry.progress);
+    });
+
     return Layer.mergeAll(
       HttpRouter.add("*", THREAD_SEND_CHECK_PATH, () => check),
       HttpRouter.add("*", THREAD_SEND_PATH, () => send),
+      HttpRouter.add("*", THREAD_SEND_MACHINE_PATH, () => machine),
     );
   }),
 );

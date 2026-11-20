@@ -66,6 +66,18 @@ describe("New task's checks before it sends a task to a server", () => {
     ).toEqual({ reach: "warn", base: "warn", uncommitted: "warn" });
   });
 
+  it("says nothing of a reach the server couldn't be asked, and never stops the send for it", () => {
+    const { reach: _reach, ...unasked } = clean;
+    expect(states(unasked)).toEqual({ base: "ok" });
+  });
+
+  it("says a send starts the person's machine there only when the server offers it and it's down", () => {
+    expect(states({ ...clean, machine: { phase: "none" } }).machine).toBe("ok");
+    expect(states({ ...clean, machine: { phase: "running", starting: true } }).machine).toBe("ok");
+    expect(states({ ...clean, machine: { phase: "running" } }).machine).toBeUndefined();
+    expect(states({ ...clean, machine: "unoffered" }).machine).toBeUndefined();
+  });
+
   it("blocks what the server couldn't start from, or report back", () => {
     expect(states({ ...clean, reach: { reach: "no", reason: "No access." } }).reach).toBe("block");
     expect(states({ orchestrator: true, local: clean.local }).reach).toBe("block");

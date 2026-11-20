@@ -458,6 +458,14 @@ export const HostedDiscovery = Schema.Struct({
    */
   thread_check_endpoint: Schema.optionalKey(Address),
   /**
+   * Where this machine reads (`machine_status_endpoint`) and starts (`machine_start_endpoint`) the
+   * person's own machine in a workspace there, for work sent with none running (`POST`,
+   * `{workspaceId}`, answered `HostedMachine`). Both or neither; absent on a server that starts no
+   * machine from here.
+   */
+  machine_status_endpoint: Schema.optionalKey(Address),
+  machine_start_endpoint: Schema.optionalKey(Address),
+  /**
    * Where model calls are sent on the person's behalf, by a CLI on this machine that this machine
    * forwards with the sign-in: a provider's own path follows it (`/v1/messages`). Absent on a
    * server that takes none.
@@ -539,6 +547,8 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
       discovery.thread_message_endpoint,
       discovery.thread_stop_endpoint,
       discovery.thread_check_endpoint,
+      discovery.machine_status_endpoint,
+      discovery.machine_start_endpoint,
       discovery.models_endpoint,
     ].filter((address) => address !== undefined),
   ];
@@ -612,6 +622,36 @@ export const runsSentWork = (discovery: HostedDiscovery): boolean =>
   discovery.thread_wait_endpoint !== undefined &&
   discovery.thread_message_endpoint !== undefined &&
   discovery.thread_stop_endpoint !== undefined;
+
+/**
+ * How a hosted Gram that runs no work itself begins its refusal of work for a person with no
+ * machine running (`host/headless.ts`): a send that started their machine sends again on it.
+ */
+export const NO_MACHINE_RUNNING = "You have no machine running";
+
+/** Whether the server starts the person's own machine from here: it names both calls for it. */
+export const startsMachines = (discovery: HostedDiscovery): boolean =>
+  discovery.machine_status_endpoint !== undefined && discovery.machine_start_endpoint !== undefined;
+
+/**
+ * The person's own machine in a workspace there, as `machine_status_endpoint` and
+ * `machine_start_endpoint` answer: where it stands (`none` when they have none, `running` once it
+ * runs) and whether a start of it is under way. Read leniently: a phase Gram doesn't know is the
+ * server's word, shown as it is. All the server's word.
+ */
+export const HostedMachine = Schema.Struct({
+  phase: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(40)),
+  starting: Schema.optionalKey(Schema.Boolean),
+});
+export type HostedMachine = typeof HostedMachine.Type;
+
+/** Whether work sent there now has a machine to run on: it runs, and no start is under way. */
+export const hostedMachineReady = (machine: HostedMachine): boolean =>
+  machine.phase === "running" && machine.starting !== true;
+
+/** Whether the machine won't come up without another start: none, stopped, or failed. */
+export const hostedMachineDown = (machine: HostedMachine): boolean =>
+  machine.starting !== true && ["none", "stopping", "stopped", "failed"].includes(machine.phase);
 
 /**
  * `POST thread_start_endpoint`: work sent from this machine, as a new thread of a workspace there,
@@ -818,6 +858,13 @@ export type SentWorkOp =
       readonly origin: string;
       readonly workspaceId: string;
       readonly threadId: string;
+    }
+  | {
+      /** The person's own machine there: read, or started unless it runs. Never stopped. */
+      readonly op: "machine";
+      readonly origin: string;
+      readonly workspaceId: string;
+      readonly action: "get" | "start";
     };
 
 export type SentWorkRequestMessage = {
@@ -832,6 +879,8 @@ export type SentWorkResult =
   | { readonly ok: true; readonly threadId: string; readonly branch?: string }
   | { readonly ok: true; readonly waited: HostedThreadWaited }
   | { readonly ok: true; readonly queued: boolean; readonly after?: string }
+  /** `unoffered`: the server starts no machine from here. */
+  | { readonly ok: true; readonly machine: HostedMachine | "unoffered" }
   | { readonly ok: true }
   | { readonly ok: false; readonly why: string; readonly unknown?: true };
 

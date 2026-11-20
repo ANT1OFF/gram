@@ -31,6 +31,8 @@ export const THREAD_SETTLED_THERE_PATH = "/threads/settled-there";
 /** New task's send of a task to a hosted workspace, and its checks first. */
 export const THREAD_SEND_CHECK_PATH = "/threads/send-check";
 export const THREAD_SEND_PATH = "/threads/send";
+/** The person's own machine there, started for a send with none running, and how it stands. */
+export const THREAD_SEND_MACHINE_PATH = "/threads/send-machine";
 /** Management routes: only the local app may call them, never a paired browser. */
 export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   REMOTE_PAIR_PATH,
@@ -45,6 +47,7 @@ export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   // Work sent from here to a server, with the person's sign-in the desktop app holds.
   THREAD_SEND_CHECK_PATH,
   THREAD_SEND_PATH,
+  THREAD_SEND_MACHINE_PATH,
   // A thread started from a profile, by the platform in front or the local app, and moved.
   PROFILE_START_PATH,
   PROFILE_MOVE_PATH,
