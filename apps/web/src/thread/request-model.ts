@@ -8,6 +8,9 @@ import {
   WORKSPACE_CREATE_TOOL,
   WORKSPACE_UPDATE_TOOL,
   WorkspaceProposalCard,
+  approvalHidesText,
+  revealHidden,
+  revealValue,
   type ApprovalRequest,
   type PermissionBehavior,
   type PermissionUpdateDestination,
@@ -112,7 +115,7 @@ export const mcpServerProposal = (request: ApprovalRequest): McpServerProposalCa
 export const appToolSummary = (request: ApprovalRequest): string | undefined => {
   if (!request.toolName.startsWith(APP_TOOL_PREFIX)) return undefined;
   const description = request.description?.trim();
-  return description === undefined || description === "" ? undefined : description;
+  return description === undefined || description === "" ? undefined : revealHidden(description);
 };
 
 /**
@@ -122,9 +125,14 @@ export const appToolSummary = (request: ApprovalRequest): string | undefined => 
  * `workspace_update` decides which repos a workspace reaches and what its agents may do, and an
  * agent's form submission or held page requests (`browser_*` with a `control`) send what its
  * details list to a public site. It is never answered from its summary alone, so compact cards show
- * its details and the inbox never folds it into an "Allow all".
+ * its details and the inbox never folds it into an "Allow all". Nor is any approval whose input or
+ * description hides or reorders text (`approvalHidesText`): what it reads as is not what runs, so
+ * it is read whole, its hidden characters shown as markers, before it is answered. One with no
+ * Allow at all (`allowWithheld`) is opened in its thread, where it can only be denied.
  */
 export const mustReadDetails = (request: ApprovalRequest): boolean =>
+  request.allowWithheld !== undefined ||
+  approvalHidesText(request) ||
   request.toolName === `${APP_TOOL_PREFIX}report_issue` ||
   request.toolName === `${APP_TOOL_PREFIX}${SETTINGS_PROPOSE_TOOL}` ||
   request.toolName === `${APP_TOOL_PREFIX}${MCP_SERVER_PROPOSE_TOOL}` ||
@@ -187,7 +195,7 @@ const CHROME_TOOLS: Readonly<Record<string, string>> = {
   resize_window: "Resize the window",
 };
 
-export const browserAsk = (request: ApprovalRequest): BrowserAsk | undefined => {
+const browserAskOf = (request: ApprovalRequest): BrowserAsk | undefined => {
   const { input } = request;
   const prompt = SERVER_PROMPT.exec(request.toolName);
   if (prompt !== null) {
@@ -239,6 +247,17 @@ export const browserAsk = (request: ApprovalRequest): BrowserAsk | undefined => 
   return { title: `${verb} in your browser?`, fields };
 };
 
+/** `browserAskOf`, each of its words as it reads: a hiding character shows as its marker. */
+export const browserAsk = (request: ApprovalRequest): BrowserAsk | undefined => {
+  const ask = browserAskOf(request);
+  if (ask === undefined) return undefined;
+  return {
+    title: revealHidden(ask.title),
+    fields: ask.fields.map((field) => ({ label: field.label, value: revealHidden(field.value) })),
+    ...(ask.message === undefined ? {} : { message: revealHidden(ask.message) }),
+  };
+};
+
 /** A browser ask on one line, for a list's row: "Click in your browser: 912, 418". */
 export const browserAskLine = (request: ApprovalRequest): string | undefined => {
   const ask = browserAsk(request);
@@ -271,7 +290,10 @@ export const approvalExtras = (request: ApprovalRequest): ApprovalDetailField[] 
   return Object.entries(request.input).flatMap(([label, value]) => {
     if (label === key || value === undefined) return [];
     if (label === "description" && value === request.description) return [];
-    const text = (typeof value === "string" ? value : JSON.stringify(value)).replace(/\s+/g, " ");
+    const text = revealHidden(typeof value === "string" ? value : JSON.stringify(value)).replace(
+      /\s+/g,
+      " ",
+    );
     return [
       {
         label,
@@ -326,7 +348,8 @@ const issueDetails = (input: ApprovalRequest["input"]): ApprovalDetails | undefi
 
 /** The folded details of an app tool's card. A spawn missing its project or brief reads as JSON. */
 export const approvalDetails = (request: ApprovalRequest): ApprovalDetails => {
-  const { input } = request;
+  // Every string as it reads: a character that hides or reorders text shows as its marker.
+  const input = revealValue(request.input) as ApprovalRequest["input"];
   const json: ApprovalDetails = { kind: "json", text: JSON.stringify(input, null, 2) };
   if (request.toolName === `${APP_TOOL_PREFIX}report_issue`) return issueDetails(input) ?? json;
   if (request.toolName !== `${APP_TOOL_PREFIX}spawn_worker`) return json;
@@ -503,9 +526,11 @@ export const alwaysAllowLabel = (count: number): string =>
   count === 1 ? "Always allow this rule" : `Always allow these ${count} rules`;
 export const alwaysAllowOpenLabel = (count: number): string => `${alwaysAllowLabel(count)}…`;
 
-/** Whether a card offers "always": it has a rule to show, and its scopes allow it. */
+/** Whether a card offers "always": it has a rule to show, its scopes allow it, and it can allow. */
 export const canAlwaysAllow = (request: ApprovalRequest): boolean =>
-  alwaysRules(request).length > 0 && (request.scopes?.includes("always") ?? true);
+  request.allowWithheld === undefined &&
+  alwaysRules(request).length > 0 &&
+  (request.scopes?.includes("always") ?? true);
 
 /** The three labelled lines of what an "always" keeps. */
 export interface AlwaysRuleLines {

@@ -11,6 +11,7 @@ export * from "./wrap-up.ts";
 export * from "./depth.ts";
 export * from "./desktop-bridge.ts";
 export * from "./notice.ts";
+export * from "./reveal.ts";
 export * from "./attachments.ts";
 export * from "./babysit.ts";
 export * from "./chime.ts";

@@ -10,6 +10,7 @@ import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
 import { ConversationRef } from "./conversations.ts";
 import { SavedWork } from "./saved-work.ts";
+import { hidesText, revealHidden, valueHidesText } from "./reveal.ts";
 import { ChecksRollup, PrState } from "./git.ts";
 import {
   HostId,
@@ -1338,17 +1339,35 @@ export const ApprovalRequest = Schema.Struct({
    * host", whose `always` answer adds it to Settings → Agent may browse.
    */
   browseHost: Schema.optionalKey(Schema.String),
+  /**
+   * Why no Allow is offered, when what would run isn't known exactly (a Codex command approval
+   * that came without its `command`): the card says this and offers Deny, and elsewhere Open.
+   */
+  allowWithheld: Schema.optionalKey(Schema.String),
 });
 export type ApprovalRequest = typeof ApprovalRequest.Type;
 
-/** What an approval is about: the command for shells, the path for file tools, else the input. */
+/**
+ * What an approval is about, as shown: the command for shells, the path for file tools, else the
+ * input. A character that hides or reorders text shows as its marker (`revealHidden`), so what
+ * reads here is what runs.
+ */
 export const approvalSubject = (request: Pick<ApprovalRequest, "input">): string => {
   const { input } = request;
-  if (typeof input["command"] === "string") return input["command"];
-  if (typeof input["file_path"] === "string") return input["file_path"];
-  if (typeof input["url"] === "string") return input["url"];
-  return JSON.stringify(input);
+  if (typeof input["command"] === "string") return revealHidden(input["command"]);
+  if (typeof input["file_path"] === "string") return revealHidden(input["file_path"]);
+  if (typeof input["url"] === "string") return revealHidden(input["url"]);
+  return revealHidden(JSON.stringify(input));
 };
+
+/** Whether any of an approval's words (its input, description, title or tool) hide or reorder text. */
+export const approvalHidesText = (
+  request: Pick<ApprovalRequest, "input" | "description" | "title" | "displayName">,
+): boolean =>
+  valueHidesText(request.input) ||
+  [request.description, request.title, request.displayName].some(
+    (words) => words !== undefined && hidesText(words),
+  );
 
 export const QuestionOption = Schema.Struct({
   label: Schema.String,
