@@ -171,6 +171,12 @@ const FLICKER_INTENDED: FlickerAllow[] = [
       "the same pace: a turn ends, its background agent's Stop stands alone, and the next turn's delivery button is back within 300 ms",
   },
   {
+    selector: '[data-testid="overview-solo-status"]',
+    kinds: ["text-flip"],
+    reason:
+      "the same pace: a background agent's turn of 100 ms hides a thread's \"now\" while it works, as a working row shows no age",
+  },
+  {
     selector: '[data-testid="right-panel"] *',
     kinds: ["reappeared"],
     reason:
@@ -197,11 +203,6 @@ const FLICKER_KNOWN: FlickerAllow[] = [
     selector: '[data-testid="keyboard-settings"] li',
     kinds: ["reappeared"],
     reason: "known: Keyboard settings redraw their terminal rows with a frame between on arrival",
-  },
-  {
-    selector: '[data-testid="overview-solo-status"]',
-    kinds: ["text-flip"],
-    reason: 'known: a thread\'s "now" in the overview blanks for a few frames as it updates',
   },
   {
     selector: '[data-testid="inbox-detail-body"] *',
