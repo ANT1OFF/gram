@@ -15,7 +15,7 @@ import {
 } from "../host/machine-keys.ts";
 import { holderOf } from "../host/ownership.ts";
 import { forwardAppTools } from "../host/app-tools-forward.ts";
-import { makeAppToolsTunnel } from "../host/app-tools-tunnel.ts";
+import { makeAppToolsTunnel, noAppToolsTunnel } from "../host/app-tools-tunnel.ts";
 import { appToolsTunnel } from "../host/remote-worker-host.ts";
 import { memoryMachineStore } from "../host/paired-machines.ts";
 import { HOST_CAPABILITIES, type HostService, serveHost } from "../host/protocol.ts";
@@ -45,14 +45,14 @@ const NAME = "worker-0123456789";
 const none = () => Effect.die(new Error("not in this test"));
 
 /** A host that says hello as `hostId` and has nothing else a test reaches. */
-const service = (hostId: string): Effect.Effect<HostService, never, Scope.Scope> =>
+const service = (hostId: string, tunnel = true): Effect.Effect<HostService, never, Scope.Scope> =>
   Effect.gen(function* () {
     return {
       hello: {
         protocol: HOST_PROTOCOL_VERSION,
         hostId: HostId.make(hostId),
         capabilities: HOST_CAPABILITIES,
-        features: ["app-tools-tunnel"],
+        features: tunnel ? ["app-tools-tunnel"] : [],
         platform: "linux",
         pid: 7,
       },
@@ -340,6 +340,67 @@ describe("worker machines from a signed-in hosted server", () => {
         expect((yield* call("token-elsewhere")).status).toBe(401);
         expect((yield* call("token-unknown")).status).toBe(401);
         expect(answered).toHaveLength(1);
+      }).pipe(Effect.scoped),
+  );
+
+  it.live(
+    "refuses a machine whose gram-host carries no app tools as soon as it joins, and stops it",
+    () =>
+      Effect.gen(function* () {
+        const hosts = yield* RemoteHosts.make(memoryMachineStore());
+        const key = generateHostKey();
+        const hostId = hostIdOf(key.publicKey);
+        let host: ReturnType<typeof relayedHost> | undefined;
+        const serving: Array<Effect.Effect<void, never, Scope.Scope>> = [];
+        // The host side serves once the app relays it.
+        yield* Effect.forkScoped(
+          Effect.gen(function* () {
+            while (serving.length === 0) yield* Effect.sleep("10 millis");
+            yield* serving[0]!;
+          }),
+        );
+        const app = fakeApp({
+          answer: ({ call }) =>
+            call === "status"
+              ? { status: 200, body: { phase: "joining", publicKey: key.publicKey } }
+              : { status: 200, body: {} },
+          relayed: (name, toServer) => {
+            host = relayedHost("conn-older", toServer);
+            const socket = host.ws;
+            serving.push(
+              Effect.gen(function* () {
+                const made = yield* Socket.fromWebSocket(
+                  Effect.succeed(socket as unknown as Socket.WebSocketLike),
+                );
+                // An older gram-host: everything else, but no app-tools-tunnel.
+                yield* serveHost(made, yield* service(hostId, false));
+              }).pipe(Effect.ignore),
+            );
+            toServer({
+              type: "machines.relay.dial",
+              conn: "conn-older",
+              origin: ORIGIN,
+              name,
+              headers: signedConnectHeaders(privateKeyFrom(key.privateKeyPem), ORIGIN, hostId),
+            });
+          },
+          fromServer: (message) => host?.fromServer(message),
+        });
+        const port = bridgeWorkerMachines(app.port);
+        // Takes the relayed dial, as the desktop's server does.
+        yield* Layer.build(
+          SignedInWorkersLive.pipe(
+            Layer.provide(Layer.succeed(WorkerMachinePort)(port)),
+            Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+          ),
+        );
+        const source = signedInSource(SERVER, { port, hosts, everyMs: 20, stopRetryMs: 10 });
+        const arrived = yield* source.arrive(NAME).pipe(Effect.timeout("10 seconds"));
+        expect(arrived).toEqual({ failed: noAppToolsTunnel(NAME) });
+        // As a spawn does with an arrival that failed: given back.
+        yield* source.abandon(NAME);
+        expect(app.calls.at(-1)).toEqual({ call: "stop", body: { name: NAME } });
+        expect(hosts.list().some((each) => each.name === NAME)).toBe(false);
       }).pipe(Effect.scoped),
   );
 

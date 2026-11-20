@@ -684,6 +684,8 @@ export const agentHostOnMachine = (
   attachments: AttachmentsOnMachine = () => Effect.fail(`${machineName} holds no attachments`),
   /** The one folder attachments are carried from, on a server with no local user. */
   carriedFrom?: string,
+  /** Why its sessions can't reach their app tools now, when it isn't for being offline. */
+  unreachable?: () => string | undefined,
 ): AgentHost => {
   const kind = inServer.kind;
   /** A start that failed there, named for the machine and logged here, where nothing else is. */
@@ -745,7 +747,9 @@ export const agentHostOnMachine = (
                       new AgentUnavailable({
                         agent: kind,
                         reason: "startup-failed",
-                        message: `${machineName} is offline; its workers start once it's back.`,
+                        message:
+                          unreachable?.() ??
+                          `${machineName} is offline; its workers start once it's back.`,
                       }),
                     )
                   : openOnHost(host, kind, reaching, machineName, (input) =>

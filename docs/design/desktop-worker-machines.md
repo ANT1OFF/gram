@@ -140,7 +140,9 @@ connection (`host.appTools.requests`, `host.appTools.answer`) from its own app-t
 session on the desktop calls it. The desktop lets a call through only with a token issued for a
 thread whose session is on that machine, as it does for a call over the tailnet. The hosted server
 relays these calls as host frames and serves no app tools; a relayed machine is never given the
-hosted server's address for them, so no thread's token goes there.
+hosted server's address for them, so no thread's token goes there. A host that doesn't name `app-tools-tunnel` (an older
+`gram-host`) is refused as soon as it joins, in words that say so, and given back; a session on one
+already registered is refused the same way rather than waited on as if the machine were offline.
 
 No HTTP route is added for it: only the app's main process, which started the server, can hand it a
 relayed connection. Even so, it can only hand over a dial signed by a key the desktop registered,

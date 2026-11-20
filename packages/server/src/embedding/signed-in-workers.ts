@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   HostId,
+  hostServes,
   WORKER_MACHINE_NAME,
   type WorkerMachineCall,
   type WorkerMachineOp,
@@ -37,6 +38,7 @@ import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
 import * as Duration from "effect/Duration";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
+import { noAppToolsTunnel } from "../host/app-tools-tunnel.ts";
 import { Socket } from "../platform/unstable.ts";
 import { CHOICES_TTL_MS, type OnDemandChoices, parseChoices } from "./on-demand.ts";
 import {
@@ -407,6 +409,8 @@ export interface SignedInDeps {
   readonly port: WorkerMachinePortShape;
   readonly hosts: Pick<RemoteHostsShape, "remove"> & {
     readonly list: () => ReadonlyArray<ProvidedMachine>;
+    /** Its host's hello once online, to refuse one that can't carry app tools; absent in fakes. */
+    readonly connection?: RemoteHostsShape["connection"];
     readonly machines: Pick<RemoteHostsShape["machines"], "provision">;
   };
   readonly now?: () => number;
@@ -513,7 +517,19 @@ export const signedInSource = (
         let relayed = false;
         for (;;) {
           const machine = named(name);
-          if (machine?.onlineSince !== undefined) return machine.id;
+          if (machine?.onlineSince !== undefined) {
+            // One whose gram-host can't carry app tools runs no session: refused now, not later.
+            const connected =
+              hosts.connection === undefined
+                ? undefined
+                : yield* hosts.connection(HostId.make(machine.id)).pipe(Effect.option);
+            if (
+              connected?._tag === "Some" &&
+              !hostServes(connected.value.hello, "app-tools-tunnel")
+            )
+              return { failed: noAppToolsTunnel(name) };
+            return machine.id;
+          }
           if (machine === undefined) {
             // No later than the deadline, however long the app or the server takes to answer.
             const left = deadline - now();

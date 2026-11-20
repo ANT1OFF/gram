@@ -49,6 +49,7 @@ import {
 } from "./following-sessions.ts";
 import type { AttachmentsOnMachine } from "./carry-attachments.ts";
 import type { HostConnection } from "./protocol.ts";
+import { noAppToolsTunnel } from "./app-tools-tunnel.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
 import { olderHost } from "./folders.ts";
@@ -91,6 +92,8 @@ export interface Machine {
   readonly name: string;
   /** The tailnet address it dialled, where its sessions reach their app tools; absent offline. */
   readonly origin?: () => string | undefined;
+  /** Why its sessions can't reach their app tools while `origin` is absent, when it isn't offline. */
+  readonly unreachable?: () => string | undefined;
   /** Asks the machine for its Claude Code sign-in again, after a start failed for it. */
   readonly recheckSignIn?: () => void;
   /**
@@ -555,6 +558,7 @@ export const machineWorkerHost = (
               machine.recheckSignIn,
               currentAttachments(machine, connection),
               carriedFrom,
+              machine.unreachable,
             );
             wrapped.set(agent, through);
             return through;
@@ -670,6 +674,12 @@ export const machineHosts = (
             id,
             name: remote.machines.get(id)?.name ?? id,
             origin: () => (relayed ? tunnel : remote.origin(id)),
+            // A relayed machine whose gram-host carries no app tools is refused in words, not
+            // waited on as if it were offline.
+            unreachable: () =>
+              relayed && tunnel === undefined && !connection.gone()
+                ? noAppToolsTunnel(remote.machines.get(id)?.name ?? id)
+                : undefined,
             recheckSignIn: () => void remote.checkSignIn(id),
             connection: remote.connection(id),
             // A machine readied to stop is waited for longer: it comes back as a new host.

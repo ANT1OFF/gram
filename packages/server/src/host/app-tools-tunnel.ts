@@ -26,6 +26,10 @@ import * as Stream from "effect/Stream";
 
 import { HOST_MCP_PATH } from "./machine-keys.ts";
 
+/** Why a relayed machine runs no session: its gram-host can't carry app tools over its connection. */
+export const noAppToolsTunnel = (machine: string) =>
+  `${machine}'s gram-host is older than this Gram and can't carry its sessions' app tools over its connection, so no session runs there. The hosted server that started it has to run a newer gram-host; leave out sandbox to run the worker on your machine.`;
+
 /** What a host serves of `app-tools-tunnel`. */
 export interface HostAppTools {
   /** Starts the loopback listener, once: the address its sessions are given. */
