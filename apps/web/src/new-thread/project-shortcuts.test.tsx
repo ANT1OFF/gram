@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { useQuery } from "@tanstack/react-query";
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useApi } from "@/api/context";
@@ -101,5 +101,14 @@ describe("ProjectLists recents", () => {
     const bookmarks = await screen.findByRole("region", { name: "Bookmarks" });
     await within(bookmarks).findByRole("button", { name: "Remove bookmark from api" });
     expect(within(bookmarks).queryByRole("button", { name: /from recents/ })).toBeNull();
+  });
+});
+
+describe("ProjectLists, a folder in use that neither list holds", () => {
+  it("names it at the top, chosen, so the menu never reads as unset", () => {
+    render(<ProjectLists projects={[]} current="/Users/qa/fixture" onChoose={() => undefined} />);
+    const inUse = screen.getByRole("region", { name: "In use" });
+    const row = within(inUse).getByRole("button", { name: /fixture/ });
+    expect(row.getAttribute("aria-pressed")).toBe("true");
   });
 });

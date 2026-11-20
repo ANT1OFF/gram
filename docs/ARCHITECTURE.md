@@ -22,7 +22,10 @@ copying its API declarations.
 | [themes](../packages/themes)           | Theme definitions and generation                                                                  |
 | [tools](../tools)                      | Pin/scaffold checks, test/lint tooling and release scripts                                        |
 
-Workspace dependencies and build references are explicit in manifests/tsconfigs.
+Workspace dependencies and build references are explicit in manifests/tsconfigs,
+and `no-restricted-imports` in `.oxlintrc.json` holds source to the same graph:
+web and contracts/themes import no Node or Electron, only the shell imports
+Electron at runtime, and no package imports an app.
 Contracts carry shared shape; agent adapters own protocol mechanics; server services
 own application state/authorization; shell owns native process/window behavior;
 web consumes those interfaces. Keep native Electron imports out of server helpers,

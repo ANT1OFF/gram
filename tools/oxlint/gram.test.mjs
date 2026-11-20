@@ -52,9 +52,12 @@ const lintEach = (sources, rule = "gram/no-bare-fork", ext = "ts") => {
 const lint = (source, rule, ext) => lintEach([source], rule, ext)[0];
 
 /** The rule codes the repository's own config reports for a probe file placed in `dir`. */
-const probeConfig = (dir) => {
+const probeConfig = (
+  dir,
+  source = 'import { realpath } from "node:fs/promises";\nexport const r = realpath;\n',
+) => {
   const file = join(root, dir, `.gram-lint-probe-${process.pid}.ts`);
-  writeFileSync(file, 'import { realpath } from "node:fs/promises";\nexport const r = realpath;\n');
+  writeFileSync(file, source);
   try {
     const result = spawnSync(
       process.execPath,
@@ -345,5 +348,37 @@ describe("lucide-stroke", () => {
         "tsx",
       ),
     ).toEqual([]);
+  });
+});
+
+// The runtime graph in docs/ARCHITECTURE.md: the renderer and the shared packages load no Node or
+// Electron, only the shell imports Electron at runtime, and no package imports an app.
+const restricted = (dir, source) =>
+  probeConfig(dir, `${source}\nexport const probe = 1;\n`).includes(
+    "eslint(no-restricted-imports)",
+  );
+
+describe("import boundaries", () => {
+  it.each([
+    ["apps/web/src", 'import "node:path";'],
+    ["apps/web/src", 'import { app } from "electron";'],
+    ["apps/web/src", 'import "@gram/server";'],
+    ["packages/contracts/src", 'import "node:fs";'],
+    ["packages/contracts/src", 'import "@gram/git";'],
+    ["packages/server/src", 'import { app } from "electron";'],
+    ["packages/server/src", 'import "@gram/shell";'],
+    ["packages/git/src", 'import "@gram/server";'],
+    ["packages/shell/src", 'import "@gram/web/lib/time";'],
+  ])("refuses in %s: %s", (dir, source) => {
+    expect(restricted(dir, source)).toBe(true);
+  });
+
+  it.each([
+    ["apps/web/src", 'import "@gram/contracts";'],
+    ["packages/server/src", 'import type { App } from "electron";'],
+    ["packages/server/src", 'import "@gram/git";'],
+    ["packages/shell/src", 'import { app } from "electron";'],
+  ])("allows in %s: %s", (dir, source) => {
+    expect(restricted(dir, source)).toBe(false);
   });
 });

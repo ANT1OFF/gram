@@ -38,6 +38,191 @@
       "rules": {
         "gram/lucide-stroke": "error"
       }
+    },
+    {
+      "files": ["apps/web/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "electron",
+                "message": "The web app is the renderer and runs in a plain browser too. Reach the desktop through the window.gram bridge, whose shape is in @gram/contracts, never Electron itself."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["node:*"],
+                "message": "This code runs in the browser renderer, where Node has no modules. Ask the server over the API, or the desktop through the window.gram bridge."
+              },
+              {
+                "group": [
+                  "@gram/agents",
+                  "@gram/git",
+                  "@gram/server",
+                  "@gram/shell",
+                  "@gram/agents/**",
+                  "@gram/git/**",
+                  "@gram/server/**",
+                  "@gram/shell/**"
+                ],
+                "message": "The web app runs in the browser and only talks to the server and the shell over their contracts. Its package.json names what it may depend on (see docs/ARCHITECTURE.md): @gram/contracts, @gram/themes. Move the shared piece down into one of those (shapes go in @gram/contracts), or put this code in the package that already owns the dependency."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/contracts/src/**", "packages/themes/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "electron",
+                "message": "Contracts and themes are shared by the browser, the server and Electron alike, so they import no runtime. Keep runtime code in the package that runs it."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["node:*"],
+                "message": "Contracts and themes are loaded in the browser too, where Node has no modules. Keep this here as a pure shape or value, and do the Node work in @gram/server or @gram/git."
+              },
+              {
+                "group": [
+                  "@gram/agents",
+                  "@gram/contracts",
+                  "@gram/git",
+                  "@gram/server",
+                  "@gram/shell",
+                  "@gram/themes",
+                  "@gram/agents/**",
+                  "@gram/contracts/**",
+                  "@gram/git/**",
+                  "@gram/server/**",
+                  "@gram/shell/**",
+                  "@gram/themes/**"
+                ],
+                "message": "Contracts and themes are the bottom of the graph and import nothing in the workspace. Its package.json names what it may depend on (see docs/ARCHITECTURE.md): nothing in the workspace. Move the shared piece down into one of those (shapes go in @gram/contracts), or put this code in the package that already owns the dependency."
+              },
+              {
+                "group": ["@gram/web", "@gram/web/**", "@gram/desktop", "@gram/desktop/**"],
+                "message": "A package never imports an app: apps depend on packages, not the other way round. Move what both need into the package (or into @gram/contracts if it is a shared shape)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/agents/src/**", "packages/git/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "electron",
+                "allowTypeImports": true,
+                "message": "Native Electron is main-process only: keep it in @gram/shell (core, electron, modules) or apps/desktop/src/main. Here, take what you need as a parameter or through a shell module, so this code stays usable outside Electron."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@gram/agents",
+                  "@gram/git",
+                  "@gram/server",
+                  "@gram/shell",
+                  "@gram/themes",
+                  "@gram/agents/**",
+                  "@gram/git/**",
+                  "@gram/server/**",
+                  "@gram/shell/**",
+                  "@gram/themes/**"
+                ],
+                "message": "This package sits just above contracts. Its package.json names what it may depend on (see docs/ARCHITECTURE.md): @gram/contracts. Move the shared piece down into one of those (shapes go in @gram/contracts), or put this code in the package that already owns the dependency."
+              },
+              {
+                "group": ["@gram/web", "@gram/web/**", "@gram/desktop", "@gram/desktop/**"],
+                "message": "A package never imports an app: apps depend on packages, not the other way round. Move what both need into the package (or into @gram/contracts if it is a shared shape)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/server/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "electron",
+                "allowTypeImports": true,
+                "message": "Native Electron is main-process only: keep it in @gram/shell (core, electron, modules) or apps/desktop/src/main. Here, take what you need as a parameter or through a shell module, so this code stays usable outside Electron."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@gram/server",
+                  "@gram/shell",
+                  "@gram/themes",
+                  "@gram/server/**",
+                  "@gram/shell/**",
+                  "@gram/themes/**"
+                ],
+                "message": "The server runs as its own Node process, with or without the desktop. Its package.json names what it may depend on (see docs/ARCHITECTURE.md): @gram/agents, @gram/contracts, @gram/git. Move the shared piece down into one of those (shapes go in @gram/contracts), or put this code in the package that already owns the dependency."
+              },
+              {
+                "group": ["@gram/web", "@gram/web/**", "@gram/desktop", "@gram/desktop/**"],
+                "message": "A package never imports an app: apps depend on packages, not the other way round. Move what both need into the package (or into @gram/contracts if it is a shared shape)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/shell/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@gram/agents",
+                  "@gram/server",
+                  "@gram/shell",
+                  "@gram/themes",
+                  "@gram/agents/**",
+                  "@gram/server/**",
+                  "@gram/shell/**",
+                  "@gram/themes/**"
+                ],
+                "message": "The shell is the Electron layer and reaches the server over its API, not its source. Its package.json names what it may depend on (see docs/ARCHITECTURE.md): @gram/contracts, @gram/git. Move the shared piece down into one of those (shapes go in @gram/contracts), or put this code in the package that already owns the dependency."
+              },
+              {
+                "group": ["@gram/web", "@gram/web/**", "@gram/desktop", "@gram/desktop/**"],
+                "message": "A package never imports an app: apps depend on packages, not the other way round. Move what both need into the package (or into @gram/contracts if it is a shared shape)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.test.mts", "**/*.test.mjs", "**/test/**"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
     }
   ],
   "ignorePatterns": [
