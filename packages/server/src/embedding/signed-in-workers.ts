@@ -350,7 +350,7 @@ export const signedInSource = (
                 ? {
                     kind: "refused" as const,
                     message: `${server.server} can't start machines now. Spawn again in a few minutes with the same clientRequestId, or leave out sandbox to run the worker on your machine.`,
-                    // A `503` may come back for a call that reached its machines all the same:
+                    // A 5xx may come back for a call that reached its machines all the same:
                     // given back as a start whose outcome isn't known.
                     unknown: true as const,
                   }
@@ -688,10 +688,12 @@ export const SignedInWorkersLive = Layer.effect(
               Effect.gen(function* () {
                 // Woken, or awake there already: carried again.
                 sync(false);
-                // Settled for good: gone there, refused, or no longer wanted. Otherwise it is
-                // looked at again while it is wanted and still offline here, since one up there
-                // now may be stopped while idle before its host dials, and only a start wakes it.
-                if (woke === "gone" || woke === "refused" || woke === "unwanted") return;
+                // Settled for good: refused, or no longer wanted. Otherwise it is looked at again
+                // while it is wanted and still offline and registered here, since one up there now
+                // may be stopped while idle before its host dials, and only a start wakes it; and
+                // one answered `not_found` (`gone`) may be a cell out of reach for a while, so it
+                // is asked again until `forgetReclaimed` confirms it gone and unregisters it.
+                if (woke === "refused" || woke === "unwanted") return;
                 yield* Effect.sleep(WAKE_RETRY_MS);
                 if (wokenFor.get(machine.id) === since) wokenFor.delete(machine.id);
                 Queue.offerUnsafe(wants, undefined);

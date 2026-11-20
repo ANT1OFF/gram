@@ -173,12 +173,16 @@ that start itself whenever work here needs the machine:
 - **A spawn reusing it** does the same as it waits: started once; failed again after that start,
   the spawn is told at once in the server's words.
 - Each wake is the spawn's start: the name's lock, a release taken back first, a `503` asked again
-  a few times. Nothing else starts a machine: never a dial, a relay, or a pass.
+  a few times. Nothing else starts a machine: never a dial, a relay, or a pass. A wake whose
+  `…/status` is answered `404 { code: "not_found" }` is tried again while the machine is wanted
+  and still registered here, as one that met a passing error is: the server answers so while the
+  workspace has no cell, and only the three-pass rule below forgets the machine.
 - Whether work still wants the machine is read under the name's lock as each start would go, not
   when the wake was queued: once the last session waiting has gone, no start is sent. One already
   sent is left to the server's idle stop.
 - A machine still wanted and still offline here is looked at again every five seconds, whatever
-  the last look found, until it joins, is no longer wanted, or is gone or refused there: one up
+  the last look found, until it joins, is no longer wanted, is refused there, or is forgotten here
+  as gone (`forgetReclaimed`): one up
   there may be stopped while idle before its host dials, and only a start wakes it.
 - Only an answered `stopped` or `failed` uses up a wake. A `…/status` with no answer or a `5xx`,
   or a start answered so (a `502` while the machine is still being stopped there), is tried again
@@ -254,8 +258,9 @@ subscription token reaches a machine, with its own consent.
   only once its owing is on disk: one that can't be written is refused, and nothing is sent. A
   start stopped before it was admitted sent nothing, so it gives nothing back and owes nothing. A
   `429` from the server is passing: a start is asked again after a wait, and a wake is tried
-  again while it is wanted. A start answered `503` once stays of unknown outcome, whatever is
-  answered after it, so its owing is kept until a stop settles it. All of a name's owings go once its
+  again while it is wanted. A start answered `503`, or any other 5xx (a `502` can come from a start
+  that failed after its machine was written), stays of unknown outcome, whatever is answered after
+  it and whether or not it is asked again, so its owing is kept and it is given back. All of a name's owings go once its
   machine is registered here or confirmed stopped under its name's lock.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.

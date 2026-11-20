@@ -600,6 +600,34 @@ describe("stops a server never confirmed", () => {
     }),
   );
 
+  it.effect("keep owing a start a server answered with a 5xx it never asks again", () =>
+    Effect.gen(function* () {
+      // As a server answers a start that failed after its machine's record was written.
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "start"
+            ? { status: 502, body: { code: "unavailable" } }
+            : { status: 200, body: { stopped: false } },
+      });
+      const owed = memoryOwedStops();
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: unregistered,
+        owed,
+        starting: new Set(),
+        stopRetryMs: 0,
+      });
+      const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Heavy" });
+      // Its machine may be there: given back as a start of unknown outcome, never let go of.
+      expect(started).toMatchObject({ kind: "refused", unknown: true });
+      expect(app.calls.map((each) => each.call)).toEqual(["start"]);
+      expect(owed.list().map((each) => each.name)).toEqual([NAME]);
+      // Given back, the server knows none yet: still owed, through the start's grace.
+      yield* source.abandon(NAME, { unsettled: true });
+      expect(owed.list().map((each) => each.name)).toEqual([NAME]);
+    }),
+  );
+
   it.effect("take a server's rate limit as passing, and wake again later", () =>
     Effect.gen(function* () {
       const app = fakeApp({ answer: () => ({ status: 429, body: {} }) });

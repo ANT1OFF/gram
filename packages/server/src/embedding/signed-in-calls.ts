@@ -64,12 +64,13 @@ export const settledSince = (sent: StartsSent | undefined, name: string, before:
 
 /**
  * One start of `name` there, its name's alone (`withName`) from its first ask to its last. A `503`
- * started nothing, so it is asked again after a wait that doubles, `START_ATTEMPTS` asks in all
- * across the whole start, and is never read as over the total or gone. A `409 released` takes the
- * release back and asks once more, never again; a take-back the server answers `404 not_found`
- * (the release is due for reclaim) spends the name for this start, answered as `409 name_in_use`,
- * and nothing more is asked under it. Nothing here forgets the machine: once is no proof. `go`, read under the lock before each ask: whether it is still wanted; when it isn't,
- * nothing more is sent (`skipped`).
+ * is asked again after a wait that doubles, `START_ATTEMPTS` asks in all across the whole start,
+ * and is never read as over the total or gone; it, and any other 5xx, leaves the start's outcome
+ * unknown (`unavailable`). A `409 released` takes the release back and asks once more, never
+ * again; a take-back the server answers `404 not_found` (the release is due for reclaim) spends
+ * the name for this start, answered as `409 name_in_use`, and nothing more is asked under it.
+ * Nothing here forgets the machine: once is no proof. `go`, read under the lock before each ask:
+ * whether it is still wanted; when it isn't, nothing more is sent (`skipped`).
  */
 export const sendSignedInStart = (
   port: WorkerMachinePortShape,
@@ -112,10 +113,12 @@ export const sendSignedInStart = (
           const bump = Effect.sync(() => options.sent?.set(name, sentOf(options.sent, name) + 1));
           yield* bump;
           const answered = yield* port.call(origin, "start", body).pipe(Effect.ensuring(bump));
-          // Busy (503) or throttled (429) there: asked again after a wait. A 503 may have reached
-          // its machines, so the start's outcome stays unknown, whatever is answered after it.
+          // Busy (503) or throttled (429) there: asked again after a wait. Any 5xx may have reached
+          // its machines (a 502 comes from a start that failed after its machine was written), so
+          // the start's outcome stays unknown, whatever is answered after it, and asked again or
+          // not: its owing is kept, and it is given back.
           const busy = answered.ok && (answered.status === 503 || answered.status === 429);
-          if (answered.ok && answered.status === 503) unavailable = true;
+          if (answered.ok && answered.status >= 500) unavailable = true;
           if (!busy || asks >= START_ATTEMPTS) return answered;
           yield* Effect.sleep((options.startRetryMs ?? START_RETRY_MS) * 2 ** (asks - 1));
         }
@@ -141,10 +144,11 @@ export const sendSignedInStart = (
   );
 
 /**
- * What a wake did. `started`, `awake` (the server says it is up, or starting), `gone` (it answers
- * `404 not_found`: not woken for this want, and not forgotten either), `unwanted` (no one wants it by the time the start would go) and `refused` (an answered
- * refusal) are settled; `retry` isn't: no answer, or a passing error, before or from the start, so
- * it may be woken again while it is still wanted.
+ * What a wake did. `started`, `awake` (the server says it is up, or starting), `unwanted` (no one
+ * wants it by the time the start would go) and `refused` (an answered refusal) are settled;
+ * `retry` isn't: no answer, or a passing error, before or from the start, so it may be woken again
+ * while it is still wanted. Nor is `gone` (a `404 not_found`, which proves nothing alone): a want
+ * goes on asking while the machine is registered, until `forgetReclaimed` confirms it gone.
  */
 export type WakeOutcome = "started" | "awake" | "gone" | "unwanted" | "refused" | "retry";
 
@@ -175,13 +179,13 @@ export const wakeSignedIn = (
     const read = yield* port.call(machine.via, "status", { name: machine.name });
     // Passing errors settle nothing: asked again while it is still wanted.
     if (!read.ok || read.status >= 500 || read.status === 429) return "retry" as const;
+    // A start of it was on its way, or went, while this was asked: the answer is older than it,
+    // and says nothing, so the wake is left to be tried again rather than spent.
+    if (!settledSince(options.sent, machine.name, before)) return "retry" as const;
     if (isNotFound(read)) return "gone" as const;
     // Any other 404 (a route or a cell not there for now) says nothing of the machine.
     if (read.status === 404) return "retry" as const;
     if (read.status >= 300) return "refused" as const;
-    // A start of it was on its way, or went, while this was asked: the answer is older than it,
-    // and says nothing, so the wake is left to be tried again rather than spent.
-    if (!settledSince(options.sent, machine.name, before)) return "retry" as const;
     const phase = parseMachineStatus(read.body).phase;
     if (phase !== "stopped" && phase !== "failed") {
       options.asleep?.delete(machine.name);

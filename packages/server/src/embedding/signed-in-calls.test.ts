@@ -353,6 +353,48 @@ describe("a worker machine that work here wants", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("keeps waking a wanted machine through a not_found while its cell is away", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const { id } = provisionRelayed(hosts, NAME);
+      // The pass's read and the wake's first come while the workspace has no cell; then the
+      // cell is back, and the machine is stopped there.
+      let reads = 0;
+      const app = fakeApp({
+        answer: ({ call }) => {
+          if (call !== "status") return { status: 202, body: {} };
+          reads += 1;
+          return reads <= 2
+            ? { status: 404, body: { code: "not_found", message: "The workspace has no cell." } }
+            : { status: 200, body: { phase: "stopped" } };
+        },
+      });
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      const forSession = awaitedMachines(
+        (hostId) => Effect.fail(new HostUnavailable({ hostId, message: "away" })),
+        hosts,
+        { getSettings: Effect.succeed({ experimental: { embedding: true } } as never) },
+        60_000,
+      );
+      const opening = yield* Effect.forkScoped(forSession(HostId.make(id), "t-1" as ThreadId));
+      yield* TestClock.adjust("1 second");
+      expect(reads).toBe(2);
+      expect(app.calls.map((each) => each.call)).not.toContain("start");
+      // Asked again while it is wanted and registered: woken once its cell is back.
+      yield* TestClock.adjust(WAKE_RETRY_MS + 1_000);
+      expect(app.calls.filter((each) => each.call === "start").map((each) => each.body)).toEqual([
+        { name: NAME },
+      ]);
+      expect(hosts.list()).toHaveLength(1);
+      yield* Fiber.interrupt(opening);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect(
     "keeps looking at a wanted machine it found up there, until it joins or must wake",
     () =>
