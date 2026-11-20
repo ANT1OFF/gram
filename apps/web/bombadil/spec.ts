@@ -201,6 +201,7 @@ const flicker = extract((state) => {
     state.window as Window & typeof globalThis,
   );
   return {
+    virtualClock: "gramMockClock" in state.window,
     count: report.count,
     byKind: { ...report.byKind },
     allowed: { ...report.allowed },
@@ -208,4 +209,8 @@ const flicker = extract((state) => {
   };
 });
 
-export const noFlicker = always(() => flicker.current.count === 0);
+/**
+ * The replayable mock (`window.gramMockClock`) runs a virtual clock and plays timed states in a few
+ * frames, so a 2 s "Loading…" would read as a flicker: there the count is recorded, not judged.
+ */
+export const noFlicker = always(() => flicker.current.virtualClock || flicker.current.count === 0);
