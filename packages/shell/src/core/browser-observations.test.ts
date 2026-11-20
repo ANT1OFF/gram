@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { browserObservations, networkOrigin } from "./browser-observations.ts";
+import type { BrowseContext } from "./browse-rules.ts";
 import type { Cdp } from "./page-driver.ts";
 
 describe("bounded browser observations", () => {
@@ -93,7 +94,40 @@ describe("bounded browser observations", () => {
       "2 console argument(s); contents omitted.",
     ]);
     expect(observations.console(true).map((line) => line.level)).toEqual(["error"]);
+    // The pane refuses Gram's own pages on loopback (a file preview): their lines stay counts.
+    const preview: BrowseContext = {
+      approved: new Set(),
+      once: new Set(),
+      appOrigins: new Set(["http://localhost:5173"]),
+    };
+    expect(observations.console(false, preview)[0]?.text).toBe(
+      "2 console argument(s); contents omitted.",
+    );
     expect(JSON.stringify(observations.diagnostics())).not.toMatch(/vite|boom|secret-|opaque-/);
+    observations.dispose();
+  });
+  it("redacts a line whole before cutting it, so a token at the cut is never left in part", () => {
+    const listeners = new Map<string, (p: unknown) => void>();
+    const cdp: Cdp = {
+      send: async () => ({}),
+      on: (event, fn) => {
+        listeners.set(event, fn);
+        return () => listeners.delete(event);
+      },
+    };
+    const observations = browserObservations(cdp, null);
+    const emit = (event: string, p: unknown) => listeners.get(event)!(p);
+    emit("Runtime.executionContextCreated", {
+      context: { id: 1, origin: "http://127.0.0.1:3000" },
+    });
+    emit("Runtime.consoleAPICalled", {
+      type: "log",
+      executionContextId: 1,
+      args: [{ type: "string", value: `${"x".repeat(1990)} sk-${"opaque".repeat(5)}` }],
+    });
+    const [line] = observations.console(false);
+    expect(line?.text).not.toMatch(/sk-|opaque/);
+    expect(line?.text.length).toBeLessThanOrEqual(2001);
     observations.dispose();
   });
   it("does not invent elapsed time and drops in-flight/unreadable-page observations", () => {

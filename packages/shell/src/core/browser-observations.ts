@@ -5,12 +5,16 @@ import {
   type BrowserNetworkFailure,
   type PaneConsoleEntry,
 } from "@gram/contracts/link-trust";
+import { isAppPage, type BrowseContext } from "./browse-rules.ts";
 import type { Cdp } from "./page-driver.ts";
 
 const CONSOLE_MAX_CHARS = 2_000;
 
-/** The text of a console call's arguments, as the console would print them. */
-export function consoleText(args: ReadonlyArray<Record<string, unknown>>): string {
+/** The text of a console call's arguments, as the console would print them, up to `max`. */
+export function consoleText(
+  args: ReadonlyArray<Record<string, unknown>>,
+  max: number = CONSOLE_MAX_CHARS,
+): string {
   const text = args
     .map((arg) => {
       const value = arg["value"];
@@ -20,18 +24,17 @@ export function consoleText(args: ReadonlyArray<Record<string, unknown>>): strin
       return typeof shown === "string" ? shown : "";
     })
     .join(" ");
-  return text.length > CONSOLE_MAX_CHARS ? `${text.slice(0, CONSOLE_MAX_CHARS)}…` : text;
+  return cut(text, max);
 }
+
+const cut = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
 
 /**
  * Whether a line logged by a context of `origin` may be read in words: only a local page's (the
- * agent's own app, as `network` and `evaluate` are), never a public page's or a file preview's.
+ * agent's own app, as `network` and `evaluate` are), never a public page's or an opaque one's.
  */
-const readableOrigin = (origin: string | undefined) =>
-  origin !== undefined &&
-  origin !== "null" &&
-  origin !== "about:blank" &&
-  browseTarget(origin).kind === "loopback";
+export const loopbackOrigin = (origin: string) =>
+  origin !== "null" && origin !== "about:blank" && browseTarget(origin).kind === "loopback";
 
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
@@ -73,20 +76,24 @@ export function browserObservations(cdp: Cdp, heldFrom: number | null) {
   let holding = heldFrom;
   let droppedConsole = 0;
   let droppedNetwork = 0;
-  /** Each line as diagnostics say it (no contents), with its redacted words when they may be read. */
-  const console: Array<PaneConsoleEntry & { readonly words?: string }> = [];
+  /** Each line as diagnostics say it (no contents), with its redacted words and their origin. */
+  const console: Array<PaneConsoleEntry & { readonly words?: string; readonly origin?: string }> =
+    [];
   /** The origin of each execution context, by id, as the page made them. */
   const origins = new Map<number, string>();
-  const wordsOf = (contextId: unknown, text: () => string) =>
-    typeof contextId === "number" && readableOrigin(origins.get(contextId))
-      ? { words: redactText(text()) }
+  // Redacted whole, then cut, so a token at the cut is never left too short to be seen.
+  const wordsOf = (contextId: unknown, text: () => string) => {
+    const origin = typeof contextId === "number" ? origins.get(contextId) : undefined;
+    return origin !== undefined && loopbackOrigin(origin)
+      ? { words: cut(redactText(text()), CONSOLE_MAX_CHARS), origin }
       : {};
+  };
   const network: BrowserNetworkFailure[] = [];
   const pending = new Map<
     string,
     { url: string; timestamp: number; at: number; status?: number }
   >();
-  const log = (entry: PaneConsoleEntry & { readonly words?: string }) => {
+  const log = (entry: (typeof console)[number]) => {
     if (holding !== null) return;
     console.push(entry);
     if (console.length > 100) {
@@ -140,7 +147,7 @@ export function browserObservations(cdp: Cdp, heldFrom: number | null) {
         level,
         text: `${args.length} console argument(s); contents omitted.`,
         at: Date.now(),
-        ...wordsOf(event["executionContextId"], () => consoleText(args)),
+        ...wordsOf(event["executionContextId"], () => consoleText(args, Infinity)),
       });
     }),
     cdp.on("Runtime.exceptionThrown", (params) => {
@@ -202,10 +209,20 @@ export function browserObservations(cdp: Cdp, heldFrom: number | null) {
     cdp.on("Network.loadingFailed", (params) => finish(params, "failed")),
   ];
   return {
-    console: (errors: boolean): PaneConsoleEntry[] =>
+    /** The lines, in words where a local page logged them, unless it is one of Gram's own. */
+    console: (errors: boolean, context?: BrowseContext) =>
       console
         .filter((line) => !errors || line.level === "error")
-        .map(({ level, text, at, words }) => ({ level, text: words ?? text, at })),
+        .map(({ level, text, at, words, origin }) => ({
+          level,
+          text:
+            words !== undefined &&
+            origin !== undefined &&
+            (context === undefined || !isAppPage(origin, context))
+              ? words
+              : text,
+          at,
+        })),
     diagnostics: (): BrowserDiagnostics => ({
       since,
       observedAt: Date.now(),

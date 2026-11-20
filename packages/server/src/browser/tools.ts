@@ -744,7 +744,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
       name: "browser_console",
       class: "read",
       description:
-        "What the Preview pane's page logged to its console since the agent first used the pane, oldest first, uncaught errors included. A local page's lines (localhost, 127.0.0.1) keep their text, with token-shaped values redacted and objects shown by type; a public page's lines say only how many arguments they had. `onlyErrors` keeps the errors.",
+        "What the Preview pane's page logged to its console since the agent first used the pane, oldest first, uncaught errors included. A local page's lines (localhost, 127.0.0.1) keep their text, with common credential shapes (bearer tokens, provider keys, `token=` values) redacted and objects shown by type; a public page's or Gram's own pages' lines say only how many arguments they had. `onlyErrors` keeps the errors.",
     },
     input: Schema.Struct({ onlyErrors: Schema.optionalKey(Schema.Boolean) }),
     handle: (threadId, { onlyErrors }) =>

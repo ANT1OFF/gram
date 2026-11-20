@@ -25,6 +25,7 @@ import {
   type PaneConsoleEntry,
   type PaneKeyModifier,
 } from "@gram/contracts/link-trust";
+import type { BrowseContext } from "./browse-rules.ts";
 import { browserObservations, jpegDimensions } from "./browser-observations.ts";
 export { consoleText } from "./browser-observations.ts";
 import { randomUUID } from "node:crypto";
@@ -143,8 +144,11 @@ export interface PageDriver {
   waitFor(ms: number, until: { readonly text?: string; readonly ref?: string }): Promise<boolean>;
   /** Sets a field's value, a select's option or a checkbox, as the user changing it would. */
   formInput(ref: string, value: string | boolean): Promise<void>;
-  /** What the page logged since the driver attached, oldest first. */
-  console(onlyErrors: boolean): readonly PaneConsoleEntry[];
+  /**
+   * What the page logged since the driver attached, oldest first: a local page's lines in words,
+   * except Gram's own pages under `context`, and every other line by its count.
+   */
+  console(onlyErrors: boolean, context?: BrowseContext): readonly PaneConsoleEntry[];
   /**
    * Whether the page asked to navigate its main frame to `url` by submitting a form, by whatever
    * means (a submit control, `requestSubmit()`, `form.submit()`), in the last few seconds.
