@@ -30,7 +30,8 @@
     "gram/no-focused-tests": "error",
     "gram/no-sleep": "error",
     "gram/no-raw-effect": "error",
-    "gram/max-lines": "error"
+    "gram/max-lines": "error",
+    "gram/no-cross-package-path": "error"
   },
   "overrides": [
     {
@@ -221,6 +222,50 @@
               {
                 "group": ["@gram/web", "@gram/web/**", "@gram/desktop", "@gram/desktop/**"],
                 "message": "A package never imports an app: apps depend on packages, not the other way round. Move what both need into the package (or into @gram/contracts if it is a shared shape)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/desktop/src/preload/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "*",
+                  "!electron",
+                  "!@gram/shell/channels",
+                  "!@gram/shell/preload",
+                  "!@gram/shell/window-arg",
+                  "!./*"
+                ],
+                "allowTypeImports": true,
+                "message": "A sandboxed preload can load nothing but `electron`, so this bundle may bring in values only from `electron` and the shell's preload-safe entries: @gram/shell/channels, @gram/shell/preload and @gram/shell/window-arg (packages/shell/src/entries.test.ts holds them to it). Import types with `import type`; anything that reads files, runs a command or needs Node goes in apps/desktop/src/main behind a channel, and the preload asks for it with ipcRenderer.invoke."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/desktop/src/main/**", "apps/desktop/src/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@gram/web", "@gram/web/**"],
+                "message": "The desktop's main process loads the web app as a page, it never imports it. Shapes both sides use go in @gram/contracts; the page reaches main through the window.gram bridge."
+              },
+              {
+                "group": ["@gram/agents", "@gram/agents/**", "@gram/server/main"],
+                "message": "The server runs in its own process, which main starts (main/server-host.ts) and talks to over the API, so agent and server code never load into the Electron main process. From @gram/server, main may import only its light entries: @gram/server/logging, @gram/server/updates and @gram/server/host/launch-args. Ask the server over its API, or add a light export to packages/server/package.json for a pure helper."
               }
             ]
           }

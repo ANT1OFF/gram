@@ -43,9 +43,7 @@ import { Docs } from "../docs/docs.ts";
 import { ReviewRequestAppToolsLive } from "../app-tools/review-request-tools.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ReviewAppToolsLive } from "../babysit/review-tools.ts";
-import { PanePort } from "../browser/pane-port.ts";
-import { BrowserAppToolsLive } from "../browser/tools.ts";
-import { DevServerAppToolsLive } from "../browser/dev-server-tools.ts";
+import { BrowserFamilyAppToolsLive } from "../browser/app-tools.ts";
 import { VerifyAppToolsLive } from "../verify/verify-tools.ts";
 import { PrCommentWakesLive } from "../babysit/pr-comments.ts";
 import { PrCommentReads } from "../git/pr-comments.ts";
@@ -999,9 +997,7 @@ export const ServerCore = Layer.unwrap(
         WorkspaceAppToolsLive,
         McpProposeAppToolsLive,
         IssueAppToolsLive,
-        // Merged, so the handlers that show an agent's page to a client reach the same port.
-        BrowserAppToolsLive.pipe(Layer.provideMerge(PanePort.layer)),
-        DevServerAppToolsLive,
+        BrowserFamilyAppToolsLive,
         VerifyAppToolsLive,
         ThreadAssistLive,
         RepoEventsInboundLive,
