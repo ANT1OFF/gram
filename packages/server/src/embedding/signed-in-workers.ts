@@ -271,7 +271,6 @@ export const signedInSource = (
           start: true as const,
           attempt: randomUUID(),
         };
-        deps.owed?.add(owing);
         // Asked for again: it may come back, so it is relayed once more.
         deps.asleep?.delete(ask.name);
         let unavailable = false;
@@ -294,7 +293,9 @@ export const signedInSource = (
               orchestrator: ask.orchestrator,
               choices: choicesOfAsk(ask),
             },
-            deps,
+            // Owed beside any before it, once the name is this start's: no stop settled meanwhile
+            // lets go of it, and none written later replaces it.
+            { ...deps, onLocked: () => deps.owed?.add(owing) },
           ).pipe(
             Effect.map((sent) => {
               unavailable = sent.unavailable;
@@ -335,6 +336,7 @@ export const signedInSource = (
                 started.kind === "over-total"
               ) {
                 deps.starting?.delete(ask.name);
+                // Its own owing alone: any owed of the name before it is about a machine still there.
                 deps.owed?.remove(ask.name, owing);
               }
             }),

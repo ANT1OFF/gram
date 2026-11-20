@@ -199,6 +199,99 @@ describe("stops a server never confirmed", () => {
       }).pipe(Effect.scoped),
   );
 
+  it.effect(
+    "give back, after a restart, a machine whose retry was refused once its stop failed",
+    () =>
+      Effect.gen(function* () {
+        // The first start goes through with its answer lost; three stops are answered 503; the
+        // retry is refused; after a restart the server stops it.
+        let stops = 0;
+        let starts = 0;
+        const app = fakeApp({
+          answer: ({ call }) => {
+            if (call === "start") return { status: 403, body: {} };
+            stops += 1;
+            return stops <= 3
+              ? { status: 503, body: {} }
+              : { status: 200, body: { stopped: true } };
+          },
+        });
+        const bridged = bridgeWorkerMachines(app.port);
+        // The first start reaches the server, and its answer never comes back.
+        const port: WorkerMachinePortShape = {
+          ...bridged,
+          call: (origin, call, body) =>
+            call === "start" && (starts += 1) === 1
+              ? Effect.succeed({ ok: false as const, why: "no answer" })
+              : bridged.call(origin, call, body),
+        };
+        const dir = mkdtempSync(join(tmpdir(), "gram-owed-"));
+        try {
+          const source = signedInSource(SERVER, {
+            port,
+            hosts: unregistered,
+            owed: fileOwedStops(dir),
+            starting: new Set(),
+            stopRetryMs: 0,
+            unansweredHoldMs: 0,
+          });
+          const first = yield* source.start({ name: NAME, orchestrator: "o", title: "Heavy" });
+          expect(first).toMatchObject({ kind: "refused", unknown: true });
+          // Given back as a start of unknown outcome: its stops fail, so it is owed.
+          yield* source.abandon(NAME, { unsettled: true });
+          // A retry of its name is refused.
+          expect(
+            (yield* source.start({ name: NAME, orchestrator: "o", title: "Heavy" })).kind,
+          ).toBe("refused");
+          // Started again, with what was kept on disk, past the grace a start of unknown outcome has.
+          const kept = fileOwedStops(dir);
+          expect(kept.list().length).toBeGreaterThan(0);
+          yield* settleOwedStops(
+            port,
+            kept,
+            () => false,
+            () => Date.now() + UNSETTLED_START_MS,
+          );
+          // Stopped there after the restart, each owing of the name settled: nothing left owed.
+          expect(stops).toBeGreaterThan(3);
+          expect(kept.list()).toEqual([]);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      }),
+  );
+
+  for (const [refusal, answer] of [
+    ["not allowed", { status: 403, body: {} }],
+    ["over the total", { status: 409, body: { code: "over_total" } }],
+  ] as const)
+    it.effect(`keep an earlier stop owed when a retry of its name is refused as ${refusal}`, () =>
+      Effect.gen(function* () {
+        const app = fakeApp({
+          answer: ({ call }) =>
+            call === "start" ? answer : { status: 200, body: { stopped: true } },
+        });
+        const port = bridgeWorkerMachines(app.port);
+        const owed = memoryOwedStops();
+        // The first try's machine couldn't be stopped: owed, an older record with no attempt.
+        owed.add({ origin: ORIGIN, name: NAME, since: 0 });
+        const source = signedInSource(SERVER, {
+          port,
+          hosts: unregistered,
+          owed,
+          starting: new Set(),
+        });
+        // A retry of its name is refused: it made nothing, but the first machine is still there.
+        expect(
+          (yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" })).kind,
+        ).not.toBe("started");
+        expect(owed.list()).toEqual([{ origin: ORIGIN, name: NAME, since: 0 }]);
+        yield* settleOwedStops(port, owed, () => false);
+        expect(app.calls.map((each) => each.call)).toEqual(["start", "stop"]);
+        expect(owed.list()).toEqual([]);
+      }),
+    );
+
   it.live("keep a retry's start owed when an older stop of its name is settled meanwhile", () =>
     Effect.gen(function* () {
       // The older stop is answered late, saying the server holds no machine of that name.
@@ -301,9 +394,10 @@ describe("stops a server never confirmed", () => {
       yield* source.abandon(NAME);
       expect(owed.list().map((each) => each.name)).toEqual([NAME]);
       // A retry of the same spawn asks for the same name: the machine is its now. The old stop is
-      // gone; only the start's own is owed, kept while the start is on its way.
+      // kept beside the start's own, both while the start is on its way, should it be refused.
       yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" });
       expect(owed.list()).toEqual([
+        { origin: ORIGIN, name: NAME, since: expect.any(Number), attempt: expect.any(String) },
         {
           origin: ORIGIN,
           name: NAME,

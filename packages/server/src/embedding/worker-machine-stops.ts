@@ -80,18 +80,26 @@ export interface OwedStop {
  */
 export interface OwedStops {
   readonly list: () => ReadonlyArray<OwedStop>;
+  /** Kept beside any owed before it, its name's included: one owing never replaces another. */
   readonly add: (stop: OwedStop) => void;
-  /** Lets go of `name`'s stop owed; with `attempt`, only while that owing is the one kept. */
+  /**
+   * With `attempt`, lets go of that owing alone; without, of every owing of `name` (its machine is
+   * registered here, or confirmed stopped under its name's lock).
+   */
   readonly remove: (name: string, attempt?: OwedStop) => void;
 }
+
+/** Which owing a stop is: its attempt id, or, for one kept before ids, its name and time. */
+const owingOf = (stop: OwedStop) => stop.attempt ?? `${stop.name}@${stop.since}`;
 
 export const memoryOwedStops = (): OwedStops => {
   const owed = new Map<string, OwedStop>();
   return {
     list: () => [...owed.values()],
-    add: (stop) => void owed.set(stop.name, stop),
+    add: (stop) => void owed.set(owingOf(stop), stop),
     remove: (name, attempt) => {
-      if (attempt === undefined || owed.get(name)?.attempt === attempt.attempt) owed.delete(name);
+      if (attempt !== undefined) owed.delete(owingOf(attempt));
+      else for (const [key, each] of owed) if (each.name === name) owed.delete(key);
     },
   };
 };
@@ -167,10 +175,12 @@ export const settleOwedStops = (
         locks,
         stop.name,
         Effect.gen(function* () {
-          // Looked at again once the name is this pass's alone: a start may have taken it.
-          if (claimed(stop.name) || !owed.list().some((each) => each.name === stop.name)) {
-            // A start's own, still on its way here: kept, so a restart now still gives it back.
-            if (stop.start === true && startingNow(stop.name)) return;
+          // Looked at again once the name is this pass's alone. A start of it on its way here:
+          // every owing of it is kept, so a refusal of that start, or a restart, still gives the
+          // machine back. Taken since (registered here): let go, the release pass has it.
+          if (!owed.list().some((each) => owingOf(each) === owingOf(stop))) return;
+          if (startingNow(stop.name)) return;
+          if (claimed(stop.name)) {
             owed.remove(stop.name, stop);
             return;
           }
