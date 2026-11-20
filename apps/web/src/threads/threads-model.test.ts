@@ -7,7 +7,9 @@ import {
   startedByOf,
   threadListings,
   threadsFilterCounts,
+  withOutcome,
 } from "./threads-model";
+import { rowStatus } from "@/sidebar/status";
 
 const summary = (
   id: string,
@@ -162,5 +164,18 @@ describe("whereOf", () => {
     expect(whereOf({ title: "Nightly", place: "api", startedBy: "Routine: nightly" })).toBe(
       "api · Routine: nightly",
     );
+  });
+});
+
+describe("withOutcome", () => {
+  const thread = summary("w", 1).thread;
+  it("says Done for a finished worker at rest, and Stopped for one that isn't", () => {
+    expect(withOutcome(rowStatus(thread, "idle", undefined), true).label).toBe("Done");
+    expect(withOutcome(rowStatus(thread, "cold", undefined), true).label).toBe("Done");
+    expect(withOutcome(rowStatus(thread, "idle", undefined), false).label).toBe("Stopped");
+  });
+  it("never hides a live or failed state behind Done", () => {
+    expect(withOutcome(rowStatus(thread, "running", undefined), true).label).toBe("Running");
+    expect(withOutcome(rowStatus(thread, "error", undefined), true).label).toBe("Failed");
   });
 });
