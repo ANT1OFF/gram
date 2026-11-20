@@ -350,12 +350,13 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           tool,
           refusal(
             "not_admitted",
-            `${name} runs direct Claude, Codex and OpenCode sessions only. Choose a worker model on its own CLI, or spawn on this machine.`,
+            `${name} runs direct Claude, Codex, OpenCode and Grok Build sessions only. Choose a worker model on its own CLI, or spawn on this machine.`,
           ),
         );
       if (chosen.agent === "codex") return yield* admitMachineCodex(tool, machine, name, chosen);
       if (chosen.agent === "opencode")
         return yield* admitMachineOpenCode(tool, machine, name, chosen);
+      if (chosen.agent === "grok") return yield* admitMachineGrok(tool, machine, name, chosen);
       if (machine?.tools?.some((entry) => entry.tool === "claude" && !entry.found))
         return yield* toolError(
           tool,
@@ -433,6 +434,41 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
    * A direct OpenCode worker on a joined machine, as the machine says of its OpenCode. Where its
    * status isn't in yet, nothing is refused on it: the open there says what is wrong.
    */
+  const admitMachineGrok = (
+    tool: string,
+    machine: ReturnType<typeof joinedMachines>[number] | undefined,
+    name: string,
+    chosen: ModelRef,
+  ) =>
+    Effect.gen(function* () {
+      // A status without Grok Build comes from a host that doesn't run Grok Build sessions.
+      if (machine?.tools !== undefined && machine.grok === undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name} doesn't run Grok Build sessions: its Gram is older than this one, or it has no Grok Build. Update Gram there (Settings → Machines), or choose another worker model.`,
+          ),
+        );
+      const grok = machine?.grok;
+      if (grok === undefined) return;
+      if (!grok.found)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}: Grok Build is not installed. Install it there before spawning a Grok Build worker.`,
+          ),
+        );
+      if (grok.models !== undefined && hostListing(grok.models, chosen.model) === undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}'s Grok Build doesn't list ${chosen.model}. Pick a model it lists.`,
+          ),
+        );
+    });
   const admitMachineOpenCode = (
     tool: string,
     machine: ReturnType<typeof joinedMachines>[number] | undefined,
@@ -969,7 +1005,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ? machineRecord?.codex?.models
               : chosen.agent === "opencode"
                 ? machineRecord?.opencode?.models
-                : machineRecord?.models;
+                : chosen.agent === "grok"
+                  ? machineRecord?.grok?.models
+                  : machineRecord?.models;
           const efforts =
             input.effort === undefined
               ? []

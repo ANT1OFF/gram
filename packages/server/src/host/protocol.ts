@@ -224,6 +224,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "agent-opencode",
   "agent-codex",
   "agent-opencode-sessions",
+  "agent-grok",
   "shared-folders",
   "dream-sessions",
   "stop-going",
@@ -241,6 +242,10 @@ export const HOST_CODEX_MISSING =
 export const HOST_OPENCODE_SESSIONS_MISSING =
   "Its gram-host is older than this Gram and doesn't run OpenCode sessions. Update Gram there (Settings → Machines), then try again.";
 
+/** Why a Grok Build session isn't opened on a host that doesn't name `agent-grok`. */
+export const HOST_GROK_MISSING =
+  "Its gram-host doesn't run Grok Build sessions: it is older than this Gram, or has no Grok Build. Update Gram there (Settings → Machines), then try again.";
+
 /** Why an OpenCode session isn't opened on a host that doesn't name `agent-opencode`. */
 export const HOST_OPENCODE_MISSING =
   "Its gram-host is older than this Gram and doesn't know OpenCode. Update Gram there (Settings → Machines), then try again.";
@@ -249,10 +254,14 @@ export const HOST_OPENCODE_MISSING =
  * `input` as a host that doesn't know OpenCode can read it: an orchestration digest names each
  * worker's agent, and an OpenCode worker's is left out, as a ledger from before agents were named.
  */
-export const withoutOpenCodeAgents = (input: UserInput): UserInput => {
+export const withoutOpenCodeAgents = (input: UserInput): UserInput =>
+  withoutAgents(input, "opencode");
+
+/** `input` with `agent`'s workers named by no agent, for a host that doesn't know that kind. */
+export const withoutAgents = (input: UserInput, agent: AgentKind): UserInput => {
   const notice = input.notice;
   if (notice?.kind !== "orchestration") return input;
-  if (!notice.features.some((f) => f.workers.some((w) => w.agent === "opencode"))) return input;
+  if (!notice.features.some((f) => f.workers.some((w) => w.agent === agent))) return input;
   return {
     ...input,
     notice: {
@@ -260,7 +269,7 @@ export const withoutOpenCodeAgents = (input: UserInput): UserInput => {
       features: notice.features.map((feature) => ({
         ...feature,
         workers: feature.workers.map((worker) => {
-          if (worker.agent !== "opencode") return worker;
+          if (worker.agent !== agent) return worker;
           const { agent: _agent, ...rest } = worker;
           return rest;
         }),
@@ -1475,8 +1484,12 @@ export const connectHost = (
     const knowsOpenCode = hostServes(hello, "agent-opencode");
     const runsCodex = hostServes(hello, "agent-codex");
     const runsOpenCode = hostServes(hello, "agent-opencode-sessions");
+    const runsGrok = hostServes(hello, "agent-grok");
     const runsDreams = hostServes(hello, "dream-sessions");
-    const readable = (input: UserInput) => (knowsOpenCode ? input : withoutOpenCodeAgents(input));
+    const readable = (input: UserInput) => {
+      const known = knowsOpenCode ? input : withoutAgents(input, "opencode");
+      return runsGrok ? known : withoutAgents(known, "grok");
+    };
     const sessions: HostSessionsConnection = {
       browserPolicy,
       // Refused before it reaches a host that can't hold the browser off, or doesn't know the
@@ -1514,17 +1527,25 @@ export const connectHost = (
                       message: HOST_OPENCODE_SESSIONS_MISSING,
                     }),
                   )
-                : // An older host would drop the field and open an ordinary session, with its
-                  // native tools, where the dream's prompt asks it to write.
-                  (request.dreamFilesOnly === true || request.audience === "dream") && !runsDreams
+                : request.agent === "grok" && !runsGrok
                   ? Effect.fail(
                       new AgentUnavailable({
                         agent: request.agent,
                         reason: "startup-failed",
-                        message: HOST_DREAMS_MISSING,
+                        message: HOST_GROK_MISSING,
                       }),
                     )
-                  : sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
+                  : // An older host would drop the field and open an ordinary session, with its
+                    // native tools, where the dream's prompt asks it to write.
+                    (request.dreamFilesOnly === true || request.audience === "dream") && !runsDreams
+                    ? Effect.fail(
+                        new AgentUnavailable({
+                          agent: request.agent,
+                          reason: "startup-failed",
+                          message: HOST_DREAMS_MISSING,
+                        }),
+                      )
+                    : sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
       events: (handle, afterSeq) =>
         hostStream(client["host.sessions.events"]({ handle, afterSeq })),
       ack: (handle, seq) =>
@@ -1620,7 +1641,7 @@ export const connectHost = (
       close: (handle) => guarded(client["host.sessions.close"]({ handle })).pipe(Effect.ignore),
       // A host that doesn't know OpenCode keeps no OpenCode config to drop.
       reload: (agent, reload) =>
-        agent === "opencode" && !knowsOpenCode
+        (agent === "opencode" && !knowsOpenCode) || (agent === "grok" && !runsGrok)
           ? Effect.void
           : guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
       accountScope: (agent) =>
