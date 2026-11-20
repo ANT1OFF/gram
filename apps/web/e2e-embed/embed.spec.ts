@@ -1550,3 +1550,92 @@ test("a light page takes the person's own palette, More contrast and motion, as 
   ).toContain('[data-palette="my-blue"]');
   expect(errors).toEqual([]);
 });
+
+test("a group's heading opens its page, its chevron folds it, and its rows show marks with a status", async ({
+  page,
+}) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    const own = window as unknown as Update & { fixturePeopleNav: object };
+    own.embed.update({ navigation: [own.fixturePeopleNav] });
+  });
+  const main = page.getByTestId("embed-navigation-main");
+  const heading = main.getByTestId("embed-navigation-heading-link");
+  const toggle = main.getByTestId("embed-navigation-toggle");
+  await expect(main.getByTestId("embed-navigation-mark")).toHaveCount(2);
+  await expect(main.getByRole("link", { name: /^Build bot ?, Working$/ })).toBeVisible();
+  await expect(main.getByTestId("embed-navigation-mark").first()).toHaveAttribute(
+    "data-status",
+    "working",
+  );
+
+  await heading.click();
+  await expect(page).toHaveURL(/\/govern\/people$/);
+  await expect(heading).toHaveAttribute("aria-current", "page");
+  await expect(main.getByTestId("embed-navigation-glide")).toBeHidden();
+  await expect(main.getByTestId("embed-navigation-item")).toHaveCount(2);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(main.getByTestId("embed-navigation-item")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/govern\/people$/);
+  await toggle.click();
+  await expect(main.getByTestId("embed-navigation-item")).toHaveCount(2);
+
+  const tree = page.getByTestId("fixture-tree");
+  await expect(tree.getByTestId("fixture-person")).toHaveCount(3);
+  await tree.getByRole("button", { name: "East" }).click();
+  await expect(tree.getByTestId("fixture-person").filter({ visible: true })).toHaveCount(1);
+  await expect(page.getByRole("img", { name: "Ada Example, Online" })).toBeVisible();
+  await shot(page.locator("main").first(), { path: "e2e/__screenshots__/kit-people-dark.png" });
+  expect(errors).toEqual([]);
+});
+
+test("the kit's marks, rows and tree fit a phone and both modes", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const errors = await mounted(page, "/govern/people");
+  const people = async () => {
+    await page.evaluate(() => {
+      const own = window as unknown as Update & {
+        fixturePeopleNav: object;
+        fixtureSidebar: object;
+      };
+      own.embed.update({ sidebar: own.fixtureSidebar, navigation: [own.fixturePeopleNav] });
+    });
+    await expect(page.getByTestId("fixture-tree").getByTestId("fixture-person")).toHaveCount(3);
+    await expect(page.getByTestId("fixture-tree").getByText("Cy Placeholder")).toBeVisible();
+  };
+  await people();
+  await shot(page, { path: "e2e/__screenshots__/kit-people-desktop-dark.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("fixture-agent-row")).toBeVisible();
+  await shot(page, { path: "e2e/__screenshots__/kit-people-phone-dark.png" });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.evaluate(() => window.embed?.navigate("/settings/appearance"));
+  await page.getByRole("group", { name: "Mode" }).getByRole("button", { name: "light" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-mode", "light");
+  await page.evaluate(() => window.embed?.navigate("/govern/people"));
+  await people();
+  await shot(page.getByTestId("embed-page"), {
+    path: "e2e/__screenshots__/kit-people-page-light.png",
+  });
+  await shot(page, { path: "e2e/__screenshots__/kit-people-desktop-light.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("fixture-agent-row")).toBeVisible();
+  const sideways = await page.evaluate(
+    () => document.scrollingElement!.scrollWidth > document.scrollingElement!.clientWidth,
+  );
+  expect(sideways).toBe(false);
+  const row = await page.getByTestId("fixture-agent-row").boundingBox();
+  expect((row?.x ?? 0) + (row?.width ?? 0)).toBeLessThanOrEqual(390);
+  await shot(page, { path: "e2e/__screenshots__/kit-people-phone-light.png" });
+  await page.getByTestId("phone-menu").click();
+  const drawer = page.getByTestId("phone-drawer");
+  await expect(drawer.getByTestId("embed-navigation-heading-link")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(drawer.getByTestId("embed-navigation-mark")).toHaveCount(2);
+  await shot(page, { path: "e2e/__screenshots__/kit-people-menu-light.png" });
+  expect(errors).toEqual([]);
+});

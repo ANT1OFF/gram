@@ -318,6 +318,17 @@ export const hiddenCount = (
 export const shownCount = (count: number | undefined): number | undefined =>
   count !== undefined && Number.isFinite(count) && count >= 1 ? Math.floor(count) : undefined;
 
+/** The page a group's heading opens: its `to` where it has a heading and a path under the app. */
+export const headingTo = (group: ShellNavigationGroup): string | undefined =>
+  group.label !== undefined &&
+  group.label.trim() !== "" &&
+  group.to !== undefined &&
+  group.to.startsWith("/") &&
+  !group.to.startsWith("//") &&
+  !/[?#\s]/.test(group.to)
+    ? group.to
+    : undefined;
+
 /** A destination's name with its group's, where it has one: "Govern: Policies". */
 export const itemName = (group: ShellNavigationGroup, label: string): string =>
   group.label === undefined || group.label.trim() === "" ? label : `${group.label}: ${label}`;

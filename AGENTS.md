@@ -20,6 +20,10 @@ Codex CLIs on their own subscriptions. [README](README.md) introduces it,
 - Never stop processes by pattern (`pkill -f`, `killall`, or `kill` on `pgrep` matches): other
   checkouts may share the machine. Stop your own check with `bun run check:cancel`, or kill only
   the exact PIDs your command started.
+- Rules live in checks. When you catch a mistake that could recur, yours or another agent's,
+  prefer a type, lint rule, import boundary or test to a new line here; give the check a message
+  that names the fix, and clear its existing violations in the same change. See
+  [rules live in checks](CONTRIBUTING.md#rules-live-in-checks).
 - Fix demonstrated causes, with a before/after reproduction where feasible. Never weaken
   assertions, skips, timeouts or permission guards to get a pass. Claim only what was tested:
   synthetic success is not live-provider qualification.
@@ -28,7 +32,7 @@ Codex CLIs on their own subscriptions. [README](README.md) introduces it,
   or the same thing at two layers; never cut security, approvals, egress, migrations, data loss,
   the API/MCP contract or the merge and release paths. See
   [what earns a test](docs/VERIFICATION.md#what-earns-a-test).
-- Use 24-hour times in product UI and documentation.
+- Use 24-hour times in product UI and documentation; `gram/clock-24h` holds the web app to it.
 - For a UI change whose look is open, follow [DESIGN.md](DESIGN.md) and the
   [mock-first playbook](docs/orchestration/playbooks/mock-first.md); most tasks skip the mock.
 - Gram's web app is also mounted inside other apps, which ship a pinned commit of it. When a

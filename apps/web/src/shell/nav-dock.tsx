@@ -3,7 +3,7 @@ import { History, Inbox, PanelLeft, Search, Settings } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 
 import { useHostAttention } from "@/embed/attention";
-import { ItemIcon, linkTo, useCurrentDestination } from "@/embed/slots";
+import { ItemIcon, linkTo, MARK_GROUND, spokenStatus, useCurrentDestination } from "@/embed/slots";
 import { navigationAt, shownCount, useEmbedShell, useThreadsListed } from "@/embed/store";
 import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
@@ -96,13 +96,14 @@ function PlaceItems() {
   return groups.flatMap((group) =>
     group.items.map((item) => {
       const count = shownCount(item.count);
+      const name = spokenStatus(item, item.label);
       return (
         <Link
           key={`${group.id}:${item.id}`}
           {...linkTo(item.to)}
           {...{ [DOCK_ITEM]: "" }}
           data-testid="nav-dock-place"
-          aria-label={count === undefined ? item.label : `${item.label}, ${count}`}
+          aria-label={count === undefined ? name : `${name}, ${count}`}
           title={item.label}
           aria-current={item.to === at ? "page" : undefined}
           className={ITEM}
@@ -176,7 +177,10 @@ export function NavDock({ edge }: { edge: "top" | "bottom" }) {
         const step = event.key === "ArrowRight" ? 1 : -1;
         items[(index + step + items.length) % items.length]?.focus();
       }}
-      className="flex max-w-full items-end gap-0.5 overflow-x-auto rounded-(--radius-lg) border border-border bg-sidebar p-1 text-sidebar-foreground shadow-overlay [scrollbar-width:none]"
+      className={cn(
+        "flex max-w-full items-end gap-0.5 overflow-x-auto rounded-(--radius-lg) border border-border bg-sidebar p-1 text-sidebar-foreground shadow-overlay [scrollbar-width:none]",
+        MARK_GROUND,
+      )}
     >
       <NeedsYouItem />
       <DockButton

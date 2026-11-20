@@ -2,7 +2,7 @@
 // page, and the few places it may add to. Nothing here imports the app, so this file's declarations
 // are the package's types as they stand.
 
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, CSSProperties, ReactNode } from "react";
 
 /** Where a slot's component is drawn, so it can fit the room it has. */
 export type ShellPlacement =
@@ -57,6 +57,35 @@ export interface ShellPageProps {
   readonly params: Readonly<Record<string, string>>;
 }
 
+/** The status a mark's dot shows, in one of Gram's status colours. */
+export type ShellMarkStatus = "success" | "working" | "waiting" | "needs" | "idle" | "error";
+
+/** A person's or an agent's mark, drawn in place of a destination's icon (the kit's `Avatar`). */
+export type ShellMark = ShellMarkBase & ShellMarkStatusWords;
+
+export interface ShellMarkBase {
+  /** Whose mark it is, for its initials. Defaults to the row's `label`. */
+  readonly name?: string;
+  /** `round` for a person (the default), `square` for an agent or anything else. */
+  readonly shape?: "round" | "square";
+  /** Drawn in place of the initials. */
+  readonly glyph?: ShellIcon;
+  readonly initials?: string;
+  readonly dimmed?: boolean;
+  /** On the mark's tile, for a fill of your own. */
+  readonly className?: string;
+  readonly style?: CSSProperties;
+}
+
+/** A mark's status and its words, together: a dot never says its status by colour alone. */
+export type ShellMarkStatusWords =
+  | { readonly status?: undefined; readonly statusLabel?: undefined }
+  | {
+      readonly status: ShellMarkStatus;
+      /** The status in words: said after the row's name to a screen reader, and the dot's hover. */
+      readonly statusLabel: string;
+    };
+
 /** One destination in a navigation group. */
 export interface ShellNavigationItem {
   /** Stable among the group's items. */
@@ -65,6 +94,8 @@ export interface ShellNavigationItem {
   /** A path under the app: one of `routes`, or one of Gram's own. */
   readonly to: string;
   readonly icon?: ShellIcon;
+  /** A person's or an agent's mark with its status, in place of `icon`. */
+  readonly mark?: ShellMark;
   /**
    * A number at the row's end, such as how many runs wait for review; on the compact sidebar's
    * tile, a dot. Left out or 0, nothing is drawn. Change it through `GramHandle.update`.
@@ -94,6 +125,13 @@ export interface ShellNavigationGroup {
    * the compact sidebar's tiles name them alone.
    */
   readonly label?: string;
+  /**
+   * A page the heading opens, a path under the app as an item's `to` is. A collapsible group's
+   * heading then opens it, and its chevron alone opens and closes the rows. The heading is marked
+   * current while the window is at exactly that path. Only a group with a `label` can have one;
+   * the compact sidebar and the palette reach the page only through a row that goes there too.
+   */
+  readonly to?: string;
   /** Defaults to `foot`. Groups keep their order within each placement. */
   readonly placement?: ShellNavigationPlacement;
   /**

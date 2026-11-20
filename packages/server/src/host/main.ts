@@ -24,6 +24,7 @@ import { claudeTokenIn } from "./claude-token.ts";
 import { checksOn } from "./checks.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { sharedOnHost } from "../shared/host-shared.ts";
+import { hostLoopback } from "./loopback.ts";
 import { threadPlacesOnHost } from "./thread-places.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import {
@@ -266,6 +267,7 @@ const hostService = (
       // Its sessions' app-tool calls over its connection, for a machine that reaches no address
       // of the control plane's; its listener starts only once a control plane asks for it.
       appTools: yield* makeAppToolsTunnel,
+      loopback: hostLoopback(),
       threadPlaces: threadPlacesOnHost(proc, hostRepos()),
       repos: {
         ensure: (url) =>

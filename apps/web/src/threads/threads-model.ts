@@ -1,4 +1,9 @@
-import type { ThreadSummary } from "@gram/contracts";
+import type { OrchestratorLedger, ThreadSummary } from "@gram/contracts";
+import { CircleCheck } from "lucide-react";
+
+import { STATUS_WORDS } from "@/orchestration/status-words";
+import { workerRow, type WorkerLiveFacts } from "@/orchestration/workers-model";
+import type { RowStatus } from "@/sidebar/status";
 
 import { orchestratorRowTitle } from "@/orchestration/tree-model";
 import { threadDisplayTitle } from "@/thread/thread-title";
@@ -155,3 +160,40 @@ export const threadsFilterCounts = (
   needsYou: listings.filter((listing) => inThreadsFilter(listing, "needsYou")).length,
   running: listings.filter((listing) => inThreadsFilter(listing, "running")).length,
 });
+
+/**
+ * The workers their orchestrators count finished, by thread id: the rows the Workers panel puts
+ * under Done, by the same rule (`workerRow`), so a worker that reported its work done reads Done
+ * here as it does there and on the Board.
+ */
+export const finishedWorkers = (
+  ledgers: Iterable<OrchestratorLedger>,
+  facts: WorkerLiveFacts,
+): ReadonlySet<string> => {
+  const finished = new Set<string>();
+  for (const ledger of ledgers)
+    for (const feature of ledger.features)
+      for (const worker of feature.workers)
+        if (workerRow(worker, facts).tab === "done") finished.add(worker.threadId);
+  return finished;
+};
+
+/**
+ * A row's status with its task's outcome beside its process: a finished worker at rest says Done,
+ * where its session alone would say Stopped. Anything live (at work, waiting on you, failed) still
+ * says what it is.
+ */
+export const withOutcome = (display: RowStatus, finished: boolean): RowStatus =>
+  !finished ||
+  display.working ||
+  display.running !== undefined ||
+  display.tone === "text-status-needs" ||
+  display.tone === "text-destructive"
+    ? display
+    : {
+        icon: CircleCheck,
+        tone: "text-success",
+        label: STATUS_WORDS.done,
+        title: `${STATUS_WORDS.done}: its work is finished and its session is at rest`,
+        working: false,
+      };

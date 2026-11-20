@@ -138,6 +138,18 @@ it closed. Once the person opens or closes it, their choice is kept on the devic
 `id`. Closed, it still shows the row the window is at, and its heading says the sum of its hidden
 rows' counts; the compact sidebar and the palette list its rows either way.
 
+A destination for a person or an agent can show a `mark` in place of its `icon`: the kit's
+`Avatar` at the row's icon size, with its initials (from `name`, or the row's `label`) or a
+`glyph`, `shape` `round` (a person, the default) or `square` (an agent or anything else), and a
+`status` dot (`success`, `working`, `waiting`, `needs`, `idle` or `error`, in Gram's status
+colours) with its `statusLabel`, the status in words, which the type requires with a `status` so
+a dot never says it by colour alone: a screen reader hears it after the row's name, and the dot's
+hover says it. `dimmed` fades the mark; `className` and `style` go on its tile, for
+a fill of your own. A group with a `label` may also have a `to`: its heading is then a link to that
+page, marked while the window is at exactly that path, and on a `collapsible` group only its
+chevron opens and closes the rows. The compact sidebar and the palette list rows only, so give the
+heading's page a row too if it must be reachable there.
+
 **Settings.** Gram's Settings pages are about the computer Gram runs on: agent CLIs, machines,
 the terminal, review requests from `gh`, updates. `settings.gram` lists the ids of the pages of
 Gram's to keep (`["appearance", "keyboard"]`, in Gram's order); a page that opens from another,
@@ -682,6 +694,33 @@ For states and feedback:
 - `SettingsGroup` takes `plainOnPhone`: on a phone, a plain list rather than a card, with no
   hairlines between rows and the title a quiet label with a rule running out after it. Wider
   windows keep the card.
+
+For people and agents:
+
+- `Avatar`: someone's or something's mark: `name` (its initials and, when `labelled`, its name to
+  a screen reader), `shape` (`round`, the default, for a person; `square` for an agent), `glyph` (a
+  Lucide icon or any glyph taking `className`, in place of the initials), `initials`, `size` (`xs`
+  20 px, `sm` 28 px, `md` 36 px, the default), `status` (a dot at its corner: `success`,
+  `working`, `waiting` as a hollow ring, `needs`, `idle` or `error`, in Gram's status colours and
+  still), `statusLabel` (the status in words, for the dot's hover and a screen reader; required
+  with a `status`, so a dot never says it by colour alone), `dimmed`,
+  `labelled`, `className` and `style` (on the tile, for a fill of your own) and `testId`. Beside its
+  name it is hidden from a screen reader. Its tile is on the neutral fill; the dot is ringed in
+  `--mark-ground`, the page's background unless you set it.
+- `AvatarRow`: a row for a person or an agent: `avatar` (an `Avatar`'s props without `size`, the
+  `AvatarMarkProps` type; the row sets the size), `name` (words, or a link of yours), `tags` (after the name: words, or `{ label, look,
+  hideOnPhone }` with `look` `quiet`, `badge` for an outlined pill or `code`), `meta` (the line
+  under the name), `aside` (muted words before the status, left out under 1024 px), `status` and
+  `statusTone` (`default`, `muted`, `success`, `working`, `needs`, `error`; by default from the
+  mark's status, `waiting` as `working` and `idle` as `muted`) at the row's end; a mark's
+  `statusLabel` is said after the name when the row has no `status` words,
+  `compact` (a 28 px mark, less height), `className` and `testId`.
+- `TreeList`: entries indented under the one they belong to, with lines joining them and a
+  chevron that folds an entry's children: `nodes` (`{ id, label, content?, children? }`, the
+  `TreeNode` type; `label` names the chevron and is drawn when there is no `content`), `label` (the
+  list's name for a screen reader), `defaultExpanded` (`all`, the default, or the ids to start
+  open; an entry added later follows it), or `expanded` with `onExpandedChange` to keep the folds
+  yourself, `connectors` (on by default), `className` and `testId`.
 
 The package's declarations (`gram-web-kit.d.ts` and `types/`) type every one of these, `render`
 on `Button`, `Badge` and the tooltip's trigger included, so an app needs no declarations of its
