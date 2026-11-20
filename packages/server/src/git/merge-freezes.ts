@@ -72,6 +72,8 @@ export interface FreezeInput {
   readonly minutes?: number | undefined;
   /** PR numbers in the repo that may still merge; a renewal without it keeps the ones it had. */
   readonly allow?: ReadonlyArray<number> | undefined;
+  /** A person approved holding every workspace's merges, not only the caller's workspace's. */
+  readonly acrossWorkspaces?: boolean | undefined;
 }
 
 /** What a freeze did: the freeze, and the GitHub auto-merges it couldn't turn off, with why. */
@@ -100,13 +102,15 @@ export interface MergeFreezesShape {
     branch: string | undefined,
   ) => Effect.Effect<MergeFreeze | undefined>;
   /**
-   * The freeze that holds back a merge of PR `number` onto the repo's branch (any branch of the
-   * repo when it isn't known), or `undefined`: a freeze standing there that doesn't allow it.
+   * The freeze that holds back a merge of PR `number` by a thread of `workspaceId` onto the repo's
+   * branch (any branch of the repo when it isn't known), or `undefined`: a freeze standing there
+   * that doesn't allow it, set in that workspace or, with a person's yes, across workspaces.
    */
   readonly holding: (
     repo: string,
     branch: string | undefined,
     number: number | undefined,
+    workspaceId: string | undefined,
   ) => Effect.Effect<MergeFreeze | undefined>;
   /** Every freeze standing now. */
   readonly list: Effect.Effect<ReadonlyArray<MergeFreeze>>;
@@ -468,7 +472,7 @@ export const MergeFreezesLive = Layer.effect(
         return found === undefined ? undefined : publicOf(found);
       });
 
-    const holding: MergeFreezesShape["holding"] = (repo, branch, number) =>
+    const holding: MergeFreezesShape["holding"] = (repo, branch, number, workspaceId) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
         const found = [...freezes.values()].find(
@@ -476,7 +480,7 @@ export const MergeFreezesLive = Layer.effect(
             sameRepo(freeze.repo, repo) &&
             (branch === undefined || freeze.branch === branch) &&
             standing(freeze, now) !== undefined &&
-            mergeFreezeHolds(freeze, number),
+            mergeFreezeHolds(freeze, number, workspaceId),
         );
         return found === undefined ? undefined : publicOf(found);
       });
@@ -500,16 +504,19 @@ export const MergeFreezesLive = Layer.effect(
       });
 
     /**
-     * Whether PR `number` of `repo` is a Gram worker's own, by the rule the merge tools hold to
+     * Whether PR `number` of the frozen repo is the own PR of a Gram worker the freeze holds, by the rule the merge tools hold to
      * (`workerOwnsPr`), so a freeze may take its GitHub auto-merge down. A PR a thread only binds
      * or follows is someone else's to arm, and isn't touched; a doubt is a no.
      */
-    const gramOwns = (repo: string, number: number) =>
+    const gramOwns = (set: StoredFreeze, number: number) =>
       Effect.gen(function* () {
+        const repo = set.repo;
         for (const thread of yield* store.listThreads) {
           const bound = thread.boundPr;
           if (bound === undefined || !sameRepo(bound.repo, repo) || bound.number !== number)
             continue;
+          // A freeze held to its workspace leaves other workspaces' PRs as they are.
+          if (!mergeFreezeHolds(set, undefined, thread.workspaceId)) continue;
           const owns = yield* workerOwnsPr(thread, repo, number).pipe(
             Effect.provideService(ThreadStore, store),
             Effect.provideService(Proc, proc),
@@ -536,8 +543,7 @@ export const MergeFreezesLive = Layer.effect(
         }
         const failed: Array<string> = [];
         for (const pr of armed) {
-          if ((set.allow ?? []).includes(pr.number) || !(yield* gramOwns(set.repo, pr.number)))
-            continue;
+          if ((set.allow ?? []).includes(pr.number) || !(yield* gramOwns(set, pr.number))) continue;
           // On the freeze's record before GitHub is asked, under its lock: a quit partway leaves
           // at worst a PR recorded that wasn't turned off, which arming again does no harm to,
           // never one turned off that nothing arms again. Ended meanwhile: nothing more is taken.
@@ -643,6 +649,7 @@ export const MergeFreezesLive = Layer.effect(
                 threadId: caller.id,
                 title: caller.title,
                 ...(caller.workspaceId === undefined ? {} : { workspaceId: caller.workspaceId }),
+                ...(input.acrossWorkspaces === true ? { acrossWorkspaces: true as const } : {}),
                 // One line: it is shown inline in other threads' refusals and the ledger.
                 reason: oneLine(redactText(input.reason)).slice(0, MERGE_FREEZE_REASON_MAX),
                 ...(allow === undefined || allow.length === 0

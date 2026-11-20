@@ -1,12 +1,8 @@
 import {
   currentBaseOf,
   AppToolError,
-  BranchName,
   isLocalHost,
   MERGE_AFTER_MAX,
-  MERGE_FREEZE_ALLOW_MAX,
-  MERGE_FREEZE_MAX_MINUTES,
-  MERGE_FREEZE_REASON_MAX,
   mergeFreezeText,
   mergeReviewPolicyOf,
   reviewBotsOf,
@@ -61,6 +57,7 @@ import {
   soloGateCantPass,
 } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
+import { makeMergeFreezeTool } from "./merge-freeze-tool.ts";
 import { parseRunRef, RunMonitor } from "../git/run-monitor.ts";
 import {
   withOwnedBranch,
@@ -199,11 +196,12 @@ export const PrAppToolsLive = Layer.effectDiscard(
      */
     const refuseWhileFrozen = (
       tool: string,
+      thread: Thread,
       repo: string,
       base: string | undefined,
       number: number,
     ) =>
-      freezes.holding(repo, base, number).pipe(
+      freezes.holding(repo, base, number, thread.workspaceId).pipe(
         Effect.flatMap((frozen) =>
           frozen === undefined
             ? Effect.void
@@ -603,7 +601,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
               ),
           );
           if (enabled) {
-            yield* refuseWhileFrozen(tool, repo, seen?.baseRef, target);
+            yield* refuseWhileFrozen(tool, thread, repo, seen?.baseRef, target);
             yield* requireGitHubAutoPolicy(thread, repo);
           }
           return {
@@ -671,9 +669,9 @@ export const PrAppToolsLive = Layer.effectDiscard(
               // badge's may be from before a retarget.
               if ((yield* freezes.active(repo, undefined)) !== undefined) {
                 const fresh = yield* view("baseRefName");
-                yield* refuseWhileFrozen(tool, repo, fresh === "" ? undefined : fresh, number);
+                yield* refuseWhileFrozen(tool, latest, repo, fresh || undefined, number);
               } else {
-                yield* refuseWhileFrozen(tool, repo, base, number);
+                yield* refuseWhileFrozen(tool, latest, repo, base, number);
               }
             }
             if (call.carded !== false) return;
@@ -1563,62 +1561,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         }).pipe(Effect.mapError(failed(LOCAL_CHECK))),
     });
 
-    const mergeFreezeTool = defineAppTool({
-      descriptor: {
-        name: "merge_freeze",
-        class: "self",
-        description: `Freeze Gram's merges onto a branch of a workspace \`repo\` (default: your PR's; \`branch\`: its default) for a \`reason\`, up to ${MERGE_FREEZE_MAX_MINUTES} \`minutes\`; call again to renew, 4 h at most. merge_when_ready waits and set_auto_merge refuses, except PRs in \`allow\`; GitHub auto-merge on Gram's PRs is off meanwhile, then restored on the head it stood on (a PR pushed meanwhile stays off; its thread is told). A person, a merge queue or other PRs' auto-merge can still merge. \`lift: true\` ends it (its thread or orchestrator). Wait with schedule_wake's freezeLifted.`,
-      },
-      audience: ["orchestrator", "worker"],
-      input: Schema.Struct({
-        repo: Schema.optionalKey(Schema.String),
-        branch: Schema.optionalKey(BranchName),
-        reason: Schema.optionalKey(
-          Schema.NonEmptyString.check(Schema.isMaxLength(MERGE_FREEZE_REASON_MAX)),
-        ),
-        minutes: Schema.optionalKey(
-          Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MERGE_FREEZE_MAX_MINUTES })),
-        ),
-        allow: Schema.optionalKey(
-          Schema.Array(Schema.Int).check(Schema.isMaxLength(MERGE_FREEZE_ALLOW_MAX)),
-        ),
-        lift: Schema.optionalKey(Schema.Boolean),
-      }),
-      handle: (caller, input) =>
-        Effect.gen(function* () {
-          const tool = "merge_freeze";
-          const thread = yield* store.getThread(caller).pipe(Effect.mapError(failed(tool)));
-          const repo = input.repo ?? thread.boundPr?.repo;
-          if (repo === undefined || !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-            return yield* new AppToolError({ tool, message: "Name the `repo` as owner/repo." });
-          }
-          if (input.lift === true) {
-            const lifted = yield* freezes.lift(thread, { repo, branch: input.branch });
-            return { lifted: true, repo: lifted.repo, branch: lifted.branch };
-          }
-          if (input.reason === undefined) {
-            return yield* new AppToolError({ tool, message: "Say why in `reason`." });
-          }
-          const { freeze: frozen, notDisarmed } = yield* freezes.freeze(thread, {
-            repo,
-            branch: input.branch,
-            reason: input.reason,
-            minutes: input.minutes,
-            allow: input.allow,
-          });
-          return {
-            frozen: true,
-            repo: frozen.repo,
-            branch: frozen.branch,
-            until: new Date(frozen.until).toISOString(),
-            ...(frozen.allow === undefined ? {} : { allow: frozen.allow }),
-            ...(frozen.disarmed === undefined
-              ? {}
-              : { autoMergeOff: frozen.disarmed.map((pr) => pr.number) }),
-            ...(notDisarmed.length === 0 ? {} : { autoMergeStillArmed: notDisarmed }),
-          };
-        }),
-    });
+    const mergeFreezeTool = yield* makeMergeFreezeTool;
 
     yield* registry.register([
       mergeFreezeTool,
