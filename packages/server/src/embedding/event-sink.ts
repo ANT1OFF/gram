@@ -13,6 +13,7 @@
 // With messages sent, the ones stored before they were are sent too, once: the backfill, below.
 
 import type { AnswerProof } from "./answer-proof.ts";
+import { threadData } from "./thread-data.ts";
 import {
   approvalSubject,
   type DecisionAssignee,
@@ -26,7 +27,6 @@ import {
   type SinkBatch,
   type SinkEvent,
   type SinkEventType,
-  type LimitWait,
   type MemoryQuestion,
   type OrchestrationPause,
   parseQuestions,
@@ -222,34 +222,6 @@ export const SINK_BACKFILL_PAUSE = Duration.millis(500);
 
 /** How many messages' last-sent content is remembered, to leave an unchanged rewrite unsent. */
 const SENT_MESSAGES_KEPT = 5000;
-
-/** A thread as `thread.upsert` and `sink.started` send it. */
-export const threadData = (thread: Thread, status?: string): Record<string, unknown> => ({
-  id: thread.id,
-  title: thread.title,
-  role: thread.role === "orchestrator" ? "orchestrator" : thread.spawnedBy ? "worker" : "plain",
-  model: thread.model.model,
-  agent: thread.model.agent,
-  ...(status === undefined ? {} : { status }),
-  ...(thread.spawnedBy === undefined ? {} : { spawnedByThreadId: thread.spawnedBy.threadId }),
-  ...(thread.limitWait === undefined ? {} : { limitWait: limitWaitData(thread.limitWait) }),
-  // Archived (parked): kept, and left out of the thread list for History. Every upsert carries the
-  // whole thread, so one without it says the thread is not archived.
-  ...(thread.parked ? { archived: true } : {}),
-});
-
-/**
- * A provider limit the thread waits out, as `thread.upsert` carries it: an idle thread with one
- * isn't done, it resumes on its own at `resumeAt` unless `cancelled`.
- */
-const limitWaitData = (wait: LimitWait): Record<string, unknown> => ({
-  kind: wait.kind,
-  resumeAt: wait.resumeAt,
-  since: wait.since,
-  ...(wait.resetsAt === undefined ? {} : { resetsAt: wait.resetsAt }),
-  ...(wait.cancelled === true ? { cancelled: true } : {}),
-  ...(wait.detail === undefined ? {} : { detail: wait.detail }),
-});
 
 const askTitle = (request: PendingRequest): string => {
   if (request.kind === "approval") {
