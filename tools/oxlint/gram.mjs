@@ -36,7 +36,7 @@
 // And a 24-hour clock in the web app: a time formatted with `hour` or `timeStyle` and no
 // `hourCycle: "h23"` reads `2:05 PM` wherever the locale's default is 12-hour.
 
-import { relative } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 import { importOf, isFunction, isTestFile, propertyName, REPO, soleExpression } from "./ast.mjs";
 import { noRawEffect } from "./no-raw-effect.mjs";
