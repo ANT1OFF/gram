@@ -136,7 +136,8 @@ export const permissionParams = (permission: "ask" | "auto" | "always-approve"):
 });
 
 /**
- * The answer Gram gives a permission request itself, without a card: `dontAsk` refuses, edits go
+ * The answer Gram gives a permission request itself, without a card: Gram's own app tools go
+ * through, as their registry raises its own card where one is needed; `dontAsk` refuses, edits go
  * through in `acceptEdits`, and a mode that would have run the call unasked lets it through when
  * the outward gate doesn't ask about it. `undefined` shows the card.
  */
@@ -145,6 +146,8 @@ export const autoAnswer = (
   gate: OutwardGate | undefined,
   call: Json,
 ): "allow" | "deny" | undefined => {
+  const tool = text(record(call["rawInput"])["tool_name"]);
+  if (tool?.startsWith(`${APP_TOOLS_SERVER_NAME}__`) === true) return "allow";
   if (mode === "dontAsk") return "deny";
   const kind = text(call["kind"]);
   if (mode === "acceptEdits" && kind === "edit") return "allow";
@@ -402,6 +405,9 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
             },
           );
         turn = running;
+        void running.finally(() => {
+          if (turn === running) turn = undefined;
+        });
         return running;
       };
 

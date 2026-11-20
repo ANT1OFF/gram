@@ -28,6 +28,15 @@ describe("Grok Build permissions", () => {
     expect(autoAnswer("auto", "all", { kind: "edit", rawInput: {} })).toBe("allow");
   });
 
+  it("lets Gram's own app tools through in every mode, and no other server's", () => {
+    const gram = { kind: "other", rawInput: { tool_name: "gram__list_open_prs", tool_input: {} } };
+    const other = { kind: "other", rawInput: { tool_name: "github__merge_pr", tool_input: {} } };
+    for (const mode of ["default", "dontAsk", "plan"] as const)
+      expect(autoAnswer(mode, "all", gram)).toBe("allow");
+    expect(autoAnswer("default", "all", other)).toBeUndefined();
+    expect(autoAnswer("dontAsk", undefined, other)).toBe("deny");
+  });
+
   it("refuses in dontAsk, passes edits in acceptEdits, and shows the rest", () => {
     expect(autoAnswer("dontAsk", undefined, command("ls"))).toBe("deny");
     expect(autoAnswer("acceptEdits", undefined, { kind: "edit", rawInput: {} })).toBe("allow");

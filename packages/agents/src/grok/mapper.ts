@@ -108,6 +108,14 @@ export const toolFor = (
       };
     case "todo_write":
       return { name: "TodoWrite", input: pick([["todos", "todos"]]) };
+    case "use_tool": {
+      const tool = typeof input["tool_name"] === "string" ? input["tool_name"] : undefined;
+      if (tool === undefined) return { name, input };
+      return {
+        name: tool.includes("__") ? `mcp__${tool}` : tool,
+        input: record(input["tool_input"]),
+      };
+    }
     default:
       return { name, input };
   }

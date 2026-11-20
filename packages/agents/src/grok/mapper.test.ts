@@ -1,7 +1,7 @@
 import { MessageId, RequestId, type AgentEvent } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { makeGrokMapper, optionFor, scopeOf } from "./mapper.ts";
+import { makeGrokMapper, optionFor, scopeOf, toolFor } from "./mapper.ts";
 
 const SESSION = "session-1";
 
@@ -127,6 +127,18 @@ describe("Grok Build mapper", () => {
     );
     expect(ended).toContainEqual({ type: "requestResolved", requestId: request });
     expect(ended).toContainEqual({ type: "turnEnd", reason: "interrupted" });
+  });
+});
+
+describe("Grok Build tools", () => {
+  it("draws an MCP call through use_tool as the server's own tool", () => {
+    expect(
+      toolFor("use_tool", {
+        variant: "UseTool",
+        tool_name: "gram__pr_status",
+        tool_input: { pr: 7 },
+      }),
+    ).toEqual({ name: "mcp__gram__pr_status", input: { pr: 7 } });
   });
 });
 
