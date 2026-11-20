@@ -322,7 +322,7 @@ export function ShellTitlebar({
         className={cn("flex shrink-0 items-center gap-0.5", CLUSTER_GAP)}
       >
         {/* The thread's menu, the workspace's controls and the window's, and what a narrow bar
-            folds: a worker's Take over and Board's layout. */}
+            folds: Board's layout. */}
         <TitlebarOverflow
           orchestration={!soloBar}
           hostPage={hostPage}

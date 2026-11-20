@@ -1,10 +1,8 @@
-import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
-import { Menu } from "@base-ui/react/menu";
+import { type Thread, type ThreadId } from "@gram/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, HandGrab, SquareSplitHorizontal } from "lucide-react";
+import { ChevronRight, SquareSplitHorizontal } from "lucide-react";
 
 import { Hint } from "@/components/hint";
-import { Term } from "@/components/term";
 import { buttonVariants } from "@/components/ui/button";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { normaliseKeys } from "@/keyboard/bindings";
@@ -13,23 +11,18 @@ import { catalogKeys } from "@/keyboard/catalog";
 import { keyLabel, useShortcut } from "@/keyboard/registry";
 import { useNow } from "@/lib/use-now";
 import { useTouch } from "@/lib/use-phone";
-import { EXPLAIN } from "@/lib/explain";
-import { seeTerm } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 import { useThreadsStore } from "@/stores/threads";
 import { RoleGlyph } from "@/thread/role-chip";
 import { useOpenThread } from "@/shell/thread-switcher";
-import { Foldable } from "@/shell/foldable";
-import { FOLD_ALL, useTitlebarSlot } from "@/shell/titlebar-slot";
-import { useThreadActions } from "@/thread/use-thread-actions";
 
 import { keepBeside, useBesideStore } from "./beside-store";
 import { openFeatureSheet } from "./feature-sheet-store";
 import { orchestratorRowTitle } from "./tree-model";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { prWaitWords } from "./waiting-on";
-import { FINISHED_WORKER, goToThread } from "./worker-banner";
+import { goToThread } from "./worker-banner";
 import { showWorkersTab } from "./workers-tab";
 import { workerEntryOf, workerRow } from "./workers-model";
 
@@ -267,90 +260,18 @@ export function WorkerNowChip({
   );
 }
 
-/**
- * "Under your control", while the user holds the worker (they typed into it, took it over, or
- * started it under their control): it stays the orchestrator's worker, whose messages wait behind
- * the user's exchange. Hand back only says they're done. Watching it never holds it.
- */
-function HoldChip({
-  thread,
-  compact = false,
-  ghost = false,
-}: {
-  thread: Thread;
-  compact?: boolean;
-  /** The unseen copy a folded title bar measures, with no test ids of its own. */
-  ghost?: boolean;
-}) {
-  const { entry } = useWorkerFacts(thread);
-  const { release } = useThreadActions(thread.id);
-  if (thread.spawnedBy === undefined || entry?.userIntervened !== true) return null;
-  return (
-    <span
-      data-testid={ghost ? undefined : "worker-hold"}
-      role="status"
-      className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border pl-1 text-meta text-foreground"
-    >
-      <Hint
-        label={`It stays the orchestrator's worker, and the orchestrator's messages wait behind yours. This clears by itself at its next report, or ${USER_HOLD_IDLE_MS / 60_000} minutes after your last message once idle.`}
-        side="bottom"
-        render={
-          <span
-            data-testid={ghost ? undefined : "worker-hold-words"}
-            className="inline-flex items-center gap-1"
-          />
-        }
-      >
-        <HandGrab aria-hidden className="size-icon-row text-muted-foreground" />
-        <span className={cn(compact && "sr-only")}>Under your control</span>
-      </Hint>
-      <Hint
-        label="Tell the orchestrator you're done talking to this worker"
-        side="bottom"
-        render={
-          <button
-            type="button"
-            data-testid={ghost ? undefined : "worker-hand-back"}
-            className="rounded-r-sm border-l border-border px-1 font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={release}
-          />
-        }
-      >
-        Hand back
-      </Hint>
-    </span>
-  );
-}
-
 /** A worker's worded actions are the app's outline secondary button (DESIGN.md, Buttons). */
 const HEADER_BUTTON = buttonVariants({ variant: "outline", size: "xs" });
 
 /**
- * In the title bar a worker's controls keep its other controls' shape: Open beside an icon button
- * of the chrome's size (28 px) in the panels' group, Take over a worded button as tall.
+ * In the title bar a worker's Open beside keeps its other controls' shape: an icon button of the
+ * chrome's size (28 px) in the panels' group.
  */
 const TITLEBAR_ICON =
   "inline-flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
-const TITLEBAR_WORDS = buttonVariants({ variant: "outline", size: "sm" });
 
-/**
- * Whether a message sent into `thread` would take it over: a live worker the orchestrator still
- * directs, which Take over is offered for. The composer says so where the message is written; the
- * hold itself is the server's, the same path Take over takes.
- */
-export function useSendTakesControl(thread: Thread): boolean {
-  // Take over's own rule (`useWorkerActions`), read from the ledger alone: the composer re-renders
-  // with this, so it subscribes to nothing else.
-  const { data: ledger } = useOrchestratorLedger(thread.workspaceId);
-  if (thread.spawnedBy === undefined) return false;
-  const entry = workerEntryOf(ledger?.features, thread.id);
-  return entry !== undefined && entry.userIntervened !== true && !FINISHED_WORKER.has(entry.state);
-}
-
-/** What a worker's own actions can do now: dock beside its orchestrator, or be taken over. */
+/** What a worker's own actions can do now: dock beside its orchestrator. */
 function useWorkerActions(thread: Thread) {
-  const { entry } = useWorkerFacts(thread);
-  const { takeOver } = useThreadActions(thread.id);
   const open = useOpenThread();
   const docked = useBesideStore((s) => s.worker === thread.id);
   // A touch screen shows one thing at a time, so it offers no Open beside.
@@ -359,34 +280,19 @@ function useWorkerActions(thread: Thread) {
     thread.spawnedBy === undefined ? undefined : s.byId[thread.spawnedBy.threadId],
   );
   const worker = thread.spawnedBy !== undefined;
-  const held = entry?.userIntervened === true;
   return {
     worker,
-    held,
     keepBeside:
       worker && orchestrator !== undefined && !docked && !touch
         ? () => keepBeside(thread.id, open)
-        : undefined,
-    // A worker sent to a server is talked to only by its orchestrator: there is nothing to take over.
-    takeOver:
-      worker &&
-      !held &&
-      thread.sentTo === undefined &&
-      entry !== undefined &&
-      !FINISHED_WORKER.has(entry.state)
-        ? () => void takeOver()
         : undefined,
   };
 }
 
 /**
- * A worker's own actions at the end of its header: Open beside shows it in the right panel next
- * to its orchestrator's chat (⌘\; in the title bar it is the panels' group's, `TitlebarOpenBeside`),
- * and Take over holds it for you, by the same path a message you
- * type into it takes, until you hand it back. While you hold it, the hold chip and its Hand back
- * stand in Take over's place. Watching it, here or beside the chat, never holds it; sending to it
- * from beside the chat is typing into it. In a title bar folded all the way, Take over is the bar's
- * "…" item (`WorkerMenuItems`) and the hold chip is a glyph and its Hand back.
+ * A worker's own action at the end of its header: Open beside shows it in the right panel next to
+ * its orchestrator's chat. In the title bar it is the panels' group's instead
+ * (`TitlebarOpenBeside`), so nothing is drawn here.
  */
 export function WorkerActions({
   thread,
@@ -397,98 +303,23 @@ export function WorkerActions({
   inTitlebar?: boolean;
 }) {
   const actions = useWorkerActions(thread);
-  const folded = useTitlebarSlot((s) => inTitlebar && s.fold >= FOLD_ALL);
-  if (!actions.worker) return null;
-  const all = (ghost: boolean) => (
-    <>
-      {/* In the title bar Open beside is the panels' group's, beside the panel's toggle. */}
-      {!inTitlebar && actions.keepBeside !== undefined && (
-        <Hint
-          label={keyLabel("Open beside the chat (⌘\\)")}
-          side="bottom"
-          render={
-            <button
-              type="button"
-              data-testid="worker-keep-beside"
-              className={HEADER_BUTTON}
-              onClick={actions.keepBeside}
-            />
-          }
-        >
-          <SquareSplitHorizontal aria-hidden className="size-icon-row" />
-          <span className="@max-md:sr-only">Open beside</span>
-        </Hint>
-      )}
-      {actions.held ? (
-        <HoldChip thread={thread} ghost={ghost} />
-      ) : (
-        actions.takeOver !== undefined && (
-          <Hint
-            label={EXPLAIN.takeOver}
-            side="bottom"
-            onOpenChange={(open) => {
-              if (open) seeTerm("takeOver");
-            }}
-            render={
-              <button
-                type="button"
-                data-testid="worker-take-over"
-                className={inTitlebar ? TITLEBAR_WORDS : HEADER_BUTTON}
-                onClick={actions.takeOver}
-              />
-            }
-          >
-            <Term term="takeOver">Take over</Term>
-          </Hint>
-        )
-      )}
-    </>
-  );
-  if (!inTitlebar) return all(false);
-  // A narrow title bar folds them into the thread menu, and the hold chip down to its glyph.
+  if (!actions.worker || inTitlebar || actions.keepBeside === undefined) return null;
   return (
-    <>
-      {folded && actions.held && <HoldChip thread={thread} compact />}
-      <Foldable level={FOLD_ALL} gap={8} className="gap-2">
-        {all(folded)}
-      </Foldable>
-    </>
-  );
-}
-
-/**
- * Take over as the title bar's "…" item, while a narrow bar folds it. Open beside never folds: it is
- * the panels' group's (`TitlebarOpenBeside`).
- */
-export function WorkerMenuItems({
-  thread,
-  itemClassName,
-}: {
-  thread: Thread;
-  itemClassName: string;
-}) {
-  const actions = useWorkerActions(thread);
-  if (actions.takeOver === undefined) return null;
-  return (
-    <>
-      {actions.takeOver !== undefined && (
-        <Menu.Item
-          data-testid="menu-take-over"
-          aria-description={EXPLAIN.takeOver}
-          className={cn(itemClassName, "items-start")}
-          onClick={actions.takeOver}
-        >
-          <HandGrab aria-hidden className="mt-0.5 size-icon-row" />
-          <span className="flex max-w-64 min-w-0 flex-col">
-            Take over
-            <span aria-hidden className="text-meta whitespace-normal text-muted-foreground">
-              {EXPLAIN.takeOver}
-            </span>
-          </span>
-        </Menu.Item>
-      )}
-      <div role="separator" className="-mx-1 my-1 h-px bg-border" />
-    </>
+    <Hint
+      label={keyLabel("Open beside the chat (⌘\\)")}
+      side="bottom"
+      render={
+        <button
+          type="button"
+          data-testid="worker-keep-beside"
+          className={HEADER_BUTTON}
+          onClick={actions.keepBeside}
+        />
+      }
+    >
+      <SquareSplitHorizontal aria-hidden className="size-icon-row" />
+      <span className="@max-md:sr-only">Open beside</span>
+    </Hint>
   );
 }
 

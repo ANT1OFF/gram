@@ -124,15 +124,15 @@ describe("context menu caps", () => {
     expectCapped("workspace", await itemsOf(<WorkspaceMenuItems state={state} />));
   });
 
-  it("keeps a held, merged worker's menu to the cap", async () => {
+  it("keeps a merged worker's menu to the cap", async () => {
     const items = await itemsOf(
       <RowMenuItems
         threadId={busiest}
-        menuItems={<WorkerMenuItems threadId={busiest} held cleanable />}
+        menuItems={<WorkerMenuItems threadId={busiest} cleanable />}
       />,
     );
     expectCapped("worker", items);
-    expect(items.slice(0, 2)).toEqual(["Hand back to orchestrator", "Clean up worktree…"]);
+    expect(items[0]).toBe("Clean up worktree…");
   });
 
   it("keeps the pane header's thread menu to the cap", async () => {
@@ -182,9 +182,9 @@ describe("context menu caps", () => {
     expect(paletteSections()["Branch"]).toEqual(["Copy feat/retry", "Push"]);
   });
 
-  it("reads a worker row's own group from its workspace's ledger", async () => {
+  it("puts a merged worker row's Clean up first", async () => {
     const items = await itemsOf(<WorkerRowMenuItems threadId={busiest} />);
-    expect(items.slice(0, 2)).toEqual(["Hand back to orchestrator", "Clean up worktree…"]);
+    expect(items[0]).toBe("Clean up worktree…");
   });
 
   it("opens ⌘K scoped to the row's thread, or the orchestrator's workspace, from More…", async () => {
@@ -341,7 +341,6 @@ describe("what left the menus", () => {
           "Restart session",
           "Go to orchestrator",
           "Open board",
-          "Hand back to orchestrator",
           "Remove from workspace",
           "Bind PR…",
         ]),

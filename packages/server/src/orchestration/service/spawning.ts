@@ -1208,7 +1208,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           const now = yield* Clock.currentTimeMillis;
           yield* updateOutbox(workspaceId, (outbox) => {
             // The thread was live, its brief sent, before this records it: a message the user typed
-            // into it meanwhile took it over (`onUserInput`), and that stands.
+            // into it meanwhile marked it (`onUserInput`), and that stands.
             const taken = outbox.workers[worker.id];
             return [
               withNotes(

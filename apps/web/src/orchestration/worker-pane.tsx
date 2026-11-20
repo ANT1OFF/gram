@@ -793,7 +793,7 @@ function ToolBody({
           key={worker}
           threadId={worker}
           focused={focused}
-          beside={{ header: null, placeholder: `Steer ${title}…`, takeoverNoted: true }}
+          beside={{ header: null, placeholder: `Steer ${title}…` }}
         />
       );
     case "terminal":

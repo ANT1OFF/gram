@@ -364,7 +364,7 @@ test("a worker's red CI stays out of the Failing strip and Needs you, held by th
   );
   const stopped = strip.locator(`[data-testid="board-failure"][data-thread-id="${made.stopped}"]`);
   const pill = page.getByTestId("overview-needs-you");
-  // Taken over, the red build is still its worker's: the user hears of it only if it asks.
+  // Written to by the user, the red build is still its worker's: the user hears of it only if it asks.
   await expect(stopped).toHaveCount(1);
   await expect(failed).toHaveCount(0);
   const before = Number(await pill.getAttribute("data-count"));
@@ -373,16 +373,7 @@ test("a worker's red CI stays out of the Failing strip and Needs you, held by th
     await page.screenshot({ path: heldShot });
     await testInfo.attach("held-worker-ci", { path: heldShot });
   }
-
-  await page.evaluate((id) => window.gramMock!.releaseWorker(id), made.failing);
-  await expect(stopped).toHaveCount(1);
-  await expect(failed).toHaveCount(0);
   await expect(pill).toHaveAttribute("data-count", String(before));
-  if (keepShots) {
-    const ownedShot = testInfo.outputPath("worker-owned-ci.png");
-    await page.screenshot({ path: ownedShot });
-    await testInfo.attach("worker-owned-ci", { path: ownedShot });
-  }
 });
 
 test("a repo that runs no CI gets one calm note on the Board, not a failure", async ({ page }) => {

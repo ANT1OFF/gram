@@ -25,7 +25,6 @@ import { isLiveWorker } from "../orchestration/ledger.ts";
 import { isEnded } from "../orchestration/sent-workers.ts";
 import { sendFingerprint } from "../orchestration/outbox.ts";
 import { featureSlug } from "../orchestration/rules.ts";
-import { userMidExchange } from "../orchestration/user-exchange.ts";
 import { Orchestration, type SentMessage } from "../orchestration/service.ts";
 import { SentWorkPort } from "../embedding/sent-work-port.ts";
 import {
@@ -448,17 +447,10 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           counted = verdict.recentSends;
         }
         // Steered unless the sender picks another mode: a steer cancels nothing, and a message
-        // that waits out the turn is often stale by the time it is read. A worker in the middle of
-        // an exchange with the user takes a message from its orchestration queued behind it: it is
-        // never refused for that, and never cuts in on the user either.
-        const wanted = mode ?? "steer";
-        const behindUser =
-          (delegated || workerSend) &&
-          wanted !== "queue" &&
-          target.thread.spawnedBy !== undefined &&
-          target.thread.role === undefined &&
-          (yield* userMidExchange(store, target.thread.id, target.status === "running"));
-        const asked = behindUser ? "queue" : wanted;
+        // that waits out the turn is often stale by the time it is read. A worker the user is
+        // talking to takes it by the same mode: the user's messages and its orchestration's go in
+        // side by side, neither held behind the other.
+        const asked = mode ?? "steer";
         const role = source.thread.role;
         // A worker's feature marks its message a worker's, which the receiving agent reads fenced.
         const feature = source.thread.spawnedBy?.feature;
@@ -482,11 +474,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         // at its next step anyway.
         const interrupt = asked === "interrupt" && target.capabilities?.steerInterrupt === true;
         const notes: Array<string> = [];
-        if (behindUser) {
-          notes.push(
-            "The user is talking to that worker now, so the message was queued behind their exchange; it reads it when that turn ends.",
-          );
-        }
         if (asked === "interrupt" && canSteer && !interrupt) {
           notes.push(
             "That agent can't be interrupted for a message, so it was steered in instead.",
@@ -515,7 +502,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               )
             : yield* runtimes.send(target.thread.id, input);
           delivered = result.queued ? "queued" : "sent";
-          if (result.queued && !behindUser && (mode === "steer" || mode === "interrupt")) {
+          if (result.queued && (mode === "steer" || mode === "interrupt")) {
             notes.push("That thread can't be steered right now, so the message was queued.");
           }
           if (result.joined !== undefined) {
@@ -572,7 +559,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "send_message",
         class: "crossThread",
         description:
-          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. `mode`: "queue" (after the turn), "steer" (mid-turn after the tool calls under way; cancels nothing) or "interrupt" (stops the turn now, cutting off tool calls; urgent stops only). Default steer. Your own workers need no approval. A current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces refuse these; a worker the user is talking to gets them queued behind that exchange. Other targets ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or worker send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs. Link a thread for the user as [title](#threadId).',
+          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. `mode`: "queue" (after the turn), "steer" (mid-turn after the tool calls under way; cancels nothing) or "interrupt" (stops the turn now, cutting off tool calls; urgent stops only). Default steer. Your own workers need no approval. A current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces refuse these. Other targets ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or worker send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs. Link a thread for the user as [title](#threadId).',
       },
       input: inputAliases(
         Schema.Struct({

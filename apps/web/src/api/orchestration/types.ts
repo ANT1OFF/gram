@@ -153,17 +153,6 @@ export interface OrchestrationApi {
    * Resolves to the worker made; rejects with `InvalidState` saying why it couldn't start.
    */
   releaseHeldBrief(workspaceId: WorkspaceId, id: string): Promise<Thread>;
-  /**
-   * Hands a worker the user wrote to back to its orchestrator, which hears it in its next digest;
-   * nothing is sent to the worker. The ledger follows as `orchestration.changed`. Rejects with
-   * `InvalidState` for a thread that isn't a worker with an orchestrator listening.
-   */
-  releaseWorker(threadId: ThreadId): Promise<void>;
-  /**
-   * "Take over": holds the worker as a message typed into it would, sending it nothing. The ledger
-   * follows as `orchestration.changed`.
-   */
-  takeOverWorker(threadId: ThreadId): Promise<void>;
   /** The workspace's workers closed with their worktree, newest first; live ones are the ledger's. */
   finishedWorkers(workspaceId: WorkspaceId): Promise<readonly FinishedWorker[]>;
   /**

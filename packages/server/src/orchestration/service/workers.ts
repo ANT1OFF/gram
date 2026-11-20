@@ -1,10 +1,8 @@
-// Workers: `list_workers`, a worker's `report`, the user's hold on a
-// worker they type into (with the timer that lets it lapse), releasing or taking over a worker, and
-// whether a worker may merge its own PR.
+// Workers: `list_workers`, a worker's `report`, the mark on a worker the user types into (with the
+// timer that lets it lapse), and whether a worker may merge its own PR.
 import {
   autonomyOf,
   type HostId,
-  InvalidState,
   isPinned,
   type Thread,
   type ThreadId,
@@ -243,20 +241,16 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
 
   /**
    * Clears the board's "the user is talking to it" flag other than by a report, which says enough
-   * by itself: the user handing it back, or the flag lapsing. The worker was the orchestrator's
-   * throughout and nothing waited on the flag, so the next digest says which without a wake of its
-   * own.
+   * by itself: the flag lapsing. The worker was the orchestrator's throughout and nothing waited on
+   * the flag, so the next digest says so without a wake of its own.
    */
-  const endHold = (workspaceId: WorkspaceId, worker: Thread, by: "user" | "lapsed") =>
+  const endHold = (workspaceId: WorkspaceId, worker: Thread) =>
     Effect.gen(function* () {
       yield* FiberMap.remove(holdTimers, worker.id);
       const ended = yield* updateOutbox(workspaceId, (outbox) => {
         const memo = outbox.workers[worker.id];
         if (memo?.userIntervened !== true) return [outbox, false];
-        const note =
-          by === "user"
-            ? `The user handed "${inlineText(worker.title)}" [thread ${worker.id}] back to you: they are done talking to it.`
-            : `"${inlineText(worker.title)}" [thread ${worker.id}] sat idle ${USER_HOLD_IDLE_MS / 60_000} minutes after the user last wrote to it, so they are likely done talking to it.`;
+        const note = `"${inlineText(worker.title)}" [thread ${worker.id}] sat idle ${USER_HOLD_IDLE_MS / 60_000} minutes after the user last wrote to it, so they are likely done talking to it.`;
         return [
           withNotes(
             {
@@ -272,36 +266,9 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
       yield* store.appendOrchestrationEvent(workspaceId, {
         at: yield* Clock.currentTimeMillis,
         kind: "released",
-        data: { threadId: worker.id, by },
+        data: { threadId: worker.id, by: "lapsed" },
       });
       yield* orchestrationChanged(workspaceId);
-    });
-
-  const releaseWorker: OrchestrationShape["releaseWorker"] = (threadId) =>
-    Effect.gen(function* () {
-      const thread = yield* store.getThread(threadId);
-      const state = yield* listeningWorkspace(thread);
-      if (state === undefined) {
-        return yield* new InvalidState({
-          message: "This thread isn't a worker with an orchestrator listening.",
-          threadId,
-        });
-      }
-      yield* endHold(state.workspace.id, thread, "user");
-    });
-
-  // The user's hold has one way in, the one a typed message takes: queued as the runtime's
-  // `onUserInput` is, so it lands in order with the turns and inputs around it.
-  const takeOverWorker: OrchestrationShape["takeOverWorker"] = (threadId) =>
-    Effect.gen(function* () {
-      const thread = yield* store.getThread(threadId);
-      if ((yield* listeningWorkspace(thread)) === undefined) {
-        return yield* new InvalidState({
-          message: "This thread isn't a worker with an orchestrator listening.",
-          threadId,
-        });
-      }
-      yield* signals.offer({ type: "userInput", thread });
     });
 
   /** Waits out `USER_HOLD_IDLE_MS` from the user's latest input, then looks again. */
@@ -345,7 +312,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         .status(threadId)
         .pipe(Effect.orElseSucceed((): WorkerFacts["status"] => "cold"));
       if (status !== "idle" && status !== "cold" && status !== "error") return;
-      yield* endHold(state.workspace.id, thread, "lapsed");
+      yield* endHold(state.workspace.id, thread);
     });
 
   // ---------------------------------------------------------------------------------------
@@ -397,8 +364,6 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
   return {
     listWorkers,
     recordReport,
-    releaseWorker,
-    takeOverWorker,
     armHold,
     armHolds,
     onHoldDue,

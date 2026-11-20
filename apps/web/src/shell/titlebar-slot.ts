@@ -17,8 +17,8 @@ const TITLEBAR_FOLD_PX = 560;
 
 /**
  * How far the title bar has folded into "…": 0 not at all, 1 its lesser buttons (none carry it
- * today), 2 a worker's own actions too (Open beside, Take over). The lesser go first, so a laptop's
- * bar keeps a worker's actions. Workers, Tidy up and the rest are always the "…"'s.
+ * today), 2 the view's own actions too (Board's layout). The lesser go first, so a laptop's bar
+ * keeps the view's actions. Workers, Tidy up and the rest are always the "…"'s.
  */
 export type TitlebarFold = 0 | 1 | 2;
 /** The bar's last fold, where everything that folds has. */

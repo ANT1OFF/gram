@@ -983,7 +983,7 @@ export type WorkerSendVerdict =
  * worker's first input is the orchestrator's brief, so it would refuse every follow-up until the
  * user typed there. What is left is a pause and the per-minute rate limit every thread has, counted
  * here for each worker on its own (`recentSends` are this pair's). The user writing to the worker
- * refuses nothing: the send waits behind their exchange instead (`deliver`). It is a
+ * neither refuses nor holds the send. It is a
  * loop guard and not a budget: how much an orchestrator says to a worker is otherwise its own
  * business. Hop depth isn't weighed, since these messages always
  * carry depth 1. The refusals no amount of waiting cures come first.

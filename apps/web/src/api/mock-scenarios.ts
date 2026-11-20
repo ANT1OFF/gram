@@ -326,7 +326,7 @@ export function simulateUnpushed(core: MockCoreScenes, threadId: ThreadId, commi
 /**
  * Dev and e2e hook: the ask stack's scenario with a failure beside its asks, for the Failing strip:
  * the board's working worker stopped on a spending limit. The in-review worker's PR checks go red
- * while the user holds it (Take over): still its worker's to fix, so never a failure of the user's.
+ * after the user wrote to it: still its worker's to fix, so never a failure of the user's.
  */
 export async function simulateFailures(core: MockCoreScenes): Promise<MockFailuresSimulation> {
   const asks = await core.mock.simulateAsks();
@@ -346,7 +346,7 @@ export async function simulateFailures(core: MockCoreScenes): Promise<MockFailur
     failing.summary = { ...failing.summary, git: state };
     core.emit({ type: "git.state", threadId: asks.inReview, state });
   }
-  await core.orchestration.takeOver(asks.inReview);
+  core.orchestration.userTyped(asks.inReview);
   return { ...asks, stopped: asks.working, failing: asks.inReview };
 }
 

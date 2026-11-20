@@ -412,8 +412,6 @@ export const OrchestrationLive = Layer.effect(
     const {
       listWorkers,
       recordReport,
-      releaseWorker,
-      takeOverWorker,
       armHold,
       armHolds,
       onHoldDue,
@@ -869,8 +867,6 @@ export const OrchestrationLive = Layer.effect(
       pinAdopt,
       describeAdopt,
       adoptThread,
-      releaseWorker,
-      takeOverWorker,
       handoff,
       sendAfterHandoff,
       cancelSwitch,

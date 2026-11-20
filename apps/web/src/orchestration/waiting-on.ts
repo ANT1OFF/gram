@@ -468,7 +468,7 @@ export const workerWaitingOn = (
         kind: "held",
         short: "",
         detail:
-          "You're talking to it, so the orchestrator's messages wait behind yours. Hand it back when you're done.",
+          "You're talking to it. It stays the orchestrator's worker, which can still message it.",
       },
     ]);
   }

@@ -1,27 +1,19 @@
-import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
+import { type Thread, type ThreadId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
-import { Brain, Columns3, FolderGit2, HandGrab, Pause, Repeat, Settings2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Brain, Columns3, FolderGit2, Pause, Repeat, Settings2 } from "lucide-react";
 
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
-import { usePhone } from "@/lib/use-phone";
 import { buttonVariants } from "@/components/ui/button";
 import { focusOtherWindow } from "@/desktop/open-thread";
-import { useSaveSettings } from "@/settings/use-save-settings";
-import { useServerSettings } from "@/settings-sync/store";
 import { useEmbedShell } from "@/embed/store";
-import { FOLD_ALL, useTitlebarSlot } from "@/shell/titlebar-slot";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import {
   pauseClock,
   pauseLeavesRunning,
   pauseText,
-  WORKER_HELD_LINE,
-  WORKER_TAKE_OVER_LINE,
-  workerHeldEnds,
   workerPauseLine,
 } from "@/thread/orchestration-model";
 
@@ -46,7 +38,7 @@ export const goToThread = (threadId: ThreadId, event?: { preventDefault: () => v
   else useLayoutStore.getState().openThread(threadId);
 };
 
-/** A worker's end states, where there is nothing left to take over. */
+/** A worker's end states. */
 export const FINISHED_WORKER: ReadonlySet<string> = new Set(["merged", "delivered", "archived"]);
 
 /** A banner line under a header: a glyph, its lead in words, the sentence, and any action. */
@@ -54,61 +46,11 @@ const BANNER =
   "flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-meta text-foreground";
 
 /**
- * What Take over would change, in a quiet line of its own the first time a worker offers it. Once
- * shown it is remembered for the user (`onboarding.takeOverHintSeen`) and stays for this view only;
- * after, the header's Take over carries it on its hint, and the line no longer stacks over the work.
- */
-function TakeOverLine() {
-  const save = useSaveSettings();
-  // Decided as the view opens, so saving it as seen doesn't take it away while it is read. The
-  // settings arrive before any thread opens; without them it stays folded rather than flash.
-  const [shown] = useState(() => {
-    const settings = useServerSettings.getState().settings;
-    return settings !== undefined && settings.onboarding.takeOverHintSeen !== true;
-  });
-  useEffect(() => {
-    if (!shown) return;
-    save({ onboarding: { takeOverHintSeen: true } }).catch((error: unknown) =>
-      console.error("save takeOverHintSeen", error),
-    );
-  }, [shown, save]);
-  const phone = usePhone();
-  if (!shown) return null;
-  return (
-    <p
-      data-testid="worker-banner-take-over"
-      className={cn(
-        "flex min-w-0 gap-2 border-b border-edge px-3 text-meta text-muted-foreground",
-        phone ? "items-start py-1.5" : "items-center py-1",
-      )}
-    >
-      <HandGrab aria-hidden className={cn("size-icon-row shrink-0", phone && "mt-0.5")} />
-      {/* A phone has no hover to read a cut line on: there it wraps and says all of it. */}
-      <span className={cn("min-w-0", !phone && "truncate")} title={WORKER_TAKE_OVER_LINE}>
-        {WORKER_TAKE_OVER_LINE}
-      </span>
-    </p>
-  );
-}
-
-/**
  * What a worker's crumbs can't say, under the header and only while it applies: the repos a
- * multi-repo worker works in; that it is under the user's control while a narrow title bar has
- * folded the header's hold chip to its glyph (wider, the chip says it in the same words); what Take
- * over would change, the first time only (`TakeOverLine`); and its workspace's pause, which reads
- * apart from a hold: a filled band that names the workspace and resumes all of it.
+ * multi-repo worker works in, the routine that started it, and its workspace's pause: a filled
+ * band that names the workspace and resumes all of it.
  */
-export function WorkerBanner({
-  thread,
-  inTitlebar = false,
-  takeover = true,
-}: {
-  thread: Thread;
-  /** The header is in the title bar, which may fold its hold chip down to a glyph. */
-  inTitlebar?: boolean;
-  /** Its takeover line; the pane's composer says it in its own place instead. */
-  takeover?: boolean;
-}) {
+export function WorkerBanner({ thread }: { thread: Thread }) {
   const workspace = useWorkspaces().find((state) => state.workspace.id === thread.workspaceId);
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
   const status = useThreadsStore((s) => s.byId[thread.id]?.status);
@@ -118,7 +60,6 @@ export function WorkerBanner({
   const held = entry?.userIntervened === true;
   const pause = useWorkerPause(thread.id, status, held);
   const resume = useResume(workspace?.workspace.id);
-  const chipFolded = useTitlebarSlot((s) => inTitlebar && s.fold >= FOLD_ALL);
   if (thread.spawnedBy === undefined) return null;
   const repos = workerRepoNames(thread, entry);
   const routine = thread.spawnedBy.routine;
@@ -150,24 +91,6 @@ export function WorkerBanner({
           </button>
         </div>
       )}
-      {held && chipFolded && (
-        // Hand back itself is the header's, beside the worker's name, where it always stays.
-        <div data-testid="worker-banner-held" role="status" className={BANNER}>
-          <HandGrab aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-          <span className="shrink-0 font-medium">Under your control</span>
-          <span
-            className="min-w-0 flex-1 truncate text-muted-foreground"
-            title={`${WORKER_HELD_LINE} ${workerHeldEnds(USER_HOLD_IDLE_MS / 60_000)}`}
-          >
-            {WORKER_HELD_LINE}
-          </span>
-        </div>
-      )}
-      {takeover &&
-        !held &&
-        thread.sentTo === undefined &&
-        entry !== undefined &&
-        !FINISHED_WORKER.has(entry.state) && <TakeOverLine />}
       {routine !== undefined && (
         // Where it came from, quietly: a routine's run started it, not a message from anyone.
         <p

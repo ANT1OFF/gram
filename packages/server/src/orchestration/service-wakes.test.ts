@@ -634,12 +634,11 @@ describe.skipIf(!hasGit)("orchestration service", () => {
   );
 
   it.effect(
-    "marks a worker the user typed into, not one a notice reached, until they hand it back",
+    "marks a worker the user typed into, not one a notice reached, until its next report",
     () =>
       inServer((world) =>
         Effect.gen(function* () {
           const runtimes = yield* ThreadRuntimes;
-          const handlers = yield* orchestrationHandlers;
           const { session, workspaceId } = yield* openOrchestrator(world);
           const worker = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
           yield* completeTurn(worker.session);
@@ -668,81 +667,9 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             }),
           ).toMatchObject({ delivered: "sent" });
           yield* completeTurn(worker.session);
-          yield* handlers["orchestrator.releaseWorker"]({ threadId: worker.thread.id });
+          // Its next report clears the mark.
+          yield* worker.session.callTool("report", { state: "progress", summary: "On it." });
           expect(yield* held).toBe(false);
-          expect((yield* outboxOf(workspaceId)).notes).toEqual([
-            `The user handed "Mail trigger" [thread ${worker.thread.id}] back to you: they are done talking to it.`,
-          ]);
-          // Nothing is said to the worker, and a second release is a no-op.
-          expect(texts(worker.session).at(-1)).toBe("Status?");
-          yield* handlers["orchestrator.releaseWorker"]({ threadId: worker.thread.id });
-          expect((yield* outboxOf(workspaceId)).notes).toHaveLength(1);
-          // The note rides the next digest.
-          yield* TestClock.adjust("60 seconds");
-          const digest = yield* waitReal(
-            "the digest that says so",
-            Effect.sync(() => texts(session).find((text) => text.includes("handed"))),
-          );
-          expect(digest).toContain('The user handed "Mail trigger"');
-
-          const plain = yield* runtimes.create({
-            projectRoot: world.repo,
-            checkout: { kind: "main", path: world.repo },
-            deferOpen: true,
-          });
-          const refused = yield* handlers["orchestrator.releaseWorker"]({
-            threadId: plain.id,
-          }).pipe(Effect.flip);
-          expect(refused._tag).toBe("InvalidState");
-        }),
-      ),
-  );
-
-  it.effect(
-    "Take over marks a worker by the typed message's path, sends it nothing, and Hand back ends it",
-    () =>
-      inServer((world) =>
-        Effect.gen(function* () {
-          const runtimes = yield* ThreadRuntimes;
-          const handlers = yield* orchestrationHandlers;
-          const { session, workspaceId } = yield* openOrchestrator(world);
-          const worker = yield* spawn(session, { feature: "mail-trigger", title: "Queue worker" });
-          yield* stopSilently(worker.session);
-          const memo = outboxOf(workspaceId).pipe(
-            Effect.map((outbox) => outbox.workers[worker.thread.id]),
-          );
-          const held = Effect.map(memo, (entry) => entry?.userIntervened === true);
-          const said = texts(worker.session);
-          expect(yield* held).toBe(false);
-
-          yield* handlers["orchestrator.takeOverWorker"]({ threadId: worker.thread.id });
-          yield* waitReal("the hold", held);
-          // The same marks a typed message leaves, so it lapses the same way.
-          const taken = yield* memo;
-          expect(taken?.userInputAt).toBeTypeOf("number");
-          expect(taken?.lastInputAt).toBe(taken?.userInputAt);
-          // Nothing reached the worker, and the orchestrator can still message it.
-          yield* settle;
-          expect(texts(worker.session)).toEqual(said);
-          expect(
-            yield* session.callTool("send_message", {
-              threadId: worker.thread.id,
-              text: "Status?",
-            }),
-          ).toMatchObject({ delivered: "sent" });
-
-          yield* handlers["orchestrator.releaseWorker"]({ threadId: worker.thread.id });
-          expect(yield* held).toBe(false);
-
-          const plain = yield* runtimes.create({
-            projectRoot: world.repo,
-            checkout: { kind: "main", path: world.repo },
-            deferOpen: true,
-          });
-          const refused = yield* handlers["orchestrator.takeOverWorker"]({
-            threadId: plain.id,
-          }).pipe(Effect.flip);
-          expect(refused._tag).toBe("InvalidState");
         }),
       ),
   );

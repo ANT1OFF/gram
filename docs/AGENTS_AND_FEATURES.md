@@ -1159,7 +1159,7 @@ interrupting anything: Claude Code refuses every further tool call, Codex is ask
 end its turn, and each agent ends its turn itself once the step it is on finishes. So
 a pause takes effect at the end of the current tool call or turn, and the UI says
 "Pausing… finishing the current step" meanwhile. A card waiting on the user stays
-theirs, and sessions keep their conversation. Workers the user holds keep their turn. While paused, queued messages, wakes, PR and run monitor notices and
+theirs, and sessions keep their conversation. Workers the user is talking to keep their turn. While paused, queued messages, wakes, PR and run monitor notices and
 digests are held; a held notice is replaced by its newer one. `merge_when_ready`
 intents stay armed and merge nothing; a merge already launching finishes first. No
 worker is spawned. Resume sends the
@@ -1206,7 +1206,7 @@ and settings by chat can change both with the usual approval card.
   skipped.
 - **What holds it.** Typing in any composer in the last two minutes, a draft for the thread, a
   window whose draft reports are 75 seconds stale, a thread that isn't wholly at rest
-  (background tasks, subagents, waits), a paused workspace or feature, a worker the user holds,
+  (background tasks, subagents, waits), a paused workspace or feature, a worker the user is talking to,
   or an open worker question. A held compaction looks again every 30 seconds until its deadline.
 - **Before a stop.** A deployment that stops the server when it is idle asks it first
   ([before an idle stop](EMBEDDING.md#before-an-idle-stop)), and what waits for its time goes then.
@@ -1323,7 +1323,7 @@ Enabling or editing the threshold starts a fresh count without historical catch-
 Successful manual and automatic starts reset progress; failed or cancelled runs need
 fresh completed threads. Seen IDs survive restart and reopening while their live,
 closed or archived history is retained. A restart preserves recorded progress but does
-not count missed completions or replay a launch. Pauses, user holds, running memory updates and
+not count missed completions or replay a launch. Pauses, workers the user is talking to, running memory updates and
 unavailable selected models defer launch. Relevant external activity or settings changes
 recheck a deferred launch; no UI timer runs it. Progress and deferral appear beside the
 setting. Automatic launches always use Review; they grant no global adoption authority.

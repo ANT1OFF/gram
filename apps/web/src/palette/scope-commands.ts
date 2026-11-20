@@ -19,7 +19,7 @@ import { DISCOVER_QUEUED, DISCOVER_SENT, tidyUpBlocked } from "@/orchestration/b
 import { useOpenBoard } from "@/orchestration/open-board";
 import { setWorkspacePaused } from "@/orchestration/pause-workspace";
 import { sendDiscover, sendTidyUp } from "@/orchestration/use-board-actions";
-import { useOrchestratorLedger, useWorkspaces } from "@/orchestration/use-orchestration";
+import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { removeWorkspaceRepo } from "@/orchestration/workspace-repos";
 import { removableRepos } from "@/settings/workspace-settings-model";
 import { feedLoaded, feedMessages } from "@/stores/feeds";
@@ -101,12 +101,11 @@ export function useScopeCommands(
   const local = useOpensLocally();
   const openInEditor = useOpenInEditor();
   const revealInFileManager = useRevealInFileManager();
-  // A worker's workspace, for its ways back; held workers are in the ledger.
+  // A worker's workspace, for its ways back.
   const workerWorkspace =
     scope?.kind === "thread" && thread?.spawnedBy !== undefined
       ? workspaces.find((state) => state.workspace.id === thread.workspaceId)
       : undefined;
-  const { data: ledger } = useOrchestratorLedger(workerWorkspace?.workspace.id);
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
@@ -466,16 +465,6 @@ export function useScopeCommands(
       });
     }
     const spawner = thread.spawnedBy?.threadId;
-    const entry = ledger?.features
-      .flatMap((feature) => feature.workers)
-      .find((each) => each.threadId === id);
-    const held = entry?.userIntervened;
-    const takeable =
-      entry !== undefined &&
-      !entry.userIntervened &&
-      entry.state !== "merged" &&
-      entry.state !== "delivered" &&
-      entry.state !== "archived";
     const joinable = actions.joinTargets.length > 0;
     const workerItems: PaletteItem[] = [
       ...(spawner !== undefined && byId[spawner] !== undefined
@@ -488,12 +477,6 @@ export function useScopeCommands(
           ]
         : []),
       ...(workerWorkspace === undefined ? [] : [board(workerWorkspace.workspace.id)]),
-      ...(held === true
-        ? [{ id: `scope:release:${id}`, label: "Hand back to orchestrator", run: actions.release }]
-        : []),
-      ...(takeable
-        ? [{ id: `scope:takeOver:${id}`, label: "Take over", run: actions.takeOver }]
-        : []),
       ...(thread.checkout.kind === "worktree" && mergedPrRef(summary) !== undefined
         ? [
             {

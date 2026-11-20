@@ -251,12 +251,11 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await fitsTheBar(page);
   await page.keyboard.press("ControlOrMeta+Alt+1");
 
-  // A worker: its crumbs and Take over in the bar, Open beside in the panels' group beside the
-  // panel's toggle, and its branch in More… only.
+  // A worker: its crumbs in the bar, Open beside in the panels' group beside the panel's toggle,
+  // and its branch in More… only.
   await routeTo(page, `/t/${made.inReview}`);
   await expect(bar.getByTestId("worker-crumbs")).toBeVisible();
   await expect(bar.getByTestId("worker-crumb-feature")).toBeVisible();
-  await expect(bar.getByTestId("worker-take-over")).toBeVisible();
   const panels = bar.getByTestId("titlebar-panels");
   await expect(panels.getByRole("button")).toHaveCount(2);
   await expect(panels.getByTestId("worker-keep-beside")).toHaveAccessibleName(
@@ -351,18 +350,14 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
   await page.keyboard.press("ControlOrMeta+KeyJ");
   await expect(page.getByTestId("workers-panel")).toBeHidden();
 
-  // A worker keeps its name, a few letters at least; Take over is in the "…", and Open beside
-  // stays in the panels' group, which never folds.
+  // A worker keeps its name, a few letters at least, and Open beside stays in the panels' group,
+  // which never folds.
   await routeTo(page, `/t/${made.inReview}`);
   const worker = bar.getByTestId("worker-crumb-worker");
   await expect(worker).toBeVisible();
   expect((await worker.boundingBox())!.width).toBeGreaterThanOrEqual(40);
-  await expect(bar.getByTestId("worker-take-over")).toBeHidden();
   await expect(bar.getByTestId("titlebar-panels").getByTestId("worker-keep-beside")).toBeVisible();
   await fitsTheBar(page);
-  await overflow.click();
-  await expect(page.getByTestId("menu-take-over")).toBeVisible();
-  await page.keyboard.press("Escape");
 
   // Board's Tidy up is in the same "…".
   await page.keyboard.press("ControlOrMeta+Alt+2");

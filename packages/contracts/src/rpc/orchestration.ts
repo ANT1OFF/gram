@@ -269,16 +269,6 @@ export const OrchestrationRpcs = RpcGroup.make(
     error: errors(NotFound, InvalidState),
   }),
   /**
-   * Says the user is done talking to a worker ("Hand back"): clears its `userIntervened`, and the
-   * orchestrator's next digest says so. The worker was its orchestrator's throughout, so this is a
-   * hint and gates nothing. Nothing is sent to the worker. `InvalidState` for a thread that isn't
-   * a worker with an orchestrator listening.
-   */
-  Rpc.make("orchestrator.releaseWorker", {
-    payload: threadRef,
-    error: errors(ThreadNotFound, InvalidState),
-  }),
-  /**
    * Spawns a low-priority brief held until a usage limit resets (`OrchestratorLedger.held`) now,
    * without waiting for the reset; the orchestrator reads it in its next digest. The worker made.
    * `InvalidState` for a brief no longer held, or when the spawn itself is refused.
@@ -304,15 +294,6 @@ export const OrchestrationRpcs = RpcGroup.make(
     payload: { workspaceId: WorkspaceId, id: Schema.String },
     success: Thread,
     error: errors(NotFound, InvalidState),
-  }),
-  /**
-   * The explicit "Take over": holds a worker for the user exactly as a message they type into it
-   * does (`userIntervened`, lapsing as that hold lapses), without sending it anything. `InvalidState`
-   * for a thread that isn't a worker with an orchestrator listening.
-   */
-  Rpc.make("orchestrator.takeOverWorker", {
-    payload: threadRef,
-    error: errors(ThreadNotFound, InvalidState),
   }),
   /**
    * The workspace's workers that were closed with their worktree, newest first: those still on the

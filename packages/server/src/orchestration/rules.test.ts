@@ -970,7 +970,7 @@ describe("checkWorkerSend", () => {
   });
 
   it("never refuses a worker for the user having written to it", () => {
-    // The check has no say in the user's exchange: the send waits behind it instead (`deliver`).
+    // The check has no say in the user's exchange with the worker, and nothing holds the send.
     expect("userIntervened" in send()).toBe(false);
     expect(checkWorkerSend(send())).toMatchObject({ ok: true });
   });

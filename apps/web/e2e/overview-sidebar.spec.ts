@@ -639,9 +639,7 @@ test("a parked solo thread waits behind the folded Parked line, and Park on a ro
   await expect(parkedLine(page)).toHaveAccessibleName(`Archived, ${before}`);
 });
 
-test("a solo or worker row's menu opens on a right-click or Shift+F10, held workers adding Hand back", async ({
-  page,
-}) => {
+test("a solo or worker row's menu opens on a right-click or Shift+F10", async ({ page }) => {
   const made = await start(page);
   const menu = page.getByRole("menu");
   /** The verbs every thread row's menu has. */
@@ -651,12 +649,10 @@ test("a solo or worker row's menu opens on a right-click or Shift+F10, held work
     await expect(menu.getByRole("menuitem", { name: /^Close thread…/ })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "More…" })).toBeVisible();
   };
-  const handBack = menu.getByRole("menuitem", { name: "Hand back to orchestrator" });
 
   const solo = threadRow(page, "t-flaky");
   await solo.click({ button: "right" });
   await verbs();
-  await expect(handBack).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
   // Without a mouse: Shift+F10 on the focused row opens the same menu.
@@ -666,20 +662,12 @@ test("a solo or worker row's menu opens on a right-click or Shift+F10, held work
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
 
-  // A worker's has the same verbs; Hand back only once the user holds it.
+  // A worker's has the same verbs.
   const live = worker(page, made.live);
   await live.click({ button: "right" });
   await verbs();
-  await expect(handBack).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
-  await page.evaluate((id) => window.gramMock!.takeOverWorker(id as never), made.live);
-  await expect.poll(async () => (await workerFacts(page, made, made.live)).held).toBe(true);
-  await live.focus();
-  await page.keyboard.press("Shift+F10");
-  await verbs();
-  await handBack.click();
-  await expect.poll(async () => (await workerFacts(page, made, made.live)).held).toBe(false);
 
   // More… opens ⌘K on that one thread's commands, for a solo row and a worker alike.
   const flaky = await openMore(page, solo);

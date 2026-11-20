@@ -4,9 +4,9 @@ import { MOCK_STUCK_TEXT, type MockReachingSimulation } from "../src/api/mock-re
 import { openOrchestrator, threadRow } from "./thread-row";
 import { openPanelTab } from "./panel-tab";
 
-// Reaching workers beyond ⌘J: opening one beside the chat (⌘\), Take over, a worker whose worktree
-// was cleaned up, and "Why is it stuck?". None of the ways to look at a worker holds it, and nothing
-// here sends a message but the one typed into a worker beside the chat, which is the user's own.
+// Reaching workers beyond ⌘J: opening one beside the chat (⌘\), a worker whose worktree was cleaned
+// up, and "Why is it stuck?". None of the ways to look at a worker marks it, and nothing here sends
+// a message but the one typed into a worker beside the chat, which is the user's own.
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
 
@@ -18,7 +18,7 @@ const withSettings = (page: Page, settings: object) =>
 
 const open = async (page: Page, helpers: object = {}): Promise<MockReachingSimulation> => {
   await withSettings(page, { helpers });
-  // Wide enough that the title bar keeps Workers, Open beside and Take over out of its folded "…".
+  // Wide enough that the title bar keeps Workers and Open beside out of its folded "…".
   await page.setViewportSize({ width: 1680, height: 900 });
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
@@ -177,7 +177,7 @@ test("what you send beside the chat is you typing into the worker", async ({ pag
   await expect(
     dock.getByTestId("message-user").filter({ hasText: "Use the retry helper" }),
   ).toHaveCount(1);
-  // The worker has it as the user's own words, and holds off its orchestrator, as in its own view.
+  // The worker has it as the user's own words, and is marked as written to, as in its own view.
   await expect.poll(() => isHeld(page, made, made.live)).toBe(true);
   await expect(
     pane(page, made.orchestratorThreadId)
@@ -191,60 +191,19 @@ test("what you send beside the chat is you typing into the worker", async ({ pag
   await expect(dock).toHaveCount(0);
 });
 
-test("Take over holds a worker without a message, and Hand back returns it", async ({ page }) => {
+test("a worker offers no Take over: its composer names it and sends plainly", async ({ page }) => {
   const made = await open(page);
   await openWorker(page, made.asking);
-  expect(await isHeld(page, made, made.asking)).toBe(false);
-  // While Take over is offered, a line under the header says what it would change.
-  await expect(page.getByTestId("worker-banner-take-over")).toContainText(
-    "the orchestrator's messages then wait behind yours",
-  );
-  // Shown as the line, it isn't a mark beside Take over too.
-  await expect(page.getByTestId("worker-take-over-info")).toHaveCount(0);
-  // Where the message is written, the composer names the worker, and with a draft Send and the
-  // line beside it say that sending takes it over.
+  await expect(page.getByTestId("worker-take-over")).toHaveCount(0);
+  await expect(page.getByTestId("worker-banner-take-over")).toHaveCount(0);
   await expect(composerOf(page, made.asking)).toHaveAttribute(
     "placeholder",
     /^(Message this worker|Queue a message for this worker|Steer this worker)… /,
   );
   await composerOf(page, made.asking).fill("Draft only");
-  await expect(
-    page.getByRole("button", { name: /^(Send|Queue|Steer) and take over from the orchestrator$/ }),
-  ).toBeVisible();
-  await expect(page.getByText("Sending takes over from the orchestrator")).toBeVisible();
-  await composerOf(page, made.asking).fill("");
-
-  await page.getByTestId("worker-take-over").click();
-  await expect(page.getByTestId("worker-hold")).toContainText("Under your control");
-  await expect(page.getByTestId("worker-take-over")).toHaveCount(0);
-  await expect(page.getByTestId("worker-banner-take-over")).toHaveCount(0);
-  expect(await isHeld(page, made, made.asking)).toBe(true);
-  // Held, a message no longer takes anything: the composer says plain Message again.
-  await expect(composerOf(page, made.asking)).toHaveAttribute(
-    "placeholder",
-    /^(Message|Queue a message|Steer the agent)… /,
-  );
-  // Nothing was sent to it: its composer is untouched and no message of the user's appeared.
-  await expect(composerOf(page, made.asking)).toHaveValue("");
-
-  await page.getByTestId("worker-hand-back").click();
-  await expect(page.getByTestId("worker-take-over")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Send|Queue|Steer)$/ })).toBeVisible();
+  // A draft is not a message: the worker isn't marked until one is sent.
   expect(await isHeld(page, made, made.asking)).toBe(false);
-
-  // Read once, the line folds away for good: the next worker offers Take over with no line under
-  // its header, the button's hint saying what it changes.
-  await openWorker(page, made.live);
-  await expect(page.getByTestId("worker-take-over")).toBeVisible();
-  await expect(page.getByTestId("worker-banner-take-over")).toHaveCount(0);
-  // It folds into Take over's own hint, with no ⓘ beside it to say it a second time.
-  await expect(page.getByTestId("worker-take-over-info")).toHaveCount(0);
-  await page.getByTestId("worker-take-over").hover();
-  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
-    "the orchestrator's messages wait behind yours",
-  );
-  expect(await page.evaluate(() => window.gramMock!.getSettings())).toMatchObject({
-    onboarding: { takeOverHintSeen: true },
-  });
 });
 
 test("a worker whose worktree was cleaned up stays readable, and Ask about it only fills the composer", async ({

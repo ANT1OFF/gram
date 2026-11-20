@@ -691,16 +691,6 @@ test("the overview lists a workspace's workers under it, and a worker's thread n
   await expect(page.getByTestId("workspace-switcher-button")).toContainText("agent-platform");
   await expect(crumbs.getByTestId("worker-crumb-workspace")).toBeHidden();
   await expect(crumbs.getByTestId("worker-crumb-feature")).toHaveText("mail-trigger");
-  const held = page.getByTestId("worker-hold");
-  // A narrow bar keeps the hold's glyph and Hand back, its words for the tooltip and screen readers.
-  await expect(held).toContainText("Under your control");
-  await held.getByTestId("worker-hold-words").hover();
-  await expect(page.locator(`[data-slot="tooltip-content"]`)).toContainText(
-    "10 minutes after your last message once idle",
-  );
-  // Handing it back clears the hold.
-  await held.getByRole("button", { name: "Hand back" }).click();
-  await expect(held).toHaveCount(0);
   // The board and Remove from workspace are in the thread menu's More…, with the way to the
   // orchestrator again.
   const headerMore = await openHeaderMore(page);

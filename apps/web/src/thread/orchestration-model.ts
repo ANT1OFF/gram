@@ -269,26 +269,6 @@ export const workerPauseLine = (pause: WorkerPause, at: number): string => {
   }
 };
 
-/**
- * A held worker's banner line, after "Under your control": what that means, and what Hand back
- * does. The same whether the user took it over or started it under their control. The worker
- * stays the orchestrator's throughout: only its messages wait.
- */
-export const WORKER_HELD_LINE =
-  "It stays the orchestrator's worker: the orchestrator's messages wait behind yours rather than cutting in. Hand back says you're done.";
-
-/**
- * What Take over changes, said under a worker's header while it is offered: that the user talks
- * to it, and what the orchestrator's messages do meanwhile. A message typed into the worker does
- * the same.
- */
-export const WORKER_TAKE_OVER_LINE =
-  "Take over, or send it a message, to talk to it yourself: the orchestrator's messages then wait behind yours.";
-
-/** When the mark clears without Hand back, for the held line's hint. */
-export const workerHeldEnds = (idleMinutes: number): string =>
-  `This also clears by itself at its next report, or ${idleMinutes} minutes after your last message once it's idle.`;
-
 const HANDOFF_REASON: Record<Handoff["reason"], string> = {
   context: "context was filling up",
   compactions: "too many compactions",
