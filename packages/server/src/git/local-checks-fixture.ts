@@ -18,7 +18,7 @@ import {
   type LocalCheck,
   type LocalCheckRunnerShape,
 } from "./local-checks.ts";
-import { hashObject, makeRepo, run, tempDir, write } from "./test-repo.ts";
+import { makeRepo, run, tempDir, write } from "./test-repo.ts";
 
 /** A repo with `main` one commit past where `feature` branched, each adding its own file. */
 export const fixture = (protectedBlob = false) => {
@@ -26,7 +26,10 @@ export const fixture = (protectedBlob = false) => {
   const repo = makeRepo(dir);
   let protectedOid: string | undefined;
   if (protectedBlob) {
-    protectedOid = hashObject(repo, "synthetic protected fixture");
+    // The blob is written outside the checkout, so only the index entry below adds it.
+    const blob = nodePath.join(dir, "protected-blob");
+    write(blob, "synthetic protected fixture");
+    protectedOid = run(repo, "hash-object", "-w", blob).trim();
     run(repo, "update-index", "--add", "--cacheinfo", `100644,${protectedOid},.env.example`);
     run(repo, "commit", "-qm", "synthetic protected ancestor");
   }
