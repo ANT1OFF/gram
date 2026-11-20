@@ -17,6 +17,7 @@ import {
 } from "react";
 
 import { cn } from "@/lib/utils";
+import { painted } from "@/lib/timers";
 
 // A list that draws only the rows near its scroller's view, inside a scroller it shares with other
 // content (the overview's sections, the Board's lines). Rows keep their own height, measured as they
@@ -411,8 +412,6 @@ export const drawnVirtualRow = (list: Element, index: number): HTMLElement | nul
 export const scrollVirtualRow = (list: Element, index: number): void =>
   handles.get(list)?.scrollTo(index);
 
-const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-
 /** Scrolls `list`'s row `index` into view and resolves with it once it has drawn, else null. */
 export async function revealVirtualRow(
   list: Element,
@@ -423,7 +422,7 @@ export async function revealVirtualRow(
   for (let frame = 0; frame < frames; frame++) {
     const row = drawnVirtualRow(list, index);
     if (row !== null) return row;
-    await nextFrame();
+    await painted();
   }
   return null;
 }
