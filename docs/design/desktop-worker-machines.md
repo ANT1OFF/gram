@@ -155,8 +155,11 @@ which must be exactly the host's four dial headers.
 
 If the machine isn't online within five minutes, the desktop asks `…/stop`, forgets the name, and
 the spawn fails with "The machine worker-… didn't join within 5 minutes, so it was stopped". No
-machine is left running for a spawn that failed. A server that says the machine failed or stopped
-(`phase: "failed"`) ends the wait at once with its own words.
+machine is left running for a spawn that failed. A server that says the machine failed
+(`phase: "failed"`), or stopped before its host joined, ends the wait at once with its own words.
+One stopped after its host joined (`phase: "stopped"` with its key) is registered and relayed all
+the same: the relay's dial wakes it there. A machine registered here that the server says is
+stopped is kept, for the same reason.
 
 ## 4. Who owns and pays for it
 
@@ -215,7 +218,9 @@ subscription token reaches a machine, with its own consent.
   registered, or one it shares that is offline) is told it is working (`released: false`) before
   it is waited for: one released once its work was over sleeps until then.
 - **A machine still released.** A start answered `409 { code: "released" }` takes the release
-  back (`released: false`) and asks once more, never again; a release answered
+  back (`released: false`) and asks once more, never again. A take-back answered `404` (the
+  release is already due for reclaim) spends the name as a reclaimed one, below, and asks
+  nothing again under it. A release answered
   `404 { code: "not_found" }`, a take-back's too, is a machine reclaimed there, forgotten here; a
   `503` is asked again after a wait.
 - **A reclaimed name.** A start answered `409 { code: "name_in_use" }` (the name was a machine's
@@ -224,6 +229,14 @@ subscription token reaches a machine, with its own consent.
 - **A retry of the same spawn.** A machine registered here before the try (an earlier spawn of the
   same `clientRequestId`) is waited for but never stopped by that try, however long it stays
   offline: it may hold the earlier spawn's work. Only a machine a try started is given back.
+  Each try holds its machine's name until its spawn is over, and only the first try to hold it
+  starts the machine or gives it back: a retry that comes while that try is still at work (a
+  reconnect, a tool call tried again) waits for its machine and, refused or cancelled itself,
+  stops nothing. A first try whose spawn fails while such a retry waits leaves the machine to it,
+  and to the release pass should it not place a worker either.
+- **A lost workspace role.** Every call about a machine whose workspace the person no longer has
+  a role in is answered `404 { code: "not_found" }`, and its relay's handshake is refused: read
+  as the machine gone wherever a call is made for it, and forgotten by the pass above.
 - **A nonce for each dial.** A WebSocket's handshake can't answer a DPoP nonce challenge the app
   can read, so before each dial of a relay the app makes one call to the server's worker-machine
   endpoint, which takes the challenge and keeps the nonce, and signs the dial with it.

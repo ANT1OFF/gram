@@ -54,6 +54,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import { randomUUID } from "node:crypto";
 import { defineAppTool, failed } from "../app-tools/definition.ts";
@@ -224,7 +225,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           /** Starts it and waits for it to come: run once the spawn goes ahead. */
           readonly prepare?: Effect.Effect<
             { readonly abandon?: Effect.Effect<void> | undefined },
-            AppToolError
+            AppToolError,
+            Scope.Scope
           >;
         }
       | undefined,
@@ -345,6 +347,14 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         const seen = joined().find((each) => each.name === name && theirs(each));
         if (seen?.onlineSince !== undefined) return { name, givesBack: source.givesBack };
         const prepare = Effect.gen(function* () {
+          // This try's hold on the name, kept until its spawn is over (`handle`'s scope): only the
+          // first try to hold it may start the machine or give it back. A retry of the same
+          // request while that try is still at work waits for its machine and, stopped or refused
+          // itself, ends nothing: what is started under the name is the first try's.
+          const hold = yield* Effect.acquireRelease(
+            Effect.sync(() => source.hold(name)),
+            (held) => Effect.sync(held.release),
+          );
           // Read again as the spawn goes ahead, after any card: what is registered now decides
           // whether this try starts the machine (and may give it back) or waits for one it found.
           const already = joined().find((each) => each.name === name && theirs(each));
@@ -352,6 +362,14 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           // is told it is working: told so before it is waited for.
           if (already !== undefined && (yield* source.unrelease(name)) === "gone")
             return yield* fail(reclaimedWords(name));
+          if (already === undefined && !hold.first) {
+            const arrived = yield* source.arrive(name);
+            if (typeof arrived !== "string")
+              return yield* fail(
+                `Another try of this spawn is starting the machine ${name}, and it didn't come online for this one, so this one stopped nothing. Wait for that try to finish, then spawn again with the same clientRequestId, or leave out sandbox to run the worker on your machine.`,
+              );
+            return {};
+          }
           const asked =
             already !== undefined
               ? ({ kind: "started", name } as const)
@@ -408,6 +426,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           // never while a thread is placed on it, the spawn's own worker made before it failed
           // included, nor when that can't be read.
           const giveBack = Effect.gen(function* () {
+            // A retry of the same request waiting for it now: left for that one, and, should it
+            // not place a worker either, to the release pass, as a registered machine.
+            if (hold.others()) return;
             const id = source.idOf(name);
             if (id !== undefined) {
               const threads = yield* store.listThreads.pipe(Effect.option);
@@ -463,7 +484,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       {
         readonly prepare?: Effect.Effect<
           { readonly abandon?: Effect.Effect<void> | undefined },
-          AppToolError
+          AppToolError,
+          Scope.Scope
         >;
         readonly givesBack: boolean;
       }
@@ -628,6 +650,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           if ("held" in spawned || "routeOffer" in spawned) yield* giveBack;
           return spawned;
         }).pipe(
+          // The machine's name stays this try's (`WorkerMachineSource.hold`) until it is over.
+          Effect.scoped,
           Effect.tap((spawned) =>
             // A held brief keeps its plan and is seeded with it when it starts.
             input.plan === undefined || "held" in spawned || "routeOffer" in spawned

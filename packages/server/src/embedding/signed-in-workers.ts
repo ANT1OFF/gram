@@ -47,6 +47,8 @@ import { CHOICES_TTL_MS, type OnDemandChoices, parseChoices } from "./on-demand.
 import {
   askWorkerMachine,
   choicesOfAsk,
+  type MachineHold,
+  makeMachineHolds,
   type OfferedModel,
   parseOfferedModels,
   type ProvidedMachine,
@@ -437,6 +439,8 @@ export interface SignedInDeps {
   readonly starting?: Set<string>;
   /** One lock per name, shared with the settling of stops owed (`withName`). */
   readonly locks?: NameLocks;
+  /** Each spawn try's hold on its name, shared by every source (`makeMachineHolds`). */
+  readonly holds?: (name: string) => MachineHold;
 }
 
 /**
@@ -613,6 +617,7 @@ export const signedInSource = (
   const now = deps.now ?? Date.now;
   const origin = server.origin;
   const offered: OfferedByServer = deps.offered ?? new Map();
+  const holds = deps.holds ?? makeMachineHolds();
   const mine = (machine: ProvidedMachine) =>
     machine.onDemand === "worker" && machine.via === origin && machine.owner === undefined;
   const named = (name: string) => hosts.list().find((each) => each.name === name && mine(each));
@@ -710,6 +715,7 @@ export const signedInSource = (
         ),
       ),
     idOf: (name) => named(name)?.id,
+    hold: holds,
     abandon: (name, options) => Effect.asVoid(forget(name, options?.unsettled === true)),
     start: (ask) =>
       Effect.suspend(() => {
@@ -732,9 +738,17 @@ export const signedInSource = (
               // Still released there: taken back, and asked once more, never again.
               if (!first.ok || first.status !== 409 || codeOf(first.body) !== "released")
                 return first;
-              yield* tellSignedInRelease(port, { name: ask.name, via: origin }, false).pipe(
-                Effect.ignore,
-              );
+              const told = yield* tellSignedInRelease(
+                port,
+                { name: ask.name, via: origin },
+                false,
+              ).pipe(Effect.option);
+              // Due for reclaim there, so it can't be taken back: the name is spent, as one the
+              // server reclaimed is, and nothing is asked again under it.
+              if (told._tag === "Some" && told.value === "gone") {
+                port.unrelay(ask.name);
+                return { ok: true as const, status: 409, body: { code: "name_in_use" } };
+              }
               return yield* send;
             }),
           ).pipe(
@@ -791,9 +805,15 @@ export const signedInSource = (
             const answered = read.value;
             // A call that went wrong on the way is asked again, until the deadline.
             const status = answered.ok ? parseMachineStatus(answered.body) : {};
+            // Stopped after its host joined (it has a key): registered and relayed all the same,
+            // since the relay's dial wakes it there. Failed, gone, or stopped before it joined,
+            // there is nothing to wait for.
+            const wakes = status.phase === "stopped" && status.publicKey !== undefined;
             if (
               answered.ok &&
-              (answered.status === 404 || status.phase === "failed" || status.phase === "stopped")
+              (answered.status === 404 ||
+                status.phase === "failed" ||
+                (status.phase === "stopped" && !wakes))
             )
               return {
                 failed: failedWords(
@@ -982,6 +1002,7 @@ export const SignedInWorkersLive = Layer.effect(
     /** Names a start is on its way for: no stop owed for an earlier one may end what it makes. */
     const starting = new Set<string>();
     const locks: NameLocks = makeKeyedLock<string>();
+    const holds = makeMachineHolds();
     const claimed = (name: string) =>
       starting.has(name) ||
       hosts.list().some((machine) => machine.name === name && machine.via !== undefined);
@@ -1045,6 +1066,7 @@ export const SignedInWorkersLive = Layer.effect(
                   owed,
                   starting,
                   locks,
+                  holds,
                 }),
                 server: answered.server,
               }

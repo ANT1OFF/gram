@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -16,6 +17,7 @@ import {
   type WorkerMachinePortShape,
 } from "../embedding/signed-in-workers.ts";
 import { AppToolError, DEFAULT_CHARTER, HostId } from "@gram/contracts";
+import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { makeStopMarks } from "../host/stop-marks.ts";
 import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
@@ -445,6 +447,70 @@ describe("sandbox from a signed-in hosted server", () => {
         while (!calls.some((each) => each.call === "start")) yield* Effect.sleep("10 millis");
         yield* Fiber.interrupt(spawning);
         expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("a cancelled retry of the same request stops nothing the first try started", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const calls: Array<{ readonly call: string; readonly body: unknown }> = [];
+      const { port } = fakePort(() => ({ status: 200, body: {} }));
+      // The first try's start is on its way; its answer, a machine started, comes when told.
+      const answer = yield* Deferred.make<void>();
+      const slow: WorkerMachinePortShape = {
+        ...port,
+        call: (_origin, call, body) =>
+          Effect.suspend(() => {
+            calls.push({ call, body });
+            return call === "start"
+              ? Deferred.await(answer).pipe(
+                  Effect.as({ ok: true as const, status: 202, body: { phase: "starting" } }),
+                )
+              : call === "choices"
+                ? Effect.succeed({ ok: true as const, status: 404, body: {} })
+                : Effect.succeed({ ok: true as const, status: 200, body: { phase: "starting" } });
+          }),
+      };
+      const hosts = {
+        list: () => [],
+        remove: () => false,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      // The name's lock, as the app shares it: a second start of the name waits for the first.
+      const source = signedInSource(SERVER, {
+        port: slow,
+        hosts,
+        locks: makeKeyedLock<string>(),
+        everyMs: 10,
+      });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(
+            signedIn({ port: slow, source: Effect.succeed({ source, server: SERVER }) }),
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session } = yield* openOrchestrator(world);
+        const first = yield* Effect.forkScoped(session.callTool("spawn_worker", SANDBOX));
+        while (!calls.some((each) => each.call === "start")) yield* Effect.sleep("10 millis");
+        // A retry of the same request (a reconnect, a tool call tried again) while it is at work.
+        const retry = yield* Effect.forkScoped(session.callTool("spawn_worker", SANDBOX));
+        yield* Effect.sleep("100 millis");
+        const cancelled = yield* Effect.forkScoped(Fiber.interrupt(retry));
+        yield* Effect.sleep("50 millis");
+        // The server takes the first try's start: the machine is the first try's.
+        yield* Deferred.succeed(answer, undefined);
+        yield* Fiber.join(cancelled);
+        yield* Effect.sleep("100 millis");
+        expect(calls.map((each) => each.call)).not.toContain("stop");
+        expect(calls.filter((each) => each.call === "start")).toHaveLength(1);
+        yield* Fiber.interrupt(first);
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );

@@ -657,6 +657,45 @@ describe("worker machines from a signed-in hosted server", () => {
     }),
   );
 
+  it.live("registers and relays a machine stopped after its host joined, which a dial wakes", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const key = generateHostKey();
+      const relayed: string[] = [];
+      // It failed after its host joined: stopped there, not failed, until the relay dials it.
+      const app = fakeApp({
+        answer: () => ({ status: 200, body: { phase: "stopped", publicKey: key.publicKey } }),
+      });
+      const port = bridgeWorkerMachines(app.port);
+      const source = signedInSource(SERVER, {
+        port: { ...port, relay: (_origin, name) => relayed.push(name) },
+        hosts,
+        timeoutMs: 200,
+        everyMs: 20,
+      });
+      expect(yield* source.arrive(NAME)).toEqual({ failed: "timeout" });
+      expect(hosts.list().some((each) => each.name === NAME)).toBe(true);
+      expect(relayed).toEqual([NAME]);
+    }),
+  );
+
+  it.live("says a machine stopped before its host joined didn't join", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const app = fakeApp({ answer: () => ({ status: 200, body: { phase: "stopped" } }) });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts,
+        timeoutMs: 2_000,
+        everyMs: 20,
+      });
+      // Refused at once, with nothing registered: not waited on to the deadline.
+      const arrived = yield* source.arrive(NAME);
+      expect(typeof arrived === "object" && arrived.failed !== "timeout").toBe(true);
+      expect(hosts.list()).toEqual([]);
+    }),
+  );
+
   it.live("says the server's own words when it stops starting the machine", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
@@ -812,7 +851,10 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
       provisionRelayed(hosts, NAME);
       const unrelayed: string[] = [];
       const app = fakeApp({
-        answer: ({ call }) => ({ status: call === "status" ? 404 : 200, body: {} }),
+        answer: ({ call }) =>
+          call === "status"
+            ? { status: 404, body: { code: "not_found" } }
+            : { status: 200, body: {} },
       });
       const port = bridgeWorkerMachines(app.port);
       const misses = new Map<string, number>();
@@ -830,6 +872,20 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
       expect(app.calls).toHaveLength(3);
       expect(unrelayed).toEqual([NAME]);
       expect(hosts.list()).toEqual([]);
+    }),
+  );
+
+  it.live("keep a machine the server says is stopped: the next dial wakes it", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionRelayed(hosts, NAME);
+      const unrelayed: string[] = [];
+      const app = fakeApp({ answer: () => ({ status: 200, body: { phase: "stopped" } }) });
+      const port = bridgeWorkerMachines(app.port);
+      const pass = forgetReclaimed({ ...port, unrelay: (name) => unrelayed.push(name) }, hosts);
+      for (let each = 0; each < 4; each += 1) yield* pass;
+      expect(unrelayed).toEqual([]);
+      expect(hosts.list()).toHaveLength(1);
     }),
   );
 
@@ -1175,6 +1231,26 @@ describe("a hosted server's answers about one machine", () => {
       const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
       expect(started.kind).toBe("refused");
       expect(app.calls.map((each) => each.call)).toEqual(["start", "release", "start"]);
+    }),
+  );
+
+  it.effect("spends a name whose release can't be taken back, and starts nothing again", () =>
+    Effect.gen(function* () {
+      // Released and already due for reclaim there: the take-back is answered not_found.
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "start"
+            ? { status: 409, body: { code: "released" } }
+            : { status: 404, body: { code: "not_found" } },
+      });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: noMachines,
+      });
+      const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
+      expect(started).toMatchObject({ kind: "refused" });
+      expect(started).not.toHaveProperty("unknown");
+      expect(app.calls.map((each) => each.call)).toEqual(["start", "release"]);
     }),
   );
 
