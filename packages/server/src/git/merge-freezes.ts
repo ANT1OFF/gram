@@ -37,7 +37,7 @@ import {
   type PrStatus,
   type Thread,
 } from "@gram/contracts";
-import { isForeignPath } from "@gram/git";
+import { isForeignPath, Proc } from "@gram/git";
 import { tmpdir } from "node:os";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -56,9 +56,11 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { BranchHeads } from "../wakes/branch-heads.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { AutoMerges } from "./auto-merges.ts";
 import { GitStatePublisher } from "./publisher.ts";
 import { makeKeyedLock } from "./keyed-lock.ts";
+import { withMachines, workerOwnsPr } from "./worker-pr.ts";
 
 /** What `merge_freeze` asks for. */
 export interface FreezeInput {
@@ -195,6 +197,8 @@ export const MergeFreezesLive = Layer.effect(
     const autoMerges = yield* AutoMerges;
     const runtimes = yield* ThreadRuntimes;
     const publisher = yield* GitStatePublisher;
+    const proc = yield* Proc;
+    const machines = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const changed = yield* PubSub.unbounded<FreezeChange>();
     /** Per repo and branch, the freeze stored, expired or not; reads skip an expired one. */
     const freezes = new Map<string, StoredFreeze>();
@@ -496,22 +500,26 @@ export const MergeFreezesLive = Layer.effect(
       });
 
     /**
-     * The PRs Gram's threads bind in `repo`, whose GitHub auto-merge a freeze takes down. One a
-     * thread only follows (`extraPrs`) is someone else's to arm, and isn't touched.
+     * Whether PR `number` of `repo` is a Gram worker's own, by the rule the merge tools hold to
+     * (`workerOwnsPr`), so a freeze may take its GitHub auto-merge down. A PR a thread only binds
+     * or follows is someone else's to arm, and isn't touched; a doubt is a no.
      */
-    const gramPrs = (repo: string) =>
-      store.listThreads.pipe(
-        Effect.map(
-          (threads) =>
-            new Set(
-              threads.flatMap((thread) =>
-                thread.boundPr !== undefined && sameRepo(thread.boundPr.repo, repo)
-                  ? [thread.boundPr.number]
-                  : [],
-              ),
-            ),
-        ),
-      );
+    const gramOwns = (repo: string, number: number) =>
+      Effect.gen(function* () {
+        for (const thread of yield* store.listThreads) {
+          const bound = thread.boundPr;
+          if (bound === undefined || !sameRepo(bound.repo, repo) || bound.number !== number)
+            continue;
+          const owns = yield* workerOwnsPr(thread, repo, number).pipe(
+            Effect.provideService(ThreadStore, store),
+            Effect.provideService(Proc, proc),
+            withMachines(machines),
+            Effect.catchCause(() => Effect.succeed(false)),
+          );
+          if (owns) return true;
+        }
+        return false;
+      });
 
     /**
      * Turns off GitHub's auto-merge on the PRs of Gram's threads onto the frozen branch, the allowed
@@ -526,10 +534,10 @@ export const MergeFreezesLive = Layer.effect(
             `GitHub's auto-merges onto ${set.branch} couldn't be listed, so any armed on Gram's PRs are still armed`,
           ];
         }
-        const ours = yield* gramPrs(set.repo);
         const failed: Array<string> = [];
         for (const pr of armed) {
-          if (!ours.has(pr.number) || (set.allow ?? []).includes(pr.number)) continue;
+          if ((set.allow ?? []).includes(pr.number) || !(yield* gramOwns(set.repo, pr.number)))
+            continue;
           // On the freeze's record before GitHub is asked, under its lock: a quit partway leaves
           // at worst a PR recorded that wasn't turned off, which arming again does no harm to,
           // never one turned off that nothing arms again. Ended meanwhile: nothing more is taken.
