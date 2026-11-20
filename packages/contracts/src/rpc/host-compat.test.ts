@@ -80,7 +80,7 @@ const OPENCODE_BREAKS: ReadonlyArray<
 /**
  * Grok Build, the fourth agent kind, at each place OpenCode's grew: no release speaks it. A control
  * plane opens a Grok session, reloads Grok config or names a Grok worker only to a host that names
- * `agent-grok` (host/protocol.ts, `withoutAgents`), which no released host does.
+ * `agent-grok` (host/session-gates.ts, `withoutAgents`), which no released host does.
  */
 const GROK_BECAUSE =
   "A control plane sends Grok Build only to a host that names agent-grok, which no host of that release does, and never opens a Grok session there.";

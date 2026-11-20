@@ -109,12 +109,8 @@ import { DecisionHook } from "../embedding/decision-hook.ts";
 import { EventSink } from "../embedding/event-sink.ts";
 import { makeHookedRequests } from "../embedding/hooked-requests.ts";
 import { makeSessionSwitch, makeSwitchMethods } from "./session-switch.ts";
-import {
-  AGENT_NAMES,
-  checkFreshTarget,
-  checkProfileModel,
-  makeAgentSwitch,
-} from "./agent-switch.ts";
+import { AGENT_NAMES } from "./agent-names.ts";
+import { checkFreshTarget, checkProfileModel, makeAgentSwitch } from "./agent-switch.ts";
 import { selectableModels } from "./model-efforts.ts";
 import { makeSessionLifecycle } from "./session-lifecycle.ts";
 import type { InputUndelivered } from "./undelivered.ts";

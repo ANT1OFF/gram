@@ -5,8 +5,6 @@ import {
   DEFAULT_HELPER,
   DEFAULT_HELPER_FALLBACK,
   GatewayProfile,
-  gatewayKindOf,
-  gatewayModelForAgent,
   helperChoice,
   helperContextAllowed,
   helperFallbackChoice,
@@ -15,7 +13,6 @@ import {
   EXAMPLE_GATEWAY,
   normalizeThreadPrs,
   PendingRequest,
-  sameGatewayURL,
   samePr,
   Thread,
   ThreadLabels,
@@ -26,6 +23,7 @@ import {
   mergeAfterDependencies,
   MONITOR_MARK_REVIEWS_MAX,
 } from "./domain.ts";
+import { gatewayKindOf, gatewayModelForAgent, sameGatewayURL } from "./gateway-kinds.ts";
 import {
   mergeStateAllowsMerge,
   requiredChecksGreen,

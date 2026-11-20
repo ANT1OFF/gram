@@ -48,7 +48,6 @@ import {
   browserGrant,
   ADMITTED,
   admittedForRole,
-  roleAgentsFrom,
   budgetVerdict,
   checkWorkerSend,
   coalesceReasons,
@@ -185,13 +184,6 @@ describe("admission", () => {
       expect(admittedForRole(kind, role)).toBe(kind === "claude" || kind === "codex");
     },
   );
-
-  it("lets a deployment add Grok Build to the roles, and nothing else", () => {
-    expect(roleAgentsFrom("grok")).toEqual(["grok"]);
-    expect(roleAgentsFrom(" Grok , opencode")).toEqual(["grok"]);
-    expect(roleAgentsFrom("opencode,claude")).toEqual([]);
-    expect(roleAgentsFrom(undefined)).toEqual([]);
-  });
 });
 
 describe("hasAuthority", () => {

@@ -1,4 +1,5 @@
 import { MessageId, ThreadId, type AgentEvent } from "@gram/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
@@ -10,13 +11,12 @@ import {
   billingLimits,
   connectorOf,
   grokCommands,
+  grokPermission,
+  permissionParams,
   promptOf,
   transcriptOf,
-  withHeadlessSignIn,
-  grokPermission,
-  makeGrokHost,
-  permissionParams,
-} from "./session.ts";
+} from "./extensions.ts";
+import { makeGrokHost, withHeadlessSignIn } from "./session.ts";
 
 const command = (text: string) => ({ kind: "execute", rawInput: { command: text } });
 
@@ -245,9 +245,11 @@ describe("Grok Build host", () => {
             cwd: "/work",
             permissionMode: "default",
           });
+          const turnEnded = yield* Deferred.make<void>();
           const fiber = yield* Stream.runForEach(session.events, (event) =>
             Effect.gen(function* () {
               events.push(event);
+              if (event.type === "turnEnd") yield* Deferred.succeed(turnEnded, undefined);
               if (event.type === "request")
                 yield* session.respond(event.request.id, {
                   kind: "approval",
@@ -257,10 +259,7 @@ describe("Grok Build host", () => {
             }),
           ).pipe(Effect.forkScoped);
           yield* session.send({ text: "go" });
-          yield* Effect.promise(async () => {
-            while (!events.some((event) => event.type === "turnEnd"))
-              await new Promise((resolve) => setTimeout(resolve, 5));
-          });
+          yield* Deferred.await(turnEnded);
           yield* Fiber.interrupt(fiber);
         }),
       ),

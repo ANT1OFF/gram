@@ -95,6 +95,7 @@ import {
   STOPPING,
 } from "./stop.ts";
 import { HOST_DROP_MS, HOST_RESTORE_MS, HOST_STOP_MS } from "./budgets.ts";
+import { openRefusal, readableBy } from "./session-gates.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type { HostLoopback } from "./loopback.ts";
@@ -177,13 +178,6 @@ export interface HostUpdater {
   readonly start: (release: string) => Stream.Stream<HostUpdateProgress, HostUpdateRefused>;
 }
 
-/**
- * Why a session isn't opened on a host that doesn't name `browser-policy`: it would drop the
- * session's `browser` and run the CLI's own default, which may turn Claude in Chrome on.
- */
-export const HOST_BROWSER_POLICY_MISSING =
-  "Its gram-host is older than this Gram and can't keep Claude in Chrome off. Update Gram there (Settings → Machines), then try again.";
-
 /** What a host without a token store answers. */
 const NO_TOKEN_STORE = "This machine's host doesn't keep a Claude token.";
 
@@ -235,54 +229,6 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "stop-going",
   "loopback-tunnels",
 ];
-
-/** Why a memory update isn't opened on a host that doesn't name `dream-sessions`. */
-export const HOST_DREAMS_MISSING =
-  "Its gram-host is older than this Gram and doesn't run memory updates. Update Gram there (Settings → Machines), then try again.";
-
-/** Why a Codex session isn't opened on a host that doesn't name `agent-codex`. */
-export const HOST_CODEX_MISSING =
-  "Its gram-host is older than this Gram and doesn't run Codex sessions. Update Gram there (Settings → Machines), then try again.";
-
-/** Why an OpenCode session isn't opened on a host that doesn't name `agent-opencode-sessions`. */
-export const HOST_OPENCODE_SESSIONS_MISSING =
-  "Its gram-host is older than this Gram and doesn't run OpenCode sessions. Update Gram there (Settings → Machines), then try again.";
-
-/** Why a Grok Build session isn't opened on a host that doesn't name `agent-grok`. */
-export const HOST_GROK_MISSING =
-  "Its gram-host doesn't run Grok Build sessions: it is older than this Gram, or has no Grok Build. Update Gram there (Settings → Machines), then try again.";
-
-/** Why an OpenCode session isn't opened on a host that doesn't name `agent-opencode`. */
-export const HOST_OPENCODE_MISSING =
-  "Its gram-host is older than this Gram and doesn't know OpenCode. Update Gram there (Settings → Machines), then try again.";
-
-/**
- * `input` as a host that doesn't know OpenCode can read it: an orchestration digest names each
- * worker's agent, and an OpenCode worker's is left out, as a ledger from before agents were named.
- */
-export const withoutOpenCodeAgents = (input: UserInput): UserInput =>
-  withoutAgents(input, "opencode");
-
-/** `input` with `agent`'s workers named by no agent, for a host that doesn't know that kind. */
-export const withoutAgents = (input: UserInput, agent: AgentKind): UserInput => {
-  const notice = input.notice;
-  if (notice?.kind !== "orchestration") return input;
-  if (!notice.features.some((f) => f.workers.some((w) => w.agent === agent))) return input;
-  return {
-    ...input,
-    notice: {
-      ...notice,
-      features: notice.features.map((feature) => ({
-        ...feature,
-        workers: feature.workers.map((worker) => {
-          if (worker.agent !== agent) return worker;
-          const { agent: _agent, ...rest } = worker;
-          return rest;
-        }),
-      })),
-    },
-  };
-};
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -1546,70 +1492,22 @@ export const connectHost = (
       );
     const browserPolicy = hostServes(hello, "browser-policy");
     const knowsOpenCode = hostServes(hello, "agent-opencode");
-    const runsCodex = hostServes(hello, "agent-codex");
-    const runsOpenCode = hostServes(hello, "agent-opencode-sessions");
     const runsGrok = hostServes(hello, "agent-grok");
-    const runsDreams = hostServes(hello, "dream-sessions");
-    const readable = (input: UserInput) => {
-      const known = knowsOpenCode ? input : withoutAgents(input, "opencode");
-      return runsGrok ? known : withoutAgents(known, "grok");
-    };
+    const readable = readableBy(hello);
     const sessions: HostSessionsConnection = {
       browserPolicy,
-      // Refused before it reaches a host that can't hold the browser off, or doesn't know the
-      // agent, whoever routed it here.
-      open: (request) =>
-        !browserPolicy
-          ? Effect.fail(
+      open: (request) => {
+        const refused = openRefusal(hello, request);
+        return refused === undefined
+          ? sessionCall(client["host.sessions.open"](request), isAgentUnavailable)
+          : Effect.fail(
               new AgentUnavailable({
                 agent: request.agent,
                 reason: "startup-failed",
-                message: HOST_BROWSER_POLICY_MISSING,
+                message: refused,
               }),
-            )
-          : request.agent === "opencode" && !knowsOpenCode
-            ? Effect.fail(
-                new AgentUnavailable({
-                  agent: request.agent,
-                  reason: "startup-failed",
-                  message: HOST_OPENCODE_MISSING,
-                }),
-              )
-            : request.agent === "codex" && !runsCodex
-              ? Effect.fail(
-                  new AgentUnavailable({
-                    agent: request.agent,
-                    reason: "startup-failed",
-                    message: HOST_CODEX_MISSING,
-                  }),
-                )
-              : request.agent === "opencode" && !runsOpenCode
-                ? Effect.fail(
-                    new AgentUnavailable({
-                      agent: request.agent,
-                      reason: "startup-failed",
-                      message: HOST_OPENCODE_SESSIONS_MISSING,
-                    }),
-                  )
-                : request.agent === "grok" && !runsGrok
-                  ? Effect.fail(
-                      new AgentUnavailable({
-                        agent: request.agent,
-                        reason: "startup-failed",
-                        message: HOST_GROK_MISSING,
-                      }),
-                    )
-                  : // An older host would drop the field and open an ordinary session, with its
-                    // native tools, where the dream's prompt asks it to write.
-                    (request.dreamFilesOnly === true || request.audience === "dream") && !runsDreams
-                    ? Effect.fail(
-                        new AgentUnavailable({
-                          agent: request.agent,
-                          reason: "startup-failed",
-                          message: HOST_DREAMS_MISSING,
-                        }),
-                      )
-                    : sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
+            );
+      },
       events: (handle, afterSeq) =>
         hostStream(client["host.sessions.events"]({ handle, afterSeq })),
       ack: (handle, seq) =>

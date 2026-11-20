@@ -93,6 +93,8 @@ import {
 import { createHash } from "node:crypto";
 import { SENDS_PER_MINUTE, WINDOW_MS as SEND_WINDOW_MS } from "../app-tools/loop-guard.ts";
 import { redactText } from "../logging/redact.ts";
+import { AGENT_NAMES } from "../runtime/agent-names.ts";
+import { ROLE_AGENTS } from "./role-agents.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Authority, delegation, audience
@@ -101,25 +103,9 @@ import { redactText } from "../logging/redact.ts";
 /** The parts a thread can play in orchestration. A worker has no `Thread.role`: it is any thread with `spawnedBy`. */
 export type OrchestrationRole = ThreadRole | "worker";
 
-/** The agents a deployment may add to the orchestrator and worker roles (`GRAM_ROLE_AGENTS`). */
-const OPTIONAL_ROLE_AGENTS: ReadonlyArray<AgentKind> = ["grok"];
-
-/**
- * The agents `GRAM_ROLE_AGENTS` (a comma list) adds to the orchestrator and worker roles. Only
- * Grok Build may be named, and only a deployment whose sessions load no user config of their own
- * should: on a desktop, Grok reads the user's allow rules, which could let a push through
- * unasked. Its outward gate is the adapter's: under a gate the session asks about every call.
- */
-export const roleAgentsFrom = (value: string | undefined): ReadonlyArray<AgentKind> =>
-  OPTIONAL_ROLE_AGENTS.filter((agent) =>
-    (value ?? "").split(",").some((entry) => entry.trim().toLowerCase() === agent),
-  );
-
-const ROLE_AGENTS = roleAgentsFrom(process.env["GRAM_ROLE_AGENTS"]);
-
 /**
  * Codex and Claude Code take executable orchestration roles, and the agents a deployment adds
- * (`roleAgentsFrom`). Claude uses its outward hook and strict Dream file bridge. Codex requires an
+ * (`ROLE_AGENTS`). Claude uses its outward hook and strict Dream file bridge. Codex requires an
  * isolated gateway home for outward approval enforcement; its Dreams use guided native permissions
  * rather than a file-only guarantee. Server app-tool approval, thread audience, ownership and
  * confirmed system delivery remain authoritative.
@@ -1383,14 +1369,6 @@ const QUIET_STATES: ReadonlySet<WorkerState> = new Set<WorkerState>(["briefed", 
 /** Statuses of a worker that isn't doing anything and won't until someone writes to it. */
 const AT_REST: ReadonlySet<ThreadStatus> = new Set<ThreadStatus>(["idle", "cold"]);
 
-/** What the user calls each agent, for a digest's line on a worker the user switched. */
-const AGENT_WORDS: Readonly<Record<AgentKind, string>> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  opencode: "OpenCode",
-  grok: "Grok Build",
-};
-
 const WENT_QUIET = "ended its turn without reporting; read its last messages with get_thread";
 
 const WORKTREE_GONE =
@@ -1599,7 +1577,7 @@ export const digestDiff = (input: {
       const switched =
         before?.agent !== undefined && worker.agent !== undefined && before.agent !== worker.agent;
       if (switched)
-        remarks.push(`continues in ${AGENT_WORDS[worker.agent!]} (the user switched it)`);
+        remarks.push(`continues in ${AGENT_NAMES[worker.agent!]} (the user switched it)`);
       if (newOverlaps.length > 0) {
         const files = worker.overlapFiles ?? [];
         remarks.push(

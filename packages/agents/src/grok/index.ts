@@ -11,12 +11,14 @@ export {
   billingLimits,
   connectorOf,
   grokCommands,
-  promptOf,
-  transcriptOf,
-  GROK_AGENT_ARGS,
-  GROK_CAPABILITIES,
   grokModels,
   grokPermission,
+  promptOf,
+  transcriptOf,
+} from "./extensions.ts";
+export {
+  GROK_AGENT_ARGS,
+  GROK_CAPABILITIES,
   makeGrokHost,
   SIGN_IN_MESSAGE,
   type GrokHostConfig,
