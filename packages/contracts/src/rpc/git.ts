@@ -15,6 +15,7 @@ import { BaseRefFields, BaseRefStatus, FetchBaseResult } from "../git-base.ts";
 import { PushResult } from "../git-push.ts";
 import { PrStatusResult } from "../pr-status.ts";
 import { VerifyState } from "../verify-recipe.ts";
+import { FileImage } from "../thread-ui.ts";
 import { GitRefreshPayload } from "../git-refresh.ts";
 import { FastForwardResult, UpstreamSync, UpstreamSyncFields } from "../git-upstream-sync.ts";
 import { UpstreamRefStatus, UpstreamStatusFields } from "../git-upstream.ts";
@@ -134,6 +135,19 @@ export const GitRpcs = RpcGroup.make(
     payload: threadRef,
     success: VerifyState,
     error: errors(ThreadNotFound),
+  }),
+  /**
+   * One picture a verify driver left in its evidence folder on the thread's head, as `fs.image`
+   * serves one: by the name `git.verifyState` listed, up to 5 MiB. Anything else is `NotFound`.
+   */
+  Rpc.make("git.verifyEvidence", {
+    payload: {
+      ...threadRef,
+      driver: Schema.String.check(Schema.isMaxLength(48)),
+      file: Schema.String.check(Schema.isMaxLength(255)),
+    },
+    success: FileImage,
+    error: errors(ThreadNotFound, NotFound),
   }),
   /** The PR's checks alone: one small request, for whoever doesn't need `git.prDetail`'s PR and diff. */
   Rpc.make("git.prChecks", {

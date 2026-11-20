@@ -2,6 +2,7 @@ import {
   VERIFY_FILE,
   type ThreadId,
   type VerifyDriverState,
+  type VerifyEvidence,
   type VerifyRunStatus,
   type VerifyState,
 } from "@gram/contracts";
@@ -16,16 +17,20 @@ import {
 } from "lucide-react";
 
 import { useApi } from "@/api/context";
+import { AttachmentLightbox } from "@/thread/attachment-lightbox";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { spin } from "@/motion";
 
+import { imageDataUrl } from "./files/image-preview";
 import { PanelMessage } from "./panel-message";
 
 // A worker's Proof: what Gram itself recorded of the repository's verify drivers on the worker's
 // committed head, never what the worker wrote. Each driver's state, the command it runs, whether
 // the repository requires it and whether it covers what the branch changed. A repository without
-// a recipe has no Proof tool at all.
+// a recipe has no Proof tool at all. Under a driver, what its run kept in its evidence folder:
+// screenshots to open, videos and snapshots by name. They show what the driver chose to keep,
+// never that it passed.
 
 /** How often the tab looks again while a driver is running. */
 const RUNNING_POLL_MS = 5_000;
@@ -80,7 +85,109 @@ const seconds = (driver: VerifyDriverState): string | undefined => {
     : `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, "0")}s`;
 };
 
-function DriverRow({ driver }: { driver: VerifyDriverState }) {
+/** Names the server serves as pictures; a video or snapshot is named, not shown. */
+const PICTURE = /\.(png|jpe?g|gif|webp|svg)$/i;
+
+/** One screenshot a driver kept, read when its row shows. */
+function EvidencePicture({
+  threadId,
+  head,
+  driver,
+  item,
+}: {
+  threadId: ThreadId;
+  head: string | undefined;
+  driver: VerifyDriverState;
+  item: VerifyEvidence;
+}) {
+  const api = useApi();
+  // A run again on the same head writes the same names afresh: its start keys it apart.
+  const run = [driver.name, driver.startedAt ?? 0, item.file, item.size] as const;
+  const query = useQuery({
+    queryKey: [...verifyStateQueryKey(threadId, head), "evidence", ...run],
+    queryFn: () => api.verifyEvidence(threadId, driver.name, item.file),
+    retry: false,
+    staleTime: Infinity,
+  });
+  const src = imageDataUrl(query.data);
+  const label = item.caption ?? item.file;
+  return (
+    <figure data-testid="proof-evidence" className="flex w-32 flex-col gap-1">
+      {src === undefined ? (
+        <div className="flex h-20 items-center justify-center rounded-md border border-border text-meta text-muted-foreground">
+          {query.isPending
+            ? "Loading…"
+            : query.data?.tooLarge === true
+              ? "Too large"
+              : "Unavailable"}
+        </div>
+      ) : (
+        <AttachmentLightbox
+          src={src}
+          name={item.file}
+          description={label}
+          thumbnailClassName="h-20 w-32 object-cover"
+        />
+      )}
+      <figcaption className="truncate text-meta text-muted-foreground" title={label}>
+        {label}
+      </figcaption>
+    </figure>
+  );
+}
+
+/** What the driver's run kept to show: its screenshots, and the rest by name. */
+function DriverEvidence({
+  threadId,
+  head,
+  driver,
+}: {
+  threadId: ThreadId;
+  head: string | undefined;
+  driver: VerifyDriverState;
+}) {
+  const items = driver.evidence ?? [];
+  const pictures = items.filter((item) => item.kind === "screenshot" && PICTURE.test(item.file));
+  const named = items.filter((item) => !pictures.includes(item));
+  return (
+    <div className="mt-1.5 flex flex-col gap-1.5">
+      {pictures.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {pictures.map((item) => (
+            <EvidencePicture
+              key={item.file}
+              threadId={threadId}
+              head={head}
+              driver={driver}
+              item={item}
+            />
+          ))}
+        </div>
+      )}
+      {named.map((item) => (
+        <span
+          key={item.file}
+          data-testid="proof-evidence"
+          className="truncate text-meta text-muted-foreground"
+        >
+          <span className="font-mono">{item.file}</span>
+          {` · ${item.kind}`}
+          {item.caption === undefined ? "" : ` · ${item.caption}`}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DriverRow({
+  driver,
+  threadId,
+  head,
+}: {
+  driver: VerifyDriverState;
+  threadId: ThreadId;
+  head: string | undefined;
+}) {
   const status = RUN_STATUS[driver.status];
   const Icon = status.icon;
   const outside = driver.coversChange === false;
@@ -109,6 +216,9 @@ function DriverRow({ driver }: { driver: VerifyDriverState }) {
           {driver.reason === undefined ? "" : `: ${driver.reason}`}
           {outside ? " · doesn't cover this change" : ""}
         </span>
+        {driver.evidence !== undefined && (
+          <DriverEvidence threadId={threadId} head={head} driver={driver} />
+        )}
       </div>
       {took !== undefined && (
         <span className="shrink-0 text-meta text-muted-foreground tabular-nums">{took}</span>
@@ -168,7 +278,7 @@ export function ProofPanel({ threadId, head }: { threadId: ThreadId; head: strin
       )}
       <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
         {state.drivers.map((driver) => (
-          <DriverRow key={driver.name} driver={driver} />
+          <DriverRow key={driver.name} driver={driver} threadId={threadId} head={state.head} />
         ))}
       </ul>
     </div>
