@@ -13,7 +13,8 @@ import {
   PROBE_SCRIPT,
   requireSdkExecutable,
   resolveBinary,
-  versionWarning,
+  versionNotice,
+  type VersionNotice,
 } from "./binary.ts";
 import { buildChildEnv, tokenChildEnv } from "./env.ts";
 import { runCommand } from "../cli/process.ts";
@@ -30,8 +31,10 @@ export interface PreparedClaude {
   readonly sdkExecutable?: string | undefined;
   readonly env: Record<string, string>;
   readonly cliVersion?: string;
-  /** Non-fatal problems to surface once per session (version skew, probe fallback). */
+  /** Non-fatal problems to surface once per session (probe fallback, an unreadable version). */
   readonly warnings: ReadonlyArray<string>;
+  /** Version skew that matters, a notice about the install rather than the session. */
+  readonly versionNotice?: VersionNotice;
 }
 
 export interface ClaudeEnvironmentShape {
@@ -219,8 +222,7 @@ export const ClaudeEnvironmentLive = (
         const warnings = [...probed.warnings];
         if (version === undefined)
           warnings.push(`Couldn't read the Claude Code version of ${binary.path}.`);
-        const skew = version === undefined ? undefined : versionWarning(version, sdk.version);
-        if (skew) warnings.push(skew);
+        const skew = version === undefined ? undefined : versionNotice(version, sdk.version);
         const sdkExecutable = yield* claudeSdkExecutable(binary.path);
         return {
           binaryPath: binary.path,
@@ -228,6 +230,7 @@ export const ClaudeEnvironmentLive = (
           env,
           ...(version === undefined ? {} : { cliVersion: version }),
           warnings,
+          ...(skew === undefined ? {} : { versionNotice: skew }),
         } satisfies PreparedClaude;
       });
 

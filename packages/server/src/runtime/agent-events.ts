@@ -1011,6 +1011,7 @@ export const makeAgentEvents = ({
             ...(event.level === "warning" && event.startupDiagnostic !== undefined
               ? { startupDiagnostic: event.startupDiagnostic }
               : {}),
+            ...(event.action === undefined ? {} : { action: event.action }),
             threadId: rt.threadId,
           });
           return;

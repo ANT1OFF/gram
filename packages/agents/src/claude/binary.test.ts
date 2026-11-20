@@ -16,6 +16,7 @@ import {
   resolveSdkExecutable,
   restoresSessionCost,
   sdkExecutablePath,
+  versionNotice,
   versionWarning,
   type BinaryFs,
 } from "./binary.ts";
@@ -312,9 +313,28 @@ describe("versions", () => {
     expect(versionWarning("2.1.282", "0.3.272")).toBeUndefined();
   });
 
-  it("warns when the CLI is older than the SDK's matched CLI", () => {
-    expect(versionWarning("2.1.271", "0.3.272")).toContain(
-      "Claude Code 2.1.271 is older than 2.1.272",
+  it("stays quiet for a CLI up to 10 patches behind, as the stable channel trails latest", () => {
+    // The baseline moved to 2.1.328 with SDK 0.3.328; a CLI a patch or ten behind is ordinary.
+    expect(versionWarning("2.1.327", "0.3.328")).toBeUndefined();
+    expect(versionWarning("2.1.318", "0.3.328")).toBeUndefined();
+  });
+
+  it("warns when the CLI is more than 10 patches older than the SDK's matched CLI", () => {
+    expect(versionWarning("2.1.317", "0.3.328")).toContain(
+      "Claude Code 2.1.317 is much older than 2.1.328",
+    );
+  });
+
+  it("keys the notice by installed version, so each version shows once", () => {
+    expect(versionNotice("2.1.327", "0.3.328")).toBeUndefined();
+    const notice = versionNotice("2.1.300", "0.3.328");
+    expect(notice?.startupDiagnostic).toMatchObject({ source: "Claude Code version", once: true });
+    expect(notice?.startupDiagnostic.key).toMatch(/^[a-f0-9]{64}$/);
+    expect(versionNotice("2.1.300", "0.3.328")?.startupDiagnostic.key).toBe(
+      notice?.startupDiagnostic.key,
+    );
+    expect(versionNotice("2.1.301", "0.3.328")?.startupDiagnostic.key).not.toBe(
+      notice?.startupDiagnostic.key,
     );
   });
 

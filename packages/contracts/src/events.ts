@@ -1,5 +1,10 @@
 import * as Schema from "effect/Schema";
-import { AgentCapabilities, rateLimitFields, StartupDiagnostic } from "./agent.ts";
+import {
+  AgentCapabilities,
+  AgentNoticeAction,
+  rateLimitFields,
+  StartupDiagnostic,
+} from "./agent.ts";
 import { SessionRestartReason, UIMessageChunkSchema, UIMessageSchema } from "./ui-message.ts";
 import { ThreadSuggestions } from "./assist.ts";
 import { KeybindingsState } from "./depth.ts";
@@ -146,6 +151,7 @@ export const ServerEvent = Schema.Union([
     kind: Schema.Literals(["needsInput", "done", "error", "info"]),
     title: Schema.String,
     startupDiagnostic: Schema.optionalKey(StartupDiagnostic),
+    action: Schema.optionalKey(AgentNoticeAction),
     /** The PR whose failed CI generated this notice; presentation may defer to its worker. */
     ciFailure: Schema.optionalKey(Schema.String),
     body: Schema.optionalKey(Schema.String),
