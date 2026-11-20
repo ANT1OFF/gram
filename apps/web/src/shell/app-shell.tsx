@@ -17,6 +17,7 @@ import { useWorkspacePlaces } from "@/shell/titlebar-path";
 import { ReviewStrip } from "@/shell/review-strip";
 import { ShellTitlebar } from "@/shell/shell-titlebar";
 import { SideResizeHandle } from "@/shell/side-resize";
+import { useToastDock } from "@/shell/toast-dock";
 import { useShellLayout } from "@/shell/use-shell-layout";
 import { useWorkspaceKeys } from "@/shell/workspace-switcher";
 import {
@@ -105,6 +106,7 @@ export function AppShell() {
     else setPanelWidth(clampWidth(width, bounds));
   };
   const chatCovered = expanded || reviewFocus;
+  const setToastDock = useToastDock((s) => s.setNode);
   const dock = nav.position === "side" ? undefined : nav.position;
   // The navigation is somewhere other than the sidebar's column: the title bar leaves out what it
   // carries for a hidden sidebar (its Show sidebar and Settings).
@@ -155,7 +157,7 @@ export function AppShell() {
         inert={chatCovered}
         // Its own stacking context, so nothing layered inside the chat rises over the panel above it.
         className={cn(
-          "isolate flex min-h-0 min-w-0 flex-col bg-thread outline-none",
+          "relative isolate flex min-h-0 min-w-0 flex-col bg-thread outline-none",
           panelLeft ? "order-3" : "order-2",
         )}
         style={chatCovered ? { width: chatWidth } : undefined}
@@ -181,6 +183,18 @@ export function AppShell() {
         <ViewOutlet>
           <Outlet />
         </ViewOutlet>
+        {/*
+         * Toasts sit at the chat's top right, under the title bar: over the transcript's least-read
+         * corner, never in the right panel's worker or tabs. A covered chat is inert, so they float
+         * over the window then.
+         */}
+        {!chatCovered && (
+          <div
+            ref={setToastDock}
+            data-testid="toast-dock"
+            className="pointer-events-none absolute top-(--titlebar-height) right-3 z-30 w-80 max-w-[calc(100%-1.5rem)]"
+          />
+        )}
       </main>
       {/* Over the inert chat, not in it, so its way back can be clicked. */}
       {reviewFocus && <ReviewStrip side={panelLeft ? "right" : "left"} />}

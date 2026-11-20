@@ -17,14 +17,13 @@ const notify = (title: string) =>
     useThreadsStore.getState().applyEvent({ type: "notify", kind: "info", title, body: "" }),
   );
 
-/** A stand-in right panel: content with a button at its foot, then the dock. */
-function Panel() {
+/** A stand-in chat column with the dock, as the app shell mounts it. */
+function Chat() {
   const setNode = useToastDock((s) => s.setNode);
   return (
-    <aside data-testid="panel">
-      <button type="button">Apply suggestion</button>
+    <main data-testid="chat">
       <div ref={setNode} data-testid="toast-dock" />
-    </aside>
+    </main>
   );
 }
 
@@ -52,46 +51,49 @@ describe("Toasts", () => {
     await waitFor(() => expect(useUndoToasts.getState().toasts).toEqual([]));
   });
 
-  it("docks below the open right panel's content instead of floating over it", () => {
-    useLayoutStore.setState({
-      panelOpen: true,
-      focusMode: false,
-      threadInView: true,
-      windowWidth: 1440,
-    });
-    render(
-      <>
-        <Panel />
-        <Toasts />
-      </>,
-    );
-    notify("Published feat/x");
-
-    const toast = screen.getByTestId("toast");
-    expect(screen.getByTestId("toast-dock").contains(toast)).toBe(true);
-    const list = screen.getByRole("list", { name: "Notifications" });
-    expect(list.getAttribute("data-docked")).toBe("true");
-    expect(list.getAttribute("aria-live")).toBe("polite");
+  it("docks in the chat's corner, whether the right panel is open or not", () => {
+    for (const panelOpen of [true, false]) {
+      useLayoutStore.setState({
+        panelOpen,
+        focusMode: false,
+        threadInView: true,
+        windowWidth: 1440,
+      });
+      render(
+        <>
+          <Chat />
+          <Toasts />
+        </>,
+      );
+      notify(`Published feat/${panelOpen}`);
+      const toast = screen.getByTestId("toast");
+      expect(screen.getByTestId("toast-dock").contains(toast)).toBe(true);
+      const list = screen.getByRole("list", { name: "Notifications" });
+      expect(list.getAttribute("data-docked")).toBe("true");
+      expect(list.getAttribute("aria-live")).toBe("polite");
+      cleanup();
+      useToastDock.setState({ node: null });
+      useThreadsStore.setState({ notifications: [] });
+    }
   });
 
-  it("floats bottom-right while the panel is closed or in focus mode", () => {
-    useLayoutStore.setState({ panelOpen: false, focusMode: false });
-    render(
-      <>
-        <Panel />
-        <Toasts />
-      </>,
-    );
+  it("floats bottom-right while the chat has no dock, as when a review covers it", () => {
+    render(<Toasts />);
     notify("CI passed on #7");
-
-    const list = screen.getByRole("list", { name: "Notifications" });
-    expect(list.getAttribute("data-docked")).toBe("false");
-    expect(screen.getByTestId("toast-dock").childElementCount).toBe(0);
-
-    act(() => useLayoutStore.setState({ panelOpen: true, focusMode: true }));
     expect(screen.getByRole("list", { name: "Notifications" }).getAttribute("data-docked")).toBe(
       "false",
     );
+  });
+
+  it("shows a repeated notice once, as the latest, not stacked", () => {
+    render(<Toasts />);
+    notify("Claude Code is much older than 2.1.328");
+    notify("CI passed on #7");
+    notify("Claude Code is much older than 2.1.328");
+    expect(screen.getAllByTestId("toast").map((t) => t.textContent)).toEqual([
+      "Notice: CI passed on #7",
+      "Notice: Claude Code is much older than 2.1.328",
+    ]);
   });
 
   it("dismisses a toast on Escape", () => {

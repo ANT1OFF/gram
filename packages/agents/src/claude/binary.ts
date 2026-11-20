@@ -191,6 +191,18 @@ export const versionNotice = (
       };
 };
 
+/**
+ * The key for a notice about this machine's Claude Code rather than the session it came from (the
+ * shell probe, an unreadable version, a switch the CLI ignores), so its repeats across threads
+ * collapse into one in Notification history. Only the digest leaves; never a path in the key.
+ */
+export const environmentDiagnostic = (...identity: readonly unknown[]): StartupDiagnostic => ({
+  source: "Claude Code environment",
+  key: createHash("sha256")
+    .update(JSON.stringify(["claude-environment", ...identity]))
+    .digest("hex"),
+});
+
 export interface VersionNotice {
   readonly message: string;
   readonly startupDiagnostic: StartupDiagnostic;
