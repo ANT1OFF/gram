@@ -144,7 +144,7 @@ test("a committed utterance spells the project's file names and the user's words
 /** Counts each opening of the microphone, and how many of its tracks are still running. */
 const countMicrophone = (page: Page) =>
   page.addInitScript(() => {
-    const mic = { opened: 0, tracks: [] as MediaStreamTrack[] };
+    const mic = { opened: 0, frames: 0, tracks: [] as MediaStreamTrack[] };
     Object.assign(window, { mic });
     const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     navigator.mediaDevices.getUserMedia = async (constraints) => {
@@ -153,7 +153,19 @@ const countMicrophone = (page: Page) =>
       mic.tracks.push(...stream.getTracks());
       return stream;
     };
+    // And each 100 ms frame the capture worklet hands the page, held or sent.
+    const Node = AudioWorkletNode;
+    window.AudioWorkletNode = class extends Node {
+      constructor(...args: ConstructorParameters<typeof AudioWorkletNode>) {
+        super(...args);
+        this.port.addEventListener("message", (event: MessageEvent) => {
+          if (event.data instanceof Float32Array) mic.frames += 1;
+        });
+      }
+    };
   });
+const heldFrames = (page: Page) =>
+  page.evaluate(() => (window as unknown as { mic: { frames: number } }).mic.frames);
 const microphone = (page: Page) =>
   page.evaluate(() => {
     const { mic } = window as unknown as {
@@ -173,7 +185,11 @@ test("the microphone opens on a press and closes with its stop, never on focus",
   const composer = await openThread(page);
   await page.getByRole("button", { name: "Start dictation" }).waitFor();
   await composer.focus();
-  await page.waitForTimeout(500 * slowdown);
+  // The focus has warmed dictation up (the speech process loads its model), and left the
+  // microphone alone.
+  await expect
+    .poll(() => page.evaluate(() => window.gramMock!.speechBridge.loads.length))
+    .toBeGreaterThan(0);
   expect(await microphone(page)).toEqual({ opened: 0, running: 0 });
 
   await composer.press("ControlOrMeta+Shift+Space");
@@ -204,7 +220,8 @@ test("Keep microphone ready holds it from focus, hands a press what it heard, an
   await page.getByRole("button", { name: "Start dictation" }).waitFor();
   await composer.focus();
   await expect.poll(() => microphone(page)).toEqual({ opened: 1, running: 1 });
-  await page.waitForTimeout(700 * slowdown);
+  // The held microphone's pre-roll is full: at least its frames (`PRE_ROLL_FRAMES`) have come in.
+  await expect.poll(() => heldFrames(page)).toBeGreaterThanOrEqual(4);
 
   await composer.press("ControlOrMeta+Shift+Space");
   // The lead silence and at least the pre-roll, there before any frame could have been captured.
@@ -439,13 +456,27 @@ test("with voice input off there is no mic and no shortcut", async ({ page }) =>
   await expect(page.getByTestId("dictation-partial")).toHaveCount(0);
 });
 
+/** Past `HOLD_MS`, how long the chord is down before letting go stops what it started. */
+const HELD_MS = 300;
+
 const holdDictate = async (page: Page) => {
   await page.keyboard.down("ControlOrMeta");
   await page.keyboard.down("Shift");
+  // When the page takes the press, on the clock it measures the hold by.
+  await page.evaluate(() =>
+    addEventListener("keydown", () => Object.assign(window, { downAt: performance.now() }), {
+      capture: true,
+      once: true,
+    }),
+  );
   await page.keyboard.down("Space");
-  const at = Date.now();
+  const downAt = await page.evaluate(() => (window as unknown as { downAt: number }).downAt);
   return async () => {
-    await page.waitForTimeout(Math.max(0, at + 400 - Date.now()));
+    // Let go only once the page's own clock says the chord has been down past `HOLD_MS`.
+    await page.waitForFunction(([at, held]) => performance.now() - at > held, [
+      downAt,
+      HELD_MS,
+    ] as const);
     await page.keyboard.up("Space");
     await page.keyboard.up("Shift");
     await page.keyboard.up("ControlOrMeta");

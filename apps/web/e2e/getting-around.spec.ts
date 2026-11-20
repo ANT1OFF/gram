@@ -7,9 +7,6 @@ import { openOrchestrator, threadRow } from "./thread-row";
 // ⌘[ and ⌘] through the window's history, and the Board's ask keys right after picking it. Mock
 // state lives in the page, so every step navigates inside the app rather than reloading.
 
-/** Past the ask stack's settle window, so a key isn't taken as a slip. */
-const SETTLED_MS = 350;
-
 const url = (threadId: string) => new RegExp(`/t/${threadId}$`);
 
 /**
@@ -122,9 +119,11 @@ const openAsks = async (page: Page) => {
   return made;
 };
 
-/** The first keys after picking Board reach the window: ⌘⇧I opens the Inbox, and j moves in it. */
+/**
+ * The first keys after picking Board reach the window: ⌘⇧I opens the Inbox, and j moves in it. At
+ * once: neither is an answer, so the ask stack's settle window doesn't hold them back.
+ */
 const arrowSteps = async (page: Page) => {
-  await page.waitForTimeout(SETTLED_MS);
   await page.keyboard.press("ControlOrMeta+Shift+I");
   const detail = page.getByTestId("inbox-detail");
   await expect(detail).toBeVisible();

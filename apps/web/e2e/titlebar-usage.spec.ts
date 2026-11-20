@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { flakyAsked } from "./seed-asks";
+import { frames } from "./settled";
 
 // The title bar's subscription meter, and a launch that lands on the orchestrator. The limits are
 // the mock's invented readings (`api/mock-limits.ts`), never a live account's.
@@ -9,6 +10,9 @@ const seed = (page: Page, flags: Record<string, string>) =>
   page.addInitScript((entries) => {
     for (const [key, value] of Object.entries(entries)) sessionStorage.setItem(key, value);
   }, flags);
+
+/** How long the home page waits for the workspaces before it lands or gives up (`LANDING_WAIT_MS`). */
+const LANDING_WAIT_MS = 3_000;
 
 const WELCOME_UNSEEN = JSON.stringify({ onboarding: { welcomeSeen: false } });
 
@@ -149,7 +153,7 @@ test("the title bar's meter is an icon button on an orchestrator, a worker and a
       .poll(
         async () => {
           const before = await meter.boundingBox();
-          await page.waitForTimeout(150);
+          await frames(page, 3);
           const after = await meter.boundingBox();
           return before !== null && after !== null && before.x === after.x && before.y === after.y;
         },
@@ -344,6 +348,8 @@ for (const link of ["/t/t-flaky", "/settings/general"]) {
       "gram.mock.settings": WELCOME_UNSEEN,
       "gram.mock.orchestration": "board",
     });
+    // A landing is decided by the home page's wait at the latest, which runs on this clock.
+    await page.clock.install();
     await page.goto(link);
     // The workspace is listed, so a landing on its orchestrator could have happened. Settings has
     // no overview to show it in, so there the app's own list is asked.
@@ -355,8 +361,8 @@ for (const link of ["/t/t-flaky", "/settings/general"]) {
     } else {
       await expect(page.getByTestId("overview-workspace").first()).toBeVisible();
     }
-    // Long enough for a landing to have happened; it never does off the home page.
-    await page.waitForTimeout(1_000);
+    // Past the longest a landing waits for; it never lands off the home page.
+    await page.clock.runFor(LANDING_WAIT_MS);
     await expect(page).toHaveURL(new RegExp(`${link}$`));
   });
 }

@@ -64,8 +64,7 @@ const overview = (page: Page) => page.getByTestId("overview-sidebar");
 const rail = (page: Page) => page.getByTestId("overview-rail");
 const tile = (page: Page, workspaceId: string) =>
   rail(page).locator(`[data-testid="overview-tile"][data-workspace-id="${workspaceId}"]`);
-const soloTile = (page: Page) =>
-  rail(page).locator('[data-testid="overview-tile"][data-tile="solo"]');
+const soloTile = (page: Page) => rail(page).locator('[data-tile="solo"]');
 /** The open sidebar over the page beside the compact strip. */
 const overlay = (page: Page) => page.getByTestId("overview-rail-overlay");
 const worker = (page: Page, threadId: string) =>
@@ -113,8 +112,7 @@ const workerFacts = (page: Page, made: MockOneThreadSimulation, threadId: string
   page.evaluate(
     async ({ workspaceId, target }) => {
       const mock = window.gramMock!;
-      const ledger = await mock.orchestratorLedger(workspaceId);
-      const entry = ledger.features
+      const entry = (await mock.orchestratorLedger(workspaceId)).features
         .flatMap((feature) => feature.workers)
         .find((each) => each.threadId === target);
       return { held: entry?.userIntervened, messages: mock.world.messages(target as never).length };
@@ -257,10 +255,12 @@ test("opening a worker closes its hover card until a fresh hover; a focus still 
   await row.click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.inReview}`));
   await expect(card).toHaveCount(0);
-  // The pointer resting or moving on the row it picked brings nothing back over the thread.
+  // The pointer resting or moving on the row it picked brings nothing back over the thread, past
+  // the row's hover card delay (250 ms, `worker-row.tsx`) on the installed clock.
   const box = (await row.boundingBox())!;
+  await page.clock.install();
   await page.mouse.move(box.x + box.width / 2 + 4, box.y + box.height / 2);
-  await page.waitForTimeout(600);
+  await page.clock.runFor(600);
   await expect(card).toHaveCount(0);
   // Leaving the row and coming back is a fresh hover.
   await page.mouse.move(1200, 400);
@@ -1350,8 +1350,11 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
   await inOverlay.nth(0).hover();
   const card = page.getByTestId("overview-pr-card");
   await expect(card).toContainText("Retry the queue with backoff");
+  // Past how long the sidebar stays with the pointer off it (`CLOSE_AFTER_MS`, 300 ms), on the
+  // installed clock: the pointer on the card keeps it open.
+  await page.clock.install();
   await card.hover();
-  await page.waitForTimeout(500);
+  await page.clock.runFor(500);
   await expect(overlay(page)).toBeVisible();
 });
 
