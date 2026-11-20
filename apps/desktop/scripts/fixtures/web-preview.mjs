@@ -14,6 +14,7 @@ import {
   installPreview,
   PREVIEW_PARTITIONS,
 } from "../../../../packages/shell/src/modules/preview/main.ts";
+import { setTimeout as delay } from "node:timers/promises";
 
 const results = [];
 const failures = [];
@@ -24,7 +25,13 @@ const check = (label, ok, detail) => {
 };
 const contentsAt = (prefix) =>
   allContents.getAllWebContents().find((c) => !c.isDestroyed() && c.getURL().startsWith(prefix));
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** The title the WebRTC probe page ends on, once it has one or 20 s have passed. */
+const rtcDone = async (contents) => {
+  for (const end = Date.now() + 20_000; Date.now() < end; await delay(100)) {
+    if (contents === undefined || contents.getTitle().startsWith("rtc-")) break;
+  }
+  return contents?.getTitle();
+};
 /** A synthetic private address; nothing is ever sent to it, the proxy's dial maps it home. */
 const LAN = "10.77.0.9";
 /** A second, which no page the user opened ever names. */
@@ -734,12 +741,6 @@ const probe = (name, url, init = {}) =>
   check("flip.example was looked up more than once", (lookups["flip.example"] ?? 0) >= 2, lookups);
 
   // WebRTC: no STUN over UDP, no TURN over TCP, to loopback by address or by a rebound name.
-  const rtcDone = async (contents) => {
-    for (const end = Date.now() + 20_000; Date.now() < end; await delay(100)) {
-      if (contents === undefined || contents.getTitle().startsWith("rtc-")) break;
-    }
-    return contents?.getTitle();
-  };
   // The review's case: the user's own page on the private network, at the very address and port
   // the public page's TURN server names, open in another thread all the while.
   await invoke(Channels.previewOpenWeb, {

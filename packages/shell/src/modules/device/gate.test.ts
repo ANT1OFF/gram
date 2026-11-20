@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DeviceCapability, DeviceExecEvent, SignedTurnGrant } from "@gram/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkLendable } from "./folders.ts";
 import {
   type AskAnswer,
@@ -125,11 +125,8 @@ const setUp = async (more: Partial<DeviceGateOptions> = {}) => {
 };
 
 /** Waits until the window has been shown `count` asks. */
-const shownAsks = async (asks: { shown: ReadonlyArray<unknown> }, count: number) => {
-  for (let tries = 0; asks.shown.length < count && tries < 500; tries += 1)
-    await new Promise((later) => setTimeout(later, 10));
-  expect(asks.shown).toHaveLength(count);
-};
+const shownAsks = (asks: { shown: ReadonlyArray<unknown> }, count: number) =>
+  vi.waitFor(() => expect(asks.shown).toHaveLength(count), { timeout: 5_000, interval: 10 });
 
 const outputOf = (events: ReadonlyArray<DeviceExecEvent>) =>
   events

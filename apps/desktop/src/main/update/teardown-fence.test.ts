@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { UpdateTeardown } from "@gram/contracts";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { killTree, type RunSync } from "../process-tree.ts";
 import { createServerHost, NO_RECOVERY, type ServerChild } from "../server-host.ts";
@@ -153,13 +153,13 @@ const alive = (pid: number) => {
 };
 
 /** Which of `pids` still run after up to 2 s: a killed orphan waits for launchd to reap it. */
-const reaped = async (pids: ReadonlyArray<number>) => {
-  for (let tries = 0; tries < 40; tries++) {
-    if (!pids.some(alive)) return [];
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  return pids.filter(alive);
-};
+const reaped = (pids: ReadonlyArray<number>) =>
+  vi
+    .waitUntil(() => !pids.some(alive), { timeout: 2_000, interval: 50 })
+    .then(
+      () => [],
+      () => pids.filter(alive),
+    );
 
 const started: number[] = [];
 afterEach(() => {

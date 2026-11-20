@@ -128,8 +128,7 @@ describe.skipIf(process.platform === "win32")("runCommand", () => {
     expect(result).toMatchObject({ timedOut: true, stopped: false });
     const pid = Number(text(result, "stdout").trim());
     expect(pid).toBeGreaterThan(1);
-    await new Promise((later) => setTimeout(later, 100));
-    expect(alive(pid)).toBe(false);
+    await vi.waitFor(() => expect(alive(pid)).toBe(false), { interval: 10 });
   });
 
   it("kills a command that ignores being asked to stop", async () => {
@@ -156,8 +155,7 @@ describe.skipIf(process.platform === "win32")("runCommand", () => {
     expect(Date.now() - started).toBeLessThan(3000);
     expect(result.code).toBe(0);
     const pid = Number(text(result, "stdout").trim());
-    await new Promise((later) => setTimeout(later, 100));
-    expect(alive(pid)).toBe(false);
+    await vi.waitFor(() => expect(alive(pid)).toBe(false), { interval: 10 });
   });
 
   it("keeps output a command writes a byte at a time in few pieces", async () => {

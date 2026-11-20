@@ -38,6 +38,7 @@ import {
   type OpenCodePermissionRule,
 } from "./protocol.ts";
 import type { OpenCodeServer, StartOpenCodeServer } from "./server.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 export const OPENCODE_CAPABILITIES: AgentCapabilities = {
   fork: false,
@@ -465,9 +466,7 @@ export const makeOpenCodeHost = (
           }),
         );
         // Nothing is sent before the stream is open, so no event of the turn is missed.
-        yield* Effect.promise(() =>
-          Promise.race([ready.promise, new Promise((resolve) => setTimeout(resolve, 5_000))]),
-        );
+        yield* Effect.promise(() => Promise.race([ready.promise, sleep(5_000)]));
         // A request the session already had waiting (a resumed one) is shown again.
         const waiting = yield* attempt("Couldn't read the session's requests", () =>
           client.permissions(session.id),
