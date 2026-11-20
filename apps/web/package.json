@@ -61,6 +61,7 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "babel-plugin-react-compiler": "catalog:",
+    "fast-check": "4.10.3",
     "happy-dom": "21.0.4",
     "shadcn": "catalog:",
     "tailwindcss": "catalog:",

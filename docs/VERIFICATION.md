@@ -264,6 +264,30 @@ the default. Windows is explicitly refused by this harness. Source:
 [owned mock server](../apps/web/scripts/e2e-server.mjs),
 [real-server setup](../apps/web/e2e-real/global-setup.ts).
 
+### Property-based UI tests
+
+A scripted spec checks the sequence someone wrote down; a property-based one has
+[fast-check](https://fast-check.dev/) make random sequences of what a person does, runs each on a
+fresh mock, and checks a model after every step. It earns its place by what only the page can get
+wrong: views that read one list and must agree, controls enabled exactly when they act, no
+`undefined` on screen, nothing thrown. Rules below the page (a store, a reducer, a derived list)
+belong in a unit test.
+
+[`needs-you-properties.spec.ts`](../apps/web/e2e/needs-you-properties.spec.ts) is the first: allow,
+deny, plans, answers, Undo, the undo window passing, Open thread and a workspace's Board, with the
+sidebar, the window title, the Inbox and the Board's chip held to the model's count. It pauses the
+page clock and moves it only in its own ticks, so a seed replays the same steps. It runs in the
+mock e2e lane with a fixed seed and a few runs. A failure prints the shortest sequence that breaks
+it and a replay line:
+
+```sh
+GRAM_UI_PROPERTY_SEED=<seed> GRAM_UI_PROPERTY_PATH=<path> \
+  bun run --filter @gram/web e2e needs-you-properties.spec.ts --workers=1
+```
+
+`GRAM_UI_PROPERTY_RUNS` and `GRAM_UI_PROPERTY_STEPS` try more and longer sequences, and a new seed
+tries others; do that when changing what needs you.
+
 ### Isolated UI preview
 
 With the installed pinned Chromium from the
