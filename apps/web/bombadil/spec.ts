@@ -172,11 +172,6 @@ const FLICKER_INTENDED: FlickerAllow[] = [
  */
 const FLICKER_KNOWN: FlickerAllow[] = [
   {
-    selector: '[data-testid="welcome"]',
-    kinds: ["layout-shift"],
-    reason: "known: the welcome screen shifts by about 0.05 as it loads at /",
-  },
-  {
     selector: '[data-testid="right-panel"] *',
     kinds: ["reappeared"],
     reason: "known: switching threads leaves the right panel's diff or PR empty for a frame",
@@ -227,11 +222,6 @@ const FLICKER_KNOWN: FlickerAllow[] = [
     selector: '[data-testid="right-panel"]',
     kinds: ["text-flip"],
     reason: "known: the right panel's PR tab drops out for a frame or three in Settings",
-  },
-  {
-    selector: '[data-testid="shell-titlebar"]',
-    kinds: ["text-flip"],
-    reason: "known: the titlebar shows Chat · Board for a frame on the way to /threads",
   },
 ];
 
