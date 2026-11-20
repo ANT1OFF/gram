@@ -164,6 +164,18 @@ const FLICKER_INTENDED: FlickerAllow[] = [
     reason:
       "the mock runs turns at a twentieth of their pace, so Steer can come and go within 300 ms",
   },
+  {
+    selector: '[data-testid="composer-toolbar"] *',
+    kinds: ["reappeared"],
+    reason:
+      "the same pace: a turn ends, its background agent's Stop stands alone, and the next turn's delivery button is back within 300 ms",
+  },
+  {
+    selector: '[data-testid="right-panel"] *',
+    kinds: ["reappeared"],
+    reason:
+      "a thread switch shows the new thread's diff or PR once it answers: the last thread's meanwhile would be the wrong one, and two threads' \"No PR\" read as one",
+  },
 ];
 
 /**
@@ -177,19 +189,9 @@ const FLICKER_KNOWN: FlickerAllow[] = [
     reason: "known: the welcome screen shifts by about 0.05 as it loads at /",
   },
   {
-    selector: '[data-testid="right-panel"] *',
-    kinds: ["reappeared"],
-    reason: "known: switching threads leaves the right panel's diff or PR empty for a frame",
-  },
-  {
     selector: '[data-testid="settings-subpages"]',
     kinds: ["layout-shift"],
     reason: "known: Settings' list shifts by about 0.03 as it loads after a reload",
-  },
-  {
-    selector: '[data-testid="composer-toolbar"] *',
-    kinds: ["reappeared"],
-    reason: "known: switching threads redraws the composer's send button with a frame between",
   },
   {
     selector: '[data-testid="keyboard-settings"] li',
@@ -217,11 +219,6 @@ const FLICKER_KNOWN: FlickerAllow[] = [
     kinds: ["reappeared", "text-flip"],
     reason:
       'known: opening Settings from the phone menu redraws its list, and shows "Section", for a frame',
-  },
-  {
-    selector: '[data-testid="diff-panel"]',
-    kinds: ["text-flip"],
-    reason: 'known: a diff that loads at once still shows "Loading diff…" for a frame',
   },
   {
     selector: '[data-testid="right-panel"]',
