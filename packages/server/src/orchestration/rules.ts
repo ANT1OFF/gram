@@ -1243,9 +1243,7 @@ const orphanedChecksNote = (feature: string, pr: string, why: string): string =>
   `Feature ${feature}: ${pr} has failing checks and no live worker owns them (${why}). Follow it up: brief or spawn a worker to fix them, or close the PR; ask the user only if a fix needs them.`;
 
 /** Report timestamps do not turn unchanged worker-authored evidence into news. */
-const reportEvidenceKey = (
-  report: Pick<WorkerReport, "state" | "summary" | "interface" | "prUrl" | "evidence" | "learned">,
-): string =>
+const reportEvidenceKey = (report: Omit<WorkerReport, "threadId" | "at">): string =>
   createHash("sha256")
     .update(
       JSON.stringify([
@@ -1256,6 +1254,7 @@ const reportEvidenceKey = (
         report.evidence,
         // Only when given, so a report from before `learned` keeps the key it was stored with.
         ...(report.learned === undefined ? [] : [report.learned]),
+        ...(report.verify === undefined ? [] : [report.verify]),
       ]),
     )
     .digest("hex");

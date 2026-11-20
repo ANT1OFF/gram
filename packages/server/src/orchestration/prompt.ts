@@ -6,7 +6,7 @@
  * by the delegation rule in `rules.ts`, and what it may do outward by the adapter's gate.
  */
 
-import type { AgentKind, Autonomy } from "@gram/contracts";
+import { VERIFY_FILE, type AgentKind, type Autonomy } from "@gram/contracts";
 import { DECISIONS_FILE } from "./memory.ts";
 
 /** One repo of a workspace, as the role prompt names it. */
@@ -307,6 +307,10 @@ const CLAUDE_WORKER_SHELL = `
 - Pass file lists as explicit quoted paths; avoid zsh expansion flags (such as \`\${(f)...}\`) and shell arrays. Read file names first, then pass them literally in the next call.
 - Don't chain \`cd\` with commands; use \`git -C\` or absolute paths. Never use wildcard \`rm\`; inspect targets first, then name literal paths. Keep required approvals intact.`;
 
+/** Only for a repository with a verify recipe; without one, nothing here mentions drivers. */
+const VERIFY_RECIPE_LINE = `- This repository names its checks in \`${VERIFY_FILE}\`. Call \`verify\` to see which cover your change and run them: Gram runs each on your commit and records the result, and your \`done\` report shows your orchestrator which of the required ones passed.
+`;
+
 /** A worker's role: do the brief, and say how it went through `report`. */
 export const workerPrompt = (input: {
   readonly feature: string;
@@ -319,6 +323,8 @@ export const workerPrompt = (input: {
   readonly agent?: AgentKind | undefined;
   /** Whether its session opens under the outward gate. */
   readonly gated?: boolean | undefined;
+  /** Whether its repository names verify drivers, which is when the prompt mentions them. */
+  readonly verifyRecipe?: boolean | undefined;
 }): string =>
   `# Your role: worker on "${input.feature}"
 
@@ -329,7 +335,7 @@ You were started by the orchestrator thread "${input.orchestratorTitle}" with th
 - When the user answers your open question in a message here rather than on its card, record it with \`record_user_answer\`.
 - Finish what the brief asks before you stop. Ordinary obstacles (an error, a timeout, a locked file, a failing tool, an empty result) are yours to diagnose and work through: retry, fix the call or take another route. Stop early only when nothing can move without an answer, or when a blocker is deliberate (a file marked not to touch, access withheld on purpose, a guardrail): leave it alone and say what you found. This lifts none of the approvals below.
 - Your orchestrator keeps a workspace memory of goals, decisions, the user's standing decisions and repo conventions. When the brief and the repo leave a question open, look there with \`memory_list\` and \`memory_read\` before you ask, starting from the \`MEMORY.md\` index; don't read it all up front. \`search_transcripts\` finds what earlier workers here tried or found. Write a lasting fact a later worker would otherwise have to rediscover (a repo convention, a trap, how the user wants something) there too: a dated entry naming this feature with \`memory_append\`, or a new note with \`memory_write\` and its line in \`MEMORY.md\`. Replace or delete a note only with the \`revision\` you read. Never your progress or what only this feature needs; your orchestrator curates it.
-- Report, then end your turn. Do not wait or poll for a reply; one arrives as a message if there is anything to say.
+${input.verifyRecipe === true ? VERIFY_RECIPE_LINE : ""}- Report, then end your turn. Do not wait or poll for a reply; one arrives as a message if there is anything to say.
 - After a restart or a turn that was cut off, check your worktree, git history and GitHub before you repeat a push, a pull request or a comment: it may have gone through already.
 - \`report\` is for the orchestrator; \`wrap_up\` is the recap a person opening this thread reads. In a turn that changed something, call \`report\` first, then \`wrap_up\` without \`ask\` (a question for a decision goes to \`ask_question\`), then write your closing message.
 - A report, plan or analysis written for the user to read goes to \`publish_doc\`, not a file in the repo: it shows as a doc card in your transcript and your orchestrator's chat, and the user reads and edits it in Gram. Update it with its \`id\` and \`revision\`; \`read_doc\` gives you the user's edits first.

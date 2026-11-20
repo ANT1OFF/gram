@@ -8,11 +8,14 @@
 import * as Schema from "effect/Schema";
 import { AgentFailureKind } from "./agent-failure.ts";
 import { AgentKind } from "./agent-kind.ts";
+import { defuseTags, inline, quoted, TITLE_MAX } from "./agent-text.ts";
+export { AGENT_TITLE_MAX, agentTitle, inlineText } from "./agent-text.ts";
 import { ChecksRollup } from "./git.ts";
 import { HostId, ProjectId, RequestId, ThreadId, WorkspaceId } from "./ids.ts";
 import { PrReviewRequest } from "./pr-people.ts";
 import { RunWatch } from "./run-watch.ts";
 import { ThreadStatus } from "./thread-status.ts";
+import { verifyReportLine, WorkerReportVerify } from "./verify-recipe.ts";
 import { WaitId, WaitKind } from "./waits.ts";
 import { StoredWakeCondition, WakeCondition, wakeConditionWhen } from "./wake-conditions.ts";
 import { WorkerQuestion } from "./worker-questions.ts";
@@ -141,6 +144,11 @@ export const WorkerReport = Schema.Struct({
   ),
   /** A lasting fact the worker offers for memory; the orchestrator decides whether to keep it. */
   learned: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(WORKER_REPORT_LEARNED_MAX))),
+  /**
+   * Gram's own record, not the worker's: on a `done` report from a repository whose verify recipe
+   * marks drivers required, which of those that cover the change passed on the reported head.
+   */
+  verify: Schema.optionalKey(WorkerReportVerify),
   /** Epoch ms. */
   at: Schema.Number,
 });
@@ -901,75 +909,12 @@ const awayFor = (minutes: number): string => {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 };
 
-const TITLE_MAX = 80;
 /** A wake reason or a change's note: a server-written sentence that may quote a worker's title. */
 const REASON_MAX = 200;
 /** How many wake reasons `Woken by:` lists before it counts the rest. */
 const WOKEN_BY_MAX = 8;
 /** How many features the line for left-out rows names before it counts the rest. */
 const QUIET_NAMED = 8;
-
-const clip = (text: string, max: number): string =>
-  text.length <= max ? text : `${text.slice(0, max)}…`;
-
-/** Characters that show nothing but can split a tag name or hide a turn of the text. */
-const INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g;
-
-/**
- * Worker-influenced text on a server-authored line: one line, clipped, unable to open a tag or to
- * close the quotes a server line puts round it, whichever quote marks those are.
- */
-const inline = (text: string, max = TITLE_MAX): string =>
-  clip(
-    text
-      .replaceAll(INVISIBLE, "")
-      .replaceAll(/\s+/g, " ")
-      .trim()
-      .replaceAll(/[<\uFF1C]/g, "‹")
-      .replaceAll(/[>\uFF1E]/g, "›")
-      // Straight, curly, low and angle double quotes, full-width too: none may close “…”.
-      .replaceAll(/["\u201C-\u201F\u00AB\u00BB\uFF02]/g, "'"),
-    max,
-  );
-
-/** {@link inline}, for a server-written note or notice built outside this file. */
-export const inlineText = (text: string, max = TITLE_MAX): string => inline(text, max);
-
-/** Longest title an agent may give its own thread (`set_title`). */
-export const AGENT_TITLE_MAX = 120;
-
-/**
- * A title an agent gives its own thread: one line, nothing invisible or a control character, at
- * most {@link AGENT_TITLE_MAX} characters. Every place that shows or quotes it gets a plain value,
- * even one that forgets to encode it.
- */
-export const agentTitle = (text: string): string =>
-  clip(
-    text
-      .replaceAll(INVISIBLE, "")
-      // oxlint-disable-next-line no-control-regex -- control characters are what this removes
-      .replaceAll(/[\s\u0000-\u001F\u007F-\u009F]+/g, " ")
-      .trim(),
-    AGENT_TITLE_MAX,
-  );
-
-/**
- * Worker-authored text inside a block. Only the block's own tag is defused, so a contract full of
- * generics stays readable while `</worker-report>` in a summary cannot end the block early.
- */
-const quoted = (text: string, max: number): string => defuseTags(clip(text, max));
-
-/**
- * Every tag Gram fences another agent's words in, defused in such words so they can neither close
- * their own block early nor open one that passes for another kind.
- */
-const defuseTags = (text: string): string =>
-  text
-    .replaceAll(INVISIBLE, "")
-    .replaceAll(
-      /[<\uFF1C](?=(?:\s*[/\uFF0F])?\s*(?:worker[-\u2010-\u2015\u2212](?:report|question|message)|thread[-\u2010-\u2015\u2212]message)\b)/gi,
-      "‹",
-    );
 
 /**
  * Who sent another thread's message, every field safe for one server-written line: what a read
@@ -1071,6 +1016,7 @@ const reportBlock = (report: DigestReport): ReadonlyArray<string> => [
     : report.interfaceUnchanged === true
       ? ["interface: unchanged since you last read it"]
       : ["interface:", quoted(report.interface, DIGEST_REPORT_INTERFACE_MAX)]),
+  ...(report.verify === undefined ? [] : [verifyReportLine(report.verify)]),
   ...(report.learned === undefined
     ? []
     : [

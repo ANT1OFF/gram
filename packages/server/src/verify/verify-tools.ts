@@ -25,8 +25,10 @@ import {
   VERIFY_TIMEOUT_DEFAULT_MINUTES,
   type Thread,
   type VerifyDriver,
+  type WorkerReportVerify,
 } from "@gram/contracts";
 import { git, Proc } from "@gram/git";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -169,6 +171,73 @@ const statusOf = (check: LocalCheck | undefined) =>
     : check.status === "failed"
       ? `failed: ${check.reason ?? "it didn't pass"}`
       : check.status;
+
+/**
+ * The required drivers that cover a thread's change and how they ran on its head, as Gram
+ * recorded them; `undefined` when the repository requires none of them, or none can be read.
+ * Without the changed paths (a thread on another machine) every required driver counts.
+ */
+export const requiredOnHead = (
+  deps: VerifyDeps,
+  threadId: Thread["id"],
+): Effect.Effect<WorkerReportVerify | undefined> =>
+  Effect.gen(function* () {
+    if (deps.checks === undefined) return undefined;
+    const checks = deps.checks;
+    const thread = yield* deps.store.getThread(threadId);
+    const required = ((yield* readRecipe(deps, thread)) ?? []).filter((d) => d.required === true);
+    if (required.length === 0) return undefined;
+    const commit = yield* commitOf(deps, thread);
+    const wanted = commit.paths === undefined ? required : driversCovering(required, commit.paths);
+    if (wanted.length === 0) return undefined;
+    const checkout = effectiveCheckout(thread);
+    const site = checkSiteOf(checkout, checkout.path);
+    const passed: string[] = [];
+    const missing: string[] = [];
+    for (const driver of wanted) {
+      const check = yield* checks.lookup(
+        site,
+        commit.head,
+        commit.head,
+        thread.projectId,
+        driverRun(driver, thread.projectId),
+      );
+      (check?.status === "passed" ? passed : missing).push(driver.name);
+    }
+    return { head: commit.head, passed, missing };
+  }).pipe(Effect.orElseSucceed(() => undefined));
+
+/** What other tools ask of a thread's verify recipe. */
+export interface VerifyStatusShape {
+  readonly requiredOnHead: (
+    threadId: Thread["id"],
+  ) => Effect.Effect<WorkerReportVerify | undefined>;
+}
+
+export class VerifyStatus extends Context.Service<VerifyStatus, VerifyStatusShape>()(
+  "@gram/server/VerifyStatus",
+) {}
+
+const verifyDeps = Effect.gen(function* () {
+  const checks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
+  const hosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
+  const proc = yield* Effect.serviceOption(Proc);
+  return {
+    store: yield* ThreadStore,
+    runtimes: yield* ThreadRuntimes,
+    publisher: yield* GitStatePublisher,
+    checks,
+    hosts,
+    proc: Effect.succeed(proc),
+  } satisfies VerifyDeps;
+});
+
+export const VerifyStatusLive = Layer.effect(
+  VerifyStatus,
+  Effect.map(verifyDeps, (deps) =>
+    VerifyStatus.of({ requiredOnHead: (threadId) => requiredOnHead(deps, threadId) }),
+  ),
+);
 
 export const verifyTools = (deps: VerifyDeps): ReadonlyArray<AppToolDefinition> => {
   /** Commands the user let run, by project and command; a changed command asks again. */
@@ -316,18 +385,12 @@ export const verifyTools = (deps: VerifyDeps): ReadonlyArray<AppToolDefinition> 
 export const VerifyAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* AppToolRegistry;
-    const checks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
-    const hosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-    const proc = yield* Effect.serviceOption(Proc);
-    yield* registry.register(
-      verifyTools({
-        store: yield* ThreadStore,
-        runtimes: yield* ThreadRuntimes,
-        publisher: yield* GitStatePublisher,
-        checks,
-        hosts,
-        proc: Effect.succeed(proc),
-      }),
-    );
+    yield* registry.register(verifyTools(yield* verifyDeps));
   }),
 );
+
+/** The note a worker's `done` report gets back when a required driver has no pass on its head. */
+export const verifyMissingNote = (verify: WorkerReportVerify | undefined): string | undefined =>
+  verify === undefined || verify.missing.length === 0
+    ? undefined
+    : `Gram has no pass on ${verify.head.slice(0, 7)} for ${verify.missing.map((name) => `"${name}"`).join(", ")}, which this repository marks required. Your orchestrator sees that with your report; run them with \`verify\` if you can, and report again.`;
