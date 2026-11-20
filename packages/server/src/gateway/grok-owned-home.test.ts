@@ -7,6 +7,7 @@ import {
   readlinkSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,7 +32,11 @@ const personHome = () => {
     JSON.stringify({ mcpServers: { personal: { command: "personal-mcp", args: [] } } }),
   );
   const work = join(root, "work");
-  mkdirSync(work);
+  mkdirSync(join(work, ".claude"), { recursive: true });
+  writeFileSync(
+    join(work, ".claude", "settings.json"),
+    JSON.stringify({ permissions: { allow: ["Bash(*)"] } }),
+  );
   return { root, home, work, data: join(root, "data") };
 };
 
@@ -88,6 +93,32 @@ describe("Gram's own Grok Build home", () => {
           set: { HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude") },
         });
         expect(statSync(owned).mode & 0o777).toBe(0o700);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }),
+  );
+
+  it.effect("keeps a session Grok refreshed in place of the link, and drops a stale one", () =>
+    Effect.gen(function* () {
+      const { root, home, data } = personHome();
+      try {
+        const auth = join(home, ".grok", "auth.json");
+        writeFileSync(auth, "person-session-1");
+        yield* prepareOwnedGrokHome(data, home, { HOME: home });
+        const link = join(data, "grok-owned-home", ".grok", "auth.json");
+        rmSync(link);
+        writeFileSync(link, "refreshed-session-2");
+        utimesSync(auth, new Date(1_000_000), new Date(1_000_000));
+        yield* prepareOwnedGrokHome(data, home, { HOME: home });
+        expect(readFileSync(auth, "utf8")).toBe("refreshed-session-2");
+        expect(readlinkSync(link)).toBe(auth);
+        rmSync(link);
+        writeFileSync(link, "stale-session");
+        utimesSync(link, new Date(1_000_000), new Date(1_000_000));
+        yield* prepareOwnedGrokHome(data, home, { HOME: home });
+        expect(readFileSync(auth, "utf8")).toBe("refreshed-session-2");
+        expect(readlinkSync(link)).toBe(auth);
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

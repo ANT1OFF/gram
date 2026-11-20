@@ -1,4 +1,4 @@
-import { chmod, mkdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readlink, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { realPathOrOwned } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -33,6 +33,27 @@ export const ownedGrokConfig = (realHome: string, claudeConfigDir?: string) => (
   },
 });
 
+const modifiedAt = (path: string): Promise<number | undefined> =>
+  lstat(path).then(
+    (found) => found.mtimeMs,
+    () => undefined,
+  );
+
+/**
+ * Clears the login path for its link. A file Grok wrote in the link's place holds a session it
+ * refreshed: it replaces the person's own when it is the newer of the two, and is never deleted
+ * while it is. Neither file is read.
+ */
+const keepRotatedLogin = async (link: string, auth: string): Promise<void> => {
+  const found = await lstat(link).catch(() => undefined);
+  if (found === undefined) return;
+  if (found.isFile() && found.mtimeMs > ((await modifiedAt(auth)) ?? -1)) {
+    await rename(link, auth);
+    return;
+  }
+  await rm(link, { force: true });
+};
+
 /**
  * Grok Build reads the person's Claude Code and Cursor settings, MCP servers, plugins, hooks and
  * allow rules from their home, and its own from `~/.grok`. Gram runs it in a home of its own whose
@@ -58,7 +79,7 @@ export const prepareOwnedGrokHome = (
       const auth = join(source, "auth.json");
       const link = join(grokHome, "auth.json");
       if ((await readlink(link).catch(() => undefined)) !== auth) {
-        await rm(link, { force: true });
+        await keepRotatedLogin(link, auth);
         await symlink(auth, link, "file");
       }
       const file = join(grokHome, "config.toml");
