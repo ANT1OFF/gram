@@ -62,6 +62,48 @@ describe("folderSettings", () => {
     expect(folderSettings(root).unreadable).toEqual([".claude/settings.json"]);
   });
 
+  it("counts a settings key not known to be harmless, and a widening permission", () => {
+    const found = folderSettings(
+      folder({
+        ".claude/settings.json": JSON.stringify({
+          model: "opus",
+          permissions: { deny: ["Bash(rm:*)"], additionalDirectories: ["/"] },
+          sandbox: { enabled: false },
+          enabledPlugins: { "x@y": true },
+          disableAllHooks: true,
+        }),
+      }),
+    );
+    expect(found.other).toEqual([
+      ".claude/settings.json: sandbox",
+      ".claude/settings.json: enabledPlugins",
+      ".claude/settings.json: disableAllHooks",
+      ".claude/settings.json: permissions.additionalDirectories",
+    ]);
+    expect(found.none).toBe(false);
+    expect(folderSettings(folder({ ".claude/settings.json": '{"model":"opus"}' })).none).toBe(true);
+  });
+
+  it("counts everything else under .claude: agents, skills, and kinds it hasn't met", () => {
+    const found = folderSettings(
+      folder({
+        ".claude/agents/helper.md": "---\nname: helper\n---\n",
+        ".claude/skills/s/SKILL.md": "",
+        ".claude/something-new/x": "",
+        ".claude/CLAUDE.md": "notes",
+      }),
+    );
+    expect([...found.other].toSorted()).toEqual([
+      ".claude/agents",
+      ".claude/skills",
+      ".claude/something-new",
+    ]);
+    expect(found.none).toBe(false);
+    const linked = folder();
+    fs.symlinkSync(folder(), nodePath.join(linked, ".claude"));
+    expect(folderSettings(linked).other).toEqual([".claude"]);
+  });
+
   it("finds nothing in a plain folder", () => {
     expect(folderSettings(folder({ "README.md": "hi" })).none).toBe(true);
   });

@@ -141,7 +141,13 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   the step off the page; in dark it takes no outline (`border-edge-group` is transparent there),
   and light, whose raised step is faint, keeps a hairline. Inside it a hairline between rows is
   the only line. Don't add a rule, a card edge or a glyph where space or the surface step already
-  says it.
+  says it. A rail beside a list (a column of sections or folders that narrows it) is the one
+  sunk region: `bg-rail` with a `border-rail-edge` outline, a clear step darker than the page in
+  both modes and edged at the 3:1 non-text floor, so it never fades into the page as a faint
+  `bg-muted/40` did. Its current row is `bg-rail-row-active`, the unsunk surface (the page in dark
+  and at more contrast, the raised step in light), so the choice reads off the sunk fill and its
+  words keep the floor they have on the page. An embedding app's theme may set `--rail-bg`,
+  `--rail-edge` and `--rail-row-active`.
 - **Settings descriptions** (a setting's line under its name, and a group's line beside its
   title) are one short line of `text-meta` in `text-description` (`--fg-description`, the
   secondary `fg-muted`, so the name and what it does read as two levels), no wider than

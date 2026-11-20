@@ -242,6 +242,7 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
       let mapper: ReturnType<typeof makeGrokMapper> | undefined;
       let mode: PermissionMode = options.permissionMode ?? "default";
       const gate = gateLevel(options.outwardGate);
+      const roots = [options.cwd, ...(options.additionalDirectories ?? [])];
       const pending = new Map<
         RequestId,
         { options: ReadonlyArray<PermissionOption>; answer: (result: Json) => void }
@@ -280,7 +281,7 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
               const kind = text(option["kind"]);
               return optionId === undefined || kind === undefined ? [] : [{ optionId, kind }];
             });
-          const own = autoAnswer(mode, gate, call);
+          const own = autoAnswer(mode, gate, call, roots);
           if (own !== undefined) {
             const option = optionFor(offered, own, "once");
             return Promise.resolve(

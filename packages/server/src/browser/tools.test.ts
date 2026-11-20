@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { AppToolDefinition } from "../app-tools/definition.ts";
-import { bridgePane, PanePort, type PaneMessagePort } from "./pane-port.ts";
+import { bridgePane, PanePort, unsandboxedLocalOnly, type PaneMessagePort } from "./pane-port.ts";
 import { browserTools } from "./tools.ts";
 
 const THREAD = "t-browse" as ThreadId;
@@ -50,6 +50,7 @@ const harness = (options: {
   readonly answers?: ReadonlyArray<ApprovalAnswer>;
   readonly thread?: Partial<Thread>;
   readonly appOrigins?: ReadonlyArray<string>;
+  readonly localOnly?: boolean;
 }) => {
   const world: World = { sent: [], cards: [], published: [], recorded: [] };
   const replies = [...options.replies];
@@ -78,6 +79,7 @@ const harness = (options: {
         }),
     },
     appOrigins: Effect.succeed(options.appOrigins ?? []),
+    localOnly: options.localOnly,
     outputs: {
       record: (_threadId, output) => Effect.sync(() => void world.recorded.push({ ...output })),
     },
@@ -107,6 +109,33 @@ describe("browser tools", () => {
       expect(world.cards).toEqual([]);
     }),
   );
+  it.effect("an unsandboxed browser opens no page for a thread on another machine", () =>
+    Effect.gen(function* () {
+      const elsewhere = { checkout: { hostId: "machine-b" } } as Partial<Thread>;
+      const refused = harness({ replies: [], thread: elsewhere, localOnly: true });
+      const error = yield* Effect.flip(
+        refused.call("browser_navigate", { url: "http://localhost:3000/" }),
+      );
+      expect(error.message).toContain("GRAM_BROWSER_UNSANDBOXED_ELSEWHERE");
+      expect(refused.world.sent).toEqual([]);
+      const here = harness({
+        replies: [],
+        thread: { checkout: {} } as Partial<Thread>,
+        localOnly: true,
+      });
+      yield* here.call("browser_navigate", { url: "http://localhost:3000/" });
+      expect(here.world.sent).toHaveLength(1);
+    }),
+  );
+
+  it("refuses other machines' threads only when the host runs without its sandbox and no opt-in", () => {
+    expect(unsandboxedLocalOnly({ GRAM_BROWSER_SANDBOX: "0" })).toBe(true);
+    expect(
+      unsandboxedLocalOnly({ GRAM_BROWSER_SANDBOX: "0", GRAM_BROWSER_UNSANDBOXED_ELSEWHERE: "1" }),
+    ).toBe(false);
+    expect(unsandboxedLocalOnly({})).toBe(false);
+  });
+
   it("are the toolset's members, read or acting as the guardrails class them", () => {
     const { tools } = harness({ replies: [] });
     expect(Object.fromEntries(tools.map((t) => [t.descriptor.name, t.descriptor.class]))).toEqual({
