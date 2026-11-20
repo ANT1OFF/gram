@@ -182,19 +182,9 @@ const FLICKER_KNOWN: FlickerAllow[] = [
     reason: "known: switching threads leaves the right panel's diff or PR empty for a frame",
   },
   {
-    selector: '[data-testid="settings-subpages"]',
-    kinds: ["layout-shift"],
-    reason: "known: Settings' list shifts by about 0.03 as it loads after a reload",
-  },
-  {
     selector: '[data-testid="composer-toolbar"] *',
     kinds: ["reappeared"],
     reason: "known: switching threads redraws the composer's send button with a frame between",
-  },
-  {
-    selector: '[data-testid="keyboard-settings"] li',
-    kinds: ["reappeared"],
-    reason: "known: Keyboard settings redraw their terminal rows with a frame between on arrival",
   },
   {
     selector: '[data-testid="overview-solo-status"]',
@@ -210,13 +200,6 @@ const FLICKER_KNOWN: FlickerAllow[] = [
     selector: '[data-testid="overview-sidebar"], [data-testid="overview-sidebar"] *',
     kinds: ["reappeared"],
     reason: "known: on the way to /threads the overview sidebar's sections go for a frame",
-  },
-  {
-    selector:
-      '[data-testid="settings-subpages"], [data-testid="settings-subpages"] *, [data-testid="settings-section-picker"]',
-    kinds: ["reappeared", "text-flip"],
-    reason:
-      'known: opening Settings from the phone menu redraws its list, and shows "Section", for a frame',
   },
   {
     selector: '[data-testid="diff-panel"]',
