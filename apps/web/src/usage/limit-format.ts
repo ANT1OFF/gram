@@ -18,6 +18,7 @@ type IntlOptions = { readonly locale?: string; readonly timeZone?: string };
 export const PROVIDER_SHORT: Readonly<Record<LimitProvider, string>> = {
   claude: "Claude",
   codex: "Codex",
+  grok: "Grok",
 };
 
 /** An agent's short word (`PROVIDER_SHORT`); one the meter doesn't know by its full name. */

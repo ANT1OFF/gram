@@ -780,6 +780,12 @@ export interface LocalChecksShape {
     head: string | undefined,
     base: string | undefined,
     projectId?: ProjectId,
+    /**
+     * A run of its own in place of the project's configured one: a repository's verify driver.
+     * Its records key apart from the project's check (`runIdOf`), so no pass of it is the merge
+     * gate's.
+     */
+    run?: LocalCheckRun,
   ) => Effect.Effect<LocalCheck | undefined>;
   /**
    * Starts that check unless it passed after the optional reconciliation cutoff, is running, or
@@ -795,6 +801,8 @@ export interface LocalChecksShape {
       readonly since: number;
       /** An explicit merge-fence reconciliation retires every older pass. */
       readonly after?: number;
+      /** A run of its own in place of the project's configured one, as `lookup` takes it. */
+      readonly run?: LocalCheckRun;
       readonly onDone: (check: LocalCheck) => Effect.Effect<void>;
     },
   ) => Effect.Effect<LocalCheck | undefined>;
@@ -1454,11 +1462,11 @@ export const LocalChecksLive = Layer.effect(
         return tree;
       });
 
-    const lookup: LocalChecksShape["lookup"] = (repoDir, head, base, projectId) =>
+    const lookup: LocalChecksShape["lookup"] = (repoDir, head, base, projectId, override) =>
       Effect.gen(function* () {
         if (head === undefined || base === undefined || !SHA.test(head) || !SHA.test(base))
           return undefined;
-        const { config: wanted } = yield* configuration(repoDir, projectId);
+        const wanted = override ?? (yield* configuration(repoDir, projectId)).config;
         if (wanted === undefined) return undefined;
         if (typeof repoDir !== "string") {
           const found = records.get(
@@ -1986,11 +1994,11 @@ export const LocalChecksLive = Layer.effect(
       repoDir,
       head,
       base,
-      { since, onDone, projectId, after },
+      { since, onDone, projectId, after, run: override },
     ) =>
       Effect.gen(function* () {
         if (!SHA.test(head) || !SHA.test(base)) return undefined;
-        const { config: wanted } = yield* configuration(repoDir, projectId);
+        const wanted = override ?? (yield* configuration(repoDir, projectId)).config;
         if (wanted === undefined) return undefined;
         if (typeof repoDir !== "string")
           return yield* machineEnsure(repoDir, head, base, wanted, { since, onDone, after });

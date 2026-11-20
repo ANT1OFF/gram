@@ -23,10 +23,14 @@ export const FAMILY_LABEL: Readonly<Record<Family, string>> = {
   other: "Other",
 };
 
-/** Each provider's brand colour (palette.ts `provider-*`): Anthropic's orange, OpenAI's black or white. */
-export const PROVIDER_COLOR: Readonly<Record<UsageProvider, string>> = {
+/**
+ * Each provider's brand colour (palette.ts `provider-*`): Anthropic's orange, OpenAI's black or
+ * white. Grok, whose mark is drawn in the text colour, has no palette colour of its own.
+ */
+export const PROVIDER_COLOR: Readonly<Record<UsageProvider | "grok", string>> = {
   claude: "var(--provider-anthropic)",
   codex: "var(--provider-openai)",
+  grok: "var(--fg)",
 };
 
 /**
@@ -140,7 +144,7 @@ export const dayLabel = (day: string, now = Date.now()): string =>
 /** The local limit history for one provider's window, oldest first, within the last `span` ms. */
 export function limitHistory(
   observations: readonly UsageLimitObservation[] | undefined,
-  provider: UsageProvider,
+  provider: string,
   window: "five_hour" | "seven_day",
   now: number,
   span: number,

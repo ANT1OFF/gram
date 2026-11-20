@@ -49,6 +49,7 @@ export interface History {
   readonly claude: ReadonlyArray<AgentSessionSummary & { readonly listedIn: string }>;
   readonly codex: ReadonlyArray<AgentSessionSummary & { readonly listedIn: string }>;
   readonly opencode?: ReadonlyArray<AgentSessionSummary & { readonly listedIn: string }>;
+  readonly grok?: ReadonlyArray<AgentSessionSummary & { readonly listedIn: string }>;
 }
 
 /** One entry of a test's history; `cwd` only where the agent names the folder itself. */

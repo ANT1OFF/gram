@@ -2,6 +2,7 @@ import {
   GatewayError,
   type GatewayModel,
   type GatewayModelInfo,
+  type GatewayModelPrice,
   type GatewayProfile,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -131,17 +132,62 @@ export const parseModelInfo = (body: unknown): Map<string, GatewayModelInfo> | n
   return infos;
 };
 
-/** What a `/models` entry says of itself, as OpenRouter's do: a name, a context, its parameters. */
+/** What a `/models` entry says of itself, as OpenRouter's and xAI's do: a name, a context, its parameters. */
 export interface InlineModel {
   readonly name?: string;
   readonly contextWindow?: number;
   readonly info: GatewayModelInfo;
+  readonly price?: GatewayModelPrice;
 }
 
+const positiveInt = (value: unknown): number | undefined =>
+  Number.isInteger(value) && (value as number) > 0 ? (value as number) : undefined;
+
+/** xAI lists prices in US cents per 100 million tokens: 20000 is $2 per million. */
+const XAI_PRICE_PER_MTOK = 10_000;
+
+const xaiPrice = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value / XAI_PRICE_PER_MTOK
+    : undefined;
+
 /**
- * Descriptions carried in the `/models` body itself, for the entries that list their
- * `supported_parameters` (OpenRouter's format): `tools` means it takes function tools, `reasoning`
- * an effort. A LiteLLM body has none, so this is empty for it.
+ * An xAI `/models` entry: text prices, a context length and the reasoning efforts it takes under
+ * `capabilities`. One without a completion price makes images, video or speech, not conversation.
+ * A model that lists no efforts takes no effort parameter, so none is ever sent to it.
+ */
+const xaiModel = (record: Record<string, unknown>): InlineModel => {
+  const input = xaiPrice(record["prompt_text_token_price"]);
+  const output = xaiPrice(record["completion_text_token_price"]);
+  const cachedInput = xaiPrice(record["cached_prompt_text_token_price"]);
+  const capabilities = (record["capabilities"] ?? {}) as Record<string, unknown>;
+  const efforts = Array.isArray(capabilities["reasoning_effort"])
+    ? capabilities["reasoning_effort"].filter((effort) => typeof effort === "string")
+    : [];
+  const chat = output !== undefined && output > 0;
+  const contextWindow = positiveInt(record["context_length"]);
+  return {
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+    info: chat
+      ? {
+          mode: "chat",
+          tools: true,
+          reasoning: efforts.length > 0,
+          ...(efforts.length > 0
+            ? { noneEffort: false, xhighEffort: efforts.includes("xhigh"), maxEffort: false }
+            : {}),
+        }
+      : { mode: "image_generation" },
+    ...(chat && input !== undefined
+      ? { price: { input, ...(cachedInput === undefined ? {} : { cachedInput }), output } }
+      : {}),
+  };
+};
+
+/**
+ * Descriptions carried in the `/models` body itself: for the entries that list their
+ * `supported_parameters` (OpenRouter's format), `tools` means it takes function tools, `reasoning`
+ * an effort; xAI's carry prices and efforts instead. A LiteLLM body has none, so this is empty for it.
  */
 export const parseInlineModels = (body: unknown): Map<string, InlineModel> => {
   const list = Array.isArray(body) ? body : (body as { data?: unknown } | null)?.data;
@@ -151,15 +197,18 @@ export const parseInlineModels = (body: unknown): Map<string, InlineModel> => {
     if (typeof entry !== "object" || entry === null) continue;
     const record = entry as Record<string, unknown>;
     const id = record["id"];
+    if (typeof id !== "string" || id === "") continue;
+    if ("prompt_text_token_price" in record || "completion_text_token_price" in record) {
+      models.set(id, xaiModel(record));
+      continue;
+    }
     const parameters = record["supported_parameters"];
-    if (typeof id !== "string" || id === "" || !Array.isArray(parameters)) continue;
+    if (!Array.isArray(parameters)) continue;
     const name = record["name"];
-    const context = record["context_length"];
+    const contextWindow = positiveInt(record["context_length"]);
     models.set(id, {
       ...(typeof name === "string" && name !== "" ? { name } : {}),
-      ...(Number.isInteger(context) && (context as number) > 0
-        ? { contextWindow: context as number }
-        : {}),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
       info: {
         mode: "chat",
         tools: parameters.includes("tools"),
@@ -196,6 +245,8 @@ export const mergeModels = (
           : {}),
         info: own.info,
       };
+      const { price: _stale, ...unpriced } = model;
+      model = own.price === undefined ? unpriced : { ...unpriced, price: own.price };
     }
     if (infos === undefined) return model;
     const { info: _stale, ...rest } = model;

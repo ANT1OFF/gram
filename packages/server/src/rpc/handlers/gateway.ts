@@ -6,6 +6,7 @@ import {
   NotFound,
   customModelsOf,
   gatewayAgentModel,
+  gatewayKindOf,
   gatewayModelForAgent,
   OPENROUTER_BASE_URL,
   gatewayModelUsable,
@@ -175,6 +176,7 @@ const AGENT_NAMES: Readonly<Record<AgentKind, string>> = {
   claude: "Claude",
   codex: "Codex",
   opencode: "OpenCode",
+  grok: "Grok Build",
 };
 
 /**
@@ -360,8 +362,10 @@ export const makeGateway = ({
       const existing = profiles.find((p) => p.id === profile.id);
       // The first profile, or any profile while none is the default, becomes the default.
       const noOtherDefault = !profiles.some((p) => p.id !== profile.id && p.default === true);
+      const kind = profile.kind ?? gatewayKindOf(profile.baseURL);
       const next: GatewayProfile = {
         ...withoutDefault(profile),
+        ...(kind === undefined ? {} : { kind }),
         keyRef: existing?.keyRef ?? "",
         ...(profile.default === true || noOtherDefault ? { default: true } : {}),
       };

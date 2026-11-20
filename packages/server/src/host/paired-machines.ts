@@ -852,6 +852,8 @@ export const machineView = (
           ...(online.status.status.opencode === undefined
             ? {}
             : { opencode: online.status.status.opencode }),
+          // Its Grok Build, from a host that runs Grok Build sessions.
+          ...(online.status.status.grok === undefined ? {} : { grok: online.status.status.grok }),
         }),
     ...(offline === undefined ? {} : { offline }),
     ...(release === undefined ? {} : { release }),

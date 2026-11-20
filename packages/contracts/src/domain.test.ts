@@ -5,7 +5,6 @@ import {
   DEFAULT_HELPER,
   DEFAULT_HELPER_FALLBACK,
   GatewayProfile,
-  gatewayModelForAgent,
   helperChoice,
   helperContextAllowed,
   helperFallbackChoice,
@@ -14,7 +13,6 @@ import {
   EXAMPLE_GATEWAY,
   normalizeThreadPrs,
   PendingRequest,
-  sameGatewayURL,
   samePr,
   Thread,
   ThreadLabels,
@@ -25,6 +23,7 @@ import {
   mergeAfterDependencies,
   MONITOR_MARK_REVIEWS_MAX,
 } from "./domain.ts";
+import { gatewayKindOf, gatewayModelForAgent, sameGatewayURL } from "./gateway-kinds.ts";
 import {
   mergeStateAllowsMerge,
   requiredChecksGreen,
@@ -168,6 +167,15 @@ describe("gateway helpers", () => {
     expect(gatewayModelForAgent(openRouter, { id: "openai/gpt-6.1" }, "claude")).toBe(false);
     expect(gatewayModelForAgent(openRouter, { id: "openai/gpt-6.1" }, "codex")).toBe(true);
     expect(gatewayModelForAgent(openRouter, { id: "moonshotai/kimi-k3" }, "codex")).toBe(false);
+    const xai = { kind: "xai" as const };
+    expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "codex")).toBe(true);
+    expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "opencode")).toBe(true);
+    expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "claude")).toBe(false);
+    expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "grok")).toBe(false);
+    expect(gatewayKindOf("https://API.x.ai/v1/")).toBe("xai");
+    expect(gatewayKindOf("https://api.x.ai")).toBe("xai");
+    expect(gatewayKindOf("https://openrouter.ai/api/v1")).toBe("openrouter");
+    expect(gatewayKindOf("https://api.x.ai.example.invalid/v1")).toBeUndefined();
     // A LiteLLM-style gateway offers everything to everyone.
     expect(gatewayModelForAgent({}, { id: "gpt-6.1" }, "claude")).toBe(true);
   });

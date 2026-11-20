@@ -1002,6 +1002,32 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
       removeDir(dir);
     }),
   );
+  it.live("runs a run of its own on one commit, and keeps it apart from the project's check", () =>
+    Effect.gen(function* () {
+      const { dir, repo, head } = fixture();
+      const commands: Array<string> = [];
+      const runner: LocalCheckRunnerShape["run"] = (_dir, _log, checkRun) =>
+        Effect.sync(() => (commands.push(checkRun.command), { ok: true }));
+      const own = { ...localCheckRunFor({ command: "driver-cmd" })!, profile: "verify/unit/v1" };
+      yield* Effect.gen(function* () {
+        const checks = yield* LocalChecks;
+        const done = yield* Deferred.make<LocalCheck>();
+        yield* checks.ensure(repo, head, head, {
+          since: 0,
+          run: own,
+          onDone: (check) => Deferred.succeed(done, check).pipe(Effect.asVoid),
+        });
+        expect(yield* Deferred.await(done)).toMatchObject({ status: "passed", head, base: head });
+        expect(commands).toEqual(["driver-cmd"]);
+        expect(yield* checks.lookup(repo, head, head, undefined, own)).toMatchObject({
+          status: "passed",
+        });
+        // The project's own check of the same pair has no pass from it.
+        expect(yield* checks.lookup(repo, head, head)).toBeUndefined();
+      }).pipe(Effect.provide(layer(":memory:", dir, runner)));
+      removeDir(dir);
+    }),
+  );
 });
 
 describe.skipIf(process.platform === "win32")("the configured local check", () => {

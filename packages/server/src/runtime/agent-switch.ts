@@ -59,13 +59,7 @@ import {
   turnsBudgetTokens,
   type HandoffLimit,
 } from "./switch-handoff.ts";
-
-/** What the user calls each agent. */
-export const AGENT_NAMES: Readonly<Record<AgentKind, string>> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  opencode: "OpenCode",
-};
+import { AGENT_NAMES } from "./agent-names.ts";
 
 /**
  * Refuses a model the thread's profile doesn't let its sessions run (`ProfileModel.choices`): by
