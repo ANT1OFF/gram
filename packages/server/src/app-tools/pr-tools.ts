@@ -61,6 +61,7 @@ import {
   soloGateCantPass,
 } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
+import { repoOutOfReach } from "../git/repo-reach.ts";
 import { parseRunRef, RunMonitor } from "../git/run-monitor.ts";
 import {
   withOwnedBranch,
@@ -284,12 +285,11 @@ export const PrAppToolsLive = Layer.effectDiscard(
             message: "No pull request found for this branch; pass repo and number.",
           });
         }
-        if (!REPO.test(repo) || number <= 0) {
-          return yield* new AppToolError({
-            tool,
-            message: `invalid pull request ${repo}#${number}`,
-          });
-        }
+        const refusal =
+          !REPO.test(repo) || number <= 0
+            ? `invalid pull request ${repo}#${number}`
+            : yield* repoOutOfReach(store, thread, repo).pipe(Effect.provideService(Proc, proc));
+        if (refusal !== undefined) return yield* new AppToolError({ tool, message: refusal });
         if (input.add === true && thread.boundPr !== undefined) {
           const added = yield* applyPrEdit(runtimes.updateThread, threadId, (t) =>
             // Without a main PR by the time this runs, there is nothing to follow it beside.

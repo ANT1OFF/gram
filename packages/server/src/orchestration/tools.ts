@@ -24,7 +24,6 @@ import {
   WORKER_REPORT_LEARNED_MAX,
   WORKER_REPORT_SUMMARY_MAX,
   DEFAULT_PR_WAKE_EVENTS,
-  MAX_PR_DEPENDENCIES,
   prRefText,
   PrWakeEvent,
   WAKE_MAX_MINUTES,
@@ -41,6 +40,7 @@ import {
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
+import { Proc } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -55,6 +55,8 @@ import { VerifyStatus, verifyMissingNote } from "../verify/verify-tools.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { parsePrRef } from "../git/merge-when-ready.ts";
+import { refuseOutOfReach } from "../git/repo-reach.ts";
+import { makeDependsOn } from "./depends-on-tool.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand } from "../embedding/on-demand.ts";
@@ -65,7 +67,6 @@ import { placementOf } from "../embedding/worker-machines.ts";
 import { confineQuestionVisuals } from "../preview/mocks.ts";
 import { ThreadPlans } from "../plans/service.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { PrDependencies } from "../wakes/pr-dependencies.ts";
 import { WakeConditions } from "../wakes/conditions.ts";
 import { ThreadWakes, type WakeInput } from "../wakes/thread-wakes.ts";
 import { compactWorkerRow } from "./ledger.ts";
@@ -104,9 +105,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const threadWakes = yield* ThreadWakes;
     const conditions = yield* WakeConditions;
     const hub = yield* EventHub;
-    const dependencies = yield* PrDependencies;
     const publisher = yield* GitStatePublisher;
     const store = yield* ThreadStore;
+    const proc = yield* Proc;
     // Absent in tool-only layers; `report` then notes nothing about verify drivers.
     const verifyStatus = Option.getOrUndefined(yield* Effect.serviceOption(VerifyStatus));
     // Absent unless an embedder's host provider is set: workers then can't ask for own machines.
@@ -568,6 +569,10 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
                       }),
                   ),
                 );
+          const prRepo = onPr === undefined ? undefined : parsePrRef(onPr)?.repo;
+          yield* refuseOutOfReach("schedule_wake", store, caller, { prRepo, condition: spec }).pipe(
+            Effect.provideService(Proc, proc),
+          );
           const conditionState =
             spec === undefined
               ? undefined
@@ -631,35 +636,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         }),
     });
 
-    const dependsOn = defineAppTool({
-      descriptor: {
-        name: "depends_on",
-        class: "self",
-        description: `Declare that a pull request depends on another one (\`pr\`, owner/repo#N or its URL): it can't merge, or can't be finished, until that one has. For your own bound PR, or with \`threadId\` your worker's. The thread is then woken whenever the dependency merges, closes or gets a new push, with no wake to set; merge_when_ready waits for it to merge first unless \`mergeAfter: false\`; and the ledger shows the chain, flagging a dependency that drags on so the dependent PR can be stacked on its branch instead. \`remove: true\` drops it. Needs a bound PR (pr_bind); at most ${MAX_PR_DEPENDENCIES} per PR; a PR already merged or closed is refused. What an orchestrator declares, its worker can't drop.`,
-      },
-      audience: ["orchestrator", "worker"],
-      input: Schema.Struct({
-        pr: Schema.NonEmptyString,
-        threadId: Schema.optionalKey(Schema.NonEmptyString),
-        remove: Schema.optionalKey(Schema.Boolean),
-        mergeAfter: Schema.optionalKey(Schema.Boolean),
-      }),
-      handle: (caller, { pr, threadId, ...rest }) =>
-        Effect.gen(function* () {
-          const ref = parsePrRef(pr);
-          if (ref === undefined) {
-            return yield* new AppToolError({
-              tool: "depends_on",
-              message: `"${pr}" isn't a pull request; write owner/repo#N or its URL.`,
-            });
-          }
-          return yield* dependencies.declare(caller, {
-            ...rest,
-            pr: ref,
-            ...(threadId === undefined ? {} : { threadId: threadId as ThreadId }),
-          });
-        }),
-    });
+    const dependsOn = yield* makeDependsOn;
 
     const setStage = defineAppTool({
       descriptor: {
