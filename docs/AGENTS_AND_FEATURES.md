@@ -1768,7 +1768,9 @@ rules; a worker's requests get the local-session rules. A page's script can't op
 before any card, and a navigation the page itself starts off loopback ends where it began.
 
 A thread whose session runs on another machine reaches that machine's loopback instead, so
-`localhost:3000` is the dev server the thread started where it runs. This needs the machine's
+`localhost:3000` is the dev server the thread started where it runs. A browser started without its
+sandbox (`GRAM_BROWSER_SANDBOX=0`) opens no page for such a thread, since its pages are less trusted
+than the server's own agents', unless `GRAM_BROWSER_UNSANDBOXED_ELSEWHERE=1`. This needs the machine's
 host to name the `loopback-tunnels` feature; with an older host the page reaches the server's
 loopback, as before. The server keeps one SOCKS5 listener on its own `127.0.0.1` for each such
 thread (32 at most), and the thread's browser context sends every request there, loopback's
@@ -1813,11 +1815,12 @@ checks before it reaches Chromium. Only a member calls these, never a viewer. A 
 connected to a server that runs its own browser still shows its own Preview pane, not the server's
 page.
 
-| Variable                  | What it sets                                                                 |
-| ------------------------- | ---------------------------------------------------------------------------- |
-| `GRAM_HEADLESS_BROWSER`   | The browser host the server forks; unset, there is no browser                |
-| `GRAM_BROWSER_EXECUTABLE` | The Chromium or Chrome the host starts                                       |
-| `GRAM_BROWSER_SANDBOX`    | `0` starts it without Chromium's sandbox, which a container's user can't use |
+| Variable                             | What it sets                                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `GRAM_HEADLESS_BROWSER`              | The browser host the server forks; unset, there is no browser                                               |
+| `GRAM_BROWSER_EXECUTABLE`            | The Chromium or Chrome the host starts                                                                      |
+| `GRAM_BROWSER_SANDBOX`               | `0` starts it without Chromium's sandbox, which a container's user can't use                                |
+| `GRAM_BROWSER_UNSANDBOXED_ELSEWHERE` | `1` lets a browser without its sandbox open pages for threads on other machines, which it otherwise refuses |
 
 ### Pinned pages
 
