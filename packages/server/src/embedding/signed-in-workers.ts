@@ -61,6 +61,7 @@ import {
   codeOf,
   fileOwedStops,
   memoryOwedStops,
+  OWED_MOST,
   type NameLocks,
   type OwedStops,
   settleOwedStops,
@@ -185,6 +186,17 @@ export const signedInSource = (
    */
   const forget = (name: string, unsettled = false) =>
     Effect.gen(function* () {
+      // A start of unknown outcome with no owing of its own here was never admitted, so nothing
+      // of it was sent: nothing to give back, and nothing to owe.
+      if (
+        unsettled &&
+        deps.owed !== undefined &&
+        named(name) === undefined &&
+        !deps.owed.list().some((each) => each.name === name && each.origin === origin)
+      ) {
+        deps.starting?.delete(name);
+        return true;
+      }
       deps.starting?.delete(name);
       let stopped = false;
       let last = "";
@@ -314,7 +326,10 @@ export const signedInSource = (
                     status: 409,
                     body: {
                       code: "owed_full",
-                      message: `This Gram is still owed stops for ${deps.owed.list().length} machines that ${server.server} never confirmed stopping, so it starts no more until it is: try again later, or leave out sandbox to run the worker on your machine.`,
+                      message:
+                        deps.owed.list().length >= OWED_MOST
+                          ? `This Gram is still owed stops for ${deps.owed.list().length} machines that ${server.server} never confirmed stopping, so it starts no more until it is: try again later, or leave out sandbox to run the worker on your machine.`
+                          : "This Gram couldn't write down the machine before asking for it (its disk may be full or read-only), so it wasn't asked for: free some space and spawn again, or leave out sandbox to run the worker on your machine.",
                     },
                   };
                 return undefined;

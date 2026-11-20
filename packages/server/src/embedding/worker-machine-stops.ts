@@ -162,11 +162,13 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
   } catch {
     // An unreadable file owes nothing; the next stop owed writes it again.
   }
+  /** Whether what is owed is on disk now. A write that failed keeps it in memory for this run. */
   const save = () => {
     try {
       file.write({ version: 1, owed: owed.list() });
+      return true;
     } catch {
-      // Kept in memory for this run.
+      return false;
     }
   };
   return {
@@ -175,10 +177,12 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       owed.add(stop);
       save();
     },
+    // Admitted only once it is on disk: a start owed in memory alone would be lost on a restart.
     admit: (stop) => {
-      const admitted = owed.admit(stop);
-      if (admitted) save();
-      return admitted;
+      if (!owed.admit(stop)) return false;
+      if (save()) return true;
+      owed.remove(stop.name, stop);
+      return false;
     },
     release: (origin, name) => {
       const before = owed.list().length;

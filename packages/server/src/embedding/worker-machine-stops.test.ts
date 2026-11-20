@@ -2,7 +2,7 @@
 // that never overlap, with a fake app over the port: no network, no real machine.
 
 import { describe, expect, it } from "@effect/vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Deferred from "effect/Deferred";
@@ -19,6 +19,7 @@ import {
   settleOwedStops,
   signedInSource,
   UNSETTLED_START_MS,
+  wakeSignedIn,
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 
@@ -41,7 +42,15 @@ describe("stops a server never confirmed", () => {
         const app = fakeApp({
           answer: ({ call }) => ({ status: call === "stop" ? 404 : 200, body: {} }),
         });
-        const port = bridgeWorkerMachines(app.port);
+        const bridged = bridgeWorkerMachines(app.port);
+        // Its start reaches the server, and the answer is lost.
+        const port: WorkerMachinePortShape = {
+          ...bridged,
+          call: (origin, call, body) =>
+            call === "start"
+              ? Effect.succeed({ ok: false as const, why: "no answer" })
+              : bridged.call(origin, call, body),
+        };
         const owed = memoryOwedStops();
         let clock = 1_000;
         const source = signedInSource(SERVER, {
@@ -51,6 +60,7 @@ describe("stops a server never confirmed", () => {
           stopRetryMs: 0,
           now: () => clock,
         });
+        yield* source.start({ name: NAME, orchestrator: "o", title: "Heavy" });
         yield* source.abandon(NAME, { unsettled: true });
         expect(owed.list()).toEqual([
           {
@@ -58,6 +68,7 @@ describe("stops a server never confirmed", () => {
             name: NAME,
             since: 1_000,
             unsettled: true,
+            start: true,
             attempt: expect.any(String),
           },
         ]);
@@ -88,7 +99,15 @@ describe("stops a server never confirmed", () => {
         answer: ({ call }) =>
           call === "stop" ? { status: 200, body: { stopped } } : { status: 200, body: {} },
       });
-      const port = bridgeWorkerMachines(app.port);
+      const bridged = bridgeWorkerMachines(app.port);
+      // Its start reaches the server, and the answer is lost.
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          call === "start"
+            ? Effect.succeed({ ok: false as const, why: "no answer" })
+            : bridged.call(origin, call, body),
+      };
       const owed = memoryOwedStops();
       const source = signedInSource(SERVER, {
         port,
@@ -97,9 +116,17 @@ describe("stops a server never confirmed", () => {
         stopRetryMs: 0,
         now: () => 1_000,
       });
+      yield* source.start({ name: NAME, orchestrator: "o", title: "Heavy" });
       yield* source.abandon(NAME, { unsettled: true });
       expect(owed.list()).toEqual([
-        { origin: ORIGIN, name: NAME, since: 1_000, unsettled: true, attempt: expect.any(String) },
+        {
+          origin: ORIGIN,
+          name: NAME,
+          since: 1_000,
+          unsettled: true,
+          start: true,
+          attempt: expect.any(String),
+        },
       ]);
       yield* settleOwedStops(
         port,
@@ -406,6 +433,91 @@ describe("stops a server never confirmed", () => {
       // Restarted at once: the server knows no such machine yet, as the start may still come.
       yield* settleOwedStops(port, owed, () => false);
       expect(owed.list().map((each) => each.name)).toEqual([NAME]);
+    }),
+  );
+
+  it.effect("send no start whose owing couldn't be written", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({ answer: () => ({ status: 202, body: {} }) });
+      const dir = mkdtempSync(join(tmpdir(), "gram-owed-"));
+      try {
+        const owed = fileOwedStops(dir);
+        owed.add({ origin: ORIGIN, name: "worker-aaaaaaaaaa", since: 0 });
+        // The folder can't be written now: a full or read-only disk.
+        chmodSync(join(dir, "remote-access"), 0o500);
+        const source = signedInSource(SERVER, {
+          port: bridgeWorkerMachines(app.port),
+          hosts: unregistered,
+          owed,
+          starting: new Set(),
+        });
+        const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Heavy" });
+        expect(started.kind).toBe("refused");
+        expect(app.calls).toEqual([]);
+        chmodSync(join(dir, "remote-access"), 0o700);
+        // What was owed before is still there.
+        expect(
+          fileOwedStops(dir)
+            .list()
+            .map((each) => each.name),
+        ).toEqual(["worker-aaaaaaaaaa"]);
+      } finally {
+        chmodSync(join(dir, "remote-access"), 0o700);
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }),
+  );
+
+  it.effect("give back nothing for a start cancelled before it was admitted", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({ answer: () => ({ status: 503, body: {} }) });
+      const owed = memoryOwedStops();
+      // Owed on another server: nothing of this start's was written here, nor sent.
+      owed.add({ origin: "https://other.example.test", name: NAME, since: 0 });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: unregistered,
+        owed,
+        starting: new Set(),
+        stopRetryMs: 0,
+        unansweredHoldMs: 0,
+      });
+      yield* source.abandon(NAME, { unsettled: true });
+      expect(app.calls).toEqual([]);
+      expect(owed.list()).toHaveLength(1);
+    }),
+  );
+
+  it.live("keep owing a start a server answered busy, then refused", () =>
+    Effect.gen(function* () {
+      const answers = [503, 429];
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "start"
+            ? { status: answers.shift() ?? 403, body: { code: "unavailable" } }
+            : { status: 200, body: {} },
+      });
+      const owed = memoryOwedStops();
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: unregistered,
+        owed,
+        starting: new Set(),
+        startRetryMs: 1,
+      });
+      // The 503 may have reached its machines: the start's outcome isn't known.
+      const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Heavy" });
+      expect(started).toMatchObject({ kind: "refused", unknown: true });
+      expect(owed.list().map((each) => each.name)).toEqual([NAME]);
+    }),
+  );
+
+  it.effect("take a server's rate limit as passing, and wake again later", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({ answer: () => ({ status: 429, body: {} }) });
+      expect(yield* wakeSignedIn(bridgeWorkerMachines(app.port), { name: NAME, via: ORIGIN })).toBe(
+        "retry",
+      );
     }),
   );
 

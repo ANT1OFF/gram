@@ -249,7 +249,12 @@ subscription token reaches a machine, with its own consent.
   no answer keeps its own grace. A give-back that fails is kept on the owing of its start. A start
   is admitted in one step with its owing, under its name, only while fewer than 256 machines are
   owed a stop; one past that is refused, saying so, and nothing is sent. Every owing is read back
-  after a restart, however many there are, and the file has room for them. All of a name's owings go once its
+  after a restart, however many there are, and the file has room for them. A start is admitted
+  only once its owing is on disk: one that can't be written is refused, and nothing is sent. A
+  start stopped before it was admitted sent nothing, so it gives nothing back and owes nothing. A
+  `429` from the server is passing: a start is asked again after a wait, and a wake is tried
+  again while it is wanted. A start answered `503` once stays of unknown outcome, whatever is
+  answered after it, so its owing is kept until a stop settles it. All of a name's owings go once its
   machine is registered here or confirmed stopped under its name's lock.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.

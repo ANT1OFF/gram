@@ -112,8 +112,11 @@ export const sendSignedInStart = (
           const bump = Effect.sync(() => options.sent?.set(name, sentOf(options.sent, name) + 1));
           yield* bump;
           const answered = yield* port.call(origin, "start", body).pipe(Effect.ensuring(bump));
-          unavailable = answered.ok && answered.status === 503;
-          if (!unavailable || asks >= START_ATTEMPTS) return answered;
+          // Busy (503) or throttled (429) there: asked again after a wait. A 503 may have reached
+          // its machines, so the start's outcome stays unknown, whatever is answered after it.
+          const busy = answered.ok && (answered.status === 503 || answered.status === 429);
+          if (answered.ok && answered.status === 503) unavailable = true;
+          if (!busy || asks >= START_ATTEMPTS) return answered;
           yield* Effect.sleep((options.startRetryMs ?? START_RETRY_MS) * 2 ** (asks - 1));
         }
       });
@@ -173,7 +176,7 @@ export const wakeSignedIn = (
     const before = sentOf(options.sent, machine.name);
     const read = yield* port.call(machine.via, "status", { name: machine.name });
     // Passing errors settle nothing: asked again while it is still wanted.
-    if (!read.ok || read.status >= 500) return "retry" as const;
+    if (!read.ok || read.status >= 500 || read.status === 429) return "retry" as const;
     if (read.status === 404) return "gone" as const;
     if (read.status >= 300) return "refused" as const;
     // A start of it was on its way, or went, while this was asked: the answer is older than it,
@@ -197,7 +200,7 @@ export const wakeSignedIn = (
       options.asleep?.delete(machine.name);
       return "started" as const;
     }
-    if (!answered.ok || answered.status >= 500) return "retry" as const;
+    if (!answered.ok || answered.status >= 500 || answered.status === 429) return "retry" as const;
     // Only the status: what a server answers isn't written to the log.
     yield* Effect.logWarning("a worker machine work wants could not be woken").pipe(
       Effect.annotateLogs({
