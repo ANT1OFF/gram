@@ -431,7 +431,7 @@ export interface OfferedModel {
 }
 
 const AGENT = /^[a-z][a-z0-9-]{0,23}$/;
-const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:\[\]/-]{0,119}$/;
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:[\]/-]{0,119}$/;
 const MAX_MODELS = 32;
 
 /** The `models` of a provider's choices, read field by field. Undefined: it lists none. */

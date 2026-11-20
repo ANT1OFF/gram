@@ -365,7 +365,8 @@ const failedWords = (name: string, why: string) => `The machine ${name} didn't j
 
 export interface SignedInDeps {
   readonly port: WorkerMachinePortShape;
-  readonly hosts: Pick<RemoteHostsShape, "list" | "remove"> & {
+  readonly hosts: Pick<RemoteHostsShape, "remove"> & {
+    readonly list: () => ReadonlyArray<ProvidedMachine>;
     readonly machines: Pick<RemoteHostsShape["machines"], "provision">;
   };
   readonly now?: () => number;

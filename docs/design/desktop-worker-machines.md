@@ -76,6 +76,17 @@ Which of the person's workspaces there the machine is started under, and so whos
 choices apply, is the server's to decide from the sign-in; `…/choices` says which (`workspace:
 {id, name}`). With several servers signed in, the first that offers worker machines is asked.
 
+`…/choices` may also list the models the server's machines run, as `models: [{ agent, id,
+resolvedId?, label? }]` (`opus` running `claude-opus-…`, say): their model access is the server's.
+Before any machine is asked for, `spawn_worker` resolves the worker's model as the spawn will
+(the named one, else the charter's default), and refuses a model not on that list, by id or the id
+an alias runs, or one through a gateway profile, with the list in its words: "Example's worker
+machines don't run claude:opus, so no machine was asked for. They run …". A worker is never started
+on another model than it asked for without saying so. A server that lists no models leaves it to
+the machine's host, which reports what it runs once it joins, as any joined machine's does; a spawn
+refused then, after its machine came, gives the machine back (`…/stop`) rather than leave it
+running.
+
 So the sandbox choices (size, architecture, isolation, environment) are the server's, as when
 embedded, and the same pick resolution (`resolveWorkerPicks`) and over-total words apply. The
 server keeps a 404 for a server that has none of this: the desktop then says the server doesn't
