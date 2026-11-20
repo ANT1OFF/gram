@@ -40,6 +40,8 @@ import { CHOICES_TTL_MS, type OnDemandChoices, parseChoices } from "./on-demand.
 import {
   askWorkerMachine,
   choicesOfAsk,
+  type OfferedModel,
+  parseOfferedModels,
   type ProvidedMachine,
   type WorkerMachineSource,
 } from "./worker-machines.ts";
@@ -369,10 +371,19 @@ export interface SignedInDeps {
   readonly now?: () => number;
   readonly timeoutMs?: number;
   readonly everyMs?: number;
+  /** What each server offered, kept across sources a short while; none kept when left out. */
+  readonly offered?: OfferedByServer;
 }
 
-/** The choices each server offered, kept a short while, by origin. */
-const offered = new Map<string, { readonly at: number; readonly value?: OnDemandChoices }>();
+/** The choices and models each server offered, kept a short while, by origin. */
+export type OfferedByServer = Map<
+  string,
+  {
+    readonly at: number;
+    readonly value?: OnDemandChoices;
+    readonly models?: ReadonlyArray<OfferedModel>;
+  }
+>;
 
 /** A hosted server the app is signed in to, as `sandbox`'s provider. */
 export const signedInSource = (
@@ -382,19 +393,45 @@ export const signedInSource = (
   const { port, hosts } = deps;
   const now = deps.now ?? Date.now;
   const origin = server.origin;
+  const offered: OfferedByServer = deps.offered ?? new Map();
   const mine = (machine: ProvidedMachine) =>
     machine.onDemand === "worker" && machine.via === origin && machine.owner === undefined;
   const named = (name: string) => hosts.list().find((each) => each.name === name && mine(each));
+  /** One `…/choices` call, kept a short while: the picks it offers and the models it runs. */
+  const asked = Effect.gen(function* () {
+    const kept = offered.get(origin);
+    if (kept !== undefined && now() - kept.at < CHOICES_TTL_MS) return kept;
+    const answered = yield* port.call(origin, "choices", {});
+    const body = answered.ok && answered.status === 200 ? answered.body : undefined;
+    const value = parseChoices(body);
+    const models = parseOfferedModels(body);
+    const fresh = {
+      at: now(),
+      ...(value === undefined ? {} : { value }),
+      ...(models === undefined ? {} : { models }),
+    };
+    offered.set(origin, fresh);
+    return fresh;
+  });
+  const forget = (name: string) =>
+    Effect.gen(function* () {
+      port.unrelay(name);
+      const machine = named(name);
+      if (machine !== undefined) hosts.remove(HostId.make(machine.id));
+      const stopped = yield* port.call(origin, "stop", { name });
+      if (!stopped.ok || stopped.status >= 300)
+        yield* Effect.logWarning("a worker machine given back could not be stopped").pipe(
+          Effect.annotateLogs({
+            machine: name,
+            reason: stopped.ok ? `answered ${stopped.status}` : stopped.why,
+          }),
+        );
+    });
   return {
-    choices: Effect.gen(function* () {
-      const kept = offered.get(origin);
-      if (kept !== undefined && now() - kept.at < CHOICES_TTL_MS) return kept.value;
-      const answered = yield* port.call(origin, "choices", {});
-      const value =
-        answered.ok && answered.status === 200 ? parseChoices(answered.body) : undefined;
-      offered.set(origin, { at: now(), ...(value === undefined ? {} : { value }) });
-      return value;
-    }),
+    label: server.server,
+    choices: Effect.map(asked, (kept) => kept.value),
+    models: Effect.map(asked, (kept) => kept.models),
+    abandon: forget,
     start: (ask) =>
       askWorkerMachine(
         ask,
@@ -453,20 +490,10 @@ export const signedInSource = (
         }
       }),
     timedOut: (name) =>
-      Effect.gen(function* () {
-        port.unrelay(name);
-        const machine = named(name);
-        if (machine !== undefined) hosts.remove(HostId.make(machine.id));
-        const stopped = yield* port.call(origin, "stop", { name });
-        if (!stopped.ok || stopped.status >= 300)
-          yield* Effect.logWarning("a worker machine that never joined could not be stopped").pipe(
-            Effect.annotateLogs({
-              machine: name,
-              reason: stopped.ok ? `answered ${stopped.status}` : stopped.why,
-            }),
-          );
-        return `The machine ${name} didn't join within ${Math.round((deps.timeoutMs ?? ARRIVE_TIMEOUT_MS) / 60_000)} minutes, so it was stopped. Spawn again to ask for a new one, or leave out sandbox to run the worker on your machine.`;
-      }),
+      Effect.as(
+        forget(name),
+        `The machine ${name} didn't join within ${Math.round((deps.timeoutMs ?? ARRIVE_TIMEOUT_MS) / 60_000)} minutes, so it was stopped. Spawn again to ask for a new one, or leave out sandbox to run the worker on your machine.`,
+      ),
   };
 };
 
@@ -533,6 +560,7 @@ export const SignedInWorkersLive = Layer.effect(
     const hosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     if (!port.available || hosts === undefined)
       return { port, source: Effect.succeed({ refused: NO_SIGNED_IN_SERVER } as const) };
+    const offered: OfferedByServer = new Map();
     // Each relayed connection is served in this layer's scope, and ends with it.
     const dials = yield* Queue.unbounded<RelayedDial>();
     port.onDial((dial) => {
@@ -556,7 +584,10 @@ export const SignedInWorkersLive = Layer.effect(
       source: port.server().pipe(
         Effect.map((answered) =>
           answered.ok
-            ? { source: signedInSource(answered.server, { port, hosts }), server: answered.server }
+            ? {
+                source: signedInSource(answered.server, { port, hosts, offered }),
+                server: answered.server,
+              }
             : {
                 refused:
                   answered.why === NO_APP || answered.why === NO_SIGNED_IN_SERVER

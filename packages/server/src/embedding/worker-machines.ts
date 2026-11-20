@@ -12,7 +12,7 @@
 // the person as its owner and `onDemand: "worker"`. Only that person's orchestrators place work on
 // it (`orchestration/service/spawning.ts` `workerMachine`), and it is never anyone's default.
 
-import type { WorkerPlacement } from "@gram/contracts";
+import { hostListing, type WorkerPlacement } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -396,8 +396,15 @@ export type ArrivalFailed = { readonly failed: string };
  * hosted server the desktop app is signed in to (here).
  */
 export interface WorkerMachineSource {
+  /** Where the machines come from, as the orchestrator is told: a server's name. */
+  readonly label: string;
   /** The provider's choices for this person, if it offers any. */
   readonly choices: Effect.Effect<OnDemandChoices | undefined>;
+  /**
+   * The models its machines run, where the provider says: a worker on any other is refused before
+   * a machine is asked for. Undefined: it doesn't say, and the machine's host does once it joins.
+   */
+  readonly models: Effect.Effect<ReadonlyArray<OfferedModel> | undefined>;
   readonly start: (ask: Omit<WorkerMachineAsk, "owner">) => Effect.Effect<WorkerMachineStart>;
   /** Whether a joined machine is one this provider started for this orchestrator's person. */
   readonly theirs: (machine: ProvidedMachine) => boolean;
@@ -408,7 +415,87 @@ export interface WorkerMachineSource {
    * forgotten it here where this provider does so.
    */
   readonly timedOut: (name: string) => Effect.Effect<string>;
+  /**
+   * Gives back a machine started for a spawn that was then refused: stopped there and forgotten
+   * here, where this provider does so.
+   */
+  readonly abandon: (name: string) => Effect.Effect<void>;
 }
+
+/** A model a provider's machines run, as its choices list it: `opus` running `claude-opus-…`. */
+export interface OfferedModel {
+  readonly agent: string;
+  readonly id: string;
+  readonly resolvedId?: string;
+  readonly label?: string;
+}
+
+const AGENT = /^[a-z][a-z0-9-]{0,23}$/;
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:\[\]/-]{0,119}$/;
+const MAX_MODELS = 32;
+
+/** The `models` of a provider's choices, read field by field. Undefined: it lists none. */
+export const parseOfferedModels = (value: unknown): ReadonlyArray<OfferedModel> | undefined => {
+  const listed =
+    typeof value === "object" && value !== null
+      ? (value as { models?: unknown }).models
+      : undefined;
+  if (!Array.isArray(listed)) return undefined;
+  const models: OfferedModel[] = [];
+  for (const raw of listed.slice(0, MAX_MODELS)) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const entry = raw as Record<string, unknown>;
+    const agent = entry["agent"];
+    const id = entry["id"];
+    if (
+      typeof agent !== "string" ||
+      !AGENT.test(agent) ||
+      typeof id !== "string" ||
+      !MODEL_ID.test(id)
+    )
+      continue;
+    const resolvedId = entry["resolvedId"];
+    const label = text(entry["label"], 60);
+    models.push({
+      agent,
+      id,
+      ...(typeof resolvedId === "string" && MODEL_ID.test(resolvedId) ? { resolvedId } : {}),
+      ...(label === undefined ? {} : { label }),
+    });
+  }
+  return models.length === 0 ? undefined : models;
+};
+
+/**
+ * Why a worker on `chosen` can't have a machine from a provider whose machines run `models`, or
+ * undefined when it can: the agent and model, by id or the id an alias runs, and never through a
+ * gateway profile, which a machine of its own has no key for.
+ */
+export const modelRefusal = (
+  label: string,
+  models: ReadonlyArray<OfferedModel>,
+  chosen: {
+    readonly agent: string;
+    readonly model: string;
+    readonly profileId?: string | undefined;
+  },
+): string | undefined => {
+  if (
+    chosen.profileId === undefined &&
+    hostListing(
+      models.filter((model) => model.agent === chosen.agent),
+      chosen.model,
+    ) !== undefined
+  )
+    return undefined;
+  const offered = models
+    .map(
+      (model) =>
+        `${model.agent}:${model.id}${model.label === undefined ? "" : ` (${model.label})`}`,
+    )
+    .join(", ");
+  return `${label}'s worker machines don't run ${chosen.agent}:${chosen.model}${chosen.profileId === undefined ? "" : " through a gateway profile"}, so no machine was asked for. They run ${offered}: name one of them as model, or leave out sandbox and the worker runs on your machine.`;
+};
 
 /** The embedder's host provider, for the person whose host the orchestrator is on. */
 export const embeddedSource = (
@@ -416,7 +503,10 @@ export const embeddedSource = (
   owner: string,
   machines: () => ReadonlyArray<JoiningMachine>,
 ): WorkerMachineSource => ({
+  label: "This deployment",
   choices: choicesFor(hosts, owner),
+  // Its machines' hosts say what they run once they join (`admitMachineModel`).
+  models: Effect.succeed(undefined),
   start: (ask) => startWorkerMachine(hosts, { ...ask, owner }),
   theirs: (machine) => machine.onDemand === "worker" && machine.owner === owner,
   arrive: (name) =>
@@ -428,4 +518,6 @@ export const embeddedSource = (
     Effect.succeed(
       `The machine ${name} was asked for but hasn't come online yet. Spawn again with the same clientRequestId in a minute, or put the worker on your machine.`,
     ),
+  // Its provider pauses an idle machine and reclaims it once released (`worker-machine-release.ts`).
+  abandon: () => Effect.void,
 });

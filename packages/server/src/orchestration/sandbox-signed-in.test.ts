@@ -131,4 +131,107 @@ describe("sandbox from a signed-in hosted server", () => {
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );
+
+  it.effect(
+    "refuses a model the server's machines don't run, before any machine is asked for",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const { port, calls } = fakePort((call) =>
+          call === "choices"
+            ? {
+                status: 200,
+                body: {
+                  choices: [],
+                  models: [{ agent: "claude", id: "hosted-only", label: "Hosted" }],
+                },
+              }
+            : { status: 202, body: {} },
+        );
+        const hosts = {
+          list: () => [],
+          remove: () => false,
+          machines: {
+            provision: () => {
+              throw new Error("not registered here");
+            },
+          },
+        };
+        const source = signedInSource(SERVER, { port, hosts });
+        const context = yield* Layer.build(
+          serverLayer(world).pipe(
+            Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+          ),
+        );
+        yield* Effect.gen(function* () {
+          const { session } = yield* openOrchestrator(world);
+          const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
+          expect(result).toMatchObject({
+            _tag: "Failure",
+            failure: {
+              message: expect.stringMatching(
+                /^Example hosted's worker machines don't run \S+, so no machine was asked for\. They run claude:hosted-only \(Hosted\)/,
+              ),
+            },
+          });
+          expect(calls.map((each) => each.call)).toEqual(["choices"]);
+        }).pipe(Effect.provide(context));
+      }).pipe(Effect.scoped),
+  );
+
+  it.live("gives back a machine that came when the spawn is then refused", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      let started = false;
+      const { port, calls } = fakePort((call) => {
+        if (call === "start") started = true;
+        return call === "choices" ? { status: 404, body: {} } : { status: 202, body: {} };
+      });
+      // It comes online as soon as it is asked for; this Gram's own machines don't know it, so
+      // the placement after it is refused.
+      const machine = {
+        id: "m-0123456789abcdef01234567",
+        name: "",
+        onDemand: "worker",
+        via: SERVER.origin,
+        onlineSince: 1,
+      };
+      const hosts = {
+        list: () => (started ? [machine] : []),
+        remove: () => true,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port, hosts, timeoutMs: 1_000, everyMs: 10 });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(
+            signedIn({
+              port,
+              source: Effect.succeed({
+                source: {
+                  ...source,
+                  start: (ask) => {
+                    machine.name = ask.name;
+                    return source.start(ask);
+                  },
+                },
+                server: SERVER,
+              }),
+            }),
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session } = yield* openOrchestrator(world);
+        const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
+        expect(result._tag).toBe("Failure");
+        expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);
+        expect(calls.at(-1)!.body).toEqual({ name: machine.name });
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
 });

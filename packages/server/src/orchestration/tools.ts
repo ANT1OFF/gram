@@ -71,6 +71,7 @@ import { WorkerHosts } from "../host/worker-host.ts";
 import {
   embeddedSource,
   isWorkerMachineName,
+  modelRefusal,
   overTotalWords,
   placementOf,
   resolveWorkerPicks,
@@ -207,9 +208,13 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         readonly feature: string;
         readonly project: string;
         readonly clientRequestId?: string | undefined;
+        readonly model?: string | undefined;
       },
       sandbox: WorkerSandbox,
-    ) =>
+    ): Effect.Effect<
+      { readonly name: string; readonly abandon?: Effect.Effect<void> | undefined } | undefined,
+      AppToolError
+    > =>
       Effect.gen(function* () {
         const tool = "spawn_worker";
         const fail = (message: string) => new AppToolError({ tool, message });
@@ -250,13 +255,21 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           );
         const source = found;
         const theirs = source.theirs;
+        // Its machines run the provider's models: a worker on another is refused before any
+        // machine is asked for, never started on another model without a word.
+        const models = yield* source.models;
+        if (models !== undefined) {
+          const chosen = yield* orchestration.spawnModel(caller, input.model);
+          const refused = modelRefusal(source.label, models, chosen);
+          if (refused !== undefined) return yield* fail(refused);
+        }
         if (sandbox.shareWith !== undefined) {
           const named = sandbox.shareWith.trim();
           if (isWorkerMachineName(named)) {
             const machine = joined().find((each) => each.name === named && theirs(each));
             if (machine === undefined)
               return yield* fail(`No machine of your workers is named ${named}.`);
-            return machine.name;
+            return { name: machine.name };
           }
           const worker = yield* store
             .getThread(named as ThreadId)
@@ -269,7 +282,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             return yield* fail(
               `${worker.title} runs on your machine, not one of its own: leave out sandbox to put this worker there too.`,
             );
-          return machine.name;
+          return { name: machine.name };
         }
         // Picks by the provider's option ids, or by their labels ("No Internet"), as it offers them.
         const offered = yield* source.choices;
@@ -310,12 +323,15 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           };
           return yield* fail(refusal("over_total", overTotalWords(asked, workersOn)));
         }
+        const fresh = asked.kind === "started" && !joined().some((each) => each.name === name);
         const arrived = yield* source.arrive(name);
-        if (typeof arrived !== "string")
-          return yield* fail(
-            arrived.failed === "timeout" ? yield* source.timedOut(name) : arrived.failed,
-          );
-        return name;
+        if (typeof arrived !== "string") {
+          if (arrived.failed === "timeout") return yield* fail(yield* source.timedOut(name));
+          yield* source.abandon(name);
+          return yield* fail(arrived.failed);
+        }
+        // Given back if the spawn is refused after it came, so none is left running for nothing.
+        return { name, ...(fresh ? { abandon: source.abandon(name) } : {}) };
       });
     /**
      * A question's pictures and mock, confined to the asking thread's folders and made absolute
@@ -399,8 +415,10 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           const input =
             placed === undefined || sandbox === undefined
               ? asked
-              : { ...asked, machine: placed, placement: placementOf(placed, sandbox) };
-          yield* orchestration.checkSpawnMachine(caller, input);
+              : { ...asked, machine: placed.name, placement: placementOf(placed.name, sandbox) };
+          yield* orchestration
+            .checkSpawnMachine(caller, input)
+            .pipe(Effect.tapError(() => placed?.abandon ?? Effect.void));
           // The workspace's standing instructions, then the user's words, which stay last.
           const brief = yield* attachUserWords(
             store,

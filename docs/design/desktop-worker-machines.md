@@ -1,13 +1,13 @@
 # Workers of a desktop orchestrator on a hosted server's machines
 
-[Up: other machines](../MACHINES.md) · [Embedding](../EMBEDDING.md#machines-of-a-workers-own) ·
+[Up: other machines](../MACHINES.md) · [Embedding](../EMBEDDING.md#workers-own-machines) ·
 [Lending this machine](personal-device.md)
 
 Status: design, November 2026. Behind the hosted-features setting (`experimental.embedding`), like
 every hosted call the desktop app makes.
 
 An orchestrator in a Gram that runs embedded in a hosted server can give a heavy worker a machine
-of its own (`spawn_worker`'s `sandbox`, [embedding](../EMBEDDING.md#machines-of-a-workers-own)).
+of its own (`spawn_worker`'s `sandbox`, [embedding](../EMBEDDING.md#workers-own-machines)).
 The desktop app can be signed in to such a server, to send whole tasks there
 ([personal device](personal-device.md)), but its own orchestrator can't ask that server for a
 machine: `sandbox` is refused with "Workers can't have machines of their own here". This note

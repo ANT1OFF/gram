@@ -490,6 +490,20 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       );
       yield* admitMachineModel("spawn_worker", hostId, chosen.model);
     });
+  // The model a spawn would run on, as it resolves here before any machine is placed: what a
+  // machine started for the worker must run.
+  const spawnModel: OrchestrationShape["spawnModel"] = (callerId, model) =>
+    Effect.gen(function* () {
+      const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
+      const chosen = yield* workerModel(
+        "spawn_worker",
+        thread,
+        state.charter,
+        model,
+        yield* workerModelsHere(thread, state.charter, undefined),
+      );
+      return chosen.model;
+    });
   const {
     outsideWorkspace,
     survey,
@@ -1347,6 +1361,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     setRoutineAdmission,
     spawnNeedsApproval,
     checkSpawnMachine,
+    spawnModel,
     describeSpawn,
     checkWorkerModel,
     spawnFor,
