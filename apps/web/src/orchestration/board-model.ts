@@ -146,6 +146,22 @@ export const workerRepoNames = (
   };
 };
 
+/** The repositories a worker's head names: its own first, and the others; `others` empty for one. */
+export interface WorkerHeadRepos {
+  readonly primary: string;
+  readonly others: readonly string[];
+}
+
+/** `workerRepoNames`, with a worker in one repo named too: by its ledger row, else its repo's folder. */
+export const workerHeadRepos = (
+  thread: Pick<Thread, "checkout" | "extraCheckouts">,
+  entry: Pick<WorkerLedgerEntry, "project" | "alsoIn"> | undefined,
+): WorkerHeadRepos =>
+  workerRepoNames(thread, entry) ?? {
+    primary: entry?.project ?? baseName(thread.checkout.repoRoot ?? thread.checkout.path),
+    others: [],
+  };
+
 export const workerCount = (features: readonly FeatureLedgerEntry[]): number =>
   features.reduce((sum, feature) => sum + feature.workers.length, 0);
 

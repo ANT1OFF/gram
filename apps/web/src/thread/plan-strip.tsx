@@ -400,35 +400,18 @@ const updatedText = (by: PlanSource, ago: string): string => {
 };
 
 /**
- * Under the pane header: the thread's plan on one line, its ring, goal,
- * headline and count, folded until clicked; while the thread works, the headline names the step in
- * progress, not the command running. Opened, it lists the steps, each with its
- * status glyph (a click moves it on), its PR's live state, who wrote it, and on hover an edit,
- * moves and a remove; every edit makes the step the user's and locks it against the helper. The
- * agent's todo list for this turn sits under the step in progress, or stands for the steps while
- * the plan has none. Absent while the thread keeps no plan, and on an orchestrator, whose board is
- * its plan.
+ * What the strip draws from: the thread, its steps, and where its turn stands, so the strip says
+ * what the transcript does: a stopped turn's plan says where it stopped, never the step as if it
+ * still ran. `undefined` while the thread keeps no plan, and on an orchestrator.
  */
-export function PlanStrip({ threadId }: { threadId: ThreadId }) {
-  const api = useApi();
+export function useStripFacts(threadId: ThreadId) {
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const turnPlan = useThreadsStore((s) => s.plans[threadId]);
   const { headline, planned } = useThreadHeadline(threadId);
-  const [open, setOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [editingGoal, setEditingGoal] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const now = useNow(open, undefined, 60_000);
-  // Edits are whole plans, so each builds on the last one sent rather than on what the screen shows
-  // until that one's `thread.plan` arrives: two quick clicks otherwise undo the first.
-  const sent = useRef<PlanEdit | undefined>(undefined);
-  const saving = useRef<Promise<unknown>>(Promise.resolve());
-  // Where the turn stands, so the strip says what the transcript does: a stopped turn's plan says
-  // where it stopped, never the step as if it still ran.
   const stoppedAt = useStopStore((s) => s.stoppedAt[threadId]);
   const messages = useThreadFeed(threadId, (state) => state.messages);
   const stopped = useMemo(() => stopOf(messages, stoppedAt) !== undefined, [messages, stoppedAt]);
-  if (summary === undefined || !planned || summary.thread.role !== undefined) return null;
+  if (summary === undefined || !planned || summary.thread.role !== undefined) return undefined;
   // Work it left running in the background is its turn's still: its todo list goes on.
   const turn: StripTurn =
     inTurn(summary.status) || (summary.background?.length ?? 0) > 0
@@ -438,10 +421,61 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
         : stopped
           ? "stopped"
           : "ended";
+  const { steps, fromTodo } = stripSteps(summary.plan, turnPlan);
+  return {
+    summary,
+    turnPlan,
+    headline,
+    turn,
+    steps,
+    fromTodo,
+    progress: planProgress({ steps }),
+    state: stripState(steps, turn, fromTodo),
+  };
+}
 
+export type StripFacts = NonNullable<ReturnType<typeof useStripFacts>>;
+
+/**
+ * Whether the folded plan has something to say: a finished plan has nothing left, and an ended
+ * turn's todo list neither.
+ */
+export const stripShown = ({ progress, state }: StripFacts): boolean =>
+  state !== undefined && !(progress.total > 0 && progress.done === progress.total);
+
+/**
+ * Under the pane header: the thread's plan on one line, its ring, goal,
+ * headline and count, folded until clicked; while the thread works, the headline names the step in
+ * progress, not the command running. Opened, it lists the steps, each with its
+ * status glyph (a click moves it on), its PR's live state, who wrote it, and on hover an edit,
+ * moves and a remove; every edit makes the step the user's and locks it against the helper. The
+ * agent's todo list for this turn sits under the step in progress, or stands for the steps while
+ * the plan has none. Absent while the thread keeps no plan, and on an orchestrator, whose board is
+ * its plan.
+ */
+export function PlanStrip({
+  threadId,
+  inPopover = false,
+}: {
+  threadId: ThreadId;
+  /** Opened and alone, in a popover: the worker pane's head says the folded line itself. */
+  inPopover?: boolean;
+}) {
+  const api = useApi();
+  const facts = useStripFacts(threadId);
+  const [openState, setOpen] = useState(false);
+  const open = inPopover || openState;
+  const [adding, setAdding] = useState(false);
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const now = useNow(open, undefined, 60_000);
+  // Edits are whole plans, so each builds on the last one sent rather than on what the screen shows
+  // until that one's `thread.plan` arrives: two quick clicks otherwise undo the first.
+  const sent = useRef<PlanEdit | undefined>(undefined);
+  const saving = useRef<Promise<unknown>>(Promise.resolve());
+  if (facts === undefined) return null;
+  const { summary, turnPlan, headline, turn, steps, fromTodo, progress, state } = facts;
   const plan = summary.plan;
-  const { steps, fromTodo } = stripSteps(plan, turnPlan);
-  const progress = planProgress({ steps });
   const needsYou = headline?.phase === "needsYou";
   const edit = (f: (edit: PlanEdit) => PlanEdit) => {
     const next = f(sent.current ?? editOf(plan));
@@ -459,11 +493,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
   };
   const goal = plan?.goal ?? "";
   const doing = fromTodo ? undefined : steps.find((step) => step.status === "doing");
-  const state = stripState(steps, turn, fromTodo);
-  // A finished plan has nothing left to say, and an ended turn's todo list neither; either stays
-  // while the user has it open.
-  if (progress.total > 0 && progress.done === progress.total && !open) return null;
-  if (state === undefined && !open) return null;
+  if (!stripShown(facts) && !open) return null;
   const line = state?.line;
   const lead = state?.lead;
   const glyph = stripGlyph(turn);
@@ -474,79 +504,89 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
       data-testid="plan-strip"
       data-open={open}
       data-turn={turn}
-      className="@container shrink-0 border-b border-edge bg-card/30"
+      className={cn("@container shrink-0", !inPopover && "border-b border-edge bg-card/30")}
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-label={`Plan: ${goal || "the agent's todo list"}, ${lead ?? `${progress.done} of ${progress.total} done`}${line === undefined ? "" : `. ${line}`}`}
-        onClick={() => setOpen(!open)}
-        className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
-      >
-        {/* While the thread works, the header's status is the one thing that moves, so the ring
+      {!inPopover && (
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={`Plan: ${goal || "the agent's todo list"}, ${lead ?? `${progress.done} of ${progress.total} done`}${line === undefined ? "" : `. ${line}`}`}
+          onClick={() => setOpen(!open)}
+          className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
+        >
+          {/* While the thread works, the header's status is the one thing that moves, so the ring
             only counts. A turn that failed or was stopped says so in its glyph too. */}
-        {glyph === "failed" ? (
-          <FailedIcon
-            aria-hidden
-            data-testid="plan-strip-glyph"
-            data-glyph="failed"
-            className={cn("size-icon-row shrink-0", STATUS_DISPLAY.error.tone)}
-          />
-        ) : glyph === "stopped" ? (
-          <span
-            aria-hidden
-            data-testid="plan-strip-glyph"
-            data-glyph="stopped"
-            className="grid size-3.5 shrink-0 place-items-center"
-          >
-            <Square className="size-2.5 fill-current" />
-          </span>
-        ) : (
-          <PlanRing
-            headline={{
-              phase:
-                headline === undefined || headline.phase === "working" ? "next" : headline.phase,
-              done: progress.done,
-              total: progress.total,
-            }}
-          />
-        )}
-        <span className="max-w-[50%] shrink-0 truncate font-medium text-foreground">
-          {goal || "Plan"}
-        </span>
-        {/* Neutral even when the turn failed: the error's card in the transcript is the one
-            alarm. */}
-        {lead !== undefined && (
-          <span data-testid="plan-strip-turn" className="shrink-0">
-            · {lead}
-          </span>
-        )}
-        {line !== undefined && (
-          <span data-testid="plan-strip-headline" className="min-w-0 truncate @max-sm:hidden">
-            · {line}
-          </span>
-        )}
-        {progress.total > 0 && state?.count !== false && (
-          <span data-testid="plan-strip-count" className="ml-auto shrink-0 tabular-nums">
-            {progress.done}/{progress.total}
-          </span>
-        )}
-        <ChevronDown
-          aria-hidden
-          className={cn(
-            "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
-            (progress.total === 0 || state?.count === false) && "ml-auto",
-            open && "rotate-180",
+          {glyph === "failed" ? (
+            <FailedIcon
+              aria-hidden
+              data-testid="plan-strip-glyph"
+              data-glyph="failed"
+              className={cn("size-icon-row shrink-0", STATUS_DISPLAY.error.tone)}
+            />
+          ) : glyph === "stopped" ? (
+            <span
+              aria-hidden
+              data-testid="plan-strip-glyph"
+              data-glyph="stopped"
+              className="grid size-3.5 shrink-0 place-items-center"
+            >
+              <Square className="size-2.5 fill-current" />
+            </span>
+          ) : (
+            <PlanRing
+              headline={{
+                phase:
+                  headline === undefined || headline.phase === "working" ? "next" : headline.phase,
+                done: progress.done,
+                total: progress.total,
+              }}
+            />
           )}
-        />
-      </button>
+          <span className="max-w-[50%] shrink-0 truncate font-medium text-foreground">
+            {goal || "Plan"}
+          </span>
+          {/* Neutral even when the turn failed: the error's card in the transcript is the one
+            alarm. */}
+          {lead !== undefined && (
+            <span data-testid="plan-strip-turn" className="shrink-0">
+              · {lead}
+            </span>
+          )}
+          {line !== undefined && (
+            <span data-testid="plan-strip-headline" className="min-w-0 truncate @max-sm:hidden">
+              · {line}
+            </span>
+          )}
+          {progress.total > 0 && state?.count !== false && (
+            <span data-testid="plan-strip-count" className="ml-auto shrink-0 tabular-nums">
+              {progress.done}/{progress.total}
+            </span>
+          )}
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
+              (progress.total === 0 || state?.count === false) && "ml-auto",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+      )}
       {open && (
         // Capped to a share of the pane and scrolled, so eight steps and a todo list can't push the
         // composer out of a short grid pane.
         <div
           data-testid="plan-strip-body"
-          className="max-h-[calc(var(--pane-height,100vh)*0.4)] thread-column overflow-y-auto px-6 pb-3 @max-sm:px-3"
+          className={
+            inPopover
+              ? "max-h-96 overflow-y-auto px-3 pt-2.5 pb-2"
+              : "max-h-[calc(var(--pane-height,100vh)*0.4)] thread-column overflow-y-auto px-6 pb-3 @max-sm:px-3"
+          }
         >
+          {/* Folded, the strip names the goal; in a popover nothing else does. */}
+          {inPopover && !editingGoal && goal !== "" && (
+            <p className="mb-1.5 text-meta font-medium text-foreground">{goal}</p>
+          )}
           {editingGoal ? (
             <div className="mb-1.5 flex">
               <TextEdit

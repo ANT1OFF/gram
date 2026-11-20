@@ -53,7 +53,6 @@ import { focusWhenRendered } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { threadStatusOf } from "@/sidebar/status";
 import { useThreadsStore } from "@/stores/threads";
-import { useThreadHeadline } from "@/thread/plan-ui";
 import { ReadOnlyTranscript } from "@/thread/read-only-transcript";
 import { ThreadView } from "@/thread/thread-view";
 
@@ -71,7 +70,7 @@ import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-c
 import { nowBesidePrs } from "./rail-model";
 import { StatusDot } from "./status-dot";
 import { STATUS_WORDS } from "./status-words";
-import { PlanSteps } from "./worker-row-wide";
+import { WorkerHeadPlan } from "./worker-head-plan";
 import { finishedRow } from "./workers-model";
 import { neighbour, rowsInOrder, type PanelRow, type StatusGroup } from "./workers-panel-model";
 import { useOpenWorker, useWorkerGroups } from "./workers-panel";
@@ -458,7 +457,14 @@ export function WorkerPane({
             <X aria-hidden className="size-icon-row" />
           </Hint>
         </div>
-        {record ? <RecordLine detail={detail} /> : <StateLine worker={worker} row={row} />}
+        {record ? (
+          <RecordLine detail={detail} />
+        ) : (
+          <>
+            <StateLine worker={worker} row={row} />
+            <WorkerHeadPlan worker={worker} />
+          </>
+        )}
         <ToolRow tools={tools} shown={shownTab} onPick={setTab} />
       </header>
       <ToolBody
@@ -506,21 +512,21 @@ function MainViewButton({ worker }: { worker: ThreadId }) {
 
 /**
  * A live worker's state in one line, in its sidebar row's order: its mark, its PR chips, then its
- * status in the list's own words less the PRs the chips name (each said once), its plan's steps,
- * then its agent and when it was last active, kept together so they wrap as one. At work, what its
- * thread runs.
+ * status in the list's own words less the PRs the chips name (each said once), then its agent and
+ * when it was last active, kept together so they wrap as one. At work, what its thread runs. The
+ * chip of the PR its PR tab names leaves the number to the tab; its plan is the next line's.
  */
 function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefined }) {
   const summary = useThreadsStore((s) => s.byId[worker]);
   const detail = useThreadsStore((s) => s.statusDetail[worker]);
   const chips = useWorkerPrChips(worker, NO_PRS);
-  const { headline } = useThreadHeadline(worker);
   const now = useNow(true, undefined, 60_000);
   if (summary === undefined) return null;
   const display = threadStatusOf(summary, detail);
   const agent = summary.thread.model?.agent;
   const active = summary.thread.lastActivityAt;
   const status = row === undefined || display.working ? display.label : row.status;
+  const tabPr = prTargetOf(summary.git, summary.thread.boundPr)?.number;
   return (
     <div
       data-testid="beside-state"
@@ -545,13 +551,11 @@ function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefine
         foldMerged
         className="flex shrink-0 items-center"
         onOpenOwn={openPrTool}
+        numberless={tabPr}
       />
       <span data-testid="beside-status" className="min-w-0 truncate" title={status}>
         {nowBesidePrs(status, shownPrNumbers(chips, true))}
       </span>
-      {headline !== undefined && headline.total > 0 && (
-        <PlanSteps done={headline.done} total={headline.total} />
-      )}
       <AgentAge agent={agent} at={active} now={now} />
     </div>
   );
@@ -785,7 +789,7 @@ function ToolBody({
             key={worker}
             threadId={worker}
             focused={focused}
-            beside={{ header: null, readOnly: true }}
+            beside={{ header: null, readOnly: true, ownHead: true }}
           />
         </ReadOnlyTranscript.Provider>
       ) : (
@@ -793,7 +797,7 @@ function ToolBody({
           key={worker}
           threadId={worker}
           focused={focused}
-          beside={{ header: null, placeholder: `Steer ${title}…` }}
+          beside={{ header: null, placeholder: `Steer ${title}…`, ownHead: true }}
         />
       );
     case "terminal":

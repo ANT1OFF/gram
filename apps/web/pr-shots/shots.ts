@@ -3115,6 +3115,136 @@ const KEPT_WORK_GONE_SHOTS: readonly Shot[] = [
   },
 ];
 
+/** The worker head's plans: a short one in one repo, and eight steps across three. */
+const WORKER_HEAD_PLANS = {
+  short: {
+    goal: "Queue worker that delivers mail triggers, with retries",
+    steps: [
+      ["Queue consumer and its schema", "done"],
+      ["Retries with backoff", "done"],
+      ["Run the queue suite and fix what fails", "doing"],
+      ["Open the PR and get CI green", "todo"],
+    ],
+  },
+  long: {
+    goal: 'Build the "Mail trigger" endpoint across the api, web and docs repos',
+    steps: [
+      ["Agree the trigger contract", "done"],
+      ["Endpoint and schema in api", "done"],
+      ["Client in web", "done"],
+      ["Docs page", "done"],
+      ["Wire retries and idempotency keys", "done"],
+      ["Review fixes from round 1", "done"],
+      ["Second review round", "done"],
+      ["Focused checks, before/after shots", "doing"],
+    ],
+  },
+} as const;
+
+/**
+ * The board's worker open in the right pane beside its orchestrator, running with a plan: `inReview`
+ * works in api, web and docs; `working` in api alone. `wide` drags the pane to 780 px; else it is at
+ * its least, 480 px.
+ */
+const openWorkerHead =
+  (worker: "inReview" | "working", wide: boolean, then?: (page: Page) => Promise<void>) =>
+  async (page: Page) => {
+    await page.setViewportSize({ width: wide ? 1600 : 1280, height: 900 });
+    await page.goto("/t/t-flaky");
+    await threadRow(page, "t-flaky").waitFor();
+    const made = await page.evaluate(
+      async ({ which, plans }) => {
+        const mock = window.gramMock!;
+        const board = await mock.simulateOrchestration("board");
+        const plan = which === "inReview" ? plans.long : plans.short;
+        mock.simulatePlan(board[which], {
+          goal: plan.goal,
+          steps: plan.steps.map(([text, status], i) => ({
+            id: `s${i + 1}` as never,
+            text,
+            status,
+            source: "agent" as const,
+          })),
+          basis: "shots",
+          updatedAt: Date.now() - 4 * 60_000,
+          updatedBy: "helper",
+        });
+        mock.simulateStatus(board[which], "running");
+        return { orchestrator: board.orchestratorThreadId, id: board[which] };
+      },
+      { which: worker, plans: WORKER_HEAD_PLANS },
+    );
+    await openOrchestrator(page, made.orchestrator);
+    await page.getByTestId("overview-hide").click();
+    await page.keyboard.press("ControlOrMeta+KeyJ");
+    await page.locator(`[data-testid="workers-panel-row"][data-thread-id="${made.id}"]`).click();
+    await page.getByTestId("worker-pane-head").waitFor();
+    if (wide) {
+      const grip = (await page.getByTestId("right-resize").boundingBox())!;
+      const [x, y] = [grip.x + grip.width / 2, grip.y + grip.height / 2];
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x - 300, y, { steps: 8 });
+      await page.mouse.up();
+    }
+    // The keys off the title, so no focus ring is in the shot.
+    await page.mouse.click(5, 895);
+    await page.mouse.move(2, 2);
+    await then?.(page);
+    await page.waitForTimeout(600);
+  };
+
+/** Where each build keeps the plan and the multi-repo caveat: the head after, under the tools before. */
+const besideOrUnder = async (page: Page, after: string, before: string) => {
+  const head = page.getByTestId(after);
+  await ((await head.count()) > 0 ? head : page.locator(before).first()).click();
+};
+
+const WORKER_HEAD_SHOTS: readonly Shot[] = [
+  {
+    name: "worker-head-multi-repo-plan",
+    title: "A worker in three repos with an 8-step plan, in the pane at 780 px",
+    open: openWorkerHead("inReview", true),
+    element: (page) => page.getByTestId("beside-dock"),
+  },
+  {
+    name: "worker-head-multi-repo-plan-narrow",
+    title: "The same worker with the pane at its least, 480 px",
+    open: openWorkerHead("inReview", false),
+    element: (page) => page.getByTestId("beside-dock"),
+  },
+  {
+    name: "worker-head-one-repo-plan",
+    title: "A worker in one repo with a 4-step plan, at 780 px",
+    open: openWorkerHead("working", true),
+    element: (page) => page.getByTestId("beside-dock"),
+  },
+  {
+    name: "worker-head-one-repo-plan-narrow",
+    title: "The one-repo worker at 480 px",
+    open: openWorkerHead("working", false),
+    element: (page) => page.getByTestId("beside-dock"),
+  },
+  {
+    name: "worker-head-plan-open",
+    title: "The plan opened: from the step on the head after, the strip under the tools before",
+    open: openWorkerHead("inReview", true, (page) =>
+      besideOrUnder(page, "beside-plan", '[data-testid="plan-strip"] > button'),
+    ),
+    element: (page) => page.getByTestId("beside-dock"),
+  },
+  {
+    name: "worker-head-repos-open",
+    title:
+      "The multi-repo caveat: opened from the head's repos after; before, the note under the tools",
+    open: openWorkerHead("inReview", true, async (page) => {
+      const repos = page.getByTestId("beside-repos");
+      if ((await repos.count()) > 0) await repos.click();
+    }),
+    element: (page) => page.getByTestId("beside-dock"),
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
   {
     name: "new-workspace-refused",
@@ -6689,6 +6819,7 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   ...NAVIGATION_SHOTS,
+  ...WORKER_HEAD_SHOTS,
 ];
 
 /**

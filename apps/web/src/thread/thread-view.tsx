@@ -164,6 +164,11 @@ export function ThreadView({
         placeholder?: string;
         /** A finished worker: its transcript only, no composer, and a line saying so instead. */
         readOnly?: boolean;
+        /**
+         * The worker pane's head says the plan's step and the repositories itself, so neither the
+         * plan strip nor the banner's multi-repo note stacks under it.
+         */
+        ownHead?: boolean;
       }
     | undefined;
   /** Pane controls at the end of the header. */
@@ -736,8 +741,8 @@ export function ThreadView({
         <div className={traceShown ? "hidden" : "contents"}>
           <StatusHeader thread={thread} digests={stream?.plan.digests} />
           <WaitingTray threadId={threadId} />
-          <PlanStrip threadId={threadId} />
-          <WorkerBanner thread={thread} />
+          {beside?.ownHead !== true && <PlanStrip threadId={threadId} />}
+          <WorkerBanner thread={thread} repos={beside?.ownHead !== true} />
           {/* A helper's summary isn't the conversation, which is all "Conversation only" shows. */}
           {!conversationOnly && <CatchUpCard thread={thread} />}
           <StuckCard thread={thread} />

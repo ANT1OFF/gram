@@ -216,7 +216,10 @@ test("a worker's row, its head and its PR tab name the same PR, its chip before 
   const headChip = head.getByTestId("overview-pr-chip");
   await expect(headChip).toHaveAttribute("data-pr", "142");
   await expect(pane(page).getByTestId("beside-tab-pr")).toHaveText(/#142/);
-  // The head says its status once, the chip carrying the number, and the chip comes first.
+  // The head says the number once, on its PR tab: the chip keeps its marks, and its status leaves
+  // the number out too. The chip comes first.
+  await expect(headChip).not.toContainText("#142");
+  await expect(headChip).toHaveAccessibleName(/142/);
   const status = head.getByTestId("beside-status");
   await expect(status).not.toContainText("#142");
   expect((await headChip.boundingBox())!.x).toBeLessThan((await status.boundingBox())!.x);
