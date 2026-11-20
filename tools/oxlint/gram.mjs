@@ -22,6 +22,9 @@
 // with its reason reads as a decision, one without reads as a silenced bug. The files not given
 // their reasons yet are in `allowlists.mjs`.
 //
+// And a file-size ceiling: a file's lines of code (blank and comment-only lines aside) stay under
+// `MAX_LINES` in `allowlists.mjs`, and the files already over it may only shrink.
+//
 // And one optical stroke for Lucide icons: the `lucide` class sets it per size (styles/base.css),
 // so a `strokeWidth` on the icon is outranked and does nothing.
 //
@@ -30,7 +33,7 @@
 
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ALLOWLISTS } from "./allowlists.mjs";
+import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 
 const BARE_FORKS = new Set([
   "fork",
@@ -71,6 +74,29 @@ const exempt = (rule, context) => {
   const list = ALLOWLISTS[rule];
   return list !== undefined && (list.owners.includes(file) || list.pending.includes(file));
 };
+
+const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
+
+/** Lines holding code: not blank and not only comments, as ESLint's `max-lines` counts them with
+ * `skipBlankLines` and `skipComments`. */
+const linesOfCode = (sourceCode) => {
+  // Blank every comment out, keeping its line breaks, so what is left on a line is code.
+  const { text } = sourceCode;
+  const pieces = [];
+  let at = 0;
+  for (const { range } of sourceCode.getAllComments()) {
+    pieces.push(text.slice(at, range[0]), text.slice(range[0], range[1]).replace(/[^\r\n]/g, ""));
+    at = range[1];
+  }
+  pieces.push(text.slice(at));
+  return pieces
+    .join("")
+    .split(/\r\n|\r|\n|\u2028|\u2029/)
+    .filter((line) => line.trim() !== "").length;
+};
+
+const SPLIT_HINT =
+  "Split it by responsibility: move one cohesive seam into its own module beside it (a feature's handlers, one table's queries, a sub-component or panel, pure helpers apart from the effectful wiring, fixtures and builders out of a test) and import it back.";
 
 const FS_MODULES = new Set(["fs", "node:fs", "fs/promises", "node:fs/promises"]);
 const REALPATHS = new Set(["realpath", "realpathSync"]);
@@ -588,6 +614,45 @@ export default {
                 node,
                 "A spelling's prefix isn't a folder: a link, `/tmp` for `/private/tmp` or `a//b` defeat it.",
               );
+          },
+        };
+      },
+    },
+    "max-lines": {
+      meta: {
+        type: "suggestion",
+        docs: {
+          description: "Keep files small enough to read whole; listed large files only shrink",
+        },
+        schema: [
+          {
+            type: "object",
+            properties: {
+              limit: { type: "number" },
+              testLimit: { type: "number" },
+              pending: { type: "object" },
+            },
+            additionalProperties: false,
+          },
+        ],
+      },
+      create(context) {
+        const { limit, testLimit, pending } = { ...MAX_LINES, ...context.options[0] };
+        return {
+          Program(node) {
+            const file = relative(REPO, context.filename).replaceAll("\\", "/");
+            const ceiling = TEST_FILE.test(file) ? testLimit : limit;
+            const count = linesOfCode(context.sourceCode);
+            const listed = Object.hasOwn(pending, file) ? pending[file] : undefined;
+            if (count <= (listed ?? ceiling)) return;
+            context.report({
+              node,
+              loc: { line: 1, column: 0 },
+              message:
+                listed === undefined
+                  ? `This file has ${count} lines of code, over the limit of ${ceiling}. ${SPLIT_HINT} Don't raise the limit or add the file to MAX_LINES in tools/oxlint/allowlists.mjs.`
+                  : `This file has ${count} lines of code, past its ratchet of ${listed} in tools/oxlint/allowlists.mjs (the limit is ${ceiling}); listed files may only shrink. ${SPLIT_HINT} Don't raise its entry.`,
+            });
           },
         };
       },

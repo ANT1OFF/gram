@@ -4,15 +4,21 @@ import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ALLOWLISTS } from "./allowlists.mjs";
+import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Lints each source as a file of its own in one oxlint run, and returns each file's diagnostics. */
-const lintEach = (sources, rule = "gram/no-bare-fork", extension = ".ts") => {
+const lintEach = (
+  sources,
+  rule = "gram/no-bare-fork",
+  extension = ".ts",
+  setting = "error",
+  names,
+) => {
   const dir = mkdtempSync(join(tmpdir(), "gram-fork-rule-"));
   try {
     const files = sources.map((source, i) => {
-      const file = join(dir, `fixture-${i}${extension}`);
+      const file = join(dir, names?.[i] ?? `fixture-${i}${extension}`);
       writeFileSync(file, source);
       return file;
     });
@@ -22,7 +28,7 @@ const lintEach = (sources, rule = "gram/no-bare-fork", extension = ".ts") => {
       JSON.stringify({
         categories: { correctness: "off" },
         jsPlugins: [join(root, "tools/oxlint/gram.mjs")],
-        rules: { [rule]: "error" },
+        rules: { [rule]: setting },
       }),
     );
     // Standalone lint fixtures must work without Effect or built workspace packages.
@@ -435,6 +441,78 @@ describe("disable-reason", () => {
       ).toBeGreaterThan(0);
     },
   );
+});
+
+const codeLines = (n) =>
+  Array.from({ length: n }, (_, i) => `export const v${i} = ${i};`).join("\n");
+
+describe("max-lines", () => {
+  const rule = "gram/max-lines";
+  const small = ["error", { limit: 3, testLimit: 5, pending: {} }];
+
+  it("counts code lines only and holds source and tests to their own limits", () => {
+    const padded = `// a comment\n\n${codeLines(2)}\n/*\n * a block\n */\n\nexport const t = 1; // trailing\n`;
+    const found = lintEach([padded, codeLines(4), codeLines(5), codeLines(6)], rule, ".ts", small, [
+      "padded.ts",
+      "over.ts",
+      "fits.test.ts",
+      "over.spec.ts",
+    ]);
+    expect(found.map((d) => d.length)).toEqual([0, 1, 0, 1]);
+  });
+
+  // The list only shrinks: a listed file may not grow past its count, and one that fits under the
+  // limit again comes off the list. One oxlint run counts every listed file.
+  const counts = () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-max-lines-"));
+    try {
+      const config = join(dir, "oxlint.json");
+      const setting = ["error", { limit: 0, testLimit: 0, pending: {} }];
+      writeFileSync(
+        config,
+        JSON.stringify({
+          categories: { correctness: "off" },
+          jsPlugins: [join(root, "tools/oxlint/gram.mjs")],
+          rules: { [rule]: setting },
+        }),
+      );
+      const result = spawnSync(
+        process.execPath,
+        [
+          join(root, "node_modules/oxlint/bin/oxlint"),
+          "--config",
+          config,
+          "--format",
+          "json",
+          ...Object.keys(MAX_LINES.pending),
+        ],
+        { cwd: root, encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 8 << 20 },
+      );
+      if (result.error) throw result.error;
+      return new Map(
+        JSON.parse(result.stdout).diagnostics.map((d) => [
+          d.filename,
+          Number(/has (\d+) lines/.exec(d.message)[1]),
+        ]),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it("keeps every listed file over the limit and within its count", () => {
+    const lines = counts();
+    const wrong = Object.entries(MAX_LINES.pending).flatMap(([file, count]) => {
+      const limit = /\.(test|spec)\.[cm]?[jt]sx?$/.test(file)
+        ? MAX_LINES.testLimit
+        : MAX_LINES.limit;
+      const now = lines.get(file) ?? 0;
+      if (now <= limit) return [`${file} fits under ${limit} now (${now}): remove its entry`];
+      if (now > count) return [`${file} grew to ${now}, past its entry ${count}: split it`];
+      return [];
+    });
+    expect(wrong, "MAX_LINES.pending in tools/oxlint/allowlists.mjs").toEqual([]);
+  });
 });
 
 describe("lucide-stroke", () => {
