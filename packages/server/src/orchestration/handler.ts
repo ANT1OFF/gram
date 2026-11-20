@@ -162,10 +162,8 @@ export const orchestrationHandlers = Effect.gen(function* () {
         ...(checkpoint === undefined ? {} : { checkpoint }),
         ...(model === undefined ? {} : { fresh: true }),
       }),
-    "orchestrator.releaseWorker": ({ threadId }) => orchestration.releaseWorker(threadId),
     "orchestrator.releaseHeldBrief": ({ workspaceId, id }) =>
       orchestration.releaseHeldBrief(workspaceId, id),
-    "orchestrator.takeOverWorker": ({ threadId }) => orchestration.takeOverWorker(threadId),
     // The user's own answer or dismissal: theirs to give, so it isn't refused while paused.
     "workerQuestion.answer": (input) => orchestration.answerQuestionAsUser(input),
     "workerQuestion.dismiss": (input) => orchestration.dismissQuestionAsUser(input),

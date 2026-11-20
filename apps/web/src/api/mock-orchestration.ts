@@ -1359,17 +1359,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       return joined;
     },
 
-    async release(threadId: ThreadId): Promise<void> {
-      const current = host.threads().find((t) => t.id === threadId);
-      if (!current) throw new ThreadNotFound({ threadId });
-      if (current.spawnedBy === undefined || current.workspaceId === undefined) {
-        throw new MockInvalidState("This thread isn't a worker with an orchestrator listening.");
-      }
-      if (intervened.delete(threadId)) {
-        host.emit({ type: "orchestration.changed", workspaceId: current.workspaceId });
-      }
-    },
-
     /** Workers closed with their worktree, as the server keeps them; none unless a scenario adds. */
     finishedWorkers(workspaceId: WorkspaceId): readonly FinishedWorker[] {
       return [...closedWorkers.values()]
@@ -1466,18 +1455,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     noLocalCheck(projectId: string, workspaceId: WorkspaceId): void {
       noLocalCheck.add(projectId);
       host.emit({ type: "orchestration.changed", workspaceId });
-    },
-
-    /** "Take over": the hold `userTyped` puts on a worker, by the same path, sending nothing. */
-    async takeOver(threadId: ThreadId): Promise<void> {
-      const current = host.threads().find((t) => t.id === threadId);
-      if (!current) throw new ThreadNotFound({ threadId });
-      if (current.spawnedBy === undefined || current.workspaceId === undefined) {
-        throw new MockInvalidState("This thread isn't a worker with an orchestrator listening.");
-      }
-      if (intervened.has(threadId)) return;
-      intervened.add(threadId);
-      host.emit({ type: "orchestration.changed", workspaceId: current.workspaceId });
     },
 
     /**
@@ -1591,7 +1568,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       return { thread, membership: "restored" };
     },
 
-    /** The user sent `threadId` a message: a worker is marked so its orchestrator holds off. */
+    /** The user sent `threadId` a message: a worker is marked so, as information. */
     userTyped(threadId: ThreadId): void {
       const thread = host.threads().find((t) => t.id === threadId);
       if (thread?.spawnedBy === undefined || intervened.has(threadId)) return;

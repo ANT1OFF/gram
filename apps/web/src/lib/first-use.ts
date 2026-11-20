@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 /** Gram's own words that carry a first-use explanation (`EXPLAIN`), by their key there. */
-export type TermId = "solo" | "takeOver" | "quiet" | "dreams";
+export type TermId = "solo" | "quiet" | "dreams";
 
 interface FirstUseState {
   /** The terms whose explanation was shown once, on this machine. */

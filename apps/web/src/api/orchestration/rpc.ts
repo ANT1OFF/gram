@@ -88,10 +88,8 @@ export const orchestrationRpc = ({ client, connection }: RpcContext): Orchestrat
   threadDetach: (threadId) => run(client["thread.detach"]({ threadId })),
   threadJoinWorkspace: (input) => run(client["thread.joinWorkspace"](input)),
   threadJoinTargets: (threadId) => run(client["thread.joinTargets"]({ threadId })),
-  releaseWorker: (threadId) => run(client["orchestrator.releaseWorker"]({ threadId })),
   releaseHeldBrief: (workspaceId, id) =>
     run(client["orchestrator.releaseHeldBrief"]({ workspaceId, id })),
-  takeOverWorker: (threadId) => run(client["orchestrator.takeOverWorker"]({ threadId })),
   finishedWorkers: (workspaceId) => run(client["orchestrator.finishedWorkers"]({ workspaceId })),
   finishedWorkersPage: (workspaceId, after) =>
     run(

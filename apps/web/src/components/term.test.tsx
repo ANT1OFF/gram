@@ -26,7 +26,7 @@ describe("Term", () => {
   it("remembers each term on its own", () => {
     seeTerm("solo");
     expect(useFirstUse.getState().seen).toEqual({ solo: true });
-    render(<Term term="takeOver">Take over</Term>);
-    expect(screen.getByText("Take over").hasAttribute("data-first-use")).toBe(true);
+    render(<Term term="dreams">Dreams</Term>);
+    expect(screen.getByText("Dreams").hasAttribute("data-first-use")).toBe(true);
   });
 });

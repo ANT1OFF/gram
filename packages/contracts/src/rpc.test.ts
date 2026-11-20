@@ -1021,10 +1021,6 @@ describe("GramRpcs", () => {
     expect(() => payloadOf("orchestrator.setPaused")({ workspaceId: "w1" })).toThrow();
     expect(payloadOf("orchestrator.ledger")({ workspaceId: "w1" })).toEqual({ workspaceId: "w1" });
     expect(payloadOf("thread.detach")({ threadId: "t1" })).toEqual({ threadId: "t1" });
-    expect(payloadOf("orchestrator.releaseWorker")({ threadId: "t1" })).toEqual({
-      threadId: "t1",
-    });
-    expect(() => payloadOf("orchestrator.releaseWorker")({})).toThrow();
     expectRoundTrip(NotFound, new NotFound({ entity: "workspace", id: "w1" }));
   });
 

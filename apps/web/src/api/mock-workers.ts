@@ -38,7 +38,7 @@ export interface MockWorkersSimulation extends MockFinishedSimulation {
   readonly doneToday: ThreadId;
   /** Merged or archived days ago. */
   readonly earlier: readonly ThreadId[];
-  /** The board's held worker (`working`), for Hand back. */
+  /** The board's worker the user wrote to (`working`, `userIntervened`). */
   readonly held: ThreadId;
 }
 

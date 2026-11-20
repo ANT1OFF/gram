@@ -3,12 +3,11 @@ import { GitMerge } from "lucide-react";
 import type { DragEvent, KeyboardEvent, ReactNode } from "react";
 
 import { ContextMenuItem } from "@/components/ui/context-menu";
-import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
 import { THREAD_DRAG_TYPE } from "@/shell/drag";
 import { useThreadsStore } from "@/stores/threads";
 
 import { branchDeleteLooksSafe, mergedPrRef } from "./merged-cleanup";
-import { ReleaseContextMenuItem, ThreadContextMenuItems } from "./thread-action-items";
+import { ThreadContextMenuItems } from "./thread-action-items";
 import { useThreadDialogs } from "./thread-dialogs-store";
 
 // The context menu of a row that stands for one thread (the overview's workers and solo threads),
@@ -64,21 +63,18 @@ export function RowMenuItems({
 }
 
 /**
- * A worker row's own group, before its thread verbs: Hand back while the user holds it, and Clean
- * up once its PR merged. Its board and orchestrator are a click away in More….
+ * A worker row's own group, before its thread verbs: Clean up once its PR merged. Its board and
+ * orchestrator are a click away in More….
  */
 export function WorkerMenuItems({
   threadId,
-  held,
   cleanable,
 }: {
   threadId: ThreadId;
-  held: boolean;
   cleanable: boolean;
 }) {
   return (
     <>
-      {held && <ReleaseContextMenuItem threadId={threadId} />}
       {cleanable && (
         <ContextMenuItem
           onClick={() =>
@@ -101,14 +97,9 @@ export function WorkerMenuItems({
   );
 }
 
-/** A worker's whole row menu: whether the user holds it from its workspace's ledger, read on open. */
+/** A worker's whole row menu. */
 export function WorkerRowMenuItems({ threadId }: { threadId: ThreadId }) {
   const summary = useThreadsStore((s) => s.byId[threadId]);
-  const { data: ledger } = useOrchestratorLedger(summary?.thread.workspaceId);
-  const held =
-    ledger?.features
-      .flatMap((feature) => feature.workers)
-      .some((worker) => worker.threadId === threadId && worker.userIntervened === true) ?? false;
   // What the thread's own merged notice offers, for a worker nobody opens again once it merged.
   const cleanable =
     summary !== undefined &&
@@ -117,11 +108,7 @@ export function WorkerRowMenuItems({ threadId }: { threadId: ThreadId }) {
   return (
     <RowMenuItems
       threadId={threadId}
-      menuItems={
-        held || cleanable ? (
-          <WorkerMenuItems threadId={threadId} held={held} cleanable={cleanable} />
-        ) : undefined
-      }
+      menuItems={cleanable ? <WorkerMenuItems threadId={threadId} cleanable /> : undefined}
     />
   );
 }

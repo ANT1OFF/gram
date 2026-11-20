@@ -423,10 +423,7 @@ const openReadmeRealistic = async (page: Page, width: number, height: number) =>
       JSON.stringify({ version: 0, state: { folded: seen.map((id) => `1.0.0-mock:${id}`) } }),
     );
   });
-  await seedMockSettings(page, {
-    panel: { open: false },
-    onboarding: { takeOverHintSeen: true },
-  });
+  await seedMockSettings(page, { panel: { open: false } });
   await page.setViewportSize({ width, height });
   await page.goto("/");
   await page.getByTestId("app-shell").waitFor();
@@ -1447,21 +1444,6 @@ const soloRowOf = async (page: Page, threadId: string) => {
 };
 
 const SNOOZE_SHOTS: readonly Shot[] = [
-  {
-    name: "worker-header-returning",
-    title:
-      "A worker's header for a user who has read what Take over does: no help line over the work (before: the line on every worker)",
-    open: async (page) => {
-      await seedMockSettings(page, { onboarding: { takeOverHintSeen: true } });
-      const made = await openRealisticMorning(page);
-      await openOrchestrator(page, made.orchestratorThreadId);
-      await threadRow(page, made.searchWorker).click();
-      await page.waitForURL(new RegExp(`/t/${made.searchWorker}$`));
-      await expect(page.getByTestId("turn-files-card")).toContainText("3 files changed");
-      await page.mouse.move(900, 500);
-      await page.waitForTimeout(600);
-    },
-  },
   {
     name: "snooze-row-menu",
     title: "A solo row's Come back later: Mark unread and the snooze times, in 24-hour time",
@@ -6317,7 +6299,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "worker-header-actions",
-    title: "A worker's header: Open beside and Take over beside its crumbs",
+    title: "A worker's header: Open beside beside its crumbs",
     open: async (page) => {
       const made = await openReachingScenario(page);
       await pressWorkersList(page);

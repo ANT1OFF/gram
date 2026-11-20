@@ -160,15 +160,6 @@ const HINT_MS = 2500;
  * second send of the same draft beside the first mount's.
  */
 const waitingThreads = new Set<string>();
-/**
- * What a message into a worker the orchestrator directs also does, in one plain wording: Send's
- * name and tooltip ("Send and take over from the orchestrator") and, while a draft waits, the line
- * beside Send say it; the placeholder only names where the message goes ("Message this worker…"),
- * so the field never reads as a warning.
- */
-const TAKES_OVER_LINE = "Sending takes over from the orchestrator";
-/** The same, said before anything is typed, where the composer is the worker's beside its chat. */
-const TAKES_OVER_NOTE = `${TAKES_OVER_LINE}; its messages wait behind yours.`;
 /** Shown while a send waits for the connection to come back. */
 const RECONNECT_HINT = "Waiting for the connection — sends once it's back";
 
@@ -176,23 +167,14 @@ export function Composer({
   threadId,
   focused,
   placeholder,
-  takesControl = false,
-  takeoverNoted = false,
+  toWorker = false,
 }: {
   threadId: ThreadId;
   focused: boolean;
   /** In place of "Message…", e.g. beside the chat, where it steers a worker. */
   placeholder?: string | undefined;
-  /**
-   * A message sent here takes the thread over from its orchestrator (a worker it still directs):
-   * the placeholder, Send's name and the line beside it say so before the message goes.
-   */
-  takesControl?: boolean;
-  /**
-   * The line beside Send says the takeover from the start, not only once a draft waits: the pane
-   * beside the orchestrator's chat, where two composers are in view.
-   */
-  takeoverNoted?: boolean;
+  /** The thread is a live worker of an orchestrator: the placeholder names "this worker". */
+  toWorker?: boolean;
 }) {
   const api = useApi();
   const typing = useTypingPresence();
@@ -1080,22 +1062,19 @@ export function Composer({
           ? "Stops the turn, withdrawing the card, then sends"
           : "Stops the turn now, cutting off tool calls"),
   };
-  // Into a worker the orchestrator directs, the send is also a take-over: its name says so.
-  const control = takesControl ? " and take over from the orchestrator" : "";
-  const queueControl = takesControl ? `. ${TAKES_OVER_LINE}` : "";
   const deliveryHint = (delivery: Delivery) =>
     withHint(
-      `${DELIVERY_WORDS[delivery]}: ${lowerFirst(deliveryLines[delivery])}${queueControl}`,
+      `${DELIVERY_WORDS[delivery]}: ${lowerFirst(deliveryLines[delivery])}`,
       deliveryKeys[delivery],
     );
   const actionLabels = {
     send: {
-      aria: `Send${control}`,
-      hint: withHint(`Send${control}`, sendKeyHint),
+      aria: "Send",
+      hint: withHint("Send", sendKeyHint),
     },
-    queue: { aria: `Queue${control}`, hint: deliveryHint("queue") },
-    steer: { aria: `Steer${control}`, hint: deliveryHint("steer") },
-    interrupt: { aria: `Interrupt${control}`, hint: deliveryHint("interrupt") },
+    queue: { aria: "Queue", hint: deliveryHint("queue") },
+    steer: { aria: "Steer", hint: deliveryHint("steer") },
+    interrupt: { aria: "Interrupt", hint: deliveryHint("interrupt") },
     // The word and its key, "Stop (⌘.)": an icon button's tooltip names it and its shortcut.
     stop: {
       aria: "Stop",
@@ -1366,7 +1345,7 @@ export function Composer({
                 ? ""
                 : (placeholder ??
                   // A phone's line holds the words alone: no keys to hint at on a touch keyboard.
-                  `${placeholderLead({ takesControl, busy, steerable, picked })}…${
+                  `${placeholderLead({ toWorker, busy, steerable, picked })}…${
                     phone ? "" : " (/ for commands, @ for files)"
                   }`)
             }
@@ -1441,20 +1420,9 @@ export function Composer({
           </div>
           <span
             aria-live="polite"
-            className={cn(
-              "min-w-0 flex-1 px-1 text-meta text-muted-foreground",
-              // The pane's standing takeover note wraps rather than cut its last words.
-              takeoverNoted ? "line-clamp-2" : "truncate",
-            )}
+            className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
           >
-            {hint ??
-              (dictation.active
-                ? dictationStatus(dictation.state)
-                : takesControl && takeoverNoted
-                  ? TAKES_OVER_NOTE
-                  : takesControl && hasDraft
-                    ? TAKES_OVER_LINE
-                    : undefined)}
+            {hint ?? (dictation.active ? dictationStatus(dictation.state) : undefined)}
           </span>
           <div className="flex shrink-0 items-center gap-1.5">
             {dictation.available && (
@@ -1728,29 +1696,29 @@ function DeliveryButton({
 
 /** The empty field's words: where a typed message will go, as the delivery button says. */
 function placeholderLead({
-  takesControl,
+  toWorker,
   busy,
   steerable,
   picked,
 }: {
-  takesControl: boolean;
+  toWorker: boolean;
   busy: boolean;
   steerable: boolean;
   picked: Delivery;
 }): string {
-  const worker = takesControl ? " this worker" : "";
+  const worker = toWorker ? " this worker" : "";
   if (steerable) {
     switch (picked) {
       case "steer":
-        return takesControl ? "Steer this worker" : "Steer the agent";
+        return toWorker ? "Steer this worker" : "Steer the agent";
       case "queue":
         return `Queue a message for${worker || " after this turn"}`;
       case "interrupt":
-        return takesControl ? "Interrupt this worker" : "Interrupt with a message";
+        return toWorker ? "Interrupt this worker" : "Interrupt with a message";
     }
   }
-  if (busy) return takesControl ? "Queue a message for this worker" : "Queue a message";
-  return takesControl ? "Message this worker" : "Message";
+  if (busy) return toWorker ? "Queue a message for this worker" : "Queue a message";
+  return toWorker ? "Message this worker" : "Message";
 }
 
 /**

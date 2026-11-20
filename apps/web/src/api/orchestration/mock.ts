@@ -112,9 +112,7 @@ export function createOrchestrationMock(
     threadJoinWorkspace: ({ threadId, workspaceId, ...options }) =>
       orchestration.join(threadId, workspaceId, options),
     threadJoinTargets: (threadId) => orchestration.joinTargets(threadId),
-    releaseWorker: (threadId) => orchestration.release(threadId),
     releaseHeldBrief: (workspaceId, id) => orchestration.releaseHeldBrief(workspaceId, id),
-    takeOverWorker: (threadId) => orchestration.takeOver(threadId),
     finishedWorkers: async (workspaceId) => orchestration.finishedWorkers(workspaceId),
     finishedWorkersPage: async (workspaceId, after) =>
       orchestration.finishedWorkersPage(workspaceId, after),

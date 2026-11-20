@@ -148,10 +148,6 @@ export function useThreadActions(threadId: ThreadId) {
             ...(addRepos ? { addRepos } : {}),
           })),
       ),
-    /** Hands a worker the user wrote to back to its orchestrator, saying nothing to the worker. */
-    release: () => attempt("hand the worker back", () => api.releaseWorker(threadId)),
-    /** Holds the worker for the user as a typed message would, sending it nothing. */
-    takeOver: () => attempt("take the worker over", () => api.takeOverWorker(threadId)),
     setLabel: (labelId: LabelId | undefined) =>
       attempt("set the label", () => api.label(threadId, labelId ? [labelId] : [])),
   };

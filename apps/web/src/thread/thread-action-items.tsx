@@ -5,7 +5,6 @@ import {
   ArchiveRestore,
   CircleCheck,
   Ellipsis,
-  Hand,
   Mail,
   MailOpen,
   Pencil,
@@ -137,17 +136,6 @@ export function ThreadContextMenuItems({
       {SEPARATOR}
       <MoreContextMenuItem scope={threadScope(thread)} />
     </>
-  );
-}
-
-/** "Hand back to orchestrator", for a worker the user holds. */
-export function ReleaseContextMenuItem({ threadId }: { threadId: ThreadId }) {
-  const { release } = useThreadActions(threadId);
-  return (
-    <ContextMenuItem data-testid="menu-release-worker" onClick={release}>
-      <Hand aria-hidden className="size-icon-row" />
-      Hand back to orchestrator
-    </ContextMenuItem>
   );
 }
 

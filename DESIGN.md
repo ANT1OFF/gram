@@ -238,10 +238,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     dialog never rings as a whole.
 - **The composer's toolbar is icons with their words on hover** (Johan's ruling, 2026-11-08: "we
   have moved too far in the text direction"). Every control on the row is a glyph whose words are
-  its tooltip and its accessible name, and nothing measures or folds it. Two exceptions: the
-  model's name on the choices chip (Johan, 2026-11-11: "I want to actually see the model name"),
-  and a warning, not a control: the worker's "Sending takes over from the orchestrator" line
-  (below).
+  its tooltip and its accessible name, and nothing measures or folds it. One exception: the
+  model's name on the choices chip (Johan, 2026-11-11: "I want to actually see the model name").
   - Every composer (the orchestrator's chat, a solo thread's and `/new`) has one choices chip for
     model · effort · mode · speed: the agent's mark, the model's name as the model picker lists it
     less the vendor the mark says ("Opus 5.5"), then the mode's 14 px glyph, and Fast's filled bolt
@@ -266,11 +264,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     the pointer), with no word and no key cap; its tooltip says "Stop (⌘.)", its name "Stop", and
     ⌘. stops from the focused composer. While the turn only waits on your answer, Stop steps back
     to the danger tint (no ring), still distinct from Send and from a faint outline. Into a worker
-    the orchestrator still directs, a message takes it
-    over, said once in plain words where it happens: the placeholder only names where the message
-    goes ("Message this worker…"), Send's name and tooltip say "Send and take over from the
-    orchestrator", and with a draft the line beside Send says "Sending takes over from the
-    orchestrator". Beside Send the context meter is its bar alone in a 32 px target, never a ring;
+    the placeholder names where the message goes ("Message this worker…"); the message goes in
+    like any other, and the orchestrator can still message the worker. Beside Send the context meter is its bar alone in a 32 px target, never a ring;
     the pointer opens its popover, headed "Context 36%", which says what it measures.
   - While a turn is open (running, or waiting on an approval or a question) the send control is
     one delivery button before Stop, never a Steer and a Queue button side by side (ruling of
@@ -292,9 +287,6 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   back as it was. There is no second list in a dialog, and while the tab is open the sidebar folds
   its workspace's workers to its line ("7 in Workers"), its chevron leading
   to the tab.
-- **An explanation shows once, then folds into its control.** What Take over changes is a line
-  under a worker's header the first time it is offered; after, Take over's own hint says it, with
-  no ⓘ beside it to say it again, so the line never stacks over every worker view.
 - **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use
   the instant tooltip (`Hint`), never a native title, with the shortcut where there is one. A hint
   opens when the pointer moves onto its trigger, never for one that appears under a resting
@@ -325,7 +317,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   sidebar's and the Board's, and Show all activity is a view option (the title bar's "…" under
   View, a pane's "…"). With no absence to sum up the line is gone, with no empty band. "New" is
   the transcript's own line, over the first message you haven't seen. A worker's PR and CI are
-  the strip above its composer, and Take over stays the title bar's (the strip adds no second one).
+  the strip above its composer.
 - **The orchestrator's reply is the strongest thing in its chat.** An update ("09:52 Update · 2
   merged · More") and an event Gram's own tools report there ("Started a worker", "Queued to merge
   when ready") are quiet meta, a line of `text-meta` in `fg-muted` at regular weight behind its

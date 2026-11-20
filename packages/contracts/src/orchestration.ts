@@ -105,8 +105,7 @@ export type OrchestrationPause = typeof OrchestrationPause.Type;
 /**
  * How long the board shows the user as talking to a worker once its turn is over and it sits idle
  * or cold with nothing more from them. It is information only: the worker stays its
- * orchestrator's throughout, and the orchestrator's messages wait behind the user's exchange
- * rather than for this to pass.
+ * orchestrator's throughout, and the orchestrator's messages reach it as usual.
  */
 export const USER_HOLD_IDLE_MS = 10 * 60_000;
 
@@ -540,8 +539,7 @@ export const WorkerLedgerEntry = Schema.Struct({
   ),
   /**
    * The user typed into the worker since its last report: information for the board and the
-   * orchestrator. The worker stays the orchestrator's, whose messages wait behind the user's
-   * exchange instead of interrupting it.
+   * orchestrator. The worker stays the orchestrator's, whose messages reach it as usual.
    */
   userIntervened: Schema.Boolean,
   messagesFromOrchestrator: Schema.Int,

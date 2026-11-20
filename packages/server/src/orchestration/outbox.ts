@@ -144,7 +144,7 @@ export type BackgroundWork = typeof BackgroundWork.Type;
 export const WorkerMemo = Schema.Struct({
   /** Messages the orchestrator has sent it, the brief not counted. Shown, never capped. */
   messages: Schema.Int,
-  /** The user typed into it since its last report, and hasn't handed it back or let it lapse. */
+  /** The user typed into it since its last report, and it hasn't lapsed. Information only. */
   userIntervened: Schema.Boolean,
   /** Epoch ms of the latest input the user typed into it; without it the hold counts from `lastInputAt`. */
   userInputAt: Schema.optionalKey(Schema.Number),

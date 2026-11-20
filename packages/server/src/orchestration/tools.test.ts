@@ -1589,7 +1589,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
     ),
   );
 
-  it.effect("queues a message to a worker the user is talking to behind their exchange", () =>
+  it.effect("steers a message into a worker the user is talking to, without waiting for them", () =>
     inServer((world) =>
       Effect.gen(function* () {
         const runtimes = yield* ThreadRuntimes;
@@ -1608,31 +1608,41 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           ),
         );
         yield* waitStatus(worker.thread.id, "running");
-        // Mid-exchange: neither refused nor steered in, and an interrupt waits all the same.
-        for (const mode of [undefined, "steer", "interrupt"] as const) {
-          const behind = yield* session.callTool("send_message", {
+        // Mid-exchange with the user: the orchestrator's message goes in by its own mode, at once.
+        for (const mode of [undefined, "steer"] as const) {
+          const sent = yield* session.callTool("send_message", {
             ...message,
             ...(mode === undefined ? {} : { mode }),
           });
-          expect(behind).toMatchObject({ threadId: worker.thread.id, delivered: "queued" });
-          expect((behind as { note?: string }).note).toContain("queued behind their exchange");
+          expect(sent).toMatchObject({ threadId: worker.thread.id, delivered: "steered" });
+          expect((sent as { note?: string }).note).toBeUndefined();
         }
-        expect(worker.session.steered).toEqual([]);
-        expect(worker.session.interrupts).toBe(0);
+        expect(worker.session.steered.map((input) => input.text)).toEqual([
+          expect.stringContaining("Status?"),
+          expect.stringContaining("Status?"),
+        ]);
+        const interrupted = yield* session.callTool("send_message", {
+          ...message,
+          mode: "interrupt",
+        });
+        expect(interrupted).toMatchObject({ delivered: "steered" });
+        expect(worker.session.steeredInterrupt.at(-1)).toBe(true);
+        // "queue" is still the sender's choice, and waits out the turn.
+        expect(
+          yield* session.callTool("send_message", { ...message, mode: "queue" }),
+        ).toMatchObject({ delivered: "queued" });
         expect((yield* orchestration.ledger(workspaceId)).features[0]?.workers[0]).toMatchObject({
           userIntervened: true,
-          messagesFromOrchestrator: 3,
+          messagesFromOrchestrator: 4,
         });
-        // The user's turn ends, and the orchestrator's words reach the worker after it.
-        // (Its end isn't counted as a rest, since the queue isn't empty: end it at the agent.)
         yield* worker.session.completeTurn();
         yield* waitReal(
-          "the queued messages",
+          "the queued message",
           Effect.sync(() => worker.session.sent.at(-1)?.origin?.threadId !== undefined),
         );
         expect(worker.session.sent.at(-1)?.text).toContain("Status?");
 
-        // Not mid-exchange (the running turn is the orchestrator's), a steer goes in as asked.
+        // After a report, a steer goes in as asked too.
         yield* worker.session.callTool("report", {
           state: "progress",
           summary: "Switched queues.",
@@ -3138,7 +3148,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
   );
 
   it.effect(
-    "Full Auto sibling delivery refuses pauses, and goes behind a user's exchange, without cards",
+    "Full Auto sibling delivery refuses pauses, and steers into a user's exchange, without cards",
     () =>
       inServer((world) =>
         Effect.gen(function* () {
@@ -3163,19 +3173,18 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
               Effect.map((outbox) => outbox.workers[id]?.userIntervened === true),
             );
           // The user writing to the sender leaves its messages as they were.
-          yield* runtimes.send(a.thread.id, { text: "User takes over." });
+          yield* runtimes.send(a.thread.id, { text: "User writes in." });
           yield* waitReal("the sender's mark", marked(a.thread.id));
           expect(yield* hosted.run(message)).toMatchObject({ delivered: expect.any(String) });
           expect(yield* store.listRequests(a.thread.id)).toEqual([]);
-          // The user mid-exchange with the receiver: the steer waits behind them instead.
+          // The user mid-exchange with the receiver: the sibling's steer goes in beside theirs.
           yield* waitStatus(b.thread.id, "running");
-          yield* runtimes.steer(b.thread.id, { text: "User takes over." });
+          yield* runtimes.steer(b.thread.id, { text: "User writes in." });
           yield* waitReal("the receiver's mark", marked(b.thread.id));
           const steeredBefore = b.session.steered.length;
-          const queued = yield* hosted.run({ ...message, text: "Coordinate again." });
-          expect(queued).toMatchObject({ delivered: "queued" });
-          expect((queued as { note?: string }).note).toContain("queued behind their exchange");
-          expect(b.session.steered).toHaveLength(steeredBefore);
+          const steered = yield* hosted.run({ ...message, text: "Coordinate again." });
+          expect(steered).toMatchObject({ delivered: "steered" });
+          expect(b.session.steered).toHaveLength(steeredBefore + 1);
           expect(yield* store.listRequests(a.thread.id)).toEqual([]);
         }),
       ),

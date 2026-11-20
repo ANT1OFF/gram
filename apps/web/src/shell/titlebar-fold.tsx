@@ -39,7 +39,6 @@ import { cn } from "@/lib/utils";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { DISCOVER_QUEUED, DISCOVER_SENT } from "@/orchestration/board-model";
 import { useDiscover, useTidyUp } from "@/orchestration/use-board-actions";
-import { WorkerMenuItems } from "@/orchestration/worker-header";
 import { showWorkersTab, useWorkersNow } from "@/orchestration/workers-tab";
 import { useWorkspacePause } from "@/orchestration/workspace-pause-button";
 import { RunScriptMenuItems } from "@/scripts/run-script-menu";
@@ -56,7 +55,7 @@ import { useViewWorkspace } from "@/views/view-workspace";
 import { PresetGlyph } from "./preset-glyph";
 import { useSwitchWorkspace } from "./workspace-switcher";
 import { useTitlebarOutline } from "./titlebar-outline";
-import { FOLD_ALL, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
+import { useTitlebarThread } from "./titlebar-slot";
 
 // The title bar's one "…": everything the bar keeps out of sight, each item with its words and its
 // shortcut, and like every menu at most seven items. The carried thread's menu (and its scripts),
@@ -520,21 +519,13 @@ function RunScriptSubmenu({ threadId, projectId }: { threadId: ThreadId; project
   );
 }
 
-/**
- * The carried thread's own: a folded worker's Open beside and Take over, its menu's verbs in a
- * submenu, and its scripts.
- */
+/** The carried thread's own: its menu's verbs in a submenu, and its scripts. */
 function ThreadItems({ threadId, items }: { threadId: ThreadId; items: ReactNode }) {
-  const fold = useTitlebarSlot((s) => s.fold);
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   if (thread === undefined) return null;
   const orchestrator = thread.role === "orchestrator";
   return (
     <>
-      {/* A worker in the bar folded all the way: its own actions are this menu's, first. */}
-      {fold >= FOLD_ALL && thread.spawnedBy !== undefined && (
-        <WorkerMenuItems thread={thread} itemClassName={MENU_ITEM} />
-      )}
       <Submenu
         label={orchestrator ? "Orchestrator" : "Thread"}
         testId="menu-thread"

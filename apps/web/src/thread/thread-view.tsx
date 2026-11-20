@@ -56,7 +56,6 @@ import { OrchestratorStreamProvider, useOrchestratorStream } from "@/orchestrati
 import { StuckCard } from "@/orchestration/stuck-card";
 import {
   useBackToOrchestrator,
-  useSendTakesControl,
   WorkerActions,
   WorkerCrumbs,
   WorkerNowChip,
@@ -162,7 +161,6 @@ export function ThreadView({
     | {
         header: ReactNode;
         placeholder?: string;
-        takeoverNoted?: boolean;
         /** A finished worker: its transcript only, no composer, and a line saying so instead. */
         readOnly?: boolean;
       }
@@ -629,8 +627,8 @@ export function ThreadView({
             <FakeAgentBadge className={hideSm} />
           </div>
         </div>
-        {/* Outside the chips that drop when short of room: Hand back must always be there, and so
-            must a snooze's Unsnooze, the one sign of why the lists leave the thread out. */}
+        {/* Outside the chips that drop when short of room: a snooze's Unsnooze must always be
+            there, the one sign of why the lists leave the thread out. */}
         <SnoozeChip threadId={threadId} />
         <WorkerActions thread={thread} inTitlebar={inTitlebar} />
         {/* In the title bar the glyph shows only while the thread works: at rest it is the bar's
@@ -731,11 +729,7 @@ export function ThreadView({
           <StatusHeader thread={thread} digests={stream?.plan.digests} />
           <WaitingTray threadId={threadId} />
           <PlanStrip threadId={threadId} />
-          <WorkerBanner
-            thread={thread}
-            inTitlebar={inTitlebar}
-            takeover={beside?.takeoverNoted !== true}
-          />
+          <WorkerBanner thread={thread} />
           {/* A helper's summary isn't the conversation, which is all "Conversation only" shows. */}
           {!conversationOnly && <CatchUpCard thread={thread} />}
           <StuckCard thread={thread} />
@@ -866,7 +860,6 @@ export function ThreadView({
                   ? {}
                   : {
                       placeholder: beside.placeholder ?? "Steer this thread…",
-                      takeoverNoted: beside.takeoverNoted === true,
                     })}
               />
             </TurnCompleteSheen>
@@ -878,22 +871,17 @@ export function ThreadView({
 }
 
 /**
- * The thread's composer. Into a worker the orchestrator still directs, a message takes it over, as
- * Take over does: the composer says so where the message is written. On a thread that waits for
- * its machine it says the message waits too.
+ * The thread's composer. On a thread that waits for its machine it says the message waits too.
  */
 function ThreadComposer({
   thread,
   focused,
   placeholder,
-  takeoverNoted = false,
 }: {
   thread: Thread;
   focused: boolean;
   placeholder?: string;
-  takeoverNoted?: boolean;
 }) {
-  const takesControl = useSendTakesControl(thread);
   // Started before its machine: the box says where a message goes now, which is into the wait.
   const wait = useMachineWait(thread);
   const phone = usePhone();
@@ -909,8 +897,7 @@ function ThreadComposer({
     <Composer
       threadId={thread.id}
       focused={focused}
-      takesControl={takesControl}
-      takeoverNoted={takeoverNoted}
+      toWorker={thread.spawnedBy !== undefined}
       {...(words === undefined ? {} : { placeholder: words })}
     />
   );

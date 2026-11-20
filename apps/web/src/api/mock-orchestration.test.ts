@@ -382,13 +382,6 @@ describe("MockApi orchestration", () => {
       (f) => f.workers,
     );
     expect(after.find((w) => w.threadId === made.briefed)?.userIntervened).toBe(true);
-    // Handing it back clears the mark and nothing else.
-    await api.releaseWorker(made.briefed);
-    const released = (await api.orchestratorLedger(made.workspaceId)).features.flatMap(
-      (f) => f.workers,
-    );
-    expect(released.find((w) => w.threadId === made.briefed)?.userIntervened).toBe(false);
-    await expect(api.releaseWorker(made.workspaceId as unknown as ThreadId)).rejects.toThrow();
   });
 
   it("answers many requests in one call, each in its own row", async () => {

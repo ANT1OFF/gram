@@ -548,17 +548,6 @@ export interface OrchestrationShape {
     input: AdoptThreadInput,
   ): Effect.Effect<AdoptedThread, AppToolError>;
   /**
-   * "Hand back": says the user is done talking to a worker. Clears `userIntervened` and tells the
-   * next digest, without a word to the worker; a hint only, since the worker stayed its
-   * orchestrator's throughout. A worker without the flag is left as it is.
-   */
-  releaseWorker(threadId: ThreadId): Effect.Effect<void, ThreadNotFound | InvalidState>;
-  /**
-   * "Take over": the hold a message the user types into a worker puts on it, by the same path
-   * (`onUserInput`), with nothing sent. A worker already held has its hold renewed.
-   */
-  takeOverWorker(threadId: ThreadId): Effect.Effect<void, ThreadNotFound | InvalidState>;
-  /**
    * Replaces the orchestrator's agent session with a fresh one under the same thread, the memory
    * as the bridge: a checkpoint prompt first, then, when that turn has ended, the fresh
    * session and a `boot` digest. Returns once it is under way, not once it is done. `InvalidState`

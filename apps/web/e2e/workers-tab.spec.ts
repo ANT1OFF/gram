@@ -183,7 +183,7 @@ test("Following live pauses when you scroll up, and Jump to live follows again",
   await expect(page.getByTestId("jump-to-live")).toHaveCount(0);
 });
 
-test("watching a worker never holds it; a message does, and Hand back returns it", async ({
+test("watching a worker never marks it; a message does, with no control to hand it back", async ({
   page,
 }) => {
   const made = await openScenario(page);
@@ -197,7 +197,6 @@ test("watching a worker never holds it; a message does, and Hand back returns it
   await page.getByTestId("transcript").hover();
   await page.mouse.wheel(0, -1200);
   await page.getByTestId("jump-to-live").click();
-  await expect(page.getByTestId("worker-hold")).toHaveCount(0);
   expect(await isHeld(page, made, made.live)).toBe(false);
 
   // A worker whose report has no helper catch-up shows that report's own words.
@@ -208,24 +207,12 @@ test("watching a worker never holds it; a message does, and Hand back returns it
   );
   expect(await isHeld(page, made, made.asking)).toBe(false);
 
-  // Sending it a message is what holds it.
+  // Sending it a message marks it, as information: no hold chip and no Take over or Hand back.
   const composer = page.getByLabel("Message", { exact: true });
   await composer.fill("Use seconds.");
   await page.keyboard.press("ControlOrMeta+Enter");
-  const hold = page.getByTestId("worker-hold");
-  await expect(hold).toContainText("Under your control");
-  expect(await isHeld(page, made, made.asking)).toBe(true);
-
-  // Hand back clears it.
-  await hold.getByRole("button", { name: "Hand back" }).click();
-  await expect(hold).toHaveCount(0);
-  await expect.poll(() => isHeld(page, made, made.asking)).toBe(false);
-
-  // The board's held worker shows the chip, not the old banner, and hands back the same way.
-  await openWorker(page, made.held);
-  await expect(page.getByTestId("worker-hold")).toBeVisible();
-  await expect(page.getByTestId("worker-banner-intervened")).toHaveCount(0);
-  await page.getByTestId("worker-hand-back").click();
+  await expect.poll(() => isHeld(page, made, made.asking)).toBe(true);
   await expect(page.getByTestId("worker-hold")).toHaveCount(0);
-  await expect.poll(() => isHeld(page, made, made.held)).toBe(false);
+  await expect(page.getByTestId("worker-take-over")).toHaveCount(0);
+  await expect(page.getByTestId("worker-hand-back")).toHaveCount(0);
 });
