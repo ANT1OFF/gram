@@ -45,11 +45,16 @@ export interface TimersShape {
  * clock, so it sleeps again for what is left rather than end before its time.
  */
 const sleepUntil = (at: number): Effect.Effect<void> =>
-  Effect.flatMap(Clock.currentTimeMillis, (now) =>
-    now >= at
-      ? Effect.void
-      : Effect.andThen(Effect.sleep(Duration.millis(at - now)), sleepUntil(at)),
-  );
+  // No time at all is no wait, as it always was; a time that never comes is never.
+  Number.isNaN(at)
+    ? Effect.void
+    : at === Number.POSITIVE_INFINITY
+      ? Effect.never
+      : Effect.flatMap(Clock.currentTimeMillis, (now) =>
+          now >= at
+            ? Effect.void
+            : Effect.andThen(Effect.sleep(Duration.millis(at - now)), sleepUntil(at)),
+        );
 
 const local: TimersShape = { until: (_key, at) => sleepUntil(at) };
 

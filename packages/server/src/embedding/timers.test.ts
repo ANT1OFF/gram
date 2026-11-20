@@ -120,6 +120,15 @@ describe("Timers", () => {
     }),
   );
 
+  it.live("ends a wait for no time at once", () =>
+    withTimers({}, (timers) =>
+      timers.until("wake:nan", Number.NaN).pipe(
+        Effect.timeout("1 second"),
+        Effect.map(() => undefined),
+      ),
+    ),
+  );
+
   it.live("is a sleep with no scheduler, and with the hosted features off", () =>
     Effect.gen(function* () {
       const { told, url } = yield* scheduler;
