@@ -18,8 +18,8 @@ export function retryTimeOf(
   now: number,
 ): number | undefined {
   if (error.kind !== "rateLimit" || model === undefined || model.profileId !== undefined) return;
-  // OpenCode and Grok Build report no subscription windows.
-  if (model.agent === "opencode" || model.agent === "grok") return undefined;
+  // OpenCode reports no subscription windows.
+  if (model.agent === "opencode") return undefined;
   const windows = limits[model.agent];
   if (windows === undefined) return undefined;
   let latest: number | undefined;

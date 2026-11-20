@@ -10,6 +10,7 @@ import {
   LIMIT_PROVIDERS,
   LIMIT_WARN_AT,
   LIMIT_WINDOWS,
+  windowsOf,
   limitSpent,
   limitStale,
   limitWarns,
@@ -83,13 +84,13 @@ export function UsageLimitsSection({
       {providers.length === 0 ? (
         <p className="text-reading text-muted-foreground" data-testid="usage-limits-none">
           {provider === undefined
-            ? "Limits appear here once Claude Code or Codex reports one."
+            ? "Limits appear here once Claude Code, Codex or Grok Build reports one."
             : `Limits appear here once ${agentLabel(provider)} reports one.`}
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-3 @lg:grid-cols-2 @5xl:grid-cols-4">
           {providers.flatMap((p) =>
-            LIMIT_WINDOWS.map((w) => (
+            windowsOf(p).map((w) => (
               <LimitCard
                 key={`${p}-${w}`}
                 provider={p}

@@ -5,7 +5,13 @@ import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vitest";
 
 import type { AcpConnection, AcpHandlers, StartAcpAgent } from "./acp.ts";
-import { autoAnswer, grokPermission, makeGrokHost, permissionParams } from "./session.ts";
+import {
+  autoAnswer,
+  billingLimits,
+  grokPermission,
+  makeGrokHost,
+  permissionParams,
+} from "./session.ts";
 
 const command = (text: string) => ({ kind: "execute", rawInput: { command: text } });
 
@@ -42,6 +48,43 @@ describe("Grok Build permissions", () => {
     expect(autoAnswer("acceptEdits", undefined, { kind: "edit", rawInput: {} })).toBe("allow");
     expect(autoAnswer("acceptEdits", undefined, command("ls"))).toBeUndefined();
     expect(autoAnswer("default", undefined, command("ls"))).toBeUndefined();
+  });
+});
+
+const billing = (percent: number, type: string, prepaid?: number) => ({
+  config: {
+    creditUsagePercent: percent,
+    currentPeriod: { type, start: "2026-11-16T08:00:00Z", end: "2026-11-23T08:00:00Z" },
+    ...(prepaid === undefined ? {} : { prepaidBalance: { val: prepaid } }),
+  },
+});
+
+describe("Grok Build plan usage", () => {
+  it("reads a weekly credit period as the seven-day window, with its reset", () => {
+    expect(billingLimits(billing(5, "USAGE_PERIOD_TYPE_WEEKLY"))).toEqual([
+      {
+        window: "seven_day",
+        utilization: 0.05,
+        status: "allowed",
+        resetsAt: Date.parse("2026-11-23T08:00:00Z"),
+      },
+    ]);
+  });
+
+  it("says a spent allowance is at its limit unless prepaid credits carry on", () => {
+    expect(billingLimits(billing(100, "USAGE_PERIOD_TYPE_WEEKLY"))[0]).toMatchObject({
+      status: "rejected",
+      utilization: 1,
+    });
+    expect(billingLimits(billing(100, "USAGE_PERIOD_TYPE_WEEKLY", 500))[0]).toMatchObject({
+      credits: true,
+      creditsAvailable: true,
+    });
+  });
+
+  it("gives no window for a monthly period or a reading without a share", () => {
+    expect(billingLimits(billing(40, "USAGE_PERIOD_TYPE_MONTHLY"))).toEqual([]);
+    expect(billingLimits({ config: {} })).toEqual([]);
   });
 });
 

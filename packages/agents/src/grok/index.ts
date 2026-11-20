@@ -8,6 +8,7 @@ export {
 export { makeGrokMapper, outputText, toolFor, turnUsage, type GrokMapper } from "./mapper.ts";
 export {
   autoAnswer,
+  billingLimits,
   GROK_AGENT_ARGS,
   GROK_CAPABILITIES,
   grokModels,

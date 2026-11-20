@@ -10,6 +10,7 @@ import {
   type PermissionMode,
   type ReasoningVariant,
   type RequestAnswer,
+  type SubscriptionLimitReport,
   type UserInput,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -102,6 +103,32 @@ export const grokModels = (state: Json): ReadonlyArray<AgentModel> =>
         },
       ];
     });
+
+/**
+ * The plan's credits as `x.ai/billing` reports them, as Gram's subscription windows: a weekly
+ * period is the `seven_day` window. A monthly one has no window of Gram's, so it gives nothing.
+ * Prepaid credits keep turns going past a used-up allowance.
+ */
+export const billingLimits = (response: Json): ReadonlyArray<SubscriptionLimitReport> => {
+  const config = record(response["config"]);
+  const percent = config["creditUsagePercent"];
+  const period = record(config["currentPeriod"]);
+  if (typeof percent !== "number" || !Number.isFinite(percent)) return [];
+  if (text(period["type"]) !== "USAGE_PERIOD_TYPE_WEEKLY") return [];
+  const utilization = Math.min(1, Math.max(0, percent / 100));
+  const resetsAt = Date.parse(text(period["end"]) ?? "");
+  const prepaid = record(config["prepaidBalance"])["val"];
+  const credits = typeof prepaid === "number" && prepaid > 0;
+  return [
+    {
+      window: "seven_day",
+      utilization,
+      status: utilization >= 1 ? "rejected" : "allowed",
+      ...(Number.isFinite(resetsAt) ? { resetsAt } : {}),
+      ...(credits ? { credits: true, creditsAvailable: true } : {}),
+    },
+  ];
+};
 
 /** The context window `state` gives for `model`. */
 export const contextWindowOf = (state: Json, model: string | undefined): number | undefined => {
@@ -516,6 +543,29 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
     capabilities: GROK_CAPABILITIES,
     open,
     listModels: (options) => (options?.profileId !== undefined ? Effect.succeed([]) : listModels),
+    readSubscriptionLimits: Effect.gen(function* () {
+      const connection = yield* launchWith(config, homedir(), ignoring);
+      return yield* Effect.tryPromise({
+        try: async () => {
+          try {
+            await connection.request("initialize", initializeParams);
+            return billingLimits(record(await connection.request("_x.ai/billing", {})));
+          } finally {
+            await connection.stop();
+          }
+        },
+        catch: (error) => {
+          const message = messageOf(error);
+          return signInProblem(message)
+            ? new AgentUnavailable({
+                agent: "grok",
+                reason: "not-logged-in",
+                message: SIGN_IN_MESSAGE,
+              })
+            : failure("Couldn't read Grok Build's plan usage", error);
+        },
+      });
+    }),
     listSessions: ({ cwd, limit }) =>
       Effect.gen(function* () {
         const connection = yield* launchWith(config, cwd, ignoring);

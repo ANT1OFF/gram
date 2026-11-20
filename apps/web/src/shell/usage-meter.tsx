@@ -15,6 +15,7 @@ import {
   missingReading,
   LIMIT_PROVIDERS,
   LIMIT_WINDOWS,
+  windowsOf,
   limitStale,
   limitTone,
   limitWarns,
@@ -423,7 +424,7 @@ function ProviderLimits({
           {credits}
         </p>
       )}
-      {LIMIT_WINDOWS.map((window) => {
+      {windowsOf(provider).map((window) => {
         const limit = currentLimit(windows?.[window], now);
         const forecast =
           limit?.at === undefined || limit.samples === undefined

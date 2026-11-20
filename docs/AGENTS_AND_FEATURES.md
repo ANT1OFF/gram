@@ -378,7 +378,8 @@ entitlement, remaining quota or proof that a turn will succeed.
 
 Subscription limits come from CLI-owned account queries at startup and about every
 minute while idle, with refresh from the Usage page. Claude Code supplies structured
-`/usage` data; Codex supplies `account/rateLimits/read`. Turn events update the same
+`/usage` data; Codex supplies `account/rateLimits/read`; Grok Build supplies its plan's credit share
+for the week (`x.ai/billing`), which shows as a weekly window only, since Grok has no 5-hour one. Turn events update the same
 kept readings between polls. Usage cards, the title bar and overview sidebar use
 the same five-hour and weekly windows, with 24-hour reset times. A successful
 sign-out or unavailable response removes that provider's readings; temporary query
@@ -442,7 +443,7 @@ Grok keeps the conversation; Gram resumes it by id after a restart. Models and t
 the ones the CLI lists. Each turn reports its tokens, reasoning tokens and context, and a price
 Grok works out, which Gram adds up as it does Claude Code's. Grok Build runs plain threads only: it
 takes no orchestrator, worker or memory-update role, can't hand its session to another agent,
-reports no subscription windows to the Usage page, and runs on no gateway profile.
+and runs on no gateway profile.
 
 For xAI's API on a key instead, add a gateway on `https://api.x.ai/v1` in Settings → Gateways.
 Codex and OpenCode are offered its models there (Claude Code isn't: xAI no longer serves the
