@@ -30,10 +30,17 @@
 //
 // And a 24-hour clock in the web app: a time formatted with `hour` or `timeStyle` and no
 // `hourCycle: "h23"` reads `2:05 PM` wherever the locale's default is 12-hour.
+//
+// And no imperative timers in the web app: `setTimeout`, `setInterval`, `requestAnimationFrame` and
+// `requestIdleCallback` are mostly reached for to paper over an ordering problem (wait for a render,
+// a focus, a measurement), and many short-lived timers churn the garbage collector into jank. Real
+// time goes through the named helpers in `apps/web/src/lib/timers.ts` and its neighbours; the files
+// not moved yet are in `allowlists.mjs` with how many each may keep.
 
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
+import { noTimer } from "./no-timer.mjs";
 
 const BARE_FORKS = new Set([
   "fork",
@@ -367,6 +374,7 @@ export default {
         };
       },
     },
+    "no-timer": noTimer,
     "disable-reason": {
       meta: {
         type: "problem",

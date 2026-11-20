@@ -2,12 +2,12 @@
 // source when it gave one (searched as the person types, a page at a time), else the server's own
 // `gh` listing, matched here. Either way they are grouped by owner.
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import type { ShellRepositoryPage } from "@/embed/contract";
 import { useEmbedShell } from "@/embed/store";
+import { useDebounced } from "@/lib/timers";
 
 /** How many of the server's own listing are offered at once. */
 const SUGGESTION_LIMIT = 8;
@@ -70,15 +70,6 @@ export interface RepoSuggestions {
 }
 
 const NONE: ReadonlySet<string> = new Set();
-
-const useDebounced = (value: string, ms: number) => {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), ms);
-    return () => clearTimeout(timer);
-  }, [value, ms]);
-  return settled;
-};
 
 /** The repositories to offer for `text`; `active` is false while the list can't be shown. */
 export function useRepoSuggestions(text: string, active: boolean): RepoSuggestions {

@@ -398,6 +398,67 @@ describe("no-sleep", () => {
   });
 });
 
+describe("no-timer", () => {
+  const rule = "gram/no-timer";
+
+  it("refuses each global timer, called bare or through window, globalThis and self", () => {
+    const found = lint(
+      `setTimeout(() => focus(), 0);
+      window.setInterval(tick, 1000);
+      globalThis.requestAnimationFrame(measure);
+      self.requestIdleCallback(warm);
+      const id = window["setTimeout"](run, 5);
+    `,
+      rule,
+      ".tsx",
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 2, 3, 4, 5]);
+    expect(found[0].message).toContain("useFlash");
+    expect(found[1].message).toContain("useNow");
+    expect(found[2].message).toContain("useLayoutEffect");
+    expect(found[3].message).toContain("usePreloadAfterPaint");
+  });
+
+  it("allows a timer bound in the file, a clear, and test files", () => {
+    expect(
+      lint(
+        `import { setTimeout } from "node:timers/promises";
+        await setTimeout(5);
+        export const later = (setTimer = (f, ms) => f(ms)) => setTimer(run, 5);
+        const requestAnimationFrame = (f) => f();
+        requestAnimationFrame(run);
+        clearTimeout(timer);
+        cancelAnimationFrame(frame);
+      `,
+        rule,
+      ),
+    ).toEqual([]);
+    expect(lint("setTimeout(run, 5);", rule, ".test.ts")).toEqual([]);
+  });
+
+  it("is on in the web app under the repository's own config", () => {
+    expect(
+      probeConfig("apps/web/src", "export const t = () => requestAnimationFrame(run);\n"),
+    ).toContain("gram(no-timer)");
+  });
+
+  // The allowance only shrinks: a file that has lost a timer must lower its count in the same change.
+  const pending = Object.entries(ALLOWLISTS["no-timer"].pending);
+  const found = new Map();
+  for (const extension of new Set(pending.map(([file]) => extname(file)))) {
+    const files = pending.map(([file]) => file).filter((file) => extname(file) === extension);
+    const diagnostics = lintEach(
+      files.map((file) => readFileSync(join(root, file), "utf8")),
+      rule,
+      extension,
+    );
+    files.forEach((file, i) => found.set(file, diagnostics[i].length));
+  }
+  it.each(pending)("%s keeps exactly the %i timers it is allowed", (file, count) => {
+    expect(found.get(file), `lower ${file}'s count in tools/oxlint/allowlists.mjs`).toBe(count);
+  });
+});
+
 describe("disable-reason", () => {
   const rule = "gram/disable-reason";
 

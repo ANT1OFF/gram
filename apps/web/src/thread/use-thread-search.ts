@@ -1,9 +1,9 @@
 import type { ThreadId, ThreadSearchHit } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, isNotImplemented } from "@/api/errors";
+import { useDebounced } from "@/lib/timers";
 
 const SEARCH_DEBOUNCE_MS = 200;
 /** Shorter queries don't search. */
@@ -15,15 +15,6 @@ export type ThreadSearchState =
   | { status: "unavailable" }
   | { status: "error"; message: string }
   | { status: "done"; hits: readonly ThreadSearchHit[]; truncated: boolean };
-
-function useDebounced<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), ms);
-    return () => clearTimeout(timer);
-  }, [value, ms]);
-  return debounced;
-}
 
 /**
  * Debounced `thread.search`, across threads or within `threadId`. With `pendingWhileTyping`, a
