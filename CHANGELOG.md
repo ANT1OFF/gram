@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.32.0](https://github.com/ANT1OFF/gram/compare/v1.31.0...v1.32.0) (2026-11-20)
+
+
+### Features
+
+* arch-fixes train 3 — hosts say their disk, durable restore debt per machine ([#793](https://github.com/ANT1OFF/gram/issues/793)) ([0e24257](https://github.com/ANT1OFF/gram/commit/0e24257126e3e384a3420c781cbecd83b9190f97))
+* arch-fixes train 5 — host steps within budget, disk fence with ways back, open a thread whose saved work is gone ([#820](https://github.com/ANT1OFF/gram/issues/820)) ([9ffdc16](https://github.com/ANT1OFF/gram/commit/9ffdc1670c618f334de7af2ed64156719b62a069))
+* forward a local CLI's model calls to a hosted server with the device's sign-in ([#818](https://github.com/ANT1OFF/gram/issues/818)) ([c66b074](https://github.com/ANT1OFF/gram/commit/c66b07459b285b58ea7b83d3ac27878738663b26))
+* **profiles:** an orchestrator's profile can start its workspace's memory updates by themselves ([#787](https://github.com/ANT1OFF/gram/issues/787)) ([f974111](https://github.com/ANT1OFF/gram/commit/f97411199b2222fc731bca656013b6ad47bb7194))
+* say whose work each Board line is when more than one person's is on it ([#795](https://github.com/ANT1OFF/gram/issues/795)) ([fec765d](https://github.com/ANT1OFF/gram/commit/fec765d44ab131d3b8dbb61cf7a6ce5f97516f3f))
+* send work to a hosted workspace from New task, with the live-test fixes and a packaged regression ([#799](https://github.com/ANT1OFF/gram/issues/799)) ([07819d6](https://github.com/ANT1OFF/gram/commit/07819d661f7397561d5a916cfb1b9ee48323c64e))
+* **web:** ask the server what it serves, and never call an RPC it lacks ([#790](https://github.com/ANT1OFF/gram/issues/790)) ([b1c655b](https://github.com/ANT1OFF/gram/commit/b1c655b866b6ed470514599c660ea35c7840517f))
+* **web:** name a new workspace, on a wider two-column sheet ([#816](https://github.com/ANT1OFF/gram/issues/816)) ([9f1f60a](https://github.com/ANT1OFF/gram/commit/9f1f60abf347e3ec54b315d61d1ab830d35acd64))
+* **web:** the worker pane: Workers mode, a worker open beside the chat, its switcher and the sidebar's hand-over ([#822](https://github.com/ANT1OFF/gram/issues/822)) ([d5dd2aa](https://github.com/ANT1OFF/gram/commit/d5dd2aae13b7e83657b160c311979ac4b0140f4a))
+
+
+### Bug Fixes
+
+* arch-fixes train — WIP lease, restore gate, codex 0.170, deps ([#791](https://github.com/ANT1OFF/gram/issues/791)) ([bffe6e8](https://github.com/ANT1OFF/gram/commit/bffe6e8ddd98b7cb9fa88fd1c1ce5209b4d508d0))
+* arch-fixes train 2 — keep work on SIGTERM, lost-machine incident, resume re-asks owed folders ([#792](https://github.com/ANT1OFF/gram/issues/792)) ([599546a](https://github.com/ANT1OFF/gram/commit/599546a8a0c5d2c1134bb59c6ad93f06f55c8301))
+* arch-fixes train 4 — restore record gaps, a ref per checkout, long steps as jobs ([#801](https://github.com/ANT1OFF/gram/issues/801)) ([6e66019](https://github.com/ANT1OFF/gram/commit/6e66019820cca42a8d8916651070216c1e1f3f20))
+* **ci:** cancel only a closed pull request's own runs, never another's on a reused branch ([#814](https://github.com/ANT1OFF/gram/issues/814)) ([7179a71](https://github.com/ANT1OFF/gram/commit/7179a71b1f0e7c882aec1bf63187d96538c6b13d))
+* **desktop:** keep hosted sign-in without lending permission ([#797](https://github.com/ANT1OFF/gram/issues/797)) ([75b533e](https://github.com/ANT1OFF/gram/commit/75b533e0403f3d6f760385406ea6d6f4ad237525))
+* **machines:** the WIP keeper keeps after chained short turns and never cuts a keep off ([#789](https://github.com/ANT1OFF/gram/issues/789)) ([bd06e4c](https://github.com/ANT1OFF/gram/commit/bd06e4c878814e9eaeb853529c429469af246da5))
+* raise the first-paint budget to 2300 kB ([#819](https://github.com/ANT1OFF/gram/issues/819)) ([2b0de0f](https://github.com/ANT1OFF/gram/commit/2b0de0f299183e6964243ad93379eb20838b2531))
+* **security:** a client's message never carries what only the server sets, and endpoint tokens leave the environment ([#798](https://github.com/ANT1OFF/gram/issues/798)) ([a592b62](https://github.com/ANT1OFF/gram/commit/a592b620ba4de09e78bf1a8e14a3e198ba60383f))
+* **security:** approval cards show exactly what runs ([#824](https://github.com/ANT1OFF/gram/issues/824)) ([270a4c1](https://github.com/ANT1OFF/gram/commit/270a4c1992c08a5767325d7aca7ca884f7b5a19b))
+* **security:** dropped file names never type control characters, and palettes can't inject CSS ([#796](https://github.com/ANT1OFF/gram/issues/796)) ([c4152d7](https://github.com/ANT1OFF/gram/commit/c4152d757dc49d6f382d992d6108e9d9cb9ccab5))
+* **security:** joined machines run only an update the publisher signed ([#825](https://github.com/ANT1OFF/gram/issues/825)) ([45b7918](https://github.com/ANT1OFF/gram/commit/45b79186eaf8fe140ae3cabb5b15ebee89699e2b))
+* **security:** November scan batch 1 (hosted trust, merge approvals, review bot, folder trust, data folder, previews, markdown, update locks) ([#812](https://github.com/ANT1OFF/gram/issues/812)) ([dcf6247](https://github.com/ANT1OFF/gram/commit/dcf6247145daf860664f3fbf39d4c10df4aac44a))
+* **security:** November scan batch 3 (thread readers, gateway redirects, remote sessions and folders, memory labels) ([#826](https://github.com/ANT1OFF/gram/issues/826)) ([1e7b68a](https://github.com/ANT1OFF/gram/commit/1e7b68a03e9b50eccfb5e33447b87b91a2e8d9d0))
+* **security:** the desktop app reads its keys through safeStorage alone ([#823](https://github.com/ANT1OFF/gram/issues/823)) ([407f8da](https://github.com/ANT1OFF/gram/commit/407f8da627248e004b4dd58a89bdd2c335e558e6))
+* **security:** the packaged Gram runs no script it is handed (RunAsNode off) ([#821](https://github.com/ANT1OFF/gram/issues/821)) ([61e840c](https://github.com/ANT1OFF/gram/commit/61e840c7eadb23ecfd4f8f7e8e78c9f8fefcc85e))
+* **server:** draw a message steered into a streaming reply where it was sent ([#817](https://github.com/ANT1OFF/gram/issues/817)) ([8f1a40e](https://github.com/ANT1OFF/gram/commit/8f1a40e228b3e1751ac886af1a0f2a47f004ccde))
+* **server:** keep a session waiting for a new disk's resume, log why work wasn't kept, and resume a lost machine's thread from the embedding ([#786](https://github.com/ANT1OFF/gram/issues/786)) ([eb01a7d](https://github.com/ANT1OFF/gram/commit/eb01a7d39a68026a82cadbfe00c6086e5f6f2242))
+* **web:** phone-narrow windows get the phone layout, a silent thread feed asks again, and places can start a thread's path ([#828](https://github.com/ANT1OFF/gram/issues/828)) ([f5a1d5e](https://github.com/ANT1OFF/gram/commit/f5a1d5e29cd0e56ba2f1abab9e6cc48113b024de))
+* **web:** the worker pane keeps the keys after an inline tool, a clicked tool tab takes them, one PR per worker ([#829](https://github.com/ANT1OFF/gram/issues/829)) ([da55f61](https://github.com/ANT1OFF/gram/commit/da55f61025b06bc50d6e0031c2ef8ef49a9cde69))
+* **web:** the worker pane takes the keys, a finished worker is read only, a worker's links open its own tools ([#827](https://github.com/ANT1OFF/gram/issues/827)) ([540a34e](https://github.com/ANT1OFF/gram/commit/540a34e79f15662910f1379885ab66184b6906e2))
+* workers read the memory their orchestrator reads; say why a fresh session waits and a usage window has no reading ([#813](https://github.com/ANT1OFF/gram/issues/813)) ([72e01aa](https://github.com/ANT1OFF/gram/commit/72e01aa23344bb7b9ae6c4428965679446328c32))
+
 ## [1.31.0](https://github.com/ANT1OFF/gram/compare/v1.30.0...v1.31.0) (2026-11-19)
 
 
