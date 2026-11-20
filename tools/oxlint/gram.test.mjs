@@ -3,8 +3,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
+import { addedComments } from "./no-comment.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Lints each source as a file of its own in one oxlint run, and returns each file's diagnostics. */
@@ -582,6 +583,12 @@ describe("no-timer", () => {
 
 describe("no-comment", () => {
   const rule = "gram/no-comment";
+  beforeAll(() => {
+    process.env.GRAM_CHECK_ALL_COMMENTS = "1";
+  });
+  afterAll(() => {
+    delete process.env.GRAM_CHECK_ALL_COMMENTS;
+  });
 
   it("refuses explanations, trailing notes, TODOs and docs on private code", () => {
     const found = lint(
@@ -640,6 +647,19 @@ describe("no-comment", () => {
     expect(probeConfig("apps/web/src", "// a note\nexport const a = 1;\n")).toContain(
       "gram(no-comment)",
     );
+  });
+
+  it("counts only the comments a change adds, not those it moves or keeps", () => {
+    const text = "// old\nexport const a = 1;\n// old\n// new\n";
+    const at = (from) => ({ comment: { range: [from, text.indexOf("\n", from)] } });
+    const refused = [at(0), at(text.indexOf("// old", 1)), at(text.indexOf("// new"))];
+    const lines = (before) =>
+      addedComments(refused, text, before).map(({ comment }) => comment.range[0]);
+    expect(lines("export const a = 1;\n// old\n")).toEqual(
+      refused.slice(1).map((r) => r.comment.range[0]),
+    );
+    expect(lines("// new\n// old\n// old\n")).toEqual([]);
+    expect(lines(undefined)).toHaveLength(3);
   });
 });
 

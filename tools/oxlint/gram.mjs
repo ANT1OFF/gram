@@ -42,7 +42,7 @@
 // not moved yet are in `allowlists.mjs` with how many each may keep.
 //
 // And no explanatory comments in product source (`gram/no-comment`, in `no-comment.mjs`): directives,
-// license headers and docs on exports stay, and the files not cleared yet are in `comments-baseline.json`.
+// license headers and docs on exports stay, and only what a change adds is checked.
 
 import { dirname, relative, resolve } from "node:path";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";

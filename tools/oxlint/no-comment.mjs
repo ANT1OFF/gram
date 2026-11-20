@@ -1,19 +1,43 @@
 // `gram/no-comment`: product code says what it means in code. A comment goes stale the day the
 // code under it changes, people skim past it, and an agent reaches for one to explain away a
 // shortcut instead of fixing its cause. What stays: directives, a license header, and a `/** … */`
-// doc on an exported declaration or one of its members, which is the API's documentation. The
-// files not cleared yet are in `comments-baseline.json` with how many comments each may keep. A file
-// below its count is not an error: nearly every change touches comments, and parallel pull requests
-// would otherwise fail main on each other's cleanups. `comments-baseline.mjs` lowers the entries.
+// doc on an exported declaration or one of its members, which is the API's documentation.
+//
+// The rule holds what a change adds. Each file the change touches is compared with where it left
+// the base (GRAM_COMMENTS_BASE, default origin/main; `comments-base.mjs` writes it before oxlint
+// runs): a refused comment whose source text the file
+// did not have there is new. Comments already on the base wait to be cleared without a list, so
+// parallel pull requests and cleanups never fail each other. Moving a comment is not adding one;
+// rewording one is. Without that file, as in an editor, the rule checks nothing.
+// GRAM_CHECK_ALL_COMMENTS=1 checks every file, for counting what is left.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(HERE, "../..");
-export const BASELINE_PATH = resolve(HERE, "comments-baseline.json");
-const baseline = () => JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
+export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+export const COMMENTS_BASE_PATH = resolve(REPO, "node_modules/.cache/gram/comments-base.json");
+
+let touched;
+/** Each product file changed since the merge base, with its text there (null when new); null when unknown. */
+const touchedFiles = () => {
+  if (touched !== undefined) return touched;
+  if (!existsSync(COMMENTS_BASE_PATH)) return (touched = null);
+  const { files } = JSON.parse(readFileSync(COMMENTS_BASE_PATH, "utf8"));
+  return (touched = files === null ? null : new Map(Object.entries(files)));
+};
+
+/** The refused comments whose source text `before` holds fewer times than `text` does. */
+export const addedComments = (refused, text, before) => {
+  const left = new Map();
+  return refused.filter(({ comment }) => {
+    const raw = text.slice(comment.range[0], comment.range[1]);
+    if (!left.has(raw)) left.set(raw, before === undefined ? 0 : before.split(raw).length - 1);
+    const count = left.get(raw);
+    left.set(raw, count - 1);
+    return count <= 0;
+  });
+};
 
 const isTestFile = (file) =>
   /\.(test|spec)\.[cm]?[jt]sx?$/.test(file) ||
@@ -113,17 +137,14 @@ export const noComment = {
   create(context) {
     const file = relative(REPO, context.filename).replaceAll("\\", "/");
     if (isTestFile(file) || file.endsWith(".d.ts")) return {};
-    const allowed = process.env.GRAM_COUNT_COMMENTS ? 0 : (baseline()[file] ?? 0);
+    const files = process.env.GRAM_CHECK_ALL_COMMENTS ? new Map([[file, null]]) : touchedFiles();
+    if (!files?.has(file)) return {};
+    const before = files.get(file) ?? undefined;
     return {
       Program(program) {
         const refused = refusedComments(context.sourceCode, program);
-        if (refused.length <= allowed) return;
-        const note =
-          allowed > 0
-            ? ` (${file} may keep ${allowed} in tools/oxlint/comments-baseline.json, which only shrinks; it has ${refused.length}. Clear the new ones, or the ones you touched.)`
-            : "";
-        for (const { comment, message } of refused)
-          context.report({ loc: comment.loc, message: message + note });
+        for (const { comment, message } of addedComments(refused, context.sourceCode.text, before))
+          context.report({ loc: comment.loc, message });
       },
     };
   },
