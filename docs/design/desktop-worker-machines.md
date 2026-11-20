@@ -157,17 +157,27 @@ If the machine isn't online within five minutes, the desktop asks `…/stop`, fo
 the spawn fails with "The machine worker-… didn't join within 5 minutes, so it was stopped". No
 machine is left running for a spawn that failed. A server that says the machine failed
 (`phase: "failed"`), or stopped before its host joined, ends the wait at once with its own words.
-One stopped after its host joined (`phase: "stopped"` with its key) is registered and relayed all
-the same: the relay's dial wakes it there. A machine registered here that the server says is
-stopped is kept, for the same reason. A dial from someone who is now only a viewer keeps a running
-machine alive but never wakes a stopped one: a spawn reusing it waits its five minutes and is told
-so, stopping nothing, and the relay dials again no more than once a minute.
+One stopped after its host joined (`phase: "stopped"` with its key) is registered all the same,
+and started again as below.
 
-A machine registered here that the server says failed (`phase: "failed"`, a recovery that failed
-before it joined again) stays failed whatever dials it, until a start of its name. So it isn't
-relayed any more and is said once in the log, and a spawn reusing it is told at once, with the
-server's words, rather than waited on. It stays registered, since it may hold an earlier spawn's
-work, and a start of the name relays it again.
+**No dial wakes a machine there.** A relay's dial only keeps a running, unreleased machine at
+work. One the server says is paused (`phase: "stopped"`, stopped while idle) or failed stays so
+until this Gram sends `…/start` for its name, which wakes it on its own disk. So the desktop sends
+that start itself whenever work here needs the machine:
+
+- **A worker resumed on it, or a message to one,** opens a session there, which waits for the
+  machine (`stops.wanting`). Each time an offline relayed machine comes to be wanted, the desktop
+  reads its `…/status` and, only if that says stopped or failed, sends `…/start` with `{name}`
+  alone (the server keeps what it was started with). A name the server doesn't say is stopped or
+  failed is never started, so one it no longer knows is never made afresh.
+- **A spawn reusing it** does the same as it waits: started once; failed again after that start,
+  the spawn is told at once in the server's words.
+- Each wake is the spawn's start: the name's lock, a release taken back first, a `503` asked again
+  a few times. Nothing else starts a machine: never a dial, a relay, or a pass.
+
+A machine registered here that the server says is stopped or failed isn't relayed while it is
+(a failed one is said once in the log): it stays registered, since it may hold an earlier spawn's
+work, and a wake or a start of its name relays it again.
 
 A start answered `503` (`busy` or `unavailable`) started nothing: it is asked again after two
 seconds, then four, three times in all, and then refused as the server unavailable, never as over

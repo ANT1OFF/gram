@@ -3,7 +3,13 @@
 // the relayed connection the fake app carries, against the real machine registry.
 
 import { describe, expect, it } from "@effect/vitest";
-import { HOST_PROTOCOL_VERSION, HostId, type Thread, type ThreadId } from "@gram/contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  HostId,
+  HostUnavailable,
+  type Thread,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -22,11 +28,13 @@ import { appToolsTunnel, machineHosts, type MachineDeps } from "../host/remote-w
 import { memoryMachineStore } from "../host/paired-machines.ts";
 import { HOST_CAPABILITIES, type HostService, serveHost } from "../host/protocol.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
+import { awaitedMachines } from "../host/worker-host.ts";
 import { noAgents, sessionsOnHost } from "../host/sessions.ts";
 import { terminalsOnHost } from "../host/terminals.ts";
 import { workerMachine } from "../orchestration/service/spawning.ts";
 import { Socket } from "../platform/unstable.ts";
 import { releaseTeller, workerMachineWork } from "./worker-machine-release.ts";
+import { workerMachineName } from "./worker-machines.ts";
 import {
   bridgeWorkerMachines,
   forgetReclaimed,
@@ -34,6 +42,7 @@ import {
   type NameLocks,
   UNSETTLED_START_MS,
   NO_SIGNED_IN_SERVER,
+  isHostedWorkerName,
   settleOwedStops,
   START_ATTEMPTS,
   tellSignedInRelease,
@@ -42,6 +51,7 @@ import {
   SignedInWorkers,
   SignedInWorkersLive,
   signedInSource,
+  wakeSignedIn,
   WorkerMachinePort,
   type WorkerMachinePortShape,
   type WorkerMachineMessagePort,
@@ -697,36 +707,38 @@ describe("worker machines from a signed-in hosted server", () => {
     }),
   );
 
-  it.live("tells a reuse at once of a registered machine the server says failed", () =>
-    Effect.gen(function* () {
-      const hosts = yield* RemoteHosts.make(memoryMachineStore());
-      provisionRelayed(hosts, NAME);
-      const unrelayed: string[] = [];
-      const failed = new Set<string>();
-      const app = fakeApp({
-        answer: ({ call }) =>
-          call === "status"
-            ? { status: 200, body: { phase: "failed", message: "Recovery failed." } }
-            : { status: 202, body: {} },
-      });
-      const port = bridgeWorkerMachines(app.port);
-      const source = signedInSource(SERVER, {
-        port: { ...port, unrelay: (name) => unrelayed.push(name) },
-        hosts,
-        failed,
-        timeoutMs: 2_000,
-        everyMs: 20,
-      });
-      const arrived = yield* source.arrive(NAME);
-      expect(typeof arrived === "object" && arrived.failed !== "timeout").toBe(true);
-      expect(unrelayed).toEqual([NAME]);
-      expect([...failed]).toEqual([NAME]);
-      // Nothing is stopped: it is registered from an earlier spawn and may hold its work.
-      expect(app.calls.map((each) => each.call)).toEqual(["status"]);
-      // Started again under its name, it may come back: relayed once more.
-      yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
-      expect([...failed]).toEqual([]);
-    }),
+  it.live(
+    "starts a reused machine the server says failed once, and tells when it fails again",
+    () =>
+      Effect.gen(function* () {
+        const hosts = yield* RemoteHosts.make(memoryMachineStore());
+        provisionRelayed(hosts, NAME);
+        const unrelayed: string[] = [];
+        const asleep = new Set<string>();
+        // Failed there, and failed again after the start this asks for.
+        const app = fakeApp({
+          answer: ({ call }) =>
+            call === "status"
+              ? { status: 200, body: { phase: "failed", message: "Recovery failed." } }
+              : { status: 202, body: {} },
+        });
+        const port = bridgeWorkerMachines(app.port);
+        const source = signedInSource(SERVER, {
+          port: { ...port, unrelay: (name) => unrelayed.push(name) },
+          hosts,
+          asleep,
+          timeoutMs: 2_000,
+          everyMs: 20,
+        });
+        const arrived = yield* source.arrive(NAME);
+        expect(typeof arrived === "object" && arrived.failed !== "timeout").toBe(true);
+        // One start of its name, `{name}` alone; never a stop: it may hold an earlier spawn's work.
+        const starts = app.calls.filter((each) => each.call === "start");
+        expect(starts.map((each) => each.body)).toEqual([{ name: NAME }]);
+        expect(app.calls.map((each) => each.call)).not.toContain("stop");
+        expect(unrelayed).toEqual([NAME]);
+        expect([...asleep]).toEqual([NAME]);
+      }),
   );
 
   it.live("says the server's own words when it stops starting the machine", () =>
@@ -939,7 +951,7 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
     }),
   );
 
-  it.live("keep a machine the server says is stopped: the next dial wakes it", () =>
+  it.live("keep a machine the server says is stopped, for work here to start again", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
       provisionRelayed(hosts, NAME);
@@ -1396,6 +1408,112 @@ describe("a hosted server's answers about one machine", () => {
       );
       expect(told).toBe("applied");
       expect(app.calls).toHaveLength(3);
+    }),
+  );
+});
+
+describe("a worker machine that work here wants", () => {
+  it.live("is started when a worker resumes on it paused, and never for a dial", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const { id } = provisionRelayed(hosts, NAME);
+      // Paused there while the desktop was away: stopped until a start of its name.
+      let phase = "stopped";
+      const app = fakeApp({
+        answer: ({ call }) => {
+          if (call === "start") phase = "starting";
+          return call === "status"
+            ? { status: 200, body: { phase } }
+            : { status: call === "start" ? 202 : 200, body: {} };
+        },
+      });
+      const port = bridgeWorkerMachines(app.port);
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(port)),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      // The relays are told and the reclaimed pass asks after it: nothing starts it.
+      yield* Effect.sleep("50 millis");
+      expect(app.calls.map((each) => each.call)).not.toContain("start");
+      // A worker placed on it resumes: its session waits for the machine, as it opens.
+      const forSession = awaitedMachines(
+        (hostId) => Effect.fail(new HostUnavailable({ hostId, message: "away" })),
+        hosts,
+        { getSettings: Effect.succeed({ experimental: { embedding: true } } as never) },
+        60_000,
+      );
+      const opening = yield* Effect.forkScoped(forSession(HostId.make(id), "t-1" as ThreadId));
+      while (!app.calls.some((each) => each.call === "start")) yield* Effect.sleep("10 millis");
+      expect(app.calls.filter((each) => each.call === "start").map((each) => each.body)).toEqual([
+        { name: NAME },
+      ]);
+      yield* Fiber.interrupt(opening);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("takes a release back before it starts one, as a spawn's start does", () =>
+    Effect.gen(function* () {
+      let released = true;
+      const app = fakeApp({
+        answer: ({ call, body }) => {
+          if (call === "release" && body["released"] === false) released = false;
+          if (call === "status") return { status: 200, body: { phase: "stopped" } };
+          return call === "start" && released
+            ? { status: 409, body: { code: "released" } }
+            : { status: call === "start" ? 202 : 200, body: {} };
+        },
+      });
+      const woke = yield* wakeSignedIn(bridgeWorkerMachines(app.port), { name: NAME, via: ORIGIN });
+      expect(woke).toBe("started");
+      expect(app.calls.map((each) => each.call)).toEqual(["status", "start", "release", "start"]);
+    }),
+  );
+
+  it.live("starts nothing the server doesn't say is stopped or failed", () =>
+    Effect.gen(function* () {
+      for (const answer of [
+        { status: 404, body: { code: "not_found" } },
+        { status: 200, body: { phase: "running" } },
+        { status: 503, body: { code: "unavailable" } },
+      ]) {
+        const app = fakeApp({ answer: () => answer });
+        yield* wakeSignedIn(bridgeWorkerMachines(app.port), { name: NAME, via: ORIGIN });
+        expect(app.calls.map((each) => each.call)).toEqual(["status"]);
+      }
+    }),
+  );
+});
+
+describe("worker machine names", () => {
+  it("are always ones a hosted server takes", () => {
+    for (let each = 0; each < 50; each += 1) {
+      expect(isHostedWorkerName(workerMachineName("o", undefined))).toBe(true);
+      expect(isHostedWorkerName(workerMachineName("o", `request-${each}`))).toBe(true);
+    }
+  });
+
+  it.effect("send no call for a name a hosted server wouldn't take", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({ answer: () => ({ status: 202, body: {} }) });
+      const port = bridgeWorkerMachines(app.port);
+      const source = signedInSource(SERVER, {
+        port,
+        hosts: {
+          list: () => [],
+          remove: () => false,
+          machines: { provision: () => ({}) as never },
+        },
+      });
+      const started = yield* source.start({
+        name: "worker-zzzzzzzzzz",
+        orchestrator: "o",
+        title: "x",
+      });
+      expect(started.kind).toBe("refused");
+      expect(yield* wakeSignedIn(port, { name: "worker-ABC", via: ORIGIN })).toBe("refused");
+      expect(app.calls).toEqual([]);
     }),
   );
 });
