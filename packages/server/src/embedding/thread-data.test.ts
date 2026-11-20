@@ -1,6 +1,6 @@
 import type { Thread } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
-import { threadData } from "./thread-data.ts";
+import { errorDetailData, threadData } from "./thread-data.ts";
 
 const thread = (extra: Record<string, unknown> = {}) =>
   ({
@@ -35,5 +35,21 @@ describe("threadData", () => {
 
   it("sends none for a thread whose turns didn't fail, which clears an earlier one", () => {
     expect(threadData(thread())).not.toHaveProperty("lastError");
+  });
+});
+
+describe("errorDetailData", () => {
+  it("sends why a thread is in error, on one line and without a secret in it", () => {
+    const data = errorDetailData(
+      "error",
+      "agent session ended:\n  spawn failed with token=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+    );
+    expect(data["detail"]).toMatch(/^agent session ended: spawn failed/);
+    expect(data["detail"]).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789");
+    expect(String(data["detail"])).not.toContain("\n");
+  });
+
+  it("sends nothing for a thread that isn't in error", () => {
+    expect(errorDetailData("running", "Reading files")).toEqual({});
   });
 });
