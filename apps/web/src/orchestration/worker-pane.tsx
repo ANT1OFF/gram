@@ -71,6 +71,15 @@ import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-c
 import { nowBesidePrs } from "./rail-model";
 import { StatusDot } from "./status-dot";
 import { STATUS_WORDS } from "./status-words";
+import {
+  PlanPopover,
+  RepoChip,
+  repoCaveat,
+  StepTitle,
+  useWorkerRepos,
+  WorkerAsideLine,
+  workerHeadVariant,
+} from "./worker-head-proto";
 import { PlanSteps } from "./worker-row-wide";
 import { finishedRow } from "./workers-model";
 import { neighbour, rowsInOrder, type PanelRow, type StatusGroup } from "./workers-panel-model";
@@ -459,7 +468,13 @@ export function WorkerPane({
           </Hint>
         </div>
         {record ? <RecordLine detail={detail} /> : <StateLine worker={worker} row={row} />}
-        <ToolRow tools={tools} shown={shownTab} onPick={setTab} />
+        {!record && workerHeadVariant() === "v2" && <WorkerAsideLine threadId={worker} />}
+        <ToolRow
+          tools={tools}
+          shown={shownTab}
+          onPick={setTab}
+          worker={record ? undefined : worker}
+        />
       </header>
       <ToolBody
         tool={shownTab}
@@ -516,6 +531,8 @@ function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefine
   const chips = useWorkerPrChips(worker, NO_PRS);
   const { headline } = useThreadHeadline(worker);
   const now = useNow(true, undefined, 60_000);
+  const repos = useWorkerRepos(worker);
+  const variant = workerHeadVariant();
   if (summary === undefined) return null;
   const display = threadStatusOf(summary, detail);
   const agent = summary.thread.model?.agent;
@@ -549,9 +566,21 @@ function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefine
       <span data-testid="beside-status" className="min-w-0 truncate" title={status}>
         {nowBesidePrs(status, shownPrNumbers(chips, true))}
       </span>
-      {headline !== undefined && headline.total > 0 && (
-        <PlanSteps done={headline.done} total={headline.total} />
-      )}
+      {headline !== undefined &&
+        headline.total > 0 &&
+        (variant === "v3" ? (
+          <StepTitle threadId={worker} done={headline.done} total={headline.total} />
+        ) : variant === "v1" ? (
+          <PlanPopover
+            threadId={worker}
+            label={`Step ${Math.min(headline.done + 1, headline.total)} of ${headline.total}. Open the plan`}
+          >
+            <PlanSteps done={headline.done} total={headline.total} />
+          </PlanPopover>
+        ) : (
+          <PlanSteps done={headline.done} total={headline.total} />
+        ))}
+      {variant === "v3" && repos !== undefined && <RepoChip repos={repos} />}
       <AgentAge agent={agent} at={active} now={now} />
     </div>
   );
@@ -631,12 +660,20 @@ function ToolRow({
   tools,
   shown,
   onPick,
+  worker,
 }: {
   tools: readonly Tool[];
   shown: BesideTab;
   onPick: (tab: BesideTab) => void;
+  /** Prototype (worker-head-trim V1): a live worker, whose multi-repo caveat its tabs carry. */
+  worker?: ThreadId | undefined;
 }) {
   const reasons = useId();
+  const repos = useWorkerRepos(worker ?? ("" as ThreadId));
+  const caveat =
+    worker !== undefined && repos !== undefined && workerHeadVariant() === "v1"
+      ? repoCaveat(repos)
+      : undefined;
   const row = useRef<HTMLDivElement>(null);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const all = [...(row.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
@@ -711,6 +748,8 @@ function ToolRow({
         );
         return off ? (
           <Hint key={tool.id} label={tool.off!} side="bottom" render={button} />
+        ) : caveat !== undefined && (tool.id === "changes" || tool.id === "pr") ? (
+          <Hint key={tool.id} label={caveat} side="bottom" render={button} />
         ) : (
           button
         );

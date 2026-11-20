@@ -50,7 +50,14 @@ const BANNER =
  * multi-repo worker works in, the routine that started it, and its workspace's pause: a filled
  * band that names the workspace and resumes all of it.
  */
-export function WorkerBanner({ thread }: { thread: Thread }) {
+export function WorkerBanner({
+  thread,
+  repos: showRepos = true,
+}: {
+  thread: Thread;
+  /** Prototype (worker-head-trim): off where the worker pane's head says it instead. */
+  repos?: boolean;
+}) {
   const workspace = useWorkspaces().find((state) => state.workspace.id === thread.workspaceId);
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
   const status = useThreadsStore((s) => s.byId[thread.id]?.status);
@@ -114,7 +121,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
           )}
         </p>
       )}
-      {repos !== undefined && (
+      {showRepos && repos !== undefined && (
         <p
           data-testid="worker-banner-repos"
           className="flex min-w-0 items-start gap-1.5 border-b border-edge bg-card/40 px-3 py-1 text-meta text-muted-foreground"

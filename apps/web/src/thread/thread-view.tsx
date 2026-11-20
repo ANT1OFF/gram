@@ -45,6 +45,7 @@ import { orchestratorRowTitle } from "@/orchestration/tree-model";
 import { FinishedWorkerView } from "@/orchestration/finished-worker-view";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { OrchestratorBanner, OrchestratorChips, WorkerBanner } from "@/orchestration/worker-banner";
+import { workerHeadVariant } from "@/orchestration/worker-head-proto";
 import { besideShown, useBesideStore } from "@/orchestration/beside-store";
 import { BesideLinkScope } from "@/orchestration/beside-link";
 import { CatchUpCard } from "@/orchestration/catch-up-card";
@@ -728,8 +729,14 @@ export function ThreadView({
         <div className={traceShown ? "hidden" : "contents"}>
           <StatusHeader thread={thread} digests={stream?.plan.digests} />
           <WaitingTray threadId={threadId} />
-          <PlanStrip threadId={threadId} />
-          <WorkerBanner thread={thread} />
+          {/* Prototype (worker-head-trim): a variant's worker-pane head says these itself. */}
+          {!(beside !== undefined && workerHeadVariant() !== "before") && (
+            <PlanStrip threadId={threadId} />
+          )}
+          <WorkerBanner
+            thread={thread}
+            repos={!(beside !== undefined && workerHeadVariant() !== "before")}
+          />
           {/* A helper's summary isn't the conversation, which is all "Conversation only" shows. */}
           {!conversationOnly && <CatchUpCard thread={thread} />}
           <StuckCard thread={thread} />

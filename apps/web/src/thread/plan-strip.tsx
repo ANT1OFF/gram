@@ -409,12 +409,20 @@ const updatedText = (by: PlanSource, ago: string): string => {
  * the plan has none. Absent while the thread keeps no plan, and on an orchestrator, whose board is
  * its plan.
  */
-export function PlanStrip({ threadId }: { threadId: ThreadId }) {
+export function PlanStrip({
+  threadId,
+  inPopover = false,
+}: {
+  threadId: ThreadId;
+  /** Prototype (worker-head-trim): the opened plan alone, in a popover from the worker pane's head. */
+  inPopover?: boolean;
+}) {
   const api = useApi();
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const turnPlan = useThreadsStore((s) => s.plans[threadId]);
   const { headline, planned } = useThreadHeadline(threadId);
-  const [open, setOpen] = useState(false);
+  const [openState, setOpen] = useState(false);
+  const open = inPopover || openState;
   const [adding, setAdding] = useState(false);
   const [editingGoal, setEditingGoal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -474,79 +482,88 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
       data-testid="plan-strip"
       data-open={open}
       data-turn={turn}
-      className="@container shrink-0 border-b border-edge bg-card/30"
+      className={cn("@container shrink-0", !inPopover && "border-b border-edge bg-card/30")}
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-label={`Plan: ${goal || "the agent's todo list"}, ${lead ?? `${progress.done} of ${progress.total} done`}${line === undefined ? "" : `. ${line}`}`}
-        onClick={() => setOpen(!open)}
-        className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
-      >
-        {/* While the thread works, the header's status is the one thing that moves, so the ring
+      {!inPopover && (
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={`Plan: ${goal || "the agent's todo list"}, ${lead ?? `${progress.done} of ${progress.total} done`}${line === undefined ? "" : `. ${line}`}`}
+          onClick={() => setOpen(!open)}
+          className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
+        >
+          {/* While the thread works, the header's status is the one thing that moves, so the ring
             only counts. A turn that failed or was stopped says so in its glyph too. */}
-        {glyph === "failed" ? (
-          <FailedIcon
-            aria-hidden
-            data-testid="plan-strip-glyph"
-            data-glyph="failed"
-            className={cn("size-icon-row shrink-0", STATUS_DISPLAY.error.tone)}
-          />
-        ) : glyph === "stopped" ? (
-          <span
-            aria-hidden
-            data-testid="plan-strip-glyph"
-            data-glyph="stopped"
-            className="grid size-3.5 shrink-0 place-items-center"
-          >
-            <Square className="size-2.5 fill-current" />
-          </span>
-        ) : (
-          <PlanRing
-            headline={{
-              phase:
-                headline === undefined || headline.phase === "working" ? "next" : headline.phase,
-              done: progress.done,
-              total: progress.total,
-            }}
-          />
-        )}
-        <span className="max-w-[50%] shrink-0 truncate font-medium text-foreground">
-          {goal || "Plan"}
-        </span>
-        {/* Neutral even when the turn failed: the error's card in the transcript is the one
-            alarm. */}
-        {lead !== undefined && (
-          <span data-testid="plan-strip-turn" className="shrink-0">
-            · {lead}
-          </span>
-        )}
-        {line !== undefined && (
-          <span data-testid="plan-strip-headline" className="min-w-0 truncate @max-sm:hidden">
-            · {line}
-          </span>
-        )}
-        {progress.total > 0 && state?.count !== false && (
-          <span data-testid="plan-strip-count" className="ml-auto shrink-0 tabular-nums">
-            {progress.done}/{progress.total}
-          </span>
-        )}
-        <ChevronDown
-          aria-hidden
-          className={cn(
-            "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
-            (progress.total === 0 || state?.count === false) && "ml-auto",
-            open && "rotate-180",
+          {glyph === "failed" ? (
+            <FailedIcon
+              aria-hidden
+              data-testid="plan-strip-glyph"
+              data-glyph="failed"
+              className={cn("size-icon-row shrink-0", STATUS_DISPLAY.error.tone)}
+            />
+          ) : glyph === "stopped" ? (
+            <span
+              aria-hidden
+              data-testid="plan-strip-glyph"
+              data-glyph="stopped"
+              className="grid size-3.5 shrink-0 place-items-center"
+            >
+              <Square className="size-2.5 fill-current" />
+            </span>
+          ) : (
+            <PlanRing
+              headline={{
+                phase:
+                  headline === undefined || headline.phase === "working" ? "next" : headline.phase,
+                done: progress.done,
+                total: progress.total,
+              }}
+            />
           )}
-        />
-      </button>
+          <span className="max-w-[50%] shrink-0 truncate font-medium text-foreground">
+            {goal || "Plan"}
+          </span>
+          {/* Neutral even when the turn failed: the error's card in the transcript is the one
+            alarm. */}
+          {lead !== undefined && (
+            <span data-testid="plan-strip-turn" className="shrink-0">
+              · {lead}
+            </span>
+          )}
+          {line !== undefined && (
+            <span data-testid="plan-strip-headline" className="min-w-0 truncate @max-sm:hidden">
+              · {line}
+            </span>
+          )}
+          {progress.total > 0 && state?.count !== false && (
+            <span data-testid="plan-strip-count" className="ml-auto shrink-0 tabular-nums">
+              {progress.done}/{progress.total}
+            </span>
+          )}
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
+              (progress.total === 0 || state?.count === false) && "ml-auto",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+      )}
       {open && (
         // Capped to a share of the pane and scrolled, so eight steps and a todo list can't push the
         // composer out of a short grid pane.
         <div
           data-testid="plan-strip-body"
-          className="max-h-[calc(var(--pane-height,100vh)*0.4)] thread-column overflow-y-auto px-6 pb-3 @max-sm:px-3"
+          className={
+            inPopover
+              ? "max-h-96 overflow-y-auto px-3 pt-2.5 pb-2"
+              : "max-h-[calc(var(--pane-height,100vh)*0.4)] thread-column overflow-y-auto px-6 pb-3 @max-sm:px-3"
+          }
         >
+          {inPopover && !editingGoal && goal !== "" && (
+            <p className="mb-1.5 text-meta font-medium text-foreground">{goal}</p>
+          )}
           {editingGoal ? (
             <div className="mb-1.5 flex">
               <TextEdit
