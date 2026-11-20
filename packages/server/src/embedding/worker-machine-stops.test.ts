@@ -5,6 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
@@ -51,7 +52,13 @@ describe("stops a server never confirmed", () => {
         });
         yield* source.abandon(NAME, { unsettled: true });
         expect(owed.list()).toEqual([
-          { origin: ORIGIN, name: NAME, since: 1_000, unsettled: true },
+          {
+            origin: ORIGIN,
+            name: NAME,
+            since: 1_000,
+            unsettled: true,
+            attempt: expect.any(String),
+          },
         ]);
         // Still within the time a start may take: the 404 settles nothing.
         yield* settleOwedStops(
@@ -90,7 +97,9 @@ describe("stops a server never confirmed", () => {
         now: () => 1_000,
       });
       yield* source.abandon(NAME, { unsettled: true });
-      expect(owed.list()).toEqual([{ origin: ORIGIN, name: NAME, since: 1_000, unsettled: true }]);
+      expect(owed.list()).toEqual([
+        { origin: ORIGIN, name: NAME, since: 1_000, unsettled: true, attempt: expect.any(String) },
+      ]);
       yield* settleOwedStops(
         port,
         owed,
@@ -190,6 +199,59 @@ describe("stops a server never confirmed", () => {
       }).pipe(Effect.scoped),
   );
 
+  it.live("keep a retry's start owed when an older stop of its name is settled meanwhile", () =>
+    Effect.gen(function* () {
+      // The older stop is answered late, saying the server holds no machine of that name.
+      const answer = yield* Deferred.make<void>();
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "start" ? { status: 202, body: {} } : { status: 200, body: { stopped: false } },
+      });
+      const bridged = bridgeWorkerMachines(app.port);
+      const stop = { asked: false };
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          call === "stop"
+            ? Effect.sync(() => (stop.asked = true)).pipe(
+                Effect.andThen(Deferred.await(answer)),
+                Effect.andThen(bridged.call(origin, call, body)),
+              )
+            : bridged.call(origin, call, body),
+      };
+      const owed = memoryOwedStops();
+      const locks = makeKeyedLock<string>();
+      const starting = new Set<string>();
+      // An old debt of the name, past its grace: the pass holds the name and asks its stop.
+      owed.add({ origin: ORIGIN, name: NAME, since: 0 });
+      const settling = yield* Effect.forkScoped(
+        settleOwedStops(port, owed, () => false, Date.now, locks),
+      );
+      while (!stop.asked) yield* Effect.sleep("1 millis");
+      yield* Effect.sleep("5 millis");
+      // A retry's start of the name waits for the name meanwhile.
+      const source = signedInSource(SERVER, { port, hosts: unregistered, owed, starting, locks });
+      const retrying = yield* Effect.forkScoped(
+        source.start({ name: NAME, orchestrator: "o", title: "Retry" }),
+      );
+      yield* Effect.sleep("5 millis");
+      yield* Deferred.succeed(answer, undefined);
+      yield* Fiber.join(settling);
+      expect((yield* Fiber.join(retrying)).kind).toBe("started");
+      // The retry's own start is still owed, so a restart before it registers gives it back.
+      expect(owed.list()).toEqual([
+        {
+          origin: ORIGIN,
+          name: NAME,
+          since: expect.any(Number),
+          unsettled: true,
+          start: true,
+          attempt: expect.any(String),
+        },
+      ]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("give back a machine started just before this Gram stopped, once it is back", () =>
     Effect.gen(function* () {
       const app = fakeApp({
@@ -242,7 +304,14 @@ describe("stops a server never confirmed", () => {
       // gone; only the start's own is owed, kept while the start is on its way.
       yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" });
       expect(owed.list()).toEqual([
-        { origin: ORIGIN, name: NAME, since: expect.any(Number), unsettled: true, start: true },
+        {
+          origin: ORIGIN,
+          name: NAME,
+          since: expect.any(Number),
+          unsettled: true,
+          start: true,
+          attempt: expect.any(String),
+        },
       ]);
       const started = app.calls.length;
       yield* settleOwedStops(
@@ -284,7 +353,9 @@ describe("stops a server never confirmed", () => {
         const owed = memoryOwedStops();
         const source = signedInSource(SERVER, { port, hosts, owed, stopRetryMs: 0 });
         yield* source.abandon(NAME);
-        expect(owed.list()).toEqual([{ origin: ORIGIN, name: NAME, since: expect.any(Number) }]);
+        expect(owed.list()).toEqual([
+          { origin: ORIGIN, name: NAME, since: expect.any(Number), attempt: expect.any(String) },
+        ]);
         yield* settleOwedStops(port, owed);
         expect(owed.list()).toHaveLength(1);
         stopStatus = 200;

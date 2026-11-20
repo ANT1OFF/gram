@@ -61,7 +61,8 @@ export const UNSETTLED_START_MS = 15 * 60_000;
 /**
  * A stop a server never confirmed. `unsettled`: its start's outcome wasn't known when it was owed.
  * `start`: a start's own, written before the start was sent, so one accepted there is given back
- * even if this Gram stops before the machine is registered here; let go once it is.
+ * even if this Gram stops before the machine is registered here; let go once it is. `attempt`:
+ * which owing of the name this is, so settling one never lets go of another owed since.
  */
 export interface OwedStop {
   readonly origin: string;
@@ -69,6 +70,7 @@ export interface OwedStop {
   readonly since: number;
   readonly unsettled?: true;
   readonly start?: true;
+  readonly attempt?: string;
 }
 
 /**
@@ -79,7 +81,8 @@ export interface OwedStop {
 export interface OwedStops {
   readonly list: () => ReadonlyArray<OwedStop>;
   readonly add: (stop: OwedStop) => void;
-  readonly remove: (name: string) => void;
+  /** Lets go of `name`'s stop owed; with `attempt`, only while that owing is the one kept. */
+  readonly remove: (name: string, attempt?: OwedStop) => void;
 }
 
 export const memoryOwedStops = (): OwedStops => {
@@ -87,7 +90,9 @@ export const memoryOwedStops = (): OwedStops => {
   return {
     list: () => [...owed.values()],
     add: (stop) => void owed.set(stop.name, stop),
-    remove: (name) => void owed.delete(name),
+    remove: (name, attempt) => {
+      if (attempt === undefined || owed.get(name)?.attempt === attempt.attempt) owed.delete(name);
+    },
   };
 };
 
@@ -113,6 +118,9 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
             since: each.since,
             ...(each.unsettled === true ? { unsettled: true as const } : {}),
             ...(each.start === true ? { start: true as const } : {}),
+            ...(typeof each.attempt === "string" && each.attempt.length <= 64
+              ? { attempt: each.attempt }
+              : {}),
           });
   } catch {
     // An unreadable file owes nothing; the next stop owed writes it again.
@@ -130,10 +138,10 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       owed.add(stop);
       save();
     },
-    remove: (name) => {
-      if (!owed.list().some((each) => each.name === name)) return;
-      owed.remove(name);
-      save();
+    remove: (name, attempt) => {
+      const before = owed.list().length;
+      owed.remove(name, attempt);
+      if (owed.list().length !== before) save();
     },
   };
 };
@@ -163,19 +171,20 @@ export const settleOwedStops = (
           if (claimed(stop.name) || !owed.list().some((each) => each.name === stop.name)) {
             // A start's own, still on its way here: kept, so a restart now still gives it back.
             if (stop.start === true && startingNow(stop.name)) return;
-            owed.remove(stop.name);
+            owed.remove(stop.name, stop);
             return;
           }
           const answered = yield* port.call(stop.origin, "stop", { name: stop.name });
           const outcome = stopOutcome(answered);
           // Unanswered, it may still reach the server: the name is kept a while more.
           if (!answered.ok) yield* Effect.sleep(UNANSWERED_STOP_HOLD_MS);
-          if (outcome === "stopped") owed.remove(stop.name);
+          // Only what this pass settled: a start owed since, its name's lock waited for, stays.
+          if (outcome === "stopped") owed.remove(stop.name, stop);
           else if (
             outcome === "absent" &&
             (stop.unsettled !== true || now() - stop.since >= UNSETTLED_START_MS)
           )
-            owed.remove(stop.name);
+            owed.remove(stop.name, stop);
         }),
       );
   });

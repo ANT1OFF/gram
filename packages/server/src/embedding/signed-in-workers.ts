@@ -16,6 +16,8 @@
 // asked for, as a worker host that came through that server (`PairedMachine.via`): taken only from
 // that server's relay, and the desktop's own, like a joined machine.
 
+import { randomUUID } from "node:crypto";
+
 import { HostId, hostServes, type WorkerMachineServer } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -218,6 +220,7 @@ export const signedInSource = (
             name,
             since: now(),
             ...(unsettled ? { unsettled: true as const } : {}),
+            attempt: randomUUID(),
           });
         return false;
       }
@@ -260,13 +263,15 @@ export const signedInSource = (
         deps.starting?.add(ask.name);
         // Written before the start is sent, kept across a restart: a machine started there that
         // this Gram never registers is given back by the stops owed, never left running.
-        deps.owed?.add({
+        const owing = {
           origin,
           name: ask.name,
           since: now(),
-          unsettled: true,
-          start: true,
-        });
+          unsettled: true as const,
+          start: true as const,
+          attempt: randomUUID(),
+        };
+        deps.owed?.add(owing);
         // Asked for again: it may come back, so it is relayed once more.
         deps.asleep?.delete(ask.name);
         let unavailable = false;
@@ -330,7 +335,7 @@ export const signedInSource = (
                 started.kind === "over-total"
               ) {
                 deps.starting?.delete(ask.name);
-                deps.owed?.remove(ask.name);
+                deps.owed?.remove(ask.name, owing);
               }
             }),
           ),

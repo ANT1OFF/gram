@@ -240,7 +240,9 @@ subscription token reaches a machine, with its own consent.
   owed first, marked as a start's; it is let go once the machine is registered here or the start
   is clearly refused, and kept while the start is on its way. So a start the server accepted just
   before this Gram stopped is given back at its next start, with the grace a start of unknown
-  outcome has, instead of running unregistered until the server reclaims it.
+  outcome has, instead of running unregistered until the server reclaims it. Each owing of a
+  name carries an attempt id, and a stop settled lets go only of the owing it settled: a retry's
+  start owed while an older stop of the name was still being asked stays owed.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
   When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way), the
