@@ -102,7 +102,7 @@ describe("a remote thread's loopback proxy", () => {
       () =>
         Effect.sync(() => {
           asked += 1;
-          return tunnels();
+          return { tunnels: tunnels() };
         }),
       run,
     );
