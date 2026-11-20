@@ -61,10 +61,9 @@ const WRITE =
  */
 const failure = (kind: Exclude<FaultKind, "slow">, method: string): Error => {
   const error = failureOf(kind, method);
-  error.stack = (error.stack ?? String(error)).replace(
-    /\n/,
-    `\n    at api.${method} (mock fault)\n`,
-  );
+  // The frame goes under the message line, the first of the stack, ahead of the frames below it.
+  const [message = String(error), ...frames] = (error.stack ?? String(error)).split("\n");
+  error.stack = [message, `    at api.${method} (mock fault)`, ...frames].join("\n");
   return error;
 };
 
