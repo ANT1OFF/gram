@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { seedTheme, type SeededTheme } from "./seed-theme";
 import { slowdown } from "./slowdown";
+import { frames, motionDone } from "./settled";
 import { shot } from "./shots";
 
 // Opening Settings used to fade the whole page from the boot palette (Tokyo Night dark) into the real
@@ -98,7 +99,8 @@ for (const [look, mode] of [["glass", "light"]] as const) {
     await expect(page.getByRole("navigation", { name: "Settings sections" })).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("data-look", look);
     await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
-    await page.waitForTimeout(1500);
+    // Opened, with whatever opening Settings set moving run out under the probe.
+    await motionDone(page);
 
     // One in-page pass with a deadline: under load it scrolls less of the page instead of timing out.
     const scrolled = await page
@@ -115,7 +117,9 @@ for (const [look, mode] of [["glass", "light"]] as const) {
         return { height, top: el.scrollTop };
       });
     expect(scrolled.height === 0 || scrolled.top > 0, "Settings didn't scroll").toBe(true);
-    await page.waitForTimeout(300);
+    // The scroll's own motion run out, and the layout shifts it caused reported, a frame on.
+    await motionDone(page);
+    await frames(page);
 
     const probe = await page.evaluate(
       () =>
@@ -153,7 +157,7 @@ test("full-page routes stay opaque over native vibrancy (Glass light, Catppuccin
   // Then Settings, in-app, the way ⌘, opens it.
   await page.keyboard.press("ControlOrMeta+,");
   await expect(page.getByRole("navigation", { name: "Settings sections" })).toBeVisible();
-  await page.waitForTimeout(500);
+  await motionDone(page);
   await expect(page.locator("html")).toHaveAttribute("data-vibrancy", "native");
   expect(await mainAlpha(page), "Settings content is see-through").toBe(1);
   await expect(page.getByTestId("thread-grid")).toHaveCount(0);
@@ -163,7 +167,8 @@ test("full-page routes stay opaque over native vibrancy (Glass light, Catppuccin
   for (const path of ["/settings/gateways", "/new", "/"]) {
     await page.goto(path);
     await forceNativeVibrancy(page);
-    await page.waitForTimeout(500);
+    // The route's surfaces done changing colour, so `main`'s is the one it rests on.
+    await motionDone(page);
     expect(await mainAlpha(page), `${path} is see-through`).toBe(1);
     if (path === "/new") {
       await shot(page, { path: "e2e/__screenshots__/flicker/glass-native-new.png" });

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { setLayout } from "./layout";
+import { frames, motionDone, steady } from "./settled";
 import { shot } from "./shots";
 
 // Under Glass the panes sit flush on the grid's hairline sheet: square corners, no margin, and a 1px
@@ -89,6 +90,16 @@ const MONITOR = () => {
   requestAnimationFrame(tick);
 };
 
+/**
+ * Once the step's motion (a split, a resize, a pane closing) has run out, with the monitor sampling
+ * every frame of it, and a few frames of the resting layout after.
+ */
+const sampled = async (page: Page) => {
+  await motionDone(page);
+  await steady(page.getByTestId("pane"));
+  await frames(page, 4);
+};
+
 /** Returns what the monitor saw since the last call, and resets it. */
 const drain = (page: Page) =>
   page.evaluate(() => {
@@ -168,9 +179,9 @@ test("Glass panes stay flush and painted over native vibrancy while they split, 
   await page.evaluate(() => {
     document.documentElement.dataset["vibrancy"] = "native";
   });
-  await page.waitForTimeout(300);
+  await motionDone(page);
   await page.evaluate(MONITOR);
-  await page.waitForTimeout(300);
+  await sampled(page);
   await expectPainted(page, "one pane");
   // The pane meets the overview sidebar and the title bar, with no gap or inset between them.
   const meets = await page.evaluate(() => {
@@ -186,7 +197,7 @@ test("Glass panes stay flush and painted over native vibrancy while they split, 
 
   await page.keyboard.press("ControlOrMeta+Backslash");
   await expect(page.getByTestId("pane")).toHaveCount(2);
-  await page.waitForTimeout(800);
+  await sampled(page);
   await expectPainted(page, "split");
 
   const divider = page.getByTestId("divider").first();
@@ -196,28 +207,28 @@ test("Glass panes stay flush and painted over native vibrancy while they split, 
   await page.mouse.move(box.x - 250, box.y + 200, { steps: 8 });
   await page.mouse.move(box.x + 200, box.y + 200, { steps: 8 });
   await page.mouse.up();
-  await page.waitForTimeout(300);
+  await sampled(page);
   await expectPainted(page, "drag resize");
 
   await divider.focus();
   for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowLeft");
-  await page.waitForTimeout(500);
+  await sampled(page);
   await expectPainted(page, "keyboard resize");
 
   await setLayout(page, "2×2");
   await expect(page.getByTestId("pane")).toHaveCount(4);
-  await page.waitForTimeout(800);
+  await sampled(page);
   await expectPainted(page, "2×2");
   await shot(page, { path: "e2e/__screenshots__/gutters/glass-native-2x2.png" });
 
   await page.keyboard.press("ControlOrMeta+Shift+Enter");
-  await page.waitForTimeout(800);
+  await sampled(page);
   await page.keyboard.press("ControlOrMeta+Shift+Enter");
-  await page.waitForTimeout(800);
+  await sampled(page);
   await expectPainted(page, "maximize and restore");
 
   await page.getByTestId("pane").nth(1).getByRole("button", { name: "Close pane" }).click();
-  await page.waitForTimeout(800);
+  await sampled(page);
   await expectPainted(page, "close");
   await shot(page, { path: "e2e/__screenshots__/gutters/glass-native-closed.png" });
 });
