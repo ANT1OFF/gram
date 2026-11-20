@@ -53,7 +53,7 @@ export type SharedPart = typeof SharedPart.Type;
 export const SHARED_ABSENT = "absent";
 
 // Control characters, and the characters Windows refuses in a name.
-// oxlint-disable-next-line no-control-regex
+// oxlint-disable-next-line no-control-regex -- control characters are what it refuses
 const UNSAFE_CHARACTERS = /[\u0000-\u001f\u007f<>:"|?*\\]/;
 
 /**

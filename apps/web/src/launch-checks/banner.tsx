@@ -173,7 +173,7 @@ export function LaunchChecksBanner() {
   // Once per change, from the one banner the shell mounts rather than every reader of the issues.
   useEffect(() => {
     if (cleared) dropCleared();
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- `dropCleared` is recreated every render; the effect runs once per change of `cleared`
   }, [cleared]);
 
   // A banner that offers an update shows once the control is in hand, rather than gaining it late.

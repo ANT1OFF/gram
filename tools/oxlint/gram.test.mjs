@@ -392,6 +392,51 @@ describe("no-sleep", () => {
   });
 });
 
+describe("disable-reason", () => {
+  const rule = "gram/disable-reason";
+
+  it("refuses a directive that turns a rule off without saying why", () => {
+    const found = lint(
+      `// oxlint-disable-next-line no-debugger
+      debugger;
+      /* eslint-disable no-console */
+      const a = 1; // oxlint-disable-line no-unused-vars
+      // eslint-disable-next-line no-debugger --
+      debugger;
+      // oxlint-disable-next-line react-hooks/exhaustive-deps -- reads refs only
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 3, 4, 5, 7]);
+    expect(found[4].message).toContain("react/exhaustive-deps");
+  });
+
+  it("allows a directive with its reason, re-enabling, and prose about directives", () => {
+    expect(
+      lint(
+        `// oxlint-disable-next-line no-debugger -- a breakpoint the test needs
+        debugger;
+        /* eslint-disable no-console -- a CLI's output */
+        /* eslint-enable no-console */
+        // Directives here say why: see oxlint-disable-next-line in the docs.
+        export const a = <div>{/* oxlint-disable-next-line x -- in JSX too */}</div>;
+      `,
+        rule,
+        ".tsx",
+      ),
+    ).toEqual([]);
+  });
+
+  it.each(ALLOWLISTS["disable-reason"].pending)(
+    "still has a directive without a reason in %s",
+    (file) => {
+      expect(
+        lint(readFileSync(join(root, file), "utf8"), rule, extname(file)).length,
+      ).toBeGreaterThan(0);
+    },
+  );
+});
+
 describe("clock-24h", () => {
   const rule = "gram/clock-24h";
 

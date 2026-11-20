@@ -4,6 +4,10 @@
 // so a file that has been moved comes off the list in the same change.
 
 export const ALLOWLISTS = {
+  "disable-reason": {
+    owners: [],
+    pending: [],
+  },
   "no-raw-path": {
     owners: ["packages/git/src/paths.ts"],
     pending: [],

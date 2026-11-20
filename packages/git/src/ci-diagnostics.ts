@@ -21,10 +21,10 @@ export function sanitizeCiText(value: string, limit = 600): string {
   return redactText(
     value
       // Terminal control patterns are intentional: scrub evidence before display.
-      // eslint-disable-next-line no-control-regex
+      // eslint-disable-next-line no-control-regex -- strips terminal escape sequences
       .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
       .replace(
-        // eslint-disable-next-line no-control-regex
+        // eslint-disable-next-line no-control-regex -- strips control and invisible characters
         /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g,
         "",
       )

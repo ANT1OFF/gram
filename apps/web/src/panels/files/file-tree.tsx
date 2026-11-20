@@ -91,7 +91,7 @@ export function FileTree({ threadId, root }: { threadId: ThreadId; root: string 
 
   // The active item may be gone (collapsed, filtered out): the first item takes the Tab stop.
   // Runs after every render because folders load lazily; it only sets state when that changes.
-  // oxlint-disable-next-line react-hooks/exhaustive-deps
+  // oxlint-disable-next-line react/exhaustive-deps -- runs after every render, as folders load lazily
   useLayoutEffect(() => {
     const tree = treeRef.current;
     if (!tree || tree.querySelector('[role="treeitem"][tabindex="0"]')) return;

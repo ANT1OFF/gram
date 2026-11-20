@@ -18,6 +18,10 @@
 // does mean real time (backoff, polling) uses the one shared helper. The files not moved yet are
 // in `allowlists.mjs` with how many each may keep.
 //
+// And every `oxlint-disable` (or `eslint-disable`) directive says why after ` -- `: an exception
+// with its reason reads as a decision, one without reads as a silenced bug. The files not given
+// their reasons yet are in `allowlists.mjs`.
+//
 // And a 24-hour clock in the web app: a time formatted with `hour` or `timeStyle` and no
 // `hourCycle: "h23"` reads `2:05 PM` wherever the locale's default is 12-hour.
 
@@ -211,6 +215,11 @@ const SLEEP_IN_TESTS =
 const WAIT_FOR_TIMEOUT =
   "`waitForTimeout` races the page: wait on what you need instead, with a web-first assertion (`await expect(locator).toBeVisible()`, `.toHaveText()`, `.toHaveCount()`), `await expect.poll(() => value).toBe(…)`, `await expect(async () => {…}).toPass()`, `page.waitForResponse`/`waitForFunction`, or `page.clock` when time is the input.";
 
+/** A directive that turns rules off: `oxlint-disable`, `eslint-disable-next-line` and the rest. */
+const DISABLE = /^\s*(?:oxlint|eslint)-disable(?:-next-line|-line)?(?:\s|$)/;
+/** Its reason, after ` -- `, ESLint's own place for one. */
+const REASON = /\s--\s*\S/;
+
 /** The Date methods that format with locale options; `toLocaleTimeString` always shows the hour. */
 const LOCALE_FORMATS = new Set(["toLocaleString", "toLocaleDateString", "toLocaleTimeString"]);
 
@@ -313,6 +322,36 @@ export default {
                 : "";
             for (const { node, message } of found)
               context.report({ node, message: message + note });
+          },
+        };
+      },
+    },
+    "disable-reason": {
+      meta: {
+        type: "problem",
+        docs: { description: "Give every oxlint-disable directive its reason after ` -- `" },
+      },
+      create(context) {
+        const file = relative(REPO, context.filename).replaceAll("\\", "/");
+        if (ALLOWLISTS["disable-reason"].pending.includes(file)) return {};
+        return {
+          Program() {
+            for (const comment of context.sourceCode.getAllComments()) {
+              if (!DISABLE.test(comment.value)) continue;
+              const [rules] = comment.value.split(/\s--(?:\s|$)/);
+              if (rules.includes("react-hooks/"))
+                context.report({
+                  loc: comment.loc,
+                  message:
+                    "Name the rule as .oxlintrc.json does, `react/exhaustive-deps`: oxlint takes `react-hooks/` too, but one name keeps the directives searchable.",
+                });
+              if (!REASON.test(comment.value))
+                context.report({
+                  loc: comment.loc,
+                  message:
+                    "Say why the rule is wrong here: end the directive with ` -- <reason>` (what the rule can't see, or why this site is the exception). If the rule is right, fix the code instead.",
+                });
+            }
           },
         };
       },

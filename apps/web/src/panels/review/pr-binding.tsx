@@ -130,7 +130,6 @@ export function BindPrForm({
     >
       <input
         aria-label="Pull request number or URL"
-        // oxlint-disable-next-line jsx-a11y/no-autofocus
         autoFocus
         className={inputCls}
         placeholder="#12 or https://github.com/owner/repo/pull/12"
