@@ -250,6 +250,7 @@ export const MEMBER_RPCS: ReadonlySet<string> = new Set([
   "git.refresh",
   "git.upstreamStatus",
   "git.upstreamSync",
+  "git.verifyState",
   "helper.presence",
   "helper.recordEvent",
   "helper.status",

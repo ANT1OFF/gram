@@ -525,6 +525,22 @@
       ]
     },
     {
+      "name": "Verify recipes and Proof",
+      "purpose": "A repository's .gram/verify.json drivers, the verify tool that runs them, Gram's record of them on a done report, and a worker's Proof tool.",
+      "code": [
+        "packages/server/src/verify/**",
+        "packages/contracts/src/verify-recipe.ts",
+        "packages/server/src/rpc/handlers/checks.ts",
+        "apps/web/src/panels/proof-panel.tsx",
+        ".gram/verify.json"
+      ],
+      "tests": [
+        "packages/server/src/verify/**/*.test.ts",
+        "packages/server/src/orchestration/report-verify.test.ts"
+      ],
+      "docs": ["docs/AGENTS_AND_FEATURES.md#verify-recipes"]
+    },
+    {
       "name": "Routines and wakes",
       "purpose": "Scheduled and event routines that start work, and condition wakes that resume a thread when something happens.",
       "code": [

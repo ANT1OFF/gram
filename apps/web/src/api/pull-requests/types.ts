@@ -20,6 +20,7 @@ import type {
   PushResult,
   ReviewComment,
   ThreadId,
+  VerifyState,
 } from "@gram/contracts";
 
 /** A thread's diff, its pull requests and their review bots, and pushing its branch. */
@@ -33,6 +34,8 @@ export interface PullRequestsApi {
   /** One file of `gitDiff`'s diff a bounded chunk of hunks at a time, or its summary. Reads only. */
   gitDiffChunk(threadId: ThreadId, request: DiffChunkRequest): Promise<DiffChunk>;
   prDetail(threadId: ThreadId): Promise<PrDetailResult>;
+  /** The thread's verify recipe and Gram's record of each driver on its committed head. */
+  verifyState(threadId: ThreadId): Promise<VerifyState>;
   /** The PR's checks alone, one small request where `prDetail` fetches the whole PR and its diff. */
   prChecks(threadId: ThreadId): Promise<PrChecksResult>;
   prCheckDiagnostic(threadId: ThreadId, selection: CiDiagnosticSelection): Promise<CiJobDiagnostic>;
