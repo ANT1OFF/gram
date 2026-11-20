@@ -21,8 +21,12 @@
 import { MockClock, type ClockState } from "./clock";
 import { deriveSeed, parseSeed, seeded } from "./prng";
 
-/** Wall-clock time, kept before `installDate` replaces it, for the looks' wait. */
-const realNow = performance.now.bind(performance);
+/**
+ * Wall-clock time, kept before `installDate` replaces it, for the looks' wait. Set inside
+ * `installDeterminism`, not at the top of the module: a top-level call survives tree-shaking, and
+ * the ordinary build then carries a piece of this module.
+ */
+let realNow: () => number = () => 0;
 /** How long the DOM must be still before an outside look goes ahead, in wall-clock ms. */
 const QUIET_MS = 60;
 /** The longest an outside look waits, so a page that never settles is still seen. */
@@ -226,6 +230,7 @@ declare global {
 }
 
 export function installDeterminism(env: { seed?: string | undefined }) {
+  realNow = performance.now.bind(performance);
   const seed = parseSeed(env.seed, DEFAULT_SEED);
   const stored = readStored();
   const mark: Mark = { loads: (stored?.loads ?? -1) + 1, inputs: stored?.inputs ?? 0 };
