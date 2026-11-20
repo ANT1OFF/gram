@@ -16,6 +16,9 @@ const ownerKey = Effect.map(currentReader, (reader) =>
   reader === undefined ? "server" : `person:${reader.subject ?? ""}`,
 );
 
+/** A window's key in the registry: its owner and its id. */
+const keyOf = (owner: string, windowId: string) => `${owner}\u0000${windowId}`;
+
 interface Registration {
   readonly placement: WindowPlacement;
   /** Whose window it is (`ownerKey`): only that caller's stream shows it, or its reports change it. */
@@ -45,7 +48,6 @@ export const makeWindowPlacements = Effect.gen(function* () {
   const snapshot = (owner: string): WindowPlacements => ({
     windows: [...windows.values()].filter((w) => w.owner === owner).map((w) => w.placement),
   });
-  const keyOf = (owner: string, windowId: string) => `${owner}\u0000${windowId}`;
   const changed = PubSub.publish(changes, true).pipe(
     Effect.andThen(
       Option.isNone(visibility)

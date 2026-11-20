@@ -13,6 +13,9 @@ const waitUntil = (check: () => boolean) =>
     expect(check()).toBe(true);
   });
 
+/** `effect` as the signed-in person `subject` calls it. */
+const as = (subject: string) => Effect.provideService(ReadingAs, { subject });
+
 const ids = (placements: WindowPlacements | undefined) =>
   placements?.windows.map((w) => w.windowId).toSorted() ?? [];
 
@@ -112,7 +115,6 @@ describe("makeWindowPlacements", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const placements = yield* makeWindowPlacements;
-        const as = (subject: string) => Effect.provideService(ReadingAs, { subject });
         const alice: WindowPlacements[] = [];
         const bob: WindowPlacements[] = [];
         yield* placements.watch("w-alice", "Main").pipe(
