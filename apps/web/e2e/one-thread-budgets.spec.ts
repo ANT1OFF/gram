@@ -26,10 +26,10 @@ const start = async (page: Page) => {
   return made;
 };
 
-/** Focus on nothing, and past the settle time. */
+/** Focus on nothing, and past the settle time, on the clock the test installed before `start`. */
 const settle = async (page: Page) => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.waitForTimeout(SETTLED_MS);
+  await page.clock.runFor(SETTLED_MS);
 };
 
 /**
@@ -73,6 +73,7 @@ const askCount = async (page: Page) =>
   );
 
 test("the orchestrator's home stays under 150 words", async ({ page }) => {
+  await page.clock.install();
   await start(page);
   await settle(page);
   // Home is the orchestrator's pane: its live cards, events, its status header and the composer. The
@@ -121,13 +122,15 @@ test("no menu on the home goes over 7 items", async ({ page }) => {
 });
 
 test("an ask takes one pick and one send: a number, then ⌘⏎", async ({ page }) => {
+  // The settle time runs on the installed clock, so passing it takes no real time.
+  await page.clock.install();
   await start(page);
   const before = await askCount(page);
   expect(before).toBeGreaterThan(1);
   // One step to the Inbox, from the sidebar's pill, open on the workspace's newest ask.
   await page.getByTestId("overview-needs-you").click();
   await expect(page.getByTestId("inbox")).toBeVisible();
-  await page.waitForTimeout(400);
+  await page.clock.runFor(SETTLED_MS);
   // One rule on every surface: a number picks, ⌘⏎ sends it.
   await page.keyboard.press("1");
   await page.keyboard.press("ControlOrMeta+Enter");

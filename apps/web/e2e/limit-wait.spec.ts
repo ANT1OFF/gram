@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { motionDone } from "./settled";
+
 test.use({ timezoneId: "UTC" });
 const SHOTS = process.env["GRAM_LIMIT_WAIT_SHOTS"];
 const DAY_SHOTS = process.env["GRAM_LIMIT_DAY_SHOTS"];
@@ -205,8 +207,8 @@ test("a full window carried on credits reads as credits in the meter, not a stop
     "Past the limit on credits; turns go on",
   );
   if (CLEARED_SHOTS !== undefined) {
-    // Let the popover finish opening before the picture.
-    await page.waitForTimeout(400);
+    // Once the popover has finished opening, for the picture.
+    await motionDone(page);
     await page.screenshot({ path: `${CLEARED_SHOTS}/meter.png` });
   }
 });

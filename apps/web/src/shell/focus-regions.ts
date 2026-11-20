@@ -7,8 +7,7 @@ import {
 import { fitShell, useLayoutStore } from "@/stores/layout";
 import { DOCK_ITEM, navigationNow } from "@/stores/navigation";
 import { OVERVIEW_ROOT } from "@/views/shell-layout";
-
-const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+import { painted } from "@/lib/timers";
 
 /** What marks a row of the overview sidebar as a stop for its arrow keys. */
 export const OVERVIEW_STOP = "data-overview-stop";
@@ -30,7 +29,7 @@ export async function focusWhenRendered(
       target.focus();
       return true;
     }
-    await nextFrame();
+    await painted();
   }
   return false;
 }

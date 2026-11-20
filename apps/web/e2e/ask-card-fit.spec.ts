@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { openOrchestratorTile } from "./overview-rail";
 import { inboxEntry } from "./open-notifications";
+import { motionDone } from "./settled";
 
 // An orchestrator question with four long choices and a long context, in each place an ask is
 // answered: the Inbox's detail pane and Quiet's card. Synthetic mock state; nothing reaches a provider.
@@ -42,6 +43,8 @@ const IN_ORDER = [OPTIONS[2], OPTIONS[0], OPTIONS[1], OPTIONS[3]];
 
 const start = async (page: Page) => {
   await page.setViewportSize({ width: 1000, height: 820 });
+  // The settle time runs on the installed clock, so passing it takes no real time.
+  await page.clock.install();
   await page.goto("/t/t-flaky");
   // At this width the overview is its compact rail.
   await expect(page.getByTestId("overview-rail")).toBeVisible();
@@ -119,7 +122,7 @@ test("in the Inbox, four long choices all show with their descriptions, and the 
 
   // The keys still pick by number, ⌘⏎ sends, and an answer can still be taken back.
   await page.getByTestId("inbox-list").focus();
-  await page.waitForTimeout(SETTLED_MS);
+  await page.clock.runFor(SETTLED_MS);
   await page.keyboard.press("4");
   await expect(ask.getByTestId("ask-option").nth(3)).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("ControlOrMeta+Enter");
@@ -140,11 +143,13 @@ test("Quiet's card shows the same choices whole", async ({ page }) => {
   const card = page.getByTestId("quiet-view").getByTestId("quiet-card");
   for (let tries = 0; tries < 12; tries++) {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    await page.waitForTimeout(SETTLED_MS);
+    await page.clock.runFor(SETTLED_MS);
     if ((await card.getByTestId("quiet-title").textContent())?.includes(QUESTION)) break;
     await page.keyboard.press("ArrowRight");
   }
   await expect(card.getByTestId("quiet-title")).toHaveText(QUESTION);
+  // The card done moving in, so its box is where it stays.
+  await motionDone(card);
   await allFit(card.getByTestId("quiet-option"), card);
   await contextOpens(
     card.getByTestId("quiet-description"),
