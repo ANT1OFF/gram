@@ -5,6 +5,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { useLaunchIssues } from "@/launch-checks/banner";
+import { useSettingsLink } from "@/settings/open-settings";
 import { UpdatePill } from "@/updates/update-pill";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,7 @@ export function TopLeftNav({
 }) {
   const settingsHint = useShortcutHint("settings.open");
   const setup = useLaunchIssues().dismissed;
+  const settingsLink = useSettingsLink(setup.length === 0 ? "/settings" : "/settings/diagnostics");
   const settingsLabel =
     setup.length === 0
       ? withHint("Settings", settingsHint)
@@ -59,7 +61,7 @@ export function TopLeftNav({
             }
             data-setup={setup.length > 0 || undefined}
             className={NAV}
-            render={<Link to={setup.length === 0 ? "/settings" : "/settings/diagnostics"} />}
+            render={<Link {...settingsLink} />}
             nativeButton={false}
           />
         }

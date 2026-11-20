@@ -4,6 +4,7 @@ import { slowdown } from "./slowdown";
 import { threadRow } from "./thread-row";
 import { openPanelTab } from "./panel-tab";
 import { openMoreOptions } from "./new-thread-options";
+import { motionDone } from "./settled";
 import { shot } from "./shots";
 
 // Looks and accessibility audit of the surfaces added in M3 wave "tonight": Glass, the only look,
@@ -472,7 +473,8 @@ for (const theme of THEMES) {
       const audit = async () => {
         const found: string[] = [];
         const root = await surface.open(page);
-        await page.waitForTimeout(150);
+        // Opened and done moving, so the picture and the colours read are its resting state.
+        await motionDone(page);
         await shot(page, { path: `e2e/__screenshots__/audit-2/${id}-${surface.name}.png` });
         const { checked, failures } = await auditContrast(root, theme.contrast);
         for (const f of failures) {

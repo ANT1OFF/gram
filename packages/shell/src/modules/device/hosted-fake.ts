@@ -84,6 +84,8 @@ export const fakeServer = () => {
     settleAnswer: undefined as { status: number; body: unknown } | undefined,
     /** Run work sent from the device; the sign-in carries `threads:start`. */
     runsWork: true,
+    /** Grants `machines:workers` (its discovery doesn't name the addresses; a test calls directly). */
+    workerMachinesScope: false,
     /** What was sent, waited on, said and stopped, as the bodies came. */
     started: [] as Array<Record<string, unknown>>,
     waited: [] as Array<Record<string, unknown>>,
@@ -162,7 +164,7 @@ export const fakeServer = () => {
         return json(400, { error: "use_dpop_nonce" }, { "dpop-nonce": state.nonce });
       }
       const form = new URLSearchParams(await readBody(request));
-      let scope = `workspaces${state.lendsDevices ? " device:register device:connect" : ""}${state.importScope ? " workspaces:import" : ""}${state.givesThreads ? " workspaces:export" : ""}${state.runsWork ? " threads:start" : ""}`;
+      let scope = `workspaces${state.lendsDevices ? " device:register device:connect" : ""}${state.importScope ? " workspaces:import" : ""}${state.givesThreads ? " workspaces:export" : ""}${state.runsWork ? " threads:start" : ""}${state.workerMachinesScope ? " machines:workers" : ""}`;
       if (form.get("grant_type") === "authorization_code") {
         const code = state.codes.get(form.get("code") ?? "");
         state.codes.delete(form.get("code") ?? "");

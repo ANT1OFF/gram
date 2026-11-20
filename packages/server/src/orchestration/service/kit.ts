@@ -16,7 +16,6 @@ import {
   type CatalogueRow,
   resolveModel,
   isLocalHost,
-  requiredChecksOf,
   type AgentKind,
   type GitState,
   type ModelRef,
@@ -129,8 +128,13 @@ import { RemoteHosts } from "../../host/remote-hosts.ts";
 import type { OwnerOf } from "../../host/ownership.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { Conversations } from "../../embedding/conversations.ts";
+import { workerMachinesOffered } from "./worker-machines-offered.ts";
 import { heldBriefOf } from "../limit-pause.ts";
 import { type PromptWorktree } from "../prompt.ts";
+
+import { prMarkOf } from "./pr-mark.ts";
+
+export { prMarkOf };
 
 /** How long wake reasons collect before the orchestrator gets its digest. */
 export const DEFAULT_WAKE_DEBOUNCE = Duration.seconds(60);
@@ -423,17 +427,6 @@ const CATALOGUE_WAIT = "3 seconds";
 
 const NO_AUTHORITY =
   "This thread is not its workspace's orchestrator, so this tool does nothing here.";
-
-export const prMarkOf = (badge: PrStatus | undefined): PrMark | undefined => {
-  if (badge === undefined) return undefined;
-  const verdict = badge.review?.verdictOnHead;
-  return {
-    state: badge.state === "MERGED" ? "merged" : badge.state === "CLOSED" ? "closed" : "open",
-    checks: requiredChecksOf(badge),
-    ...(verdict === undefined ? {} : { verdictOnHead: verdict }),
-    ...(badge.mergeState === undefined ? {} : { mergeState: badge.mergeState }),
-  };
-};
 
 export const toolError = (tool: string, message: string) => new AppToolError({ tool, message });
 
@@ -1522,6 +1515,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     localChecks,
     composerPresence,
     eventSink,
+    workerMachinesOffered: yield* workerMachinesOffered,
     creator,
     rosterHere,
     rosterFor,

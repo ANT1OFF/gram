@@ -194,6 +194,12 @@ These synthetic runs qualify browser UI paths only.
 | `bun run check:ci`             | The complete check (scaffold included), then web/desktop bundles on the same source                  |
 | `bun run build`                | Standalone typecheck plus bundles                                                                    |
 
+Gram's own [verify recipe](AGENTS_AND_FEATURES.md#verify-recipes), `.gram/verify.json`, names the
+same checks as drivers an agent runs with `verify`: `static` for every change, and the Vitest
+projects (`contracts`, `server`, `web`, `shell`) for the paths they cover. Each starts with
+`bun install --frozen-lockfile`, since Gram runs it in a fresh worktree of the commit. `bun run check`
+stays the merge gate.
+
 The docs checker covers tracked/staged files; stage new docs before checking.
 Use `node tools/check-docs.mjs --self-test` when changing its parser/check policy.
 It is offline and checks the authored Markdown subset, not external URL availability.
@@ -263,6 +269,32 @@ the default. Windows is explicitly refused by this harness. Source:
 [mock configuration](../apps/web/playwright.config.ts),
 [owned mock server](../apps/web/scripts/e2e-server.mjs),
 [real-server setup](../apps/web/e2e-real/global-setup.ts).
+
+### Property-based UI tests
+
+A scripted spec checks the sequence someone wrote down; a property-based one has
+[fast-check](https://fast-check.dev/) make random sequences of what a person does, runs each on a
+fresh mock, and checks a model after every step. It earns its place by what only the page can get
+wrong: views that read one list and must agree, controls enabled exactly when they act, no
+`undefined` on screen, nothing thrown. Rules below the page (a store, a reducer, a derived list)
+belong in a unit test.
+
+[`needs-you-properties.spec.ts`](../apps/web/e2e/needs-you-properties.spec.ts) is the first: allow,
+deny, plans, answers, Undo, the undo window passing, Open thread and a workspace's Board, with the
+sidebar, the window title, the Inbox and the Board's chip held to the model's count. It pauses the
+page clock and moves it only in its own ticks, so a seed replays the same steps. It runs in the
+mock e2e lane with a fixed seed and a few runs. A failure prints the shortest sequence that breaks
+it and a replay line:
+
+```sh
+GRAM_UI_PROPERTY_SEED=<seed> GRAM_UI_PROPERTY_PATH=<path> \
+  bun run --filter @gram/web e2e needs-you-properties.spec.ts --workers=1
+```
+
+`GRAM_UI_PROPERTY_RUNS` and `GRAM_UI_PROPERTY_STEPS` try more and longer sequences, and a new seed
+tries others; do that when changing what needs you. Unlike the
+[random exploration trial](#random-exploration-trial), it explores only the steps it lists, and
+replays them, so it can gate a pull request.
 
 ### Isolated UI preview
 
@@ -336,6 +368,41 @@ file instead of the shard, and stays listed until it is fixed. More failed files
 fails at once. A local check, and the local checks a merge accepts, never rerun.
 `GRAM_CHECK_RERUN=0` turns it off. The e2e shards' Playwright already retries a failed test once
 and reports it as flaky.
+
+### Random exploration (trial)
+
+[Bombadil](https://github.com/antithesishq/bombadil) clicks, types, scrolls and navigates the mock
+app at random and checks the properties in [spec.ts](../apps/web/bombadil/spec.ts) on every state
+it captures: its own (no console errors, HTTP errors, uncaught exceptions or unhandled
+rejections), the Inbox count agreeing with its rows, no click adding two history entries, Back
+leaving the page it started from, and no `undefined`, `NaN` or `[object Object]` outside code. It
+serves the e2e preview bundle on 127.0.0.1 with synthetic mock state, in Playwright's Chromium,
+with coverage instrumentation off (with it on, the app never renders). From the root:
+
+```sh
+bun run --filter @gram/web bombadil -- --time-limit 90s
+```
+
+It exits 0 when the time runs out with every property holding, 2 on a violation and 1 on an
+error, and stops at the first violation unless given `--keep-going`. The log, the trace and the
+violation's text go to `apps/web/bombadil-out/`; `--help` lists the flags. A run takes its own
+path each time and its replay diverges, so a trace is a trail of screenshots and values to read,
+not a reproduction.
+
+`noFlicker` counts what the app does on its own, with no input since: an element gone for a frame
+and back within 300 ms, text going A → B → A, a list emptied and refilled, and a layout shift. The
+recorder is [flicker-observer.ts](../apps/web/e2e/flicker-observer.ts), self-contained so that a
+Playwright spec can install it with `page.addInitScript(installFlickerObserver)`. The spec lists
+the flickers it allows: intended ones, such as a cross-fade, and known ones the trial found and
+nobody has fixed, each with its reason. They still show in the trace's `flicker.allowed`. Remove a
+known entry with its fix.
+
+[bombadil.yml](../.github/workflows/bombadil.yml) runs it for ten minutes nightly and by hand,
+writes a violation to the job summary and uploads its trace. **It is not a gate**: it never runs
+on a pull request and is in no lane, required check or `merge-ci.json`. The four-week trial is
+reviewed around 2026-12-18 for real bugs found, false positives, upgrade churn and whether
+instrumentation works upstream. Pin upgrades are deliberate: each 0.x release can break the spec
+language and the trace format.
 
 ## Protocol, native and live checks
 

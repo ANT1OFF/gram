@@ -16,7 +16,13 @@ import {
   type LocalCheck,
   type LocalCheckRun,
 } from "../git/local-checks.ts";
-import { driverRun, verifyTools } from "./verify-tools.ts";
+import {
+  driverRun,
+  requiredOnHead,
+  verifyProfile,
+  verifyStateOf,
+  verifyTools,
+} from "./verify-tools.ts";
 
 const THREAD = "t-verify" as Thread["id"];
 const PROJECT = "p-verify" as Project["id"];
@@ -39,12 +45,13 @@ const harness = (
   root: string,
   answers: Array<"allow" | "deny">,
   trust: Project["folderTrust"] = "trusted",
+  passed: ReadonlySet<string> = new Set(),
 ) => {
   const cards: Omit<ApprovalRequest, "kind" | "id">[] = [];
   const runs: LocalCheckRun[] = [];
-  const tools = verifyTools({
+  const deps = {
     store: {
-      getThread: () =>
+      getThread: (_id: Thread["id"]) =>
         Effect.succeed({
           id: THREAD,
           role: "worker",
@@ -69,7 +76,27 @@ const harness = (
         Effect.succeed({ repo: true, head: HEAD, changedFiles: 0 } as unknown as GitState),
     },
     checks: {
-      lookup: () => Effect.succeed(undefined),
+      lookup: (
+        _site: unknown,
+        head: string | undefined,
+        _base: unknown,
+        _project: unknown,
+        run?: LocalCheckRun,
+      ) =>
+        Effect.succeed(
+          run !== undefined && head !== undefined && passed.has(run.profile ?? "")
+            ? ({
+                head,
+                base: head,
+                tree: "",
+                status: "passed",
+                command: run.command,
+                isolation: run.isolation,
+                startedAt: 0,
+                host: "here",
+              } satisfies LocalCheck)
+            : undefined,
+        ),
       ensure: (_site, head, base, options) =>
         Effect.sync(() => {
           runs.push(options.run!);
@@ -87,7 +114,8 @@ const harness = (
     },
     hosts: undefined,
     proc: Effect.succeed(Option.none()),
-  });
+  } satisfies Parameters<typeof verifyTools>[0];
+  const tools = verifyTools(deps);
   const call = (input: unknown) => {
     const tool = tools[0] as AppToolDefinition;
     return Schema.decodeUnknownEffect(tool.input as Schema.Codec<unknown, unknown>)(input).pipe(
@@ -95,7 +123,9 @@ const harness = (
       Effect.flatMap((decoded) => tool.handle(THREAD, decoded, {})),
     );
   };
-  return { call, cards, runs };
+  const state = () =>
+    Effect.flatMap(deps.store.getThread(THREAD), (thread) => verifyStateOf(deps, thread));
+  return { call, cards, runs, required: () => requiredOnHead(deps, THREAD), state };
 };
 
 describe("verify", () => {
@@ -143,6 +173,55 @@ describe("verify", () => {
       const refused = yield* Effect.flip(harness(broken, []).call({}));
       expect(refused.message).toContain('needs a "name" and a "run"');
     }),
+  );
+});
+
+describe("required drivers on a worker's head", () => {
+  it.effect("names those without a pass, and nothing when the recipe requires none", () =>
+    Effect.gen(function* () {
+      const root = repoWith([
+        { name: "unit", run: "t", required: true },
+        { name: "shots", run: "s", required: true },
+        { name: "lint", run: "l" },
+      ]);
+      const passedUnit = new Set([verifyProfile({ name: "unit" })]);
+      expect(yield* harness(root, [], "trusted", passedUnit).required()).toEqual({
+        head: HEAD,
+        passed: ["unit"],
+        missing: ["shots"],
+      });
+      const optional = repoWith([{ name: "lint", run: "l" }]);
+      expect(yield* harness(optional, []).required()).toBeUndefined();
+    }),
+  );
+});
+
+describe("the Proof tab's state", () => {
+  it.effect(
+    "is Gram's record per driver on the head, and says when there's no recipe or a broken one",
+    () =>
+      Effect.gen(function* () {
+        const root = repoWith([
+          { name: "unit", run: "t", required: true },
+          { name: "lint", run: "l", kind: "lint" },
+        ]);
+        const passedUnit = new Set([verifyProfile({ name: "unit" })]);
+        expect(yield* harness(root, [], "trusted", passedUnit).state()).toEqual({
+          recipe: "ok",
+          head: HEAD,
+          drivers: [
+            { name: "unit", run: "t", required: true, status: "passed", startedAt: 0 },
+            { name: "lint", run: "l", kind: "lint", status: "notRun" },
+          ],
+        });
+        const bare = mkdtempSync(join(tmpdir(), "gram-verify-"));
+        roots.push(bare);
+        expect(yield* harness(bare, []).state()).toEqual({ recipe: "none", drivers: [] });
+        expect(yield* harness(repoWith([{ name: "unit" }]), []).state()).toMatchObject({
+          recipe: "unreadable",
+          error: expect.stringContaining('needs a "name" and a "run"'),
+        });
+      }),
   );
 });
 

@@ -13,7 +13,8 @@
     "e2e": "playwright test",
     "e2e:embed": "playwright test --config e2e-embed/playwright.config.ts",
     "pr:shots": "node scripts/pr-shots.mjs",
-    "e2e:real": "playwright test --config e2e-real/playwright.config.ts"
+    "e2e:real": "playwright test --config e2e-real/playwright.config.ts",
+    "bombadil": "node scripts/bombadil.mjs"
   },
   "dependencies": {
     "@base-ui/react": "catalog:",
@@ -48,6 +49,7 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
+    "@antithesishq/bombadil": "0.8.0",
     "@babel/core": "catalog:",
     "@playwright/test": "1.65.1",
     "@rolldown/plugin-babel": "catalog:",
@@ -61,6 +63,7 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "babel-plugin-react-compiler": "catalog:",
+    "fast-check": "4.10.3",
     "happy-dom": "21.0.4",
     "shadcn": "catalog:",
     "tailwindcss": "catalog:",

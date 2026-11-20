@@ -14,6 +14,8 @@ export * from "./dial.ts";
 export * from "./settings.ts";
 export * from "./dpop.ts";
 export * from "./hosted.ts";
+export * from "./hosted-worker-machines.ts";
+export * from "./hosted-registration.ts";
 export * from "./lending.ts";
 export * from "./command-facts.ts";
 export * from "./ask-view.ts";
@@ -22,5 +24,6 @@ export * from "./ask-queue.ts";
 export * from "./hosted-device.ts";
 export * from "./presence.ts";
 export * from "./serve-work.ts";
+export * from "./serve-machines.ts";
 // The ask window, the decision dialogs and the Settings bridge are Electron's: the main process
 // imports them from `./main.ts`.

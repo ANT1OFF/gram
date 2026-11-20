@@ -137,9 +137,11 @@ test("an auto-hidden sidebar comes back at its edge, and goes again", async ({ p
   await page.mouse.move(2, viewport.height / 2, { steps: 4 });
   await expect(held).toHaveAttribute("data-shown", "");
   await expect.poll(async () => (await box(page, "overview-sidebar")).x).toBe(0);
-  // Moving onto it keeps it; leaving it for the page lets it go.
+  // Moving onto it keeps it, past its hide delay (`HIDE_AFTER_MS`, 400 ms) on the installed clock;
+  // leaving it for the page lets it go.
+  await page.clock.install();
   await page.mouse.move(60, viewport.height / 2, { steps: 4 });
-  await page.waitForTimeout(600);
+  await page.clock.runFor(600);
   await expect(held).toHaveAttribute("data-shown", "");
   await page.mouse.move(viewport.width / 2, viewport.height / 2, { steps: 4 });
   await expect(held).not.toHaveAttribute("data-shown", /.*/);

@@ -58,6 +58,8 @@
       "files": ["apps/web/src/**"],
       "rules": {
         "gram/clock-24h": "error",
+        "gram/no-timer": "error",
+        "gram/settings-entry": "error",
         "no-restricted-imports": [
           "error",
           {

@@ -44,8 +44,12 @@ test("a Send shortcut rebound without ⌘ still sends from the text area", async
   await page.goto("/t/t-deps");
   const composer = page.getByLabel("Message", { exact: true });
   await composer.fill("rebound");
-  // Let the overrides load before pressing keys.
-  await page.waitForTimeout(500);
+  // The overrides are in once the send menu names the rebound key, before any key is pressed.
+  await page.getByTestId("send-menu-trigger").click({ button: "right" });
+  await expect(page.getByTestId("send-menu")).toContainText(/⌥|Alt/);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("send-menu")).toHaveCount(0);
+  await composer.focus();
   // It is this text area's chord, and no other field's: from the pane's find bar it does nothing.
   const sent = page.getByTestId("message-user");
   const before = await sent.count();

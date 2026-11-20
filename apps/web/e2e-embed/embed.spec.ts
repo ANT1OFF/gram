@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { frames } from "../e2e/settled";
 import { shot } from "../e2e/shots";
 
 // The acceptance run for mounting Gram in an app of another's: the fixture app consumes only the
@@ -683,8 +684,9 @@ test("compact, the sidebar is a quiet strip that opens over the page on hover", 
   expect((await page.locator("main").boundingBox())?.x).toBe(mainBox?.x);
   await expect(overlay.getByTestId("embed-navigation-main")).toBeVisible();
   // While it is open the strip's tooltips keep away: the sidebar says each name.
+  // A hint opens in the hover's own handler (no delay), so once the hover is in and drawn it would show.
   await strip.getByRole("link", { name: "Build: Home" }).hover();
-  await page.waitForTimeout(300);
+  await frames(page);
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveCount(0);
   // Leaving both closes it.
   await page.mouse.move(900, 400);
@@ -808,8 +810,7 @@ test("the embedding app can count what needs someone itself", async ({ page }) =
 
   // The compact strip's tile follows the same count, and goes to the same place.
   await page.getByTestId("overview-compact").click();
-  const tile = page.getByTestId("overview-rail-needs-you");
-  await expect(tile).toHaveAccessibleName("5 to review");
+  await expect(page.getByTestId("overview-rail-needs-you")).toHaveAccessibleName("5 to review");
   await expect(page.getByTestId("overview-rail-needs-you-dot")).toBeVisible();
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ attention: { count: 0 } });
@@ -1098,10 +1099,11 @@ test("with the peek off, a resting pointer leaves the strip alone and its Expand
   });
   await page.getByTestId("overview-sidebar").getByTestId("overview-compact").click();
   const rail = page.getByTestId("overview-rail");
-  await expect(rail).toBeVisible();
+  // Longer than the strip waits before it opens under a resting pointer, on the installed clock.
+  // The hover waits for the strip to show.
+  await page.clock.install();
   await rail.hover({ position: { x: 20, y: 400 } });
-  // Longer than the strip waits before it opens under a resting pointer.
-  await page.waitForTimeout(800);
+  await page.clock.runFor(800);
   await expect(page.getByTestId("overview-rail-overlay")).toHaveCount(0);
   await rail.getByTestId("overview-expand").click();
   await expect(rail).toHaveCount(0);
@@ -1383,7 +1385,8 @@ test("Back and a link out of Settings leave it for an added page", async ({ page
   await page.getByTestId("settings-back").click();
   await expect(page).toHaveURL(/\/w\/acme\/govern\/policies$/);
   await expect(page.getByTestId("fixture-policies")).toBeVisible();
-  await page.waitForTimeout(300);
+  // Drawn, and a frame on: a second navigation the Back started would have landed by then.
+  await frames(page);
   await expect(page).toHaveURL(/\/w\/acme\/govern\/policies$/);
   expect(errors).toEqual([]);
 });

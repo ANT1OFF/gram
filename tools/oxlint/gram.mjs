@@ -38,13 +38,22 @@
 // And no raw React effects in product code: see `no-raw-effect.mjs`.
 //
 // And a 24-hour clock in the web app: a time formatted with `hour` or `timeStyle` and no
-// `hourCycle: "h23"` reads `2:05 PM` wherever the locale's default is 12-hour.
+// `hourCycle: "h23"` reads `2:05 PM` wherever the locale's default is 12-hour.//
+// And no imperative timers in the web app: `setTimeout`, `setInterval`, `requestAnimationFrame` and
+// `requestIdleCallback` are mostly reached for to paper over an ordering problem (wait for a render,
+// a focus, a measurement), and many short-lived timers churn the garbage collector into jank. Real
+// time goes through the named helpers in `apps/web/src/lib/timers.ts` and its neighbours; the files
+// not moved yet are in `allowlists.mjs` with how many each may keep.
+//
+// And Settings opened through `settings/open-settings.ts`: see `settings-entry.mjs`.
 
 import { dirname, relative, resolve } from "node:path";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 import { importOf, isFunction, isTestFile, propertyName, REPO, soleExpression } from "./ast.mjs";
 import { noRawEffect } from "./no-raw-effect.mjs";
 import { noRawGit } from "./no-raw-git.mjs";
+import { noTimer } from "./no-timer.mjs";
+import { settingsEntry } from "./settings-entry.mjs";
 
 const BARE_FORKS = new Set([
   "fork",
@@ -486,6 +495,7 @@ export default {
       },
     },
     "no-raw-git": noRawGit,
+    "settings-entry": settingsEntry,
     "no-adhoc-lock": {
       meta: {
         type: "problem",
@@ -657,6 +667,7 @@ export default {
       },
     },
     "no-raw-effect": noRawEffect,
+    "no-timer": noTimer,
     "no-focused-tests": {
       meta: {
         type: "problem",

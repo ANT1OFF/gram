@@ -14,6 +14,7 @@ import {
 import { BaseRefFields, BaseRefStatus, FetchBaseResult } from "../git-base.ts";
 import { PushResult } from "../git-push.ts";
 import { PrStatusResult } from "../pr-status.ts";
+import { VerifyState } from "../verify-recipe.ts";
 import { GitRefreshPayload } from "../git-refresh.ts";
 import { FastForwardResult, UpstreamSync, UpstreamSyncFields } from "../git-upstream-sync.ts";
 import { UpstreamRefStatus, UpstreamStatusFields } from "../git-upstream.ts";
@@ -124,6 +125,15 @@ export const GitRpcs = RpcGroup.make(
     payload: threadRef,
     success: PrDetailResult,
     error: errors(ThreadNotFound, GitError),
+  }),
+  /**
+   * The thread's verify recipe and how Gram recorded each driver on its committed head, read from
+   * the repository's own clone. Gram's record alone: nothing the agent wrote counts here.
+   */
+  Rpc.make("git.verifyState", {
+    payload: threadRef,
+    success: VerifyState,
+    error: errors(ThreadNotFound),
   }),
   /** The PR's checks alone: one small request, for whoever doesn't need `git.prDetail`'s PR and diff. */
   Rpc.make("git.prChecks", {

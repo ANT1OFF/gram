@@ -5,7 +5,6 @@ import {
   BookOpen,
   Brain,
   BroomSparkles,
-  ChartNoAxesCombined,
   CheckIcon,
   ChevronRightIcon,
   CirclePause,
@@ -19,7 +18,6 @@ import {
   Network,
   PanelsTopLeft,
   Play,
-  Settings,
   Settings2,
   Telescope,
   Workflow,
@@ -55,6 +53,7 @@ import { useViewWorkspace } from "@/views/view-workspace";
 import { PresetGlyph } from "./preset-glyph";
 import { useSwitchWorkspace } from "./workspace-switcher";
 import { useTitlebarOutline } from "./titlebar-outline";
+import { SettingsItem, UsageItem } from "./window-menu-items";
 import { FOLD_ALL, FOLD_ICONS, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 
 // The title bar's one "…": everything the bar keeps out of sight, each item with its words and its
@@ -629,36 +628,6 @@ function ViewPlaces() {
         <Check />
       </Menu.RadioItem>
     </Menu.RadioGroup>
-  );
-}
-
-/** Usage in words, for a bar with no room for its meter. */
-function UsageItem() {
-  const navigate = useNavigate();
-  return (
-    <Menu.Item
-      data-testid="phone-menu-usage"
-      className={MENU_ITEM}
-      onClick={() => void navigate({ to: "/settings/usage" })}
-    >
-      <ChartNoAxesCombined aria-hidden />
-      Usage
-    </Menu.Item>
-  );
-}
-
-/** Settings in words, for a bar with no room for its icon. */
-function SettingsItem() {
-  const navigate = useNavigate();
-  return (
-    <Menu.Item
-      data-testid="phone-menu-settings"
-      className={MENU_ITEM}
-      onClick={() => void navigate({ to: "/settings" })}
-    >
-      <Settings aria-hidden />
-      Settings
-    </Menu.Item>
   );
 }
 

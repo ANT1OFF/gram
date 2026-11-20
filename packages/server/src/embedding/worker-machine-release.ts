@@ -13,20 +13,47 @@
 // What was told is kept in memory: after a restart it is told again, which the provider takes as
 // the same word.
 
-import { effectiveCheckout, hostOf, type Thread, type ThreadId } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  type FeatureLedgerEntry,
+  HostId,
+  hostOf,
+  type Thread,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import { RemoteHosts } from "../host/remote-hosts.ts";
-import { finishedWorkers } from "../orchestration/ledger.ts";
+import { isLiveWorker } from "../orchestration/ledger.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand, type OnDemandHosts } from "./on-demand.ts";
+import {
+  SignedInWorkers,
+  tellSignedInRelease,
+  type WorkerMachinePortShape,
+} from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
 
 /** How often worker machines are looked at. */
+/**
+ * The workers whose machine may be told its work is over: finished as the ledger reads them and
+ * with nothing still going on (`isLiveWorker`), so one whose pull request merged while its turn,
+ * a build or a check still runs keeps its machine at work.
+ */
+export const releasableWorkers = (
+  features: ReadonlyArray<Pick<FeatureLedgerEntry, "workers">>,
+): ReadonlySet<ThreadId> =>
+  new Set(
+    features
+      .flatMap((feature) => feature.workers)
+      .filter((worker) => !isLiveWorker(worker))
+      .map((worker) => worker.threadId),
+  );
+
 export const WORKER_RELEASE_EVERY = Duration.minutes(10);
 /** How long a newly online machine is given before it can be released. */
 export const WORKER_RELEASE_SETTLE_MS = 30 * 60_000;
@@ -37,6 +64,8 @@ export interface ReleaseMachine {
   readonly name: string;
   readonly owner?: string | undefined;
   readonly onDemand?: string | undefined;
+  /** The hosted server a desktop's worker host came through (`signed-in-workers.ts`). */
+  readonly via?: string | undefined;
   readonly onlineSince?: number | undefined;
 }
 
@@ -57,7 +86,7 @@ export const workerMachineWork = (
     .filter(
       (machine) =>
         machine.onDemand === "worker" &&
-        machine.owner !== undefined &&
+        (machine.owner !== undefined || machine.via !== undefined) &&
         (machine.onlineSince === undefined ||
           now - machine.onlineSince >= WORKER_RELEASE_SETTLE_MS),
     )
@@ -70,6 +99,60 @@ export const workerMachineWork = (
           !(thread.spawnedBy === undefined && thread.parked === true),
       ),
     }));
+
+/**
+ * What to tell the provider of each worker machine this pass. An embedder's provider is told only
+ * what changed, as it always was. A hosted server's: one at work is told it is working
+ * unless that was told this run already: after a restart nothing is kept of what was told, and a
+ * release the provider still holds would have it reclaim a machine its worker came back to. One
+ * whose work is over is told it is released once it has settled (`WORKER_RELEASE_SETTLE_MS`, so
+ * its first worker is placed first), unless that was told already. `told` is by machine id.
+ */
+export const releaseDecisions = (
+  machines: ReadonlyArray<ReleaseMachine>,
+  threads: ReadonlyArray<
+    Pick<Thread, "id" | "checkout" | "currentCheckout" | "spawnedBy" | "parked">
+  >,
+  finished: ReadonlySet<ThreadId>,
+  now: number,
+  told: ReadonlyMap<string, { readonly released: boolean; readonly at: number }>,
+): ReadonlyArray<{ readonly machine: ReleaseMachine; readonly released: boolean }> =>
+  machines
+    .filter(
+      (machine) =>
+        machine.onDemand === "worker" && (machine.owner !== undefined || machine.via !== undefined),
+    )
+    .flatMap((machine): ReadonlyArray<{ machine: ReleaseMachine; released: boolean }> => {
+      const atWork = threads.some(
+        (thread) =>
+          hostOf(effectiveCheckout(thread)) === machine.id &&
+          !finished.has(thread.id) &&
+          !(thread.spawnedBy === undefined && thread.parked === true),
+      );
+      const said = told.get(machine.id);
+      // An embedder's provider: told only what changed, once the machine has settled, and never
+      // that one it hasn't been told is released is working (as it always has been).
+      if (machine.via === undefined) {
+        const settled =
+          machine.onlineSince === undefined ||
+          now - machine.onlineSince >= WORKER_RELEASE_SETTLE_MS;
+        const released = !atWork;
+        return !settled || said?.released === released || (!released && said === undefined)
+          ? []
+          : [{ machine, released }];
+      }
+      // A hosted server's: what was told is trusted a while only, as a reuse that failed may have
+      // taken a release back, and after a restart one at work is told so once.
+      const fresh = (released: boolean) =>
+        said !== undefined && said.released === released && now - said.at < TOLD_FOR_MS;
+      if (atWork) return fresh(false) ? [] : [{ machine, released: false }];
+      const settling =
+        machine.onlineSince !== undefined && now - machine.onlineSince < WORKER_RELEASE_SETTLE_MS;
+      return settling || fresh(true) ? [] : [{ machine, released: true }];
+    });
+
+/** How long what was told of a machine is trusted before it is told again. */
+export const TOLD_FOR_MS = 60 * 60_000;
 
 /** Tells the provider a worker machine's work is over, or going on again. 404: it keeps none. */
 export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, released: boolean) =>
@@ -91,16 +174,50 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
     ),
   );
 
+/**
+ * How a machine's release is told: to the hosted server a desktop's worker host came through, or
+ * to the embedder's provider. Undefined: there is no one to tell.
+ */
+export const releaseTeller = (
+  hosts: OnDemandHosts | undefined,
+  signedIn: WorkerMachinePortShape | undefined,
+  /** A machine the signed-in server reclaimed first: forgotten here. */
+  gone: (machine: ReleaseMachine) => Effect.Effect<void> = () => Effect.void,
+) => {
+  if (hosts === undefined && signedIn === undefined) return undefined;
+  return (machine: ReleaseMachine, released: boolean): Effect.Effect<void, Error> =>
+    machine.via !== undefined
+      ? signedIn === undefined
+        ? Effect.fail(new Error("no desktop app to tell"))
+        : tellSignedInRelease(signedIn, { name: machine.name, via: machine.via }, released).pipe(
+            Effect.flatMap((told) => (told === "gone" ? gone(machine) : Effect.void)),
+          )
+      : hosts === undefined
+        ? Effect.fail(new Error("no host provider to tell"))
+        : tellRelease(hosts, machine, released);
+};
+
 /** Looks at the worker machines every `WORKER_RELEASE_EVERY`, with a provider and joined machines. */
 export const WorkerMachineReleaseLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const hosts = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
+    const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
     const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-    if (hosts === undefined || remote === undefined) return;
+    const relayed = signedIn?.port.available === true ? signedIn.port : undefined;
+    const tell = releaseTeller(hosts, relayed, (machine) =>
+      Effect.sync(() => {
+        relayed?.unrelay(machine.name);
+        remote?.remove(HostId.make(machine.id));
+      }),
+    );
+    if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
-    /** What the provider was last told of each machine, by name. */
-    const told = new Map<string, boolean>();
+    /**
+     * What the provider was last told of each machine, by its id: a machine that takes the name of
+     * one reclaimed before it has another key, and so another id, and is told afresh.
+     */
+    const told = new Map<string, { readonly released: boolean; readonly at: number }>();
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
       if (machines.length === 0) return;
@@ -109,18 +226,25 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
       for (const workspace of yield* store.listWorkspaces) {
         const ledger = yield* orchestration.ledger(workspace.workspace.id).pipe(Effect.option);
         if (Option.isSome(ledger))
-          for (const id of finishedWorkers(ledger.value.features)) finished.add(id);
+          for (const id of releasableWorkers(ledger.value.features)) finished.add(id);
       }
-      for (const { machine, over } of workerMachineWork(machines, threads, finished, Date.now())) {
-        if (told.get(machine.name) === over) continue;
-        // A machine never told it was released needs no word that it is at work.
-        if (!over && !told.has(machine.name)) continue;
-        const sent = yield* tellRelease(hosts, machine, over).pipe(Effect.result);
-        if (sent._tag === "Success") told.set(machine.name, over);
-        else
+      for (const { machine, released } of releaseDecisions(
+        machines,
+        threads,
+        finished,
+        Date.now(),
+        told,
+      )) {
+        const sent = yield* tell(machine, released).pipe(Effect.result);
+        // Kept only once the provider took it: one it didn't apply is told again next pass.
+        if (sent._tag === "Success") told.set(machine.id, { released, at: Date.now() });
+        else {
+          // Not known to have been taken, or taken with the answer lost: nothing kept of it.
+          told.delete(machine.id);
           yield* Effect.logWarning("a worker machine's release could not be told").pipe(
             Effect.annotateLogs({ machine: machine.name, reason: sent.failure.message }),
           );
+        }
       }
     });
     yield* pass.pipe(

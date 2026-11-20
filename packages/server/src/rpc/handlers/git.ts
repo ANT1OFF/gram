@@ -25,7 +25,6 @@ import {
   matchesBotLogin,
   parseGitDiffCapped,
   Pr,
-  prChecksStamp,
   Proc,
   repoFromPrUrl,
   samePath,
@@ -80,6 +79,7 @@ import { heldCheckoutPaths, usedCheckoutPaths } from "../../runtime/create-in-ch
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import { reviewRequestsHandlers } from "../../github/handler.ts";
 import { logDefects, type Handlers } from "./common.ts";
+import { checksHandlers } from "./checks.ts";
 import { gitRefreshHandlers } from "./git-refresh.ts";
 import { prHandlers } from "./pr.ts";
 import { prCheckoutHandlers } from "./pr-checkout.ts";
@@ -490,68 +490,6 @@ export const gitHandlers = Effect.gen(function* () {
         };
       }),
 
-    "git.prChecks": ({ threadId }) =>
-      Effect.gen(function* () {
-        const thread = yield* store.getThread(threadId);
-        const cwd = yield* ghFolder(thread);
-        const target = yield* threadPr(thread, cwd);
-        // No PR is a normal state here as it is for `git.prDetail`, not a failure.
-        if (target === undefined) return { checks: [] };
-        // The client asks again as the badge's rollup changes, which is within the lookup's TTL of
-        // its last answer as often as not: the stamp keeps that answer from standing in for this one.
-        // Only the target's own badge can say so. Numbers are local to a repository, and a PR bound
-        // from elsewhere can share its number with the checkout's.
-        const badge = yield* publisher.badgeFor(thread);
-        const stamp =
-          badge !== undefined && isBadgeOf(badge, target) ? prChecksStamp(badge) : undefined;
-        const checks = yield* pr
-          .checks(cwd, target.number, target.repo, { stamp })
-          .pipe(Effect.mapError((e) => new GitError({ message: e.message })));
-        // A PR already failing when the app opened has no CI notice to name its checks.
-        yield* publisher.checksRead(thread);
-        return { checks };
-      }),
-
-    "git.prRerunChecks": ({ threadId }) =>
-      Effect.gen(function* () {
-        const thread = yield* store.getThread(threadId);
-        const cwd = yield* ghFolder(thread);
-        const target = yield* threadPr(thread, cwd);
-        if (target === undefined) return yield* noPullRequest;
-        // Never from the cache: the PR row reads these checks too, and an answer it cached before
-        // they failed says there is nothing to rerun.
-        const runs = yield* pr
-          .checks(cwd, target.number, target.repo, { fresh: true })
-          .pipe(Effect.mapError((e) => new GitError({ message: e.message })));
-        // `gh run rerun --failed` reruns cancelled jobs too.
-        const failed = runs.filter(
-          (run) => run.status === "failing" || run.conclusion?.toUpperCase() === "CANCELLED",
-        );
-        const runIds = [
-          ...new Set(failed.flatMap((run) => (run.runId === undefined ? [] : [run.runId]))),
-        ];
-        const skipped = failed.filter((run) => run.runId === undefined).map((run) => run.name);
-        if (runIds.length === 0) {
-          return yield* new InvalidState({
-            message:
-              skipped.length === 0
-                ? "No failed checks to rerun."
-                : "The failed checks don't run on GitHub Actions, so rerun them on their provider.",
-          });
-        }
-        // Refresh even when a later rerun fails, since earlier ones were already queued.
-        yield* Effect.forEach(
-          runIds,
-          (runId) => reviews.rerun(cwd, target.repo, runId).pipe(Effect.mapError(toGitError)),
-          { discard: true },
-        ).pipe(
-          Effect.ensuring(
-            refreshes.request(effectiveCheckout(thread).path, true, { expectChange: true }),
-          ),
-        );
-        return { runIds, skipped };
-      }),
-
     "pr.bind": ({ threadId, repo, number, monitor }) =>
       Effect.gen(function* () {
         yield* refuseOrchestrator(threadId);
@@ -785,6 +723,7 @@ export const GitHandlersLive = GitRpcs.toLayer(
     const handlers = {
       ...(yield* gitHandlers),
       ...(yield* gitRefreshHandlers),
+      ...(yield* checksHandlers),
       ...(yield* pushHandlers),
       ...(yield* upstreamSyncHandlers),
       ...(yield* prHandlers),

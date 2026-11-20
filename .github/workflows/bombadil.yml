@@ -1,0 +1,79 @@
+name: Random exploration (trial)
+
+# Bombadil explores the mock web app at random for ten minutes and checks the properties in
+# apps/web/bombadil/spec.ts (docs/VERIFICATION.md#random-exploration-trial). It is a report-only
+# trial: it runs nightly and by hand, never on a pull request, and is in no merge gate, required
+# check or lane (.gram/merge-ci.json). A violation fails this run and uploads its trace; nothing
+# else reads the result.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  explore:
+    name: bombadil
+    # Not on forks: their schedules would run it too.
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Keep Vite's localhost binding consistent with Node fetch.
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # Cache downloads only, never source or build results.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: gram-chromium-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+      # Bombadil drives Playwright's Chromium (CHROME, set by the script); --with-deps installs its
+      # system libraries even when the browser came from cache.
+      - run: bun run playwright install --with-deps chromium
+        working-directory: apps/web
+      # Exit 0: the time ran out with every property holding; 2: a violation; 1: an error. The
+      # script writes any violation's text to the job summary.
+      - name: Explore the mock app
+        id: explore
+        working-directory: apps/web
+        run: |
+          set +e
+          node scripts/bombadil.mjs --time-limit 10m
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+      - name: Upload the trace of a violation
+        if: steps.explore.outputs.code == '2'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bombadil-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/web/bombadil-out
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Result
+        env:
+          CODE: ${{ steps.explore.outputs.code }}
+        run: |
+          echo "bombadil exited ${CODE:-unknown}"
+          test "$CODE" = 0

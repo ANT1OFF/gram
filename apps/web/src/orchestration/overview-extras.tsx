@@ -63,6 +63,7 @@ import {
   RoomyTile,
 } from "@/embed/slots";
 import { useLaunchIssues } from "@/launch-checks/banner";
+import { useSettingsLink } from "@/settings/open-settings";
 
 // The overview sidebar's extras: At rest's Pull requests and Done, each gone with nothing in it, the
 // way into History, and the usage meters and worker slots at its foot, off by default. Each reads
@@ -431,6 +432,7 @@ export function RoomyFoot({ showHistory = true }: { showHistory?: boolean }) {
   const historyOpen = useHistoryStore((s) => s.open);
   const settingsHint = useShortcutHint("settings.open");
   const setup = useLaunchIssues().dismissed;
+  const settingsLink = useSettingsLink(setup.length === 0 ? "/settings" : "/settings/diagnostics");
   const inSettings = useRouterState({
     select: (state) => state.location.pathname.startsWith("/settings"),
   });
@@ -470,7 +472,7 @@ export function RoomyFoot({ showHistory = true }: { showHistory?: boolean }) {
           side="top"
           render={
             <Link
-              to={setup.length === 0 ? "/settings" : "/settings/diagnostics"}
+              {...settingsLink}
               data-testid="overview-settings"
               aria-label={settingsLabel}
               aria-current={inSettings ? "page" : undefined}

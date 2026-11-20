@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { AgentEvent } from "../agent.ts";
+import { HostAppToolsAnswer, HostAppToolsRequest } from "./host-app-tools.ts";
 import { Connector } from "../connectors.ts";
 import {
   AgentUnavailable,
@@ -35,6 +36,8 @@ import { SavedDiff } from "../saved-work.ts";
 import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
 import { HostCodexStatus, HostGrokStatus, HostModel, HostOpenCodeStatus } from "./host-agents.ts";
+
+export * from "./host-app-tools.ts";
 
 /**
  * The host protocol's version. Between releases the protocol only grows: a new call, a new optional
@@ -231,6 +234,13 @@ export const HostFeature = Schema.Literals([
    * ask a host without it.
    */
   "stop-going",
+  /**
+   * Carries its sessions' app-tool calls to the control plane over its own connection
+   * (`host.appTools.*`): it serves them on an address of its own loopback, and the control plane
+   * answers each. For a host that can't reach the control plane's address, such as one a hosted
+   * server started for a desktop's worker, whose connection that server relays.
+   */
+  "app-tools-tunnel",
   /**
    * Opens a TCP connection to one of the machine's own loopback ports for the control plane
    * (`host.loopback.*`), so the browser a thread's tools drive on the control plane reaches a dev
@@ -1410,6 +1420,25 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.sessions.addDirectories", {
     payload: { ...session, paths: Schema.Array(Schema.String) },
     success: Schema.Boolean,
+    error: HostFailed,
+  }),
+  /**
+   * Starts serving app-tool calls on the host's loopback, once (`app-tools-tunnel`): the address
+   * its sessions are given, `http://127.0.0.1:<port>`, under which `/host/mcp` takes them.
+   */
+  Rpc.make("host.appTools.open", {
+    success: Schema.Struct({ url: Schema.String.check(Schema.isMaxLength(64)) }),
+    error: HostFailed,
+  }),
+  /** Each app-tool call a session there made, for the control plane to answer by id. */
+  Rpc.make("host.appTools.requests", {
+    success: HostAppToolsRequest,
+    error: HostFailed,
+    stream: true,
+  }),
+  /** The control plane's answer to one call: the host writes it back to the session. */
+  Rpc.make("host.appTools.answer", {
+    payload: HostAppToolsAnswer,
     error: HostFailed,
   }),
   /** Points the session's app tools at `mcp` from now on (`session-retarget`). */

@@ -25,7 +25,7 @@ import { useThreadsStore } from "@/stores/threads";
 /** The worker pane's own element, which a panel request checks the keys against. */
 export const WORKER_PANE_TEST_ID = "beside-dock";
 
-export type BesideTab = "thread" | "changes" | "pr" | "terminal" | "files";
+export type BesideTab = "thread" | "changes" | "pr" | "proof" | "terminal" | "files";
 
 /** How the right panel stood before the Thread tab opened it, which Close puts back. */
 interface PanelBefore {
@@ -90,7 +90,7 @@ interface BesideState {
   setFocused: (focused: boolean) => void;
 }
 
-const TABS: readonly BesideTab[] = ["thread", "changes", "pr", "terminal", "files"];
+const TABS: readonly BesideTab[] = ["thread", "changes", "pr", "proof", "terminal", "files"];
 
 /** The least a worker's conversation and composer open at, as wide as the read-only dock was. */
 export const BESIDE_WIDTH = 480;

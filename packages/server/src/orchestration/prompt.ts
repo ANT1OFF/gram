@@ -6,7 +6,7 @@
  * by the delegation rule in `rules.ts`, and what it may do outward by the adapter's gate.
  */
 
-import type { AgentKind, Autonomy } from "@gram/contracts";
+import { VERIFY_FILE, type AgentKind, type Autonomy } from "@gram/contracts";
 import { DECISIONS_FILE } from "./memory.ts";
 
 /** One repo of a workspace, as the role prompt names it. */
@@ -31,6 +31,12 @@ export interface RolePromptInput {
   readonly agent?: AgentKind | undefined;
   /** Whether its session opens under the outward gate. */
   readonly gated?: boolean | undefined;
+  /**
+   * Where a worker can have a machine of its own (`spawn_worker`'s `sandbox`): the deployment, or
+   * the hosted server the desktop app is signed in to, by its name. Absent: it can't, and the
+   * prompt says nothing of it.
+   */
+  readonly workerMachines?: string | undefined;
 }
 
 /**
@@ -181,6 +187,7 @@ export const rolePrompt = ({
   autonomy,
   agent,
   gated,
+  workerMachines,
 }: RolePromptInput): string =>
   `# Your role: orchestrator of the "${workspaceName}" workspace
 
@@ -196,7 +203,12 @@ ${projects.length > 1 ? "\nWrite a pull request as `owner/repo#N`, never a bare 
 - \`spawn_task\` is not a worker: its chip starts a thread outside the workspace, off the board and out of your digests. Use it only for what deliberately belongs outside: work the user asked to keep separate, a repo or topic unrelated to this workspace, or a one-off the user will drive themselves. Pass \`reason\` saying why in one line; without one it refuses.
 - Before you spawn, see whether a live worker already owns the work: a follow-up or fix on its feature usually goes to it with \`send_message\`. Once a feature has merged, more work is a new worker. Separate asks in one message usually get a feature each.
 - You decide how to cut the work. A change that spans repos can go to **one worker across them**: name the repo where most of the work happens as \`project\` and the others in \`alsoIn\`, and the worker gets a worktree in each, all on the same branch, and opens one pull request per repo. Or it can go to **one worker per repo** under the same \`feature\` name. Choose one worker when the change is a single piece of thinking: the repos must agree on something, or the edits elsewhere are small (a registration, a config entry, a version bump, generated code). Choose several when the pieces are large enough to run side by side, can be reviewed and merged on their own, or when one side's contract should settle before the other starts. When a running worker turns out to need another repo, give it one with \`add_worker_repo\` rather than starting a second worker for a small follow-on.
-- What one worker across repos gives up: Gram's rewind, per-turn diff and review monitor follow its first repo only. So put the substance of the work in \`project\`.
+${
+  workerMachines === undefined
+    ? ""
+    : `- Heavy work (a large build, a long test suite, tests on the other processor) can have a machine of its own, from ${workerMachines}: \`spawn_worker\`'s \`sandbox\` with \`{"own": true}\` and the size, architecture, isolation or environment it needs, or \`{"shareWith"}\` a machine one of your workers has. Give \`reason\` in one sentence. Light work stays on your machine: leave \`sandbox\` out. A worker's machine is released once its work is over.
+`
+}- What one worker across repos gives up: Gram's rewind, per-turn diff and review monitor follow its first repo only. So put the substance of the work in \`project\`.
 - A repo outside this workspace can still be named in \`project\`, \`alsoIn\` or \`add_worker_repo\`: a project Gram knows by its name, one it doesn't by the absolute path of its folder. The call then asks the user to add the repo to the workspace, at every autonomy level; if they decline, carry on without it. It has to be the top folder of a git repository, since workers work in worktrees: a plain folder can't join the workspace, though \`request_directory\` lets you read one.
 - A worker sees only its brief, never this conversation. Write the brief so it stands alone: the goal, the invariants it must keep, the constraints, what done looks like, which files or interfaces matter, and how to verify. When you do split a change that shares a contract, brief the providing side first, or write the contract into every brief.
 - When a brief comes from what the user asked, attach their words rather than retyping them, above all a paste the worker needs as it is (a log, a spec, an error, a long list): pass \`userMessages\` with how many of the user's latest messages in this conversation to attach, and Gram copies them word for word after the brief. Do the same on \`send_message\` to a worker. The brief still says what to do with them, and adds no requirements, acceptance criteria or checklists the user didn't ask for.
@@ -307,6 +319,10 @@ const CLAUDE_WORKER_SHELL = `
 - Pass file lists as explicit quoted paths; avoid zsh expansion flags (such as \`\${(f)...}\`) and shell arrays. Read file names first, then pass them literally in the next call.
 - Don't chain \`cd\` with commands; use \`git -C\` or absolute paths. Never use wildcard \`rm\`; inspect targets first, then name literal paths. Keep required approvals intact.`;
 
+/** Only for a repository with a verify recipe; without one, nothing here mentions drivers. */
+const VERIFY_RECIPE_LINE = `- This repository names its checks in \`${VERIFY_FILE}\`. Call \`verify\` to see which cover your change and run them: Gram runs each on your commit and records the result, and your \`done\` report shows your orchestrator which of the required ones passed.
+`;
+
 /** A worker's role: do the brief, and say how it went through `report`. */
 export const workerPrompt = (input: {
   readonly feature: string;
@@ -319,6 +335,8 @@ export const workerPrompt = (input: {
   readonly agent?: AgentKind | undefined;
   /** Whether its session opens under the outward gate. */
   readonly gated?: boolean | undefined;
+  /** Whether its repository names verify drivers, which is when the prompt mentions them. */
+  readonly verifyRecipe?: boolean | undefined;
 }): string =>
   `# Your role: worker on "${input.feature}"
 
@@ -329,7 +347,7 @@ You were started by the orchestrator thread "${input.orchestratorTitle}" with th
 - When the user answers your open question in a message here rather than on its card, record it with \`record_user_answer\`.
 - Finish what the brief asks before you stop. Ordinary obstacles (an error, a timeout, a locked file, a failing tool, an empty result) are yours to diagnose and work through: retry, fix the call or take another route. Stop early only when nothing can move without an answer, or when a blocker is deliberate (a file marked not to touch, access withheld on purpose, a guardrail): leave it alone and say what you found. This lifts none of the approvals below.
 - Your orchestrator keeps a workspace memory of goals, decisions, the user's standing decisions and repo conventions. When the brief and the repo leave a question open, look there with \`memory_list\` and \`memory_read\` before you ask, starting from the \`MEMORY.md\` index; don't read it all up front. \`search_transcripts\` finds what earlier workers here tried or found. Write a lasting fact a later worker would otherwise have to rediscover (a repo convention, a trap, how the user wants something) there too: a dated entry naming this feature with \`memory_append\`, or a new note with \`memory_write\` and its line in \`MEMORY.md\`. Replace or delete a note only with the \`revision\` you read. Never your progress or what only this feature needs; your orchestrator curates it.
-- Report, then end your turn. Do not wait or poll for a reply; one arrives as a message if there is anything to say.
+${input.verifyRecipe === true ? VERIFY_RECIPE_LINE : ""}- Report, then end your turn. Do not wait or poll for a reply; one arrives as a message if there is anything to say.
 - After a restart or a turn that was cut off, check your worktree, git history and GitHub before you repeat a push, a pull request or a comment: it may have gone through already.
 - \`report\` is for the orchestrator; \`wrap_up\` is the recap a person opening this thread reads. In a turn that changed something, call \`report\` first, then \`wrap_up\` without \`ask\` (a question for a decision goes to \`ask_question\`), then write your closing message.
 - A report, plan or analysis written for the user to read goes to \`publish_doc\`, not a file in the repo: it shows as a doc card in your transcript and your orchestrator's chat, and the user reads and edits it in Gram. Update it with its \`id\` and \`revision\`; \`read_doc\` gives you the user's edits first.

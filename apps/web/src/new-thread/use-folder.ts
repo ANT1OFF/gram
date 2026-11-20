@@ -1,9 +1,9 @@
 import type { FolderEntry, FolderListing, HostFolderChecked, HostId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
 import type { Api } from "@/api/types";
+import { useDebounced } from "@/lib/timers";
 
 import { folderProblem, type FolderProblem } from "./fs-errors";
 import { baseName, splitForCompletion } from "./path";
@@ -11,16 +11,6 @@ import { baseName, splitForCompletion } from "./path";
 /** `fs.browse` lists a folder only when its path ends in a separator. */
 export const withTrailingSlash = (path: string): string =>
   path === "" || /[\\/]$/.test(path) ? path : `${path}/`;
-
-function useDebouncedValue<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    if (ms <= 0) return;
-    const id = setTimeout(() => setDebounced(value), ms);
-    return () => clearTimeout(id);
-  }, [value, ms]);
-  return ms <= 0 ? value : debounced;
-}
 
 /**
  * Where folders are listed: this Mac's, or a joined machine's through its host (`hostId`), never
@@ -52,7 +42,7 @@ export type FolderStatus =
 export function useFolderStatus(path: string, debounceMs = 200): FolderStatus {
   const api = useApi();
   const trimmed = path.trim();
-  const debounced = withTrailingSlash(useDebouncedValue(trimmed, debounceMs));
+  const debounced = withTrailingSlash(useDebounced(trimmed, debounceMs));
   const query = useQuery({
     queryKey: ["fs.browse", debounced],
     queryFn: () => api.browse(debounced),
@@ -80,7 +70,7 @@ export function useCompletions(
   hostId?: HostId,
 ): readonly FolderEntry[] {
   const { key, browse } = useBrowsing(hostId);
-  const debounced = useDebouncedValue(prefix, debounceMs);
+  const debounced = useDebounced(prefix, debounceMs);
   const query = useQuery({
     queryKey: [...key, debounced],
     queryFn: () => browse(debounced),
@@ -147,7 +137,7 @@ export function useMachineFolderStatus(
 ): MachineFolderStatus {
   const api = useApi();
   const trimmed = path.trim();
-  const debounced = useDebouncedValue(trimmed, debounceMs);
+  const debounced = useDebounced(trimmed, debounceMs);
   const query = useQuery({
     queryKey: ["machines.folders.check", hostId, debounced],
     queryFn: () => api.checkFolderOn(hostId!, debounced),

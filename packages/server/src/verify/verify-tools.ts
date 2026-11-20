@@ -25,11 +25,16 @@ import {
   VERIFY_TIMEOUT_DEFAULT_MINUTES,
   type Thread,
   type VerifyDriver,
+  type VerifyDriverState,
+  type VerifyState,
+  type WorkerReportVerify,
 } from "@gram/contracts";
 import { git, Proc } from "@gram/git";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { defineAppTool, OWN_PR_AUDIENCE, type AppToolDefinition } from "../app-tools/definition.ts";
@@ -170,6 +175,154 @@ const statusOf = (check: LocalCheck | undefined) =>
       ? `failed: ${check.reason ?? "it didn't pass"}`
       : check.status;
 
+/**
+ * Each driver of a recipe with how Gram recorded its run on the thread's committed head, and
+ * whether it covers what the branch changed (`undefined` where the changed paths can't be read).
+ */
+const driversOnHead = (deps: VerifyDeps, thread: Thread, drivers: readonly VerifyDriver[]) =>
+  Effect.gen(function* () {
+    const commit = yield* commitOf(deps, thread);
+    const checkout = effectiveCheckout(thread);
+    const site = checkSiteOf(checkout, checkout.path);
+    const covering =
+      commit.paths === undefined
+        ? undefined
+        : new Set(driversCovering(drivers, commit.paths).map((d) => d.name));
+    const rows = yield* Effect.forEach(drivers, (driver) =>
+      (deps.checks === undefined
+        ? Effect.succeed(undefined)
+        : deps.checks.lookup(
+            site,
+            commit.head,
+            commit.head,
+            thread.projectId,
+            driverRun(driver, thread.projectId),
+          )
+      ).pipe(
+        Effect.map((check) => ({
+          driver,
+          check,
+          coversChange: covering === undefined ? undefined : covering.has(driver.name),
+        })),
+      ),
+    );
+    return {
+      head: commit.head,
+      uncommitted: commit.uncommitted,
+      pathsKnown: covering !== undefined,
+      rows,
+    };
+  });
+
+/**
+ * The required drivers that cover a thread's change and how they ran on its head, as Gram
+ * recorded them; `undefined` when the repository requires none of them, or none can be read.
+ * Without the changed paths (a thread on another machine) every required driver counts.
+ */
+export const requiredOnHead = (
+  deps: VerifyDeps,
+  threadId: Thread["id"],
+): Effect.Effect<WorkerReportVerify | undefined> =>
+  Effect.gen(function* () {
+    if (deps.checks === undefined) return undefined;
+    const checks = deps.checks;
+    const thread = yield* deps.store.getThread(threadId);
+    const required = ((yield* readRecipe(deps, thread)) ?? []).filter((d) => d.required === true);
+    if (required.length === 0) return undefined;
+    const commit = yield* commitOf(deps, thread);
+    const wanted = commit.paths === undefined ? required : driversCovering(required, commit.paths);
+    if (wanted.length === 0) return undefined;
+    const checkout = effectiveCheckout(thread);
+    const site = checkSiteOf(checkout, checkout.path);
+    const passed: string[] = [];
+    const missing: string[] = [];
+    for (const driver of wanted) {
+      const check = yield* checks.lookup(
+        site,
+        commit.head,
+        commit.head,
+        thread.projectId,
+        driverRun(driver, thread.projectId),
+      );
+      (check?.status === "passed" ? passed : missing).push(driver.name);
+    }
+    return { head: commit.head, passed, missing };
+  }).pipe(Effect.orElseSucceed(() => undefined));
+
+/** A thread's recipe and Gram's record of each driver on its head, for the Proof tab. */
+export const verifyStateOf = (deps: VerifyDeps, thread: Thread): Effect.Effect<VerifyState> =>
+  Effect.gen(function* () {
+    const read = yield* Effect.result(readRecipe(deps, thread));
+    if (Result.isFailure(read))
+      return { recipe: "unreadable", error: read.failure.message, drivers: [] } as const;
+    if (read.success === undefined) return { recipe: "none", drivers: [] } as const;
+    const listed = yield* Effect.result(driversOnHead(deps, thread, read.success));
+    if (Result.isFailure(listed))
+      return {
+        recipe: "ok",
+        drivers: read.success.map((driver) => stateRow(driver, undefined, undefined)),
+      } as const;
+    const { head, uncommitted, rows } = listed.success;
+    return {
+      recipe: "ok",
+      head,
+      ...(uncommitted > 0 ? { uncommitted } : {}),
+      drivers: rows.map(({ driver, check, coversChange }) => stateRow(driver, check, coversChange)),
+    } as const;
+  });
+
+const stateRow = (
+  driver: VerifyDriver,
+  check: LocalCheck | undefined,
+  coversChange: boolean | undefined,
+): VerifyDriverState => ({
+  name: driver.name,
+  run: driver.run,
+  ...(driver.kind === undefined ? {} : { kind: driver.kind }),
+  ...(driver.required === true ? { required: true } : {}),
+  ...(coversChange === undefined ? {} : { coversChange }),
+  status: check === undefined ? "notRun" : check.status,
+  ...(check?.status === "failed" ? { reason: check.reason ?? "it didn't pass" } : {}),
+  ...(check === undefined ? {} : { startedAt: check.startedAt }),
+  ...(check?.finishedAt === undefined ? {} : { finishedAt: check.finishedAt }),
+});
+
+/** What other tools ask of a thread's verify recipe. */
+export interface VerifyStatusShape {
+  readonly requiredOnHead: (
+    threadId: Thread["id"],
+  ) => Effect.Effect<WorkerReportVerify | undefined>;
+  readonly stateFor: (thread: Thread) => Effect.Effect<VerifyState>;
+}
+
+export class VerifyStatus extends Context.Service<VerifyStatus, VerifyStatusShape>()(
+  "@gram/server/VerifyStatus",
+) {}
+
+const verifyDeps = Effect.gen(function* () {
+  const checks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
+  const hosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
+  const proc = yield* Effect.serviceOption(Proc);
+  return {
+    store: yield* ThreadStore,
+    runtimes: yield* ThreadRuntimes,
+    publisher: yield* GitStatePublisher,
+    checks,
+    hosts,
+    proc: Effect.succeed(proc),
+  } satisfies VerifyDeps;
+});
+
+export const VerifyStatusLive = Layer.effect(
+  VerifyStatus,
+  Effect.map(verifyDeps, (deps) =>
+    VerifyStatus.of({
+      requiredOnHead: (threadId) => requiredOnHead(deps, threadId),
+      stateFor: (thread) => verifyStateOf(deps, thread),
+    }),
+  ),
+);
+
 export const verifyTools = (deps: VerifyDeps): ReadonlyArray<AppToolDefinition> => {
   /** Commands the user let run, by project and command; a changed command asks again. */
   const allowed = new Set<string>();
@@ -198,47 +351,32 @@ export const verifyTools = (deps: VerifyDeps): ReadonlyArray<AppToolDefinition> 
             drivers: [],
             note: `This repository has no ${VERIFY_FILE}. Verify as its own docs say.`,
           };
-        const commit = yield* commitOf(deps, thread);
-        const checkout = effectiveCheckout(thread);
-        const site = checkSiteOf(checkout, checkout.path);
-        const recorded = (driver: VerifyDriver) =>
-          deps.checks!.lookup(
-            site,
-            commit.head,
-            commit.head,
-            thread.projectId,
-            driverRun(driver, thread.projectId),
-          );
-
         if (wanted === undefined) {
-          const covering =
-            commit.paths === undefined
-              ? undefined
-              : new Set(driversCovering(drivers, commit.paths).map((d) => d.name));
-          const rows = yield* Effect.forEach(drivers, (driver) =>
-            Effect.map(recorded(driver), (check) => ({
+          const listed = yield* driversOnHead(deps, thread, drivers);
+          return {
+            commit: listed.head,
+            ...(listed.uncommitted > 0
+              ? {
+                  uncommitted: `${listed.uncommitted} changed files aren't committed and aren't verified.`,
+                }
+              : {}),
+            drivers: listed.rows.map(({ driver, check, coversChange }) => ({
               name: driver.name,
               run: driver.run,
               ...(driver.kind === undefined ? {} : { kind: driver.kind }),
               ...(driver.required === true ? { required: true } : {}),
-              ...(covering === undefined ? {} : { coversYourChange: covering.has(driver.name) }),
+              ...(coversChange === undefined ? {} : { coversYourChange: coversChange }),
               onThisCommit: statusOf(check),
             })),
-          );
-          return {
-            commit: commit.head,
-            ...(commit.uncommitted > 0
-              ? {
-                  uncommitted: `${commit.uncommitted} changed files aren't committed and aren't verified.`,
-                }
-              : {}),
-            drivers: rows,
-            next:
-              covering === undefined
-                ? "This repository asks that you run the drivers whose patterns match what you changed before you report done, and say which passed."
-                : "This repository asks that you run the drivers that cover your change before you report done, and say which passed.",
+            next: listed.pathsKnown
+              ? "This repository asks that you run the drivers that cover your change before you report done, and say which passed."
+              : "This repository asks that you run the drivers whose patterns match what you changed before you report done, and say which passed.",
           };
         }
+
+        const commit = yield* commitOf(deps, thread);
+        const checkout = effectiveCheckout(thread);
+        const site = checkSiteOf(checkout, checkout.path);
 
         const driver = drivers.find((d) => d.name === wanted);
         if (driver === undefined)
@@ -316,18 +454,12 @@ export const verifyTools = (deps: VerifyDeps): ReadonlyArray<AppToolDefinition> 
 export const VerifyAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* AppToolRegistry;
-    const checks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
-    const hosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-    const proc = yield* Effect.serviceOption(Proc);
-    yield* registry.register(
-      verifyTools({
-        store: yield* ThreadStore,
-        runtimes: yield* ThreadRuntimes,
-        publisher: yield* GitStatePublisher,
-        checks,
-        hosts,
-        proc: Effect.succeed(proc),
-      }),
-    );
+    yield* registry.register(verifyTools(yield* verifyDeps));
   }),
 );
+
+/** The note a worker's `done` report gets back when a required driver has no pass on its head. */
+export const verifyMissingNote = (verify: WorkerReportVerify | undefined): string | undefined =>
+  verify === undefined || verify.missing.length === 0
+    ? undefined
+    : `Gram has no pass on ${verify.head.slice(0, 7)} for ${verify.missing.map((name) => `"${name}"`).join(", ")}, which this repository marks required. Your orchestrator sees that with your report; run them with \`verify\` if you can, and report again.`;
