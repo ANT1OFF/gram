@@ -389,6 +389,14 @@ violation's text go to `apps/web/bombadil-out/`; `--help` lists the flags. A run
 path each time and its replay diverges, so a trace is a trail of screenshots and values to read,
 not a reproduction.
 
+`noFlicker` counts what the app does on its own, with no input since: an element gone for a frame
+and back within 300 ms, text going A → B → A, a list emptied and refilled, and a layout shift. The
+recorder is [flicker-observer.ts](../apps/web/e2e/flicker-observer.ts), self-contained so that a
+Playwright spec can install it with `page.addInitScript(installFlickerObserver)`. The spec lists
+the flickers it allows: intended ones, such as a cross-fade, and known ones the trial found and
+nobody has fixed, each with its reason. They still show in the trace's `flicker.allowed`. Remove a
+known entry with its fix.
+
 [bombadil.yml](../.github/workflows/bombadil.yml) runs it for ten minutes nightly and by hand,
 writes a violation to the job summary and uploads its trace. **It is not a gate**: it never runs
 on a pull request and is in no lane, required check or `merge-ci.json`. The four-week trial is
