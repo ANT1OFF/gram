@@ -387,6 +387,30 @@ with coverage instrumentation off (with it on, the app never renders). From the 
 bun run --filter @gram/web bombadil -- --time-limit 90s
 ```
 
+Two opt-in mock modes, built only for these runs ([mock-modes](../apps/web/src/api/mock-modes)),
+change what a run sees. On the ordinary mock a run can't be replayed (below); on the replayable
+one it can:
+
+- **Replayable** (`--seed <n>`, or `--replayable` for a seed drawn and printed): a seeded random,
+  a clock that moves one step per input instead of with the wall clock (timers, `Date`,
+  `performance.now`, idle callbacks), no animation, the app in one file, and Bombadil's look held
+  until the page is still. The same seed and inputs reach the same states, so `--reproduce <trace>`
+  and `--shrink <trace>` replay a run, taking its modes from the `run.json` beside the trace. Replays
+  hold often but not always: a 389-step run reached its violation again in 2 of 3 replays and
+  in 2 of 3 of the shrinker's calibrations, and a 1,700-step run replayed 900 to 1,100 steps
+  before parting. Downloads, the clipboard and scrolling still run in wall-clock time.
+- **Faults** (`--faults <rate>`, with `--fault-seed <n>`): that share of the app's api calls is
+  slowed, by at most 4 s, or fails as a 503, a lost socket or a timeout. Run it with
+  [faults.ts](../apps/web/bombadil/faults.ts), whose properties say the app stays usable: never
+  without a control for long, no uncaught exception or unhandled rejection, a failure the person
+  asked for shown on the page, and a retry it offers enabled.
+
+```sh
+bun run --filter @gram/web bombadil -- --replayable --time-limit 3m
+bun run --filter @gram/web bombadil -- --reproduce bombadil-out/trace.bin   # from apps/web
+bun run --filter @gram/web bombadil -- --spec bombadil/faults.ts --faults 0.15 --replayable
+```
+
 It exits 0 when the time runs out with every property holding, 2 on a violation and 1 on an
 error, and stops at the first violation unless given `--keep-going`. The log, the trace and the
 violation's text go to `apps/web/bombadil-out/`; `--help` lists the flags. A run takes its own
@@ -402,7 +426,8 @@ nobody has fixed, each with its reason. They still show in the trace's `flicker.
 known entry with its fix.
 
 [bombadil.yml](../.github/workflows/bombadil.yml) runs it for ten minutes nightly and by hand,
-writes a violation to the job summary and uploads its trace. **It is not a gate**: it never runs
+once on the ordinary mock and once under faults on the replayable mock, writes a violation to the
+job summary and uploads its trace with its `run.json`. **It is not a gate**: it never runs
 on a pull request and is in no lane, required check or `merge-ci.json`. The four-week trial is
 reviewed around 2026-12-18 for real bugs found, false positives, upgrade churn and whether
 instrumentation works upstream. Pin upgrades are deliberate: each 0.x release can break the spec

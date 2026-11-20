@@ -4,6 +4,7 @@
 **/node_modules
 **/dist
 **/dist-e2e
+**/dist-bombadil
 **/out
 **/release
 **/.turbo

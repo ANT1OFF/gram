@@ -19,6 +19,10 @@ const serverPort = process.env["GRAM_DEV_SERVER_PORT"];
 const e2eToken = process.env["GRAM_E2E_TOKEN"];
 const previewTemp = process.env["GRAM_PREVIEW_TEMP_DIR"];
 
+/** The replayable mock (`src/api/mock-modes`), which Bombadil's `--seed` builds. */
+const replayableMock =
+  process.env["VITE_API"] === "mock" && process.env["VITE_MOCK_DETERMINISTIC"] === "1";
+
 const proxy = (port: string): Record<string, ProxyOptions> => {
   const target = `http://127.0.0.1:${port}`;
   // changeOrigin rewrites Host to the server's loopback host:port, which its allowlist requires.
@@ -162,7 +166,8 @@ export default defineConfig({
     tailwindcss(),
     // For the packaged app's third-party notices; see tools/notices.
     bundledPackages("web"),
-    entryBudget,
+    // The replayable mock's single file is over every budget, and is never shipped.
+    ...(replayableMock ? [] : [entryBudget]),
     ...(e2eToken ? [e2eTokenEndpoint(e2eToken)] : []),
   ],
   build: {
@@ -190,6 +195,10 @@ export default defineConfig({
             { name: "initial", tags: ["$initial"], priority: 1 },
           ],
         },
+        // The replayable mock is one file: a part that loads later would arrive in wall-clock
+        // time, and mounting before or after it shifts every `useId` that Bombadil's replay
+        // matches controls by. One file also runs `src/api/mock-modes/install.ts` first.
+        ...(replayableMock ? { codeSplitting: false } : {}),
       },
     },
   },
