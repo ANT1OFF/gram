@@ -2,7 +2,16 @@
 // that never overlap, with a fake app over the port: no network, no real machine.
 
 import { describe, expect, it } from "@effect/vitest";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Deferred from "effect/Deferred";
@@ -17,6 +26,8 @@ import {
   OWED_MOST,
   type NameLocks,
   RECLAIMED_AFTER_MISSES,
+  stopHoldUntil,
+  STOPS_FILE_MOST,
   settleOwedStops,
   signedInSource,
   UNSETTLED_START_MS,
@@ -351,6 +362,46 @@ describe("stops a server never confirmed", () => {
       yield* Effect.forkScoped(after.start({ name: NAME, orchestrator: "o", title: "Retry" }));
       yield* Effect.sleep("200 millis");
       // The stops may still land: the retry's start waits out their hold.
+      expect(log).toEqual(["stop", "stop", "stop"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("hold a name for as long as the server may still act on a stop it took", () =>
+    Effect.gen(function* () {
+      const log: string[] = [];
+      const base = bridgeWorkerMachines(
+        fakeApp({ answer: () => ({ status: 202, body: {} }) }).port,
+      );
+      // Every stop is taken there and its answer lost; a start is answered.
+      const port: WorkerMachinePortShape = {
+        ...base,
+        call: (_origin, call) =>
+          Effect.sync(() => {
+            log.push(call);
+            return call === "stop"
+              ? { ok: false as const, why: "no answer" }
+              : { ok: true as const, status: 202, body: {} };
+          }),
+      };
+      let clock = Date.now();
+      const owed = memoryOwedStops(
+        [],
+        () => true,
+        () => clock,
+      );
+      const deps = {
+        port,
+        hosts: unregistered,
+        owed,
+        starting: new Set<string>(),
+        now: () => clock,
+      };
+      yield* signedInSource(SERVER, { ...deps, stopRetryMs: 0, unansweredHoldMs: 0 }).abandon(NAME);
+      // Two minutes on, after a restart: the server's call down may still be waiting to act.
+      clock += 2 * 60_000;
+      const after = signedInSource(SERVER, { ...deps, locks: makeKeyedLock<string>() });
+      yield* Effect.forkScoped(after.start({ name: NAME, orchestrator: "o", title: "Retry" }));
+      yield* Effect.sleep("200 millis");
       expect(log).toEqual(["stop", "stop", "stop"]);
     }).pipe(Effect.scoped),
   );
@@ -863,6 +914,104 @@ describe("stops a server never confirmed", () => {
       }
     }),
   );
+
+  it("keep only the holds whose time is not up, however many passes asked again", () => {
+    let clock = 1_700_000_000_000;
+    const owed = memoryOwedStops(
+      [],
+      () => true,
+      () => clock,
+    );
+    // Thirty-two machines owed a stop, asked every ten minutes while no stop is answered.
+    for (let pass = 0; pass < 150; pass += 1) {
+      for (let each = 0; each < 32; each += 1)
+        owed.holds.hold(
+          ORIGIN,
+          `worker-${each.toString(16).padStart(10, "0")}`,
+          stopHoldUntil(clock),
+        );
+      clock += 10 * 60_000;
+    }
+    // None of them can still act there by now: none is kept, and what is written stays small.
+    expect(owed.heldList()).toHaveLength(0);
+    owed.holds.hold(ORIGIN, NAME, stopHoldUntil(clock));
+    expect(owed.heldList()).toHaveLength(1);
+  });
+
+  it("keep the owings of a file grown past its bound with holds long over, and shrink it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-owed-"));
+    try {
+      // As the file was left before holds were pruned: two owings and thousands of old holds.
+      const file = join(dir, "remote-access", "worker-machine-stops.json");
+      mkdirSync(join(dir, "remote-access"), { mode: 0o700 });
+      const holds = Array.from({ length: 8_000 }, (_, each) => ({
+        id: `old-${each}`,
+        origin: ORIGIN,
+        name: NAME,
+        until: 1,
+      }));
+      const owings = [NAME, "worker-aaaaaaaaaa"].map((name) => ({
+        origin: ORIGIN,
+        name,
+        since: 1,
+      }));
+      writeFileSync(file, JSON.stringify({ version: 1, owed: owings, holds }), { mode: 0o600 });
+      expect(statSync(file).size).toBeGreaterThan(STOPS_FILE_MOST);
+      const owed = fileOwedStops(dir);
+      // Read all the same: every stop still owed is kept.
+      expect(owed.list().map((each) => each.name)).toEqual([NAME, "worker-aaaaaaaaaa"]);
+      // Written back with only what still holds, well within what is read back.
+      owed.remove("worker-aaaaaaaaaa");
+      expect(statSync(file).size).toBeLessThan(STOPS_FILE_MOST);
+      expect(
+        fileOwedStops(dir)
+          .list()
+          .map((each) => each.name),
+      ).toEqual([NAME]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("set aside a file it can't read, never write over it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-owed-"));
+    try {
+      const file = join(dir, "remote-access", "worker-machine-stops.json");
+      mkdirSync(join(dir, "remote-access"), { mode: 0o700 });
+      writeFileSync(file, "{ not json", { mode: 0o600 });
+      fileOwedStops(dir).add({ origin: ORIGIN, name: NAME, since: 1 });
+      // What it held is kept beside the new one, for a person to read.
+      const aside = readdirSync(join(dir, "remote-access")).filter((each) =>
+        each.startsWith("worker-machine-stops.json.unreadable-"),
+      );
+      expect(aside).toHaveLength(1);
+      expect(readFileSync(join(dir, "remote-access", aside[0]!), "utf8")).toBe("{ not json");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("write no more than can be read back, so a restart keeps what was written", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-owed-"));
+    try {
+      // Owings with origins long enough that all of them would be past what is read back.
+      const origin = `https://${"a".repeat(3_000)}.example.test`;
+      const owed = fileOwedStops(dir);
+      for (let each = 0; each < OWED_MOST; each += 1)
+        owed.add({
+          origin,
+          name: `worker-${each.toString(16).padStart(10, "0")}`,
+          since: 1_700_000_000_000,
+          attempt: `00000000-0000-4000-8000-${each.toString(16).padStart(12, "0")}`,
+        });
+      // Each write that would go past it is refused; what was written last is still read.
+      expect(fileOwedStops(dir).list().length).toBeGreaterThan(100);
+      // And a stop whose hold can't be written down isn't sent.
+      expect(owed.holds.hold(origin, NAME, stopHoldUntil(Date.now()))).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it("keep every owing across a restart, a full list with long origins included", () => {
     const dir = mkdtempSync(join(tmpdir(), "gram-owed-"));

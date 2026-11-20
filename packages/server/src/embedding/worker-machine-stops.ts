@@ -2,6 +2,9 @@
 // name, so a start and a stop of it never overlap, and the stops a server never confirmed, kept
 // and asked again until it does.
 
+import { existsSync, renameSync } from "node:fs";
+import { join } from "node:path";
+
 import { WORKER_MACHINE_NAME } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type { KeyedLock } from "../git/keyed-lock.ts";
@@ -24,12 +27,24 @@ export const STOP_CALL_MS = 45_000;
  */
 export const stopSendBy = (sentAt: number) => sentAt + 30_000;
 
+/** How long the app's own request may take once it is sent (`HOSTED_CALL_MS` in the shell). */
+const STOP_REQUEST_MS = 15_000;
+
 /**
- * Until when a stop sent of a name may still reach the server: its call's deadline, then
+ * How long a hosted server may still act on a stop it has taken: its call down to the workspace
+ * may wait up to two minutes, and the stop then waits for the person's lock. Past that only the
+ * server can say (a stop that carried its own expiry, or named the disk it meant).
+ */
+export const SERVER_ACTS_WITHIN_MS = 130_000;
+
+/**
+ * Until when a stop sent of a name may still act there: the last time it may leave the app
+ * (`stopSendBy`), its request's own time, the time the server may take to act on it, then
  * `UNANSWERED_STOP_HOLD_MS`. Kept with the stops owed, across a restart, and let go only by that
  * stop's own answer: no start of the name is sent before then (`StopHolds`).
  */
-export const stopHoldUntil = (sentAt: number) => sentAt + STOP_CALL_MS + UNANSWERED_STOP_HOLD_MS;
+export const stopHoldUntil = (sentAt: number) =>
+  stopSendBy(sentAt) + STOP_REQUEST_MS + SERVER_ACTS_WITHIN_MS + UNANSWERED_STOP_HOLD_MS;
 
 /**
  * One lock per machine name: a start and a stop of the same name never overlap, so a stop already
@@ -158,13 +173,26 @@ interface StopHold {
   readonly until: number;
 }
 
-const memoryStopHolds = (kept: ReadonlyArray<StopHold>, changed: () => boolean) => {
+const memoryStopHolds = (
+  kept: ReadonlyArray<StopHold>,
+  changed: () => boolean,
+  now: () => number,
+) => {
   const holds = new Map(kept.map((each) => [each.id, each]));
   let next = 0;
+  /** Lets go of every hold whose time is up: what is kept, and written, is only what still holds. */
+  const prune = () => {
+    const at = now();
+    for (const [id, each] of holds) if (each.until <= at) holds.delete(id);
+  };
   return {
-    list: () => [...holds.values()],
+    list: () => {
+      prune();
+      return [...holds.values()];
+    },
     holds: {
       hold: (origin: string, name: string, until: number) => {
+        prune();
         const id = `${Date.now().toString(36)}-${(next += 1)}-${Math.random().toString(36).slice(2, 8)}`;
         holds.set(id, { id, origin, name, until });
         if (changed()) return id;
@@ -196,9 +224,10 @@ const owingOf = (stop: OwedStop) => stop.attempt ?? `${stop.name}@${stop.since}`
 export const memoryOwedStops = (
   kept: ReadonlyArray<StopHold> = [],
   changed: () => boolean = () => true,
+  now: () => number = Date.now,
 ): OwedStops & { readonly heldList: () => ReadonlyArray<StopHold> } => {
   const owed = new Map<string, OwedStop>();
-  const held = memoryStopHolds(kept, changed);
+  const held = memoryStopHolds(kept, changed, now);
   return {
     holds: held.holds,
     heldList: held.list,
@@ -222,16 +251,39 @@ export const memoryOwedStops = (
   };
 };
 
+/** The most the stops owed file may hold, as it is read back: no more is ever written. */
+export const STOPS_FILE_MOST = 512 * 1024;
+
+/**
+ * The most read back of a file written before writes were bounded: one grown with holds long
+ * over is still read, its owings kept, and written back small.
+ */
+const STOPS_FILE_READ_MOST = 16 * 1024 * 1024;
+
 /** `memoryOwedStops` kept in `<dataDir>/remote-access/worker-machine-stops.json`. */
 export const fileOwedStops = (dataDir: string): OwedStops => {
   // Room for every stop that may be owed (`OWED_MOST`), long origins included: one past it, or a
   // file too large to read, would lose them all.
-  const file = privateJsonFile(dataDir, "worker-machine-stops.json", 512 * 1024);
+  const file = privateJsonFile(dataDir, "worker-machine-stops.json", STOPS_FILE_MOST);
   let read: { version?: unknown; owed?: unknown; holds?: unknown } | undefined;
+  // Whether nothing may be written: a file that couldn't be read, nor set aside, is never
+  // replaced, since it may hold stops still owed.
+  let keepFile = false;
   try {
-    read = file.read() as typeof read;
+    read = privateJsonFile(
+      dataDir,
+      "worker-machine-stops.json",
+      STOPS_FILE_READ_MOST,
+    ).read() as typeof read;
   } catch {
     read = undefined;
+    // Never dropped: set aside beside it, for a person to read, before a new one is written.
+    const path = join(dataDir, "remote-access", "worker-machine-stops.json");
+    try {
+      if (existsSync(path)) renameSync(path, `${path}.unreadable-${Date.now()}`);
+    } catch {
+      keepFile = true;
+    }
   }
   const keptHolds = (Array.isArray(read?.holds) ? (read.holds as unknown[]) : []).flatMap(
     (each): StopHold[] =>
@@ -271,12 +323,19 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
               : {}),
           });
   } catch {
-    // An unreadable file owes nothing; the next stop owed writes it again.
+    // An owing that can't be read is left out; the rest are kept.
   }
-  /** Whether what is owed is on disk now. A write that failed keeps it in memory for this run. */
+  /**
+   * Whether what is owed is on disk now. A write that failed keeps it in memory for this run, and
+   * so does one past what the file may hold (`STOPS_FILE_MOST`): written, it couldn't be read back
+   * after a restart, and every stop owed would be lost with it.
+   */
   function save() {
+    if (keepFile) return false;
     try {
-      file.write({ version: 1, owed: owed.list(), holds: owed.heldList() });
+      const value = { version: 1, owed: owed.list(), holds: owed.heldList() };
+      if (Buffer.byteLength(JSON.stringify(value)) > STOPS_FILE_MOST) return false;
+      file.write(value);
       return true;
     } catch {
       return false;
