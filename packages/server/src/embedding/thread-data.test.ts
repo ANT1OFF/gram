@@ -40,12 +40,13 @@ describe("threadData", () => {
 
 describe("errorDetailData", () => {
   it("sends why a thread is in error, on one line and without a secret in it", () => {
+    const token = `ghp_${"a".repeat(36)}`;
     const data = errorDetailData(
       "error",
-      "agent session ended:\n  spawn failed with token=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+      `agent session ended:\n  spawn failed with token=${token}`,
     );
     expect(data["detail"]).toMatch(/^agent session ended: spawn failed/);
-    expect(data["detail"]).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789");
+    expect(data["detail"]).not.toContain(token);
     expect(String(data["detail"])).not.toContain("\n");
   });
 
