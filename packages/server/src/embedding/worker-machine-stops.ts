@@ -81,16 +81,23 @@ export interface OwedStop {
 export interface OwedStops {
   readonly list: () => ReadonlyArray<OwedStop>;
   /**
-   * Kept, unless its name is owed a stop already: that owing stands for the machine of the name,
-   * and is never replaced, so one name is owed once however often its give-backs fail. Whether it
-   * was kept as a new owing.
+   * Kept beside every other owing: one per attempt (name, server and attempt id), each until it
+   * is settled, so what is owed is the whole of what may still be there. Kept as it is when that
+   * attempt is owed already.
    */
-  readonly add: (stop: OwedStop) => boolean;
+  readonly add: (stop: OwedStop) => void;
+  /**
+   * `add`, in one step, only while fewer than `OWED_MOST` are owed: whether it was kept. A start
+   * is admitted so, never sent unless its stop is owed first.
+   */
+  readonly admit: (stop: OwedStop) => boolean;
   /**
    * With `attempt`, lets go of that owing alone; without, of every owing of `name` (its machine is
    * registered here, or confirmed stopped under its name's lock).
    */
   readonly remove: (name: string, attempt?: OwedStop) => void;
+  /** Lets go of every owing of `name` on the server at `origin`, and on no other. */
+  readonly release: (origin: string, name: string) => void;
 }
 
 /** The most stops kept owed at once: a start that would need one more is refused. */
@@ -104,9 +111,16 @@ export const memoryOwedStops = (): OwedStops => {
   return {
     list: () => [...owed.values()],
     add: (stop) => {
-      for (const each of owed.values()) if (each.name === stop.name) return false;
-      owed.set(owingOf(stop), stop);
+      if (!owed.has(owingOf(stop))) owed.set(owingOf(stop), stop);
+    },
+    admit: (stop) => {
+      if (owed.size >= OWED_MOST) return false;
+      if (!owed.has(owingOf(stop))) owed.set(owingOf(stop), stop);
       return true;
+    },
+    release: (origin, name) => {
+      for (const [key, each] of owed)
+        if (each.name === name && each.origin === origin) owed.delete(key);
     },
     remove: (name, attempt) => {
       if (attempt !== undefined) owed.delete(owingOf(attempt));
@@ -124,7 +138,9 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
   try {
     const kept = file.read() as { version?: unknown; owed?: unknown } | undefined;
     if (kept?.version === 1 && Array.isArray(kept.owed))
-      for (const each of kept.owed.slice(0, OWED_MOST))
+      // Every owing kept, however many: one is never left out on reading. Past `OWED_MOST`, no
+      // start is admitted until enough are settled.
+      for (const each of kept.owed)
         if (
           typeof each === "object" &&
           each !== null &&
@@ -156,9 +172,18 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
   return {
     list: owed.list,
     add: (stop) => {
-      const added = owed.add(stop);
-      if (added) save();
-      return added;
+      owed.add(stop);
+      save();
+    },
+    admit: (stop) => {
+      const admitted = owed.admit(stop);
+      if (admitted) save();
+      return admitted;
+    },
+    release: (origin, name) => {
+      const before = owed.list().length;
+      owed.release(origin, name);
+      if (owed.list().length !== before) save();
     },
     remove: (name, attempt) => {
       const before = owed.list().length;
@@ -177,7 +202,7 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
 export const settleOwedStops = (
   port: WorkerMachinePortShape,
   owed: OwedStops,
-  claimed: (name: string) => boolean = () => false,
+  claimed: (name: string, origin: string) => boolean = () => false,
   now: () => number = Date.now,
   locks?: NameLocks,
   /** Names a start of this Gram's is on its way for: a start's own debt is kept while it is. */
@@ -194,7 +219,7 @@ export const settleOwedStops = (
           // machine back. Taken since (registered here): let go, the release pass has it.
           if (!owed.list().some((each) => owingOf(each) === owingOf(stop))) return;
           if (startingNow(stop.name)) return;
-          if (claimed(stop.name)) {
+          if (claimed(stop.name, stop.origin)) {
             owed.remove(stop.name, stop);
             return;
           }

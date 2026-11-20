@@ -81,8 +81,11 @@ export const sendSignedInStart = (
     readonly startRetryMs?: number | undefined;
     readonly sent?: StartsSent | undefined;
     readonly go?: (() => boolean) | undefined;
-    /** Run once the name is this start's alone, before anything is sent. */
-    readonly onLocked?: (() => void) | undefined;
+    /**
+     * Run once the name is this start's alone, before anything is sent: an answer it gives is
+     * the start's, and nothing is sent.
+     */
+    readonly onLocked?: (() => Answered | undefined) | undefined;
   },
 ): Effect.Effect<{
   readonly answered: Answered;
@@ -93,7 +96,8 @@ export const sendSignedInStart = (
     options.locks,
     name,
     Effect.gen(function* () {
-      options.onLocked?.();
+      const admitted = options.onLocked?.();
+      if (admitted !== undefined) return { answered: admitted, unavailable: false };
       let unavailable = false;
       let asks = 0;
       const skipped = {

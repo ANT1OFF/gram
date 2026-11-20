@@ -61,7 +61,6 @@ import {
   codeOf,
   fileOwedStops,
   memoryOwedStops,
-  OWED_MOST,
   type NameLocks,
   type OwedStops,
   settleOwedStops,
@@ -214,8 +213,12 @@ export const signedInSource = (
         yield* Effect.logWarning("a worker machine given back could not be stopped").pipe(
           Effect.annotateLogs({ machine: name, reason: last }),
         );
-        // Registered here, the release pass tells the server; otherwise it is owed a stop.
-        if (named(name) === undefined)
+        // Registered here, the release pass tells the server; otherwise it is owed a stop, unless
+        // the server is owed one of the name already (the start's own, which stands for it).
+        if (
+          named(name) === undefined &&
+          !deps.owed?.list().some((each) => each.name === name && each.origin === origin)
+        )
           deps.owed?.add({
             origin,
             name,
@@ -225,7 +228,7 @@ export const signedInSource = (
           });
         return false;
       }
-      deps.owed?.remove(name);
+      deps.owed?.release(origin, name);
       port.unrelay(name);
       const machine = named(name);
       if (machine !== undefined) hosts.remove(HostId.make(machine.id));
@@ -260,13 +263,6 @@ export const signedInSource = (
     abandon: (name, options) => Effect.asVoid(forget(name, options?.unsettled === true)),
     start: (ask) =>
       Effect.suspend(() => {
-        // No room to owe it a stop: started, it couldn't be given back after a restart.
-        const owedNow = deps.owed?.list() ?? [];
-        if (owedNow.length >= OWED_MOST && !owedNow.some((each) => each.name === ask.name))
-          return Effect.succeed<WorkerMachineStart>({
-            kind: "refused",
-            message: `This Gram is still owed stops for ${owedNow.length} machines that ${server.server} never confirmed stopping, so it starts no more until it is: try again later, or leave out sandbox to run the worker on your machine.`,
-          });
         // This start takes the name: no stop owed for an earlier one may end the machine it makes.
         deps.starting?.add(ask.name);
         // Written before the start is sent, kept across a restart: a machine started there that
@@ -282,7 +278,7 @@ export const signedInSource = (
         // Asked for again: it may come back, so it is relayed once more.
         deps.asleep?.delete(ask.name);
         let unavailable = false;
-        // Whether this start's owing is its own, rather than one owed of the name before it.
+        // Whether this start's owing was kept.
         let owned = false;
         let spent = false;
         // A name the server doesn't take is never sent (it would answer `400 invalid_request`).
@@ -307,8 +303,21 @@ export const signedInSource = (
             // lets go of it, and none written later replaces it.
             {
               ...deps,
+              // Admitted, with room to owe it a stop, and owed it, in one step under the name: a
+              // start with no room is refused, never sent where nothing could give it back.
               onLocked: () => {
-                owned = deps.owed?.add(owing) === true;
+                if (deps.owed === undefined) return undefined;
+                owned = deps.owed.admit(owing);
+                if (!owned)
+                  return {
+                    ok: true as const,
+                    status: 409,
+                    body: {
+                      code: "owed_full",
+                      message: `This Gram is still owed stops for ${deps.owed.list().length} machines that ${server.server} never confirmed stopping, so it starts no more until it is: try again later, or leave out sandbox to run the worker on your machine.`,
+                    },
+                  };
+                return undefined;
               },
             },
           ).pipe(
@@ -441,7 +450,7 @@ export const signedInSource = (
               });
               if (result.kind === "refused") return { failed: failedWords(name, result.message) };
               // Registered here: the release pass looks after it from now on.
-              deps.owed?.remove(name);
+              deps.owed?.release(origin, name);
             }
           }
           if (named(name) !== undefined && !relayed) {
@@ -591,9 +600,9 @@ export const SignedInWorkersLive = Layer.effect(
     const locks: NameLocks = makeKeyedLock<string>();
     const asleep = new Set<string>();
     const sent: StartsSent = new Map();
-    const claimed = (name: string) =>
+    const claimed = (name: string, origin: string) =>
       starting.has(name) ||
-      hosts.list().some((machine) => machine.name === name && machine.via !== undefined);
+      hosts.list().some((machine) => machine.name === name && machine.via === origin);
     // Each relayed connection is served in this layer's scope, and ends with it.
     const dials = yield* Queue.unbounded<RelayedDial>();
     port.onDial((dial) => {

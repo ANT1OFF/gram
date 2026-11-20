@@ -262,7 +262,154 @@ describe("stops a server never confirmed", () => {
       }),
   );
 
-  it.effect("keep one owing of a name however many of its give-backs fail", () =>
+  it.live("admit no start past the most owed, however a settled stop and a start interleave", () =>
+    Effect.gen(function* () {
+      const answer = yield* Deferred.make<void>();
+      const removed = yield* Deferred.make<void>();
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "start" ? { status: 202, body: {} } : { status: 200, body: { stopped: true } },
+      });
+      const bridged = bridgeWorkerMachines(app.port);
+      const stop = { asked: false };
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          call === "stop"
+            ? Effect.sync(() => (stop.asked = true)).pipe(
+                Effect.andThen(Deferred.await(answer)),
+                Effect.andThen(bridged.call(origin, call, body)),
+              )
+            : bridged.call(origin, call, body),
+      };
+      const kept = memoryOwedStops();
+      // Told the moment NAME's owing is let go, as another start could come in just then.
+      const owed: typeof kept = {
+        ...kept,
+        remove: (name, attempt) => {
+          kept.remove(name, attempt);
+          if (name === NAME) Deferred.doneUnsafe(removed, Effect.void);
+        },
+      };
+      // Full: NAME among them.
+      for (let each = 0; each < OWED_MOST - 1; each += 1)
+        owed.add({
+          origin: ORIGIN,
+          name: `worker-${each.toString(16).padStart(10, "0")}`,
+          since: 0,
+        });
+      owed.add({ origin: ORIGIN, name: NAME, since: 0 });
+      const locks = makeKeyedLock<string>();
+      const source = signedInSource(SERVER, {
+        port,
+        hosts: unregistered,
+        owed,
+        starting: new Set(),
+        locks,
+      });
+      // NAME's stop is settled; a retry of NAME waits for its name meanwhile.
+      const settling = yield* Effect.forkScoped(
+        settleOwedStops(port, owed, () => false, Date.now, locks),
+      );
+      while (!stop.asked) yield* Effect.sleep("1 millis");
+      const retry = yield* Effect.forkScoped(
+        source.start({ name: NAME, orchestrator: "o", title: "Retry" }),
+      );
+      yield* Effect.sleep("5 millis");
+      // Another name's start comes the moment NAME's owing is let go, before the retry has it.
+      const other = yield* Effect.forkScoped(
+        Deferred.await(removed).pipe(
+          Effect.andThen(
+            source.start({ name: "worker-abcdefabcd", orchestrator: "o", title: "B" }),
+          ),
+        ),
+      );
+      yield* Deferred.succeed(answer, undefined);
+      yield* Fiber.join(settling);
+      yield* Fiber.join(retry);
+      yield* Fiber.join(other);
+      // However it went: never more owed than are kept, and every start sent is owed.
+      expect(owed.list().length).toBeLessThanOrEqual(OWED_MOST);
+      const owedNames = new Set(owed.list().map((each) => each.name));
+      for (const sent of app.calls.filter((each) => each.call === "start"))
+        expect(owedNames.has(sent.body["name"] as string)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("owe a machine its stop on each server that may hold it", () =>
+    Effect.gen(function* () {
+      const asked: Array<{ readonly origin: string; readonly call: string }> = [];
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "start" ? { status: 202, body: {} } : { status: 200, body: { stopped: true } },
+      });
+      const bridged = bridgeWorkerMachines(app.port);
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          Effect.sync(() => asked.push({ origin, call })).pipe(
+            Effect.andThen(bridged.call(origin, call, body)),
+          ),
+      };
+      const owed = memoryOwedStops();
+      // Owed its stop on the first server; the retry asks another.
+      owed.add({ origin: ORIGIN, name: NAME, since: 0 });
+      const other = { origin: "https://other.example.test", server: "Other hosted" };
+      const source = signedInSource(other, {
+        port,
+        hosts: unregistered,
+        owed,
+        starting: new Set(),
+      });
+      expect((yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" })).kind).toBe(
+        "started",
+      );
+      // After a restart, each server is asked to stop its own.
+      yield* settleOwedStops(port, owed, () => false);
+      expect(
+        asked
+          .filter((each) => each.call === "stop")
+          .map((each) => each.origin)
+          .toSorted(),
+      ).toEqual([ORIGIN, other.origin].toSorted());
+    }),
+  );
+
+  it.effect("keep owing a retry whose start got no answer, past an older owing's grace", () =>
+    Effect.gen(function* () {
+      let started = false;
+      const app = fakeApp({
+        answer: () => ({ status: 200, body: { stopped: false } }),
+      });
+      const bridged = bridgeWorkerMachines(app.port);
+      // The retry's start gets no answer: it may still reach the server.
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          call === "start"
+            ? Effect.sync(() => (started = true)).pipe(
+                Effect.as({ ok: false as const, why: "no answer" }),
+              )
+            : bridged.call(origin, call, body),
+      };
+      const owed = memoryOwedStops();
+      // An older owing of the name, one kept before attempt ids, long past any grace.
+      owed.add({ origin: ORIGIN, name: NAME, since: 0 });
+      const source = signedInSource(SERVER, {
+        port,
+        hosts: unregistered,
+        owed,
+        starting: new Set(),
+      });
+      yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" });
+      expect(started).toBe(true);
+      // Restarted at once: the server knows no such machine yet, as the start may still come.
+      yield* settleOwedStops(port, owed, () => false);
+      expect(owed.list().map((each) => each.name)).toEqual([NAME]);
+    }),
+  );
+
+  it.effect("owe each start once, its failed give-back kept on its owing", () =>
     Effect.gen(function* () {
       // Its starts go through; its stops never do.
       const app = fakeApp({
@@ -281,7 +428,9 @@ describe("stops a server never confirmed", () => {
         yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
         yield* source.abandon(NAME);
       }
-      expect(owed.list().map((each) => each.name)).toEqual([NAME]);
+      // One owing for each start, each its own attempt: no second for its give-back.
+      expect(owed.list().map((each) => each.name)).toEqual(Array.from({ length: 10 }, () => NAME));
+      expect(new Set(owed.list().map((each) => each.attempt)).size).toBe(10);
     }),
   );
 
@@ -313,6 +462,37 @@ describe("stops a server never confirmed", () => {
         expect(app.calls).toEqual([]);
         // Restarted: every machine owed a stop is still owed one.
         expect(fileOwedStops(dir).list()).toHaveLength(OWED_MOST);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }),
+  );
+
+  it.effect("read back every owing past the most, and admit no start until they drain", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({ answer: () => ({ status: 202, body: {} }) });
+      const dir = mkdtempSync(join(tmpdir(), "gram-owed-"));
+      try {
+        const owed = fileOwedStops(dir);
+        for (let each = 0; each < OWED_MOST + 20; each += 1)
+          owed.add({
+            origin: ORIGIN,
+            name: `worker-${each.toString(16).padStart(10, "0")}`,
+            since: 0,
+            attempt: `00000000-0000-4000-8000-${each.toString(16).padStart(12, "0")}`,
+          });
+        const kept = fileOwedStops(dir);
+        expect(kept.list()).toHaveLength(OWED_MOST + 20);
+        const source = signedInSource(SERVER, {
+          port: bridgeWorkerMachines(app.port),
+          hosts: unregistered,
+          owed: kept,
+          starting: new Set(),
+        });
+        expect((yield* source.start({ name: NAME, orchestrator: "o", title: "More" })).kind).toBe(
+          "refused",
+        );
+        expect(app.calls).toEqual([]);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -471,11 +651,19 @@ describe("stops a server never confirmed", () => {
       // The first try's machine couldn't be stopped: owed.
       yield* source.abandon(NAME);
       expect(owed.list().map((each) => each.name)).toEqual([NAME]);
-      // A retry of the same spawn asks for the same name: the machine is its now. The old stop
-      // stands for it, kept while the start is on its way, should it be refused.
+      // A retry of the same spawn asks for the same name: the machine is its now. The old stop is
+      // kept beside the start's own, both while the start is on its way, should it be refused.
       yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" });
       expect(owed.list()).toEqual([
         { origin: ORIGIN, name: NAME, since: expect.any(Number), attempt: expect.any(String) },
+        {
+          origin: ORIGIN,
+          name: NAME,
+          since: expect.any(Number),
+          unsettled: true,
+          start: true,
+          attempt: expect.any(String),
+        },
       ]);
       const started = app.calls.length;
       yield* settleOwedStops(

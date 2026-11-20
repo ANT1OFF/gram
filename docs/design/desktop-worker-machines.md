@@ -242,12 +242,14 @@ subscription token reaches a machine, with its own consent.
   before this Gram stopped is given back at its next start, with the grace a start of unknown
   outcome has, instead of running unregistered until the server reclaims it. Each owing of a
   name carries an attempt id, and a stop settled lets go only of the owing it settled: a retry's
-  start owed while an older stop of the name was still being asked stays owed. A name is owed
-  once: a later owing of it (a retry's start, another failed give-back) is folded into the one
-  kept, which is never replaced, so a retry clearly refused (not allowed, over the total) leaves
-  the earlier machine still owed its stop. At most 256 machines are owed a stop at once, and the
-  file has room for all of them; a start that would need one more is refused, saying so, rather
-  than started where nothing could give it back after a restart. All of a name's owings go once its
+  start owed while an older stop of the name was still being asked stays owed. One owing is kept
+  per attempt (name, server and attempt id; one kept before ids is its own), each until it is
+  settled, so what is owed is the whole of what may still be there: a retry clearly refused lets
+  go of its own alone, a retry sent to another server is owed there too, and one whose start got
+  no answer keeps its own grace. A give-back that fails is kept on the owing of its start. A start
+  is admitted in one step with its owing, under its name, only while fewer than 256 machines are
+  owed a stop; one past that is refused, saying so, and nothing is sent. Every owing is read back
+  after a restart, however many there are, and the file has room for them. All of a name's owings go once its
   machine is registered here or confirmed stopped under its name's lock.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
