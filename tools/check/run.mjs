@@ -4,7 +4,7 @@
 //
 // Locally the tests first take a machine-wide check slot (slots.mjs), so full checks from several
 // worktrees take turns rather than starving each other into timeouts, and each uses its share of
-// the cores. On CI (one checkout per job) there is no slot and Vitest keeps three workers.
+// the cores. On CI (one checkout per job) there is no slot and Vitest takes a worker per core.
 //
 // `bun run check:affected` is the development loop: the same static stages (seconds), then only
 // the Vitest projects the branch's changes against `origin/main` can affect, by the workspace
@@ -216,7 +216,9 @@ if (
 ) {
   const slots = slotCount();
   const workers = Number(
-    option("--workers") ?? process.env["GRAM_CHECK_WORKERS"] ?? (ci ? 3 : workersPerSlot(slots)),
+    option("--workers") ??
+      process.env["GRAM_CHECK_WORKERS"] ??
+      (ci ? availableParallelism() : workersPerSlot(slots)),
   );
   if (!Number.isInteger(workers) || workers < 1) throw new Error(`invalid workers "${workers}"`);
   if (!affectedMode && !ci && !flag("--no-slot") && process.env["GRAM_CHECK_SLOT"] !== "0") {
