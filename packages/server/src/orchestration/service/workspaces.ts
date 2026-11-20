@@ -42,6 +42,7 @@ import {
 } from "./kit.ts";
 import type { Charter } from "./charter.ts";
 import { makeKeyedLock } from "../../git/keyed-lock.ts";
+import { admitWorkspaceReader, projectWorkspaceOf } from "./reader-workspaces.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
 import type { Pauses } from "./pauses.ts";
@@ -142,14 +143,16 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
         ).pipe(Effect.map((folders) => folders.flat()));
 
   /**
-   * Refused unless this call may reach the workspace's orchestrator (`host/ownership.ts`): an
-   * edit of a workspace changes its orchestrator's folders and session, and an orchestration has
-   * one owner. Asked before anything is written, whether by `workspace.save` or an agent's edit.
+   * Refused unless this call's reader may act on the workspace (`embedding/readable-by.ts`),
+   * answered as for one that doesn't exist, and may reach its orchestrator (`host/ownership.ts`):
+   * an edit of a workspace changes its orchestrator's folders and session, and an orchestration
+   * has one owner. Asked before anything is written, whether by `workspace.save` or an agent's edit.
    */
   const admitHolder = (workspaceId: WorkspaceId | undefined) =>
     Effect.gen(function* () {
       if (workspaceId === undefined) return;
       const state = yield* store.getWorkspace(workspaceId).pipe(Effect.option);
+      if (Option.isSome(state)) yield* admitWorkspaceReader(state.value);
       const holder = Option.isSome(state) ? state.value.workspace.orchestratorThreadId : undefined;
       if (holder !== undefined) yield* admitThread(store.getThread, ownerOf, holder);
     });
@@ -486,10 +489,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       projectId,
       Effect.gen(function* () {
         const [project] = yield* projectsOf([projectId]);
-        const existing = (yield* store.listWorkspaces).find(
-          (state) =>
-            state.workspace.projectIds.length === 1 && state.workspace.projectIds[0] === projectId,
-        );
+        const existing = yield* projectWorkspaceOf(yield* store.listWorkspaces, projectId);
         if (existing !== undefined) {
           // Made meanwhile, by another window say: it keeps its own level, and the task must not
           // start under one the draft promised and this workspace doesn't have.
@@ -523,6 +523,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
         "projectId" in target
           ? yield* workspaceOfProject(target.projectId, target.autonomy, selected)
           : yield* store.getWorkspace(target.workspaceId);
+      yield* admitWorkspaceReader(state);
       const { workspace } = state;
       const holder =
         workspace.orchestratorThreadId === undefined
