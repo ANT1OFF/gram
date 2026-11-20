@@ -39,10 +39,11 @@ test("applies keybinding overrides, flags a clash and resets one", async ({ page
   });
   await page.goto("/t/t-deps");
   await expect(page.getByTestId("right-panel")).toBeVisible();
-  // Let the overrides load before pressing keys.
-  await page.waitForTimeout(500);
-  await page.keyboard.press("ControlOrMeta+Shift+b");
-  await expect(page.getByTestId("right-panel")).toBeHidden();
+  // Until the overrides load the chord is nobody's, so pressing it again is safe.
+  await expect(async () => {
+    await page.keyboard.press("ControlOrMeta+Shift+b");
+    await expect(page.getByTestId("right-panel")).toBeHidden({ timeout: 500 });
+  }).toPass();
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await openSettingsPage(page, "Keyboard");

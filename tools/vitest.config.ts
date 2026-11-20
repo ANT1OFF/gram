@@ -16,6 +16,7 @@ export default defineProject({
       "packages/*.test.mjs",
       "notices/*.test.mjs",
       "sherpa-onnx/*.test.mjs",
+      "agent-guards/*.test.mjs",
     ],
   },
 });

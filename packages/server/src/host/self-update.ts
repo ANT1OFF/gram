@@ -50,6 +50,7 @@ import { lockConflict, takeUpdateLock, updateLockState } from "./update-lock.ts"
 import { RELEASES } from "./install-script.ts";
 import { hostSwitches, LINUX_HOST_SWITCHES } from "./launch.ts";
 import { LAUNCHD_LABEL, type ServiceCommand } from "./service.ts";
+import { setTimeout as wait } from "node:timers/promises";
 
 /** A release number as Gram tags them: `1.17.0`, or `1.17.0-beta.1`. */
 export const RELEASE = /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[0-9A-Za-z.]{1,32})?$/;
@@ -434,8 +435,6 @@ const nextCommand = (current: ServiceCommand, bin: string, entry: string): Servi
   ...current,
   program: [bin, entry, ...current.program.slice(2)],
 });
-
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * The host's updater: `check` for `host.update.check`, `start` for `host.update.start`. One

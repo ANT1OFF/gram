@@ -31,6 +31,7 @@ import {
   grantFolder,
   handleFileRequest,
 } from "../../../../packages/server/src/preview/files.ts";
+import { setTimeout as delay } from "node:timers/promises";
 
 const results = [];
 const failures = [];
@@ -39,7 +40,6 @@ const check = (label, ok, detail) => {
     detail === undefined ? label : `${label}: ${JSON.stringify(detail)}`,
   );
 };
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** A listener on loopback that records what reached it. */
 async function listener(respond = (_request, response) => response.writeHead(200).end("{}")) {

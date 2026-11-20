@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
 import type { GitState, PrStatus, ThreadId } from "@gram/contracts";
 import {
   GitStateRuntime,
@@ -161,13 +161,12 @@ const FakeGitState = Layer.effect(
 
 /** Waits on real time, since the cue's `git` runs are real processes. */
 const listed = (count: number) =>
-  Effect.gen(function* () {
-    const deadline = Date.now() + 20_000;
-    while (worktreeLists.at.length < count && Date.now() < deadline) {
-      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 10)));
-    }
-    expect(worktreeLists.at.length).toBeGreaterThanOrEqual(count);
-  });
+  Effect.promise(() =>
+    vi.waitFor(() => expect(worktreeLists.at.length).toBeGreaterThanOrEqual(count), {
+      timeout: 20_000,
+      interval: 10,
+    }),
+  );
 
 const FakePr = Layer.succeed(Pr, {
   status: () => Effect.succeed(badge),

@@ -92,6 +92,7 @@ import { useAttachments } from "./use-attachments";
 import { useMentions } from "./use-mentions";
 import { useModelNames, useModelsSettled } from "./models";
 import { SLAB, SLAB_TEXTAREA } from "./styles";
+import { sleep } from "@/lib/sleep";
 
 const labelCls = "text-meta font-medium text-muted-foreground";
 
@@ -105,9 +106,6 @@ const checkingAgent = (model: { agent: string } | undefined): string =>
  * at the autonomy picked above the goal. A single agent chat, the one-off thread, is the other
  * draft behind the same header.
  */
-/** A wait between asking again, while a send starts the person's machine there. */
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const TaskOrchestratorFields = lazy(() => import("./task-orchestrator-fields"));
 
 /** The `ModelRef` an orchestrator pick starts on, as `choiceModel` makes it. */
@@ -430,7 +428,7 @@ export function NewTaskDraft({
           if (progress.state === "ready") return true;
           if (!mounted.current) throw new SendWorkError("New task was closed.");
           setMachineStep(machineLine(progress, sendTo));
-          await pause(2_000);
+          await sleep(2_000);
         }
       };
       const sendIt = () =>
@@ -452,7 +450,7 @@ export function NewTaskDraft({
           } catch (e) {
             if (!started || attempt >= 5 || !refusedForMachine(e) || !mounted.current) throw e;
             setMachineStep(`Waiting for your machine on ${sendTo.host} to join…`);
-            await pause(5_000);
+            await sleep(5_000);
           }
         }
         useTaskDraftStore.getState().remember(target);

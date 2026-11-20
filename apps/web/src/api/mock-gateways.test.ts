@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { ProfileId } from "@gram/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "./mock";
 import { MOCK_AGENTS_KEY } from "./mock-overrides";
@@ -8,13 +8,10 @@ import type { ApiServerEvent } from "./types";
 
 const LITELLM = "litellm" as ProfileId;
 
-async function waitFor(predicate: () => boolean, label: string) {
-  for (let i = 0; i < 2000; i++) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error(`timed out waiting for ${label}`);
-}
+const waitFor = (predicate: () => boolean, label: string) =>
+  vi.waitUntil(predicate, { timeout: 5_000, interval: 1 }).catch(() => {
+    throw new Error(`timed out waiting for ${label}`);
+  });
 
 afterEach(() => sessionStorage.clear());
 

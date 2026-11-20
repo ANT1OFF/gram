@@ -79,6 +79,7 @@ import { AutoMerges } from "../git/auto-merges.ts";
 import { wakeConditionsLayer } from "../wakes/condition-sources.ts";
 import { InstalledVersions } from "../wakes/installed-versions.ts";
 import { UpstreamReleases, type UpstreamRelease } from "../wakes/upstream-releases.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 /** What outlives a layer: the temp dir with the repo, the database and the memory, and the fake git states. */
 export interface World {
@@ -752,8 +753,7 @@ export const withServer = <A, E>(
     }),
   );
 
-const realPause = (ms: number) =>
-  Effect.promise(() => new Promise((resolve) => setTimeout(resolve, ms)));
+const realPause = (ms: number) => Effect.promise(() => sleep(ms));
 
 /**
  * For a test that makes worktrees in more than one repo: some forty git processes, which a Windows

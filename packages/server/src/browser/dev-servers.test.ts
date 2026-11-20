@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import { HostId, type ApprovalRequest, type Thread, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -87,11 +87,11 @@ const alive = (pid: number) => {
   }
 };
 
-const until = async (check: () => boolean, ms = 5_000) => {
-  const deadline = Date.now() + ms;
-  while (!check() && Date.now() < deadline) await new Promise((done) => setTimeout(done, 50));
-  return check();
-};
+const until = (check: () => boolean, ms = 5_000) =>
+  vi.waitUntil(check, { timeout: ms, interval: 50 }).then(
+    () => true,
+    () => false,
+  );
 
 /** A probe that answers later, as the real one does, so starts at once all probe before any is done. */
 const freeLater = async () => {
