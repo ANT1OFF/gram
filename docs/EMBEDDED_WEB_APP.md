@@ -583,8 +583,7 @@ same palette.
 ### Gram's palette as data
 
 An app that draws its own pages in Gram's colours, and would rather not run Gram's code to learn
-them, reads `packages/themes/palette.json` (exported as `@gram/themes/palette.json`) at the commit
-it pins. It holds the default palette and its pair: `defaultPaletteId`, then `light` and `dark`,
+them, reads `packages/themes/palette.json` from the repository at the commit it pins. It holds the default palette and its pair: `defaultPaletteId`, then `light` and `dark`,
 each the preset's `id` and its `colors`, every colour the theme names (`surface-1`, `fg`, `accent`,
 …) derived at standard contrast, as `#rrggbb`. It is plain JSON, so a build or a CI job can fetch
 it for a commit with no checkout or install. The themes package's `palette:data` script writes
