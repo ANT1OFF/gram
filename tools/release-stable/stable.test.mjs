@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { checksumLines } from "../release-rc/rc-lib.mjs";
+import { generateReleaseKey, signReleaseChecksums } from "../release-rc/release-key.mjs";
 import { LINUX_WORKFLOW, runTitle } from "../release-linux/linux-lib.mjs";
 import { writeLinuxBuild } from "../release-linux/testing/linux-build.mjs";
 import { parseStableArgs } from "./stable-lib.mjs";
@@ -45,6 +46,11 @@ const AMBIENT = "ambient-secret-89ab";
 const VERSION = "1.0.0";
 const ZIP = `gram_${VERSION}_darwin-arm64_signed.zip`;
 const TEAM = "ANVR857GFZ";
+
+// The checkout pins the publisher's key, whose private half is only in the publisher's keychain:
+// these phases sign and verify with a key of their own instead, through the same code.
+const RELEASE_KEY = generateReleaseKey();
+const readReleaseKey = () => RELEASE_KEY.privatePkcs8;
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 // The fake gh starts once per REST request. Node startup dominated this fixture under load;
@@ -130,7 +136,12 @@ async function makeAssets(dir, { linux = false } = {}) {
     join(dir, "SHA256SUMS.txt"),
     checksumLines(covered.map((name) => ({ name, sha256: sha256(readFileSync(join(dir, name))) }))),
   );
-  return [...covered, "SHA256SUMS.txt", ...manifests].map((name) => {
+  signReleaseChecksums({
+    assets: dir,
+    pinnedKey: RELEASE_KEY.publicKey,
+    readPrivate: readReleaseKey,
+  });
+  return [...covered, "SHA256SUMS.txt", "SHA256SUMS.txt.sig", ...manifests].map((name) => {
     const bytes = readFileSync(join(dir, name));
     return { name, bytes: bytes.length, sha256: sha256(bytes) };
   });
@@ -175,6 +186,8 @@ const seams = (overrides = {}) => ({
     const repo = notesRepo();
     return readPublicNotes({ ...args, source: repo.dir, commit: repo.commit });
   },
+  pinnedKey: RELEASE_KEY.publicKey,
+  readReleaseKey,
   verifyApp: async (zip, state) => {
     appChecks.push({ zip, sha256: sha256(readFileSync(zip)), version: state.version });
     return { stub: "macOS checks need a signed build" };
@@ -565,6 +578,7 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
       "WEB-SHA256SUMS.txt",
       "SHA256SUMS.txt",
       "latest-mac.yml",
+      "SHA256SUMS.txt.sig",
       APPIMAGE,
       DEB,
       "LINUX-BUILD.json",
@@ -603,7 +617,7 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     const before = (await github.state()).repos[REPO].releases.find(
       (r) => r.id === state.releaseId,
     );
-    expect(before.assets).toHaveLength(7);
+    expect(before.assets).toHaveLength(8);
 
     // The answer to the new SHA256SUMS.txt's upload is lost: GitHub took it, the phase stopped.
     env.FAKE_GH_DROP_RESPONSE = "name=SHA256SUMS\\.txt ";
@@ -616,7 +630,7 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     await runPhase(options("linux"), seamsNow());
     state = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
     const after = (await github.state()).repos[REPO].releases.find((r) => r.id === state.releaseId);
-    expect(after.assets).toHaveLength(11);
+    expect(after.assets).toHaveLength(12);
     expect(after.assets.filter((a) => a.name === "SHA256SUMS.txt")).toHaveLength(1);
     await runPhase(options("validate"), seams({ verifyAttestation: attestedAll }));
   }, 120_000);
