@@ -84,6 +84,17 @@ describe("fitShell", () => {
     expect(narrow.panelWidth).toBeGreaterThanOrEqual(PANEL_WIDTH.min);
   });
 
+  it("leaves the chat's title bar room past macOS's window buttons when no sidebar is beside it", () => {
+    const dragged = { overviewSidebar: "hidden", panelTab: "files", panelWidth: 4096 } as const;
+    // Elsewhere the chat keeps its minimum, from the window's edge.
+    expect(fit(dragged).panelWidth).toBe(1440 - CHAT_MIN_WIDTH);
+    // On macOS the bar starts after the window's buttons and Show sidebar: those too.
+    expect(fit({ ...dragged, lightsInset: 80 }).panelWidth).toBe(1440 - 80 - 32 - CHAT_MIN_WIDTH);
+    // A sidebar beside the chat holds the toggle, and the buttons are over it.
+    const beside = fit({ ...dragged, overviewSidebar: "open", lightsInset: 80 });
+    expect(beside.panelWidth).toBe(1440 - SIDEBAR_WIDTH.default - CHAT_MIN_WIDTH);
+  });
+
   it("puts the panel aside, then the overview, when even their minimums don't fit", () => {
     useLayoutStore.setState({ overviewSidebar: "open" });
     expect(fit({ windowWidth: 700 })).toMatchObject({

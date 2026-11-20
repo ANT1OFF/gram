@@ -2,11 +2,13 @@ import type { ThreadId } from "@gram/contracts";
 import { useParams, useRouterState } from "@tanstack/react-router";
 import { useLayoutEffect } from "react";
 
+import { useWindowLights } from "@/desktop/window-lights";
 import { panelOffered, useEmbedShell } from "@/embed/store";
 import { usePhone } from "@/lib/use-phone";
 import { useServerSettings } from "@/settings-sync/store";
 import { useWindowWidth } from "@/shell/side-resize";
 import {
+  chatBarStart,
   clampWidth,
   fitShell,
   panelBoundsFor,
@@ -39,6 +41,7 @@ export function useShellLayout() {
   const setShellContext = useLayoutStore((s) => s.setShellContext);
   const panelLeft = useServerSettings((s) => s.settings?.panel.side === "left");
   const { width: windowWidth, resizing: windowResizing } = useWindowWidth();
+  const lightsInset = useWindowLights((s) => s.inset);
   const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
   const hasThread = threadId !== undefined;
   // Nothing uncommitted and nothing ahead of its base: the Diff tab would say only that.
@@ -101,6 +104,7 @@ export function useShellLayout() {
     reviewFocus,
     reviewRequestsPlacement,
     openPrsPlacement,
+    lightsInset,
   };
   const fit = fitShell(input);
   // The panel and sidebar as they'd be without the review's focus, which the chat keeps its width
@@ -114,18 +118,29 @@ export function useShellLayout() {
       panelBarred,
       page,
       chatBusy,
+      lightsInset,
     });
-  }, [windowWidth, hasThread, threadQuiet, panelBarred, page, chatBusy, setShellContext]);
+  }, [
+    windowWidth,
+    hasThread,
+    threadQuiet,
+    panelBarred,
+    page,
+    chatBusy,
+    lightsInset,
+    setShellContext,
+  ]);
 
   const left = fit.sidebarWidth;
+  const chatStart = (sidebar: number) => chatBarStart(sidebar, lightsInset);
   // Beside a review the chat keeps more room, so the drag stops there too.
-  const bounds = panelBoundsFor({ panelTab, chatBusy, windowWidth }, left);
+  const bounds = panelBoundsFor({ panelTab, chatBusy, windowWidth }, chatStart(left));
   const shownWidth = clampWidth(
     panelWidthFor(
       { panelTab, panelWidth, reviewWidth, windowWidth, chatBusy },
       unfocused.sidebarWidth,
     ),
-    panelBoundsFor({ panelTab, chatBusy, windowWidth }, unfocused.sidebarWidth),
+    panelBoundsFor({ panelTab, chatBusy, windowWidth }, chatStart(unfocused.sidebarWidth)),
   );
   return {
     fit,

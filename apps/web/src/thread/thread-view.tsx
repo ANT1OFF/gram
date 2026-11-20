@@ -35,8 +35,9 @@ import { useShortcut } from "@/keyboard/registry";
 import { targetBadge } from "@/panels/pr-identity";
 import { turnEndMessages } from "@/panels/turn-diff";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
+import { Foldable } from "@/shell/foldable";
 import { useTitlebarOutline } from "@/shell/titlebar-outline";
-import { useTitlebarSlot, useTitlebarThread } from "@/shell/titlebar-slot";
+import { FOLD_ICONS, useTitlebarSlot, useTitlebarThread } from "@/shell/titlebar-slot";
 import { usePhone } from "@/lib/use-phone";
 import { useStable } from "@/lib/use-stable";
 import { cn } from "@/lib/utils";
@@ -658,7 +659,14 @@ export function ThreadView({
           <RunningCount count={display.running} />
           <span className="sr-only">{display.label}</span>
         </Hint>
-        <ConversationOnlyButton hideClass={hideMd} inTitlebar={inTitlebar} />
+        {inTitlebar ? (
+          // Short of room in the bar, View ▸ Conversation only in its "…" switches it.
+          <Foldable level={FOLD_ICONS} gap={8}>
+            <ConversationOnlyButton inTitlebar />
+          </Foldable>
+        ) : (
+          <ConversationOnlyButton hideClass={hideMd} />
+        )}
         {/* In the title bar, Contents, Run script and the thread's menu are the bar's one "…". */}
         {!inTitlebar && (
           <>

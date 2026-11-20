@@ -55,13 +55,14 @@ import { useViewWorkspace } from "@/views/view-workspace";
 import { PresetGlyph } from "./preset-glyph";
 import { useSwitchWorkspace } from "./workspace-switcher";
 import { useTitlebarOutline } from "./titlebar-outline";
-import { useTitlebarThread } from "./titlebar-slot";
+import { FOLD_ALL, FOLD_ICONS, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 
 // The title bar's one "…": everything the bar keeps out of sight, each item with its words and its
 // shortcut, and like every menu at most seven items. The carried thread's menu (and its scripts),
 // Workers, the workspace's (Tidy up, Discover, Pause, Memory, its settings) and the window's (Contents,
 // Quiet, focus mode, History, the layout), the groups each a submenu. A narrow bar folds a worker's
-// own actions and Board's layout into it too. Each item does what its button did.
+// own actions and Board's layout into it too, then usage, and last Chat · Board and Settings, as a
+// phone's "…" has them. Each item does what its button did.
 
 const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
 
@@ -548,47 +549,12 @@ const PHONE_MENU =
  * to show, each in words.
  */
 function PhonePlaces() {
-  const navigate = useNavigate();
-  const pathname = useLocation({ select: (location) => location.pathname });
-  const view = useViewStore((s) => s.view);
   const workspaces = useWorkspaces();
   const current = useViewWorkspace();
   const switchTo = useSwitchWorkspace();
-  const checked = switcherChecked(view, pathname) ?? "";
-  const pickView = (next: AppView) => {
-    useViewStore.getState().setView(next);
-    if (next === "chat" && !chatRoute(pathname)) {
-      void navigate({ to: useViewStore.getState().lastChat ?? "/" });
-    }
-  };
   return (
     <>
-      {workspaces.length > 0 && (
-        <Menu.RadioGroup
-          data-testid="phone-menu-view"
-          aria-label="Chat or Board"
-          value={checked}
-          onValueChange={(next: AppView) => pickView(next)}
-        >
-          {/* No "View" label: the View submenu below is a different thing, and a checked Chat or
-              Board says what these are. */}
-          <Menu.RadioItem value="chat" closeOnClick className={MENU_ITEM}>
-            <MessageSquare aria-hidden />
-            Chat
-            <Check />
-          </Menu.RadioItem>
-          <Menu.RadioItem
-            value="board"
-            closeOnClick
-            disabled={current === undefined}
-            className={MENU_ITEM}
-          >
-            <LayoutDashboard aria-hidden />
-            Board
-            <Check />
-          </Menu.RadioItem>
-        </Menu.RadioGroup>
-      )}
+      <ViewPlaces />
       {workspaces.length > 1 && (
         <Submenu
           label="Switch workspace"
@@ -623,46 +589,128 @@ function PhonePlaces() {
   );
 }
 
+/** Chat or Board in words: a phone's, and a desktop bar's folded all the way. */
+function ViewPlaces() {
+  const navigate = useNavigate();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const view = useViewStore((s) => s.view);
+  const workspaces = useWorkspaces();
+  const current = useViewWorkspace();
+  const checked = switcherChecked(view, pathname) ?? "";
+  const pickView = (next: AppView) => {
+    useViewStore.getState().setView(next);
+    if (next === "chat" && !chatRoute(pathname)) {
+      void navigate({ to: useViewStore.getState().lastChat ?? "/" });
+    }
+  };
+  if (workspaces.length === 0) return null;
+  return (
+    <Menu.RadioGroup
+      data-testid="phone-menu-view"
+      aria-label="Chat or Board"
+      value={checked}
+      onValueChange={(next: AppView) => pickView(next)}
+    >
+      {/* No "View" label: the View submenu below is a different thing, and a checked Chat or
+          Board says what these are. */}
+      <Menu.RadioItem value="chat" closeOnClick className={MENU_ITEM}>
+        <MessageSquare aria-hidden />
+        Chat
+        <Check />
+      </Menu.RadioItem>
+      <Menu.RadioItem
+        value="board"
+        closeOnClick
+        disabled={current === undefined}
+        className={MENU_ITEM}
+      >
+        <LayoutDashboard aria-hidden />
+        Board
+        <Check />
+      </Menu.RadioItem>
+    </Menu.RadioGroup>
+  );
+}
+
+/** Usage in words, for a bar with no room for its meter. */
+function UsageItem() {
+  const navigate = useNavigate();
+  return (
+    <Menu.Item
+      data-testid="phone-menu-usage"
+      className={MENU_ITEM}
+      onClick={() => void navigate({ to: "/settings/usage" })}
+    >
+      <ChartNoAxesCombined aria-hidden />
+      Usage
+    </Menu.Item>
+  );
+}
+
+/** Settings in words, for a bar with no room for its icon. */
+function SettingsItem() {
+  const navigate = useNavigate();
+  return (
+    <Menu.Item
+      data-testid="phone-menu-settings"
+      className={MENU_ITEM}
+      onClick={() => void navigate({ to: "/settings" })}
+    >
+      <Settings aria-hidden />
+      Settings
+    </Menu.Item>
+  );
+}
+
 /** The window's own that a wide bar shows as icons: usage, the right panel and Settings. */
 function PhoneWindowItems() {
-  const navigate = useNavigate();
   // An app in front of Gram that leaves Usage out of Settings has no meter to link to.
   const usage = useGramSettingKept("usage");
   return (
     <>
       {SEPARATOR}
-      {usage && (
-        <Menu.Item
-          data-testid="phone-menu-usage"
-          className={MENU_ITEM}
-          onClick={() => void navigate({ to: "/settings/usage" })}
-        >
-          <ChartNoAxesCombined aria-hidden />
-          Usage
-        </Menu.Item>
-      )}
-      <Menu.Item
-        data-testid="phone-menu-settings"
-        className={MENU_ITEM}
-        onClick={() => void navigate({ to: "/settings" })}
-      >
-        <Settings aria-hidden />
-        Settings
-      </Menu.Item>
+      {usage && <UsageItem />}
+      <SettingsItem />
     </>
   );
+}
+
+/**
+ * What a desktop bar can fold into "…" beyond the thread's: each true where the bar shows it.
+ * Folded, it is here in words, where the phone's "…" has it.
+ */
+export interface TitlebarFolds {
+  /** Chat · Board. */
+  readonly views: boolean;
+  /** Settings, at the bar's left while the overview is hidden. */
+  readonly settings: boolean;
+  /** The usage meter. */
+  readonly usage: boolean;
+}
+
+/** What the desktop bar has folded into "…" of `folds`, as far as it has folded. */
+function useFolded(folds: TitlebarFolds | undefined) {
+  const fold = useTitlebarSlot((s) => s.fold);
+  return {
+    views: folds?.views === true && fold >= FOLD_ALL,
+    settings: folds?.settings === true && fold >= FOLD_ALL,
+    usage: folds?.usage === true && fold >= FOLD_ICONS,
+  };
 }
 
 function OverflowMenu({
   orchestration,
   thread,
+  folds,
   className,
 }: {
   orchestration: boolean;
   thread?: { id: ThreadId; items: ReactNode } | undefined;
+  folds?: TitlebarFolds | undefined;
   className?: string | undefined;
 }) {
   const state = useViewWorkspace();
+  const folded = useFolded(folds);
   const workspace = orchestration && state !== undefined;
   const paletteHint = useShortcutHint("palette.open");
   // A phone's header keeps only the menu, the title, Needs you and this: the rest is in here.
@@ -738,6 +786,13 @@ function OverflowMenu({
           >
             <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
               {phone && <PhonePlaces />}
+              {/* A desktop bar folded all the way: Chat · Board first, as a phone's. */}
+              {!phone && folded.views && (
+                <>
+                  <ViewPlaces />
+                  {SEPARATOR}
+                </>
+              )}
               {thread !== undefined && <ThreadItems threadId={thread.id} items={thread.items} />}
               {workspace && (
                 <>
@@ -748,6 +803,13 @@ function OverflowMenu({
               {(thread !== undefined || workspace) && SEPARATOR}
               <ViewSubmenu threadId={thread?.id} />
               {phone && <PhoneWindowItems />}
+              {!phone && (folded.usage || folded.settings) && (
+                <>
+                  {SEPARATOR}
+                  {folded.usage && <UsageItem />}
+                  {folded.settings && <SettingsItem />}
+                </>
+              )}
             </div>
           </Menu.Popup>
         </Menu.Positioner>
@@ -768,10 +830,12 @@ function OverflowMenu({
 function ThreadOverflow({
   threadId,
   orchestration,
+  folds,
   className,
 }: {
   threadId: ThreadId;
   orchestration: boolean;
+  folds?: TitlebarFolds | undefined;
   className?: string | undefined;
 }) {
   const { items, aside } = useThreadMenu(threadId);
@@ -781,6 +845,7 @@ function ThreadOverflow({
       <OverflowMenu
         orchestration={orchestration}
         thread={{ id: threadId, items: items(MENU_ITEM) }}
+        folds={folds}
         className={className}
       />
     </>
@@ -794,6 +859,7 @@ function ThreadOverflow({
 export function TitlebarOverflow({
   orchestration,
   hostPage = false,
+  folds,
   className,
 }: {
   /** The bar shows a workspace's work, so its controls (Workers, Tidy up, Pause…) are here. */
@@ -803,17 +869,20 @@ export function TitlebarOverflow({
    * workspace's, a thread's or the window's panes, so what this menu holds acts on none of it.
    */
   hostPage?: boolean;
+  /** What the desktop bar folds into this as it narrows: see `TitlebarFolds`. */
+  folds?: TitlebarFolds;
   className?: string;
 }) {
   const carried = useTitlebarThread();
   if (hostPage && carried === undefined) return null;
   return carried === undefined ? (
-    <OverflowMenu orchestration={orchestration} className={className} />
+    <OverflowMenu orchestration={orchestration} folds={folds} className={className} />
   ) : (
     <ThreadOverflow
       key={carried}
       threadId={carried}
       orchestration={orchestration}
+      folds={folds}
       className={className}
     />
   );

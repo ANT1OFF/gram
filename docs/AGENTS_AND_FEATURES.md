@@ -436,7 +436,8 @@ ask you something. **Show all activity** (the title bar's "…", under View) sho
 everything, and so does finding a folded reply with ⌘F. Only the view changes: the orchestrator
 still receives every digest.
 
-**Conversation only** (the thread header's speech-bubble button, the same menus, or ⌘⌥5) takes the
+**Conversation only** (the thread header's speech-bubble button, pressed while on; View in the
+title bar's "…" or a pane's "…"; or ⌘⌥5) takes the
 agent's tool calls, commands and reasoning out of every transcript and leaves what was said, the
 plan, questions, approvals, errors, images (attached ones, and the screenshots and pictures a tool
 call returned, as thumbnails) and the pages and files it published. It is a focused mode, so it

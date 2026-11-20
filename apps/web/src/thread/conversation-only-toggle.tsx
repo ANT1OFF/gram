@@ -18,7 +18,8 @@ const HINT = {
 /**
  * The header's switch for "Conversation only": the bare glyph while off, and pressed with its name
  * while on, so a transcript without its tool calls says why. `hideClass` drops the name where the
- * header is short of room.
+ * header is short of room. In the window's title bar it is an icon like the rest of the bar, pressed
+ * while on, its words on hover: a name there ran over the bar's other controls.
  */
 export function ConversationOnlyButton({
   hideClass,
@@ -30,22 +31,24 @@ export function ConversationOnlyButton({
 }) {
   const on = useConversationOnly((s) => s.on);
   const keys = useShortcutHint("view.conversationOnly");
+  const named = on && !inTitlebar;
   return (
     <Button
       variant="ghost"
-      size={on ? "xs" : inTitlebar ? "icon-sm" : "icon-xs"}
+      size={named ? "xs" : inTitlebar ? "icon-sm" : "icon-xs"}
       data-testid="conversation-only"
       aria-pressed={on}
       aria-label={CONVERSATION_ONLY}
       title={withHint(on ? HINT.on : HINT.off, keys)}
       className={cn(
         "shrink-0 text-muted-foreground",
-        on && "bg-accent text-foreground @max-sm:size-7 @max-sm:px-0",
+        on && "bg-accent text-foreground",
+        named && "@max-sm:size-7 @max-sm:px-0",
       )}
       onClick={() => useConversationOnly.getState().toggle()}
     >
       <MessageSquareText aria-hidden />
-      {on && <span className={hideClass}>{CONVERSATION_ONLY}</span>}
+      {named && <span className={hideClass}>{CONVERSATION_ONLY}</span>}
     </Button>
   );
 }

@@ -234,9 +234,31 @@ describe("when the title bar folds", () => {
     expect(nextFold({ ...wide, barWidth: 500 })).toBe(2);
     expect(nextFold({ ...wide, overflow: true })).toBe(1);
     expect(nextFold({ ...wide, fold: 1, overflow: true })).toBe(2);
-    expect(nextFold({ ...wide, fold: 2, overflow: true })).toBe(2);
+    // Still spilling, the icons go, then Chat · Board and Settings, and no further.
+    expect(nextFold({ ...wide, fold: 2, overflow: true })).toBe(3);
+    expect(nextFold({ ...wide, fold: 3, overflow: true })).toBe(4);
+    expect(nextFold({ ...wide, fold: 4, overflow: true })).toBe(4);
+    // Narrow and spilling: a step past what its width alone folds.
+    expect(nextFold({ ...wide, barWidth: 500, overflow: true })).toBe(2);
+    expect(nextFold({ ...wide, barWidth: 500, fold: 2, overflow: true })).toBe(3);
     // With no header to ask, the width alone decides.
     expect(nextFold({ ...wide, spare: Infinity })).toBe(0);
+  });
+
+  it("folds past the view's actions only for a title short of its least, never to show it whole", () => {
+    // The icons 66 wide with their gaps, Chat · Board and Settings 150.
+    const all = { ...wide, fold: 2, widths: [0, 114, 66, 150] } as const;
+    // The title is cut (short of what it needs whole) but keeps its least: the icons stay.
+    expect(nextFold({ ...all, spare: -80, tight: 10 })).toBe(2);
+    // Short of its least, the icons go first, then Chat · Board.
+    expect(nextFold({ ...all, spare: -80, tight: -1 })).toBe(3);
+    expect(nextFold({ ...all, spare: -200, tight: -67 })).toBe(4);
+    // Back once each step's buttons fit with the slack over, the least kept.
+    expect(nextFold({ ...all, fold: 4, spare: 0, tight: 165 })).toBe(4);
+    expect(nextFold({ ...all, fold: 4, spare: 0, tight: 166 })).toBe(3);
+    expect(nextFold({ ...all, fold: 3, spare: 0, tight: 82 })).toBe(2);
+    // Narrow, the view's actions stay folded whatever the room.
+    expect(nextFold({ ...all, fold: 3, barWidth: 500, spare: 400, tight: 400 })).toBe(2);
   });
 
   it("folds the lesser buttons first, and Workers only when they aren't room enough", () => {

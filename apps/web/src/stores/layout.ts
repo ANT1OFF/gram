@@ -188,7 +188,24 @@ interface ShellContext {
    * review beside them keeps the usual width.
    */
   chatBusy?: boolean | undefined;
+  /**
+   * What macOS's window buttons cover at the window's left (`--window-lights-inset`), 0 elsewhere:
+   * see `chatBarStart`.
+   */
+  lightsInset?: number | undefined;
 }
+
+/** The room the title bar's Show sidebar takes, with its gap, while the sidebar is hidden. */
+const SIDEBAR_TOGGLE_ROOM = 32;
+
+/**
+ * Where the chat's room starts for the panel's bounds: past the sidebar, or with none shown, past
+ * macOS's window buttons and the Show sidebar the title bar then carries after them. The panel
+ * leaves the chat `CHAT_MIN_WIDTH` past that, so a dragged panel never leaves the title bar less
+ * room than its folded controls and a few letters of the title need.
+ */
+export const chatBarStart = (sidebarWidth: number, lightsInset: number | undefined): number =>
+  sidebarWidth > 0 ? sidebarWidth : lightsInset ? lightsInset + SIDEBAR_TOGGLE_ROOM : 0;
 
 /** The page `pathname` is, for `ShellContext.page`: Settings is one page across its tabs. */
 export const shellPage = (pathname: string): string =>
@@ -294,6 +311,7 @@ export function fitShell(input: ShellFitInput): ShellFit {
         ? railWidth
         : shrunkSidebar(panel === "side" ? room - PANEL_WIDTH.min : room);
   const beside = Math.max(0, input.windowWidth - sidebarWidth);
+  const chatStart = chatBarStart(sidebarWidth, input.lightsInset);
   // A review in focus takes the window but for the chat's strip, wherever the panel was.
   if (
     input.reviewFocus &&
@@ -313,7 +331,7 @@ export function fitShell(input: ShellFitInput): ShellFit {
       reviewNarrow: false,
     };
   }
-  const bounds = panelBoundsFor(input, sidebarWidth);
+  const bounds = panelBoundsFor(input, chatStart);
   const panelWidth =
     panel === "side"
       ? clampWidth(panelWidthFor(input, sidebarWidth), bounds)
@@ -1244,8 +1262,10 @@ export const useLayoutStore = create<LayoutState>()(
           panelBarred,
           page,
           chatBusy,
+          lightsInset,
         }) =>
           set((s) =>
+            s.lightsInset === lightsInset &&
             s.windowWidth === windowWidth &&
             s.threadInView === threadInView &&
             s.threadQuiet === threadQuiet &&
@@ -1260,6 +1280,7 @@ export const useLayoutStore = create<LayoutState>()(
                   panelBarred,
                   page,
                   chatBusy,
+                  lightsInset,
                   // A panel opened on the page left goes with it, expanded or not.
                   // So does a review's focus, which would otherwise come back with the panel.
                   ...(s.page === page
