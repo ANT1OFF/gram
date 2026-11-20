@@ -1,5 +1,7 @@
-import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
+
+import { appPathname } from "@/lib/app-path";
 
 import { isSettingsPath } from "./leave-settings";
 
@@ -23,13 +25,8 @@ export function useSettingsLink(to: SettingsEntry = "/settings") {
  */
 export function useOpenSettings(): () => void {
   const navigate = useNavigate();
-  const router = useRouter();
   return useCallback(
-    () =>
-      void navigate({
-        to: "/settings",
-        replace: isSettingsPath(router.state.location.pathname),
-      }),
-    [navigate, router],
+    () => void navigate({ to: "/settings", replace: isSettingsPath(appPathname()) }),
+    [navigate],
   );
 }
