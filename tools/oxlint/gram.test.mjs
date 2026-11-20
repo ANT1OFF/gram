@@ -580,6 +580,69 @@ describe("no-timer", () => {
   });
 });
 
+describe("no-comment", () => {
+  const rule = "gram/no-comment";
+
+  it("refuses explanations, trailing notes, TODOs and docs on private code", () => {
+    const found = lint(
+      `import x from "y";
+      export function a() {
+        // explain the next line
+        return x; // trailing
+      }
+      /** A private helper. */
+      const b = 2;
+      /* a block */
+      export const c = b;
+      // TODO later
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([3, 4, 6, 8, 10]);
+    expect(found[0].message).toContain("fix the cause");
+    expect(found[2].message).toContain("export it");
+  });
+
+  it("keeps directives, a license header and docs on exports and their members", () => {
+    expect(
+      lint(
+        `// SPDX-License-Identifier: MIT
+        /// <reference types="vite/client" />
+        /** An export. */
+        export function a() {}
+        export interface I {
+          /** A member. */
+          m: string;
+        }
+        export const o = {
+          /** A key. */
+          k: 1,
+        };
+        /** A class. */
+        export class C {
+          /** A field. */
+          f = 1;
+        }
+        // oxlint-disable-next-line no-debugger -- a breakpoint the test needs
+        debugger;
+        // @ts-expect-error the fixture is untyped
+        const v = import(/* @vite-ignore */ "x");
+        /** The default. */
+        export default v;
+      `,
+        rule,
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves tests alone and is on in product source under the repository's own config", () => {
+    expect(lint("// a note\nexport const a = 1;\n", rule, ".test.ts")).toEqual([]);
+    expect(probeConfig("apps/web/src", "// a note\nexport const a = 1;\n")).toContain(
+      "gram(no-comment)",
+    );
+  });
+});
+
 describe("disable-reason", () => {
   const rule = "gram/disable-reason";
 

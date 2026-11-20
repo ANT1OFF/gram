@@ -40,11 +40,15 @@
 // a focus, a measurement), and many short-lived timers churn the garbage collector into jank. Real
 // time goes through the named helpers in `apps/web/src/lib/timers.ts` and its neighbours; the files
 // not moved yet are in `allowlists.mjs` with how many each may keep.
+//
+// And no explanatory comments in product source (`gram/no-comment`, in `no-comment.mjs`): directives,
+// license headers and docs on exports stay, and the files not cleared yet are in `comments-baseline.json`.
 
 import { dirname, relative, resolve } from "node:path";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 import { importOf, isFunction, isTestFile, propertyName, REPO, soleExpression } from "./ast.mjs";
 import { noRawEffect } from "./no-raw-effect.mjs";
+import { noComment } from "./no-comment.mjs";
 import { noTimer } from "./no-timer.mjs";
 
 const BARE_FORKS = new Set([
@@ -658,6 +662,7 @@ export default {
     },
     "no-raw-effect": noRawEffect,
     "no-timer": noTimer,
+    "no-comment": noComment,
     "no-focused-tests": {
       meta: {
         type: "problem",
