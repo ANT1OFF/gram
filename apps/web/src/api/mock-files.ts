@@ -168,7 +168,9 @@ export const expandMockHome = (path: string) =>
 /** Top-level names the checkout's `.gitignore` matches. */
 const IGNORED = new Set(["dist"]);
 
-const CHECKOUT_RE = /^\/Users\/dev\/code\/(?:api|web|docs)(?:\/\.worktrees\/[^/]+)?((?:\/[^/]+)*)$/;
+// The fixtures' projects, and the realistic morning's (`mock-scenarios.ts`), with their worktrees.
+const CHECKOUT_RE =
+  /^\/Users\/dev\/(?:code\/(?:api|web|docs)|Documents\/code\/(?:gram|infra))(?:\/\.worktrees\/[^/]+)?((?:\/[^/]+)*)$/;
 const MODIFIED_AT = Date.UTC(2026, 8, 16, 9, 30);
 const LANGUAGES: Record<string, string> = {
   css: "css",

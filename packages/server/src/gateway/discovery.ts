@@ -15,6 +15,45 @@ export type Fetcher = (
 
 const DISCOVERY_TIMEOUT_MS = 15_000;
 
+/** The most redirects a gateway request follows, each within the origin it was asked of. */
+const REDIRECTS_MAX = 3;
+
+/**
+ * `fetch` for a gateway's models and catalog: it follows a redirect only within the origin it was
+ * asked of, so a gateway's address never sends the request, with its key, to another host.
+ */
+export const sameOriginFetch: Fetcher = async (url, init) => {
+  let at = url;
+  for (let hop = 0; hop <= REDIRECTS_MAX; hop++) {
+    const response = await fetch(at, { ...init, redirect: "manual" });
+    const location = response.headers.get("location");
+    if (response.status < 300 || response.status >= 400 || location === null) return response;
+    const next = new URL(location, at);
+    if (next.origin !== new URL(at).origin)
+      throw new Error("the gateway redirected to another origin");
+    at = next.href;
+  }
+  throw new Error("the gateway redirected too often");
+};
+
+/** What a gateway's base URL that isn't a plain http(s) address is told. */
+export const BASE_URL_SHAPE =
+  "A gateway's base URL is an http or https address with no user name or password in it.";
+
+/** Whether `baseURL` is a plain http(s) address, with no credentials in it. */
+export const plainBaseURL = (baseURL: string): boolean => {
+  try {
+    const url = new URL(baseURL);
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
+};
+
 const modelsUrl = (baseURL: string) => `${baseURL.replace(/\/+$/, "")}/models`;
 
 const hostOf = (baseURL: string) => {

@@ -52,17 +52,19 @@ export function useShellLayout() {
     const summary = threadId === undefined ? undefined : s.byId[threadId];
     return summary?.git?.repo ?? summary?.thread.checkout.kind === "worktree";
   });
+  const orchestrator = useThreadsStore(
+    (s) => threadId !== undefined && s.byId[threadId]?.thread.role === "orchestrator",
+  );
+  // An orchestrator's pane lists its workers, so the app in front may offer it there too.
   const panelBarred = !panelOffered(
     useEmbedShell((s) => s.panel),
     {
       threadInView: hasThread,
       threadInRepo,
+      orchestrator,
     },
   );
   const board = useViewStore((s) => s.view === "board");
-  const orchestrator = useThreadsStore(
-    (s) => threadId !== undefined && s.byId[threadId]?.thread.role === "orchestrator",
-  );
   // A grid of panes shares the chat's place among its threads, so it needs the room too.
   const grid = useLayoutStore((s) => s.grid.preset !== "1" && !s.grid.maximized);
   const chatBusy = board || orchestrator || grid;

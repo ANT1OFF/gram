@@ -179,6 +179,7 @@ import {
   PROFILE_START_PATH,
   PROFILE_WAIT_PATH,
   PROFILE_START_RECORD,
+  THREAD_READERS_PATH,
   ProfileStartRoutes,
 } from "../thread-profiles/routes.ts";
 import { ProfileStarters } from "../thread-profiles/service.ts";
@@ -230,6 +231,7 @@ export const SERVICE_PATHS: ReadonlySet<string> = new Set([
   PROFILE_START_PATH,
   PROFILE_MOVE_PATH,
   PROFILE_WAIT_PATH,
+  THREAD_READERS_PATH,
 ]);
 
 /** What a service call's answer adds to its record: the thread a profile start made or found. */
@@ -604,6 +606,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             target.path === PROFILE_START_PATH ||
             target.path === PROFILE_MOVE_PATH ||
             target.path === PROFILE_WAIT_PATH ||
+            target.path === THREAD_READERS_PATH ||
             HOST_PATHS.has(target.path) ||
             target.path === MCP_PATH ||
             target.path === HOST_MCP_PATH

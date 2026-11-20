@@ -15,18 +15,22 @@ import {
   PROFILE_WAIT_PATH,
   ProfileWaitRequest,
   type ProfileWaitResponse,
+  THREAD_READERS_PATH,
+  ThreadReadersRequest,
+  type ThreadReadersResponse,
 } from "@gram/contracts";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { authTarget } from "../http/auth-target.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { setReaders } from "../embedding/thread-readers.ts";
+import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { ProfileStarters } from "./service.ts";
 import type { ProfileStarter } from "./start.ts";
 
-export { PROFILE_MOVE_PATH, PROFILE_START_PATH, PROFILE_WAIT_PATH };
+export { PROFILE_MOVE_PATH, PROFILE_START_PATH, PROFILE_WAIT_PATH, THREAD_READERS_PATH };
 
 /** A profile's files hold at most 1 MB; the rest of a body is small beside them. */
 const BODY_MAX = 2_000_000;
@@ -39,6 +43,7 @@ const notThere = HttpServerResponse.text("not found", { status: 404 });
 const decodeRequest = Schema.decodeUnknownEffect(ProfileStartRequest);
 const decodeMove = Schema.decodeUnknownEffect(ProfileMoveRequest);
 const decodeWait = Schema.decodeUnknownEffect(ProfileWaitRequest);
+const decodeReaders = Schema.decodeUnknownEffect(ThreadReadersRequest);
 
 /**
  * Headers the answer carries for the service-call record (`server.ts`): which thread, where, and
@@ -115,9 +120,9 @@ export const profileStartRoute = (
     const input = yield* decodeRequest(value, { onExcessProperty: "error" }).pipe(Effect.option);
     if (input._tag === "None")
       return refuse("Give the profile and the thread's id, and the machine's if it has one.", 400);
-    const { profile, threadId, hostId, machine, startedBy, readableBy } = input.value;
+    const { profile, threadId, hostId, machine, startedBy, readableBy, readers } = input.value;
     return yield* starter
-      .startOne(profile, { threadId, on: hostId, machine, startedBy, readableBy })
+      .startOne(profile, { threadId, on: hostId, machine, startedBy, readableBy, readers })
       .pipe(
         Effect.map(({ thread, created }) =>
           HttpServerResponse.jsonUnsafe(
@@ -126,6 +131,9 @@ export const profileStartRoute = (
               created,
               ...(thread.awaitingMachine === undefined ? {} : { awaitingMachine: true }),
               ...(thread.readableBy === undefined ? {} : { readableBy: thread.readableBy }),
+              ...(thread.readers === undefined || thread.readers.length === 0
+                ? {}
+                : { readers: thread.readers }),
             } satisfies ProfileStartResponse,
             {
               headers: {
@@ -212,6 +220,38 @@ export const profileWaitRoute = (
     );
   });
 
+/** Answers the readers path. `on` is the hosted features setting, read per request. */
+export const threadReadersRoute = (
+  store: Pick<ThreadStoreShape, "getThread" | "listThreads" | "listClosed" | "setThreadReaders">,
+  on: Effect.Effect<boolean>,
+): Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  never,
+  HttpServerRequest.HttpServerRequest
+> =>
+  Effect.gen(function* () {
+    const body = yield* jsonBodyAt(THREAD_READERS_PATH, on);
+    if (body.answer !== undefined) return body.answer;
+    const input = yield* decodeReaders(body.value, { onExcessProperty: "error" }).pipe(
+      Effect.option,
+    );
+    if (input._tag === "None") return refuse("Give the thread's id and its readers.", 400);
+    const { threadId, readers } = input.value;
+    return yield* setReaders(store, threadId, readers).pipe(
+      Effect.map((set) =>
+        HttpServerResponse.jsonUnsafe(
+          {
+            threadId,
+            readers: set.readers,
+            threadIds: set.threadIds,
+          } satisfies ThreadReadersResponse,
+          { headers: { [PROFILE_START_RECORD.thread]: threadId } },
+        ),
+      ),
+      Effect.catch((error) => Effect.succeed(refuse(error.message, 409))),
+    );
+  });
+
 /** The routes on the server's router, under its auth middleware. */
 export const ProfileStartRoutes = Layer.unwrap(
   Effect.gen(function* () {
@@ -225,6 +265,7 @@ export const ProfileStartRoutes = Layer.unwrap(
       HttpRouter.add("*", PROFILE_START_PATH, () => profileStartRoute(starter, on)),
       HttpRouter.add("*", PROFILE_MOVE_PATH, () => profileMoveRoute(starter, on)),
       HttpRouter.add("*", PROFILE_WAIT_PATH, () => profileWaitRoute(starter, on)),
+      HttpRouter.add("*", THREAD_READERS_PATH, () => threadReadersRoute(store, on)),
     );
   }),
 );

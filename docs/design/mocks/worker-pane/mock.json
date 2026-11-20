@@ -1,0 +1,55 @@
+{
+  "title": "Worker pane: list and worker on the right",
+  "slug": "worker-pane",
+  "status": "approved",
+  "template": "options",
+  "current": 2,
+  "approved": 2,
+  "approvedDirection": "A+ Switcher and hand-over",
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-19"
+    },
+    {
+      "n": 2,
+      "file": "v2.html",
+      "created": "2026-11-19"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Navigator",
+      "board": "a-navigator",
+      "shots": {
+        "dark": "shots/v2-a-navigator-worker-dark.png",
+        "light": "shots/v2-a-navigator-worker-light.png"
+      }
+    },
+    {
+      "name": "A+ Switcher and hand-over",
+      "board": "a-switcher-and-hand-over",
+      "shots": {
+        "dark": "shots/v2-a-switcher-and-hand-over-switcher-dark.png",
+        "light": "shots/v2-a-switcher-and-hand-over-switcher-light.png"
+      }
+    },
+    {
+      "name": "B One worker tab",
+      "board": "b-one-worker-tab",
+      "shots": {
+        "dark": "shots/v2-b-one-worker-tab-worker-dark.png",
+        "light": "shots/v2-b-one-worker-tab-worker-light.png"
+      }
+    },
+    {
+      "name": "C Split",
+      "board": "c-split",
+      "shots": {
+        "dark": "shots/v2-c-split-wide-dark.png",
+        "light": "shots/v2-c-split-wide-light.png"
+      }
+    }
+  ]
+}

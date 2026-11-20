@@ -89,7 +89,10 @@ Content-Type: application/json
 ```
 
 - The answer is `{ "threadId": "...", "created": true }`; `created` is false when an earlier ask
-  under the same id made the thread. The shapes are `ProfileStartRequest` and
+  under the same id made the thread. That earlier thread is answered only to an ask this start
+  could have made it from: the same profile (what the thread keeps of it, `profileBindingOf`) and,
+  where the ask names one, the same `startedBy`. Otherwise the id is held by someone else's
+  thread, and the start is `409` with nothing made. The shapes are `ProfileStartRequest` and
   `ProfileStartResponse` in `@gram/contracts`, the path `PROFILE_START_PATH`.
 - `threadId` is required here, so a retried call never makes a second thread. It shares one
   starter with `thread.createFromProfile`: an id asked for either way makes one thread.
@@ -212,6 +215,41 @@ Content-Type: application/json
 - **What still reaches it.** The platform's own service routes (the event sink, moves, the
   export of a workspace), which are the embedder's, not a person's, and the server's own work.
 - **Without it** the thread is everyone's to see, as ever.
+
+### Readers beside its person
+
+A thread readable by one person may also have readers (`Thread.readers`): people, by their
+subjects, who see it as its person does but never act on it. The start may name them, and the
+platform's own service changes them later, at any time:
+
+```http
+POST /threads/from-profile
+{ "profile": { ... }, "threadId": "<uuid>", "readableBy": "<person id>", "readers": ["<id>", ...] }
+
+POST /threads/readers
+{ "threadId": "<uuid>", "readers": ["<id>", ...] }
+→ { "threadId": "<uuid>", "readers": ["<id>", ...], "threadIds": ["<uuid>", ...] }
+```
+
+- **The set.** At most 200 subjects, each printable and at most 128 characters; duplicates and the
+  thread's own person are dropped, and the answer gives the set as kept, sorted. `/threads/readers`
+  replaces the set (an empty one clears it) on the thread and on every thread of the same person
+  that came from it or works with it: what it spawned or forked, its workspace's, open or closed.
+  `threadIds` names them. A thread without `readableBy`, or one that isn't there, is `409`. Only
+  the first start under an id sets readers; a repeat leaves them, and `/threads/readers` changes
+  them. Threads it spawns, forks or makes later get the set it has then.
+- **Reading.** A reader gets everything a read gives its person: the thread in lists, snapshots and
+  events, its transcript, search hits, outputs, attachments, closed entry, its files and diffs
+  (`fs.file`, `fs.image`, `fs.search`, `git.diff`), its workspace's memory, docs and ledger: every
+  call a viewer may make (`VIEWER_RPCS`) naming it or a path in its folder is let through for
+  them. A listing a viewer can't make (`fs.list`) leaves the folder out for them as for anyone.
+- **Never acting.** Any other call naming it, its workspace or a path in its folder is refused
+  (`You may read that thread, but only the person it is for acts on it.`), as are the platform's
+  inbound messages and `/asks/answer` from them, reopening it, its terminals, and shells on its
+  machine. A reader's agents read nothing of it: an agent reads as its own thread's person, never
+  as a reader, so nothing of it reaches a thread others may read.
+- **What is not carried.** Moving a thread or a workspace to another server carries its
+  `readableBy`, not its readers: the platform sets them again there.
 
 ## Moving a thread to another machine
 

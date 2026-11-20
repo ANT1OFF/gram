@@ -7,7 +7,13 @@ import { focusWhenRendered } from "@/shell/focus-regions";
 import { fitShell, useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
-import { besideShown, useBesideStore } from "./beside-store";
+import {
+  backToWorkers,
+  besideShown,
+  narrowFromWorkers,
+  useBesideStore,
+  widenForWorkers,
+} from "./beside-store";
 import { boardWorkspaceFor } from "./board-model";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { tabCount, workersByTab } from "./workers-model";
@@ -21,7 +27,7 @@ let beforeWorkers: { open: boolean; tab: RightPanelTab; beside: boolean } | unde
 
 /** The Workers tab's current row, else its first: where ⌘J puts the keys. */
 const workersRow = (): HTMLElement | null =>
-  document.querySelector<HTMLElement>('[data-testid="workers-panel-row"][aria-current="page"]') ??
+  document.querySelector<HTMLElement>('[data-testid="workers-panel-row"][aria-current]') ??
   document.querySelector<HTMLElement>('[data-testid="workers-panel-row"]');
 
 /** The keys on a row once the tab has drawn its rows (its ledger may still load), else its tab. */
@@ -45,7 +51,21 @@ export function showWorkersTab(): void {
   }
   beside.setShown(false);
   layout.revealPanel("workers");
+  widenForWorkers();
   void focusWorkers();
+}
+
+/**
+ * The sidebar's "N in Workers": the pane's list, with the keys on its current row. From a worker
+ * open there, that is Back: the list as it was, the worker's row current and holding the keys.
+ */
+export function focusWorkersPane(): void {
+  const layout = useLayoutStore.getState();
+  if (fitShell(layout).panel !== "none" && besideShown(useBesideStore.getState()) !== undefined) {
+    backToWorkers();
+    return;
+  }
+  showWorkersTab();
 }
 
 /**
@@ -62,8 +82,12 @@ export function toggleWorkersTab(): void {
   if (!onWorkers) return showWorkersTab();
   const back = beforeWorkers;
   beforeWorkers = undefined;
-  if (back === undefined || !back.open) return layout.togglePanel();
+  if (back === undefined || !back.open) {
+    narrowFromWorkers();
+    return layout.togglePanel();
+  }
   if (back.beside) return beside.setShown(true);
+  narrowFromWorkers();
   layout.setPanelTab(back.tab);
 }
 

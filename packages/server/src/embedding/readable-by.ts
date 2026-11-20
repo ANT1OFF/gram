@@ -17,6 +17,14 @@
 // Whose a thread is gets asked on paths with no store at hand (an event on its way to a window), so
 // the store notes each thread's `readableBy` wherever it reads or writes one, and once when it
 // opens (`notePrivacy`). The value never changes, so the note never goes stale.
+//
+// Readers. Beside its person, such a thread may have readers (`Thread.readers`), set by the
+// embedding host (`THREAD_READERS_PATH`): people who see it as its person does but never act on
+// it. So there are two levels. Reading (`readerMay` given a `Privacy`, `level: "read"`) admits its
+// person and its readers; acting (`readerMay` given the bare subject, `level: "act"`, the default
+// everywhere) admits its person alone. A reader's agent is never a reader: what it reads would
+// end up in a thread of its own that others may read. Unlike `readableBy`, readers change, so the
+// store notes them on every write and on the host's change (`noteReaders`), never from a read.
 
 import { isAbsolute, resolve } from "node:path";
 import { isInside, physicalPath } from "@gram/git";
@@ -33,7 +41,30 @@ export interface Reader {
    * person, as that thread is (`spawnScope`).
    */
   readonly fromThread?: boolean | undefined;
+  /** With `fromThread`: the thread whose agent it is, whose readers what it makes inherits. */
+  readonly thread?: ThreadId | undefined;
 }
+
+/**
+ * Who may see a thread readable by one person: that person (`readableBy`), and its readers, who
+ * read but never act (`Thread.readers`).
+ */
+export interface Privacy {
+  readonly readableBy: string;
+  readonly readers: ReadonlySet<string>;
+}
+
+/**
+ * What the rule is given: a bare subject (its person alone, the level of acting), who may see it
+ * (`Privacy`, the level of reading), or undefined for a thread everyone may see.
+ */
+export type Readable = string | Privacy | undefined;
+
+/** Whether a check is of reading a thread (its readers too) or of acting on it (its person). */
+export type Level = "read" | "act";
+
+/** What a reader who may only read a thread is told when it would act on it. */
+export const ONLY_READS = "You may read that thread, but only the person it is for acts on it.";
 
 /** The server's own work, which reads everything: said where a route is the server's own. */
 export const SERVER = "server" as const;
@@ -60,6 +91,14 @@ export const NOT_READABLE = "That thread isn't there.";
 export const SUBJECT = /^[\x21-\x7e]{1,128}$/;
 
 const known = new Map<ThreadId, string>();
+
+/** Each thread's readers beside its person, as last written (`noteReaders`). */
+const readersKnown = new Map<ThreadId, ReadonlySet<string>>();
+
+/** Each workspace's readers, as its threads' last written: they are all one person's. */
+const workspaceReaderSets = new Map<string, ReadonlySet<string>>();
+
+const NO_READERS: ReadonlySet<string> = new Set();
 
 /**
  * The reader of each workspace a thread readable by one person belongs to, noted with the thread:
@@ -117,11 +156,13 @@ export const machineKey = (hostId: string | undefined): string | undefined =>
 
 /** Notes whose a thread is, as it is read or written, and where it works. A reader never changes. */
 export const notePrivacy = (
-  thread: Pick<Thread, "id" | "readableBy"> &
-    ThreadFolders & { readonly workspaceId?: string | undefined },
+  thread: Pick<Thread, "id" | "readableBy"> & {
+    readonly readers?: ReadonlyArray<string> | undefined;
+  } & ThreadFolders & { readonly workspaceId?: string | undefined },
 ): void => {
   if (thread.readableBy === undefined) return;
   if (!known.has(thread.id)) known.set(thread.id, thread.readableBy);
+  if (!readersKnown.has(thread.id)) noteReaders(thread);
   if (typeof thread.workspaceId === "string" && !workspaceReaders.has(thread.workspaceId))
     workspaceReaders.set(thread.workspaceId, thread.readableBy);
   const paths = [thread.checkout, thread.currentCheckout, ...(thread.extraCheckouts ?? [])];
@@ -146,6 +187,25 @@ export const notePrivacy = (
 };
 
 /**
+ * Notes a thread's readers as written (`Thread.readers`), replacing what was noted: on every
+ * write of the thread and on the host's change, never on a read, which may be older.
+ */
+export const noteReaders = (
+  thread: Pick<Thread, "id" | "readableBy"> & {
+    readonly readers?: ReadonlyArray<string> | undefined;
+    readonly workspaceId?: string | undefined;
+  },
+): void => {
+  if (thread.readableBy === undefined) return;
+  const readers =
+    thread.readers === undefined || thread.readers.length === 0
+      ? NO_READERS
+      : new Set(thread.readers);
+  readersKnown.set(thread.id, readers);
+  if (typeof thread.workspaceId === "string") workspaceReaderSets.set(thread.workspaceId, readers);
+};
+
+/**
  * Whether a thread `reader` may not see works on the machine `hostId` (`undefined`: this one):
  * a shell there reaches its folder and this server's own files whatever the API refuses.
  */
@@ -167,10 +227,11 @@ export const machineHoldsUnreadable = (
 export const sharesRepoWithUnreadable = (
   reader: Reader | undefined,
   paths: ReadonlyArray<string>,
+  level: Level = "act",
 ): boolean => {
   if (paths.length === 0 || !anyPrivate()) return false;
   const repos: Array<string> = [];
-  for (const [id, roots] of reposOf) if (!readerMay(reader, known.get(id))) repos.push(...roots);
+  for (const [id, roots] of reposOf) if (!readerMay(reader, at(id, level))) repos.push(...roots);
   if (repos.length === 0) return false;
   return paths.some((path) => {
     const written = resolve(path);
@@ -189,8 +250,8 @@ export const logLinesFor = (
 ): ReadonlyArray<string> => {
   if (!anyPrivate()) return lines;
   const hidden: Array<string> = [];
-  for (const [id, by] of known)
-    if (!readerMay(reader, by)) hidden.push(id, ...(foldersOf.get(id) ?? []));
+  for (const [id] of known)
+    if (!readerMay(reader, at(id, "read"))) hidden.push(id, ...(foldersOf.get(id) ?? []));
   if (hidden.length === 0) return lines;
   return lines.filter((line) => !hidden.some((needle) => line.includes(needle)));
 };
@@ -200,6 +261,31 @@ export const anyPrivate = (): boolean => known.size > 0;
 
 /** The subject a thread is readable by, as noted; undefined for a thread readable by anyone. */
 export const readableByOf = (threadId: ThreadId): string | undefined => known.get(threadId);
+
+/** The readers a thread has beside its person, as noted (`Thread.readers`). */
+export const readersOf = (threadId: ThreadId): ReadonlySet<string> =>
+  readersKnown.get(threadId) ?? NO_READERS;
+
+/** Who may see a thread, as noted: its person and its readers; undefined for anyone. */
+export const privacyOf = (threadId: ThreadId): Privacy | undefined => {
+  const readableBy = known.get(threadId);
+  return readableBy === undefined ? undefined : { readableBy, readers: readersOf(threadId) };
+};
+
+/** Who may see `thread`, as noted where it is, else as the value says. */
+export const privacyOfThread = (
+  thread: Pick<Thread, "id" | "readableBy"> & {
+    readonly readers?: ReadonlyArray<string> | undefined;
+  },
+): Privacy | undefined =>
+  privacyOf(thread.id) ??
+  (thread.readableBy === undefined
+    ? undefined
+    : { readableBy: thread.readableBy, readers: new Set(thread.readers ?? []) });
+
+/** A thread's `Readable` at `level`: its privacy to read, its person alone to act. */
+const at = (threadId: ThreadId, level: Level): Readable =>
+  level === "read" ? privacyOf(threadId) : known.get(threadId);
 
 /**
  * The subject a workspace is readable by: its threads' reader, as noted, else its orchestrator's
@@ -212,6 +298,20 @@ export const readableByOfWorkspace = (
   workspaceReaders.get(workspaceId) ??
   (orchestrator === undefined ? undefined : known.get(orchestrator));
 
+/** Who may see a workspace (`readableByOfWorkspace`) and its readers; undefined for anyone. */
+export const privacyOfWorkspace = (
+  workspaceId: string,
+  orchestrator?: ThreadId | undefined,
+): Privacy | undefined => {
+  const readableBy = readableByOfWorkspace(workspaceId, orchestrator);
+  if (readableBy === undefined) return undefined;
+  const readers =
+    workspaceReaderSets.get(workspaceId) ??
+    (orchestrator === undefined ? undefined : readersKnown.get(orchestrator)) ??
+    NO_READERS;
+  return { readableBy, readers };
+};
+
 /** This fiber's reader: `ReadingAs`, else its caller's person; undefined for the server's work. */
 export const currentReader: Effect.Effect<Reader | undefined> = Effect.gen(function* () {
   const said = yield* ReadingAs;
@@ -221,38 +321,47 @@ export const currentReader: Effect.Effect<Reader | undefined> = Effect.gen(funct
   return caller === undefined ? undefined : { subject: caller.person };
 });
 
-/** The rule, given the reader: anyone for a thread without `readableBy`, else that subject alone. */
-export const readerMay = (reader: Reader | undefined, readableBy: string | undefined): boolean =>
-  readableBy === undefined ||
-  reader === undefined ||
-  (reader.subject !== undefined && reader.subject === readableBy);
+/**
+ * The rule, given the reader: anyone for a thread without `readableBy`; else its person; and,
+ * given its `Privacy` (reading), its readers too, unless the reader is an agent. The server's own
+ * work (`undefined`) reads and acts on everything.
+ */
+export const readerMay = (reader: Reader | undefined, readable: Readable): boolean => {
+  const readableBy = typeof readable === "string" ? readable : readable?.readableBy;
+  if (readableBy === undefined || reader === undefined) return true;
+  if (reader.subject === undefined) return false;
+  if (reader.subject === readableBy) return true;
+  return (
+    typeof readable === "object" &&
+    reader.fromThread !== true &&
+    readable.readers.has(reader.subject)
+  );
+};
 
-/** Whether this fiber's reader may see a thread whose `readableBy` is this. */
-export const mayRead = (readableBy: string | undefined): Effect.Effect<boolean> =>
-  Effect.map(currentReader, (reader) => readerMay(reader, readableBy));
+/** Whether this fiber's reader may see a thread who may see is this (`Readable`). */
+export const mayRead = (readable: Readable): Effect.Effect<boolean> =>
+  Effect.map(currentReader, (reader) => readerMay(reader, readable));
 
-/** Whether this fiber's reader may see the thread `threadId`, as noted (`readableByOf`). */
+/** Whether this fiber's reader may see the thread `threadId`, as noted (`privacyOf`). */
 export const mayReadThread = (threadId: ThreadId): Effect.Effect<boolean> =>
-  mayRead(readableByOf(threadId));
+  mayRead(privacyOf(threadId));
 
 /** The threads this fiber's reader may not see, as noted: for a query to leave out. */
 export const hiddenThreads: Effect.Effect<ReadonlyArray<ThreadId>> = Effect.map(
   currentReader,
-  (reader) => [...known].flatMap(([id, by]) => (readerMay(reader, by) ? [] : [id])),
+  (reader) => [...known].flatMap(([id]) => (readerMay(reader, privacyOf(id)) ? [] : [id])),
 );
 
 /** `items` this fiber's reader may see, by the thread each is of; none of a thread it may not. */
 export const readableOnly = <A>(
   items: ReadonlyArray<A>,
-  threadOf: (item: A) => ThreadId | Pick<Thread, "id" | "readableBy"> | undefined,
+  threadOf: (item: A) => ThreadId | Pick<Thread, "id" | "readableBy" | "readers"> | undefined,
 ): Effect.Effect<ReadonlyArray<A>> =>
   Effect.map(currentReader, (reader) =>
     items.filter((item) => {
       const of = threadOf(item);
       if (of === undefined) return true;
-      const readableBy =
-        typeof of === "string" ? readableByOf(of) : (of.readableBy ?? readableByOf(of.id));
-      return readerMay(reader, readableBy);
+      return readerMay(reader, typeof of === "string" ? privacyOf(of) : privacyOfThread(of));
     }),
   );
 
@@ -263,6 +372,13 @@ export const readableOnly = <A>(
 export const spawnScope: Effect.Effect<string | undefined> = Effect.map(ReadingAs, (reader) =>
   reader !== undefined && reader !== SERVER && reader.fromThread === true
     ? reader.subject
+    : undefined,
+);
+
+/** The thread whose agent's tool call this fiber runs (`Reader.thread`), whose readers it keeps. */
+export const spawnThread: Effect.Effect<ThreadId | undefined> = Effect.map(ReadingAs, (reader) =>
+  reader !== undefined && reader !== SERVER && reader.fromThread === true
+    ? reader.thread
     : undefined,
 );
 
@@ -318,6 +434,40 @@ export const workspacesMentioned = (payload: unknown): ReadonlyArray<string> => 
 /** What a link between threads of two different `readableBy`s (or one's and none) is told. */
 export const READERS_DIFFER = "Threads that work together are readable by the same person.";
 
+/**
+ * The threads that share `root`'s privacy: those it spawned or forked, and its workspaces', and
+ * theirs in turn, of the same `readableBy`, open or closed. What a change of readers applies to,
+ * since a reader of one of them reads what the others did for it.
+ */
+export const privacyFamily = (
+  root: Pick<Thread, "id" | "readableBy"> & { readonly workspaceId?: string | undefined },
+  threads: ReadonlyArray<
+    Pick<Thread, "id" | "readableBy" | "spawnedBy" | "forkedFrom"> & {
+      readonly workspaceId?: string | undefined;
+    }
+  >,
+): ReadonlyArray<ThreadId> => {
+  if (root.readableBy === undefined) return [];
+  const same = threads.filter((thread) => thread.readableBy === root.readableBy);
+  const family = new Set<ThreadId>([root.id]);
+  const workspaces = new Set<string>(root.workspaceId === undefined ? [] : [root.workspaceId]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const thread of same) {
+      if (family.has(thread.id)) continue;
+      const linked =
+        (thread.spawnedBy !== undefined && family.has(thread.spawnedBy.threadId)) ||
+        (thread.forkedFrom?.threadId !== undefined && family.has(thread.forkedFrom.threadId)) ||
+        (thread.workspaceId !== undefined && workspaces.has(thread.workspaceId));
+      if (!linked) continue;
+      family.add(thread.id);
+      if (thread.workspaceId !== undefined) workspaces.add(thread.workspaceId);
+      grew = true;
+    }
+  }
+  return [...family];
+};
+
 /** Whether two threads may be linked (a worker and its orchestrator, a join, an adoption). */
 export const sameReaders = (
   a: Pick<Thread, "id" | "readableBy">,
@@ -337,10 +487,10 @@ export const realOf = (path: string): string => physicalPath(path);
 const within = (path: string, folder: string): boolean => isInside(folder, path);
 
 /** The folders, as written and with links resolved, of the threads `reader` may not see. */
-const unreadableFolders = (reader: Reader | undefined): ReadonlyArray<string> => {
+const unreadableFolders = (reader: Reader | undefined, level: Level): ReadonlyArray<string> => {
   const folders: Array<string> = [];
   for (const [id, paths] of foldersOf) {
-    if (readerMay(reader, known.get(id))) continue;
+    if (readerMay(reader, at(id, level))) continue;
     for (const path of paths) {
       folders.push(path);
       const real = realOf(path);
@@ -354,9 +504,10 @@ const unreadableFolders = (reader: Reader | undefined): ReadonlyArray<string> =>
 export const touchesUnreadable = (
   reader: Reader | undefined,
   paths: ReadonlyArray<string>,
+  level: Level = "act",
 ): boolean => {
   if (paths.length === 0 || !anyPrivate()) return false;
-  const folders = unreadableFolders(reader);
+  const folders = unreadableFolders(reader, level);
   if (folders.length === 0) return false;
   return paths.some((path) => {
     const written = resolve(path);
@@ -411,9 +562,10 @@ export const withoutUnreadable = (
   reader: Reader | undefined,
   result: unknown,
   base: string | undefined,
+  level: Level = "act",
 ): unknown => {
   if (!anyPrivate()) return result;
-  const folders = unreadableFolders(reader);
+  const folders = unreadableFolders(reader, level);
   if (folders.length === 0) return result;
   const bases = base === undefined ? [] : [resolve(base), realOf(base)];
   const hidden = (path: string): boolean => {

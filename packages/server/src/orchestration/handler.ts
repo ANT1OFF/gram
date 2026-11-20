@@ -10,7 +10,7 @@ import * as Option from "effect/Option";
 import { attachmentsDir, withDraftAttachments } from "../attachments/attachments.ts";
 import { ServerConfig } from "../config.ts";
 import { logDefects, type Handlers } from "../rpc/handlers/common.ts";
-import { currentReader, readableByOfWorkspace, readerMay } from "../embedding/readable-by.ts";
+import { currentReader, privacyOfWorkspace, readerMay } from "../embedding/readable-by.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { steerOrSend } from "../runtime/steer-or-send.ts";
@@ -57,7 +57,7 @@ export const orchestrationHandlers = Effect.gen(function* () {
             all.filter((state) =>
               readerMay(
                 reader,
-                readableByOfWorkspace(state.workspace.id, state.workspace.orchestratorThreadId),
+                privacyOfWorkspace(state.workspace.id, state.workspace.orchestratorThreadId),
               ),
             ),
           ),

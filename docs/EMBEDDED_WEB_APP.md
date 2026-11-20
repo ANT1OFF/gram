@@ -164,16 +164,27 @@ palette still reach every thread, and a thread still opens from its address.
 
 **The right panel.** `panel: "code"` offers the right panel (Diff, PR, Files, Terminal and its
 other tabs) and its title-bar toggle only on a thread that works in a git repository, a worktree or
-a checkout. On every other page (a thread outside a repository, `/threads`, the home page, the
-embedding app's own pages) neither shows, its key does nothing and its palette commands are left
-out. `shown`, the default, offers it everywhere, as Gram on its own does. Change it through
-`update({ panel })`.
+a checkout, and on an orchestrator. On an orchestrator the pane lists its workers by where they
+stand, and opens one under "‹ Workers › its title" with that worker's own Changes, PR, Terminal
+and Files; an orchestrator outside a repository gets its workers alone, none of its own Diff,
+Files or Terminal. On every other page (another thread outside a repository, `/threads`, the home
+page, the embedding app's own pages) neither shows, its key does nothing and its palette commands
+are left out. `shown`, the default, offers it everywhere, as Gram on its own does. Change it
+through `update({ panel })`.
+
+**Esc in the worker pane.** With the keys in the pane and nothing typed in its composer, Esc goes
+back from a worker to the list. Gram marks the event handled (`preventDefault`) and never stops
+it, so an app that listens for Esc itself (to close a sheet of its own) sees it: skip an event
+whose `defaultPrevented` is set. The arrow keys that step between workers act only with the keys
+in the pane's head.
 
 **Starting work, in your words.** `threadsPage: { title: "Chat", newLabel: "New chat" }` renames
 the page of every thread (`/threads`) in its heading, the title bar, a phone's header and the
 palette, and words its button, which then starts a chat. `threadsPage.kinds` gives your words for
 what kind of thread a row is (`{ solo: "One agent", orchestrator: "Team lead", worker: "Team
-member" }`), for people who do not speak of orchestrators and workers. Your word for `solo` also
+member" }`), for people who do not speak of orchestrators and workers. `kinds.workers` is your
+word for an orchestrator's workers together ("Workers" when left out): the right pane's list, the
+way back to it from a worker, and the sidebar's "4 in Workers". Your word for `solo` also
 names that choice in the New form, in place of "Chat", and a solo thread's header, so an app with a
 Chat of its own has one word for a thread run by one agent. `threadsPage.newForm` words the New
 form's Who does it, an orchestrator (Team) or one agent (Chat): `team` and `solo` each take a

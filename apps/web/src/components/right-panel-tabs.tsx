@@ -3,8 +3,8 @@ import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { TabsContent } from "@/components/ui/tabs";
 import { DocsPanel } from "@/docs/docs-panel";
 import { PagesPanel } from "@/pages/pages-panel";
-import { WorkersPanel } from "@/orchestration/workers-panel";
-import { BesidePanel } from "@/orchestration/beside-dock";
+import { WorkerPane } from "@/orchestration/worker-pane";
+import { WorkersPanel, type OrchestratorViews } from "@/orchestration/workers-panel";
 import { ConnectorsPanel } from "@/panels/connectors-panel";
 import { DiffPanel } from "@/panels/diff-panel";
 import { FilesPanel } from "@/panels/files/files-panel";
@@ -19,11 +19,40 @@ import { CommandPanel } from "@/thread/command-panel";
 import type { OpenCommand } from "@/thread/command-view-model";
 import { ReviewRequestsPanel } from "@/reviews/review-requests";
 
+/**
+ * The pane's Workers mode: an orchestrator's workers, or one of them open (`worker`), in place of
+ * the tabs. In the same lazy chunk as the tabs' contents.
+ */
+export function WorkersMode({
+  workspaceId,
+  worker,
+  record,
+  orchestrator,
+}: {
+  workspaceId: WorkspaceId;
+  worker: ThreadId | undefined;
+  record: boolean;
+  orchestrator: OrchestratorViews | undefined;
+}) {
+  if (worker !== undefined) {
+    return <WorkerPane workspaceId={workspaceId} worker={worker} record={record} />;
+  }
+  return (
+    <WorkersPanel
+      key={workspaceId}
+      workspaceId={workspaceId}
+      orchestrator={orchestrator}
+      closable
+    />
+  );
+}
+
 /** The right panel's tab contents, a chunk of their own that `RightPanel` loads lazily. */
 export function RightPanelTabs({
   threadId,
   workspaceId,
   besideWorker,
+  besideRecord,
   command,
   previewHere,
   reviewsHere,
@@ -35,6 +64,8 @@ export function RightPanelTabs({
   workspaceId: WorkspaceId | undefined;
   /** The worker open beside the chat, which the Thread tab shows. */
   besideWorker: ThreadId | undefined;
+  /** It is a finished worker's record. */
+  besideRecord: boolean;
   /** The command opened from the strip above the composer, which the Command tab shows. */
   command: OpenCommand | undefined;
   previewHere: boolean;
@@ -49,9 +80,9 @@ export function RightPanelTabs({
           <WorkersPanel key={workspaceId} workspaceId={workspaceId} />
         </TabsContent>
       )}
-      {besideWorker !== undefined && (
+      {besideWorker !== undefined && workspaceId !== undefined && (
         <TabsContent value="thread" className="flex min-h-0 flex-col">
-          <BesidePanel key={besideWorker} worker={besideWorker} />
+          <WorkerPane workspaceId={workspaceId} worker={besideWorker} record={besideRecord} />
         </TabsContent>
       )}
       {command !== undefined && (

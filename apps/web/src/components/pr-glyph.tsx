@@ -51,13 +51,21 @@ export type PrGlyphThread = PrBadgeThread & Pick<Thread, "extraPrs" | "babysit">
 
 const checkoutName = (checkout: Thread["checkout"]) => checkout.branch ?? checkout.path;
 
+/** The bound PR's address, on the host the branch's PR is on (GitHub Enterprise included). */
+const boundPrUrl = (branchPrUrl: string, repo: string, number: number): string => {
+  const host = URL.canParse(branchPrUrl) ? new URL(branchPrUrl).origin : "https://github.com";
+  return `${host}/${repo}/pull/${number}`;
+};
+
 /** Checks GitHub doesn't require are failing, which the glyph leaves out since it would merge. */
 const optionalFailing = (pr: Pick<PrFacts, "checks" | "requiredChecks">) =>
   pr.checks === "failing" && pr.requiredChecks !== undefined && pr.requiredChecks !== "failing";
 
 /**
- * The thread's PRs as its row's card lists them: its own (the bound one, else the branch's), then
- * those it follows, each with its facts.
+ * The thread's PRs as its row's card lists them: its own (the one its PR panel opens: the bound one,
+ * else the branch's), then those it follows, each with its facts. A badge that still names another
+ * PR than the bound one (a rebind the next sweep hasn't caught up with) never stands for it: the
+ * bound PR is named, its state unknown until its badge comes.
  */
 export function threadPrEntries(
   thread: PrGlyphThread,
@@ -65,8 +73,8 @@ export function threadPrEntries(
 ): readonly PrGlyphEntry[] {
   const entries: PrGlyphEntry[] = [];
   const pr = git?.pr;
-  if (git !== undefined && pr !== undefined) {
-    const shown = targetBadge(git, thread.boundPr) ?? pr;
+  const shown = git === undefined ? undefined : targetBadge(git, thread.boundPr);
+  if (git !== undefined && pr !== undefined && shown !== undefined) {
     const notes: string[] = [];
     const review = reviewGlyphOf(shown.review);
     if (review) notes.push(...review.label.split("\n"));
@@ -78,14 +86,10 @@ export function threadPrEntries(
       );
     }
     if (aheadOfPr(git, pr)) notes.push("Local commits past the PR head, not in the PR");
-    const cue = prCue(thread, pr);
-    if (cue === "followed" && thread.currentCheckout) {
+    if (prCue(thread, pr) === "followed" && thread.currentCheckout) {
       notes.push(
         `Followed the agent to ${checkoutName(thread.currentCheckout)}, launched on ${checkoutName(thread.checkout)}`,
       );
-    }
-    if (cue === "elsewhere" && thread.boundPr) {
-      notes.push(`This thread is bound to #${thread.boundPr.number}, not this branch's PR`);
     }
     if (git.workElsewhere) {
       notes.push(`Uncommitted work on “${git.workElsewhere.branch}” in another worktree`);
@@ -109,6 +113,26 @@ export function threadPrEntries(
       review,
       peopleThreads: shown.review?.threads.humanUnresolved ?? 0,
       facts,
+    });
+  } else if (pr !== undefined && thread.boundPr !== undefined) {
+    const { repo, number } = thread.boundPr;
+    entries.push({
+      key: `${repo}#${number}`,
+      number,
+      repo,
+      title: undefined,
+      url: boundPrUrl(pr.url, repo, number),
+      glyph: prGlyphOf(undefined),
+      label: prGlyphLabel(number, undefined),
+      additions: undefined,
+      deletions: undefined,
+      notes: [`Its branch's PR is #${pr.number}, not the one this thread is bound to`],
+      stale: false,
+      own: true,
+      checks: undefined,
+      review: undefined,
+      peopleThreads: 0,
+      facts: { repo, number },
     });
   }
   for (const extra of extraRowsOf(thread.extraPrs, git)) {

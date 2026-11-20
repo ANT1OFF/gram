@@ -10,6 +10,7 @@ import {
   currentDestination,
   navigationCurrent,
   panelOffered,
+  panelWorkersOnly,
   routeProblem,
   shellFor,
   shownCount,
@@ -125,10 +126,19 @@ describe("where the right panel is offered", () => {
     for (const page of [home, chat, code]) expect(panelOffered("shown", page)).toBe(true);
   });
 
-  it("is only a thread in a repository under `code`", () => {
+  it("is only a thread in a repository, or an orchestrator, under `code`", () => {
     expect(panelOffered("code", home)).toBe(false);
     expect(panelOffered("code", chat)).toBe(false);
     expect(panelOffered("code", code)).toBe(true);
+    // An orchestrator's pane lists its workers, in a repository or not.
+    expect(panelOffered("code", { ...chat, orchestrator: true })).toBe(true);
+    expect(panelOffered("code", { ...home, orchestrator: true })).toBe(false);
+  });
+
+  it("gives an orchestrator outside a repository its workers alone under `code`", () => {
+    expect(panelWorkersOnly("code", { orchestrator: true, threadInRepo: false })).toBe(true);
+    expect(panelWorkersOnly("code", { orchestrator: true, threadInRepo: true })).toBe(false);
+    expect(panelWorkersOnly("shown", { orchestrator: true, threadInRepo: false })).toBe(false);
   });
 });
 

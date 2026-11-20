@@ -11,7 +11,11 @@ import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
 import {
   anyPrivate,
+  type Level,
   NOT_READABLE,
+  ONLY_READS,
+  privacyOf,
+  privacyOfWorkspace,
   type Reader,
   ReadingAs,
   readableByOf,
@@ -700,11 +704,12 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
        * names anywhere in its payload, or a named workspace's orchestrator, whose workers have its
        * reader. Asked of every call, a read or a change, before it runs.
        */
-      const namesUnreadable = (reader: Reader, payload: unknown) =>
+      const namesUnreadable = (reader: Reader, payload: unknown, level: Level = "act") =>
         Effect.gen(function* () {
           if (!anyPrivate()) return false;
           for (const threadId of threadsMentioned(payload))
-            if (!readerMay(reader, readableByOf(threadId))) return true;
+            if (!readerMay(reader, level === "read" ? privacyOf(threadId) : readableByOf(threadId)))
+              return true;
           // A dream is its workspace's: its id names the workspace as much as the workspace's own.
           const dreamWorkspaces: Array<string> = [];
           const dreamId =
@@ -723,7 +728,15 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
             const state = yield* store.getWorkspace(workspaceId as WorkspaceId).pipe(Effect.option);
             const holder =
               state._tag === "Some" ? state.value.workspace.orchestratorThreadId : undefined;
-            if (!readerMay(reader, readableByOfWorkspace(workspaceId, holder))) return true;
+            if (
+              !readerMay(
+                reader,
+                level === "read"
+                  ? privacyOfWorkspace(workspaceId, holder)
+                  : readableByOfWorkspace(workspaceId, holder),
+              )
+            )
+              return true;
           }
           return false;
         });
@@ -732,7 +745,12 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
        * folder of a thread `reader` may not see (`touchesUnreadable`): by any spelling, a link
        * that leads there or `..` included, whatever the call does with it.
        */
-      const pathsUnreadable = (reader: Reader, payload: unknown, sharedToo = false) =>
+      const pathsUnreadable = (
+        reader: Reader,
+        payload: unknown,
+        sharedToo = false,
+        level: Level = "act",
+      ) =>
         Effect.gen(function* () {
           if (!anyPrivate()) return false;
           const bases: Array<string> = [];
@@ -748,8 +766,8 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           // Behind a proxy, nor a repository such a thread has a checkout of: another checkout
           // of it, a branch list, a worktree list share that thread's `.git` and its commits.
           return (
-            touchesUnreadable(reader, paths) ||
-            (sharedToo && sharesRepoWithUnreadable(reader, paths))
+            touchesUnreadable(reader, paths, level) ||
+            (sharedToo && sharesRepoWithUnreadable(reader, paths, level))
           );
         });
       /** The folder a listing's relative entries are under: its own path, or its thread's. */
@@ -776,6 +794,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
         action: string,
         payload: unknown,
         effect: Effect.Effect<A, E, R>,
+        level: Level = "act",
       ): Effect.Effect<A, E, R> =>
         !LISTING_RPCS.has(action)
           ? effect
@@ -783,7 +802,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
               anyPrivate()
                 ? Effect.map(
                     listedUnder(payload),
-                    (base) => withoutUnreadable(reader, result, base) as A,
+                    (base) => withoutUnreadable(reader, result, base, level) as A,
                   )
                 : Effect.succeed(result),
             );
@@ -813,13 +832,23 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           }
           const actor = actorOf(headers);
           if (actor === undefined) return yield* Effect.die(new Error(NO_ACTOR_REFUSAL));
-          // A thread readable by one person is theirs alone to read or change, member or viewer.
+          // A thread readable by one person is theirs alone to change, member or viewer, and
+          // theirs and its readers' to read (`Thread.readers`). A call that only reads is judged
+          // as a read; any other as acting, which its readers may not.
           const reader: Reader = { subject: actor.id };
+          const action = rpc._tag;
+          const reads = VIEWER_RPCS.has(action) || setsOnlyOwnView(action, payload);
           if (
-            (yield* namesUnreadable(reader, payload)) ||
-            (yield* pathsUnreadable(reader, payload, true))
+            (yield* namesUnreadable(reader, payload, "read")) ||
+            (yield* pathsUnreadable(reader, payload, true, "read"))
           )
             return yield* Effect.die(new Error(NOT_READABLE));
+          if (
+            !reads &&
+            ((yield* namesUnreadable(reader, payload, "act")) ||
+              (yield* pathsUnreadable(reader, payload, true, "act")))
+          )
+            return yield* Effect.die(new Error(ONLY_READS));
           // The call runs as this person, for what asks who acted (`embedding/person.ts`).
           const effect = listedFor(
             reader,
@@ -830,9 +859,9 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
               Effect.provideService(RoutedFor, { person: actor.id }),
               Effect.provideService(ReadingAs, reader),
             ),
+            reads ? "read" : "act",
           );
-          const action = rpc._tag;
-          if (VIEWER_RPCS.has(action) || setsOnlyOwnView(action, payload)) return yield* effect;
+          if (reads) return yield* effect;
           if (actor.role !== "member") return yield* Effect.die(new Error(VIEWER_REFUSAL));
           // A member works in threads and workspaces; the server's own setup is its deployment's.
           if (!memberMay(action, payload, headless))

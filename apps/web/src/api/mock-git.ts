@@ -406,6 +406,24 @@ export function registerMockThreadDiff(threadId: ThreadId, files: readonly DiffF
   scenarioDiffs.set(threadId, files);
 }
 
+/** Branches a scenario gave its threads: the name, and what the branch changed against main. */
+const scenarioBranches = new Map<
+  ThreadId,
+  { readonly branch: string; readonly files: readonly DiffFile[] }
+>();
+
+/**
+ * `threadId` works on `branch`, which changed `files` against `origin/main` and has nothing
+ * uncommitted: its Diff names its own branch, as a worker's worktree does.
+ */
+export function seedMockBranch(
+  threadId: ThreadId,
+  branch: string,
+  files: readonly DiffFile[] = [],
+): void {
+  scenarioBranches.set(threadId, { branch, files });
+}
+
 function mockDiffOf(threadId: ThreadId, scope: DiffScope): Diff {
   if (threadId === "t-grpc") return { repo: false };
   const seeded = scope.kind === "turn" ? undefined : scenarioDiffs.get(threadId);
@@ -415,10 +433,16 @@ function mockDiffOf(threadId: ThreadId, scope: DiffScope): Diff {
       threadId === "t-deps" && scope.turnId === MOCK_DEPS_TURN
         ? DEPS_TURN_FILES
         : [...(scenarioTurnFiles.get(`${threadId}:${scope.turnId}`) ?? [])];
-    return { repo: true, branch: "main", files };
+    return { repo: true, branch: scenarioBranches.get(threadId)?.branch ?? "main", files };
   }
   if (threadId === "t-docs") {
     return { repo: true, branch: "docs/readme", base: "origin/main", files: [README_FILE] };
+  }
+  const branched = scenarioBranches.get(threadId);
+  if (branched !== undefined) {
+    return scope.kind === "branch"
+      ? { repo: true, branch: branched.branch, base: "origin/main", files: [...branched.files] }
+      : { repo: true, branch: branched.branch, files: [] };
   }
   if (threadId !== "t-flaky") {
     return {
@@ -473,6 +497,27 @@ const RUNS = "https://github.com/example/api/actions/runs";
 /** PRs a scenario seeds for its threads, as a merged worker's: read before the fixed ones below. */
 const seededPrDetails = new Map<ThreadId, PrDetail>();
 
+/** An open seeded PR's checks: two passed, its end-to-end run still going. */
+const OPEN_PR_RUNS: PrDetail["checkRuns"] = [
+  {
+    name: "lint",
+    status: "passing",
+    link: `${RUNS}/9201/job/1`,
+    runId: "9201",
+    conclusion: "SUCCESS",
+    phase: "completed",
+  },
+  {
+    name: "test",
+    status: "passing",
+    link: `${RUNS}/9201/job/2`,
+    runId: "9201",
+    conclusion: "SUCCESS",
+    phase: "completed",
+  },
+  { name: "e2e", status: "pending", link: `${RUNS}/9201/job/3`, runId: "9201", phase: "running" },
+];
+
 /** A merged PR with `files` for `threadId`, as the realistic scenario's finished workers have. */
 export function seedMergedPr(
   threadId: ThreadId,
@@ -484,10 +529,29 @@ export function seedMergedPr(
     readonly files: readonly DiffFile[];
   },
 ): void {
+  seedMockPr(threadId, { ...pr, state: "MERGED" });
+}
+
+/**
+ * A PR with `files` for `threadId`, open (its checks running) or merged, so the PR a worker's tool
+ * names is the one its body shows.
+ */
+export function seedMockPr(
+  threadId: ThreadId,
+  pr: {
+    readonly number: number;
+    readonly repo: string;
+    readonly title: string;
+    readonly branch: string;
+    readonly files: readonly DiffFile[];
+    readonly state: "OPEN" | "MERGED";
+  },
+): void {
+  const open = pr.state === "OPEN";
   seededPrDetails.set(threadId, {
     headRefOid: `${pr.number}e4c1a9`.padEnd(40, "0"),
     number: pr.number,
-    state: "MERGED",
+    state: pr.state,
     url: `https://github.com/${pr.repo}/pull/${pr.number}`,
     title: pr.title,
     body: "",
@@ -499,11 +563,11 @@ export function seedMergedPr(
     deletions: pr.files.reduce((sum, file) => sum + file.deletions, 0),
     changedFiles: pr.files.length,
     commits: 2,
-    reviewDecision: "APPROVED",
-    checks: "passing",
-    checksPassed: 3,
+    reviewDecision: open ? "" : "APPROVED",
+    checks: open ? "pending" : "passing",
+    checksPassed: open ? 2 : 3,
     checksTotal: 3,
-    checkRuns: [],
+    checkRuns: open ? OPEN_PR_RUNS : [],
     commitList: [],
     conversation: [],
     files: pr.files,

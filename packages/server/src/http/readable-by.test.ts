@@ -13,6 +13,7 @@ import {
   GramRpcs,
   PROFILE_START_PATH,
   type ServerEvent,
+  THREAD_READERS_PATH,
   ThreadId,
   type ThreadFeedEvent,
 } from "@gram/contracts";
@@ -24,7 +25,7 @@ import * as Stream from "effect/Stream";
 import { AppToolRegistry, WRITES_STAY_PRIVATE } from "../app-tools/registry.ts";
 import { SHARED_MACHINE } from "../rpc/handlers/terminal.ts";
 import { ServerConfig } from "../config.ts";
-import { logLinesFor, NOT_READABLE, ReadingAs } from "../embedding/readable-by.ts";
+import { logLinesFor, NOT_READABLE, ONLY_READS, ReadingAs } from "../embedding/readable-by.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { removeDir } from "../git/test-repo.ts";
 import { waitReal } from "../orchestration/test-harness.ts";
@@ -596,6 +597,132 @@ describe("threads readable by one person", () => {
         expect(yield* outcome(moClient["thread.listWaits"]({ threadId: openWorker.id }))).toBe(
           "the call went through",
         );
+      }),
+    );
+
+    it.effect("let their readers read them and never act on them, as the embedder sets", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        const SHARED = ThreadId.make("7c2e3b01-4d5f-4a6b-9c7d-8e9f0a1b2c41");
+        const readersAt = (body: unknown) =>
+          send(port, "POST", THREAD_READERS_PATH, JSON.stringify(body), {
+            host: `127.0.0.1:${port}`,
+            origin: proxy.config.origin,
+            [IDENTITY_HEADER]: proxy.statement(
+              { sub: "platform", role: "service", path: THREAD_READERS_PATH },
+              { header: { typ: SERVICE_TYP } },
+            ),
+          });
+
+        // Readers come only with a person: a thread everyone may read has none.
+        expect((yield* start(port, SHARED, { readers: ["mo"] })).status).toBe(409);
+        const started = yield* start(port, SHARED, {
+          readableBy: "ada",
+          readers: ["vera", "mo", "ada", "mo"],
+        });
+        expect(JSON.parse(started.body)).toEqual({
+          threadId: SHARED,
+          created: true,
+          readableBy: "ada",
+          readers: ["mo", "vera"],
+        });
+        yield* idle(SHARED);
+        const folderOf = (yield* store.getThread(SHARED)).checkout.path;
+        writeFileSync(join(folderOf, "NOTES.md"), "the shared notes");
+
+        const moClient = yield* as(port, mo);
+        const lia = yield* as(port, { sub: "lia", name: "Lia", role: "member" });
+        // A reader sees it as Ada does: listed, its transcript, search and its files.
+        expect(listed(yield* listen(moClient))).toContain(SHARED);
+        expect(JSON.stringify(yield* feed(moClient, SHARED))).toContain("the open plan");
+        expect(yield* found(moClient, "plan")).toContain(SHARED);
+        expect(
+          (yield* moClient["fs.file"]({ threadId: SHARED, path: join(folderOf, "NOTES.md") }))
+            .content,
+        ).toContain("the shared notes");
+        // But never acts on it: no send, interrupt or listing of its folder for a member reader.
+        expect(
+          yield* outcome(
+            moClient["thread.send"]({
+              threadId: SHARED,
+              input: { text: "do this" },
+              clientMessageId: `mo-${randomBytes(4).toString("hex")}`,
+            }),
+          ),
+        ).toContain(ONLY_READS);
+        expect(yield* outcome(moClient["thread.interrupt"]({ threadId: SHARED }))).toContain(
+          ONLY_READS,
+        );
+        expect(yield* outcome(moClient["fs.list"]({ path: folderOf }))).toContain(ONLY_READS);
+        // Someone who isn't a reader still gets nothing of it.
+        expect(listed(yield* listen(lia))).not.toContain(SHARED);
+        expect(yield* outcome(feed(lia, SHARED))).toContain(NOT_READABLE);
+        // Nor does an agent reading as a reader: a reader's agents never read it.
+        expect(
+          yield* outcome(
+            tool(OPEN, "get_thread", { threadId: SHARED }).pipe(
+              Effect.provideService(ReadingAs, { subject: "mo", fromThread: true }),
+            ),
+          ),
+        ).toContain(`unknown thread ${SHARED}`);
+
+        // A worker it spawns has its readers; a change of readers reaches the worker too.
+        const worker = yield* runtimes.create({
+          projectRoot: folder(),
+          checkout: { kind: "main", path: folder() },
+          deferOpen: true,
+          spawnedBy: { threadId: SHARED, feature: "f" },
+        });
+        expect(worker.readers).toEqual(["mo", "vera"]);
+        // A repeat start leaves the readers as they are, and no write changes them.
+        expect(JSON.parse((yield* start(port, SHARED, { readableBy: "ada" })).body)).toMatchObject({
+          created: false,
+          readers: ["mo", "vera"],
+        });
+        yield* store.updateThread(SHARED, (thread) => ({ ...thread, readers: ["lia"] }));
+        expect((yield* store.getThread(SHARED)).readers).toEqual(["mo", "vera"]);
+
+        const changed = yield* readersAt({ threadId: SHARED, readers: ["lia"] });
+        expect(changed.status, changed.body).toBe(200);
+        expect(JSON.parse(changed.body)).toEqual({
+          threadId: SHARED,
+          readers: ["lia"],
+          threadIds: expect.arrayContaining([SHARED, worker.id]),
+        });
+        expect((yield* store.getThread(worker.id)).readers).toEqual(["lia"]);
+        expect(yield* outcome(feed(moClient, SHARED))).toContain(NOT_READABLE);
+        expect(yield* outcome(moClient["thread.listWaits"]({ threadId: worker.id }))).toContain(
+          NOT_READABLE,
+        );
+        expect(JSON.stringify(yield* feed(lia, SHARED))).toContain("the open plan");
+        // Cleared, it is Ada's alone again.
+        expect((yield* readersAt({ threadId: SHARED, readers: [] })).status).toBe(200);
+        expect((yield* store.getThread(SHARED)).readers).toBeUndefined();
+        expect(yield* outcome(feed(lia, SHARED))).toContain(NOT_READABLE);
+
+        // Refused: a thread with no person, one that isn't there, and a person asking.
+        expect((yield* readersAt({ threadId: OPEN, readers: ["mo"] })).status).toBe(409);
+        expect(
+          (yield* readersAt({
+            threadId: ThreadId.make("7c2e3b01-4d5f-4a6b-9c7d-8e9f0a1b2c4f"),
+            readers: ["mo"],
+          })).status,
+        ).toBe(409);
+        const asPerson = yield* send(
+          port,
+          "POST",
+          THREAD_READERS_PATH,
+          JSON.stringify({ threadId: SHARED, readers: ["mo"] }),
+          {
+            host: `127.0.0.1:${port}`,
+            origin: proxy.config.origin,
+            [IDENTITY_HEADER]: proxy.statement(ada),
+          },
+        );
+        expect(asPerson.status).toBe(403);
+        expect((yield* store.getThread(SHARED)).readers).toBeUndefined();
       }),
     );
   });

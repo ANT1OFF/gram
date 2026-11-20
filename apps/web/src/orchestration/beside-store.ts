@@ -3,9 +3,10 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { currentWindow } from "@/desktop/window-identity";
+import { panelOffered, useEmbedShell } from "@/embed/store";
 import { isTouch } from "@/lib/use-phone";
 import { focusPaneComposer } from "@/shell/pane-focus";
-import { fitShell, useLayoutStore } from "@/stores/layout";
+import { fitShell, routePanelRequests, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
 // "Open beside" (⌘\, ⌘-click a worker, a plain click on a worker's link in its orchestrator's chat):
@@ -17,7 +18,14 @@ import { useThreadsStore } from "@/stores/threads";
 // Each window keeps its own, as it keeps its own grid: a reload brings it back once the worker is
 // checked to still be a worker of the orchestrator in view. None of it is synced between machines.
 
-export type BesideTab = "thread" | "terminal" | "changes";
+/**
+ * The worker's own tools, in the pane's one row under its title: its conversation, its changes, its
+ * pull request, its terminal (read only) and its files.
+ */
+/** The worker pane's own element, which a panel request checks the keys against. */
+export const WORKER_PANE_TEST_ID = "beside-dock";
+
+export type BesideTab = "thread" | "changes" | "pr" | "terminal" | "files";
 
 /** How the right panel stood before the Thread tab opened it, which Close puts back. */
 interface PanelBefore {
@@ -31,6 +39,16 @@ interface BesideState {
   readonly worker: ThreadId | undefined;
   /** The last worker opened, which ⌘\ from the orchestrator brings back. */
   readonly last: ThreadId | undefined;
+  /**
+   * The worker last open in the pane: its row in the Workers list is drawn current, apart from the
+   * keyboard's focus. Back keeps it; it clears when the pane closes.
+   */
+  readonly current: ThreadId | undefined;
+  /**
+   * `worker` is a finished worker whose worktree was cleaned up, open as its record: the server has
+   * no thread for it, only what Gram kept, so it is never closed for being unknown.
+   */
+  readonly record: boolean;
   readonly tab: BesideTab;
   /** The right panel shows the Thread tab, rather than another tab with the worker kept in reach. */
   readonly shown: boolean;
@@ -42,14 +60,37 @@ interface BesideState {
   readonly widenedFrom: number | undefined;
   /** `worker` came back from storage: it isn't shown until `checkRestored` keeps or drops it. */
   readonly restored: boolean;
-  dock: (worker: ThreadId) => void;
+  /**
+   * The pane takes the keys once its worker is drawn (on its title), as when it opened from the
+   * pane's own list, its switcher or ↑ ↓: Esc and ↑ ↓ work at once.
+   */
+  readonly takeKeys: boolean;
+  /**
+   * A link in the pane (its transcript's "View changes", a file, its PR) opened one of the worker's
+   * tools while the keys were on it: once drawn, the keys go to that tool's tab if the link went
+   * with the view it was in, so Esc and ↑ ↓ still work. Keys outside the pane are left alone.
+   */
+  readonly toolKeys: boolean;
+  /** Back asked the list for its place: its scroll, and the keys on the current worker's row. */
+  readonly returned: boolean;
+  dock: (
+    worker: ThreadId,
+    options?: {
+      readonly record?: boolean;
+      /** Keep the tool it shows (↑ ↓ and the switcher), where the worker has it. */
+      readonly keepTool?: boolean;
+      readonly takeKeys?: boolean;
+    },
+  ) => void;
   close: () => void;
+  /** Back to the Workers list: the worker leaves the pane, which stays as it stands. */
+  back: () => void;
   setTab: (tab: BesideTab) => void;
   setShown: (shown: boolean) => void;
   setFocused: (focused: boolean) => void;
 }
 
-const TABS: readonly BesideTab[] = ["thread", "terminal", "changes"];
+const TABS: readonly BesideTab[] = ["thread", "changes", "pr", "terminal", "files"];
 
 /** The least a worker's conversation and composer open at, as wide as the read-only dock was. */
 export const BESIDE_WIDTH = 480;
@@ -84,29 +125,58 @@ export const useBesideStore = create<BesideState>()(
     (set) => ({
       worker: undefined,
       last: undefined,
+      current: undefined,
+      record: false,
       tab: "thread",
       shown: false,
       focused: false,
       before: undefined,
       widenedFrom: undefined,
       restored: false,
-      dock: (worker) =>
+      takeKeys: false,
+      toolKeys: false,
+      returned: false,
+      dock: (worker, options) =>
         set((s) => ({
           worker,
           last: worker,
+          current: worker,
+          record: options?.record === true,
           shown: true,
           restored: false,
-          // Another worker opens on its conversation.
-          ...(s.worker === worker ? {} : { tab: "thread" as const, focused: false }),
+          takeKeys: options?.takeKeys === true,
+          toolKeys: false,
+          returned: false,
+          // Another worker opens on its conversation, unless stepped to with the same tool.
+          ...(s.worker === worker
+            ? {}
+            : options?.keepTool === true
+              ? {}
+              : { tab: "thread" as const, focused: false }),
         })),
       close: () =>
         set({
           worker: undefined,
+          current: undefined,
+          record: false,
           shown: false,
           focused: false,
           before: undefined,
           widenedFrom: undefined,
           restored: false,
+          takeKeys: false,
+          toolKeys: false,
+          returned: false,
+        }),
+      back: () =>
+        set({
+          worker: undefined,
+          record: false,
+          shown: false,
+          focused: false,
+          takeKeys: false,
+          toolKeys: false,
+          returned: true,
         }),
       setTab: (tab) => set({ tab }),
       setShown: (shown) => set((s) => (s.shown === shown ? s : { shown, focused: false })),
@@ -127,6 +197,28 @@ export const useBesideStore = create<BesideState>()(
 /** The worker the right panel's Thread tab shows now, if it does. */
 export const besideShown = (s: Pick<BesideState, "worker" | "shown" | "restored">) =>
   s.worker !== undefined && s.shown && !s.restored ? s.worker : undefined;
+
+/** Which of a worker's tools shows what a panel request for it asks. */
+const TOOL_FOR: Partial<Record<string, BesideTab>> = {
+  diff: "changes",
+  pr: "pr",
+  files: "files",
+  terminal: "terminal",
+};
+
+// A link in the worker's own transcript ("View changes", a file, its PR) opens that worker's tool
+// in the pane, where it is, rather than the orchestrator's tab behind it.
+routePanelRequests((threadId, panel) => {
+  const state = useBesideStore.getState();
+  const tool = TOOL_FOR[panel];
+  if (tool === undefined || besideShown(state) !== threadId) return false;
+  // Read before the tool replaces the view the link was in, which takes the keys with it.
+  const held = document.activeElement;
+  const inPane =
+    held instanceof Element && held.closest(`[data-testid="${WORKER_PANE_TEST_ID}"]`) !== null;
+  useBesideStore.setState({ tab: tool, toolKeys: inPane });
+  return true;
+});
 
 /** Shows the right panel on the Thread tab however it fits, noting how it stood if it was hidden. */
 function revealThreadTab() {
@@ -149,6 +241,27 @@ function revealThreadTab() {
 }
 
 /**
+ * Gives the pane's Workers mode the room a worker's conversation needs, as opening one does: at
+ * least `BESIDE_WIDTH`, until the pane closes or goes back to how it stood.
+ */
+export function widenForWorkers(): void {
+  const layout = useLayoutStore.getState();
+  if (layout.panelWidth < BESIDE_WIDTH && useBesideStore.getState().widenedFrom === undefined) {
+    useBesideStore.setState({ widenedFrom: layout.panelWidth });
+    layout.setPanelWidth(BESIDE_WIDTH);
+  }
+}
+
+/** Puts back the width `widenForWorkers` or opening a worker took, unless dragged since. */
+export function narrowFromWorkers(): void {
+  const { widenedFrom } = useBesideStore.getState();
+  if (widenedFrom === undefined) return;
+  useBesideStore.setState({ widenedFrom: undefined });
+  const layout = useLayoutStore.getState();
+  if (layout.panelWidth === BESIDE_WIDTH) layout.setPanelWidth(widenedFrom);
+}
+
+/**
  * Keeps one restored from storage only while its worker still exists and still reports to an
  * orchestrator in view (in a pane, or the route's thread), and drops it otherwise. Call it once the
  * thread list has loaded; one opened in this session is left alone.
@@ -160,12 +273,32 @@ export function checkRestored(route: ThreadId | undefined) {
   const inView =
     orchestrator !== undefined &&
     (orchestrator === route || useLayoutStore.getState().grid.panes.includes(orchestrator));
-  if (!inView) {
+  if (!inView || !besideOffered(orchestrator)) {
     closeBeside();
     return;
   }
   useBesideStore.setState({ restored: false });
   if (shown) revealThreadTab();
+}
+
+/**
+ * Whether a worker can open in the pane beside `orchestrator`: the one check every way in goes
+ * through (a row of the list, ⌘\, a chat link, the switcher, ↑ ↓, a record, a restore). Not on a
+ * touch screen, which shows one thing at a time, and only where the pane is offered on the
+ * orchestrator (an app in front of Gram may offer it on a coding thread alone).
+ */
+export function besideOffered(orchestrator: ThreadId | undefined): boolean {
+  if (isTouch()) return false;
+  const { panel } = useEmbedShell.getState();
+  // Gram's own offers it everywhere.
+  if (panel === "shown" || orchestrator === undefined) return true;
+  const summary = useThreadsStore.getState().byId[orchestrator];
+  if (summary === undefined) return true;
+  return panelOffered(panel, {
+    threadInView: true,
+    threadInRepo: summary.git?.repo ?? summary.thread.checkout.kind === "worktree",
+    orchestrator: summary.thread.role === "orchestrator",
+  });
 }
 
 /** The orchestrator `worker` reports to, while it is a worker. */
@@ -178,20 +311,63 @@ export const orchestratorOf = (worker: ThreadId): ThreadId | undefined =>
  * Thread tab. Nothing is sent to either thread. `open` brings a thread into the focused pane and its
  * route.
  */
-export function keepBeside(worker: ThreadId, open: (threadId: ThreadId) => void): boolean {
-  // A touch screen shows one thing at a time: the worker opens on its own, as any thread does.
-  if (isTouch()) return false;
+export function keepBeside(
+  worker: ThreadId,
+  open: (threadId: ThreadId) => void,
+  options: { readonly keepFocus?: boolean; readonly keepTool?: boolean } = {},
+): boolean {
   const orchestrator = orchestratorOf(worker);
-  if (orchestrator === undefined) return false;
+  // A touch screen shows one thing at a time: the worker opens on its own, as any thread does.
+  if (orchestrator === undefined || !besideOffered(orchestrator)) return false;
   const { grid, openInPane } = useLayoutStore.getState();
   if (grid.panes[grid.focused] === worker && !grid.panes.includes(orchestrator)) {
     openInPane(orchestrator, grid.focused);
   }
   open(orchestrator);
-  useBesideStore.getState().dock(worker);
+  // From the pane's own list the keys go into the pane, for ↑ ↓ and Esc.
+  useBesideStore.getState().dock(worker, {
+    takeKeys: options.keepFocus === true,
+    keepTool: options.keepTool === true,
+  });
   revealThreadTab();
-  focusPaneComposer(useLayoutStore.getState().grid.focused, { always: true });
+  if (options.keepFocus !== true) {
+    focusPaneComposer(useLayoutStore.getState().grid.focused, { always: true });
+  }
   return true;
+}
+
+/**
+ * Opens a finished worker whose worktree was cleaned up in the pane, as its record: read only,
+ * beside the orchestrator already in view. The server has no thread for it, so it is not checked
+ * against one.
+ */
+export function openRecordBeside(
+  worker: ThreadId,
+  options: { readonly keepTool?: boolean } = {},
+): boolean {
+  if (!besideOffered(undefined)) return false;
+  useBesideStore
+    .getState()
+    .dock(worker, { record: true, takeKeys: true, keepTool: options.keepTool === true });
+  revealThreadTab();
+  return true;
+}
+
+/**
+ * Back from a worker to the pane's Workers list, the pane left as it stands: the worker stays
+ * current on the list, which puts back its place and the keys on that worker's row.
+ */
+export function backToWorkers(): void {
+  useBesideStore.getState().back();
+  useLayoutStore.getState().setPanelTab("workers");
+}
+
+/** Closes the pane: the worker in it, if any, and the panel itself, however it was opened. */
+export function closePane(): void {
+  closeBeside();
+  narrowFromWorkers();
+  const layout = useLayoutStore.getState();
+  if (fitShell(layout).panel !== "none") layout.togglePanel();
 }
 
 /**
@@ -200,7 +376,7 @@ export function keepBeside(worker: ThreadId, open: (threadId: ThreadId) => void)
  * which the link then opens as it always has.
  */
 export function openBesideFrom(orchestrator: ThreadId, worker: ThreadId): boolean {
-  if (isTouch() || orchestratorOf(worker) !== orchestrator) return false;
+  if (orchestratorOf(worker) !== orchestrator || !besideOffered(orchestrator)) return false;
   useBesideStore.getState().dock(worker);
   revealThreadTab();
   return true;
@@ -238,7 +414,8 @@ export function besideToggle(focused: ThreadId | undefined): "close" | ThreadId 
   if (isTouch()) return worker !== undefined && shown ? "close" : undefined;
   if (worker !== undefined) return shown ? "close" : worker;
   if (focused === undefined) return undefined;
-  if (orchestratorOf(focused) !== undefined) return focused;
+  const orchestrator = orchestratorOf(focused);
+  if (orchestrator !== undefined) return besideOffered(orchestrator) ? focused : undefined;
   if (last !== undefined && orchestratorOf(last) === focused) return last;
   return undefined;
 }

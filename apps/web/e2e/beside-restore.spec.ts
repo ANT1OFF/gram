@@ -120,7 +120,7 @@ test("one the read-only dock saved on its Log comes back on the worker's convers
   await expect(dock.getByTestId("beside-tab-thread")).toHaveAttribute("aria-selected", "true");
   await expect(dock.getByLabel("Message", { exact: true })).toHaveAttribute(
     "placeholder",
-    "Steer this thread…",
+    /^Steer .+…$/,
   );
 });
 

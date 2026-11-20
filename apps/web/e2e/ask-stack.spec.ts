@@ -130,7 +130,7 @@ test("each ask shows once with what its Allow covers, and 1 allows all three aft
   const overview = page.getByTestId("overview-sidebar");
   await expect(overview.getByTestId("approval-card")).toHaveCount(0);
   await expect(threadRow(page, made.pushers[0]).getByTestId("overview-worker-now")).toHaveText(
-    "asks you",
+    /^Asks you: /,
   );
   await expect(page.getByTestId("ask-stack")).toHaveCount(0);
 
@@ -522,7 +522,7 @@ test("Send answer turns the worker's row, card and chip to answered with the cou
     .getByTestId("feature-card")
     .filter({ has: page.locator(`[data-thread-id="${made.asking}"]`) })
     .or(page.getByTestId("feature-card").filter({ hasText: "Idempotent refund" }));
-  await expect(row.getByTestId("overview-worker-now")).toHaveText("asks you");
+  await expect(row.getByTestId("overview-worker-now")).toHaveText(/^Asks you: /);
   await expect(card.getByTestId("feature-card-now")).toHaveText("asks you");
   const pill = page.getByTestId("overview-needs-you");
   const before = Number(await pill.getAttribute("data-count"));
@@ -547,5 +547,5 @@ test("Send answer turns the worker's row, card and chip to answered with the cou
   await expect(chip.getByTestId("rail-now")).not.toHaveText("asks you");
   // Sent, the worker runs again: nothing goes back to asking.
   await expect(chip).toHaveAttribute("data-tone", "working", { timeout: 15_000 });
-  await expect(page.getByTestId("overview-sidebar")).not.toContainText("asks you");
+  await expect(page.getByTestId("overview-sidebar")).not.toContainText(/asks you/i);
 });

@@ -1,4 +1,3 @@
-import { PreviewCard } from "@base-ui/react/preview-card";
 import {
   type FeatureCardHeld,
   type OrchestratorLedger,
@@ -10,29 +9,12 @@ import {
 } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 import {
-  AlarmClock,
-  Bot,
   ChevronDown,
   ChevronsLeft,
-  CircleArrowUp,
-  Cpu,
-  Flag,
   FoldHorizontal,
-  Gauge,
-  GitBranch,
-  HardDrive,
-  Hourglass,
-  LaptopMinimalCheck,
-  Link2,
   PanelLeft,
   PanelLeftClose,
-  Snail,
-  Snowflake,
-  Tag,
-  Timer,
-  Workflow,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   memo,
@@ -47,34 +29,29 @@ import {
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { keyLabel } from "@/keyboard/registry";
 import { EmbedAccount, EmbedNavigation, EmbedSidebarHeader, EmbedSwitcher } from "@/embed/slots";
 import { useScrollFade } from "@/embed/scroll-fade";
-import { useEmbedShell, useRoomySidebar, useThreadsListed } from "@/embed/store";
+import { useEmbedShell, useRoomySidebar, useThreadsListed, useWorkersWord } from "@/embed/store";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
-import { agoText, formatRelative, formatStamp } from "@/lib/time";
+import { formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
 import { revealVirtualRow, virtualRowOf, VirtualRows } from "@/lib/virtual-rows";
-import { PendingRing, PresenceItem, PresenceList, Swap } from "@/motion";
-import { CARD_SURFACE } from "@/reviews/pr-display";
+import { PresenceItem, PresenceList } from "@/motion";
 import { focusLost } from "@/lib/use-return-focus";
 import { focusSidebar, overviewStops } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { UpdatePill } from "@/updates/update-pill";
 import { useSwitchWorkspace } from "@/shell/workspace-switcher";
-import { activityLine, settledRow, SETTLED_AFTER_MS, threadStatusOf } from "@/sidebar/status";
+import { settledRow, threadStatusOf } from "@/sidebar/status";
 import { fitShell, overviewFoldKey, useLayoutStore, type ShellFit } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useSame } from "@/stores/use-same";
-import { workerPauseHint } from "@/thread/orchestration-model";
-import { useThreadHeadline } from "@/thread/plan-ui";
-import { RowMenuItems, rowMenuKeys, threadDragProps, WorkerRowMenuItems } from "@/thread/row-menu";
+import { RowMenuItems, rowMenuKeys, threadDragProps } from "@/thread/row-menu";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { heldStateText } from "@/usage/limit-format";
 import {
@@ -94,10 +71,7 @@ import { askKeysByThread } from "./ask-model";
 import { NewEntryMenu } from "./new-entry-menu";
 import { OverviewEmptyHint } from "./overview-empty-hint";
 import { useWorkspaceAsks } from "./ask-stack";
-import { PAUSE_WORD, useWorkerPause, WorkerPauseMark, type WorkerPauseState } from "./worker-pause";
-import { keepBeside } from "./beside-store";
-import { PrChip } from "./feature-card";
-import { RAIL_TONES } from "./rail-tones";
+import { besideShown, keepBeside, useBesideStore } from "./beside-store";
 import {
   OverviewDone,
   OverviewFoot,
@@ -111,28 +85,19 @@ import {
 import { ledgerSlotsText } from "./overview-extras-model";
 import {
   foldByKey,
-  nowLineShown,
   orchestratorHover,
   stateWord,
   orchestratorLine,
+  handedOverItems,
   overviewFeatures,
   overviewItems,
   overviewState,
-  plainActivity,
-  plainRunning,
-  rowTone,
-  rowWaiting,
   soloDisplay,
   stateWordShown,
   steplessLine,
-  edgeWords,
-  featureAddsToTitle,
-  waitShort,
-  workLineText,
   workspaceWorkersText,
   type OverviewFeature,
   type OverviewState,
-  type OverviewWorkerRow,
   type ReportNext,
   type RunningWorker,
 } from "./overview-model";
@@ -149,26 +114,12 @@ import {
   SETTLED,
   STOP,
 } from "./overview-section";
-import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
-import { threadHost, type MachineMark } from "@/thread/machine-mark";
-import {
-  MachineMarker,
-  useMachineMark,
-  useThreadHost,
-  useThreadSent,
-} from "@/thread/machine-marker";
+import { threadHost } from "@/thread/machine-mark";
+import { MachineMarker, useMachineMark } from "@/thread/machine-marker";
 import { peek } from "./peek-store";
-import {
-  ANSWERED,
-  edgeBesidePrs,
-  nowBesidePrs,
-  TONE_DOT,
-  workerStarting,
-  type RailTone,
-} from "./rail-model";
-import { showWorkersTab } from "./workers-tab";
+import { focusWorkersPane } from "./workers-tab";
 import { StatusDot } from "./status-dot";
-import { STARTING, STATUS_WORDS } from "./status-words";
+import { STATUS_WORDS } from "./status-words";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
 import { useFeatureCards } from "./use-feature-cards";
 import { NeedsYouEntry } from "./needs-you-entry";
@@ -178,8 +129,19 @@ import { accentStyle, useWorkspaceAccent } from "./workspace-accent";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useOrchestratorWaiting, useWorkerWaitings } from "./use-waiting-on";
-import { besideRuns, watchedRuns, type WaitGlyph, type WaitingOn } from "./waiting-on";
 import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-model";
+import {
+  besideKey,
+  DOT,
+  TALL_DOT,
+  TWO_LINE_ROW,
+  UNREAD_TITLE,
+  useWorkLine,
+  WaitingLine,
+  WORKER_ROW,
+  WORKER_TRAIL,
+  WorkerRow,
+} from "./worker-row";
 
 // The overview sidebar: the Orchestrator layout's left
 // column. What needs you across every workspace, one line per workspace with the one the window is
@@ -261,7 +223,6 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
 }
 
 /** ⌘/Ctrl-click: beside the chat rather than in its own view. */
-export const besideKey = (event: MouseEvent) => event.metaKey || event.ctrlKey;
 
 // Arrows move between the overview's rows; nothing else is taken, and never from a field.
 export const overviewKeys = (event: KeyboardEvent<HTMLElement>) => {
@@ -766,12 +727,18 @@ function WorkspaceRow({
   const { live, working } = useWorkerTally(id, ledger, asking);
   const foldKey = overviewFoldKey(id);
   const userFolded = useLayoutStore((s) => s.workspacesCollapsedNodes.includes(foldKey));
-  // While the right panel shows this workspace's Workers tab, its workers are listed there, not
-  // twice: the sidebar folds them to its line, which says where they are.
+  // While the right pane shows this workspace's workers (its list, or one of them open), they are
+  // listed there, not twice: the sidebar hands them over, folding them to its line, which says
+  // where they are. A worker that needs you stays in sight under it.
+  const besideOn = useBesideStore((s) => besideShown(s) !== undefined);
   const inTab = useLayoutStore(
-    (s) => here && s.panelTab === "workers" && fitShell(s).panel !== "none",
+    (s) => here && (s.panelTab === "workers" || besideOn) && fitShell(s).panel !== "none",
   );
   const folded = userFolded || inTab;
+  // Handed over: the asks stay in sight, folded by the user or not; their fold is theirs again
+  // once the pane closes.
+  const handedOver = inTab;
+  const workersWord = useWorkersWord();
   const fold = (to: boolean) => useLayoutStore.getState().toggleWorkspaceNode(foldKey, to);
   const bodyId = useId();
   // What its orchestrator waits on at rest, unless its pause or park holds everything anyway.
@@ -863,7 +830,7 @@ function WorkspaceRow({
               ) : live > 0 ? (
                 // In the tab, how many and where: what they do is the tab's to say.
                 <span data-testid="overview-workspace-summary" className="truncate">
-                  {workspaceWorkersText({ live, working, inTab })}
+                  {workspaceWorkersText({ live, working, inTab, word: workersWord })}
                 </span>
               ) : orchestratorBusy ? (
                 <span className="truncate">At work</span>
@@ -884,7 +851,7 @@ function WorkspaceRow({
           <Hint
             label={
               inTab
-                ? `${name}'s workers are in the Workers tab`
+                ? `${name}'s ${workersWord.toLowerCase()} are in the pane: go there`
                 : folded
                   ? `Show ${name}'s workers`
                   : `Hide ${name}'s workers`
@@ -898,13 +865,13 @@ function WorkspaceRow({
                 aria-controls={bodyId}
                 aria-label={
                   inTab
-                    ? `Go to ${name}'s workers in the Workers tab`
+                    ? `Go to ${name}'s ${workersWord.toLowerCase()} in the pane`
                     : folded
                       ? `Show ${name}'s workers`
                       : `Hide ${name}'s workers`
                 }
                 // In the tab: the chevron leads there, with the keys on its rows.
-                onClick={() => (inTab ? showWorkersTab() : fold(!folded))}
+                onClick={() => (inTab ? focusWorkersPane() : fold(!folded))}
                 className="grid size-7 shrink-0 cursor-default place-items-center rounded-(--radius-sm) text-muted-foreground [:where(&)_svg]:text-sidebar-icon outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring"
               />
             }
@@ -924,21 +891,38 @@ function WorkspaceRow({
       </ContextMenu>
       <div
         id={bodyId}
-        hidden={folded}
+        hidden={folded && !handedOver}
         className={cn("flex flex-col", accent !== undefined && "gram-accent-rail")}
         style={accentStyle(accent)}
       >
         {/* The current one's are there folded too, for ⌘J to open it on its first worker. */}
-        {(here || !folded) && <WorkspaceBody workspaceId={id} empty={empty} />}
+        {(here || !folded) && (
+          <WorkspaceBody workspaceId={id} empty={empty} handedOver={handedOver} />
+        )}
       </div>
     </div>
   );
 }
 
 /** An open workspace's features and their live workers, from its cards. */
-function WorkspaceBody({ workspaceId, empty }: { workspaceId: WorkspaceId; empty: boolean }) {
+function WorkspaceBody({
+  workspaceId,
+  empty,
+  handedOver,
+}: {
+  workspaceId: WorkspaceId;
+  empty: boolean;
+  handedOver: boolean;
+}) {
   const features = useOverviewFeatures(workspaceId);
-  return <WorkspaceFeatures workspaceId={workspaceId} features={features} empty={empty} />;
+  return (
+    <WorkspaceFeatures
+      workspaceId={workspaceId}
+      features={features}
+      empty={empty}
+      handedOver={handedOver}
+    />
+  );
 }
 
 /**
@@ -949,12 +933,25 @@ function WorkspaceFeatures({
   workspaceId,
   features,
   empty,
+  handedOver = false,
 }: {
   workspaceId: WorkspaceId;
   features: readonly OverviewFeature[];
   /** Its line already says "idle": nothing more under it. */
   empty: boolean;
+  /**
+   * Its workers are in the right pane: only those that need you stay here, under its line, each
+   * the same row, drawn current while it is the one open in the pane.
+   */
+  handedOver?: boolean;
 }) {
+  const paneCurrent = useBesideStore((s) => (besideShown(s) === undefined ? undefined : s.current));
+  const openThread = useOpenThread();
+  // Handed over, a kept row opens its worker in the pane, as the pane's own rows do; ⌘ still opens
+  // it in the main view.
+  const openInPane = (threadId: ThreadId, event: Pick<MouseEvent, "metaKey" | "ctrlKey">) => {
+    if (besideKey(event) || !keepBeside(threadId, openThread)) openThread(threadId);
+  };
   // A snoozed worker is out of the list until its snooze ends; the Board still shows it.
   const snoozed = useThreadsStore(
     useShallow((s) =>
@@ -965,12 +962,13 @@ function WorkspaceFeatures({
   );
   const items = useMemo(() => {
     const away = new Set<string>(snoozed);
-    return overviewItems(features).filter(
+    const shown = overviewItems(features).filter(
       (item) => item.kind !== "worker" || !away.has(item.row.threadId),
     );
-  }, [features, snoozed]);
+    return handedOver ? handedOverItems(shown) : shown;
+  }, [features, snoozed, handedOver]);
   if (items.length === 0) {
-    if (empty) return null;
+    if (empty || handedOver) return null;
     return (
       <OrchestratorAtWork workspaceId={workspaceId} className="pb-1 pl-6">
         No workers now.
@@ -987,7 +985,13 @@ function WorkspaceFeatures({
         {items.map((item) =>
           item.kind === "worker" ? (
             <PresenceItem key={item.row.threadId}>
-              <WorkerRow row={item.row} feature={item.feature} updatedAt={item.updatedAt} />
+              <WorkerRow
+                row={item.row}
+                feature={item.feature}
+                updatedAt={item.updatedAt}
+                {...(paneCurrent === item.row.threadId ? { current: true } : {})}
+                {...(handedOver ? { onOpen: (event) => openInPane(item.row.threadId, event) } : {})}
+              />
             </PresenceItem>
           ) : (
             <PresenceItem key={item.held.id}>
@@ -997,574 +1001,6 @@ function WorkspaceFeatures({
         )}
       </PresenceList>
     </div>
-  );
-}
-
-/**
- * A live worker: a click opens it, where any ask it has shows, ⌥-click peeks and ⌘/Ctrl-click keeps
- * it beside; a right-click (or Shift+F10) opens its menu, and it drags onto a grid pane. Its title
- * line ends in its agent's mark, always; a second line, when it has something to say, holds its PR
- * chips, its words (an ask, a failure, a wait's reason, real activity) and how long ago it started,
- * with its dot a bar beside both. Its name and hover card keep the rest. In the compact rail's flyout it
- * has no hover card of its own (`card={false}`), the flyout being one.
- */
-export function WorkerRow({
-  row,
-  feature,
-  updatedAt,
-  card = true,
-}: {
-  row: OverviewWorkerRow;
-  feature: string;
-  updatedAt: number;
-  card?: boolean;
-}) {
-  const openThread = useOpenThread();
-  // Only this row's answer: a move to another thread re-renders the two rows it changes, not all.
-  const viewed = useParams({
-    strict: false,
-    select: (params) => params.threadId === row.threadId,
-  });
-  const lastActivity = useThreadsStore((s) => s.byId[row.threadId]?.thread.lastActivityAt);
-  const agent = useThreadsStore((s) => s.byId[row.threadId]?.thread.model?.agent);
-  const status = useThreadsStore((s) => s.byId[row.threadId]?.status);
-  const unread = useThreadsStore((s) => s.byId[row.threadId]?.thread.unread === true);
-  const busy = useThreadsStore((s) => busyThread(s, row.threadId));
-  const pause = useWorkerPause(row.threadId, status, row.held);
-  const asking = row.askKey !== undefined;
-  // One tone for its dot, its words and its count on the orchestrator's line, as the Board has it.
-  const tone = rowTone(row, { status, working: busy });
-  const dot = TONE_DOT[tone];
-  const working = tone === "working";
-  const waiting = rowWaiting(row, tone);
-  // The runs it watches as one chip beside its PR chips, and its line's wait the next it has.
-  const runs = watchedRuns(waiting);
-  const lineWait = besideRuns(waiting);
-  // Ages to the minute.
-  const now = useNow(true, undefined, 60_000);
-  const settled =
-    tone === "idle" &&
-    pause === undefined &&
-    lastActivity !== undefined &&
-    now - lastActivity >= SETTLED_AFTER_MS;
-  // Spawned and not begun, or its session opening: nothing has run yet, so neither "Working" nor
-  // "Stopped" is true. The rule ⌘J's rows, the Workers panel and the worker's header read too.
-  const starting =
-    tone === "working" && workerStarting({ asking, state: row.state, failed: row.failed, status });
-  // At work, its dot says it all: no words at its edge, unless an answer just sent; its plan's step
-  // and what it runs are on its hover card.
-  const routine = working && !starting && !asking && !row.failed && row.now !== ANSWERED;
-  // The other machine it runs on, if any: named at its edge unless the edge has words of its own,
-  // when the glyph alone stands and the name is on its hover card.
-  const hostId = useThreadHost(row.threadId);
-  const sent = useThreadSent(row.threadId);
-  const machine = useMachineMark(hostId, sent);
-  // What its edge says beyond its dot: "Starting…", an ask, a failure, a wait's reason, real
-  // activity. A tone's own word ("Idle") gives way to the machine's name.
-  const edgeSays = starting || (!routine && (waiting !== undefined || nowLineShown(row)));
-  const prChips = useWorkerPrChips(row.threadId, row.prs);
-  const startedAt = useThreadsStore((s) => s.byId[row.threadId]?.thread.createdAt);
-  // A second line under its title for what it has done and what it waits on: its PR chips (a run
-  // of merged ones folded into "N merged"), then its words, then how long ago it started. With
-  // neither chips nor words, the row stays one line and its dot says the rest.
-  const twoLines = edgeSays || prChips.length > 0;
-  const facts = [
-    row.title,
-    ...(unread ? ["unread"] : []),
-    ...(pause === undefined ? [] : [PAUSE_WORD[pause.state]]),
-    starting ? STARTING : (waiting?.label ?? row.now),
-    ...(machine === undefined ? [] : [machine.words]),
-    ...(agent === undefined ? [] : [agentLabel(agent)]),
-    ...(startedAt === undefined ? [] : [`started ${agoText(startedAt, now)}`]),
-    ...(lastActivity === undefined ? [] : [`last active ${formatStamp(lastActivity)}`]),
-  ];
-  const preview = usePickedPreview();
-  const onClick = (event: MouseEvent<HTMLElement>) => {
-    preview.picked();
-    if (besideKey(event)) keepBeside(row.threadId, openThread);
-    else if (event.altKey) {
-      peek({ kind: "worker", threadId: row.threadId, title: row.title }, event.currentTarget);
-    } else openThread(row.threadId);
-  };
-  const props = {
-    type: "button" as const,
-    [STOP]: "",
-    "data-testid": "overview-worker",
-    "data-thread-id": row.threadId,
-    "data-asking": asking || undefined,
-    "data-unread": unread || undefined,
-    "aria-current": viewed || undefined,
-    "aria-label": facts.join(", "),
-    // The compact rail's flyout has no card to say them.
-    title: card
-      ? undefined
-      : `${facts.join(" · ")}${waiting === undefined ? "" : `\n${waiting.hint}`}`,
-    "aria-keyshortcuts": "Shift+F10",
-    onClick,
-    onKeyDown: rowMenuKeys,
-    ...threadDragProps(row.threadId),
-    // Its title on one line, cut at its end with the whole of it on hover, its marks at the line's
-    // right edge; with something to say, a second line under it and its dot a bar beside both.
-    className: cn(ROW, WORKER_ROW, twoLines && TWO_LINE_ROW, CURRENT_ROW, settled && SETTLED),
-  };
-  // The PRs its chips show, which its words then leave out: each said once.
-  const shownPrs = shownPrNumbers(prChips, true);
-  const body = (
-    <>
-      <StatusDot
-        state={tone}
-        data-testid="overview-worker-dot"
-        data-tone={tone}
-        data-tall={twoLines || undefined}
-        className={twoLines ? TALL_DOT : DOT}
-      />
-      {/* Its title, one line cut at its end; the hover card, or the flyout's tooltip, says the
-          whole. */}
-      <span
-        data-testid="overview-worker-title"
-        className={cn(ROW_TITLE, "text-foreground", unread && UNREAD_TITLE)}
-      >
-        {row.title}
-      </span>
-      {/* At the title's edge: the machine it runs on, a pause, and its agent's mark. */}
-      <span className={cn(ROW_TRAIL, WORKER_TRAIL)}>
-        {/* Its hover is the row's own: its card, or the flyout's title, says the machine whole. */}
-        <MachineMarker
-          hostId={hostId}
-          sent={sent}
-          show={edgeSays ? "glyph" : "name"}
-          hover="none"
-          testId="overview-worker-machine"
-        />
-        {pause !== undefined && <WorkerPauseMark pause={pause} />}
-        {agent !== undefined && (
-          <span data-testid="overview-worker-agent" className="flex shrink-0">
-            <AgentIcon agent={agent} className="size-icon-row" />
-          </span>
-        )}
-      </span>
-      {twoLines && (
-        <span data-testid="overview-worker-line" className={ROW_STATUS}>
-          {/* Its chips, then its words while at least a few of them fit beside the chips: short of
-              that they wrap out of sight to the hover card, rather than show a cut stub. */}
-          <span className="flex h-lh min-w-0 flex-1 flex-wrap content-start items-center gap-x-1.5 overflow-hidden">
-            {/* The chips' room; the real ones, each a button, sit over it outside the row's own. */}
-            <WorkerPrChips
-              threadId={row.threadId}
-              cardPrs={row.prs}
-              chips={prChips}
-              runs={runs}
-              dense
-              ghost
-              foldMerged
-              className="h-lh shrink-0 items-center"
-            />
-            {edgeSays && (
-              <span className="flex h-lh min-w-16 flex-1 items-center">
-                {starting ? (
-                  <span
-                    data-testid="overview-worker-starting"
-                    className="min-w-0 truncate text-meta text-muted-foreground"
-                  >
-                    {STARTING}
-                  </span>
-                ) : waiting !== undefined ? (
-                  lineWait !== undefined && (
-                    <WaitingLine
-                      waiting={lineWait}
-                      testId="overview-worker-waiting"
-                      prs={shownPrs}
-                    />
-                  )
-                ) : (
-                  <WorkerNow row={row} asking={asking} tone={tone} prs={shownPrs} />
-                )}
-              </span>
-            )}
-          </span>
-          {startedAt !== undefined && (
-            <span
-              data-testid="overview-worker-age"
-              className="ml-auto shrink-0 pl-1 text-muted-foreground tabular-nums"
-            >
-              {formatRelative(startedAt, now)}
-            </span>
-          )}
-        </span>
-      )}
-    </>
-  );
-  // The PR chips sit over their room on the second line, outside the row's button: each is a
-  // button of its own.
-  const chips = twoLines && (prChips.length > 0 || runs.length > 0) && (
-    <WorkerPrChips
-      threadId={row.threadId}
-      cardPrs={row.prs}
-      chips={prChips}
-      runs={runs}
-      card={card}
-      dense
-      foldMerged
-      className={WORKER_CHIPS}
-    />
-  );
-  if (!card) {
-    return (
-      <RowMenu menu={<WorkerRowMenuItems threadId={row.threadId} />}>
-        <button {...props}>{body}</button>
-        {chips}
-      </RowMenu>
-    );
-  }
-  return (
-    <RowMenu menu={<WorkerRowMenuItems threadId={row.threadId} />}>
-      <PreviewCard.Root open={preview.open} onOpenChange={preview.onOpenChange}>
-        <PreviewCard.Trigger
-          delay={250}
-          render={<button {...props} />}
-          onMouseLeave={preview.onMouseLeave}
-          onBlur={preview.onBlur}
-        >
-          {body}
-        </PreviewCard.Trigger>
-        <PreviewCard.Portal>
-          <PreviewCard.Positioner
-            side="right"
-            align="start"
-            sideOffset={8}
-            className="isolate z-50"
-          >
-            <PreviewCard.Popup
-              data-testid="overview-worker-card"
-              data-surface="overlay"
-              className={cn(CARD_SURFACE, "flex w-72 flex-col gap-1.5 p-3 text-reading")}
-            >
-              <WorkerCard
-                row={row}
-                feature={feature}
-                agent={agent}
-                lastActivity={lastActivity ?? updatedAt}
-                dot={dot}
-                tone={tone}
-                asking={asking}
-                pause={pause}
-                waiting={waiting}
-                machine={machine}
-              />
-            </PreviewCard.Popup>
-          </PreviewCard.Positioner>
-        </PreviewCard.Portal>
-      </PreviewCard.Root>
-      {chips}
-    </RowMenu>
-  );
-}
-
-/**
- * A row's hover card, closed by the click or Enter that opens the row: it would otherwise stay over
- * the thread just opened, under a pointer that hasn't moved. It stays closed until a fresh hover,
- * after the pointer has left the row, or a fresh focus, after the focus has left it; a focus still
- * opens it from the keyboard.
- */
-function usePickedPreview() {
-  const [open, setOpen] = useState(false);
-  const hoverQuiet = useRef(false);
-  const focusQuiet = useRef(false);
-  return {
-    open,
-    picked: () => {
-      hoverQuiet.current = true;
-      focusQuiet.current = true;
-      setOpen(false);
-    },
-    onOpenChange: (next: boolean, details: PreviewCard.Root.ChangeEventDetails) => {
-      if (next && details.reason === "trigger-hover" && hoverQuiet.current) return;
-      if (next && details.reason === "trigger-focus" && focusQuiet.current) return;
-      setOpen(next);
-    },
-    onMouseLeave: () => {
-      hoverQuiet.current = false;
-    },
-    onBlur: () => {
-      focusQuiet.current = false;
-    },
-  };
-}
-
-const NO_PRS: readonly { readonly number: number }[] = [];
-
-/** A title marked unread (Mark unread, or an agent's `set_unread`): heavier, until it is opened. */
-const UNREAD_TITLE = "font-semibold text-foreground";
-
-/** A worker's line while its agent session opens, before its first turn runs. */
-
-/** A row's 8 px dot, centred in its mark column on the row's one line. */
-const DOT = "size-2 justify-self-center";
-
-/**
- * A two-line worker's dot: a 4 px bar beside both its lines, in its state's colour, so the two read
- * as one row with no connector between them.
- */
-const TALL_DOT = "row-span-2 h-auto min-h-6 w-1 self-stretch justify-self-center rounded-full";
-
-/** A worker row keeps its marks in a third column on the phone too, its second line under them. */
-const WORKER_ROW = "in-data-phone-drawer:grid-cols-[0.625rem_minmax(0,1fr)_auto]";
-
-/** A two-line worker row: room above and below its lines. */
-const TWO_LINE_ROW = "py-1";
-
-/** Its marks at the title line's edge, never a line of their own on the phone. */
-const WORKER_TRAIL = "in-data-phone-drawer:col-start-3 in-data-phone-drawer:justify-end";
-
-/**
- * Its real PR chips, over their room at the start of the second line: the row's inset, its mark
- * column and the gap after it, and the row's bottom inset. Only the chips take the pointer: the
- * line's empty room around them stays the row's.
- */
-const WORKER_CHIPS =
-  "pointer-events-none absolute bottom-1 left-6 flex h-lh items-center text-meta in-data-phone-drawer:left-7.5 *:pointer-events-auto";
-
-/**
- * A worker's card now line under its title, when it says more than the row's dot; else its tone in
- * a word, so every live row keeps the same status line under its title.
- */
-function WorkerNow({
-  row,
-  asking,
-  tone,
-  prs = NO_PRS,
-}: {
-  row: OverviewWorkerRow;
-  asking: boolean;
-  tone: RailTone;
-  /** PRs its chips show beside it, left out of its words. */
-  prs?: readonly { readonly number: number }[];
-}) {
-  if (!nowLineShown(row)) {
-    return (
-      <span
-        data-testid="overview-worker-state"
-        className="min-w-0 truncate text-meta text-muted-foreground"
-      >
-        {RAIL_TONES[tone].label}
-      </span>
-    );
-  }
-  return (
-    <Swap
-      swapKey={row.now}
-      className={cn(
-        "min-w-0 truncate text-meta",
-        asking ? "text-foreground" : row.failed ? "text-destructive" : "text-muted-foreground",
-      )}
-    >
-      <span data-testid="overview-worker-now" className="truncate">
-        {nowBesidePrs(edgeWords(row.now), prs)}
-      </span>
-    </Swap>
-  );
-}
-
-/** A worker's step on its hover card in full, its plan's step count included. */
-function WorkerCardStep({ row }: { row: OverviewWorkerRow }) {
-  const step = useWorkLine(row.threadId, row.report);
-  if (step === undefined) return null;
-  return (
-    <p data-testid="overview-worker-card-step" className="text-meta text-muted-foreground">
-      {step}
-    </p>
-  );
-}
-
-/**
- * A worker on hover: its feature, agent, title, station and now line, its whole step while it
- * works, first PR and last activity.
- */
-function WorkerCard({
-  row,
-  feature,
-  agent,
-  lastActivity,
-  dot,
-  tone,
-  asking,
-  pause,
-  waiting,
-  machine,
-}: {
-  row: OverviewWorkerRow;
-  feature: string;
-  agent: string | undefined;
-  lastActivity: number;
-  dot: string;
-  tone: RailTone;
-  asking: boolean;
-  pause: WorkerPauseState | undefined;
-  waiting: WaitingOn | undefined;
-  /** The other machine it runs on; absent on this one. */
-  machine: MachineMark | undefined;
-}) {
-  const time = formatStamp(lastActivity);
-  // Its agent, then its feature where the title doesn't already say it; wrapped, never cut.
-  const context = [
-    ...(agent === undefined ? [] : [agentLabel(agent)]),
-    ...(featureAddsToTitle(feature, row.title) ? [feature] : []),
-  ];
-  return (
-    <>
-      {context.length > 0 && (
-        <p data-testid="overview-worker-card-feature" className="text-meta text-muted-foreground">
-          {context.join(" · ")}
-        </p>
-      )}
-      <p data-testid="overview-worker-card-title" className="font-medium">
-        {row.title}
-      </p>
-      {/* Its station and now line, wrapped rather than cut: a wait in its short words, as the
-          list under it says each one whole. */}
-      <p className="flex min-w-0 items-start gap-1.5 text-meta">
-        <span className="flex h-lh shrink-0 items-center">
-          <span
-            aria-hidden
-            title={RAIL_TONES[tone].label}
-            className={cn("size-1.5 rounded-full", dot)}
-          />
-        </span>
-        <span data-testid="overview-worker-card-station" className="shrink-0 text-foreground/80">
-          {row.stationLabel}
-        </span>
-        <span
-          data-testid="overview-worker-card-now"
-          className={cn(
-            "min-w-0 flex-1 break-words",
-            asking ? "text-foreground" : row.failed ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {waiting === undefined ? row.now : waitShort(waiting.label)}
-        </span>
-        <time
-          data-testid="overview-worker-card-time"
-          dateTime={new Date(lastActivity).toISOString()}
-          title={`Last activity ${time}`}
-          className="shrink-0 text-muted-foreground tabular-nums"
-        >
-          {time}
-        </time>
-      </p>
-      {tone === "working" && !asking && !row.failed && <WorkerCardStep row={row} />}
-      {waiting !== undefined && <WaitingList waiting={waiting} />}
-      {pause !== undefined && (
-        <p
-          data-testid="overview-worker-card-paused"
-          className="flex items-center gap-1.5 text-meta text-muted-foreground"
-        >
-          <WorkerPauseMark pause={pause} />
-          {workerPauseHint(pause.state, pause.at)}
-        </p>
-      )}
-      {row.pr !== undefined && (
-        <span className="flex">
-          <PrChip pr={row.pr} threadId={row.threadId} />
-        </span>
-      )}
-      {/* Where it runs, whole: the machine, how it got in, its state, and why when it is offline. */}
-      {machine !== undefined && (
-        <p
-          data-testid="overview-worker-card-machine"
-          className={cn(
-            "text-meta whitespace-pre-line",
-            machine.state === undefined ? "text-muted-foreground" : "text-foreground/80",
-          )}
-        >
-          {machine.hint}
-        </p>
-      )}
-      <p className="mt-0.5 flex gap-3 border-t border-border pt-1.5 text-meta text-muted-foreground">
-        <span>Click · open</span>
-        <span>{keyLabel("⌥-click")} · peek</span>
-        <span>{keyLabel("⌘-click")} · beside</span>
-      </p>
-    </>
-  );
-}
-
-/**
- * A wait's glyph at a row's edge, in the PR vocabulary's marks where it has one; a timed wake's the
- * thread's wake chip's alarm clock, and a condition's what it waits on.
- */
-const WAIT_GLYPH: Readonly<Record<WaitGlyph, LucideIcon>> = {
-  ci: PendingRing,
-  localCheck: LaptopMinimalCheck,
-  review: Bot,
-  merge: Timer,
-  dependency: Link2,
-  limit: Gauge,
-  run: Workflow,
-  timer: AlarmClock,
-  branch: GitBranch,
-  thread: Flag,
-  ciQueued: Snail,
-  load: Cpu,
-  disk: HardDrive,
-  freeze: Snowflake,
-  release: Tag,
-  version: CircleArrowUp,
-  condition: Hourglass,
-};
-
-/**
- * What a worker or an orchestrator at rest waits on, at its row's edge, as calm as an idle row
- * beside the row's hollow dot that already says it waits: the wait's glyph and its key token, the
- * PR or the time ("#397", "08:10"), or its glyph alone for a condition ("a release is published"),
- * where it has them (`WaitEdge`), else its short words without "Waiting" (`waitShort`). Its label
- * and its whole words are its hover; the whole list is on the row's card.
- */
-function WaitingLine({
-  waiting,
-  testId,
-  prs = NO_PRS,
-}: {
-  waiting: WaitingOn;
-  testId: string;
-  /** PRs its row's chips show, left out of its words. */
-  prs?: readonly { readonly number: number }[];
-}) {
-  // A PR its row's chip names already isn't the edge's token as well: its words say the wait.
-  const edge = edgeBesidePrs(waiting.edge, prs);
-  const Glyph = edge === undefined ? undefined : WAIT_GLYPH[edge.glyph];
-  const detail = waiting.reasons[0]?.detail;
-  return (
-    <Swap swapKey={waiting.label} className="min-w-0 truncate text-meta text-muted-foreground">
-      <span
-        data-testid={testId}
-        data-kind={waiting.kind}
-        data-glyph={edge?.glyph}
-        title={detail === undefined ? waiting.label : `${waiting.label}\n${detail}`}
-        className="flex min-w-0 items-center gap-1"
-      >
-        {Glyph !== undefined && <Glyph aria-hidden className="size-icon-chip shrink-0" />}
-        <span className={cn("truncate", edge !== undefined && "tabular-nums")}>
-          {edge === undefined ? nowBesidePrs(waitShort(waiting.label), prs) : edge.token}
-        </span>
-      </span>
-    </Swap>
-  );
-}
-
-/** Every wait of a worker on its hover card, the one its row names first. */
-function WaitingList({ waiting }: { waiting: WaitingOn }) {
-  return (
-    <ul
-      data-testid="overview-worker-card-waits"
-      className="flex flex-col gap-0.5 text-meta text-muted-foreground"
-    >
-      {waiting.reasons.map((reason, i) => (
-        <li key={i} data-kind={reason.kind} className="flex min-w-0 gap-1.5">
-          <Hourglass aria-hidden className="mt-0.75 size-icon-chip shrink-0" />
-          <span className="min-w-0">{reason.detail}</span>
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -1722,12 +1158,6 @@ function FoldedThreads({
 
 type ThreadsState = ReturnType<typeof useThreadsStore.getState>;
 
-/** Whether a thread is at work now, as its tree row would show it. */
-const busyThread = (s: ThreadsState, threadId: ThreadId): boolean => {
-  const summary = s.byId[threadId];
-  return summary !== undefined && threadWorking(summary, s.statusDetail[threadId]);
-};
-
 /** The workspace's orchestrator (`orchestratorOf`), while it is at work itself. */
 const workingOrchestrator = (
   s: ThreadsState,
@@ -1738,33 +1168,6 @@ const workingOrchestrator = (
     threadWorking(orchestrator, s.statusDetail[orchestrator.thread.id])
     ? orchestrator.thread.id
     : undefined;
-};
-
-/**
- * What a thread at work is doing, in plain words (`plainActivity`): what kind of thing it runs,
- * never the command or a path. With nothing of its own running, the work left running under it.
- */
-const workLineOf = (s: ThreadsState, threadId: ThreadId): string | undefined => {
-  const summary = s.byId[threadId];
-  if (summary === undefined) return undefined;
-  const activity = activityLine(summary.status, s.statusDetail[threadId], summary.activity);
-  const display = threadStatusOf(summary, s.statusDetail[threadId]);
-  if (!display.working && display.running === undefined) return undefined;
-  if (activity !== undefined) return plainActivity(activity);
-  // The glyph's title lists each command under the work it counts; its label alone stays plain.
-  return display.running === undefined ? display.title : plainRunning(display.label);
-};
-
-/**
- * What a thread at work is doing, as its row says it: its plan's step and what it runs, else what
- * it runs. An orchestrator has no plan headline, so its line is always what it runs. A needs-you
- * headline is left to the ask stack and the row's glyph.
- */
-const useWorkLine = (threadId: ThreadId, report?: ReportNext | undefined): string | undefined => {
-  const { headline } = useThreadHeadline(threadId, plainActivity);
-  const running = useThreadsStore((s) => workLineOf(s, threadId));
-  const planAt = useThreadsStore((s) => s.byId[threadId]?.plan?.updatedAt);
-  return workLineText(headline, planAt, report, running);
 };
 
 function WorkLine({ threadId }: { threadId: ThreadId }) {

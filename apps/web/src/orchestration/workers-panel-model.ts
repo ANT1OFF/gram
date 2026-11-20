@@ -1,5 +1,7 @@
 import {
   effectiveCheckout,
+  type FeatureStation,
+  STATION_LABELS,
   type HostId,
   type SentTo,
   isLocalHost,
@@ -12,6 +14,7 @@ import type { OnDemandChoice } from "@/api/on-demand";
 
 import { formatRelative, formatStamp } from "@/lib/time";
 
+import { ASKS_YOU, type OverviewWorkerRow } from "./overview-model";
 import type { RailTone } from "./rail-model";
 import { glyphState, STARTING, STATUS_WORDS, type DotState } from "./status-words";
 import { searchRows, type WorkerRow, type WorkersByTab } from "./workers-model";
@@ -86,6 +89,10 @@ export interface PanelRow {
   readonly sent?: SentTo | undefined;
   /** Where its orchestrator put it, when that is a machine for workers, and why. */
   readonly placement?: WorkerPlacement | undefined;
+  /** When it last moved, as epoch ms: its finish, else its thread's last activity. */
+  readonly atMs?: number | undefined;
+  /** The ⌘J row it is drawn from, which the shared worker row reads when no card has it. */
+  readonly source: WorkerRow;
 }
 
 export interface StatusGroup extends StatusGroupSpec {
@@ -143,6 +150,8 @@ export const panelRow = (
     // A sent worker's mark names where it went; its placement would say it twice.
     placement:
       summary?.thread.sentTo === undefined ? summary?.thread.spawnedBy?.placement : undefined,
+    atMs: at,
+    source: row,
   };
 };
 
@@ -212,3 +221,44 @@ export const filterLabel = (shown: ReadonlySet<StatusGroupId>): string =>
  */
 export const elsewhereLine = (elsewhere: number, here: number): string =>
   `${elsewhere}${here > 0 ? " more" : ""} ${elsewhere === 1 ? "needs" : "need"} you elsewhere`;
+
+/**
+ * A panel row as the shared worker row reads it (`OverviewWorkerRow`), for a worker no feature card
+ * has (a finished one, or one its card doesn't list yet): the same facts from the ⌘J row it came
+ * from. `askKey` is the ask of its in the stack.
+ */
+export const overviewRowOf = (row: PanelRow, askKey: string | undefined): OverviewWorkerRow => {
+  const worker = row.source;
+  const done = worker.tab === "done";
+  const station: FeatureStation = done ? "merged" : "working";
+  return {
+    threadId: worker.threadId,
+    title: worker.title,
+    state: worker.state,
+    now: askKey !== undefined ? ASKS_YOU : done ? row.line : worker.now,
+    station,
+    stationLabel: STATION_LABELS[station],
+    failed: worker.tone === "error",
+    askKey,
+    pr: undefined,
+    prs: [],
+    held: worker.held,
+    activity: worker.activity,
+    tone: done ? "merged" : worker.tone,
+    waiting: askKey === undefined && !done ? worker.waiting : undefined,
+  };
+};
+
+/** Every row of `groups` in their order, the one ↑ ↓ and the switcher step through. */
+export const rowsInOrder = (groups: readonly StatusGroup[]): readonly PanelRow[] =>
+  groups.flatMap((group) => group.rows);
+
+/** The row before or after `threadId` in `order`, if any. */
+export const neighbour = (
+  order: readonly PanelRow[],
+  threadId: ThreadId,
+  step: -1 | 1,
+): PanelRow | undefined => {
+  const at = order.findIndex((row) => row.threadId === threadId);
+  return at === -1 ? undefined : order[at + step];
+};

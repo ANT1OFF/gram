@@ -6,7 +6,7 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { signedInPerson } from "../embedding/person.ts";
-import { anyPrivate, readableByOf, readerMay } from "../embedding/readable-by.ts";
+import { anyPrivate, privacyOf, privacyOfThread, readerMay } from "../embedding/readable-by.ts";
 import { BacklogGauge } from "./backlog.ts";
 import { ClientBuffer, serverEventKey, serverEventOrder } from "./client-buffer.ts";
 
@@ -191,16 +191,14 @@ export const readableEventFor = (
   const reader = { subject: signedInPerson(person) };
   if (event.type === "threads.snapshot") {
     const threads = event.threads.filter((summary) =>
-      readerMay(reader, summary.thread.readableBy ?? readableByOf(summary.thread.id)),
+      readerMay(reader, privacyOfThread(summary.thread)),
     );
     return threads.length === event.threads.length ? event : { ...event, threads };
   }
   if (event.type === "thread.upsert")
-    return readerMay(reader, event.thread.readableBy ?? readableByOf(event.thread.id))
-      ? event
-      : undefined;
+    return readerMay(reader, privacyOfThread(event.thread)) ? event : undefined;
   const threadId = (event as { readonly threadId?: unknown }).threadId;
-  if (typeof threadId === "string" && !readerMay(reader, readableByOf(threadId as ThreadId)))
+  if (typeof threadId === "string" && !readerMay(reader, privacyOf(threadId as ThreadId)))
     return undefined;
   return event;
 };
