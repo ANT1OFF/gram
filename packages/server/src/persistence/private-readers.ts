@@ -57,7 +57,8 @@ export const rememberPrivateIn = (
 /**
  * Whose each thread is, open, closed or gone, and where it works, noted before anything asks
  * (`embedding/readable-by.ts`): a thread no read has touched yet since the server started is
- * still only its reader's, and so are its folders and its workspace.
+ * still only its reader's, and so are its folders and its workspace. A kept entry counts only
+ * for a thread with no live or closed row, whose row says who reads it now.
  */
 export const notePrivateThreads = (sql: SqlClient.SqlClient) =>
   Effect.gen(function* () {
@@ -67,7 +68,9 @@ export const notePrivateThreads = (sql: SqlClient.SqlClient) =>
       SELECT thread_id AS id, data FROM closed_threads
         WHERE json_extract(data, '$.readableBy') IS NOT NULL
       UNION ALL
-      SELECT thread_id AS id, data FROM private_readers`.pipe(Effect.orDie)) {
+      SELECT thread_id AS id, data FROM private_readers
+        WHERE thread_id NOT IN (SELECT id FROM threads)
+          AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`.pipe(Effect.orDie)) {
       const stored = JSON.parse(row.data) as Partial<Thread>;
       if (typeof stored.readableBy !== "string") continue;
       const noted = { ...stored, id: row.id as ThreadId, readableBy: stored.readableBy };
@@ -80,3 +83,64 @@ export const notePrivateThreads = (sql: SqlClient.SqlClient) =>
       });
     }
   });
+
+/** The fields of a thread that say which machines it ran on, as `mayReachThread` reads them. */
+const MACHINE_FIELDS = [
+  "checkout",
+  "currentCheckout",
+  "extraCheckouts",
+  "dreamHost",
+  "awaitingMachine",
+] as const;
+
+/**
+ * Keeps where `threadId` ran when it is its workspace's orchestrator and its row is about to
+ * leave `threads`: the machines a later edit of the workspace must still be reachable on, once
+ * no orchestrator is open (`holderMachinesIn`). Run in the transaction that removes the row.
+ */
+export const rememberHolderIn = (sql: SqlClient.SqlClient, threadId: string) =>
+  Effect.gen(function* () {
+    const rows = yield* sql<{ workspace_id: string; data: string }>`
+      SELECT w.id AS workspace_id, t.data FROM workspaces w JOIN threads t
+        ON t.id = w.orchestrator_thread_id WHERE w.orchestrator_thread_id = ${threadId}`;
+    for (const row of rows) {
+      let stored: unknown;
+      try {
+        stored = JSON.parse(row.data);
+      } catch {
+        stored = undefined;
+      }
+      const thread = typeof stored === "object" && stored !== null ? stored : {};
+      const kept = Object.fromEntries(
+        MACHINE_FIELDS.flatMap((key) => {
+          const value = (thread as Record<string, unknown>)[key];
+          return value === undefined || value === null ? [] : [[key, value]];
+        }),
+      );
+      yield* sql`INSERT OR REPLACE INTO workspace_holders (workspace_id, data)
+        VALUES (${row.workspace_id}, ${JSON.stringify(kept)})`;
+    }
+  });
+
+/** What `holderMachinesIn` answers. */
+export type ClosedHolder = Pick<Thread, (typeof MACHINE_FIELDS)[number]> | "unreadable" | undefined;
+
+/**
+ * Where `workspaceId`'s last orchestrator ran, as `rememberHolderIn` kept it: `undefined` when
+ * none was kept, `"unreadable"` when the kept record can't be read, which a caller must refuse.
+ */
+export const holderMachinesIn = (sql: SqlClient.SqlClient, workspaceId: string) =>
+  Effect.map(
+    sql<{ data: string }>`SELECT data FROM workspace_holders WHERE workspace_id = ${workspaceId}`,
+    (rows): ClosedHolder => {
+      if (rows[0] === undefined) return undefined;
+      try {
+        const kept: unknown = JSON.parse(rows[0].data);
+        const checkout = (kept as Partial<Thread> | null)?.checkout;
+        if (typeof checkout?.path !== "string") return "unreadable";
+        return kept as Pick<Thread, (typeof MACHINE_FIELDS)[number]>;
+      } catch {
+        return "unreadable";
+      }
+    },
+  );

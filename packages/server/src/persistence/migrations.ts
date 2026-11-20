@@ -623,6 +623,15 @@ const privateReaders = Effect.gen(function* () {
   yield* sql`CREATE TABLE private_readers (thread_id TEXT PRIMARY KEY, data TEXT NOT NULL)`;
 });
 
+/**
+ * Where each workspace's last orchestrator ran (`private-readers.ts` `rememberHolderIn`): an
+ * edit made once it has closed is still held to that machine's owner.
+ */
+const workspaceHolders = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE workspace_holders (workspace_id TEXT PRIMARY KEY, data TEXT NOT NULL)`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -639,6 +648,7 @@ export const migrations = {
   "0013_actor_names": actorNames,
   "0014_folder_trust": folderTrust,
   "0015_private_readers": privateReaders,
+  "0016_workspace_holders": workspaceHolders,
 };
 
 /**

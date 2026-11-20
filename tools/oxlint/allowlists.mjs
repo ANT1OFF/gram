@@ -540,7 +540,7 @@ export const MAX_LINES = {
     "packages/server/src/orchestration/tools.ts": 1101,
     "packages/server/src/orchestration/worker-questions.test.ts": 1454,
     "packages/server/src/persistence/thread-store.test.ts": 1377,
-    "packages/server/src/persistence/thread-store.ts": 3799,
+    "packages/server/src/persistence/thread-store.ts": 3798,
     "packages/server/src/routines/routines.ts": 1172,
     "packages/server/src/rpc/actor-guard.ts": 756,
     "packages/server/src/rpc/handlers/connectors.ts": 791,

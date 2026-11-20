@@ -1,6 +1,11 @@
 // Workspaces: saving, naming and removing one, the workspace a
 // project opens into, and `open`, which gives a workspace its orchestrator thread.
-import { admitThread, callerPerson } from "../../host/ownership.ts";
+import {
+  admitThread,
+  callerPerson,
+  mayReachMachinesOf,
+  NOT_YOUR_MACHINE,
+} from "../../host/ownership.ts";
 import { OnDemand } from "../../embedding/on-demand.ts";
 import { workspaceHost } from "../../embedding/workspace-machines.ts";
 import {
@@ -43,6 +48,7 @@ import {
 import type { Charter } from "./charter.ts";
 import { makeKeyedLock } from "../../git/keyed-lock.ts";
 import { admitWorkspaceReader, projectWorkspaceOf } from "./reader-workspaces.ts";
+import { readableWorkspacesOnly } from "../../embedding/readable-by.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
 import type { Pauses } from "./pauses.ts";
@@ -154,8 +160,19 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       const state = yield* store.getWorkspace(workspaceId).pipe(Effect.option);
       if (Option.isSome(state)) yield* admitWorkspaceReader(state.value);
       const holder = Option.isSome(state) ? state.value.workspace.orchestratorThreadId : undefined;
-      if (holder !== undefined) yield* admitThread(store.getThread, ownerOf, holder);
+      if (holder !== undefined) return yield* admitThread(store.getThread, ownerOf, holder);
+      // Closed, it is held to the machines it last ran on, as kept; a record that can't be read
+      // establishes nobody, and is refused.
+      const ran = yield* store.closedHolderOf(workspaceId);
+      if (ran === undefined) return;
+      const reachable = ran !== "unreadable" && (yield* mayReachMachinesOf(ownerOf, ran));
+      if (!reachable) return yield* new InvalidState({ message: NOT_YOUR_MACHINE });
     });
+
+  /** The workspaces this fiber's reader may see. */
+  const visibleWorkspaces = Effect.flatMap(store.listWorkspaces, (all) =>
+    readableWorkspacesOnly(all, (state) => state.workspace),
+  );
 
   const syncFolders = (holder: ThreadId, before: ReadonlyArray<ProjectId>, state: WorkspaceState) =>
     Effect.gen(function* () {
@@ -212,7 +229,9 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
         input.id === undefined ? [] : [input.id],
         registryLock.withPermits(1)(
           Effect.gen(function* () {
-            const others = (yield* store.listWorkspaces).filter(
+            // Names are unique among the workspaces the caller may see: a clash with one they may
+            // not would tell them it is there.
+            const others = (yield* visibleWorkspaces).filter(
               ({ workspace }) => workspace.id !== input.id,
             );
             // Automatic opens pick a free name under the same lock that reserves explicit names.
@@ -311,7 +330,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       const write = Effect.gen(function* () {
         const name = change.name.trim();
         if (name === "") return yield* new InvalidState({ message: "A workspace needs a name." });
-        const others = (yield* store.listWorkspaces).filter(({ workspace }) => workspace.id !== id);
+        const others = (yield* visibleWorkspaces).filter(({ workspace }) => workspace.id !== id);
         if (
           others.some(({ workspace }) => workspace.name.trim().toLowerCase() === name.toLowerCase())
         ) {
@@ -489,7 +508,11 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       projectId,
       Effect.gen(function* () {
         const [project] = yield* projectsOf([projectId]);
-        const existing = yield* projectWorkspaceOf(yield* store.listWorkspaces, projectId);
+        const existing = yield* projectWorkspaceOf(
+          yield* store.listWorkspaces,
+          projectId,
+          yield* store.listProjects,
+        );
         if (existing !== undefined) {
           // Made meanwhile, by another window say: it keeps its own level, and the task must not
           // start under one the draft promised and this workspace doesn't have.

@@ -68,6 +68,7 @@ describe("migration ordering gate", () => {
         [13, "actor_names"],
         [14, "folder_trust"],
         [15, "private_readers"],
+        [16, "workspace_holders"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -219,6 +220,7 @@ describe("the baseline", () => {
         "table usage_limits",
         "table wait_items",
         "table worker_reports",
+        "table workspace_holders",
         "table workspaces",
         "trigger closed_messages_usage_insert",
         "trigger closed_messages_usage_update",
