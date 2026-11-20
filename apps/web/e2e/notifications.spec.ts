@@ -54,9 +54,9 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
       });
   }, diagnosticKey);
   await nextFrame(page);
-  await expect(page.getByTestId("toast")).toHaveCount(1);
+  // About the machine, with nothing to do: Notification history, not a toast.
+  await expect(page.getByTestId("toast")).toHaveCount(0);
   await expect(page.getByTestId("right-panel")).toBeHidden();
-  await page.getByTestId("toast").getByRole("button", { name: "Dismiss" }).click();
   await page.clock.runFor(1000);
   await openHistory(page);
   const center = history(page);
@@ -105,7 +105,8 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
     });
   });
   await nextFrame(page);
-  await expect(page.getByTestId("toast")).toHaveCount(3);
+  // The new configuration warning goes to history alone; the approval and the error toast.
+  await expect(page.getByTestId("toast")).toHaveCount(2);
   await expect(center.getByTestId("notification-entry")).toHaveCount(4);
   await page.clock.runFor(7000);
   await expect(page.getByTestId("toast")).toHaveCount(0);
