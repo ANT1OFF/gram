@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { checksumLines } from "../release-rc/rc-lib.mjs";
+import { generateReleaseKey, signReleaseChecksums } from "../release-rc/release-key.mjs";
 import { LINUX_WORKFLOW, runTitle } from "../release-linux/linux-lib.mjs";
 import { writeLinuxBuild } from "../release-linux/testing/linux-build.mjs";
 import { parseStableArgs } from "./stable-lib.mjs";
@@ -33,6 +34,11 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+/**
+ * The release key the synthetic releases are signed with, standing in for the one this checkout
+ * pins, whose private half only the publisher's keychain holds.
+ */
+const RELEASE_KEY = generateReleaseKey();
 const SOURCE = resolve(HERE, "../..");
 const REPO = "ANT1OFF/gram";
 // The checkout under test stands in for the release's source, so the tool finds it at that commit.
@@ -130,7 +136,12 @@ async function makeAssets(dir, { linux = false } = {}) {
     join(dir, "SHA256SUMS.txt"),
     checksumLines(covered.map((name) => ({ name, sha256: sha256(readFileSync(join(dir, name))) }))),
   );
-  return [...covered, "SHA256SUMS.txt", ...manifests].map((name) => {
+  const signature = signReleaseChecksums({
+    assets: dir,
+    pinnedKey: RELEASE_KEY.publicKey,
+    readPrivate: () => RELEASE_KEY.privatePkcs8,
+  });
+  return [...covered, "SHA256SUMS.txt", signature, ...manifests].map((name) => {
     const bytes = readFileSync(join(dir, name));
     return { name, bytes: bytes.length, sha256: sha256(bytes) };
   });
@@ -181,6 +192,7 @@ const seams = (overrides = {}) => ({
   },
   // Sigstore's verdict needs a real attestation: a stand-in that verifies every file.
   verifyAttestation: (files) => attestedAll(files),
+  releaseKey: { pinned: RELEASE_KEY.publicKey, readPrivate: () => RELEASE_KEY.privatePkcs8 },
   ...overrides,
 });
 
@@ -331,6 +343,16 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     await expect(runPhase(options("validate"), seams())).rejects.toThrow(
       new RegExp(`assets lack ${DEB.replaceAll(".", "\\.")}`),
     );
+  }, 120_000);
+
+  it("won't validate a release the pinned key didn't sign", async () => {
+    const other = generateReleaseKey();
+    await expect(
+      runPhase(
+        options("validate"),
+        seams({ releaseKey: { pinned: other.publicKey, readPrivate: () => other.privatePkcs8 } }),
+      ),
+    ).rejects.toThrow(/SHA256SUMS\.txt\.sig doesn't verify against the pinned release key/);
   }, 120_000);
 
   it("validates, checks and publishes with your own login", async () => {
@@ -565,6 +587,7 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
       "WEB-SHA256SUMS.txt",
       "SHA256SUMS.txt",
       "latest-mac.yml",
+      "SHA256SUMS.txt.sig",
       APPIMAGE,
       DEB,
       "LINUX-BUILD.json",
@@ -603,7 +626,7 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     const before = (await github.state()).repos[REPO].releases.find(
       (r) => r.id === state.releaseId,
     );
-    expect(before.assets).toHaveLength(7);
+    expect(before.assets).toHaveLength(8);
 
     // The answer to the new SHA256SUMS.txt's upload is lost: GitHub took it, the phase stopped.
     env.FAKE_GH_DROP_RESPONSE = "name=SHA256SUMS\\.txt ";
@@ -616,8 +639,9 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     await runPhase(options("linux"), seamsNow());
     state = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
     const after = (await github.state()).repos[REPO].releases.find((r) => r.id === state.releaseId);
-    expect(after.assets).toHaveLength(11);
+    expect(after.assets).toHaveLength(12);
     expect(after.assets.filter((a) => a.name === "SHA256SUMS.txt")).toHaveLength(1);
+    expect(after.assets.filter((a) => a.name === "SHA256SUMS.txt.sig")).toHaveLength(1);
     await runPhase(options("validate"), seams({ verifyAttestation: attestedAll }));
   }, 120_000);
 
