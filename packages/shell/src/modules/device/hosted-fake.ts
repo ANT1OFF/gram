@@ -93,6 +93,12 @@ export const fakeServer = () => {
     startAnswer: undefined as { status: number; body: unknown } | undefined,
     /** How a wait is answered, when not with a reply. */
     waitAnswer: undefined as { status: number; body: unknown } | undefined,
+    /** Start the person's own machine from the device; named in discovery when on. */
+    startsMachines: true,
+    /** Their machine's phase, and the phases a start goes through, one per read after it. */
+    machine: "none",
+    machineStarts: [] as Array<Record<string, unknown>>,
+    machineAhead: [] as Array<string>,
   };
   /** The threads the device sent, by its key: only these may be followed. */
   const sent = new Map<string, string>();
@@ -127,6 +133,12 @@ export const fakeServer = () => {
               thread_message_endpoint: `${origin}/api/threads/message`,
               thread_stop_endpoint: `${origin}/api/threads/stop`,
               thread_check_endpoint: `${origin}/api/threads/check`,
+              ...(state.startsMachines
+                ? {
+                    machine_status_endpoint: `${origin}/api/machine/status`,
+                    machine_start_endpoint: `${origin}/api/machine/start`,
+                  }
+                : {}),
             }
           : {}),
       });
@@ -278,6 +290,18 @@ export const fakeServer = () => {
         threadId,
         branch: `thread/${threadId}`,
       });
+    }
+    // The person's own machine: a start goes through `machineAhead`, one phase per read.
+    if (url.pathname === "/api/machine/start" && held.scope === "threads:start") {
+      state.machineStarts.push(JSON.parse(await readBody(request)) as Record<string, unknown>);
+      if (state.machine !== "running" && state.machineAhead.length === 0)
+        state.machineAhead = ["starting", "running"];
+      return json(200, { phase: state.machine, starting: state.machineAhead.length > 0 });
+    }
+    if (url.pathname === "/api/machine/status" && held.scope === "threads:start") {
+      await readBody(request);
+      state.machine = state.machineAhead.shift() ?? state.machine;
+      return json(200, { phase: state.machine, starting: state.machineAhead.length > 0 });
     }
     // Reaches what its own organisation owns, as a GitHub App installed there would.
     if (url.pathname === "/api/threads/check" && held.scope === "threads:start") {

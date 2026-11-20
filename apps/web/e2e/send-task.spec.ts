@@ -123,3 +123,78 @@ test("a task goes to a hosted workspace only once its checks pass", async ({ pag
     },
   ]);
 });
+
+const SHOTS = process.env["GRAM_SEND_SHOTS"];
+
+const openSend = async (page: Page) => {
+  await page.goto("/");
+  await expect(page.getByTestId("app-shell")).toBeVisible();
+  const made = await page.evaluate(async () => {
+    const mock = window.gramMock!;
+    await mock.simulateSettingsChange({ experimental: { embedding: true } });
+    return mock.simulateOrchestration();
+  });
+  await page.evaluate((id) => {
+    history.pushState({}, "", `/new-task?workspace=${id}`);
+    dispatchEvent(new PopStateEvent("popstate"));
+  }, made.workspaceId);
+  await page.getByLabel("What needs doing").fill("Make refund webhooks idempotent.");
+  await page.getByTestId("send-target").click();
+  await page.getByRole("option", { name: "Platform" }).click();
+};
+
+test("a send with no machine running there starts the person's machine, then sends", async ({
+  page,
+}) => {
+  await seedSignedIn(page);
+  // The server couldn't be asked about the repository: nothing is said of it.
+  const { reach: _reach, ...unasked } = checked({});
+  await page.route("**/threads/send-check", (route) =>
+    route.fulfill({ json: { ...unasked, machine: { phase: "none", starting: false } } }),
+  );
+  const steps = [
+    { state: "starting", phase: "none" },
+    { state: "starting", phase: "pending" },
+    { state: "starting", phase: "starting" },
+    { state: "ready", phase: "running" },
+  ];
+  const machineAsked: unknown[] = [];
+  const { promise: held, resolve: release } = Promise.withResolvers<void>();
+  await page.route("**/threads/send-machine", async (route) => {
+    machineAsked.push(route.request().postDataJSON());
+    // Ready only once the test has seen it boot.
+    if (machineAsked.length === 4) await held;
+    return route.fulfill({ json: steps[Math.min(machineAsked.length - 1, steps.length - 1)] });
+  });
+  // The first send lands before the new machine has joined there; the same send goes again.
+  let sends = 0;
+  await page.route("**/threads/send", (route) => {
+    sends += 1;
+    return sends === 1
+      ? route.fulfill({
+          status: 409,
+          json: {
+            error:
+              "Example didn't start it: You have no machine running, and this Gram runs no work itself. Start a machine to run this.",
+          },
+        })
+      : route.fulfill({ json: { threadId: "t-sent" } });
+  });
+  await openSend(page);
+
+  const checks = page.getByTestId("send-checks");
+  await expect(checks.getByTestId("send-check-machine")).toHaveAttribute("data-state", "ok");
+  await expect(checks.getByTestId("send-check-reach")).toHaveCount(0);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-1-checks.png`, fullPage: true });
+
+  await page.getByTestId("task-submit").click();
+  await expect(page.getByTestId("send-machine")).toContainText(
+    "Starting your machine on gram.example.com — waiting for room…",
+  );
+  await expect(page.getByTestId("send-machine")).toContainText("booting", { timeout: 10_000 });
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-2-starting.png`, fullPage: true });
+  release();
+  await expect(page).toHaveURL(/\/t\/t-sent/, { timeout: 20_000 });
+  expect(machineAsked[0]).toEqual({ target: { origin: ORIGIN, workspaceId: "w1" } });
+  expect(sends).toBe(2);
+});

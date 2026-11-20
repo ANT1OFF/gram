@@ -18,6 +18,8 @@ import {
   type HostedThreadStart,
   HostedThreadStarted,
   HostedRepositoryReach,
+  HostedMachine,
+  startsMachines,
   type HostedThreadStop,
   type HostedThreadWait,
   HostedThreadWaited,
@@ -872,6 +874,52 @@ export const checkHostedRepositories = async (
   const decoded = Schema.decodeUnknownOption(HostedRepositoryReach)(answer);
   if (decoded._tag === "None") return failed(UNREADABLE);
   return { ok: true, reach: decoded.value };
+};
+
+/**
+ * Reads the person's own machine in a workspace there (`get`), or starts it unless it runs
+ * (`start`), with their sign-in, for work sent with none running. The server decides whether it
+ * may start and on what, within the organisation's limits; a refusal is its word. A start that
+ * runs already changes nothing, so one with no answer can be made again. `unoffered`: the server
+ * starts no machine from here, and the send is left to say so.
+ */
+export const hostedMachine = async (
+  calls: HostedCalls & { readonly workspaceId: string; readonly action: "get" | "start" },
+): Promise<{ readonly ok: true; readonly machine: HostedMachine | "unoffered" } | Failed> => {
+  if (!startsMachines(calls.discovery) || !runsSentWork(calls.discovery))
+    return { ok: true, machine: "unoffered" };
+  const endpoint =
+    calls.action === "start"
+      ? calls.discovery.machine_start_endpoint
+      : calls.discovery.machine_status_endpoint;
+  if (endpoint === undefined) return { ok: true, machine: "unoffered" };
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "threads:start",
+    calls.fetch,
+    "POST",
+    endpoint,
+    { workspaceId: calls.workspaceId },
+  );
+  if ("why" in response) return response;
+  const answer = await jsonOf(response);
+  if (response.status !== 200)
+    return failed(
+      refusalOf(answer) ??
+        (calls.action === "start"
+          ? "The server didn't start your machine."
+          : "The server didn't say how your machine stands."),
+    );
+  const decoded = Schema.decodeUnknownOption(HostedMachine)(answer);
+  if (decoded._tag === "None") return failed(UNREADABLE);
+  return {
+    ok: true,
+    machine: {
+      phase: decoded.value.phase,
+      ...(decoded.value.starting === undefined ? {} : { starting: decoded.value.starting }),
+    },
+  };
 };
 
 /**

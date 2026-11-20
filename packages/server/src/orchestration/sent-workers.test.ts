@@ -67,6 +67,7 @@ const fakeApp = Effect.gen(function* () {
         asked.push({ op: "stop", origin, workspaceId, threadId });
         return { ok: true as const };
       }),
+    machine: () => Effect.succeed({ ok: true as const, machine: "unoffered" as const }),
   };
   return { port, waits, asked };
 });

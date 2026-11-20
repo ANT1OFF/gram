@@ -196,6 +196,56 @@ describe("this machine as a personal device", () => {
     expect(fake.state.stopped).toEqual([{ workspaceId: "w1", threadId: "t-sent-1" }]);
   });
 
+  it("starts the person's own machine there only in a listed workspace, and never while paused", async () => {
+    const first = await setUp();
+    expect(await first.device.machineWork(origin, "w1", "start")).toMatchObject({ ok: false });
+    expect(await first.device.signIn(origin)).toEqual({ ok: true });
+    expect(await first.device.machineWork(origin, "w-other", "start")).toMatchObject({
+      ok: false,
+    });
+    expect(fake.state.machineStarts).toEqual([]);
+    expect(await first.device.machineWork(origin, "w1", "get")).toEqual({
+      ok: true,
+      machine: { phase: "none", starting: false },
+    });
+    expect(await first.device.machineWork(origin, "w1", "start")).toEqual({
+      ok: true,
+      machine: { phase: "none", starting: true },
+    });
+    expect(fake.state.machineStarts).toEqual([{ workspaceId: "w1" }]);
+    expect(await first.device.machineWork(origin, "w1", "get")).toMatchObject({
+      machine: { phase: "starting", starting: true },
+    });
+    expect(await first.device.machineWork(origin, "w1", "get")).toMatchObject({
+      machine: { phase: "running", starting: false },
+    });
+    await first.device.close();
+
+    const file = join(dataDir, "device-settings.json");
+    const key = settingsKey(first.store);
+    const read = await readDeviceSettings(file, key);
+    if (!read.ok) throw new Error("unreadable");
+    await writeDeviceSettings(file, key, {
+      ...read.settings,
+      servers: read.settings.servers.map((server) => ({ ...server, paused: true })),
+    });
+    const second = await setUp({}, first.store);
+    await second.waitFor(() => (second.device.state().servers[0]?.workspaces.length ?? 0) > 0);
+    expect(await second.device.machineWork(origin, "w1", "start")).toMatchObject({ ok: false });
+    expect(fake.state.machineStarts.length).toBe(1);
+  });
+
+  it("says a server that starts no machine from here doesn't, without asking it", async () => {
+    fake.state.startsMachines = false;
+    const { device } = await setUp();
+    expect(await device.signIn(origin)).toEqual({ ok: true });
+    expect(await device.machineWork(origin, "w1", "start")).toEqual({
+      ok: true,
+      machine: "unoffered",
+    });
+    expect(fake.state.machineStarts).toEqual([]);
+  });
+
   it("signs in once the person accepts the server, registers, and lists its workspaces", async () => {
     const { device, store, confirmed } = await setUp();
     expect(await device.signIn(origin)).toEqual({ ok: true });

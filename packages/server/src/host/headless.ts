@@ -15,6 +15,7 @@ import {
   embeddingOn,
   type HostId,
   InvalidState,
+  NO_MACHINE_RUNNING,
 } from "@gram/contracts";
 import { WorktreeError } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -108,8 +109,7 @@ const notListing = (machine: PlaceableMachine, agent: MachineAgent): string => {
 };
 
 /** With hosts provisioned on demand, a person with no machine of their own can start one. */
-export const START_A_MACHINE =
-  "You have no machine running, and this Gram runs no work itself. Start a machine to run this.";
+export const START_A_MACHINE = `${NO_MACHINE_RUNNING}, and this Gram runs no work itself. Start a machine to run this.`;
 
 /**
  * The machine a thread goes on when its request names none: the confirmed machine online now that

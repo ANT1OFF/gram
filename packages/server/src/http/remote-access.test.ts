@@ -116,7 +116,14 @@ describe("private browser access", () => {
         request({ headers: { host: `127.0.0.1:${PORT}` }, cookies }),
       ),
     ).toMatchObject({ status: 401 });
-    for (const url of ["/mcp", "/remote/pair", "/?boot=synthetic-local"])
+    // Work sent with the desktop app's sign-in, and the machine a send starts there, too.
+    for (const url of [
+      "/mcp",
+      "/remote/pair",
+      "/?boot=synthetic-local",
+      "/threads/send",
+      "/threads/send-machine",
+    ])
       expect(access.authorize(request({ url, cookies }))).toMatchObject({ status: 403 });
     expect(access.authorize(request({ url: "/ws", cookies }))).toEqual({ kind: "pass" });
     expect(

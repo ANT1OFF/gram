@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   HOSTED_THREAD_STATES,
+  HostedMachine,
   HostedRepositoryReach,
   type HostedThreadWaited,
   type SentWorkBrief,
@@ -70,6 +71,17 @@ export interface SentWorkPortShape {
     workspaceId: string,
     threadId: string,
   ) => Effect.Effect<{ readonly ok: true } | Refused>;
+  /**
+   * The person's own machine there: read, or started unless it runs. `unoffered`: the server
+   * starts none from here. Only for a send the person makes (`embedding/hosted-machine.ts`).
+   */
+  readonly machine: (
+    origin: string,
+    workspaceId: string,
+    action: "get" | "start",
+  ) => Effect.Effect<
+    { readonly ok: true; readonly machine: HostedMachine | "unoffered" } | Refused
+  >;
 }
 
 /** Electron's `process.parentPort` as the server sees it. */
@@ -209,6 +221,17 @@ export const bridgeSentWork = (
       ask({ op: "stop", origin, workspaceId, threadId }).pipe(
         Effect.map((result) => (result.ok ? { ok: true as const } : result)),
       ),
+    machine: (origin, workspaceId, action) =>
+      ask({ op: "machine", origin, workspaceId, action }).pipe(
+        Effect.map((result) => {
+          if (!result.ok || !("machine" in result)) return refusedOf(result);
+          if (result.machine === "unoffered") return { ok: true as const, machine: "unoffered" };
+          const machine = Schema.decodeUnknownOption(HostedMachine)(result.machine);
+          return machine._tag === "Some"
+            ? { ok: true as const, machine: machine.value }
+            : refusedOf({ ok: true });
+        }),
+      ),
   };
 };
 
@@ -223,6 +246,7 @@ export const NO_SENT_WORK: SentWorkPortShape = {
   wait: () => refusedHere,
   message: () => refusedHere,
   stop: () => refusedHere,
+  machine: () => refusedHere,
 };
 
 export class SentWorkPort extends Context.Service<SentWorkPort, SentWorkPortShape>()(

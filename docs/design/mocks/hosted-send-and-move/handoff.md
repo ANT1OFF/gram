@@ -59,12 +59,17 @@ Board 1, sending a task, is built in New task (`composer/new-task-draft.tsx`,
 `send-target-stop.tsx`, `send-target.ts`): a Machine stop lists the hosted workspaces of servers
 signed in to that run sent work, and picking one shows where it runs and the three checks. The
 local server answers them (`POST /threads/send-check`, `orchestration/sent-work-routes.ts`): the
-server says whether it reaches the repository (`thread_check_endpoint`; a server without it is
-"couldn't check", a warning), the remote's default branch is what the worker starts from (blocking
+server says whether it reaches the repository (`thread_check_endpoint`; a server without it, or
+one whose check fails, says nothing and the send still asks it), the remote's default branch is what the worker starts from (blocking
 when it is missing or has commits only here, a warning when another branch is checked out, since
 a server starts from the remote's default branch), and uncommitted files warn. `POST /threads/send`
 makes the task the workspace orchestrator's worker there, as `send_worker` would, without the
-charter's `sendWork`, which bounds the orchestrator and not the person. Deviations: "Ask for
+charter's `sendWork`, which bounds the orchestrator and not the person. Where the server starts the person's own
+machine from here (`machine_status_endpoint`, `machine_start_endpoint`) and theirs isn't running,
+the checks say the send starts it, and Send does: `POST /threads/send-machine` runs
+`ensureHostedMachine` (`embedding/hosted-machine.ts`), New task asks it again every two seconds
+and says each step, then sends, sending again a few times while the new machine joins. Only the
+person's own send starts a machine; `send_worker` never does. Deviations: "Ask for
 access" and "Push it" aren't drawn (no address for the first; pushing stays the person's), and
 attached files block a send, since only the brief goes.
 
