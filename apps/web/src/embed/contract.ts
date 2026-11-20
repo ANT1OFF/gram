@@ -282,7 +282,7 @@ export interface ShellMachines {
  * is offered; the deployment still has to refuse a model it does not allow.
  */
 /** The agents whose models the prompt box lists. */
-export type ShellAgent = "claude" | "codex" | "opencode";
+export type ShellAgent = "claude" | "codex" | "opencode" | "grok";
 
 /** One model the prompt box lists, as the embedding app's `ShellModels.offered` is given it. */
 export interface ShellModelChoice {

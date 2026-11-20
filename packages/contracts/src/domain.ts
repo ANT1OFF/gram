@@ -208,13 +208,15 @@ export const XAI_BASE_URL = "https://api.x.ai/v1";
  * Whether `agent` is offered `model` on `profile`: always on a LiteLLM-style gateway. On
  * OpenRouter, Claude Code gets Anthropic's models and Codex OpenAI's, the ones each runs well, and
  * OpenCode every other maker's: never Anthropic's, which stay with Claude Code. On xAI, Codex and
- * OpenCode get every model and Claude Code none, as xAI no longer serves the Anthropic API.
+ * OpenCode get every model and Claude Code none, as xAI no longer serves the Anthropic API. Grok
+ * Build runs on its own sign-in, never on a gateway.
  */
 export const gatewayModelForAgent = (
   profile: Pick<GatewayProfile, "kind">,
   model: Pick<GatewayModel, "id">,
   agent: AgentKind,
 ): boolean => {
+  if (agent === "grok") return false;
   if (profile.kind === "xai") return agent !== "claude";
   if (profile.kind !== "openrouter") return true;
   switch (agent) {
@@ -225,6 +227,7 @@ export const gatewayModelForAgent = (
     case "opencode":
       return !model.id.startsWith("anthropic/") && !model.id.startsWith("~anthropic/");
   }
+  return false;
 };
 
 /** A synthetic gateway profile on a reserved host, for tests and examples. */

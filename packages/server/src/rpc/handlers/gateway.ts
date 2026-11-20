@@ -175,6 +175,7 @@ const AGENT_NAMES: Readonly<Record<AgentKind, string>> = {
   claude: "Claude",
   codex: "Codex",
   opencode: "OpenCode",
+  grok: "Grok Build",
 };
 
 /**

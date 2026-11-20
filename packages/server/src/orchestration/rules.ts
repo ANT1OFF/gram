@@ -1371,6 +1371,7 @@ const AGENT_WORDS: Readonly<Record<AgentKind, string>> = {
   claude: "Claude Code",
   codex: "Codex",
   opencode: "OpenCode",
+  grok: "Grok Build",
 };
 
 const WENT_QUIET = "ended its turn without reporting; read its last messages with get_thread";

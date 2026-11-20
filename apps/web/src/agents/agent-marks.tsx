@@ -58,3 +58,14 @@ export function OpenCodeMark(props: AgentMarkProps) {
     </Mark>
   );
 }
+
+export function GrokMark(props: AgentMarkProps) {
+  return (
+    <Mark {...props}>
+      <path
+        fillRule="evenodd"
+        d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15Zm5.3 1.9 1.4 1.4L6.7 19.6l-1.4-1.4L17.3 6.4Z"
+      />
+    </Mark>
+  );
+}

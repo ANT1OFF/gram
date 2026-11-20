@@ -44,6 +44,7 @@ const AGENT_NAMES: Record<AgentKind, string> = {
   claude: "Claude",
   codex: "Codex",
   opencode: "OpenCode",
+  grok: "Grok Build",
 };
 
 const hostOf = (url: string): string | undefined => {
