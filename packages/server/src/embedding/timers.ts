@@ -40,12 +40,18 @@ export interface TimersShape {
   readonly until: (key: string, at: number) => Effect.Effect<void>;
 }
 
-const local: TimersShape = {
-  until: (_key, at) =>
-    Effect.flatMap(Clock.currentTimeMillis, (now) =>
-      Effect.sleep(Duration.millis(Math.max(0, at - now))),
-    ),
-};
+/**
+ * Sleeps until this clock reads `at` or later. A timer may wake a millisecond early by the wall
+ * clock, so it sleeps again for what is left rather than end before its time.
+ */
+const sleepUntil = (at: number): Effect.Effect<void> =>
+  Effect.flatMap(Clock.currentTimeMillis, (now) =>
+    now >= at
+      ? Effect.void
+      : Effect.andThen(Effect.sleep(Duration.millis(at - now)), sleepUntil(at)),
+  );
+
+const local: TimersShape = { until: (_key, at) => sleepUntil(at) };
 
 /** How long past its time a registered wait gives the scheduler before it ends by itself. */
 export const FALLBACK_GRACE = Duration.seconds(30);
@@ -198,8 +204,7 @@ export const TimersLive = Layer.effect(
         if (waiting.get(key) === mine) waiting.delete(key);
         // Its clock decided, and this one may be a moment behind: whoever waits checks the time by
         // this clock, and would only arm the wait again.
-        const left = at - (yield* Clock.currentTimeMillis);
-        if (left > 0) yield* Effect.sleep(Duration.millis(Math.min(left, 60_000)));
+        yield* sleepUntil(Math.min(at, (yield* Clock.currentTimeMillis) + 60_000));
       });
 
     return { until };
