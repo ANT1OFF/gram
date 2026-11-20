@@ -659,6 +659,48 @@ describe("event sink", () => {
     }),
   );
 
+  it.live("sends why a thread's last turn failed, and nothing for one that didn't", () =>
+    Effect.gen(function* () {
+      const dir = mkdtempSync(join(tmpdir(), "gram-sink-"));
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+      const to = yield* receiver;
+      const failed = {
+        ...sinkThread("thread-failed", 1),
+        lastError: {
+          kind: "network",
+          retryable: true,
+          text: "The machine went away during the turn.",
+          at: 7_000,
+          machineLost: { machine: "box-1" },
+        },
+      } as unknown as Thread;
+      yield* makeEventSink({
+        endpoint: { url: to.url, token: "sink-token" },
+        file: join(dir, "event-sink.db"),
+        on: Effect.succeed(true),
+        threads: Effect.succeed([failed, sinkThread("thread-fine", 2)]),
+        retryBase: Duration.millis(5),
+        retryMax: Duration.millis(20),
+        recheck: Duration.millis(5),
+      });
+      const started = yield* eventually(
+        "sink.started",
+        Effect.sync(() => to.held.find((event) => event.type === "sink.started")),
+      );
+      const threads = started.data["threads"] as ReadonlyArray<Record<string, unknown>>;
+      expect(threads.find((thread) => thread["id"] === "thread-failed")?.["lastError"]).toEqual({
+        text: "The machine went away during the turn.",
+        kind: "network",
+        retryable: true,
+        at: 7_000,
+        machineLost: "box-1",
+      });
+      expect(threads.find((thread) => thread["id"] === "thread-fine")).not.toHaveProperty(
+        "lastError",
+      );
+    }),
+  );
+
   it.live("does not believe an ack past what it sent, and keeps sending the same events", () =>
     Effect.gen(function* () {
       const held: Array<SinkEvent> = [];
