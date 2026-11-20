@@ -172,22 +172,36 @@ describe("a hosted server's answers about one machine", () => {
     }),
   );
 
-  it.effect("reads a release the server answers not_found as a machine gone, and forgets it", () =>
+  it.live("tells a release answered not_found again later, and forgets nothing of it", () =>
     Effect.gen(function* () {
-      const app = fakeApp({ answer: () => ({ status: 404, body: { code: "not_found" } }) });
-      const gone: string[] = [];
-      const tell = releaseTeller(undefined, bridgeWorkerMachines(app.port), (machine) =>
-        Effect.sync(() => gone.push(machine.name)),
-      )!;
+      // The server has no cell manager for a while, as during a deployment, then is back.
+      const answers = [
+        { status: 404, body: { code: "not_found", message: "No cell manager here." } },
+        { status: 200, body: { known: true, released: false } },
+      ];
+      const app = fakeApp({ answer: () => answers.shift() ?? { status: 503, body: {} } });
+      const tell = releaseTeller(undefined, bridgeWorkerMachines(app.port))!;
       const machine = {
         id: "m-0123456789abcdef01234567",
         name: NAME,
         onDemand: "worker",
         via: ORIGIN,
       };
-      // Taken as told: nothing to tell again of a machine reclaimed there.
-      expect((yield* tell(machine, true).pipe(Effect.result))._tag).toBe("Success");
-      expect(gone).toEqual([NAME]);
+      // The startup pass's word for a worker still at work: not taken as told, so told again.
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Success");
+      // A 404 that isn't not_found is a passing error, asked again at once like a busy server.
+      const other = [
+        { status: 404, body: {} },
+        { status: 200, body: { known: true } },
+      ];
+      const passing = fakeApp({ answer: () => other.shift() ?? { status: 503, body: {} } });
+      expect(
+        yield* tellSignedInRelease(bridgeWorkerMachines(passing.port), machine, true, {
+          retryMs: 5,
+        }),
+      ).toBe("applied");
+      expect(passing.calls).toHaveLength(2);
     }),
   );
 

@@ -33,16 +33,33 @@ export const codeOf = (body: unknown): unknown =>
   typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
 
 /**
- * What a stop's answer says: the machine was stopped; there was no such machine (a 404, or a 2xx
- * saying `stopped: false`, as a server answers a name it holds nothing for); or nothing clear.
+ * Whether an answer is a `404 { code: "not_found" }`, the one a server gives a name it doesn't
+ * know. Alone it proves nothing: the server answers the same while it has no cell manager, or the
+ * workspace no cell, for a while. Only `RECLAIMED_AFTER_MISSES` of them in a row, asked a pass
+ * apart, are taken as the machine gone; any other 404 is a passing error.
+ */
+export const isNotFound = (
+  answered:
+    | { readonly ok: true; readonly status: number; readonly body: unknown }
+    | { readonly ok: false },
+) => answered.ok && answered.status === 404 && codeOf(answered.body) === "not_found";
+
+/** How many passes in a row a machine is answered `isNotFound` before it is taken as gone. */
+export const RECLAIMED_AFTER_MISSES = 3;
+
+/**
+ * What a stop's answer says: the machine was stopped; there was no such machine (a 2xx saying
+ * `stopped: false`, as a server answers a name it holds nothing for, under its person's lock);
+ * `missing`, a `404 not_found`, which says so only once it comes a few passes in a row
+ * (`isNotFound`); or nothing clear.
  */
 export const stopOutcome = (
   answered:
     | { readonly ok: true; readonly status: number; readonly body: unknown }
     | { readonly ok: false },
-): "stopped" | "absent" | "failed" => {
+): "stopped" | "absent" | "missing" | "failed" => {
   if (!answered.ok) return "failed";
-  if (answered.status === 404) return "absent";
+  if (isNotFound(answered)) return "missing";
   if (answered.status >= 300) return "failed";
   const said =
     typeof answered.body === "object" && answered.body !== null
@@ -199,9 +216,11 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
 
 /**
  * Asks again for each stop owed; one confirmed is let go, as is one the server knows no more once
- * no start of it can still be on its way. A name this Gram is starting again, or has registered
- * since, is the new start's: that machine is no longer owed a stop (the release pass looks after a
- * registered one), so a debt never stops a retry that took its name.
+ * no start of it can still be on its way: said so (`stopped: false`), or answered `404 not_found`
+ * on `RECLAIMED_AFTER_MISSES` passes in a row (`misses`, by owing, kept across passes). A name this
+ * Gram is starting again, or has registered since, is the new start's: that machine is no longer
+ * owed a stop (the release pass looks after a registered one), so a debt never stops a retry that
+ * took its name.
  */
 export const settleOwedStops = (
   port: WorkerMachinePortShape,
@@ -211,6 +230,7 @@ export const settleOwedStops = (
   locks?: NameLocks,
   /** Names a start of this Gram's is on its way for: a start's own debt is kept while it is. */
   startingNow: (name: string) => boolean = () => false,
+  misses: Map<string, number> = new Map(),
 ) =>
   Effect.gen(function* () {
     for (const stop of owed.list())
@@ -229,15 +249,19 @@ export const settleOwedStops = (
           }
           const answered = yield* port.call(stop.origin, "stop", { name: stop.name });
           const outcome = stopOutcome(answered);
+          const key = owingOf(stop);
+          const missed = outcome === "missing" ? (misses.get(key) ?? 0) + 1 : 0;
+          if (missed === 0) misses.delete(key);
+          else misses.set(key, missed);
           // Unanswered, it may still reach the server: the name is kept a while more.
           if (!answered.ok) yield* Effect.sleep(UNANSWERED_STOP_HOLD_MS);
+          const absent =
+            outcome === "absent" || (outcome === "missing" && missed >= RECLAIMED_AFTER_MISSES);
           // Only what this pass settled: a start owed since, its name's lock waited for, stays.
           if (outcome === "stopped") owed.remove(stop.name, stop);
-          else if (
-            outcome === "absent" &&
-            (stop.unsettled !== true || now() - stop.since >= UNSETTLED_START_MS)
-          )
+          else if (absent && (stop.unsettled !== true || now() - stop.since >= UNSETTLED_START_MS))
             owed.remove(stop.name, stop);
+          if (!owed.list().some((each) => owingOf(each) === key)) misses.delete(key);
         }),
       );
   });

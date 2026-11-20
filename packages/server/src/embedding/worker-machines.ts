@@ -463,7 +463,8 @@ export interface WorkerMachineSource {
   readonly givesBack: boolean;
   /**
    * Tells the provider a machine this spawn reuses is working again, before it is waited on: one
-   * released once its work was over sleeps until it is told so. Never fails.
+   * released once its work was over sleeps until it is told so. Never fails. `gone`: the server
+   * says it holds no such machine, so this spawn isn't placed there; nothing is forgotten of it.
    */
   readonly unrelease: (name: string) => Effect.Effect<"gone" | undefined>;
   /** The id of the machine registered here under `name`, when there is one. */

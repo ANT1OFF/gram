@@ -746,9 +746,9 @@ describe("worker machines from a signed-in hosted server", () => {
         via: ORIGIN,
       };
       expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
-      // A 404 is a machine reclaimed there: gone, nothing to tell again.
+      // Nor a 404: the server answers it for every machine while its cell is out of reach.
       answer = { status: 404, body: { code: "not_found" } };
-      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Success");
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
       answer = { status: 200, body: { known: true, released: false } };
       expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Success");
     }),
@@ -872,17 +872,23 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
     }),
   );
 
-  it.live("keep a machine the server says is stopped, for work here to start again", () =>
+  it.live("keep a machine the server says is stopped, or answers a 404 not not_found", () =>
     Effect.gen(function* () {
-      const hosts = yield* RemoteHosts.make(memoryMachineStore());
-      provisionRelayed(hosts, NAME);
-      const unrelayed: string[] = [];
-      const app = fakeApp({ answer: () => ({ status: 200, body: { phase: "stopped" } }) });
-      const port = bridgeWorkerMachines(app.port);
-      const pass = forgetReclaimed({ ...port, unrelay: (name) => unrelayed.push(name) }, hosts);
-      for (let each = 0; each < 4; each += 1) yield* pass;
-      expect(unrelayed).toEqual([]);
-      expect(hosts.list()).toHaveLength(1);
+      // Stopped: for work here to start again. A 404 of no machine's: a route not there now.
+      for (const answer of [
+        { status: 200, body: { phase: "stopped" } },
+        { status: 404, body: {} },
+      ]) {
+        const hosts = yield* RemoteHosts.make(memoryMachineStore());
+        provisionRelayed(hosts, NAME);
+        const unrelayed: string[] = [];
+        const app = fakeApp({ answer: () => answer });
+        const port = bridgeWorkerMachines(app.port);
+        const pass = forgetReclaimed({ ...port, unrelay: (name) => unrelayed.push(name) }, hosts);
+        for (let each = 0; each < 4; each += 1) yield* pass;
+        expect(unrelayed).toEqual([]);
+        expect(hosts.list()).toHaveLength(1);
+      }
     }),
   );
 

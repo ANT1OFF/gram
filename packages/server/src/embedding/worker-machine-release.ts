@@ -16,7 +16,6 @@
 import {
   effectiveCheckout,
   type FeatureLedgerEntry,
-  HostId,
   hostOf,
   type Thread,
   type ThreadId,
@@ -176,13 +175,14 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
 
 /**
  * How a machine's release is told: to the hosted server a desktop's worker host came through, or
- * to the embedder's provider. Undefined: there is no one to tell.
+ * to the embedder's provider. Undefined: there is no one to tell. A signed-in server's `404
+ * not_found` is a release not applied, told again next pass, and forgets nothing here: a server
+ * answers it for every machine while its cell is out of reach, and only `forgetReclaimed`, a few
+ * passes in a row, forgets one.
  */
 export const releaseTeller = (
   hosts: OnDemandHosts | undefined,
   signedIn: WorkerMachinePortShape | undefined,
-  /** A machine the signed-in server reclaimed first: forgotten here. */
-  gone: (machine: ReleaseMachine) => Effect.Effect<void> = () => Effect.void,
 ) => {
   if (hosts === undefined && signedIn === undefined) return undefined;
   return (machine: ReleaseMachine, released: boolean): Effect.Effect<void, Error> =>
@@ -190,7 +190,11 @@ export const releaseTeller = (
       ? signedIn === undefined
         ? Effect.fail(new Error("no desktop app to tell"))
         : tellSignedInRelease(signedIn, { name: machine.name, via: machine.via }, released).pipe(
-            Effect.flatMap((told) => (told === "gone" ? gone(machine) : Effect.void)),
+            Effect.flatMap((told) =>
+              told === "missing"
+                ? Effect.fail(new Error("the server answered that it holds no such machine"))
+                : Effect.void,
+            ),
           )
       : hosts === undefined
         ? Effect.fail(new Error("no host provider to tell"))
@@ -204,12 +208,7 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
     const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const relayed = signedIn?.port.available === true ? signedIn.port : undefined;
-    const tell = releaseTeller(hosts, relayed, (machine) =>
-      Effect.sync(() => {
-        relayed?.unrelay(machine.name);
-        remote?.remove(HostId.make(machine.id));
-      }),
-    );
+    const tell = releaseTeller(hosts, relayed);
     if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;

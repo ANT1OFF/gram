@@ -924,7 +924,7 @@ describe("sandbox from a signed-in hosted server", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("refuses a reused machine the server says it reclaimed, and forgets it", () =>
+  it.live("refuses a reused machine the server says it holds no more, and forgets nothing", () =>
     Effect.gen(function* () {
       const world = yield* makeWorld;
       const { port, calls } = fakePort((call) =>
@@ -976,9 +976,10 @@ describe("sandbox from a signed-in hosted server", () => {
           _tag: "Failure",
           failure: { message: expect.stringMatching(/reclaimed/) },
         });
-        // Told at once, not after the wait; nothing stopped, and the registration let go.
+        // Told at once, not after the wait; nothing stopped. One 404 is no proof it is gone (a
+        // server answers it while its cell is out of reach): it stays, for `forgetReclaimed`.
         expect(calls.map((each) => each.call)).toEqual(["choices", "release"]);
-        expect(registered).toBe(false);
+        expect(registered).toBe(true);
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );

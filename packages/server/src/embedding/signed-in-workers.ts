@@ -60,10 +60,12 @@ import {
 import {
   codeOf,
   fileOwedStops,
+  isNotFound,
   memoryOwedStops,
   OWED_MOST,
   type NameLocks,
   type OwedStops,
+  RECLAIMED_AFTER_MISSES,
   settleOwedStops,
   stopOutcome,
   UNANSWERED_STOP_HOLD_MS,
@@ -214,7 +216,9 @@ export const signedInSource = (
             // "No such machine" ends nothing while a start of it may still be on its way.
             const outcome = stopOutcome(answered);
             stopped = outcome === "stopped" || (outcome === "absent" && !unsettled);
-            unanswered = !answered.ok;
+            // A stop no one answered may still land late: a later attempt's answer is its own,
+            // not that one's, so the name is held after it whatever comes next.
+            if (!answered.ok) unanswered = true;
             // Only the status: what a server answers isn't written to the log.
             last = answered.ok ? `answered ${answered.status}` : "no answer";
           }
@@ -253,17 +257,9 @@ export const signedInSource = (
     givesBack: true,
     unrelease: (name) =>
       tellSignedInRelease(port, { name, via: origin }, false).pipe(
-        Effect.flatMap((told) =>
-          told === "applied"
-            ? Effect.succeed(undefined)
-            : // Reclaimed there: nothing to wait for, and nothing here to keep or relay.
-              Effect.sync(() => {
-                port.unrelay(name);
-                const machine = named(name);
-                if (machine !== undefined) hosts.remove(HostId.make(machine.id));
-                return "gone" as const;
-              }),
-        ),
+        // Answered `not_found`: this spawn doesn't wait for it. Once is no proof it is gone, so
+        // it stays registered and relayed: only `forgetReclaimed` forgets one.
+        Effect.map((told) => (told === "applied" ? undefined : ("gone" as const))),
         Effect.catch(() =>
           Effect.logWarning("a worker machine reused could not be told it is working").pipe(
             Effect.annotateLogs({ machine: name }),
@@ -417,7 +413,7 @@ export const signedInSource = (
           const fresh = answered.ok && settledSince(deps.sent, name, before);
           const status = fresh ? parseMachineStatus(answered.body) : {};
           const why = status.message ?? `${server.server} says it isn't starting.`;
-          if (fresh && answered.status === 404 && machine === undefined)
+          if (fresh && isNotFound(answered) && machine === undefined)
             return { failed: failedWords(name, why) };
           if (fresh && answered.status < 300) {
             // Failed on the start this spawn asked for, or again after it was started once more:
@@ -504,21 +500,20 @@ export class SignedInWorkers extends Context.Service<
 
 /** How often the app is told the whole list of machines it carries, whether or not it changed. */
 export const RELAYS_RESYNC = Duration.minutes(1);
-/** How many passes in a row a machine is answered 404 before it is forgotten here. */
-export const RECLAIMED_AFTER_MISSES = 3;
 /** How often offline relayed machines are asked after, to forget one the server reclaimed. */
 export const RECLAIMED_EVERY = Duration.minutes(10);
 
 /**
  * Forgets each relayed worker machine that is offline and that its server answers it doesn't know
- * (`…/status` 404): reclaimed there once released, or removed. Online ones aren't asked.
+ * (`…/status` 404 `not_found`, `RECLAIMED_AFTER_MISSES` passes in a row): reclaimed there once
+ * released, or removed. Online ones aren't asked. Nothing else forgets one a server started.
  */
 export const forgetReclaimed = (
   port: WorkerMachinePortShape,
   hosts: Pick<RemoteHostsShape, "list" | "remove">,
   /**
-   * How many passes in a row each machine was answered 404: the server says the same of a name
-   * while its workspace is out of reach for a while, so one answer alone forgets nothing.
+   * How many passes in a row each machine was answered 404 `not_found`: the server says the same
+   * of a name while its workspace is out of reach for a while, so one answer alone forgets nothing.
    */
   misses: Map<string, number> = new Map(),
   /**
@@ -559,7 +554,7 @@ export const forgetReclaimed = (
         }
         continue;
       }
-      if (!answered.ok || answered.status !== 404) {
+      if (!isNotFound(answered)) {
         misses.delete(machine.id);
         continue;
       }
@@ -717,11 +712,20 @@ export const SignedInWorkersLive = Layer.effect(
     // A machine the server no longer knows (reclaimed after its release, or removed there) is
     // forgotten here, so its relay stops and its name is free.
     const misses = new Map<string, number>();
+    const stopMisses = new Map<string, number>();
     yield* forgetReclaimed(port, hosts, misses, asleep, sent).pipe(
       // One the pass found stopped or failed is no longer among the relays told.
       Effect.tap(() => Effect.sync(() => sync(false))),
       Effect.andThen(
-        settleOwedStops(port, owed, claimed, Date.now, locks, (name) => starting.has(name)),
+        settleOwedStops(
+          port,
+          owed,
+          claimed,
+          Date.now,
+          locks,
+          (name) => starting.has(name),
+          stopMisses,
+        ),
       ),
       Effect.catchCause((cause) => Effect.logWarning("the reclaimed-machine pass failed", cause)),
       Effect.repeat(Schedule.spaced(RECLAIMED_EVERY)),

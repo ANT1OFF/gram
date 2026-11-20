@@ -228,7 +228,8 @@ subscription token reaches a machine, with its own consent.
   restarted is dialled again), on every change of its machines (a removal under Settings stops its
   relay), and every minute besides. The app keeps that list even while its sign-in is still being
   restored, and dials each once the sign-in covers it. A machine the server no longer knows
-  (`…/status` 404, reclaimed after its release) is forgotten, so relays never pile up; past 32
+  (`…/status` `404 not_found` three passes in a row, reclaimed after its release) is forgotten,
+  so relays never pile up; past 32
   relayed machines a new one is refused with what to remove.
 - **Revocation.** Signing out, the sign-in ending, or hosted features turning off closes every live
   relay the sign-in no longer covers, at once and in a check every 30 seconds; none dials again
@@ -258,11 +259,14 @@ subscription token reaches a machine, with its own consent.
   machine is registered here or confirmed stopped under its name's lock.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
-  When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way), the
-  server's "no such machine" (a 404, or a 2xx with `stopped: false`) settles nothing for fifteen
-  minutes, since the start may still make it. A start and a stop of one name never overlap here:
-  a give-back keeps the name through every attempt of its stop, and half a minute more after one
-  no one answered, so a retry's start of that name goes out only after it.
+  The server's "no such machine" is a 2xx with `stopped: false`, or `404 { code: "not_found" }` on
+  three passes in a row: one such 404 is no proof, since the server answers it for every machine
+  while it has no cell manager or the workspace no cell, and any other 404 is a passing error.
+  When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way),
+  "no such machine" settles nothing for fifteen minutes, since the start may still make it. A
+  start and a stop of one name never overlap here: a give-back keeps the name through every
+  attempt of its stop, and half a minute more if any attempt went unanswered, whatever later ones
+  were answered, so a retry's start of that name goes out only after it.
 - **A machine in use is never given back.** A spawn that fails or is interrupted after its machine
   came gives the machine back only if no open thread is placed on it: not its own worker made
   before the failure, and not another worker sharing it. A name a later start takes, or one registered here since, is that start's: no stop owed for
@@ -271,18 +275,23 @@ subscription token reaches a machine, with its own consent.
   restart it tells each machine at work that it is working, once, in case the server still holds
   a release from before; a machine just back online is told so at once, and only a verdict that
   its work is over waits for it to settle. A release counts as told only once the server applied
-  it (not a 404, nor a 2xx saying it knows no such machine), so one that wasn't is told again.
-- **A machine the server no longer knows** is forgotten here after three passes in a row answer
-  404, since the same answer comes while its workspace is out of reach for a while.
-- **Reusing a machine.** A machine a spawn reuses (one an earlier spawn of the same id left
-  registered, or one it shares that is offline) is told it is working (`released: false`) before
-  it is waited for: one released once its work was over sleeps until then.
+  it (not a 404, nor a 2xx saying it knows no such machine), so one that wasn't is told again. A
+  release answered 404 forgets nothing: a `404 not_found` is told again next pass, any other 404
+  is asked again at once, as a busy server is.
+- **A machine the server no longer knows** is forgotten here only after three passes in a row
+  answer its `…/status` `404 { code: "not_found" }`, since the same answer comes while its
+  workspace is out of reach for a while. Nothing else forgets a machine a server started.
+- **Reusing a machine.** A hosted server's machine a spawn reuses (one an earlier spawn of the
+  same id left registered, or one it shares that is offline) is told it is working
+  (`released: false`) before it is waited for: one released once its work was over sleeps until
+  then. An embedder's machine shared by `shareWith` goes to the spawn by name, online or not, as it
+  always has: nothing waits for it first.
 - **A machine still released.** A start answered `409 { code: "released" }` takes the release
-  back (`released: false`) and asks once more, never again. A take-back answered `404` (the
-  release is already due for reclaim) spends the name as a reclaimed one, below, and asks
-  nothing again under it. A release answered
-  `404 { code: "not_found" }`, a take-back's too, is a machine reclaimed there, forgotten here; a
-  `503` is asked again after a wait.
+  back (`released: false`) and asks once more, never again. A take-back answered
+  `404 { code: "not_found" }` (the release is already due for reclaim) refuses that start as a
+  reclaimed name, below, and asks nothing more under it; a spawn that reuses a machine and is
+  answered so is refused without waiting for it. Neither forgets the machine: that is the
+  three-pass rule's. A `503`, or any other 404, is asked again after a wait.
 - **A reclaimed name.** A start answered `409 { code: "name_in_use" }` (the name was a machine's
   the server has since reclaimed) is refused once, saying to spawn with another
   `clientRequestId`; it is never asked again, nor read as being over the total.
