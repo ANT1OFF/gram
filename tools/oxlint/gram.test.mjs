@@ -8,11 +8,11 @@ import { ALLOWLISTS } from "./allowlists.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Lints each source as a file of its own in one oxlint run, and returns each file's diagnostics. */
-const lintEach = (sources, rule = "gram/no-bare-fork") => {
+const lintEach = (sources, rule = "gram/no-bare-fork", ext = "ts") => {
   const dir = mkdtempSync(join(tmpdir(), "gram-fork-rule-"));
   try {
     const files = sources.map((source, i) => {
-      const file = join(dir, `fixture-${i}.ts`);
+      const file = join(dir, `fixture-${i}.${ext}`);
       writeFileSync(file, source);
       return file;
     });
@@ -49,7 +49,7 @@ const lintEach = (sources, rule = "gram/no-bare-fork") => {
     rmSync(dir, { recursive: true, force: true });
   }
 };
-const lint = (source, rule) => lintEach([source], rule)[0];
+const lint = (source, rule, ext) => lintEach([source], rule, ext)[0];
 
 /** The rule codes the repository's own config reports for a probe file placed in `dir`. */
 const probeConfig = (dir) => {
@@ -303,5 +303,47 @@ describe("no-adhoc-lock", () => {
 
   it.each(ALLOWLISTS["no-adhoc-lock"].pending)("still has an unmoved site in %s", (file) => {
     expect(lint(readFileSync(join(root, file), "utf8"), rule).length).toBeGreaterThan(0);
+  });
+});
+
+describe("lucide-stroke", () => {
+  const rule = "gram/lucide-stroke";
+
+  it("refuses a stroke on a Lucide icon, imported, namespaced or made with createLucideIcon", () => {
+    const found = lint(
+      `import { Check, createLucideIcon as make } from "lucide-react";
+      import * as Icons from "lucide-react";
+      const Ring = make({ name: "ring", size: 24, node: [] });
+      export const a = <Check strokeWidth={1.5} />;
+      export const b = <Icons.X absoluteStrokeWidth />;
+      export const c = <Ring className="size-3" strokeWidth={1.5} {...props} />;
+    `,
+      rule,
+      "tsx",
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([4, 5, 6]);
+    expect(found[0].message).toContain("createLucideIcon");
+  });
+
+  it("allows a stroke on Gram's own svg, on a node, and other props on an icon", () => {
+    expect(
+      lint(
+        `import { Check, createLucideIcon } from "lucide-react";
+        import { Gauge } from "./gauge";
+        const Ring = createLucideIcon({
+          name: "ring",
+          size: 24,
+          node: [["circle", { r: "9", strokeWidth: "1.5", key: "ring" }]],
+        });
+        export const a = <svg strokeWidth={2}><circle strokeWidth="1.5" /></svg>;
+        export const b = <Gauge strokeWidth={2} />;
+        export const c = <Check className="size-icon-row" />;
+        export const d = <Ring />;
+        function Local({ Check }) { return <Check strokeWidth={1} />; }
+      `,
+        rule,
+        "tsx",
+      ),
+    ).toEqual([]);
   });
 });

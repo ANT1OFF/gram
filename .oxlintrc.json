@@ -32,6 +32,12 @@
         "gram/no-day-math": "error",
         "gram/no-adhoc-lock": "error"
       }
+    },
+    {
+      "files": ["apps/web/src/**", "apps/web/e2e-embed/**"],
+      "rules": {
+        "gram/lucide-stroke": "error"
+      }
     }
   ],
   "ignorePatterns": [

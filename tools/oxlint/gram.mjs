@@ -11,6 +11,9 @@
 // only through `git/keyed-lock.ts`, which frees a key once nobody holds it.
 // Each primitive's owner and the files not moved onto it yet are in `allowlists.mjs`; `.oxlintrc.json`
 // scopes the rules to those packages, and test files are exempt.
+//
+// And one optical stroke for Lucide icons: the `lucide` class sets it per size (styles/base.css),
+// so a `strokeWidth` on the icon is outranked and does nothing.
 
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -143,9 +146,71 @@ const namesSemaphore = (type) =>
 
 const MAPS = new Set(["Map", "WeakMap", "ReadonlyMap"]);
 
+/** Lucide's props that set an icon's stroke, which the `lucide` class's stroke outranks. */
+const LUCIDE_STROKES = new Set(["strokeWidth", "absoluteStrokeWidth"]);
+const CREATORS = new Set(["createLucideIcon"]);
+
+/** Whether a binding is an import from lucide-react (one of `names`, when given). */
+const fromLucide = (definition, names) =>
+  definition?.type === "ImportBinding" &&
+  definition.parent.source.value === "lucide-react" &&
+  (names === undefined ||
+    (definition.node.type === "ImportSpecifier" &&
+      names.has(definition.node.imported.name ?? definition.node.imported.value)));
+
 export default {
   meta: { name: "gram" },
   rules: {
+    "lucide-stroke": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Don't set strokeWidth on a Lucide icon: the `lucide` class draws one optical stroke per size",
+        },
+      },
+      create(context) {
+        if (exempt("lucide-stroke", context)) return {};
+        const sourceCode = context.sourceCode;
+        /** The definition `name` is bound to where `node` is. */
+        const definitionOf = (node, name) => {
+          for (let scope = sourceCode.getScope(node); scope; scope = scope.upper) {
+            const variable = scope.variables.find((value) => value.name === name);
+            if (variable) return variable.defs[0];
+          }
+        };
+        /** Whether a JSX name is a lucide-react icon, imported or made with its createLucideIcon. */
+        const lucide = (name) => {
+          while (name.type === "JSXMemberExpression") name = name.object;
+          if (name.type !== "JSXIdentifier") return false;
+          const definition = definitionOf(name, name.name);
+          if (fromLucide(definition)) return true;
+          if (definition?.type !== "Variable" || definition.parent.kind !== "const") return false;
+          let init = definition.node.init;
+          while (init?.type === "TSAsExpression" || init?.type === "TSSatisfiesExpression")
+            init = init.expression;
+          return (
+            init?.type === "CallExpression" &&
+            init.callee.type === "Identifier" &&
+            fromLucide(definitionOf(init.callee, init.callee.name), CREATORS)
+          );
+        };
+        return {
+          JSXOpeningElement(node) {
+            const props = node.attributes.filter(
+              (attribute) =>
+                attribute.type === "JSXAttribute" && LUCIDE_STROKES.has(attribute.name.name),
+            );
+            if (props.length === 0 || !lucide(node.name)) return;
+            for (const prop of props)
+              context.report({
+                node: prop,
+                message: `\`${prop.name.name}\` does nothing on a Lucide icon: its \`lucide\` class sets the stroke from --icon-stroke for each size (styles/base.css), and DESIGN.md keeps one optical stroke. Drop it and pick the size token; a glyph of Gram's own that needs a thinner line sets \`strokeWidth\` on its strokes in createLucideIcon's node, as motion/spinner.tsx's rings do.`,
+              });
+          },
+        };
+      },
+    },
     "no-adhoc-lock": {
       meta: {
         type: "problem",
