@@ -158,6 +158,12 @@ const FLICKER_INTENDED: FlickerAllow[] = [
     kinds: ["text-flip"],
     reason: 'a setting saved again cross-fades a new "Saved" over the old one for 200 ms',
   },
+  {
+    selector: '[data-testid="composer-toolbar"]',
+    kinds: ["text-flip"],
+    reason:
+      "the mock runs turns at a twentieth of their pace, so Steer can come and go within 300 ms",
+  },
 ];
 
 /**
