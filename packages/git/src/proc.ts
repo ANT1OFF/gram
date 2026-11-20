@@ -383,11 +383,15 @@ const NESTED_LIMIT = 64;
  */
 const gitlinkedGitDirs = (
   read: (more: ReadonlyArray<string>) => Effect.Effect<ProcOutput, ProcError>,
-): Effect.Effect<ReadonlyArray<string> | undefined, ProcError> =>
+): Effect.Effect<
+  { readonly dirs: ReadonlyArray<string>; readonly dotGits: ReadonlyArray<string> } | undefined,
+  ProcError
+> =>
   Effect.gen(function* () {
     const top = yield* read(["rev-parse", "--show-toplevel"]);
-    if (top.status !== 0 || top.stdout.trim() === "") return [];
+    if (top.status !== 0 || top.stdout.trim() === "") return { dirs: [], dotGits: [] };
     const found: Array<string> = [];
+    const dotGits: Array<string> = [];
     const queue: Array<{ readonly worktree: string; readonly gitDir: string | undefined }> = [
       { worktree: top.stdout.trim(), gitDir: undefined },
     ];
@@ -405,6 +409,8 @@ const gitlinkedGitDirs = (
       if (listing.status !== 0 || listing.truncated) return undefined;
       for (const path of gitlinkPaths(listing.stdout)) {
         const at = nodePath.join(worktree, path);
+        dotGits.push(nodePath.join(at, ".git"));
+        if (dotGits.length > NESTED_LIMIT * 4) return undefined;
         const dir = nestedGitDir(at);
         if (dir === undefined) continue;
         found.push(dir);
@@ -412,7 +418,7 @@ const gitlinkedGitDirs = (
         queue.push({ worktree: at, gitDir: dir });
       }
     }
-    return found;
+    return { dirs: found, dotGits };
   });
 
 interface CachedGuard {
@@ -420,6 +426,7 @@ interface CachedGuard {
   readonly gitDir: string;
   readonly commonDir: string;
   readonly nestedGitDirs: ReadonlyArray<string>;
+  readonly gitlinkDotGits: ReadonlyArray<string>;
   readonly guard: Guard;
 }
 
@@ -442,8 +449,14 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
       const hit = cache.get(key);
       if (
         hit !== undefined &&
-        discoverySignature(options.cwd, hit.gitDir, hit.commonDir, undefined, hit.nestedGitDirs) ===
-          hit.signature
+        discoverySignature(
+          options.cwd,
+          hit.gitDir,
+          hit.commonDir,
+          undefined,
+          hit.nestedGitDirs,
+          hit.gitlinkDotGits,
+        ) === hit.signature
       )
         return hit.guard;
       // `git config` reads `GIT_CONFIG` as its `--file`, which the call itself ignores: listed
@@ -471,6 +484,7 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
       // points at, wherever its git folder is (an agent can make one with `git add`).
       const nested: Array<ConfigEntry> = [];
       const nestedDirs: Array<string> = [];
+      let dotGits: ReadonlyArray<string> = [];
       if (dirs.status === 0 && commonDir) {
         const modules = submoduleGitDirs(commonDir);
         const linked = yield* gitlinkedGitDirs(read);
@@ -478,8 +492,9 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
           return yield* Effect.fail(
             new ProcSpawnError({ bin: "git", message: "the repository has too many submodules" }),
           );
+        dotGits = linked.dotGits;
         const seen = new Set(modules.map((dir) => nodePath.resolve(dir)));
-        for (const dir of linked)
+        for (const dir of linked.dirs)
           if (!seen.has(nodePath.resolve(dir))) {
             seen.add(nodePath.resolve(dir));
             nestedDirs.push(dir);
@@ -512,10 +527,18 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
       if (dirs.status === 0 && gitDir && commonDir && !guard.includes && globals.length === 0) {
         if (cache.size >= GUARD_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
         cache.set(key, {
-          signature: discoverySignature(options.cwd, gitDir, commonDir, undefined, nestedDirs),
+          signature: discoverySignature(
+            options.cwd,
+            gitDir,
+            commonDir,
+            undefined,
+            nestedDirs,
+            dotGits,
+          ),
           gitDir,
           commonDir,
           nestedGitDirs: nestedDirs,
+          gitlinkDotGits: dotGits,
           guard,
         });
       }

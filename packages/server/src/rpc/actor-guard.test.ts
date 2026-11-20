@@ -106,6 +106,9 @@ describe("a folder a call runs git or config in, on a headless server", () => {
     expect(names({ root: "/data/shared/ws-1/repo" })).toBe(true);
     expect(names({ cwd: "/data" })).toBe(true);
     expect(names({ projectRoot: "/data" })).toBe(true);
+    // A thread's folder with `..` out of it is wherever it leads.
+    expect(names({ repoPath: `${remote}/../../../../data/shared/ws-1/repo` })).toBe(true);
+    expect(names({ repoPath: `${remote}/packages/..` })).toBe(false);
     // Without the machines to ask, any named folder counts as the server's.
     expect(Effect.runSync(namesServerDisk({ repoPath: remote }, undefined))).toBe(true);
   });

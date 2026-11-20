@@ -276,6 +276,35 @@ describe.skipIf(!hasGit)("Gram's own git and a submodule's config", () => {
     }).pipe(provide),
   );
 
+  it.live(
+    "guards a nested repository whose .git is a link, or that is checked out after a call",
+    () =>
+      Effect.gen(function* () {
+        const { repo, root, ran, marker } = setup();
+        const inner = nodePath.join(repo, "inner");
+        fs.mkdirSync(inner);
+        run(inner, "init", "-q", "-b", "main");
+        fs.writeFileSync(nodePath.join(inner, ".gitattributes"), "*.txt filter=nested\n");
+        fs.writeFileSync(nodePath.join(inner, "n.txt"), "one\n");
+        run(inner, "add", "-A");
+        run(inner, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "n");
+        run(repo, "add", "inner");
+        run(repo, "commit", "-qm", "gitlink");
+        // Nothing checked out at the gitlink when Gram first looks, so the guard it keeps has no
+        // nested config in it.
+        const away = nodePath.join(root, "inner-git");
+        fs.renameSync(nodePath.join(inner, ".git"), away);
+        expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+        // Then the agent puts it back as a link git follows, with a filter in its config.
+        if (process.platform !== "win32") fs.symlinkSync(away, nodePath.join(inner, ".git"));
+        else fs.renameSync(away, nodePath.join(inner, ".git"));
+        run(inner, "config", "filter.nested.clean", `touch '${marker("nested-clean")}'; cat`);
+        fs.writeFileSync(nodePath.join(inner, "n.txt"), "two\n");
+        expect((yield* git(repo, STRICT_STATUS_ARGS)).stdout).toContain("inner");
+        expect(ran()).toEqual([]);
+      }).pipe(provide),
+  );
+
   it.live.skipIf(process.platform === "win32")("gives the git that gh starts the same guard", () =>
     Effect.gen(function* () {
       const { repo, root, plant, ran } = setup();

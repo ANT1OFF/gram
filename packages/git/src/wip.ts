@@ -20,6 +20,7 @@
 
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
+import { devNull } from "node:os";
 import * as Effect from "effect/Effect";
 import { headOid, readRef, repoTopOrFail, run } from "./checkpoint-git.ts";
 import { IDENTITY_ENV, isValidCheckpointId, writeWorktreeTree } from "./checkpoints.ts";
@@ -285,7 +286,7 @@ export interface WipKept {
 }
 
 /** Never a hook of the repository's, nor a prompt: nothing a person is there to answer. */
-const QUIET = ["-c", "core.hooksPath=/dev/null", "-c", "credential.interactive=false"];
+const QUIET = ["-c", `core.hooksPath=${devNull}`, "-c", "credential.interactive=false"];
 
 const network = (protocols: string) => ({
   timeoutMs: PUSH_TIMEOUT_MS,

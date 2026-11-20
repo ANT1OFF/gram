@@ -43,17 +43,19 @@ export const RUNS_IN_FOLDER: ReadonlySet<string> = new Set([
 /**
  * Whether a call that runs in a folder names one on this server's own disk: a path no joined
  * machine's thread holds (`placeOf` says this machine's). A relative path, `~` included, would be
- * read against the server's own folders, so it counts as one of them. Without `placeOf` to ask,
- * every named folder does.
+ * read against the server's own folders, so it counts as one of them. A path is asked about both as
+ * named and with its `..` resolved, so `<thread folder>/../..` does not pass for the thread's.
+ * Without `placeOf` to ask, every named folder does.
  */
 export const namesServerDisk = (
   payload: unknown,
   placeOf: ((path: string) => Effect.Effect<HostId | undefined>) | undefined,
 ): Effect.Effect<boolean> =>
   Effect.gen(function* () {
-    for (const path of pathsMentioned(payload, [resolve("/")])) {
+    for (const named of pathsMentioned(payload, [resolve("/")])) {
       if (placeOf === undefined) return true;
-      if ((yield* placeOf(path)) === LOCAL_HOST_ID) return true;
+      for (const path of new Set([named, resolve(named)]))
+        if ((yield* placeOf(path)) === LOCAL_HOST_ID) return true;
     }
     return false;
   });

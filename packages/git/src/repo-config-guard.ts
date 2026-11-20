@@ -6,6 +6,7 @@
 // keeps working; what a checkout says about itself never runs.
 
 import * as fs from "node:fs";
+import { devNull } from "node:os";
 import * as nodePath from "node:path";
 
 export interface ConfigEntry {
@@ -102,7 +103,7 @@ const isInclude = (key: string): boolean => {
  * (`dirty` reads its HEAD in place), not its uncommitted changes.
  */
 const ALWAYS: ReadonlyArray<readonly [string, string]> = [
-  ["core.hooksPath", "/dev/null"],
+  ["core.hooksPath", devNull],
   ["protocol.ext.allow", "never"],
   ["diff.ignoreSubmodules", "dirty"],
   ["status.submoduleSummary", "false"],
@@ -262,7 +263,8 @@ export const nestedGitDir = (path: string): string | undefined => {
   const dotGit = nodePath.join(path, ".git");
   let st: fs.Stats;
   try {
-    st = fs.lstatSync(dotGit);
+    // Followed, as git follows a `.git` that is a link to a folder or to a gitdir file.
+    st = fs.statSync(dotGit);
   } catch {
     return undefined;
   }
@@ -294,6 +296,7 @@ export const discoverySignature = (
   commonDir: string,
   lstat: (path: string) => fs.BigIntStats | undefined = lstatOrUndefined,
   nestedGitDirs: ReadonlyArray<string> = [],
+  gitlinkDotGits: ReadonlyArray<string> = [],
 ): string => {
   const parts: Array<string> = [];
   const mark = (path: string) => {
@@ -321,12 +324,35 @@ export const discoverySignature = (
     mark(path);
   for (const nested of nestedGitDirs) {
     mark(nested);
+    mark(nodePath.join(nested, "index"));
     for (const path of submoduleConfigFiles(nested)) mark(path);
+  }
+  // Every gitlink's `.git`, checked out or not: one made later at a gitlink nothing was checked
+  // out at is a nested repository whose config the guard hasn't read. Followed too, so a link
+  // pointed elsewhere changes the signature.
+  for (const path of gitlinkDotGits) {
+    mark(path);
+    const target = statOrUndefined(path);
+    parts.push(
+      target === undefined
+        ? `${path}=>-`
+        : target.isDirectory()
+          ? `${path}=>d${target.ino}`
+          : `${path}=>${target.ino}:${target.ctimeNs}:${target.size}`,
+    );
   }
   const submodules = submoduleGitDirs(commonDir);
   if (submodules === undefined) parts.push("submodules:too-many");
   else for (const sub of submodules) for (const path of submoduleConfigFiles(sub)) mark(path);
   return parts.join("\n");
+};
+
+const statOrUndefined = (path: string): fs.BigIntStats | undefined => {
+  try {
+    return fs.statSync(path, { bigint: true });
+  } catch {
+    return undefined;
+  }
 };
 
 const lstatOrUndefined = (path: string): fs.BigIntStats | undefined => {
