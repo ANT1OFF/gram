@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { AppActivity, type WindowActivity } from "../../git/activity.ts";
+import { ReadingAs } from "../../embedding/readable-by.ts";
 import { makeWindowPlacements } from "./windows.ts";
 
 const waitUntil = (check: () => boolean) =>
@@ -105,5 +106,36 @@ describe("makeWindowPlacements", () => {
       const first = yield* placements.watch("w1", "Main").pipe(Stream.take(1), Stream.runCollect);
       expect(ids([...first][0])).toEqual(["w1"]);
     }),
+  );
+
+  it.effect("shows each signed-in person only their own windows, and lets only them report", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const placements = yield* makeWindowPlacements;
+        const as = (subject: string) => Effect.provideService(ReadingAs, { subject });
+        const alice: WindowPlacements[] = [];
+        const bob: WindowPlacements[] = [];
+        yield* placements.watch("w-alice", "Main").pipe(
+          Stream.runForEach((p) => Effect.sync(() => alice.push(p))),
+          as("alice"),
+          Effect.forkScoped,
+        );
+        yield* placements.watch("w-bob", "Main").pipe(
+          Stream.runForEach((p) => Effect.sync(() => bob.push(p))),
+          as("bob"),
+          Effect.forkScoped,
+        );
+        yield* waitUntil(() => ids(bob.at(-1)).join() === "w-bob");
+        yield* placements.report("w-alice", ["t-private" as ThreadId]).pipe(as("alice"));
+        yield* waitUntil(() => alice.at(-1)?.windows[0]?.threadIds[0] === "t-private");
+        // Bob names Alice's window: nothing of hers changes, and his stream never shows it.
+        yield* placements.report("w-alice", ["t-bob" as ThreadId]).pipe(as("bob"));
+        yield* Effect.yieldNow;
+        expect(alice.at(-1)?.windows).toEqual([
+          { windowId: "w-alice", name: "Main", threadIds: ["t-private"] },
+        ]);
+        for (const seen of bob) expect(JSON.stringify(seen)).not.toMatch(/alice|t-private/);
+      }),
+    ),
   );
 });
