@@ -1,4 +1,4 @@
-import { randomBytes, type KeyObject, createHash, timingSafeEqual } from "node:crypto";
+import { randomBytes, type KeyObject, createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   checkHostedDiscovery,
@@ -28,6 +28,7 @@ import {
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 import { dpopProof } from "./dpop.ts";
+import { page, sameText } from "./hosted-loopback.ts";
 
 /**
  * The calls a desktop app makes to a hosted server it signs in to (`docs/design/personal-device.md`,
@@ -159,6 +160,8 @@ export interface HostedToken {
 
 export interface HostedTokens extends HostedToken {
   readonly refreshToken?: string;
+  /** The organisation the grant is for, where the server says (`HostedTokenAnswer`). */
+  readonly organization?: string;
   readonly grantedScopes?: readonly string[];
 }
 
@@ -235,24 +238,12 @@ const tokenCall = async (
         expiresAt: options.now() + lasts,
         subject: token.sub,
         ...(token.refresh_token === undefined ? {} : { refreshToken: token.refresh_token }),
+        ...(token.organization === undefined ? {} : { organization: token.organization }),
         ...(token.scope === undefined ? {} : { grantedScopes: token.scope.trim().split(/ +/) }),
       },
     };
   }
   return failed("The server refused the sign-in.");
-};
-
-/** Compared in constant time, through hashes, so the lengths needn't match. */
-const sameText = (a: string, b: string): boolean =>
-  timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
-
-const page = (response: ServerResponse, status: number, text: string) => {
-  response.writeHead(status, {
-    "content-type": "text/plain; charset=utf-8",
-    "cache-control": "no-store",
-    "referrer-policy": "no-referrer",
-  });
-  response.end(text);
 };
 
 export interface SignInOptions {

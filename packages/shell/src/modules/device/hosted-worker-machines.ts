@@ -2,7 +2,7 @@
 // one under the server's `worker_machines_endpoint`, a dial of the relay that carries its
 // connection, a relay's lease, and the device's side of them (`hosted-device.ts`).
 
-import { createHash, type KeyObject } from "node:crypto";
+import type { KeyObject } from "node:crypto";
 
 import {
   type HostedDiscovery,
@@ -209,13 +209,6 @@ export const ANOTHER_ACCOUNT = {
   why: "This computer is signed in to that server as someone else now, so nothing was sent for this machine: sign in as the person it was started for.",
 };
 
-/**
- * The opaque mark of a sign-in (`WorkerMachineServer.account`): the server and who the person
- * is there, hashed, so no one's id leaves the app.
- */
-export const accountOf = (origin: string, subject: string) =>
-  createHash("sha256").update(`${origin}\n${subject}`).digest("base64url").slice(0, 32);
-
 /** A device's worker-machine calls, each to the server signed in at its origin. */
 export interface HostedWorkerMachines {
   /**
@@ -264,6 +257,8 @@ interface WorkerMachineServerSide {
   readonly discovery: HostedDiscovery;
   readonly key: KeyObject;
   readonly keeper: TokenKeeper;
+  /** The mark of this sign-in (`StoredSignIn.machineMark`, `WorkerMachineServer.account`). */
+  readonly machineMark: string;
   readonly limits: { readonly paused: () => boolean };
 }
 
@@ -288,7 +283,7 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
           server: {
             origin: open.origin,
             server: open.discovery.name,
-            account: accountOf(open.origin, open.keeper.subject),
+            account: open.machineMark,
           },
         };
       if (signedIn.length > 0)
@@ -302,8 +297,7 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
     workerMachineCall: async (origin, call, body, sendBy, account) => {
       const server = known(origin);
       if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
-      if (account !== undefined && account !== accountOf(origin, server.keeper.subject))
-        return ANOTHER_ACCOUNT;
+      if (account !== undefined && account !== server.machineMark) return ANOTHER_ACCOUNT;
       if (call === "start" && server.limits.paused())
         return {
           ok: false,

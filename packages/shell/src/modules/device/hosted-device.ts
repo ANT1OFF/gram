@@ -1,7 +1,6 @@
 import { createHmac, type KeyObject, randomBytes } from "node:crypto";
 import { join } from "node:path";
 import {
-  type DeviceCapability,
   type DeviceId,
   type HostedDiscovery,
   type HostedMachine,
@@ -36,7 +35,8 @@ import {
   type TokenKeeper,
 } from "./hosted.ts";
 import { forgetHostedDevice, registerHostedDevice } from "./hosted-registration.ts";
-import { parseSignIn, type StoredSignIn } from "./stored-sign-in.ts";
+import { capabilitiesOf, folderId, hostOf } from "./hosted-device-parts.ts";
+import { machineMarkFor, markedSignIn, type StoredSignIn } from "./stored-sign-in.ts";
 import {
   type HostedWorkerMachines,
   hostedWorkerMachines,
@@ -382,6 +382,8 @@ interface Server {
   readonly deviceId: DeviceId;
   readonly deviceRegistered: boolean;
   readonly keeper: TokenKeeper;
+  /** The mark worker machines asked for under this sign-in carry (`StoredSignIn.machineMark`). */
+  readonly machineMark: string;
   readonly limits: AskLimits;
   readonly grants: GrantLedger;
   workspaces: ReadonlyArray<HostedWorkspace>;
@@ -400,19 +402,6 @@ interface Retained {
   readonly problem: string;
 }
 
-/** What a workspace's lent machine may do; a workspace whose policy isn't known gets nothing. */
-const capabilitiesOf = (
-  policy: HostedWorkspace["devices"] | undefined,
-  readOnly: boolean,
-): ReadonlyArray<DeviceCapability> =>
-  policy === undefined || policy === "off"
-    ? []
-    : policy === "on" && !readOnly
-      ? ["read", "exec"]
-      : ["read"];
-
-const folderId = () => `f-${randomBytes(8).toString("hex")}`;
-
 const savedOf = (server: Server): SavedServer => ({
   origin: server.origin,
   paused: server.limits.paused(),
@@ -430,14 +419,6 @@ const savedOf = (server: Server): SavedServer => ({
     })),
   })),
 });
-
-const hostOf = (origin: string) => {
-  try {
-    return new URL(origin).host;
-  } catch {
-    return origin;
-  }
-};
 
 const CLOSING: Done = { ok: false, why: "Gram is closing." };
 
@@ -674,6 +655,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       deviceId: signIn.deviceId,
       deviceRegistered: signIn.deviceRegistered !== false,
       keeper: keeper ?? keeperFor(origin, discovery, key, signIn, () => endedByServer(server)),
+      machineMark: signIn.machineMark ?? machineMarkFor(origin, signIn.subject),
       limits: makeAskLimits(options.elapsed, { paused: saved?.paused ?? false }, () => {
         // Paused: everything waiting on the person goes, as paused, and the pause is kept.
         void server.lending?.stop("paused");
@@ -747,7 +729,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       return { ok: false, why };
     };
     try {
-      const signIn = parseSignIn(await secrets.get(signInName(saved.origin)));
+      const signIn = await markedSignIn(saved.origin, secrets, signInName(saved.origin));
       const pem = await secrets.get(keyName(saved.origin));
       if (signIn === undefined || pem === undefined) {
         return keep("Signed out. Sign in again.");
@@ -877,6 +859,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         refreshToken: signed.tokens.refreshToken,
         deviceId: deviceIdOf(devicePublicKeyText(key)),
         ...(registerDevice ? {} : { deviceRegistered: false }),
+        machineMark: machineMarkFor(origin, signed.tokens.subject, signed.tokens.organization),
       };
       // A sign-in kept from before goes back if this one doesn't finish.
       const previous = await secrets.get(signInName(origin));

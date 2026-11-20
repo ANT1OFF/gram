@@ -49,6 +49,8 @@ export const fakeServer = () => {
     askNonceOnce: true,
     issuer: "",
     sub: "person-ada",
+    /** The organisation each grant is for, named in the token answer when set. */
+    organization: undefined as string | undefined,
     expiresIn: 900,
     registeredKey: undefined as string | undefined,
     lieAboutId: false,
@@ -195,6 +197,7 @@ export const fakeServer = () => {
         ...(state.giveRefresh ? { refresh_token: refresh } : {}),
         scope,
         sub: state.sub,
+        ...(state.organization === undefined ? {} : { organization: state.organization }),
       });
     }
     // Everything else needs a token bound to the key that proves the call.

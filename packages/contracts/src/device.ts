@@ -789,7 +789,9 @@ export const HostedDeviceRegistered = Schema.Struct({ deviceId: DeviceId });
 
 /**
  * A token endpoint's answer, as Gram reads it: OAuth's fields, and `sub`, the person's subject
- * id, which Gram's protocol adds so a device knows whom it signs for.
+ * id, which Gram's protocol adds so a device knows whom it signs for. `organization`, where a
+ * server gives it: the organisation the grant is for, so what is made under one sign-in is told
+ * apart from the same person's in another (`WorkerMachineServer.account`).
  */
 export const HostedTokenAnswer = Schema.Struct({
   access_token: Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,4096}$/)),
@@ -798,6 +800,7 @@ export const HostedTokenAnswer = Schema.Struct({
   refresh_token: Schema.optional(Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,4096}$/))),
   scope: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),
   sub: Id,
+  organization: Schema.optional(Id),
 });
 export type HostedTokenAnswer = typeof HostedTokenAnswer.Type;
 

@@ -63,7 +63,9 @@ import {
   isNotFound,
   memoryOwedStops,
   OWED_MOST,
+  ownsOwing,
   type NameLocks,
+  type OwedStop,
   type OwedStops,
   RECLAIMED_AFTER_MISSES,
   settleOwedStops,
@@ -224,7 +226,7 @@ export const signedInSource = (
           unsettled &&
           deps.owed !== undefined &&
           named(name) === undefined &&
-          !deps.owed.list().some((each) => each.name === name && each.origin === origin)
+          !deps.owed.list().some((each) => ownsOwing(each, origin, name, account))
         ) {
           deps.starting?.delete(name);
           return true;
@@ -279,7 +281,7 @@ export const signedInSource = (
           // the server is owed one of the name already (the start's own, which stands for it).
           if (
             named(name) === undefined &&
-            !deps.owed?.list().some((each) => each.name === name && each.origin === origin)
+            !deps.owed?.list().some((each) => ownsOwing(each, origin, name, account))
           )
             deps.owed?.add({
               origin,
@@ -291,7 +293,7 @@ export const signedInSource = (
             });
           return false;
         }
-        deps.owed?.release(origin, name);
+        deps.owed?.release(origin, name, account);
         port.unrelay(name);
         const machine = named(name);
         if (machine !== undefined) hosts.remove(HostId.make(machine.id));
@@ -369,6 +371,9 @@ export const signedInSource = (
             {
               ...deps,
               heldFor,
+              // Asked under the sign-in this source is for, as its owing and its give-back are:
+              // signed in there as someone else meanwhile, the app sends none of it.
+              account,
               // Admitted, with room to owe it a stop, and owed it, in one step under the name: a
               // start with no room is refused, never sent where nothing could give it back.
               onLocked: () => {
@@ -530,7 +535,7 @@ export const signedInSource = (
               });
               if (result.kind === "refused") return { failed: failedWords(name, result.message) };
               // Registered here: the release pass looks after it from now on.
-              deps.owed?.release(origin, name);
+              deps.owed?.release(origin, name, account);
             }
           }
           if (named(name) !== undefined && !relayed) {
@@ -645,6 +650,27 @@ export const forgetReclaimed = (
     }
   });
 
+/**
+ * Whether a machine of an owed stop's name is registered here (`settleOwedStops`' `claimed`):
+ * under that stop's own sign-in it is the release pass's now; under another, or where whose
+ * either is isn't known, the stop is kept and not sent, since it might end that other machine. A
+ * start on its way keeps it too (`startingNow`).
+ */
+export const claimedHere =
+  (hosts: Pick<RemoteHostsShape, "list">) =>
+  (name: string, origin: string, stop: OwedStop): boolean | "other" => {
+    const holders = hosts
+      .list()
+      .filter((machine) => machine.name === name && machine.via === origin);
+    if (holders.length === 0) return false;
+    return stop.legacy !== true &&
+      holders.some(
+        (machine) => machine.viaAccount !== undefined && machine.viaAccount === stop.account,
+      )
+      ? true
+      : "other";
+  };
+
 /** Takes one relayed connection as its machine's dial, or ends it with why. */
 export const takeRelayedDial = (hosts: RemoteHostsShape, dial: RelayedDial) =>
   Effect.gen(function* () {
@@ -686,9 +712,7 @@ export const SignedInWorkersLive = Layer.effect(
     const locks: NameLocks = makeKeyedLock<string>();
     const asleep = new Set<string>();
     const sent: StartsSent = new Map();
-    const claimed = (name: string, origin: string) =>
-      starting.has(name) ||
-      hosts.list().some((machine) => machine.name === name && machine.via === origin);
+    const claimed = claimedHere(hosts);
     // Each relayed connection is served in this layer's scope, and ends with it.
     const dials = yield* Queue.unbounded<RelayedDial>();
     port.onDial((dial) => {

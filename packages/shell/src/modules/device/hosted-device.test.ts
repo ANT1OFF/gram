@@ -431,6 +431,49 @@ describe("this machine as a personal device", () => {
     ).toMatchObject({ ok: false });
   });
 
+  it("marks a sign-in's worker machines for that sign-in, the same mark across a restart", async () => {
+    const markOf = (store: Map<string, string>) =>
+      (JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark?: string })
+        .machineMark;
+    // A server that names no organisation: the sign-in's own mark, kept with it.
+    const first = await setUp();
+    await first.device.signIn(origin);
+    const own = markOf(first.store);
+    expect(own).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    await first.device.close();
+    const again = await setUp({}, first.store);
+    await again.waitFor(() => again.device.state().servers[0]?.problem === undefined);
+    expect(markOf(first.store)).toBe(own);
+    await again.device.close();
+    // One kept from before marks were: given its own as it is restored, and that one kept.
+    const stored = JSON.parse(first.store.get(`device-sign-in ${origin}`) ?? "{}") as object;
+    const { machineMark: _gone, ...before } = stored as { machineMark?: string };
+    first.store.set(`device-sign-in ${origin}`, JSON.stringify(before));
+    const restored = await setUp({}, first.store);
+    await restored.waitFor(() => restored.device.state().servers[0]?.problem === undefined);
+    const given = markOf(first.store);
+    expect(given).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    await restored.device.close();
+    expect(markOf((await setUp({}, first.store)).store)).toBe(given);
+  });
+
+  it("marks the same person's sign-ins alike in one organisation, apart in another", async () => {
+    const marks: Array<string | undefined> = [];
+    for (const organization of ["org-a", "org-a", "org-b"]) {
+      fake.state.organization = organization;
+      const { device, store } = await setUp();
+      await device.signIn(origin);
+      marks.push(
+        (JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark?: string })
+          .machineMark,
+      );
+      await device.close();
+    }
+    // Signing in again to the same organisation reaches what was made before; another doesn't.
+    expect(marks[0]).toBe(marks[1]);
+    expect(marks[2]).not.toBe(marks[0]);
+  });
+
   it("keeps a pause across a restart until the person lifts it", async () => {
     const first = await setUp();
     await first.device.signIn(origin);

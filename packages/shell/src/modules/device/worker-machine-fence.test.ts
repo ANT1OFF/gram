@@ -4,12 +4,14 @@
 import type { HostedDiscovery } from "@gram/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { TokenKeeper } from "./hosted.ts";
-import { accountOf, ANOTHER_ACCOUNT, hostedWorkerMachines } from "./hosted-worker-machines.ts";
+import { ANOTHER_ACCOUNT, hostedWorkerMachines } from "./hosted-worker-machines.ts";
 import { devicePrivateKeyFrom, generateDeviceKey } from "./keys.ts";
 import { STOP_TOO_LATE, SUPERSEDED } from "./worker-machine-fence.ts";
 
 const ORIGIN = "https://hosted.example.test";
 const NAME = "worker-0123456789";
+/** The mark of the sign-in the app holds there now (`StoredSignIn.machineMark`). */
+const MARK = "mark-ada-0123456789";
 const key = devicePrivateKeyFrom(generateDeviceKey().privateKeyPem);
 const discovery = {
   name: "Example hosted",
@@ -46,7 +48,14 @@ const setup = (
       headers: { "content-type": "application/json" },
     });
   };
-  const server = { origin: ORIGIN, discovery, key, keeper, limits: { paused: () => false } };
+  const server = {
+    origin: ORIGIN,
+    discovery,
+    key,
+    keeper,
+    machineMark: MARK,
+    limits: { paused: () => false },
+  };
   const machines = hostedWorkerMachines({
     servers: () => [server],
     known: (origin) => (origin === ORIGIN ? server : undefined),
@@ -121,7 +130,7 @@ describe("a worker machine's call, as the app sends it for one sign-in", () => {
     const { machines, sent } = setup();
     // The server is handed the sign-in's mark, never who the person is.
     const found = machines.workerMachineServer();
-    const mine = accountOf(ORIGIN, "ada");
+    const mine = MARK;
     expect(found).toEqual({
       ok: true,
       server: { origin: ORIGIN, server: "Example hosted", account: mine },
@@ -134,7 +143,7 @@ describe("a worker machine's call, as the app sends it for one sign-in", () => {
           call,
           { name: NAME },
           undefined,
-          accountOf(ORIGIN, "grace"),
+          "mark-grace-0123456789",
         ),
       ).toEqual(ANOTHER_ACCOUNT);
     expect(sent).toEqual([]);

@@ -171,7 +171,12 @@ export interface OwedStops {
    */
   readonly remove: (name: string, attempt?: OwedStop) => void;
   /** Lets go of every owing of `name` on the server at `origin`, and on no other. */
-  readonly release: (origin: string, name: string) => void;
+  /**
+   * Lets go of every owing of `name` on the server at `origin` made under the sign-in `account`
+   * (`ownsOwing`), and of no other: another sign-in's, or one from before sign-ins were kept,
+   * stays.
+   */
+  readonly release: (origin: string, name: string, account: string | undefined) => void;
   /** The holds of stops on their way (`stopHoldUntil`), kept beside what is owed. */
   readonly holds: StopHolds;
 }
@@ -241,6 +246,18 @@ const memoryStopHolds = (
   };
 };
 
+/**
+ * Whether `each` is an owing of `name` on `origin` made under the sign-in `account`: one from
+ * before sign-ins were kept is no one's known, and so never matches.
+ */
+export const ownsOwing = (
+  each: OwedStop,
+  origin: string,
+  name: string,
+  account: string | undefined,
+) =>
+  each.origin === origin && each.name === name && each.legacy !== true && each.account === account;
+
 /** The most stops kept owed at once: a start that would need one more is refused. */
 export const OWED_MOST = 256;
 
@@ -266,9 +283,8 @@ export const memoryOwedStops = (
       if (!owed.has(owingOf(stop))) owed.set(owingOf(stop), stop);
       return true;
     },
-    release: (origin, name) => {
-      for (const [key, each] of owed)
-        if (each.name === name && each.origin === origin) owed.delete(key);
+    release: (origin, name, account) => {
+      for (const [key, each] of owed) if (ownsOwing(each, origin, name, account)) owed.delete(key);
     },
     remove: (name, attempt) => {
       if (attempt !== undefined) owed.delete(owingOf(attempt));
@@ -399,9 +415,9 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       owed.remove(stop.name, stop);
       return false;
     },
-    release: (origin, name) => {
+    release: (origin, name, account) => {
       const before = owed.list().length;
-      owed.release(origin, name);
+      owed.release(origin, name, account);
       if (owed.list().length !== before) save();
     },
     remove: (name, attempt) => {
@@ -423,7 +439,12 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
 export const settleOwedStops = (
   port: WorkerMachinePortShape,
   owed: OwedStops,
-  claimed: (name: string, origin: string) => boolean = () => false,
+  /**
+   * Whether a machine of the stop's name is registered here: `true` under the stop's own sign-in
+   * (the release pass has it, and the owing goes), `"other"` under another, or with whose unknown
+   * (the owing stays, and its stop isn't sent: it might end that machine).
+   */
+  claimed: (name: string, origin: string, stop: OwedStop) => boolean | "other" = () => false,
   now: () => number = Date.now,
   locks?: NameLocks,
   /** Names a start of this Gram's is on its way for: a start's own debt is kept while it is. */
@@ -441,14 +462,16 @@ export const settleOwedStops = (
           // machine back. Taken since (registered here): let go, the release pass has it.
           if (!owed.list().some((each) => owingOf(each) === owingOf(stop))) return;
           if (startingNow(stop.name)) return;
-          if (claimed(stop.name, stop.origin)) {
+          const held = claimed(stop.name, stop.origin, stop);
+          if (held === "other") return;
+          if (held) {
             owed.remove(stop.name, stop);
             return;
           }
           // Held before it is sent, or not sent: asked again next pass.
           const sentAt = now();
-          const held = owed.holds.hold(stop.origin, stop.name, stopHoldUntil(sentAt));
-          if (held === undefined) return;
+          const hold = owed.holds.hold(stop.origin, stop.name, stopHoldUntil(sentAt));
+          if (hold === undefined) return;
           const answered = yield* port.call(
             stop.origin,
             "stop",
@@ -456,7 +479,7 @@ export const settleOwedStops = (
             { sendBy: stopSendBy(sentAt), account: stop.account },
           );
           // Its own answer came: its hold goes. Unanswered or a 5xx, it may still act: held.
-          if (stopSettled(answered)) owed.holds.answered(held);
+          if (stopSettled(answered)) owed.holds.answered(hold);
           const outcome = stopOutcome(answered);
           const key = owingOf(stop);
           const missed = outcome === "missing" ? (misses.get(key) ?? 0) + 1 : 0;

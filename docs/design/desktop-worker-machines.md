@@ -313,10 +313,17 @@ subscription token reaches a machine, with its own consent.
   release answered 404 forgets nothing: a `404 not_found` is told again next pass, any other 404
   is asked again at once, as a busy server is.
 - **One sign-in's machines are its own.** The app hands this Gram an opaque mark of the sign-in
-  it asks under (who the person is there, hashed), and everything made under it carries the mark:
-  the machine registered (`PairedMachine.viaAccount`) and every stop owed. Each call about one
-  carries it, and the app sends nothing for a mark that isn't its sign-in's now, so signing in
-  there as someone else neither forgets the first person's machines nor settles their stops.
+  it asks under, set once as the person signs in and kept with the sign-in
+  (`StoredSignIn.machineMark`). Where the server's token answer names the organisation the grant
+  is for, the mark is the server, that organisation and the person, hashed: the same for every
+  sign-in as that person there, so signing in again reaches what was made before. Where it
+  doesn't, each sign-in has a mark of its own, so a later sign-in leaves what an earlier one made
+  alone. Everything made under a sign-in carries its mark: every start, the machine registered
+  (`PairedMachine.viaAccount`) and every stop owed. Each call about one carries it, and the app
+  sends nothing for a mark that isn't its sign-in's now. A stop owed is let go of, settled or
+  skipped only by its own sign-in's answers and registrations: while another sign-in's machine
+  has its name, it is neither sent nor let go of. So signing in there as someone else, or in
+  another organisation, neither forgets the first sign-in's machines nor settles their stops.
   A machine or a stop owed from before marks were kept is never forgotten or settled on a "no such
   machine", which another sign-in may be answering; only a stop answered done settles one.
 - **A machine the server no longer knows** is forgotten here only after three passes in a row
