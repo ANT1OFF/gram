@@ -30,6 +30,9 @@ const on = (id: string, hostId: string, extra: Partial<Placed> = {}): Placed =>
     ...extra,
   }) as Placed;
 
+/** A worker as the ledger lists it, by its state and its thread's status. */
+const worker = (threadId: string, state: string, status: string) => ({ threadId, state, status });
+
 describe("a worker machine's work", () => {
   it("is over once every thread placed on it is finished, or closed", () => {
     const work = workerMachineWork(
@@ -149,11 +152,6 @@ describe("a worker machine's work", () => {
   });
 
   it("keeps a worker whose pull request merged but whose turn still runs at work", () => {
-    const worker = (threadId: string, state: string, status: string) => ({
-      threadId,
-      state,
-      status,
-    });
     const released = releasableWorkers([
       {
         workers: [worker("t-running", "merged", "running"), worker("t-done", "merged", "idle")],
