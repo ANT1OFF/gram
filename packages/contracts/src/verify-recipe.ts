@@ -202,3 +202,38 @@ export const verifyReportLine = (verify: WorkerReportVerify): string => {
   ];
   return `verify (recorded by Gram on ${verify.head.slice(0, 7)}, not the worker's word): ${parts.join("; ")}`;
 };
+
+/** How Gram recorded a driver's run on a thread's committed head. */
+export const VerifyRunStatus = Schema.Literals(["notRun", "running", "passed", "failed"]);
+export type VerifyRunStatus = typeof VerifyRunStatus.Type;
+
+/** One driver of a thread's recipe, with how it ran on the thread's head. */
+export const VerifyDriverState = Schema.Struct({
+  name: Schema.String,
+  run: Schema.String,
+  kind: Schema.optionalKey(VerifyDriverKind),
+  required: Schema.optionalKey(Schema.Boolean),
+  /** Whether its `covers` match what the branch changed; absent where that can't be read. */
+  coversChange: Schema.optionalKey(Schema.Boolean),
+  status: VerifyRunStatus,
+  /** Why it failed, in Gram's words. */
+  reason: Schema.optionalKey(Schema.String),
+  /** Epoch ms the run started and, once it ended, finished. */
+  startedAt: Schema.optionalKey(Schema.Number),
+  finishedAt: Schema.optionalKey(Schema.Number),
+});
+export type VerifyDriverState = typeof VerifyDriverState.Type;
+
+/**
+ * A thread's verify recipe and Gram's record of each driver on its head: `none` without a recipe,
+ * `unreadable` with one that can't be read (`error` says why), else `ok` with the drivers.
+ */
+export const VerifyState = Schema.Struct({
+  recipe: Schema.Literals(["none", "unreadable", "ok"]),
+  error: Schema.optionalKey(Schema.String),
+  head: Schema.optionalKey(Schema.String),
+  /** Changed files not committed, which no run includes. */
+  uncommitted: Schema.optionalKey(Schema.Int),
+  drivers: Schema.Array(VerifyDriverState),
+});
+export type VerifyState = typeof VerifyState.Type;

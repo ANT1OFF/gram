@@ -15,7 +15,7 @@ import * as Stream from "effect/Stream";
 
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { gitHandlers } from "../rpc/handlers/git.ts";
+import { checksHandlers } from "../rpc/handlers/checks.ts";
 import { makeRuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { gitPlatformTest } from "./platform.ts";
@@ -118,7 +118,7 @@ describe.skipIf(!hasGit)("git.prChecks and git.prRerunChecks", () => {
       projectRoot: repo,
       checkout: { kind: "main", path: repo },
     });
-    return { repo, thread, handlers: yield* gitHandlers, runtimes };
+    return { repo, thread, handlers: yield* checksHandlers, runtimes };
   });
 
   it.live("answers the PR's checks from the checks lookup, and none without a PR", () =>

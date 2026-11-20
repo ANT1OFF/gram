@@ -1,11 +1,5 @@
 import { Popover } from "@base-ui/react/popover";
-import type {
-  BoundPr,
-  FinishedWorkerDetail,
-  GitState,
-  ThreadId,
-  WorkspaceId,
-} from "@gram/contracts";
+import type { FinishedWorkerDetail, ThreadId, WorkspaceId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -13,15 +7,10 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  FileDiff,
-  FolderTree,
   GitPullRequest,
-  MessageSquare,
   Search,
   SquareArrowOutUpRight,
-  SquareTerminal,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   useEffect,
@@ -37,7 +26,6 @@ import {
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
 import { Hint } from "@/components/hint";
-import { worktreeMissing } from "@/components/worktree-missing";
 import { useWorkersWord } from "@/embed/store";
 import { formatStamp, agoText } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -49,6 +37,7 @@ import { OutboundLink } from "@/panels/outbound-link";
 import { prDetailQuery, prDetailStamp } from "@/panels/pr-detail-query";
 import { prTargetOf } from "@/panels/pr-identity";
 import { PrPanel } from "@/panels/pr-panel";
+import { ProofPanel, useVerifyState } from "@/panels/proof-panel";
 import { focusWhenRendered } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { threadStatusOf } from "@/sidebar/status";
@@ -74,9 +63,11 @@ import { WorkerHeadPlan } from "./worker-head-plan";
 import { finishedRow } from "./workers-model";
 import { neighbour, rowsInOrder, type PanelRow, type StatusGroup } from "./workers-panel-model";
 import { useOpenWorker, useWorkerGroups } from "./workers-panel";
+import { liveTools, recordTools, type Tool } from "./worker-tools";
 
 // A worker open in the right pane, under "‹ Workers › its title": its state on one line, its own
-// tools in one row under that (Conversation, Changes, PR, Terminal, Files), and its composer, which
+// tools in one row under that (Conversation, Changes, PR, Proof where the repository names checks,
+// Terminal, Files), and its composer, which
 // steers it. The orchestrator's chat stays in the main view beside it. Back (‹, the crumb, or Esc
 // with the keys in the pane and nothing typed) returns to the list where it was; ↑ ↓ step to the
 // worker before or after it in the list's order, and its title opens a switcher of every worker,
@@ -85,111 +76,6 @@ import { useOpenWorker, useWorkerGroups } from "./workers-panel";
 // pane's list, its switcher or ↑ ↓ puts the keys on its title, so Esc and ↑ ↓ work at once.
 
 export { WORKER_PANE_TEST_ID };
-
-interface Tool {
-  readonly id: BesideTab;
-  readonly label: string;
-  readonly icon: LucideIcon;
-  /** A count or number after its name: "3", "#142". */
-  readonly count?: string | undefined;
-  /** Why it can't be used now; it is off while this is set. */
-  readonly off?: string | undefined;
-}
-
-/** Why Terminal and Files are off for a worker kept only as its record. */
-export const WORKTREE_GONE = "Worktree cleaned up";
-/** Why PR is off for a worker without one. */
-export const NO_PR_YET = "No pull request yet";
-/** Why Changes and PR are off for a worker that works in no repository. */
-export const NO_REPOSITORY = "Not in a git repository";
-/** Why Changes, Terminal and Files are off for a worker whose folder was deleted outside Gram. */
-export const FOLDER_MISSING = "Its folder was deleted";
-/** Why Terminal and Files are off for a finished worker whose worktree is still there. */
-export const FINISHED = "Finished: read only";
-
-/** What a worker's tools are offered by: where it works, its PR, and whether it is finished. */
-export interface ToolFacts {
-  readonly git: Pick<GitState, "repo" | "changedFiles" | "pr" | "missing" | "origin"> | undefined;
-  /**
-   * The PR the thread is bound to, which the PR tool opens: before its badge has loaded, and over
-   * a badge that still names another PR.
-   */
-  readonly boundPr?: Pick<BoundPr, "repo" | "number"> | undefined;
-  /** Finished (Done): read only, though its worktree may still be there. */
-  readonly finished?: boolean;
-  /** A finished worker's changed files as its PR lists them, once read. */
-  readonly prFiles?: number | undefined;
-}
-
-/**
- * The tools of a worker with a thread, from its git state: PR only with a PR to open, Changes,
- * Terminal and Files only with a checkout to read them from, and a finished one's Terminal and
- * Files off. One that is off says why.
- */
-export const liveTools = ({
-  git,
-  boundPr,
-  finished = false,
-  prFiles,
-}: ToolFacts): readonly Tool[] => {
-  const outside = git !== undefined && !git.repo;
-  const missing = worktreeMissing(git as GitState | undefined);
-  // The one its PR panel opens, its row's chip names and its head line shows.
-  const pr = prTargetOf(git, boundPr)?.number;
-  const changed = finished && prFiles !== undefined ? prFiles : (git?.changedFiles ?? 0);
-  const noCheckout = missing ? FOLDER_MISSING : finished ? FINISHED : undefined;
-  return [
-    { id: "thread", label: "Conversation", icon: MessageSquare },
-    {
-      id: "changes",
-      label: "Changes",
-      icon: FileDiff,
-      count: changed > 0 ? String(changed) : undefined,
-      // A finished one's from its PR, which needs no checkout.
-      off: outside
-        ? NO_REPOSITORY
-        : missing && !(finished && prFiles !== undefined)
-          ? FOLDER_MISSING
-          : undefined,
-    },
-    {
-      id: "pr",
-      label: "PR",
-      icon: GitPullRequest,
-      count: pr === undefined ? undefined : `#${pr}`,
-      off: outside ? NO_REPOSITORY : pr === undefined ? NO_PR_YET : undefined,
-    },
-    { id: "terminal", label: "Terminal", icon: SquareTerminal, off: noCheckout },
-    { id: "files", label: "Files", icon: FolderTree, off: noCheckout },
-  ];
-};
-
-/**
- * The tools of a worker kept only as its record: its Changes from the same record its summary
- * counts, so the two never disagree, its PR while it had one, and no Terminal or Files.
- */
-export const recordTools = (detail: FinishedWorkerDetail | undefined): readonly Tool[] => {
-  const pr = detail?.worker.prs[0];
-  return [
-    { id: "thread", label: "Conversation", icon: MessageSquare },
-    {
-      id: "changes",
-      label: "Changes",
-      icon: FileDiff,
-      count:
-        detail === undefined || detail.files.length === 0 ? undefined : String(detail.files.length),
-    },
-    {
-      id: "pr",
-      label: "PR",
-      icon: GitPullRequest,
-      count: pr === undefined ? undefined : `#${pr.number}`,
-      off: pr === undefined ? NO_PR_YET : undefined,
-    },
-    { id: "terminal", label: "Terminal", icon: SquareTerminal, off: WORKTREE_GONE },
-    { id: "files", label: "Files", icon: FolderTree, off: WORKTREE_GONE },
-  ];
-};
 
 /** A worker kept only as its record, from what Gram kept of it. */
 function useRecord(worker: ThreadId, record: boolean) {
@@ -287,6 +173,7 @@ export function WorkerPane({
     !record &&
     (row !== undefined ? row.source.tab === "done" : summary?.thread.completedAt !== undefined);
   const prFiles = usePrFiles(worker, finished);
+  const verify = useVerifyState(worker, git?.head, !record && git?.repo === true).data;
   const tools = record
     ? recordTools(detail)
     : liveTools({
@@ -294,6 +181,7 @@ export function WorkerPane({
         boundPr: summary?.thread.boundPr,
         finished,
         prFiles: prFiles?.length,
+        verify,
       });
   // A tool that is off shows nothing: its conversation does instead.
   const shownTab = tools.find((tool) => tool.id === tab && tool.off === undefined)?.id ?? "thread";
@@ -473,6 +361,7 @@ export function WorkerPane({
         record={record}
         finished={finished}
         prFiles={prFiles}
+        head={git?.head}
         detail={detail}
         loading={record && kept.isPending}
         title={title}
@@ -734,6 +623,7 @@ function ToolBody({
   record,
   finished,
   prFiles,
+  head,
   detail,
   loading,
   title,
@@ -744,6 +634,8 @@ function ToolBody({
   record: boolean;
   finished: boolean;
   prFiles: readonly { path: string; additions: number; deletions: number }[] | undefined;
+  /** Its committed head, which its Proof is read for. */
+  head: string | undefined;
   detail: FinishedWorkerDetail | undefined;
   loading: boolean;
   title: string;
@@ -830,6 +722,8 @@ function ToolBody({
           <FilesPanel key={worker} threadId={worker} />
         </div>
       );
+    case "proof":
+      return <ProofPanel key={worker} threadId={worker} head={head} />;
   }
 }
 
