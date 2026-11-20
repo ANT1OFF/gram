@@ -69,6 +69,7 @@ import {
   settleOwedStops,
   stopHoldUntil,
   stopOutcome,
+  stopSendBy,
   UNANSWERED_STOP_HOLD_MS,
   withName,
 } from "./worker-machine-stops.ts";
@@ -222,8 +223,19 @@ export const signedInSource = (
             for (let attempt = 0; attempt < STOP_ATTEMPTS && !stopped; attempt += 1) {
               if (attempt > 0) yield* Effect.sleep(deps.stopRetryMs ?? STOP_RETRY_MS);
               // Held before it is sent, across a restart, until its own answer comes.
-              const held = deps.owed?.holds.hold(origin, name, stopHoldUntil(now()));
-              const answered = yield* port.call(origin, "stop", { name });
+              const sentAt = now();
+              const held = deps.owed?.holds.hold(origin, name, stopHoldUntil(sentAt));
+              // One whose hold couldn't be written down isn't sent: it is owed, and asked later.
+              if (deps.owed !== undefined && held === undefined) {
+                last = "its hold couldn't be written down";
+                continue;
+              }
+              const answered = yield* port.call(
+                origin,
+                "stop",
+                { name },
+                { sendBy: stopSendBy(sentAt) },
+              );
               if (answered.ok && held !== undefined) deps.owed?.holds.answered(held);
               // "No such machine" ends nothing while a start of it may still be on its way.
               const outcome = stopOutcome(answered);
@@ -269,10 +281,18 @@ export const signedInSource = (
     models: Effect.map(asked, (kept) => kept.models),
     givesBack: true,
     unrelease: (name) =>
-      tellSignedInRelease(port, { name, via: origin }, false).pipe(
-        // Answered `not_found`: this spawn doesn't wait for it. Once is no proof it is gone, so
-        // it stays registered and relayed: only `forgetReclaimed` forgets one.
-        Effect.map((told) => (told === "applied" ? undefined : ("gone" as const))),
+      Effect.gen(function* () {
+        // Answered `not_found` `RECLAIMED_AFTER_MISSES` times in a row, a little apart: this
+        // spawn doesn't wait for it. Fewer is no proof (a cell out of reach answers so too), and
+        // it is waited for as any reused machine. Either way it stays registered and relayed:
+        // only `forgetReclaimed` forgets one.
+        for (let missed = 1; ; missed += 1) {
+          const told = yield* tellSignedInRelease(port, { name, via: origin }, false);
+          if (told === "applied") return undefined;
+          if (missed >= RECLAIMED_AFTER_MISSES) return "gone" as const;
+          yield* Effect.sleep(deps.everyMs ?? ARRIVE_EVERY_MS);
+        }
+      }).pipe(
         Effect.catch(() =>
           Effect.logWarning("a worker machine reused could not be told it is working").pipe(
             Effect.annotateLogs({ machine: name }),
@@ -432,7 +452,8 @@ export const signedInSource = (
           // A `404 not_found` says nothing alone, even of a machine just accepted: one not
           // registered here fails only after `RECLAIMED_AFTER_MISSES` in a row, and is asked
           // again meanwhile (`isNotFound`); any other answer starts the count afresh.
-          if (fresh) notFound = isNotFound(answered) ? notFound + 1 : 0;
+          // Only answers in a row: no answer, a stale one, or any other, starts the count afresh.
+          notFound = fresh && isNotFound(answered) ? notFound + 1 : 0;
           if (notFound >= RECLAIMED_AFTER_MISSES && machine === undefined)
             return { failed: failedWords(name, why) };
           if (fresh && answered.status < 300) {

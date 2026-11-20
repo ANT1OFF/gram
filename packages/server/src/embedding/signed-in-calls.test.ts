@@ -261,6 +261,51 @@ describe("a machine asked for, as it comes", () => {
   );
 });
 
+describe("a machine asked for, as it comes, through calls that get no answer", () => {
+  it.live("counts only not_found answers in a row, never across one that got none", () =>
+    Effect.gen(function* () {
+      // 404, no answer, 404, no answer, 404, then starting there: never three 404s in a row.
+      const reads = ["404", "none", "404", "none", "404"];
+      let asked = 0;
+      const bridged = bridgeWorkerMachines(
+        fakeApp({
+          answer: ({ call }) =>
+            call === "status"
+              ? reads[asked - 1] === "404"
+                ? { status: 404, body: { code: "not_found" } }
+                : { status: 200, body: { phase: "starting" } }
+              : { status: 202, body: {} },
+        }).port,
+      );
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          call === "status" && reads[asked++] === "none"
+            ? Effect.succeed({ ok: false as const, why: "no answer" })
+            : bridged.call(origin, call, body),
+      };
+      const source = signedInSource(SERVER, {
+        port,
+        hosts: {
+          list: () => [],
+          remove: () => false,
+          machines: {
+            provision: () => {
+              throw new Error("not registered here");
+            },
+          },
+        },
+        everyMs: 1,
+        timeoutMs: 300,
+      });
+      const arrived = yield* source.arrive(NAME);
+      // Waited to its deadline, past every read, rather than failed on the third 404.
+      expect(asked).toBeGreaterThan(reads.length);
+      expect(arrived).toEqual({ failed: "timeout" });
+    }),
+  );
+});
+
 describe("a worker machine that work here wants", () => {
   it.live("is started when a worker resumes on it paused, and never for a dial", () =>
     Effect.gen(function* () {

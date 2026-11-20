@@ -186,7 +186,10 @@ that start itself whenever work here needs the machine:
   machine is wanted and still registered here, as one that met a passing error is: the server
   answers so while the workspace has no cell. A want stops after three `not_found` wakes in a
   row; only the three-pass rule below forgets the machine. A spawn waiting for a machine it asked
-  for fails on `not_found` only after three in a row, and otherwise waits to its deadline.
+  for fails on `not_found` only after three answers in a row (one that got no answer starts the
+  count afresh), and otherwise waits to its deadline. A spawn reusing a machine whose release
+  take-back is answered `not_found` asks again, a little apart, and gives up on it only after
+  three in a row.
 - Whether work still wants the machine is read under the name's lock as each start would go, not
   when the wake was queued: once the last session waiting has gone, no start is sent. One already
   sent is left to the server's idle stop.
@@ -285,7 +288,12 @@ subscription token reaches a machine, with its own consent.
   were answered, so a retry's start of that name goes out only after it. A give-back is never cut
   short once begun, whoever stops waiting for it. Each stop sent is held besides, in the stops
   owed file, from before it is sent until its own answer comes or the app's deadline and half a
-  minute more have passed: no start of the name, after a restart included, goes out before.
+  minute more have passed: no start of the name, after a restart included, goes out before. A
+  stop whose hold can't be written down isn't sent; it is owed. The app, which sends every call,
+  fences them by name where they leave it (`worker-machine-fence.ts`): a start it has received
+  drops any stop of that name still waiting to go out (behind a token renewal, say); a start goes
+  out only once no stop of the name is on its way, nor for half a minute after one that got no
+  answer; and a stop isn't sent past the `sendBy` this Gram gave it.
 - **A machine in use is never given back.** A spawn that fails or is interrupted after its machine
   came gives the machine back only if no open thread is placed on it: not its own worker made
   before the failure, and not another worker sharing it. A name a later start takes, or one registered here since, is that start's: no stop owed for

@@ -37,6 +37,8 @@ export interface WorkerMachinePortShape {
     origin: string,
     call: WorkerMachineCall,
     body: Readonly<Record<string, unknown>>,
+    /** The latest time the app may send it (`WorkerMachineOp`'s `sendBy`). */
+    options?: { readonly sendBy?: number },
   ) => Effect.Effect<
     { readonly ok: true; readonly status: number; readonly body: unknown } | Refused
   >;
@@ -261,8 +263,14 @@ export const bridgeWorkerMachines = (
           return { ok: false as const, why: why ?? NO_SIGNED_IN_SERVER };
         }),
       ),
-    call: (origin, call, body) =>
-      ask({ op: "call", origin, call, body }).pipe(
+    call: (origin, call, body, options) =>
+      ask({
+        op: "call",
+        origin,
+        call,
+        body,
+        ...(options?.sendBy === undefined ? {} : { sendBy: options.sendBy }),
+      }).pipe(
         Effect.map((result) =>
           result.ok && "status" in result && typeof result.status === "number"
             ? { ok: true as const, status: result.status, body: result.body }

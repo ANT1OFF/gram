@@ -19,6 +19,12 @@ export const UNANSWERED_STOP_HOLD_MS = 30_000;
 export const STOP_CALL_MS = 45_000;
 
 /**
+ * The latest a stop asked for at `sentAt` may leave the app (`WorkerMachineOp`'s `sendBy`): its
+ * last request then has the app's own call time to land, all within `STOP_CALL_MS`.
+ */
+export const stopSendBy = (sentAt: number) => sentAt + 30_000;
+
+/**
  * Until when a stop sent of a name may still reach the server: its call's deadline, then
  * `UNANSWERED_STOP_HOLD_MS`. Kept with the stops owed, across a restart, and let go only by that
  * stop's own answer: no start of the name is sent before then (`StopHolds`).
@@ -134,8 +140,11 @@ export interface OwedStops {
  * sent until its own answer comes, or its time is up. A start of the name waits until none is.
  */
 export interface StopHolds {
-  /** Holds `name` on `origin` until `until`, for one stop: its id. */
-  readonly hold: (origin: string, name: string, until: number) => string;
+  /**
+   * Holds `name` on `origin` until `until`, for one stop: its id, or nothing when the hold
+   * couldn't be written down, and then the stop isn't sent.
+   */
+  readonly hold: (origin: string, name: string, until: number) => string | undefined;
   /** That stop's own answer came: its hold, and no other, is let go. */
   readonly answered: (id: string) => void;
   /** The latest time any stop of `name` on `origin` holds it to, if one still does. */
@@ -149,7 +158,7 @@ interface StopHold {
   readonly until: number;
 }
 
-const memoryStopHolds = (kept: ReadonlyArray<StopHold>, changed: () => void) => {
+const memoryStopHolds = (kept: ReadonlyArray<StopHold>, changed: () => boolean) => {
   const holds = new Map(kept.map((each) => [each.id, each]));
   let next = 0;
   return {
@@ -158,8 +167,9 @@ const memoryStopHolds = (kept: ReadonlyArray<StopHold>, changed: () => void) => 
       hold: (origin: string, name: string, until: number) => {
         const id = `${Date.now().toString(36)}-${(next += 1)}-${Math.random().toString(36).slice(2, 8)}`;
         holds.set(id, { id, origin, name, until });
-        changed();
-        return id;
+        if (changed()) return id;
+        holds.delete(id);
+        return undefined;
       },
       answered: (id: string) => {
         if (holds.delete(id)) changed();
@@ -185,7 +195,7 @@ const owingOf = (stop: OwedStop) => stop.attempt ?? `${stop.name}@${stop.since}`
 
 export const memoryOwedStops = (
   kept: ReadonlyArray<StopHold> = [],
-  changed: () => void = () => undefined,
+  changed: () => boolean = () => true,
 ): OwedStops & { readonly heldList: () => ReadonlyArray<StopHold> } => {
   const owed = new Map<string, OwedStop>();
   const held = memoryStopHolds(kept, changed);
@@ -332,8 +342,16 @@ export const settleOwedStops = (
             owed.remove(stop.name, stop);
             return;
           }
-          const held = owed.holds.hold(stop.origin, stop.name, stopHoldUntil(now()));
-          const answered = yield* port.call(stop.origin, "stop", { name: stop.name });
+          // Held before it is sent, or not sent: asked again next pass.
+          const sentAt = now();
+          const held = owed.holds.hold(stop.origin, stop.name, stopHoldUntil(sentAt));
+          if (held === undefined) return;
+          const answered = yield* port.call(
+            stop.origin,
+            "stop",
+            { name: stop.name },
+            { sendBy: stopSendBy(sentAt) },
+          );
           // Its own answer came: its hold goes. Unanswered, it may still land: held its time out.
           if (answered.ok) owed.holds.answered(held);
           const outcome = stopOutcome(answered);

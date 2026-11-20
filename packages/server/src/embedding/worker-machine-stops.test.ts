@@ -639,6 +639,29 @@ describe("stops a server never confirmed", () => {
     }),
   );
 
+  it.effect("send no stop whose hold couldn't be written down, and owe it instead", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({ answer: () => ({ status: 200, body: { stopped: true } }) });
+      const dir = mkdtempSync(join(tmpdir(), "gram-owed-"));
+      try {
+        const owed = fileOwedStops(dir);
+        owed.add({ origin: ORIGIN, name: "worker-aaaaaaaaaa", since: 0 });
+        // The folder can't be written now: a full or read-only disk.
+        chmodSync(join(dir, "remote-access"), 0o500);
+        const port = bridgeWorkerMachines(app.port);
+        const source = signedInSource(SERVER, { port, hosts: unregistered, owed, stopRetryMs: 0 });
+        // Neither a give-back's stop nor an owed one goes out with no hold kept for it.
+        yield* source.abandon(NAME);
+        yield* settleOwedStops(port, owed);
+        expect(app.calls).toEqual([]);
+        expect(owed.list().map((each) => each.name)).toContain("worker-aaaaaaaaaa");
+      } finally {
+        chmodSync(join(dir, "remote-access"), 0o700);
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }),
+  );
+
   it.effect("give back nothing for a start cancelled before it was admitted", () =>
     Effect.gen(function* () {
       const app = fakeApp({ answer: () => ({ status: 503, body: {} }) });

@@ -945,6 +945,12 @@ export type WorkerMachineOp =
       readonly origin: string;
       readonly call: WorkerMachineCall;
       readonly body: Readonly<Record<string, unknown>>;
+      /**
+       * The latest time (milliseconds since the epoch) the app may send it: past it, after a
+       * token renewal say, it isn't sent at all. A stop carries one, so a stop that comes late
+       * can never land after the time its sender held the name for.
+       */
+      readonly sendBy?: number;
     }
   /** Keep carrying this machine's connection, dialling the relay again whenever it ends. */
   | { readonly op: "relay"; readonly origin: string; readonly name: string }

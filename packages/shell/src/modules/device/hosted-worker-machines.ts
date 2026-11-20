@@ -13,6 +13,7 @@ import {
   type WorkerMachineServer,
 } from "@gram/contracts";
 import { dpopProof } from "./dpop.ts";
+import { type FencedCall, makeWorkerMachineFence } from "./worker-machine-fence.ts";
 import {
   authorizedCall,
   type Failed,
@@ -42,6 +43,8 @@ export const callWorkerMachines = async (
   calls: HostedCalls & {
     readonly call: WorkerMachineCall;
     readonly body: Readonly<Record<string, unknown>>;
+    /** Its place in the fence between a stop and a start of one name (`worker-machine-fence.ts`). */
+    readonly fence?: FencedCall | undefined;
   },
 ): Promise<{ readonly ok: true; readonly status: number; readonly body: unknown } | Failed> => {
   const endpoint = calls.discovery.worker_machines_endpoint;
@@ -52,15 +55,29 @@ export const callWorkerMachines = async (
   // The token as it stands before the call, and after it: a renewal on the way may replace the
   // one the call was made with, and neither may leave the app.
   const before = await calls.keeper.token("machines:workers").catch(() => undefined);
+  // The fence is asked just before each request goes out, after any wait for a token: one it
+  // holds back is never sent, and is answered with why.
+  let heldBack: string | undefined;
+  const gate = calls.fence?.gate;
+  const fenced: typeof calls.fetch =
+    gate === undefined
+      ? calls.fetch
+      : async (url, init) => {
+          heldBack = await gate();
+          if (heldBack !== undefined) throw new Error(heldBack);
+          return calls.fetch(url, init);
+        };
   const response = await authorizedCall(
     calls.keeper,
     calls.key,
     "machines:workers",
-    calls.fetch,
+    fenced,
     "POST",
     callAddress(endpoint, calls.call),
     calls.body,
   );
+  calls.fence?.done(!("why" in response));
+  if (heldBack !== undefined) return failed(heldBack);
   if ("why" in response) return response;
   // What a server echoes of the sign-in never leaves the app: the token it was called with, and
   // anything shaped like a signed token (a proof, a JWT), wherever it is in the answer.
@@ -202,6 +219,8 @@ export interface HostedWorkerMachines {
     origin: string,
     call: WorkerMachineCall,
     body: Readonly<Record<string, unknown>>,
+    /** Not sent at all past this time (`WorkerMachineOp`'s `sendBy`). */
+    sendBy?: number,
   ) => Promise<
     | { readonly ok: true; readonly status: number; readonly body: unknown }
     | { readonly ok: false; readonly why: string }
@@ -239,6 +258,8 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
   readonly callsOf: (server: S) => HostedCalls;
 }): HostedWorkerMachines => {
   const { servers, known, callsOf } = deps;
+  // One fence for every server's names: a stop never lands on what a newer start made.
+  const fence = makeWorkerMachineFence();
   return {
     workerMachineServer: () => {
       const signedIn = [...servers()].filter(
@@ -255,7 +276,7 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
       return { ok: false, why: NO_WORKER_MACHINE_SERVER };
     },
 
-    workerMachineCall: async (origin, call, body) => {
+    workerMachineCall: async (origin, call, body, sendBy) => {
       const server = known(origin);
       if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
       if (call === "start" && server.limits.paused())
@@ -263,7 +284,12 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
           ok: false,
           why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
         };
-      return callWorkerMachines({ ...callsOf(server), call, body });
+      return callWorkerMachines({
+        ...callsOf(server),
+        call,
+        body,
+        fence: fence.enter(origin, call, body["name"], sendBy),
+      });
     },
 
     workerMachineRelayAllowed: (origin) => {
