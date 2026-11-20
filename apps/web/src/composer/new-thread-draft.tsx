@@ -520,7 +520,10 @@ function ConfiguredNewThreadDraft() {
                 <WhereStop label={repoPath === "" ? "Folder" : "Repository"}>
                   {pickedMachine === undefined ? (
                     <FolderPicker
-                      folder={projectRoot}
+                      // While the folder is checked, the chip names it rather than reading unset.
+                      folder={
+                        projectRoot || (folderStatus.state === "checking" ? pathValue.trim() : "")
+                      }
                       projects={recents}
                       onPickFolder={setTypedRoot}
                       onBrowse={browse}
