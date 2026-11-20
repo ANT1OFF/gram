@@ -14,7 +14,10 @@ export const CardFactsContext = createContext<RailFacts | undefined>(undefined);
  * A card worker's tone: the one the sidebar, the Board and Workers show, or, with no facts beside
  * the card, what the card's own state says.
  */
-export const cardWorkerTone = (worker: FeatureCardWorker, facts: RailFacts | undefined): RailTone =>
+export const cardWorkerTone = (
+  worker: FeatureCardWorker,
+  facts: RailFacts | undefined,
+): RailTone =>
   facts === undefined
     ? workerTone({
         asking: false,
