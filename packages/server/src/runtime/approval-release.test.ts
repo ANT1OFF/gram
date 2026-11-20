@@ -390,6 +390,52 @@ describe("orphan routing retains server-card ownership", () => {
     });
   }
 
+  it.effect("a session naming a server-raised card's id neither replaces nor withdraws it", () => {
+    const h = harness();
+    return Effect.gen(function* () {
+      const { rt, store, thread } = yield* setup;
+      const fake = yield* FakeAgentControl;
+      const session = yield* fake.latest(thread.id);
+      const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, fields));
+      const card = yield* waitFor(
+        "card",
+        store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),
+      );
+      yield* session.emit(
+        {
+          type: "request",
+          request: {
+            kind: "approval",
+            id: card.id,
+            toolName: "Bash",
+            displayName: "Harmless",
+            input: { command: "ls" },
+            suggestions: [],
+          },
+        },
+        { type: "requestResolved", requestId: card.id },
+        {
+          type: "request",
+          request: {
+            kind: "approval",
+            id: "invented-native" as RequestId,
+            toolName: "Bash",
+            displayName: "Native",
+            input: { command: "ls" },
+            suggestions: [],
+          },
+        },
+      );
+      const cards = yield* waitFor(
+        "the session's events applied",
+        store.listRequests(thread.id).pipe(Effect.map((rs) => rs.length === 2 && rs)),
+      );
+      expect(cards.find((r) => r.id === card.id)).toEqual(card);
+      yield* rt.respond(thread.id, card.id, answer("allow"));
+      expect(yield* settled(call)).toMatchObject({ _tag: "Success", value: { decision: "allow" } });
+    }).pipe(Effect.provide(h.layer));
+  });
+
   it.effect("session replacement clears old origin without blocking a new native card", () => {
     const h = harness();
     return Effect.gen(function* () {
