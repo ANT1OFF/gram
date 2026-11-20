@@ -5,7 +5,6 @@ import { type Proc, ProcLive } from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { execFileSync } from "node:child_process";
 import * as nodePath from "node:path";
 import { expect } from "@effect/vitest";
 
@@ -27,11 +26,10 @@ export const fixture = (protectedBlob = false) => {
   const repo = makeRepo(dir);
   let protectedOid: string | undefined;
   if (protectedBlob) {
-    protectedOid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
-      cwd: repo,
-      input: "synthetic protected fixture",
-      encoding: "utf8",
-    }).trim();
+    // The blob is written outside the checkout, so only the index entry below adds it.
+    const blob = nodePath.join(dir, "protected-blob");
+    write(blob, "synthetic protected fixture");
+    protectedOid = run(repo, "hash-object", "-w", blob).trim();
     run(repo, "update-index", "--add", "--cacheinfo", `100644,${protectedOid},.env.example`);
     run(repo, "commit", "-qm", "synthetic protected ancestor");
   }
