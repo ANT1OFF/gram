@@ -411,6 +411,17 @@ export const ALLOWLISTS = {
       "apps/web/src/whats-new/use-whats-new-on-launch.ts": 1,
     },
   },
+  // The desktop build reads Gram's own checkout, before any agent has touched it; the rest build
+  // repositories for tests.
+  "no-raw-git": {
+    owners: ["packages/git/src/proc.ts"],
+    pending: [
+      "apps/desktop/src/build-source.ts",
+      "packages/git/src/test-utils.ts",
+      "packages/server/src/app-tools/pr-tools-kit.ts",
+      "packages/server/src/git/test-repo.ts",
+    ],
+  },
   "no-adhoc-lock": {
     owners: ["packages/server/src/git/keyed-lock.ts"],
     pending: [],
