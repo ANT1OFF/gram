@@ -15,7 +15,7 @@ import {
 
 // Behind an embedding deployment's GitHub route, every `gh` reads with the deployment's access.
 vi.mock("../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<typeof import("../embedding/github-relay.ts")>()),
+  ...(await actual<Record<string, unknown>>()),
   githubRelayed: () => true,
 }));
 
