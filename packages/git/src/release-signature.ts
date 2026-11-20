@@ -9,13 +9,11 @@ import { createPublicKey, verify } from "node:crypto";
 export const CHECKSUMS_SIGNATURE = "SHA256SUMS.txt.sig";
 
 /**
- * The publisher's Ed25519 public key, as base64 of its raw 32 bytes.
- *
- * PLACEHOLDER: no release key has been made yet. Until the line below holds the key that
- * `bun run release:key keygen` prints, every check against it refuses (fails
- * closed), so a host or installer that requires the signature takes no release.
+ * The publisher's Ed25519 public key, as base64 of its raw 32 bytes: the key whose private half
+ * `bun run release:key keygen` kept in the publisher's login keychain (20 November 2026).
  */
-export const GRAM_RELEASE_PUBLIC_KEY: string | null = null;
+export const GRAM_RELEASE_PUBLIC_KEY: string | null =
+  "WJQzqS72egfjClRWY2oBKqBm9XyEAtOCwZHkaeMgQx8=";
 
 /** The SPKI DER prefix of an Ed25519 public key, before its raw 32 bytes. */
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");

@@ -126,9 +126,10 @@ pull request. From then on `release:rc` and `release:stable linux` sign each `SH
 write, and `release:stable validate` verifies the signature it downloads. `bun run release:key
 show` prints the public half of the key in the keychain.
 
-Until it is pinned the source holds a placeholder (`null`): releases carry no signature, and every
-Linux joined-machine update and Linux install from a release refuses with "Signed release
-refused". Dev builds and Gram run from source are unaffected.
+The key is pinned. Releases cut before it carry no signature, so a joined machine can't take one
+of those: it refuses with "Signed release refused". If the source holds `null` (no key), every
+Linux joined-machine update and Linux install from a release refuses the same way. Dev builds and
+Gram run from source are unaffected.
 
 ### Holding main during the cut
 
