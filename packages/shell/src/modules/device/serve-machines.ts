@@ -14,6 +14,7 @@ import {
   type WorkerMachineCall,
   type WorkerMachineRelayMessage,
   type WorkerMachineResult,
+  type WorkerMachineSignInsMessage,
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 
@@ -105,7 +106,10 @@ export interface WorkerMachineRelays {
   ) => void;
   /**
    * Closes every live relay the sign-in no longer covers: signed out, or the sign-in ended, or
-   * hosted features turned off. Each dials again only once it is covered again.
+   * hosted features turned off. Each dials again only once it is covered again. Called on every
+   * change of the device: when the sign-ins' marks are not as last told (one signed in or out, a
+   * renewal's new mark), this machine's server is told so (`machines.signins`), and moves what
+   * former marks hold now rather than at its next pass.
    */
   readonly revalidate: () => void;
   /** A frame or an end from this machine's server, for a connection the app carries. */
@@ -131,7 +135,7 @@ interface Wanted {
  */
 export const makeWorkerMachineRelays = (options: {
   readonly device: () => HostedDevice | undefined;
-  readonly post: (message: WorkerMachineRelayMessage) => void;
+  readonly post: (message: WorkerMachineRelayMessage | WorkerMachineSignInsMessage) => void;
   readonly open?: OpenRelaySocket;
   readonly now?: () => number;
   /** Whether a timer checks live relays against the sign-in; off in tests that drive it. */
@@ -270,10 +274,15 @@ export const makeWorkerMachineRelays = (options: {
     wanted.delete(name);
     stop(kept);
   };
+  let toldMarks: string | undefined;
   const revalidate = () => {
     for (const entry of wanted.values())
       if (entry.socket !== undefined && !covered(entry))
         closeSafely(entry.socket, 4401, "signed out");
+    const marks = JSON.stringify(options.device()?.workerMachineMarks() ?? []);
+    if (marks === toldMarks) return;
+    toldMarks = marks;
+    options.post({ type: "machines.signins" });
   };
   const watcher = options.watch === false ? undefined : setInterval(revalidate, REVALIDATE_MS);
   watcher?.unref?.();
@@ -463,6 +472,7 @@ export const answerWorkerMachines = async (
     const found = device.workerMachineServer();
     return respond(found.ok ? { ok: true, server: found.server } : { ok: true, why: found.why });
   }
+  if (op === "marks") return respond({ ok: true, marks: device.workerMachineMarks() });
   const origin = textOf(message, "origin", 512);
   if (origin === undefined) return respond(MALFORMED);
   if (op === "call") {

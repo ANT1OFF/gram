@@ -3,8 +3,13 @@
 // settled or let go of by another. A fake app over the port, no network, no real machine.
 
 import { describe, expect, it } from "@effect/vitest";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { ServerConfig } from "../config.ts";
+import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { generateHostKey } from "../host/machine-keys.ts";
 import { memoryMachineStore } from "../host/paired-machines.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
@@ -12,6 +17,7 @@ import { ACCOUNT, fakeApp, NAME, ORIGIN, SERVER } from "./signed-in-fixtures.ts"
 import {
   bridgeWorkerMachines,
   claimedHere,
+  fileOwedStops,
   memoryOwedStops,
   settleOwedStops,
   SignedInWorkers,
@@ -221,6 +227,134 @@ describe("a sign-in whose mark became its organisation's", () => {
       expect(owed.list().map((each) => each.account)).toEqual([ACCOUNT, OTHER]);
     }).pipe(Effect.scoped),
   );
+});
+
+/** Another hosted server this computer is signed in to, besides the one new machines come from. */
+const SECOND = "https://second.example.test";
+/** The second's sign-in: its own mark before a renewal named its organisation, and after. */
+const OWN = "mark-own-before-0123456789";
+const ORG = "mark-org-now-0123456789";
+/** A machine a stop is owed for, no longer registered here. */
+const GONE = "worker-gone000001";
+/** The server, busy: nothing owed settles while a test looks at what is owed. */
+const BUSY = () => ({ status: 503, body: {} });
+
+/** A data folder with these stops owed on disk, and a way to read back what is owed there. */
+const stopsOnDisk = (owed: ReadonlyArray<Record<string, unknown>>) => {
+  const dir = mkdtempSync(join(tmpdir(), "gram-marks-"));
+  mkdirSync(join(dir, "remote-access"), { mode: 0o700 });
+  const path = join(dir, "remote-access", "worker-machine-stops.json");
+  writeFileSync(path, JSON.stringify({ version: 1, owed }), { mode: 0o600 });
+  return {
+    dir,
+    owedAccounts: () =>
+      (JSON.parse(readFileSync(path, "utf8")) as { owed: Array<{ account?: string }> }).owed.map(
+        (each) => each.account,
+      ),
+  };
+};
+
+/** Waits for `done`, a few milliseconds at a time, for at most two seconds. */
+const until = (done: () => boolean) =>
+  Effect.gen(function* () {
+    for (let each = 0; each < 400 && !done(); each += 1) yield* Effect.sleep("5 millis");
+    expect(done()).toBe(true);
+  });
+
+const workersOver = (
+  app: ReturnType<typeof fakeApp>,
+  hosts: RemoteHosts["Service"],
+  dataDir: string,
+) =>
+  Layer.build(
+    SignedInWorkersLive.pipe(
+      Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+      Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+      Layer.provide(ServerConfig.layer({ ...TEST_CONFIG, dataDir })),
+    ),
+  );
+
+const provisionOn = (hosts: RemoteHosts["Service"], name: string, viaAccount: string) =>
+  hosts.machines.provision({
+    name,
+    publicKey: generateHostKey().publicKey,
+    platform: "linux",
+    onDemand: "worker",
+    via: SECOND,
+    viaAccount,
+  });
+
+describe("a sign-in that isn't the one new machines are asked of", () => {
+  it.live("has its machines and stops moved to its new mark as soon as the app says so", () =>
+    Effect.gen(function* () {
+      const disk = stopsOnDisk([
+        { origin: SECOND, name: GONE, since: 0, account: OWN },
+        { origin: SECOND, name: "worker-gone000002", since: 1, account: OTHER },
+      ]);
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(disk.dir, { recursive: true })));
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionOn(hosts, NAME, OWN);
+      provisionOn(hosts, "worker-abcdef0123", OTHER);
+      // New machines are asked of the first server, whose sign-in has no former marks. The
+      // second's, paused or not chosen, is told only among every sign-in's marks.
+      const marks: Array<{ origin: string; account: string; formerAccounts: string[] }> = [
+        { origin: ORIGIN, account: ACCOUNT, formerAccounts: [] },
+        { origin: SECOND, account: OWN, formerAccounts: [] },
+      ];
+      const app = fakeApp({ marks: () => marks, answer: BUSY });
+      yield* workersOver(app, hosts, disk.dir);
+      yield* Effect.sleep("50 millis");
+      expect(hosts.list().map((each) => each.viaAccount)).toEqual([OWN, OTHER]);
+      // A renewal names the second sign-in's organisation, and the app says its sign-ins changed.
+      marks[1] = { origin: SECOND, account: ORG, formerAccounts: [OWN] };
+      app.toServer({ type: "machines.signins" });
+      // Moved at once, with no spawn from it and no pass: another sign-in's left as it is.
+      yield* until(() => hosts.list()[0]?.viaAccount === ORG);
+      expect(hosts.list().map((each) => each.viaAccount)).toEqual([ORG, OTHER]);
+      expect(disk.owedAccounts()).toEqual([ORG, OTHER]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("has a move a restart cut short finished at the next start", () =>
+    Effect.gen(function* () {
+      // The machines were moved before the restart; the stops owed weren't yet.
+      const disk = stopsOnDisk([{ origin: SECOND, name: GONE, since: 0, account: OWN }]);
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(disk.dir, { recursive: true })));
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionOn(hosts, NAME, ORG);
+      const app = fakeApp({
+        marks: () => [
+          { origin: ORIGIN, account: ACCOUNT, formerAccounts: [] },
+          { origin: SECOND, account: ORG, formerAccounts: [OWN] },
+        ],
+        answer: BUSY,
+      });
+      yield* workersOver(app, hosts, disk.dir);
+      yield* until(() => disk.owedAccounts()[0] === ORG);
+      expect(hosts.list().map((each) => each.viaAccount)).toEqual([ORG]);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("a move of a sign-in's stops whose write failed", () => {
+  it("is written by the next move asked for, though nothing is left to move", () => {
+    const disk = stopsOnDisk([{ origin: SECOND, name: NAME, since: 0, account: OWN }]);
+    try {
+      const owed = fileOwedStops(disk.dir);
+      chmodSync(join(disk.dir, "remote-access"), 0o500);
+      try {
+        expect(owed.remark(SECOND, OWN, ORG)).toBe(false);
+      } finally {
+        chmodSync(join(disk.dir, "remote-access"), 0o700);
+      }
+      expect(disk.owedAccounts()).toEqual([OWN]);
+      // The next pass asks again: written now, so a restart reads the new mark.
+      expect(owed.remark(SECOND, OWN, ORG)).toBe(true);
+      expect(disk.owedAccounts()).toEqual([ORG]);
+    } finally {
+      rmSync(disk.dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("a stop owed under one sign-in", () => {

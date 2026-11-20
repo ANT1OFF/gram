@@ -949,9 +949,21 @@ export interface WorkerMachineServer {
   readonly formerAccounts?: ReadonlyArray<string>;
 }
 
+/**
+ * One signed-in server's sign-in as worker machines carry it: its mark, and the marks it had
+ * before, whose machines and stops are moved to it. Told for every sign-in, paused or not.
+ */
+export interface WorkerMachineMarks {
+  readonly origin: string;
+  readonly account: string;
+  readonly formerAccounts: ReadonlyArray<string>;
+}
+
 export type WorkerMachineOp =
   /** Which server, if any, worker machines may be asked of now. */
   | { readonly op: "server" }
+  /** The mark of every sign-in the app holds, paused or not, with its former marks. */
+  | { readonly op: "marks" }
   /** One call to the server, answered with its status and JSON body as received. */
   | {
       readonly op: "call";
@@ -1003,12 +1015,13 @@ export type WorkerMachineRequestMessage = {
 } & WorkerMachineOp;
 
 /**
- * Each op's answer. `server` answers the server, or none with why; `call`, the server's status and
- * body (at most 256 KiB, read as JSON, `undefined` when it isn't); `signIn`: the person must sign
- * in to it again first.
+ * Each op's answer. `server` answers the server, or none with why; `marks`, every sign-in's marks;
+ * `call`, the server's status and body (at most 256 KiB, read as JSON, `undefined` when it isn't);
+ * `signIn`: the person must sign in to it again first.
  */
 export type WorkerMachineResult =
   | { readonly ok: true; readonly server?: WorkerMachineServer; readonly why?: string }
+  | { readonly ok: true; readonly marks: ReadonlyArray<WorkerMachineMarks> }
   | { readonly ok: true; readonly status: number; readonly body: unknown }
   | { readonly ok: true }
   | { readonly ok: false; readonly why: string; readonly signIn?: true };
@@ -1017,6 +1030,14 @@ export interface WorkerMachineResponseMessage {
   readonly type: "machines.response";
   readonly id: string;
   readonly result: WorkerMachineResult;
+}
+
+/**
+ * The app's word to this machine's server that its sign-ins changed (one signed in or out, a
+ * pause, a new mark): the server asks for every sign-in's marks again (`marks`).
+ */
+export interface WorkerMachineSignInsMessage {
+  readonly type: "machines.signins";
 }
 
 /**

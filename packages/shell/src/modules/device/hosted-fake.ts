@@ -88,6 +88,8 @@ export const fakeServer = () => {
     runsWork: true,
     /** Grants `machines:workers` (its discovery doesn't name the addresses; a test calls directly). */
     workerMachinesScope: false,
+    /** Names worker-machine addresses in discovery, so the device offers them (never called here). */
+    namesWorkerMachines: false,
     /** What was sent, waited on, said and stopped, as the bodies came. */
     started: [] as Array<Record<string, unknown>>,
     waited: [] as Array<Record<string, unknown>>,
@@ -143,6 +145,12 @@ export const fakeServer = () => {
                     machine_start_endpoint: `${origin}/api/machine/start`,
                   }
                 : {}),
+            }
+          : {}),
+        ...(state.namesWorkerMachines
+          ? {
+              worker_machines_endpoint: `${origin}/api/workers`,
+              worker_machine_connect: `${origin.replace("http:", "ws:")}/workers/relay`,
             }
           : {}),
       });

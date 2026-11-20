@@ -320,9 +320,18 @@ subscription token reaches a machine, with its own consent.
   doesn't, each sign-in has a mark of its own, so a later sign-in leaves what an earlier one made
   alone. When a renewal of that same sign-in first names its organisation, the sign-in takes the
   organisation's mark, and keeps its own as a former mark: this Gram moves the machines and stops
-  made under the former mark to the new one, in one step, before any source asks under it, and
-  touches no other sign-in's. One kept from before marks were takes its mark from its first
-  renewal; until then nothing is asked for under it. Everything made under a sign-in carries its mark: every start, the machine registered
+  made under the former mark to the new one, and touches no other sign-in's. It does so for every
+  sign-in the app holds, paused or not, whichever one new machines are asked of: the app answers
+  `marks` with each one's mark and former marks, which this Gram asks for at start, with each
+  relays resync (every minute), and whenever the app says its sign-ins changed
+  (`machines.signins`, sent as a renewal gives one a new mark), besides before any source asks
+  under one. Each ledger's move is whole or not at all, and asked for again each time, so one that a
+  failed write or a restart cut short is finished by the next; until then the app still answers
+  what is asked under a sign-in's own former marks, as that sign-in's. One kept from before marks
+  were takes its mark from its first renewal; until then nothing is asked for under it. A new
+  mark, of its own or its organisation's, is used only once the keychain took it, in the same
+  record as the refresh token: one whose write failed is not used, and the next renewal tries
+  again, so nothing is made under a mark a restart would lose. Everything made under a sign-in carries its mark: every start, the machine registered
   (`PairedMachine.viaAccount`) and every stop owed. Each call about one carries it, and the app
   sends nothing for a mark that isn't its sign-in's now. A stop owed is let go of, settled or
   skipped only by its own sign-in's answers and registrations: while another sign-in's machine

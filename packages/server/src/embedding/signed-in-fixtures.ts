@@ -22,6 +22,12 @@ export const fakeApp = (options: {
     readonly server?: typeof SERVER & { readonly formerAccounts?: ReadonlyArray<string> };
     readonly why?: string;
   };
+  /** Every sign-in's marks, as the app answers `marks`: none unless given. */
+  readonly marks?: () => ReadonlyArray<{
+    readonly origin: string;
+    readonly account: string;
+    readonly formerAccounts: ReadonlyArray<string>;
+  }>;
   readonly answer: (call: Call) => { readonly status: number; readonly body: unknown };
   readonly relayed?: (name: string, toServer: (message: unknown) => void) => void;
   readonly fromServer?: (message: Record<string, unknown>) => void;
@@ -46,6 +52,7 @@ export const fakeApp = (options: {
       const op = message["op"] as string;
       asked.push(op);
       if (op === "server") respond({ ok: true, ...(options.server ?? { server: SERVER }) });
+      else if (op === "marks") respond({ ok: true, marks: options.marks?.() ?? [] });
       else if (op === "call") {
         const call = {
           call: message["call"] as string,

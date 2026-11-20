@@ -690,10 +690,54 @@ export const SignedInWorkersLive = Layer.effect(
     sync(true);
     const unwatch = hosts.watch(() => sync(false));
     yield* Effect.addFinalizer(() => Effect.sync(unwatch));
-    yield* Effect.sync(() => {
-      told = "";
-      sync(false);
-    }).pipe(Effect.repeat(Schedule.spaced(RELAYS_RESYNC)), Effect.forkScoped);
+    /**
+     * Moves one sign-in's machines and stops from its former marks to its mark. Each ledger's move
+     * is whole or not at all, and asked for again at every pass, so one that failed, or that a
+     * restart cut short between the two, is finished by a later one: the app keeps the former
+     * marks for as long as the sign-in lasts, and answers what is asked under them meanwhile.
+     */
+    const adopt = (marks: {
+      readonly origin: string;
+      readonly account?: string | undefined;
+      readonly formerAccounts?: ReadonlyArray<string> | undefined;
+    }) => {
+      const account = marks.account;
+      if (account === undefined) return;
+      for (const former of marks.formerAccounts ?? []) {
+        if (former === account) continue;
+        try {
+          hosts.machines.remark(marks.origin, former, account);
+        } catch {
+          // Not written, so not moved: the next pass moves it.
+        }
+        owed.remark(marks.origin, former, account);
+      }
+    };
+    /** Every sign-in's move, paused or not, whichever of them new machines are asked of. */
+    const adoptAll = port.marks().pipe(
+      Effect.tap((marks) => Effect.sync(() => marks.forEach(adopt))),
+      Effect.catchCause((cause) => Effect.logWarning("moving former sign-in marks failed", cause)),
+    );
+    // At start, and whenever the app says its sign-ins changed.
+    yield* Effect.forkScoped(adoptAll);
+    const signIns = yield* Queue.sliding<void>(1);
+    port.onSignIns(() => {
+      Queue.offerUnsafe(signIns, undefined);
+    });
+    yield* Queue.take(signIns).pipe(Effect.andThen(adoptAll), Effect.forever, Effect.forkScoped);
+    // Each resync moves what every sign-in's former marks hold first, so the relays told are
+    // under each sign-in's mark now.
+    yield* Effect.sleep(RELAYS_RESYNC).pipe(
+      Effect.andThen(adoptAll),
+      Effect.andThen(
+        Effect.sync(() => {
+          told = "";
+          sync(false);
+        }),
+      ),
+      Effect.forever,
+      Effect.forkScoped,
+    );
     // A worker machine that work here wants (a session about to open on it waits for it, as a
     // worker resumed or a message to one does: `stops.wanting`) and that is offline is woken
     // there by a start of its name, once each time it comes to be wanted. Only a want does: never
@@ -774,15 +818,6 @@ export const SignedInWorkersLive = Layer.effect(
     // forgotten here, so its relay stops and its name is free.
     const misses = new Map<string, number>();
     const stopMisses = new Map<string, number>();
-    /** Moves the server's sign-in's machines and stops from its former marks to its mark. */
-    const adopt = (server: WorkerMachineServer) => {
-      if (server.account === undefined) return;
-      for (const former of server.formerAccounts ?? [])
-        if (former !== server.account) {
-          hosts.machines.remark(server.origin, former, server.account);
-          owed.remark(server.origin, former, server.account);
-        }
-    };
     yield* port.server().pipe(
       Effect.tap((answered) => Effect.sync(() => answered.ok && adopt(answered.server))),
       Effect.andThen(forgetReclaimed(port, hosts, misses, asleep, sent)),

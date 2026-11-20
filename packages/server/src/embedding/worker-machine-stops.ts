@@ -181,9 +181,11 @@ export interface OwedStops {
   readonly holds: StopHolds;
   /**
    * Moves every owing on `origin` under the sign-in mark `from` to `to`, in one write: the same
-   * sign-in, whose mark became its organisation's. No other owing changes.
+   * sign-in, whose mark became its organisation's. No other owing changes. Whether what is owed
+   * is on disk after it: a write that failed is tried again by the next move asked for, and one
+   * lost to a restart is made again as the app tells the former marks at the next start.
    */
-  readonly remark: (origin: string, from: string, to: string) => void;
+  readonly remark: (origin: string, from: string, to: string) => boolean;
 }
 
 /**
@@ -295,6 +297,7 @@ export const memoryOwedStops = (
       for (const [key, each] of owed)
         if (each.origin === origin && each.legacy !== true && each.account === from)
           owed.set(key, { ...each, account: to });
+      return true;
     },
     remove: (name, attempt) => {
       if (attempt !== undefined) owed.delete(owingOf(attempt));
@@ -321,6 +324,8 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
   // Whether nothing may be written: a file that couldn't be read, nor set aside, is never
   // replaced, since it may hold stops still owed.
   let keepFile = false;
+  /** A move of marks that isn't on disk yet: the next `remark` writes it. */
+  let remarkUnsaved = false;
   try {
     read = privateJsonFile(
       dataDir,
@@ -406,6 +411,8 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       };
       if (Buffer.byteLength(JSON.stringify(value)) > STOPS_FILE_MOST) return false;
       file.write(value);
+      // Every owing is on disk now, any move of marks with them.
+      remarkUnsaved = false;
       return true;
     } catch {
       return false;
@@ -426,9 +433,14 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       return false;
     },
     remark: (origin, from, to) => {
-      const moved = owed.list().some((each) => each.origin === origin && each.account === from);
+      const moved = owed
+        .list()
+        .some((each) => each.origin === origin && each.legacy !== true && each.account === from);
       owed.remark(origin, from, to);
-      if (moved) save();
+      // A move whose write failed is on disk only once a later write takes it: the next move
+      // asked for (each pass asks again) writes it, moved or not.
+      if (moved || remarkUnsaved) remarkUnsaved = !save();
+      return !remarkUnsaved;
     },
     release: (origin, name, account) => {
       const before = owed.list().length;

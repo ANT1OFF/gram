@@ -34,7 +34,7 @@ import {
   type TokenKeeper,
 } from "./hosted.ts";
 import { forgetHostedDevice, registerHostedDevice } from "./hosted-registration.ts";
-import { capabilitiesOf, folderId, hostOf } from "./hosted-device-parts.ts";
+import { capabilitiesOf, folderId, hostOf, markTaker } from "./hosted-device-parts.ts";
 import { signInKeeper } from "./sign-in-keeper.ts";
 import { machineMarkFor, parseSignIn, type StoredSignIn } from "./stored-sign-in.ts";
 import {
@@ -655,6 +655,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     saved?: SavedServer,
     keeper?: TokenKeeper,
   ): Server => {
+    const marks = markTaker<Server>(changed);
     const server: Server = {
       origin,
       discovery,
@@ -663,14 +664,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       deviceRegistered: signIn.deviceRegistered !== false,
       keeper:
         keeper ??
-        keeperFor(
-          origin,
-          discovery,
-          key,
-          signIn,
-          () => endedByServer(server),
-          (mark, former) => Object.assign(server, { machineMark: mark, formerMarks: former }),
-        ),
+        keeperFor(origin, discovery, key, signIn, () => endedByServer(server), marks.marked),
       machineMark: signIn.machineMark,
       formerMarks: signIn.formerMarks ?? [],
       limits: makeAskLimits(options.elapsed, { paused: saved?.paused ?? false }, () => {
@@ -684,6 +678,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       lent: new Map(),
       connected: new Set(),
     };
+    marks.take(server);
     for (const workspace of saved?.workspaces ?? [])
       server.lent.set(workspace.id, {
         state: "resume",
@@ -887,10 +882,10 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           ? secrets.remove(signInName(origin))
           : secrets.set(signInName(origin), previous),
       );
-      const holder: { server?: Server } = {};
-      const keeper = keeperFor(origin, found.discovery, key, first, () => {
-        if (holder.server !== undefined) endedByServer(holder.server);
-      });
+      // The server below, once made: a renewal may end the sign-in, or mark it, before it is.
+      const marks = markTaker<Server>(changed);
+      const ended = () => marks.with(endedByServer);
+      const keeper = keeperFor(origin, found.discovery, key, first, ended, marks.marked);
       undo.push(() => keeper.signOut());
       if (closed) return await giveUp(CLOSING);
       if (registerDevice) {
@@ -934,7 +929,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           why: `Gram keeps at most ${SERVERS_MOST} servers. Sign out of one first.`,
         });
       }
-      holder.server = server;
+      marks.take(server);
       // The old one, signed out by the server, goes for the new one.
       if (current !== undefined) await stopLending(current);
       accepted.add(origin);

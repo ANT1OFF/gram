@@ -61,6 +61,8 @@ const setup = (gates: {
       unrelay: () => undefined,
       relays: () => undefined,
       onDial: () => undefined,
+      marks: () => Effect.succeed([]),
+      onSignIns: () => undefined,
     };
     const hosts = {
       list: () => (online ? [machine] : []),
@@ -253,6 +255,8 @@ describe("a worker's machine brought up for a spawn", () => {
         unrelay: () => undefined,
         relays: () => undefined,
         onDial: () => undefined,
+        marks: () => Effect.succeed([]),
+        onSignIns: () => undefined,
       };
       const hosts = {
         list: () => [],

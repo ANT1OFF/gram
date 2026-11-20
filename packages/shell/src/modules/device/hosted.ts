@@ -407,8 +407,11 @@ export interface TokenKeeperOptions {
   readonly now: () => number;
   /** The server ended the sign-in, or answered for someone else: it is over. */
   readonly ended?: () => void;
-  /** Each renewal's answer as it is taken, for whom and which organisation it is. */
-  readonly renewed?: (tokens: HostedTokens) => void;
+  /**
+   * Each renewal's answer as it is taken, for whom and which organisation it is: awaited before
+   * its token is handed out, so what it keeps is kept before anything is asked with the token.
+   */
+  readonly renewed?: (tokens: HostedTokens) => void | Promise<void>;
 }
 
 export type TokenFor =
@@ -529,7 +532,8 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
         await save();
         if (ended) return signedOutNow();
       }
-      options.renewed?.(answer.tokens);
+      await options.renewed?.(answer.tokens);
+      if (ended) return signedOutNow();
       const { refreshToken: _rotated, ...token } = answer.tokens;
       // A fresh token is for one use alone, so it is never handed out again.
       if (keep) tokens.set(scope, token);

@@ -227,3 +227,91 @@ describe("a worker machine's relay, as its dial is prepared", () => {
     }
   });
 });
+
+describe("a sign-in whose mark moved to its organisation's, as the app tells it", () => {
+  it("is told for every sign-in, paused or unselected, and its own former mark still answered", async () => {
+    const OTHER = "https://other.example.test";
+    const OWN = "mark-own-before-0123456789";
+    const ORG = "mark-org-now-0123456789";
+    const sent: string[] = [];
+    const keeper = {
+      subject: "ada",
+      token: async () => ({
+        ok: true as const,
+        token: { accessToken: "at", tokenType: "DPoP" as const, expiresAt: 0, subject: "ada" },
+      }),
+      fresh: async () => ({
+        ok: true as const,
+        token: { accessToken: "at", tokenType: "DPoP" as const, expiresAt: 0, subject: "ada" },
+      }),
+      nonce: {},
+      signedOut: () => false,
+    } as unknown as TokenKeeper;
+    const fetch = async (url: string | URL | Request) => {
+      sent.push(String(url));
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const otherDiscovery = {
+      ...discovery,
+      worker_machines_endpoint: `${OTHER}/workers`,
+      worker_machine_connect: `${OTHER.replace("https", "wss")}/workers/relay`,
+    } as unknown as HostedDiscovery;
+    // New machines are asked of the first server; the second, paused, was just renewed to its
+    // organisation's mark, and its machines and stops are still under its own.
+    const paused = { now: true };
+    const first = {
+      origin: ORIGIN,
+      discovery,
+      key,
+      keeper,
+      machineMark: MARK,
+      limits: { paused: () => false },
+    };
+    const second = {
+      origin: OTHER,
+      discovery: otherDiscovery,
+      key,
+      keeper,
+      machineMark: ORG,
+      formerMarks: [OWN],
+      limits: { paused: () => paused.now },
+    };
+    const both = [first, second];
+    const machines = hostedWorkerMachines({
+      servers: () => both,
+      known: (origin) => both.find((each) => each.origin === origin),
+      callsOf: (server) => ({
+        discovery: server.discovery,
+        keeper,
+        key,
+        fetch: fetch as typeof globalThis.fetch,
+      }),
+    });
+    expect(machines.workerMachineServer()).toMatchObject({ ok: true, server: { origin: ORIGIN } });
+    // Every sign-in's marks, the paused one's with what it had before, for the server to move.
+    expect(machines.workerMachineMarks()).toEqual([
+      { origin: ORIGIN, account: MARK, formerAccounts: [] },
+      { origin: OTHER, account: ORG, formerAccounts: [OWN] },
+    ]);
+    // Until it is moved, what was made under the former mark is still this sign-in's: looked at,
+    // stopped and carried, though it is paused and not the one new machines are asked of.
+    for (const call of ["status", "stop", "release"] as const)
+      expect(
+        (await machines.workerMachineCall(OTHER, call, { name: NAME }, undefined, OWN)).ok,
+      ).toBe(true);
+    expect(sent).toHaveLength(3);
+    expect(machines.workerMachineRelayAllowed(OTHER, OWN)).toBe(true);
+    expect(await machines.workerMachineRelayLease(OTHER, OWN)).toBe(true);
+    // Another sign-in's mark is still another's, and the first's own is never the second's.
+    expect(
+      await machines.workerMachineCall(OTHER, "status", { name: NAME }, undefined, MARK),
+    ).toEqual(ANOTHER_ACCOUNT);
+    expect(
+      await machines.workerMachineCall(ORIGIN, "status", { name: NAME }, undefined, OWN),
+    ).toEqual(ANOTHER_ACCOUNT);
+    // A pause still holds back a start.
+    expect(
+      (await machines.workerMachineCall(OTHER, "start", { name: NAME }, undefined, ORG)).ok,
+    ).toBe(false);
+  });
+});

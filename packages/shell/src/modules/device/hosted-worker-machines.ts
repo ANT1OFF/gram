@@ -10,6 +10,7 @@ import {
   WORKER_MACHINE_CALLS,
   WORKER_MACHINE_NAME,
   type WorkerMachineCall,
+  type WorkerMachineMarks,
   type WorkerMachineServer,
 } from "@gram/contracts";
 import { dpopProof } from "./dpop.ts";
@@ -219,6 +220,11 @@ export interface HostedWorkerMachines {
     | { readonly ok: true; readonly server: WorkerMachineServer }
     | { readonly ok: false; readonly why: string };
   /**
+   * The mark of every sign-in here whose server starts worker machines, paused or not, with the
+   * marks it had before: what was made under those is moved to it, whichever sign-in spawns.
+   */
+  readonly workerMachineMarks: () => ReadonlyArray<WorkerMachineMarks>;
+  /**
    * One call about a worker's machine, with the person's sign-in. A pause holds back a start, never
    * a status, a release or a stop, which only look or give back.
    */
@@ -271,6 +277,15 @@ interface WorkerMachineServerSide {
   readonly limits: { readonly paused: () => boolean };
 }
 
+/**
+ * Whether `account` is this sign-in's: its mark, or one it had before (`formerMarks`), whose
+ * machines and stops the server is still moving to it. Undefined asks under no sign-in.
+ */
+const ownMark = (server: WorkerMachineServerSide, account: string | undefined) =>
+  account === undefined ||
+  (server.machineMark !== undefined &&
+    (account === server.machineMark || (server.formerMarks ?? []).includes(account)));
+
 /** The device's worker-machine calls over the servers it is signed in to. */
 export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
   readonly servers: () => Iterable<S>;
@@ -313,10 +328,27 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
       return { ok: false, why: NO_WORKER_MACHINE_SERVER };
     },
 
+    workerMachineMarks: () =>
+      [...servers()].flatMap((server) =>
+        server.keeper.signedOut() ||
+        !startsWorkerMachines(server.discovery) ||
+        server.machineMark === undefined
+          ? []
+          : [
+              {
+                origin: server.origin,
+                account: server.machineMark,
+                formerAccounts: (server.formerMarks ?? []).filter(
+                  (each) => each !== server.machineMark,
+                ),
+              },
+            ],
+      ),
+
     workerMachineCall: async (origin, call, body, sendBy, account) => {
       const server = known(origin);
       if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
-      if (account !== undefined && account !== server.machineMark) return ANOTHER_ACCOUNT;
+      if (!ownMark(server, account)) return ANOTHER_ACCOUNT;
       if (call === "start" && server.limits.paused())
         return {
           ok: false,
@@ -336,7 +368,7 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
         server !== undefined &&
         !server.keeper.signedOut() &&
         startsWorkerMachines(server.discovery) &&
-        (account === undefined || account === server.machineMark)
+        ownMark(server, account)
       );
     },
 
@@ -346,7 +378,7 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
         server === undefined ||
         server.keeper.signedOut() ||
         !startsWorkerMachines(server.discovery) ||
-        (account !== undefined && account !== server.machineMark)
+        !ownMark(server, account)
       )
         return false;
       return leaseWorkerMachineRelay(server.keeper);
@@ -356,7 +388,7 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
       const server = known(origin);
       if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
       // Another sign-in's machine is never carried under this one: not dialled, nor leased.
-      if (account !== undefined && account !== server.machineMark) return ANOTHER_ACCOUNT;
+      if (!ownMark(server, account)) return ANOTHER_ACCOUNT;
       return workerMachineRelayDial({ ...callsOf(server), name });
     },
   };

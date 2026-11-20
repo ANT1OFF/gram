@@ -514,6 +514,81 @@ describe("this machine as a personal device", () => {
     }
   });
 
+  it("uses a restored sign-in's new mark only once it is kept, so a restart loses nothing", async () => {
+    fake.state.namesWorkerMachines = true;
+    const markOf = (store: Map<string, string>) =>
+      (JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark?: string })
+        .machineMark;
+    // Signed in where the server names no organisation, and kept from before marks were.
+    const keychain = new Map<string, string>();
+    const first = await setUp({}, keychain);
+    await first.device.signIn(origin);
+    const { machineMark: _gone, ...before } = JSON.parse(
+      keychain.get(`device-sign-in ${origin}`) ?? "{}",
+    ) as { machineMark?: string };
+    keychain.set(`device-sign-in ${origin}`, JSON.stringify(before));
+    await first.device.close();
+    const renewals = fake.state.refreshes;
+    // Restored with a keychain that takes the rotated refresh token but not the mark: the write
+    // of the mark its renewal gives it fails.
+    const failing = secretsIn(keychain);
+    const restored = await setUp(
+      {
+        secrets: {
+          ...failing,
+          set: async (name, value) => {
+            if ((JSON.parse(value) as { machineMark?: string }).machineMark !== undefined)
+              throw new Error("The keychain didn't take it.");
+            return failing.set(name, value);
+          },
+        },
+      },
+      keychain,
+    );
+    // Its first renewal came, and the workspaces it lists after it.
+    await restored.waitFor(
+      () =>
+        fake.state.refreshes > renewals &&
+        (restored.device.state().servers[0]?.workspaces.length ?? 0) > 0,
+    );
+    // No mark was kept, so none is used: nothing is made under a mark a restart would lose.
+    expect(markOf(keychain)).toBeUndefined();
+    expect(restored.device.workerMachineMarks()).toEqual([]);
+    expect(restored.device.workerMachineServer().ok).toBe(false);
+    await restored.device.close();
+    // Restored again with a keychain that takes it: the mark used is the one kept.
+    const again = await setUp({}, keychain);
+    await again.waitFor(() => again.device.workerMachineMarks().length > 0);
+    const kept = markOf(keychain);
+    expect(kept).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    expect(again.device.workerMachineMarks()).toEqual([
+      { origin, account: kept, formerAccounts: [] },
+    ]);
+    await again.device.close();
+  });
+
+  it("takes the organisation's mark from a renewal of a sign-in made in this run, not only at restart", async () => {
+    fake.state.namesWorkerMachines = true;
+    const { device, store } = await setUp();
+    await device.signIn(origin);
+    const own = (
+      JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark: string }
+    ).machineMark;
+    expect(device.workerMachineMarks()).toEqual([{ origin, account: own, formerAccounts: [] }]);
+    // The server begins naming the organisation; the next renewal brings it.
+    fake.state.organization = "org-a";
+    clock += 3_600_000;
+    await device.refresh(origin);
+    const [marks] = device.workerMachineMarks();
+    expect(marks?.account).not.toBe(own);
+    expect(marks?.formerAccounts).toEqual([own]);
+    expect(
+      (JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark: string })
+        .machineMark,
+    ).toBe(marks?.account);
+    await device.close();
+  });
+
   it("keeps a pause across a restart until the person lifts it", async () => {
     const first = await setUp();
     await first.device.signIn(origin);

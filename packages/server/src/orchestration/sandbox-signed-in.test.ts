@@ -55,6 +55,8 @@ const fakePort = (
     unrelay: () => undefined,
     relays: () => undefined,
     onDial: () => undefined,
+    marks: () => Effect.succeed([]),
+    onSignIns: () => undefined,
   };
   return { port, calls };
 };
