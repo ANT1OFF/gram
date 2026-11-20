@@ -9,7 +9,7 @@ import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { GramRpcs, type RequestId } from "@gram/contracts";
+import { GramRpcs, parseQuestions, QUESTIONS_FILE, type RequestId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Cause from "effect/Cause";
@@ -55,6 +55,7 @@ import { ThreadArchive, ThreadArchiverLive } from "../orchestration/archive.ts";
 import { DreamFiles } from "../orchestration/dream-files.ts";
 import { DreamsLive } from "../orchestration/dreams.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
+import { questionAnswerer } from "../orchestration/dream-handler.ts";
 import { Orchestration, OrchestrationLive } from "../orchestration/service.ts";
 import { WorkerMachineReleaseLive } from "../embedding/worker-machine-release.ts";
 import { RoutineEventSourcesLive } from "../routines/events.ts";
@@ -314,6 +315,13 @@ export const AuthMiddleware = HttpRouter.middleware(
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
+    const memory = Option.getOrUndefined(yield* Effect.serviceOption(OrchestrationMemory));
+    const hub = Option.getOrUndefined(yield* Effect.serviceOption(EventHub));
+    // An orchestrator question answered through `asks/answer`, as the socket's `question.answer`.
+    const answerQuestionAsUser =
+      memory === undefined || hub === undefined || store === undefined || runtimes === undefined
+        ? undefined
+        : questionAnswerer({ memory, store, hub, runtimes });
     const sharedFolders = Option.getOrUndefined(yield* Effect.serviceOption(SharedFolders));
     // Its long steps run as jobs in the server's scope, outliving the call that starts one.
     const machineJobs = yield* makeMachineJobs();
@@ -551,6 +559,30 @@ export const AuthMiddleware = HttpRouter.middleware(
                     : {
                         noteAnswer: (askId: string, note: AnswerNote | undefined) =>
                           eventSink.noteAnswer(askId as RequestId, note),
+                      }),
+                  ...(answerQuestionAsUser === undefined || memory === undefined
+                    ? {}
+                    : {
+                        orchestratorQuestions: {
+                          find: (workspaceId, questionId) =>
+                            Effect.gen(function* () {
+                              const state = yield* store.getWorkspace(workspaceId);
+                              const threadId = state.workspace.orchestratorThreadId;
+                              if (threadId === undefined) return undefined;
+                              const content = yield* memory.read(workspaceId, QUESTIONS_FILE);
+                              const question = parseQuestions(content).find(
+                                (each) => each.id === questionId,
+                              );
+                              return question === undefined ? undefined : { question, threadId };
+                            }).pipe(Effect.orElseSucceed(() => undefined)),
+                          answer: answerQuestionAsUser,
+                          mayReach: (_workspaceId, threadId) =>
+                            mayReachThread(
+                              store.getThread,
+                              ownersOf(remoteHosts?.machines),
+                              threadId,
+                            ),
+                        },
                       }),
                   ...(orchestration === undefined
                     ? {}
