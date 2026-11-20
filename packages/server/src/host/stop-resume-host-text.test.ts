@@ -41,9 +41,7 @@ describe("a resume a host fails with a long message", () => {
       } as unknown as StopResumeDeps;
       const resumed = yield* resumeHost(deps, MACHINE);
       expect(resumed.refused[0]?.note.length).toBeLessThanOrEqual(1024);
-      expect(stops.blocked(MACHINE, THREAD.id)?.length).toBeLessThanOrEqual(
-        BLOCK_REASON_MAX_CHARS,
-      );
+      expect(stops.blocked(MACHINE, THREAD.id)?.length).toBeLessThanOrEqual(BLOCK_REASON_MAX_CHARS);
     }),
   );
 });
