@@ -113,6 +113,9 @@ export interface ResolvedBinary {
  * The first usable candidate, skipping shell wrappers that may inject hooks or session arguments.
  * Interpreter scripts (npm installs) and Windows batch shims are accepted.
  */
+const commandName = (path: string): string =>
+  (path.split(/[\\/]/).at(-1) ?? path).toLowerCase().replace(/\.exe$/, "");
+
 export const resolveBinary = Effect.fnUntraced(function* (
   candidates: ReadonlyArray<string>,
   fs: BinaryFs,
@@ -129,11 +132,16 @@ export const resolveBinary = Effect.fnUntraced(function* (
       skipped.push({ path: real.value, reason: "unreadable" });
       continue;
     }
-    if (classifyExecutable(head.value) === "shellWrapper") {
+    const kind = classifyExecutable(head.value);
+    if (kind === "shellWrapper") {
       skipped.push({ path: real.value, reason: "shell wrapper" });
       continue;
     }
-    return { path: real.value, skipped } satisfies ResolvedBinary;
+    // A native multicall binary (mise's command wrappers, busybox) picks its tool by the name it
+    // is run under, so a link to it under another name keeps the link's path.
+    const path =
+      kind === "native" && commandName(real.value) !== commandName(candidate) ? candidate : real.value;
+    return { path, skipped } satisfies ResolvedBinary;
   }
   const detail = skipped.length ? ` (skipped: ${skipped.map((s) => s.path).join(", ")})` : "";
   return yield* Effect.fail(

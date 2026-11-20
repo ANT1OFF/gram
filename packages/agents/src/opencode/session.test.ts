@@ -6,6 +6,7 @@ import {
   type MessageId,
   type ProfileId,
   type ThreadId,
+  XAI_BASE_URL,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -420,6 +421,33 @@ describe("OpenCode's models and config", () => {
           },
         },
       },
+    });
+  });
+
+  it("prices a gateway model the gateway lists prices for, cached input included", () => {
+    const config = JSON.parse(
+      gatewayConfig({
+        profile: {
+          id: "xai" as ProfileId,
+          name: "xAI",
+          baseURL: XAI_BASE_URL,
+          kind: "xai",
+          keyRef: "profile:xai",
+          models: [
+            {
+              id: "grok-4.7",
+              name: "grok-4.7",
+              price: { input: 2, cachedInput: 0.5, output: 6 },
+            },
+          ],
+        },
+        key: Redacted.make("xai-test"),
+      }),
+    );
+    expect(config.providers.gram.models["grok-4.7"].cost).toEqual({
+      input: 2,
+      output: 6,
+      cache: { read: 0.5 },
     });
   });
 

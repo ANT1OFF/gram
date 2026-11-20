@@ -60,7 +60,7 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 
 /** What a failed start or session says when the CLI has no usable sign-in. */
 export const SIGN_IN_MESSAGE =
-  "Grok Build isn't signed in. Run `grok login` in a terminal, then start the thread again.";
+  "Not signed in. Run `grok login` in a terminal, then start the thread again.";
 
 const signInProblem = (message: string): boolean =>
   /auth|sign[ -]?in|log ?in|unauthori[sz]ed|credential|token expired/i.test(message);

@@ -315,6 +315,16 @@ const normalURL = (url: string): string => {
 /** Whether two gateway addresses name the same endpoint, whatever their case or trailing slash. */
 export const sameGatewayURL = (a: string, b: string): boolean => normalURL(a) === normalURL(b);
 
+/**
+ * The kind a gateway's own address implies, so a profile added by hand on OpenRouter's or xAI's API
+ * follows its conventions too; `undefined` for any other address.
+ */
+export const gatewayKindOf = (baseURL: string): GatewayKind | undefined => {
+  if (sameGatewayURL(baseURL, OPENROUTER_BASE_URL)) return "openrouter";
+  const url = normalURL(baseURL);
+  return url === normalURL(XAI_BASE_URL) || url === "https://api.x.ai" ? "xai" : undefined;
+};
+
 // ---------------------------------------------------------------------------------------------
 // Projects, threads, labels
 

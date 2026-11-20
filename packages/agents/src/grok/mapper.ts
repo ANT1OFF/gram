@@ -352,6 +352,9 @@ export const makeGrokMapper = (options: GrokMapperOptions): GrokMapper => {
 
   const update = (input: Json): ReadonlyArray<AgentEvent> => {
     const out: Array<AgentEvent> = [];
+    // A resumed session replays its past turns' updates, prices included; only a turn Gram
+    // started is this thread's.
+    if (turn === undefined) return out;
     switch (input["sessionUpdate"]) {
       case "agent_message_chunk":
         append("text", text(record(input["content"])["text"]) ?? "", out);
