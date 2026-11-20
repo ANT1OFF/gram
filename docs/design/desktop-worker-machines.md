@@ -199,6 +199,9 @@ subscription token reaches a machine, with its own consent.
 
 ## 5. Release, an expired sign-in, and a sleeping desktop
 
+- **No card of its own.** A spawn that starts a new machine on the hosted server raises no approval
+  card beyond the spawn's usual ones: the person's sign-in with the `machines:workers` scope is the
+  consent, and the server's own limits and total bound what it may start.
 - **Only once the spawn goes ahead.** The machine is asked for in the tool's handler, after any
   approval card, so a denied or refused spawn starts nothing. One that came for a spawn that is
   then refused, held or interrupted is given back (`…/stop`); a start that got no answer is given
