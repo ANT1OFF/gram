@@ -18,6 +18,7 @@ import {
 import { useApi } from "@/api/context";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { spin } from "@/motion";
 
 import { PanelMessage } from "./panel-message";
 
@@ -92,11 +93,8 @@ function DriverRow({ driver }: { driver: VerifyDriverState }) {
     >
       <Icon
         aria-hidden
-        className={cn(
-          "mt-0.5 size-4 shrink-0",
-          status.tone,
-          driver.status === "running" && "animate-spin",
-        )}
+        ref={driver.status === "running" ? spin : undefined}
+        className={cn("mt-0.5 size-4 shrink-0", status.tone)}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex items-center gap-2 text-reading">
