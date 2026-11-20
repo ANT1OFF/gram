@@ -12,12 +12,13 @@ export const workerMachinesOffered = Effect.gen(function* () {
   const signedInWorkers = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
   /**
    * Where `spawn_worker`'s `sandbox` gets a worker a machine of its own now, in a few words for the
-   * orchestrator's prompt: the embedder's provider, or the hosted server the desktop app is signed
-   * in to. Undefined where it gets none, and the prompt then says nothing of it.
+   * orchestrator's prompt: the hosted server the desktop app is signed in to. Undefined where it
+   * gets none, and the prompt then says nothing of it; so too on an embedded Gram, whose prompt
+   * never spoke of `sandbox` (the tool's own description does), and stays as it was.
    */
   const offered: Effect.Effect<string | undefined> =
     onDemandHosts !== undefined
-      ? Effect.succeed("this deployment")
+      ? Effect.succeed(undefined)
       : signedInWorkers === undefined || !signedInWorkers.port.available
         ? Effect.succeed(undefined)
         : signedInWorkers.source.pipe(

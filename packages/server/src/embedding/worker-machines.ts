@@ -222,10 +222,13 @@ export const choicesOfAsk = (ask: Omit<WorkerMachineAsk, "owner">): Record<strin
 /**
  * A start, from whichever provider is asked (`send`). 409 is over the person's total; 403 or 404
  * is not allowed (the person or their organisation turned it off, or the provider starts none).
+ * `codes`: a 409's `code` is read (a hosted server's `name_in_use`, `released` and others); an
+ * embedder's provider's every 409 is over the total, as it always was.
  */
 export const askWorkerMachine = <R>(
   ask: Omit<WorkerMachineAsk, "owner">,
   send: Effect.Effect<StartAnswer, never, R>,
+  codes = true,
 ): Effect.Effect<WorkerMachineStart, never, R> =>
   Effect.gen(function* () {
     if (!askIsWellFormed(ask))
@@ -241,6 +244,7 @@ export const askWorkerMachine = <R>(
         unknown: true,
       } as const;
     const { status, body } = answered;
+    if (status === 409 && !codes) return parseOverTotal(body);
     // The name was a machine's the server has since reclaimed: it isn't given out again. Asked
     // once, never again under the same name, so the orchestrator picks another request id.
     if (
@@ -321,6 +325,7 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
       ),
       Effect.catch((failure) => Effect.succeed({ failed: failure.message })),
     ),
+    false,
   );
 
 /** A joined machine as waiting for a worker's own reads it. */
