@@ -124,6 +124,19 @@ describe("a worker's own machine", () => {
     }),
   );
 
+  it.effect("reads any 409 an embedder's provider gives as over the total, as it always has", () =>
+    Effect.gen(function* () {
+      for (const code of ["name_in_use", "released", "quota"]) {
+        const fake = yield* Effect.promise(() =>
+          provider(409, { code, message: "Over the organisation's limit.", machines: [] }),
+        );
+        const over = yield* startWorkerMachine(fake.hosts, ask);
+        yield* Effect.promise(fake.close);
+        expect(over).toMatchObject({ kind: "over-total", machines: [] });
+      }
+    }),
+  );
+
   it.effect("is refused where the person or their organisation turned it off", () =>
     Effect.gen(function* () {
       const fake = yield* Effect.promise(() =>
