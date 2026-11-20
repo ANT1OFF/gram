@@ -113,6 +113,9 @@ export interface ResolvedBinary {
  * The first usable candidate, skipping shell wrappers that may inject hooks or session arguments.
  * Interpreter scripts (npm installs) and Windows batch shims are accepted.
  */
+/** Binaries that run as whichever tool their name says, so they are run by their link's name. */
+const MULTICALL: ReadonlySet<string> = new Set(["mise", "busybox", "toybox"]);
+
 const commandName = (path: string): string =>
   (path.split(/[\\/]/).at(-1) ?? path).toLowerCase().replace(/\.exe$/, "");
 
@@ -140,7 +143,9 @@ export const resolveBinary = Effect.fnUntraced(function* (
     // A native multicall binary (mise's command wrappers, busybox) picks its tool by the name it
     // is run under, so a link to it under another name keeps the link's path.
     const path =
-      kind === "native" && commandName(real.value) !== commandName(candidate)
+      kind === "native" &&
+      MULTICALL.has(commandName(real.value)) &&
+      commandName(real.value) !== commandName(candidate)
         ? candidate
         : real.value;
     return { path, skipped } satisfies ResolvedBinary;

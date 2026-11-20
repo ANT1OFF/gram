@@ -1645,7 +1645,7 @@ export const connectHost = (
           ? Effect.void
           : guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
       accountScope: (agent) =>
-        hostServes(hello, "account-scope")
+        hostServes(hello, "account-scope") && (agent !== "grok" || runsGrok)
           ? sessionCall(
               client["host.sessions.accountScope"]({ agent }),
               (error): error is AgentUnavailable => error instanceof AgentUnavailable,
