@@ -1443,6 +1443,117 @@ const soloRowOf = async (page: Page, threadId: string) => {
   return row;
 };
 
+/**
+ * The notices a working day piles up, as the server sends them: Claude Code's version skew at each
+ * worker's session start (keyed per installed version, with its Update), a Codex MCP server's
+ * start-up warning (about the machine, nothing to do), and a review round on one worker.
+ * Synthetic: thread ids from the realistic scenario, a made-up CLI version and invented digests.
+ */
+const simulateNoticePile = async (page: Page, workers: readonly string[]) => {
+  await page.evaluate((ids) => {
+    const mock = window.gramMock!;
+    for (const id of ids) {
+      mock.simulateNotification({
+        type: "notify",
+        kind: "info",
+        title:
+          "Claude Code 2.1.300 is much older than 2.1.328, which Agent SDK 0.3.328 is built for; some features may misbehave.",
+        startupDiagnostic: { key: "c".repeat(64), source: "Claude Code version", once: true },
+        action: "updateCli",
+        threadId: id as never,
+      } as never);
+      mock.simulateNotification({
+        type: "notify",
+        kind: "info",
+        title: "MCP server sample didn't start: sign in required",
+        startupDiagnostic: { key: "d".repeat(64), source: "Codex MCP startup" },
+        threadId: id as never,
+      });
+    }
+    mock.simulateNotification({
+      type: "notify",
+      kind: "done",
+      title: "Review round 2: approved",
+      body: "No unresolved findings",
+      threadId: ids[0] as never,
+    });
+  }, workers);
+};
+
+/** Every worker of the realistic orchestrator, by its rows in the Workers list. */
+const workerIds = (page: Page) =>
+  page
+    .locator('[data-testid="workers-panel-row"]')
+    .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-thread-id") ?? ""));
+
+const NOTICE_SHOTS: readonly Shot[] = [
+  {
+    name: "notices-beside-worker",
+    title:
+      "Notices with a worker open beside the orchestrator (before: docked under the worker's composer; after: at the chat's top right, machine-only notices in Notification history)",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.setViewportSize({ width: 1728, height: 1095 });
+      const made = await openReadmeRealistic(page, 1728, 1095);
+      await goInApp(page, `/t/${made.orchestratorThreadId}`);
+      await page.getByLabel("Message", { exact: true }).first().waitFor();
+      await page.keyboard.press("ControlOrMeta+KeyJ");
+      const ids = (await workerIds(page)).filter(Boolean);
+      await page
+        .getByTestId("workers-panel")
+        .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.searchWorker}"]`)
+        .click({ modifiers: ["ControlOrMeta"] });
+      await page.getByTestId("worker-crumbs").waitFor();
+      await page.keyboard.press("ControlOrMeta+Backslash");
+      await page.getByTestId("beside-dock").waitFor();
+      await simulateNoticePile(
+        page,
+        [made.searchWorker, ...ids.filter((id) => id !== made.searchWorker)].slice(0, 4),
+      );
+      await page.getByTestId("toast").first().waitFor();
+      await page.mouse.move(700, 500);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "notices-floating",
+    title:
+      "The same notices with the right panel closed (before: bottom right; after: the chat's top right)",
+    modes: ["dark"],
+    open: async (page) => {
+      const made = await openReadmeRealistic(page, 1728, 1095);
+      await goInApp(page, `/t/${made.orchestratorThreadId}`);
+      await page.getByLabel("Message", { exact: true }).first().waitFor();
+      await simulateNoticePile(page, [made.searchWorker, "t-flaky", "t-deps"]);
+      await page.getByTestId("toast").first().waitFor();
+      await page.mouse.move(700, 500);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "notices-history",
+    title:
+      "Notification history (Inbox → Notifications) after the pile: each notice once, with its count",
+    modes: ["dark"],
+    open: async (page) => {
+      const made = await openReadmeRealistic(page, 1728, 1095);
+      await goInApp(page, `/t/${made.orchestratorThreadId}`);
+      await page.getByLabel("Message", { exact: true }).first().waitFor();
+      await simulateNoticePile(page, [made.searchWorker, "t-flaky", "t-deps"]);
+      await page
+        .locator(
+          '[data-testid="overview-needs-you"]:visible, [data-testid="overview-rail-needs-you"]:visible, [data-testid="inbox-button"]:visible',
+        )
+        .first()
+        .click();
+      await page.getByTestId("inbox-notifications").click();
+      await page.getByRole("region", { name: "Notification history" }).waitFor();
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(800);
+    },
+  },
+];
+
 const SNOOZE_SHOTS: readonly Shot[] = [
   {
     name: "snooze-row-menu",
@@ -3023,6 +3134,7 @@ export const SHOTS: readonly Shot[] = [
   ...REVIEW_SHOTS,
   ...STATE_TRUTH_SHOTS,
   ...SNOOZE_SHOTS,
+  ...NOTICE_SHOTS,
   ...PANEL_TAB_SHOTS,
   ...COMPOSER_TOOLBAR_SHOTS,
   {

@@ -37,7 +37,6 @@ import { useFeature, useServerBrowser } from "@/settings/use-diagnostics";
 import { panelWorkersOnly, useEmbedShell, useRoomySidebar, useWorkersWord } from "@/embed/store";
 import { usePhone } from "@/lib/use-phone";
 import { PHONE_SEGMENT, PhonePanelHeader } from "@/shell/phone-panels";
-import { useToastDock } from "@/shell/toast-dock";
 import {
   fitShell,
   isReviewTab,
@@ -267,7 +266,6 @@ export function RightPanel() {
     (s) => routeThreadId !== undefined && (!s.ready || s.byId[routeThreadId] !== undefined),
   );
   const threadId = known ? routeThreadId : undefined;
-  const setToastDock = useToastDock((s) => s.setNode);
   const busyTerminals = useThreadsStore((s) =>
     threadId === undefined ? "" : terminalsBusyText(s.byId[threadId]?.terminalProcesses),
   );
@@ -335,7 +333,6 @@ export function RightPanel() {
             }
           />
         </Suspense>
-        <div ref={setToastDock} data-testid="toast-dock" className="shrink-0" />
       </aside>
     );
   }
@@ -478,8 +475,6 @@ export function RightPanel() {
           />
         </Suspense>
       </Tabs>
-      {/* Toasts dock here while the panel is open, below the content instead of over it. */}
-      <div ref={setToastDock} data-testid="toast-dock" className="shrink-0" />
     </aside>
   );
 }

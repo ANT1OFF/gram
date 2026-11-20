@@ -45,7 +45,7 @@ import {
   seenServer,
   type SeenServer,
 } from "./connectors.ts";
-import type { VersionNotice } from "./binary.ts";
+import { environmentDiagnostic, type VersionNotice } from "./binary.ts";
 import { ClaudeEnvironment } from "./environment.ts";
 import { AsyncPushQueue } from "./input-queue.ts";
 import { ClaudeSdk, type ClaudeSdkShape } from "./sdk.ts";
@@ -461,7 +461,13 @@ describe("ClaudeHost.open", () => {
       yield* openSession({}).pipe(Effect.provide(unset.layer));
       expect(query(unset).options.permissionMode).toBe("default");
       expect(yield* take(session, 4)).toEqual([
-        { type: "notice", level: "warning", message: "probe fallback" },
+        // About the machine: keyed, so its repeats across threads collapse in Notification history.
+        {
+          type: "notice",
+          level: "warning",
+          message: "probe fallback",
+          startupDiagnostic: environmentDiagnostic("probe fallback"),
+        },
         // About the install, not the session: keyed to show once per version, with the update.
         {
           type: "notice",

@@ -69,7 +69,12 @@ import {
   buildAppToolServer,
   buildRemoteAppToolServer,
 } from "./apptools.ts";
-import { expectedCliVersion, restoresSessionCost, supportsFastControl } from "./binary.ts";
+import {
+  environmentDiagnostic,
+  expectedCliVersion,
+  restoresSessionCost,
+  supportsFastControl,
+} from "./binary.ts";
 import {
   makeConnectors,
   nextLapsedConnectors,
@@ -1242,7 +1247,12 @@ export const makeClaudeHost = (
 
       initialized = true;
       for (const warning of prepared.warnings) {
-        emit({ type: "notice", level: "warning", message: warning });
+        emit({
+          type: "notice",
+          level: "warning",
+          message: warning,
+          startupDiagnostic: environmentDiagnostic(warning),
+        });
       }
       if (prepared.versionNotice !== undefined)
         emit({
@@ -1365,6 +1375,7 @@ export const makeClaudeHost = (
             type: "notice",
             level: "warning",
             message: `Claude Code ${runningCli ?? "(version unknown)"} kept its cross-session messaging on despite ${PEER_MESSAGING_SWITCH}=0. Gram refuses ListAgents and SendMessage in this session.`,
+            startupDiagnostic: environmentDiagnostic("peer-messaging", runningCli ?? ""),
           });
         }
         trackBackgroundTask(message);

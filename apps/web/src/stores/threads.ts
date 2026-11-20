@@ -30,6 +30,27 @@ type Notify = Extract<ServerEvent, { type: "notify" }> & { at: number };
 type RateLimit = Extract<ServerEvent, { type: "rateLimit" }>;
 type ShowPanel = Extract<ServerEvent, { type: "ui.showPanel" }>;
 
+/**
+ * Whether a recorded notice also toasts. An `info` start-up diagnostic is about the machine or its
+ * harness (a CLI's version, an MCP server, the shell probe), not the thread that happened to start:
+ * it goes to Notification history, whose unread count says it's there, and toasts only when it
+ * offers something to do (`action`). Everything else, about a thread or the user's own action,
+ * toasts as before.
+ */
+export const toasts = (event: Pick<Notify, "kind" | "startupDiagnostic" | "action">): boolean =>
+  event.kind !== "info" || event.startupDiagnostic === undefined || event.action !== undefined;
+
+/**
+ * The toast list with `next` added, the same notice already in it (kind, title and body) taken
+ * out: a repeat, from this thread or another, shows once, as the latest, not stacked.
+ */
+export const withToast = (list: readonly Notify[], next: Notify): readonly Notify[] => [
+  ...list
+    .filter((n) => n.kind !== next.kind || n.title !== next.title || n.body !== next.body)
+    .slice(-19),
+  next,
+];
+
 const VERDICT_TITLE: Record<ReviewVerdict, string> = {
   approved: "approved",
   changesRequested: "changes requested",
@@ -332,10 +353,8 @@ export const createThreadsSlice = (
         useSuggestionsStore.getState().offer(event);
         return;
       case "notify":
-        if (!useNotificationHistory.getState().record(event)) return;
-        set((s) => ({
-          notifications: [...s.notifications.slice(-19), { ...event, at: Date.now() }],
-        }));
+        if (!useNotificationHistory.getState().record(event) || !toasts(event)) return;
+        set((s) => ({ notifications: withToast(s.notifications, { ...event, at: Date.now() }) }));
         return;
       case "rateLimit": {
         const at = Date.now();
@@ -347,7 +366,7 @@ export const createThreadsSlice = (
           at,
         };
         useNotificationHistory.getState().record(notify, notify.at);
-        set((s) => ({ notifications: [...s.notifications.slice(-19), notify] }));
+        set((s) => ({ notifications: withToast(s.notifications, notify) }));
         return;
       }
       case "usageLimit":
@@ -380,7 +399,7 @@ export const createThreadsSlice = (
           at: Date.now(),
         };
         useNotificationHistory.getState().record(notify, notify.at);
-        set((s) => ({ notifications: [...s.notifications.slice(-19), notify] }));
+        set((s) => ({ notifications: withToast(s.notifications, notify) }));
         return;
       }
       case "keybindings.changed":

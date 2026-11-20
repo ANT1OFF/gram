@@ -15,7 +15,6 @@ import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { PresenceItem, PresenceList } from "@/motion";
 import { errorMessage } from "@/api/errors";
-import { fitShell, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useUndoToasts, type UndoToast } from "@/stores/undo-toasts";
 
@@ -44,15 +43,15 @@ const KIND: Record<Notify["kind"], { icon: LucideIcon; tone: string; label: stri
 };
 
 /**
- * Server `notify` events (agent notices, turn ends, errors) as a short-lived toast stack. While the
- * right panel is open the stack docks at its foot, so it shrinks the panel's content rather than
- * covering its buttons; otherwise it floats bottom-right. Escape on a toast dismisses it.
+ * Server `notify` events (agent notices, turn ends, errors) as a short-lived toast stack, at the
+ * chat's top right (`toast-dock` in the app shell): never in the right panel, whose worker or tab
+ * keeps its full height. Without the dock (a covered chat) it floats bottom-right. Which notices
+ * toast at all, `stores/threads.ts` decides. Escape on a toast dismisses it.
  */
 export function Toasts() {
   const navigate = useNavigate();
   const notifications = useThreadsStore((s) => s.notifications);
   const dock = useToastDock((s) => s.node);
-  const panelShown = useLayoutStore((s) => fitShell(s).panel !== "none");
   const [dismissed, setDismissed] = useState<ReadonlySet<object>>(() => new Set());
 
   const dismiss = (n: object) =>
@@ -106,7 +105,7 @@ export function Toasts() {
   }, [undos]);
 
   const visible = notifications.filter((n) => !dismissed.has(n)).slice(-MAX_VISIBLE);
-  const docked = panelShown && dock !== null;
+  const docked = dock !== null;
 
   const list = (
     <ol
@@ -121,7 +120,7 @@ export function Toasts() {
       }}
       className={
         docked
-          ? "flex flex-col px-2 pt-2 empty:hidden"
+          ? "flex flex-col pt-2 empty:hidden"
           : "pointer-events-none fixed right-4 bottom-2 z-50 flex w-80 flex-col"
       }
     >

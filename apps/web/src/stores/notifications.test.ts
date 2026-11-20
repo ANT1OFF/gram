@@ -35,10 +35,11 @@ beforeEach(() => {
 });
 
 describe("notification retention and startup quieting", () => {
-  it("shows the first notice across newly spawned workers, counts repeats and retains source associations", () => {
+  it("records the first notice across newly spawned workers, counts repeats and retains source associations", () => {
     const { applyEvent } = useThreadsStore.getState();
     for (let i = 1; i <= 4; i++) applyEvent(warning(`worker-${i}`));
-    expect(useThreadsStore.getState().notifications).toHaveLength(1);
+    // About the machine, with nothing to do: history and its unread count, not a toast.
+    expect(useThreadsStore.getState().notifications).toHaveLength(0);
     expect(useNotificationHistory.getState().entries).toMatchObject([
       {
         count: 4,
@@ -49,7 +50,7 @@ describe("notification retention and startup quieting", () => {
     expect(unreadNotifications(useNotificationHistory.getState())).toBe(1);
     applyEvent(warning("new-source", "b".repeat(64)));
     applyEvent({ type: "notify", kind: "info", title: warning().title });
-    expect(useThreadsStore.getState().notifications).toHaveLength(3);
+    expect(useThreadsStore.getState().notifications).toHaveLength(1);
   });
 
   it("never throttles errors, input requests or turn outcomes even with diagnostic metadata", () => {
@@ -59,7 +60,12 @@ describe("notification retention and startup quieting", () => {
       applyEvent({ ...warning(), kind });
       applyEvent({ ...warning(), kind });
     }
-    expect(useThreadsStore.getState().notifications).toHaveLength(7);
+    // Each is raised; a repeat replaces its twin in the stack rather than stacking beside it.
+    expect(useThreadsStore.getState().notifications.map((n) => n.kind)).toEqual([
+      "error",
+      "needsInput",
+      "done",
+    ]);
     expect(useNotificationHistory.getState().entries).toHaveLength(7);
   });
 
@@ -81,6 +87,18 @@ describe("notification retention and startup quieting", () => {
     expect(cleared.getState().record(warning("worker-4"), at + DIAGNOSTIC_COOLDOWN_MS)).toBe(true);
     expect(unreadNotifications(cleared.getState())).toBe(1);
     vi.restoreAllMocks();
+  });
+
+  it("keeps machine diagnostics out of the toasts unless they offer an action, counting them unread", () => {
+    const { applyEvent } = useThreadsStore.getState();
+    applyEvent(warning("worker-1"));
+    expect(useThreadsStore.getState().notifications).toEqual([]);
+    expect(unreadNotifications(useNotificationHistory.getState())).toBe(1);
+    // An actionable one toasts on its first sighting only.
+    applyEvent({ ...cli("e", "worker-1"), action: "updateCli" });
+    applyEvent({ ...cli("e", "worker-2"), action: "updateCli" });
+    expect(useThreadsStore.getState().notifications).toHaveLength(1);
+    expect(useThreadsStore.getState().notifications[0]).toMatchObject({ action: "updateCli" });
   });
 
   it("shows a notice about the installed CLI once per version, through cooldowns and reloads", () => {
