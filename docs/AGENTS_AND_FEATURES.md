@@ -1514,6 +1514,13 @@ have no pass yet. The orchestrator sees that with the report, marked as Gram's r
 the worker's, and the worker is told which are missing. A worker can't set it, and nothing is
 refused for a missing pass.
 
+A worker in a repository with a recipe has a **Proof** tool in its pane, beside PR. It shows what
+Gram recorded of each driver on the worker's committed head, never what the worker wrote: passed,
+failed with Gram's reason, running, or not run on this commit, with the command, whether it is
+required, how long it took, and whether it covers the change. Its count, "3/4", is over the drivers
+that cover the change. Uncommitted files are named as left out of every run. The tab reads
+`git.verifyState`; a repository without a recipe has no Proof tool at all.
+
 ## Agents after Gram quits
 
 Off by default. **Settings → General → Running work → Run agents after quit** runs this machine's

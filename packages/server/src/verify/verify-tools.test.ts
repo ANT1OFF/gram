@@ -16,7 +16,13 @@ import {
   type LocalCheck,
   type LocalCheckRun,
 } from "../git/local-checks.ts";
-import { driverRun, requiredOnHead, verifyProfile, verifyTools } from "./verify-tools.ts";
+import {
+  driverRun,
+  requiredOnHead,
+  verifyProfile,
+  verifyStateOf,
+  verifyTools,
+} from "./verify-tools.ts";
 
 const THREAD = "t-verify" as Thread["id"];
 const PROJECT = "p-verify" as Project["id"];
@@ -45,7 +51,7 @@ const harness = (
   const runs: LocalCheckRun[] = [];
   const deps = {
     store: {
-      getThread: () =>
+      getThread: (_id: Thread["id"]) =>
         Effect.succeed({
           id: THREAD,
           role: "worker",
@@ -117,7 +123,9 @@ const harness = (
       Effect.flatMap((decoded) => tool.handle(THREAD, decoded, {})),
     );
   };
-  return { call, cards, runs, required: () => requiredOnHead(deps, THREAD) };
+  const state = () =>
+    Effect.flatMap(deps.store.getThread(THREAD), (thread) => verifyStateOf(deps, thread));
+  return { call, cards, runs, required: () => requiredOnHead(deps, THREAD), state };
 };
 
 describe("verify", () => {
@@ -185,6 +193,35 @@ describe("required drivers on a worker's head", () => {
       const optional = repoWith([{ name: "lint", run: "l" }]);
       expect(yield* harness(optional, []).required()).toBeUndefined();
     }),
+  );
+});
+
+describe("the Proof tab's state", () => {
+  it.effect(
+    "is Gram's record per driver on the head, and says when there's no recipe or a broken one",
+    () =>
+      Effect.gen(function* () {
+        const root = repoWith([
+          { name: "unit", run: "t", required: true },
+          { name: "lint", run: "l", kind: "lint" },
+        ]);
+        const passedUnit = new Set([verifyProfile({ name: "unit" })]);
+        expect(yield* harness(root, [], "trusted", passedUnit).state()).toEqual({
+          recipe: "ok",
+          head: HEAD,
+          drivers: [
+            { name: "unit", run: "t", required: true, status: "passed", startedAt: 0 },
+            { name: "lint", run: "l", kind: "lint", status: "notRun" },
+          ],
+        });
+        const bare = mkdtempSync(join(tmpdir(), "gram-verify-"));
+        roots.push(bare);
+        expect(yield* harness(bare, []).state()).toEqual({ recipe: "none", drivers: [] });
+        expect(yield* harness(repoWith([{ name: "unit" }]), []).state()).toMatchObject({
+          recipe: "unreadable",
+          error: expect.stringContaining('needs a "name" and a "run"'),
+        });
+      }),
   );
 });
 

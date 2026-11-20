@@ -9,6 +9,7 @@ import { useBindingsStore } from "@/keyboard/bindings-store";
 import { isMac } from "@/keyboard/registry";
 import { useSubscription } from "@/lib/effects";
 import { copyText } from "@/settings/copy-text";
+import { useOpenSettings } from "@/settings/open-settings";
 import { useServerSettings } from "@/settings-sync/store";
 import { loadWhatsNew } from "@/whats-new";
 import { useWhatsNewDialog } from "@/whats-new/whats-new-dialog";
@@ -43,6 +44,7 @@ const toast = (title: string, body: string) =>
  */
 export function useDesktopBridge() {
   const navigate = useNavigate();
+  const openSettings = useOpenSettings();
   const api = useApi();
 
   useEffect(() => {
@@ -62,7 +64,7 @@ export function useDesktopBridge() {
           return;
         }
         case "settings":
-          void navigate({ to: "/settings" });
+          openSettings();
           return;
         case "closePane": {
           const { grid, closePane } = useLayoutStore.getState();
@@ -228,7 +230,7 @@ export function useDesktopBridge() {
       offClick();
       window.removeEventListener("keydown", onZoomKey);
     };
-  }, [navigate, api]);
+  }, [navigate, openSettings, api]);
 
   // macOS's window buttons keep their room in the overview's header and the title bar.
   useSubscription(() => {

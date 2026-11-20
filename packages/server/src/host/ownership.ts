@@ -126,8 +126,13 @@ export const holderOf = (machine: {
   readonly id: string;
   readonly owner?: string | undefined;
   readonly onDemand?: string | undefined;
+  /** A worker host a desktop asked a hosted server for: the desktop's, open as a joined one is. */
+  readonly via?: string | undefined;
 }): string | undefined =>
-  machine.owner ?? (machine.onDemand === undefined ? undefined : `${CLOSED}${machine.id}`);
+  machine.owner ??
+  (machine.onDemand === undefined || machine.via !== undefined
+    ? undefined
+    : `${CLOSED}${machine.id}`);
 
 /** Whether a holder (`holderOf`) is a closed machine's, which no person or embedder names. */
 export const isClosed = (holder: string | undefined): boolean =>
@@ -146,6 +151,7 @@ export const ownersOf = (
           readonly owner?: string | undefined;
           readonly person?: string | undefined;
           readonly onDemand?: string | undefined;
+          readonly via?: string | undefined;
         }>;
       }
     | undefined,

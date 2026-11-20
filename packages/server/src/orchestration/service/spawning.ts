@@ -2,6 +2,7 @@
 // the approval an outside repo or a gated mode needs, through the gates near a limit, to the thread,
 // its worktrees and its brief.
 
+import { pinRefusal } from "../../embedding/worker-machines.ts";
 import type { makeSpawnBreaker } from "../spawn-breaker.ts";
 import {
   listedRow,
@@ -157,7 +158,16 @@ export interface NamedMachine {
   readonly id: HostId;
   readonly owner?: string | undefined;
   readonly onDemand?: "personal" | "thread" | "worker" | undefined;
+  /** The hosted server a desktop's worker host came through (`PairedMachine.via`). */
+  readonly via?: string | undefined;
 }
+
+/**
+ * Why a worker for a machine of its own isn't spawned on another model than the one it was given,
+ * as one elsewhere would be with a warning: the machine runs only what its provider offers.
+ */
+export const sandboxSwapWords = (instead: { readonly of: string; readonly why: string }) =>
+  `${instead.of} can't run there (${instead.why}), so no worker is spawned and no machine is asked for. A worker on a machine of its own runs the model it is given or none: name one that machine runs, or leave out sandbox to run it here on another model.`;
 
 /** Why a worker can't go on a machine its orchestrator named. */
 export const NOT_THIS_ORCHESTRATIONS_MACHINE =
@@ -173,7 +183,7 @@ export const RUNS_ON_ITS_ORCHESTRATORS_MACHINE =
  * - Its orchestrator's own machine always.
  * - Another machine only if it is the orchestrator's person's own (`onDemand: "personal"`, the
  *   same `owner`), or one started for that person's workers (`onDemand: "worker"`), or, on a Gram that runs work itself, a machine started for nothing in particular
- *   (no owner, no kind). Never a machine started for other work (`onDemand: "thread"`, another
+ *   (no owner, no kind), or a worker host it asked a hosted server for (`via`). Never a machine started for other work (`onDemand: "thread"`, another
  *   run's), and on a headless Gram never an unmarked one either, which may be another run's from
  *   before machines said their kind.
  * - On a headless Gram, which runs no work itself, "here" is its orchestrator's machine.
@@ -200,7 +210,10 @@ export const workerMachine = (
     named.owner !== undefined &&
     named.owner === ownOwner;
   const unmarked = named.onDemand === undefined && named.owner === undefined;
-  if (personsOwn || (unmarked && !headless)) return { hostId: named.id };
+  // A worker host this Gram asked a hosted server for, with the desktop's sign-in: this Gram's own.
+  const relayedWorker =
+    named.onDemand === "worker" && named.via !== undefined && named.owner === undefined;
+  if (personsOwn || ((unmarked || relayedWorker) && !headless)) return { hostId: named.id };
   return { error: NOT_THIS_ORCHESTRATIONS_MACHINE };
 };
 
@@ -341,6 +354,29 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         return yield* toolError(tool, refusal("not_admitted", OWNERS_DIFFER));
       return hostId;
     });
+  /** Whether a worker goes on a machine a hosted server started for this desktop (`via`). */
+  const relayed = (hostId: HostId | undefined) =>
+    hostId !== undefined && joinedMachines().find((m) => m.id === hostId)?.via !== undefined;
+  /**
+   * On such a machine a pin on one model's own id runs that model, as its host lists it: never
+   * another that an alias of the same name runs there.
+   */
+  const relayedPinRefusal = (
+    hostId: HostId | undefined,
+    named: string | undefined,
+    chosen: ModelRef,
+  ): string | undefined => {
+    if (hostId === undefined) return undefined;
+    const machine = joinedMachines().find((m) => m.id === hostId);
+    if (machine?.via === undefined) return undefined;
+    const rows =
+      chosen.agent === "codex"
+        ? machine.codex?.models
+        : chosen.agent === "opencode"
+          ? machine.opencode?.models
+          : machine.models;
+    return rows === undefined ? undefined : pinRefusal(machine.name, rows, named, chosen);
+  };
   const admitMachineModel = (tool: string, hostId: HostId | undefined, chosen: ModelRef) =>
     Effect.gen(function* () {
       if (hostId === undefined) return;
@@ -399,7 +435,34 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         input.model,
         yield* workerModelsHere(thread, state.charter, hostId),
       );
+      if (relayed(hostId) && chosen.instead !== undefined)
+        return yield* toolError(
+          "spawn_worker",
+          refusal("not_admitted", sandboxSwapWords(chosen.instead)),
+        );
+      const pinned = relayedPinRefusal(hostId, input.model, chosen.model);
+      if (pinned !== undefined)
+        return yield* toolError("spawn_worker", refusal("not_admitted", pinned));
       yield* admitMachineModel("spawn_worker", hostId, chosen.model);
+    });
+  // The model a spawn would run on, as it resolves here before any machine is placed: what a
+  // machine started for the worker must run.
+  const spawnModel: OrchestrationShape["spawnModel"] = (callerId, model) =>
+    Effect.gen(function* () {
+      const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
+      const chosen = yield* workerModel(
+        "spawn_worker",
+        thread,
+        state.charter,
+        model,
+        yield* workerModelsHere(thread, state.charter, undefined),
+      );
+      if (chosen.instead !== undefined)
+        return yield* toolError(
+          "spawn_worker",
+          refusal("not_admitted", sandboxSwapWords(chosen.instead)),
+        );
+      return chosen.model;
     });
   const {
     outsideWorkspace,
@@ -854,6 +917,15 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             yield* workerModelsHere(caller, state.charter, hostId),
           );
           const chosen = picked.model;
+          // On a machine of its own (`sandbox`), a worker runs the model it was given or none: the
+          // machine runs what its provider offers, so another model would be a silent swap.
+          if (relayed(hostId) && picked.instead !== undefined)
+            return yield* toolError(
+              tool,
+              refusal("not_admitted", sandboxSwapWords(picked.instead)),
+            );
+          const pinned = relayedPinRefusal(hostId, input.model, chosen);
+          if (pinned !== undefined) return yield* toolError(tool, refusal("not_admitted", pinned));
           yield* admitMachineModel(tool, hostId, chosen);
           const mode = startModeFor(
             chosen.agent,
@@ -1260,6 +1332,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     setRoutineAdmission,
     spawnNeedsApproval,
     checkSpawnMachine,
+    spawnModel,
     describeSpawn,
     checkWorkerModel,
     spawnFor,

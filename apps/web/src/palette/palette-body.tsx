@@ -62,6 +62,7 @@ import {
 import { useHistoryStore } from "@/history/history-view";
 import { useServerSettings } from "@/settings-sync/store";
 import { startScript, useProjectScripts } from "@/scripts/use-project-scripts";
+import { useOpenSettings } from "@/settings/open-settings";
 import { projectNameOf } from "@/settings/workspace-settings-model";
 import {
   fitShell,
@@ -104,7 +105,7 @@ import {
   type PaletteSectionId,
   threadScope,
 } from "./palette-items";
-import { useRecentDestinations } from "./recent-destinations";
+import { go, useRecentDestinations } from "./recent-destinations";
 import { useScopeCommands, type ScopeSteps } from "./scope-commands";
 import { matchesWordFilters } from "./word-filters";
 import { useWordFilters, WordFilterControls } from "./word-filter-controls";
@@ -148,12 +149,6 @@ const pickerItems = (picker: PalettePicker, query: string): PaletteItem[] => {
   return [...(typed === undefined ? [] : [typed]), ...matchItems(picker.items, query)];
 };
 
-/** A destination's run, remembered so the unfiltered palette leads with it next time. */
-const go = (id: string, open: () => void) => () => {
-  useRecentDestinations.getState().visit(id);
-  open();
-};
-
 const scopeKey = (scope: PaletteScope | undefined) =>
   scope === undefined
     ? "all"
@@ -175,6 +170,7 @@ export function PaletteBody({
   const api = useApi();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const openSettings = useOpenSettings();
   const embedNavigation = shownNavigation(useEmbedShell((s) => s.navigation));
   const hostAttention = useEmbedShell((s) => s.attention !== undefined);
   const hostSettings = useEmbedShell((s) => s.settings);
@@ -576,7 +572,7 @@ export function PaletteBody({
       label: "Settings",
       ...shortcut("settings.open"),
       keywords: "preferences options",
-      run: go("go:settings", () => void navigate({ to: "/settings" })),
+      run: go("go:settings", openSettings),
     },
     {
       id: "go:threads",

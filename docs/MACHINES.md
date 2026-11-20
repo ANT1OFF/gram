@@ -19,6 +19,13 @@ A Gram that runs as a service can also take hosts that another system starts and
 key, over ordinary TLS with no Tailscale and nothing to confirm: see
 [provisioned hosts](PROVISIONED_HOSTS.md).
 
+Signed in to a hosted server that offers it (Settings → Machines → Hosted servers), an
+orchestrator here can give a heavy worker a machine of its own from that server, through
+`spawn_worker`'s `sandbox`. The machine joins this Gram as a worker host: it shows under Machines
+while it runs, takes only the workers placed on it, and is released when their work is over. It
+reaches this Gram through the hosted server, which the app dials, so nothing here listens for it.
+See [the design](design/desktop-worker-machines.md).
+
 ## Start a thread on a machine
 
 Once a machine is confirmed, **Machine** shows first under Where it runs on New → Chat. It reads

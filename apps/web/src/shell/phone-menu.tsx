@@ -24,6 +24,7 @@ import {
 } from "@/embed/store";
 import { useHistoryStore } from "@/history/history-view";
 import { useLaunchIssues } from "@/launch-checks/banner";
+import { useSettingsLink } from "@/settings/open-settings";
 import { cn } from "@/lib/utils";
 import { ROUND } from "@/shell/phone-button-style";
 import { NewEntryMenu } from "@/orchestration/new-entry-menu";
@@ -307,6 +308,7 @@ function YouButton() {
     if (pathname !== before.pathname || (historyOpen && !before.historyOpen)) setOpen(false);
   }, [pathname, historyOpen]);
   const setup = useLaunchIssues().dismissed;
+  const settingsLink = useSettingsLink(setup.length === 0 ? "/settings" : "/settings/diagnostics");
   const mode = useThemeStore((s) => s.mode);
   const inSettings = pathname.startsWith("/settings");
   return (
@@ -379,7 +381,7 @@ function YouButton() {
                   <span className="flex-1 truncate">History</span>
                 </button>
                 <Link
-                  to={setup.length === 0 ? "/settings" : "/settings/diagnostics"}
+                  {...settingsLink}
                   data-testid="overview-settings"
                   aria-current={inSettings ? "page" : undefined}
                   className={ROW}

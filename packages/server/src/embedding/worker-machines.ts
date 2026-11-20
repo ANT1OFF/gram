@@ -12,10 +12,15 @@
 // the person as its owner and `onDemand: "worker"`. Only that person's orchestrators place work on
 // it (`orchestration/service/spawning.ts` `workerMachine`), and it is never anyone's default.
 
-import type { WorkerPlacement } from "@gram/contracts";
+import { hostListing, type WorkerPlacement } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { createHash, randomBytes } from "node:crypto";
-import type { OnDemandChoice, OnDemandHosts } from "./on-demand.ts";
+import {
+  choicesFor,
+  type OnDemandChoice,
+  type OnDemandChoices,
+  type OnDemandHosts,
+} from "./on-demand.ts";
 import { callOutside } from "./outside.ts";
 
 /** What an orchestrator asks of a worker's own machine. Short ids, as the provider offers them. */
@@ -60,7 +65,12 @@ export type WorkerMachineStart =
       readonly total?: Resources;
       readonly machines: ReadonlyArray<WorkerMachineHeld>;
     }
-  | { readonly kind: "refused"; readonly message: string };
+  | {
+      readonly kind: "refused";
+      readonly message: string;
+      /** No answer came: the provider may have started it all the same. */
+      readonly unknown?: true;
+    };
 
 const SHORT = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const NAME = /^worker-[a-z0-9]{8,16}$/;
@@ -188,25 +198,104 @@ export const resolveWorkerPicks = (
   return { picks: resolved };
 };
 
+/** The provider's answer to a start, or why none came. */
+export type StartAnswer =
+  | { readonly status: number; readonly body: unknown }
+  | { readonly failed: string };
+
+/** Whether an ask's name and picks are ones there are, before anything is sent. */
+const askIsWellFormed = (ask: Omit<WorkerMachineAsk, "owner">) =>
+  NAME.test(ask.name) &&
+  (ask.size === undefined || SHORT.test(ask.size)) &&
+  (ask.architecture === undefined || SHORT.test(ask.architecture)) &&
+  (ask.isolation === undefined || SHORT.test(ask.isolation)) &&
+  (ask.environment === undefined || SHORT.test(ask.environment));
+
+/** An ask's picks as the provider takes them: by choice id, only those named. */
+export const choicesOfAsk = (ask: Omit<WorkerMachineAsk, "owner">): Record<string, string> => ({
+  ...(ask.size === undefined ? {} : { size: ask.size }),
+  ...(ask.architecture === undefined ? {} : { architecture: ask.architecture }),
+  ...(ask.isolation === undefined ? {} : { isolation: ask.isolation }),
+  ...(ask.environment === undefined ? {} : { environment: ask.environment }),
+});
+
 /**
- * Asks the provider for a worker's own machine (`POST /hosts/start`, `kind: "worker"`). 409 is
- * over the person's total; 403 or 404 is not allowed (the person or their organisation turned it
- * off, or the provider starts none).
+ * A start, from whichever provider is asked (`send`). 409 is over the person's total; 403 or 404
+ * is not allowed (the person or their organisation turned it off, or the provider starts none).
  */
-export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) =>
+export const askWorkerMachine = <R>(
+  ask: Omit<WorkerMachineAsk, "owner">,
+  send: Effect.Effect<StartAnswer, never, R>,
+): Effect.Effect<WorkerMachineStart, never, R> =>
   Effect.gen(function* () {
-    if (
-      !NAME.test(ask.name) ||
-      (ask.size !== undefined && !SHORT.test(ask.size)) ||
-      (ask.architecture !== undefined && !SHORT.test(ask.architecture)) ||
-      (ask.isolation !== undefined && !SHORT.test(ask.isolation)) ||
-      (ask.environment !== undefined && !SHORT.test(ask.environment))
-    )
+    if (!askIsWellFormed(ask))
       return {
         kind: "refused",
         message: "That size, processor, kind or environment isn't one there is.",
       } as const;
-    const answered = yield* callOutside("host provider", hosts.provider, {
+    const answered = yield* send;
+    if ("failed" in answered)
+      return {
+        kind: "refused",
+        message: `The machine couldn't be asked for: ${answered.failed}`,
+        unknown: true,
+      } as const;
+    const { status, body } = answered;
+    // The name was a machine's the server has since reclaimed: it isn't given out again. Asked
+    // once, never again under the same name, so the orchestrator picks another request id.
+    if (
+      status === 409 &&
+      typeof body === "object" &&
+      body !== null &&
+      (body as { code?: unknown }).code === "name_in_use"
+    )
+      return {
+        kind: "refused",
+        message: `The machine name ${ask.name} was a machine's that the server has since reclaimed, so it isn't used again. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
+      } as const;
+    // Held as released there, even after it was taken back once.
+    if (
+      status === 409 &&
+      typeof body === "object" &&
+      body !== null &&
+      (body as { code?: unknown }).code === "released"
+    )
+      return {
+        kind: "refused",
+        message: `${ask.name} is still held as released there, after it was told it is working again. Try again in a minute, or spawn with another clientRequestId.`,
+      } as const;
+    // Over the person's total, as a `409` with no code, or `over_total`, says; another code is no
+    // total to show.
+    const code =
+      typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
+    if (status === 409 && (code === undefined || code === "over_total"))
+      return parseOverTotal(body);
+    if (status === 409)
+      return {
+        kind: "refused",
+        message:
+          text((body as { message?: unknown }).message, 300) ?? "The server refused that machine.",
+      } as const;
+    if (status === 403 || status === 404)
+      return {
+        kind: "refused",
+        message:
+          text((body as { message?: unknown } | undefined)?.message, 300) ??
+          "Workers' own machines are off here: put the worker on your own machine.",
+      } as const;
+    if (status < 200 || status >= 300)
+      return {
+        kind: "refused",
+        message: `The machine couldn't be asked for: the server answered ${status}.`,
+      } as const;
+    return { kind: "started", name: ask.name } as const;
+  });
+
+/** Asks the embedder's provider for a worker's own machine (`POST /hosts/start`, `kind: "worker"`). */
+export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) =>
+  askWorkerMachine(
+    ask,
+    callOutside("host provider", hosts.provider, {
       method: "POST",
       path: "/hosts/start",
       json: {
@@ -216,12 +305,7 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
         options: {
           orchestrator: ask.orchestrator,
           title: ask.title.slice(0, 120),
-          choices: {
-            ...(ask.size === undefined ? {} : { size: ask.size }),
-            ...(ask.architecture === undefined ? {} : { architecture: ask.architecture }),
-            ...(ask.isolation === undefined ? {} : { isolation: ask.isolation }),
-            ...(ask.environment === undefined ? {} : { environment: ask.environment }),
-          },
+          choices: choicesOfAsk(ask),
         },
       },
       accept: [403, 404, 409],
@@ -235,24 +319,9 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
             .then((body: unknown) => ({ status: response.status, body })),
         ),
       ),
-      Effect.result,
-    );
-    if (answered._tag === "Failure")
-      return {
-        kind: "refused",
-        message: `The machine couldn't be asked for: ${answered.failure.message}`,
-      } as const;
-    const { status, body } = answered.success;
-    if (status === 409) return parseOverTotal(body);
-    if (status === 403 || status === 404)
-      return {
-        kind: "refused",
-        message:
-          text((body as { message?: unknown } | undefined)?.message, 300) ??
-          "Workers' own machines are off here: put the worker on your own machine.",
-      } as const;
-    return { kind: "started", name: ask.name } as const;
-  });
+      Effect.catch((failure) => Effect.succeed({ failed: failure.message })),
+    ),
+  );
 
 /** A joined machine as waiting for a worker's own reads it. */
 export interface JoiningMachine {
@@ -347,3 +416,202 @@ export const placementOf = (
     ...(why === undefined || why === "" ? {} : { why }),
   };
 };
+
+// ---------------------------------------------------------------------------------------------
+/** A joined machine as a provider reads it. */
+export interface ProvidedMachine {
+  readonly id: string;
+  readonly name: string;
+  readonly owner?: string | undefined;
+  readonly onDemand?: string | undefined;
+  readonly via?: string | undefined;
+  readonly onlineSince?: number | undefined;
+}
+
+/** Why waiting for a machine ended without it. */
+export type ArrivalFailed = { readonly failed: string };
+
+/**
+ * What `sandbox` asks a worker machine of: the embedder's provider (`worker-machines.ts`), or a
+ * hosted server the desktop app is signed in to (here).
+ */
+export interface WorkerMachineSource {
+  /** Where the machines come from, as the orchestrator is told: a server's name. */
+  readonly label: string;
+  /** The provider's choices for this person, if it offers any. */
+  readonly choices: Effect.Effect<OnDemandChoices | undefined>;
+  /**
+   * The models its machines run, where the provider says: a worker on any other is refused before
+   * a machine is asked for. Undefined: it doesn't say, and the machine's host does once it joins.
+   */
+  readonly models: Effect.Effect<ReadonlyArray<OfferedModel> | undefined>;
+  readonly start: (ask: Omit<WorkerMachineAsk, "owner">) => Effect.Effect<WorkerMachineStart>;
+  /** Whether a joined machine is one this provider started for this orchestrator's person. */
+  readonly theirs: (machine: ProvidedMachine) => boolean;
+  /** Waits for the machine asked for to come online here: its id, or why not (`timeout`). */
+  readonly arrive: (name: string) => Effect.Effect<string | ArrivalFailed>;
+  /**
+   * After a machine didn't come in time: what the orchestrator is told, having stopped it there and
+   * forgotten it here where this provider does so.
+   */
+  readonly timedOut: (name: string) => Effect.Effect<string>;
+  /**
+   * Whether this provider gives a machine back when asked (`abandon`): the signed-in server does;
+   * an embedder's provider keeps it, and its own retries and reclaim look after it, so a spawn it
+   * held keeps its brief.
+   */
+  readonly givesBack: boolean;
+  /**
+   * Tells the provider a machine this spawn reuses is working again, before it is waited on: one
+   * released once its work was over sleeps until it is told so. Never fails.
+   */
+  readonly unrelease: (name: string) => Effect.Effect<"gone" | undefined>;
+  /** The id of the machine registered here under `name`, when there is one. */
+  readonly idOf: (name: string) => string | undefined;
+  /**
+   * Gives back a machine started for a spawn that was then refused: stopped there and forgotten
+   * here, where this provider does so. `unsettled`: its start's outcome isn't known, so the server
+   * not knowing it yet ends nothing.
+   */
+  readonly abandon: (
+    name: string,
+    options?: { readonly unsettled?: boolean },
+  ) => Effect.Effect<void>;
+}
+
+/** A model a provider's machines run, as its choices list it: `opus` running `claude-opus-…`. */
+export interface OfferedModel {
+  readonly agent: string;
+  readonly id: string;
+  readonly resolvedId?: string;
+  readonly label?: string;
+}
+
+const AGENT = /^[a-z][a-z0-9-]{0,23}$/;
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:[\]/-]{0,119}$/;
+const MAX_MODELS = 32;
+
+/** The `models` of a provider's choices, read field by field. Undefined: it lists none. */
+export const parseOfferedModels = (value: unknown): ReadonlyArray<OfferedModel> | undefined => {
+  const listed =
+    typeof value === "object" && value !== null
+      ? (value as { models?: unknown }).models
+      : undefined;
+  if (!Array.isArray(listed)) return undefined;
+  const models: OfferedModel[] = [];
+  for (const raw of listed.slice(0, MAX_MODELS)) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const entry = raw as Record<string, unknown>;
+    const agent = entry["agent"];
+    const id = entry["id"];
+    if (
+      typeof agent !== "string" ||
+      !AGENT.test(agent) ||
+      typeof id !== "string" ||
+      !MODEL_ID.test(id)
+    )
+      continue;
+    const resolvedId = entry["resolvedId"];
+    const label = text(entry["label"], 60);
+    models.push({
+      agent,
+      id,
+      ...(typeof resolvedId === "string" && MODEL_ID.test(resolvedId) ? { resolvedId } : {}),
+      ...(label === undefined ? {} : { label }),
+    });
+  }
+  return models.length === 0 ? undefined : models;
+};
+
+/** A pin on one model's own id (`claude-opus-5-5`), not a tier, a name or an alias (`opus`). */
+const CONCRETE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9.]+)*-[0-9][a-z0-9.[\]-]*$/i;
+
+/**
+ * Why a worker pinned to one model's own id (`named`) can't run on a machine whose listing runs it
+ * as `chosen.model` through another id: a desktop alias matched the pin, and the machine's own
+ * alias runs another model. Undefined when it runs what was named, or nothing concrete was named.
+ */
+export const pinRefusal = (
+  label: string,
+  rows: ReadonlyArray<{ readonly id: string; readonly resolvedId?: string }>,
+  named: string | undefined,
+  chosen: { readonly agent: string; readonly model: string },
+): string | undefined => {
+  if (named === undefined) return undefined;
+  const colon = named.indexOf(":");
+  const wanted = (colon === -1 ? named : named.slice(colon + 1)).trim().toLowerCase();
+  if (!CONCRETE_ID.test(wanted)) return undefined;
+  // The row the launch names exactly first (`opus[1m]`), before one that only matches once a
+  // window is set aside (`opus`).
+  const launched = chosen.model.toLowerCase();
+  const row =
+    rows.find((each) => each.id.toLowerCase() === launched) ?? hostListing(rows, chosen.model);
+  if (row === undefined) return undefined;
+  const runs = row.resolvedId ?? row.id;
+  if (hostListing([{ id: runs.toLowerCase() }], wanted) !== undefined) return undefined;
+  return `${label} runs ${chosen.agent}:${chosen.model} as ${runs}, not ${wanted}, so no worker is spawned and no machine is asked for. Name a model it runs as itself, or leave out sandbox to run it here.`;
+};
+
+/**
+ * Why a worker on `chosen` can't have a machine from a provider whose machines run `models`, or
+ * undefined when it can: the agent and model, by id or the id an alias runs, and never through a
+ * gateway profile, which a machine of its own has no key for.
+ */
+export const modelRefusal = (
+  label: string,
+  models: ReadonlyArray<OfferedModel>,
+  chosen: {
+    readonly agent: string;
+    readonly model: string;
+    readonly profileId?: string | undefined;
+  },
+): string | undefined => {
+  if (
+    chosen.profileId === undefined &&
+    hostListing(
+      models.filter((model) => model.agent === chosen.agent),
+      chosen.model,
+    ) !== undefined
+  )
+    return undefined;
+  const offered = models
+    .map(
+      (model) =>
+        `${model.agent}:${model.id}${model.label === undefined ? "" : ` (${model.label})`}`,
+    )
+    .join(", ");
+  return `${label}'s worker machines don't run ${chosen.agent}:${chosen.model}${chosen.profileId === undefined ? "" : " through a gateway profile"}, so no machine was asked for. They run ${offered}: name one of them as model, or leave out sandbox and the worker runs on your machine.`;
+};
+
+/** The embedder's host provider, for the person whose host the orchestrator is on. */
+export const embeddedSource = (
+  hosts: OnDemandHosts,
+  owner: string,
+  machines: () => ReadonlyArray<JoiningMachine>,
+): WorkerMachineSource => ({
+  label: "This deployment",
+  choices: choicesFor(hosts, owner),
+  // Its machines' hosts say what they run once they join (`admitMachineModel`).
+  models: Effect.succeed(undefined),
+  start: (ask) => startWorkerMachine(hosts, { ...ask, owner }),
+  theirs: (machine) => machine.onDemand === "worker" && machine.owner === owner,
+  arrive: (name) =>
+    awaitWorkerMachine(machines, { name, owner }).pipe(
+      Effect.map((id) => id ?? { failed: "timeout" }),
+    ),
+  // The provider keeps it starting: a retry with the same request id waits for that one.
+  timedOut: (name) =>
+    Effect.succeed(
+      `The machine ${name} was asked for but hasn't come online yet. Spawn again with the same clientRequestId in a minute, or put the worker on your machine.`,
+    ),
+  // Its provider pauses an idle machine and reclaims it once released (`worker-machine-release.ts`).
+  givesBack: false,
+  // Its provider wakes a machine on the next message, released or not.
+  unrelease: () => Effect.succeed(undefined),
+  idOf: (name) =>
+    machines().find(
+      (machine) =>
+        machine.name === name && machine.owner === owner && machine.onDemand === "worker",
+    )?.id,
+  abandon: () => Effect.void,
+});

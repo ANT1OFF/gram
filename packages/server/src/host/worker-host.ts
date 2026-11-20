@@ -29,6 +29,9 @@ import { RemoteHosts, type RemoteHostsShape } from "./remote-hosts.ts";
 import { RESUME_STALL_MS, type StopMarks } from "./stop-marks.ts";
 import { type MachineParts, placedHost } from "./placed.ts";
 import { machineHosts } from "./remote-worker-host.ts";
+import { forwardAppTools } from "./app-tools-forward.ts";
+import { McpTokens } from "../app-tools/mcp-tokens.ts";
+import { HttpServer } from "../platform/unstable.ts";
 import type { HostShared } from "../shared/host-shared.ts";
 import { ServerConfig } from "../config.ts";
 import { attachmentsDir } from "../attachments/attachments.ts";
@@ -325,10 +328,21 @@ const joinedMachines = Effect.gen(function* () {
   if (remote === undefined || store === undefined || hub === undefined || proc === undefined)
     return undefined;
   const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
+  // A relayed machine's app-tool calls come over its connection, answered from this Gram's own
+  // endpoint on loopback (`app-tools-forward.ts`); without the tokens there is none to answer.
+  const tokens = Option.getOrUndefined(yield* Effect.serviceOption(McpTokens));
+  const http = Option.getOrUndefined(yield* Effect.serviceOption(HttpServer.HttpServer));
+  const port = () =>
+    http !== undefined && "port" in http.address
+      ? http.address.port
+      : config !== undefined && config.port > 0
+        ? config.port
+        : undefined;
   const get = yield* machineHosts(remote, {
     store,
     hub,
     proc,
+    ...(tokens === undefined ? {} : { appTools: forwardAppTools({ tokens, store, port }) }),
     agents: yield* AgentHosts,
     gate: Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate)),
     // A server people sign in to, or one that runs no work, has no local user whose files a

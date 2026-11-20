@@ -471,6 +471,14 @@ export const HostedDiscovery = Schema.Struct({
    * server that takes none.
    */
   models_endpoint: Schema.optionalKey(Address),
+  /**
+   * Where this machine's orchestrators ask for a machine of a worker's own, with the person's
+   * sign-in (`POST <it>/choices`, `/start`, `/status`, `/release`, `/stop`), and where this machine
+   * carries such a machine's connection to its own Gram (`worker_machine_connect`, a WebSocket).
+   * Both or neither; absent on a server that starts none for a desktop.
+   */
+  worker_machines_endpoint: Schema.optionalKey(Address),
+  worker_machine_connect: Schema.optionalKey(Address),
 });
 export type HostedDiscovery = typeof HostedDiscovery.Type;
 
@@ -550,11 +558,17 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
       discovery.machine_status_endpoint,
       discovery.machine_start_endpoint,
       discovery.models_endpoint,
+      discovery.worker_machines_endpoint,
     ].filter((address) => address !== undefined),
   ];
   if (!calls.every((address) => on(address, secure ? "https:" : "http:")))
     return { ok: false, why: "The server sends Gram to another address." };
   if (!on(discovery.device_connect, secure ? "wss:" : "ws:"))
+    return { ok: false, why: "The server sends Gram to another address." };
+  if (
+    discovery.worker_machine_connect !== undefined &&
+    !on(discovery.worker_machine_connect, secure ? "wss:" : "ws:")
+  )
     return { ok: false, why: "The server sends Gram to another address." };
   return { ok: true, discovery };
 };
@@ -622,6 +636,11 @@ export const runsSentWork = (discovery: HostedDiscovery): boolean =>
   discovery.thread_wait_endpoint !== undefined &&
   discovery.thread_message_endpoint !== undefined &&
   discovery.thread_stop_endpoint !== undefined;
+
+/** Whether the server starts machines for this machine's workers: it names both addresses. */
+export const startsWorkerMachines = (discovery: HostedDiscovery): boolean =>
+  discovery.worker_machines_endpoint !== undefined &&
+  discovery.worker_machine_connect !== undefined;
 
 /**
  * How a hosted Gram that runs no work itself begins its refusal of work for a person with no
@@ -896,3 +915,113 @@ export interface SentWorkResponseMessage {
   readonly id: string;
   readonly result: SentWorkResult;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Machines of a worker's own, which this machine's orchestrators ask a hosted server for, through
+// the desktop app, which holds the sign-in (`docs/design/desktop-worker-machines.md`). The server
+// asks over its parent port and the app answers by id; the app carries each machine's connection
+// to the server as frames over the same port.
+
+/** The calls a worker machine is asked for and looked after with, under `worker_machines_endpoint`. */
+export const WORKER_MACHINE_CALLS = ["choices", "start", "status", "release", "stop"] as const;
+export type WorkerMachineCall = (typeof WORKER_MACHINE_CALLS)[number];
+
+/** A worker machine's name, as the server picks it (`worker-` and hex). */
+export const WORKER_MACHINE_NAME = /^worker-[a-z0-9]{8,16}$/;
+
+/** The server a worker machine may be asked of: signed in, not paused, and it starts them. */
+export interface WorkerMachineServer {
+  readonly origin: string;
+  /** What the server calls itself, as the app shows it. */
+  readonly server: string;
+}
+
+export type WorkerMachineOp =
+  /** Which server, if any, worker machines may be asked of now. */
+  | { readonly op: "server" }
+  /** One call to the server, answered with its status and JSON body as received. */
+  | {
+      readonly op: "call";
+      readonly origin: string;
+      readonly call: WorkerMachineCall;
+      readonly body: Readonly<Record<string, unknown>>;
+    }
+  /** Keep carrying this machine's connection, dialling the relay again whenever it ends. */
+  | { readonly op: "relay"; readonly origin: string; readonly name: string }
+  /** Stop carrying it. */
+  | { readonly op: "unrelay"; readonly name: string }
+  /**
+   * Carry exactly these, and no others: what the server has registered. `fresh` from a server that
+   * has just started, which knows none of the connections carried for the one before it, so each
+   * is dialled again.
+   */
+  | {
+      readonly op: "relays";
+      readonly machines: ReadonlyArray<{ readonly origin: string; readonly name: string }>;
+      readonly fresh?: true;
+    };
+
+export type WorkerMachineRequestMessage = {
+  readonly type: "machines.request";
+  readonly id: string;
+} & WorkerMachineOp;
+
+/**
+ * Each op's answer. `server` answers the server, or none with why; `call`, the server's status and
+ * body (at most 256 KiB, read as JSON, `undefined` when it isn't); `signIn`: the person must sign
+ * in to it again first.
+ */
+export type WorkerMachineResult =
+  | { readonly ok: true; readonly server?: WorkerMachineServer; readonly why?: string }
+  | { readonly ok: true; readonly status: number; readonly body: unknown }
+  | { readonly ok: true }
+  | { readonly ok: false; readonly why: string; readonly signIn?: true };
+
+export interface WorkerMachineResponseMessage {
+  readonly type: "machines.response";
+  readonly id: string;
+  readonly result: WorkerMachineResult;
+}
+
+/**
+ * A relayed connection's messages. The app says a host dialled (`dial`, with the headers the host
+ * signed its dial with, as the server relayed them), then each frame, and its end; the server sends
+ * frames back and may end it. `conn` names one connection, made by the app.
+ */
+export type WorkerMachineRelayMessage =
+  | {
+      readonly type: "machines.relay.dial";
+      readonly conn: string;
+      readonly origin: string;
+      readonly name: string;
+      readonly headers: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly type: "machines.relay.frame";
+      readonly conn: string;
+      readonly data: string | Uint8Array;
+    }
+  | {
+      readonly type: "machines.relay.end";
+      readonly conn: string;
+      readonly code?: number;
+      readonly reason?: string;
+    };
+
+const RelayHeader = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512));
+
+/**
+ * The first frame the relay sends the app: the headers the host signed its dial with, exactly
+ * these four, which this machine's server checks against the host's key.
+ */
+export const RelayDialFrame = Schema.Struct({
+  dial: Schema.Struct({
+    headers: Schema.Struct({
+      "x-gram-host-id": RelayHeader,
+      "x-gram-host-time": RelayHeader,
+      "x-gram-host-nonce": RelayHeader,
+      "x-gram-host-signature": RelayHeader,
+    }),
+  }),
+});
+export type RelayDialFrame = typeof RelayDialFrame.Type;

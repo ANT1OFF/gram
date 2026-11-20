@@ -4,7 +4,6 @@ import { dpopProof } from "./dpop.ts";
 import { browser, fakeServer } from "./hosted-fake.ts";
 import {
   discoverHosted,
-  forgetHostedDevice,
   HOSTED_TOKEN_MOST_MS,
   HOSTED_TOKEN_RENEW_BEFORE_MS,
   exportHostedThread,
@@ -16,9 +15,15 @@ import {
   waitHostedThread,
   listHostedWorkspaces,
   makeTokenKeeper,
-  registerHostedDevice,
   signInHosted,
+  type TokenKeeper,
 } from "./hosted.ts";
+import { forgetHostedDevice, registerHostedDevice } from "./hosted-registration.ts";
+import {
+  leaseWorkerMachineRelay,
+  scrubbed,
+  workerMachineRelayDial,
+} from "./hosted-worker-machines.ts";
 import { deviceIdOf, devicePrivateKeyFrom, generateDeviceKey } from "./keys.ts";
 
 let fake: ReturnType<typeof fakeServer>;
@@ -808,5 +813,105 @@ describe("a hosted server", () => {
     });
     expect([...(fake.state.names[0] ?? "")]).toHaveLength(128);
     expect(fake.state.names[0]?.isWellFormed()).toBe(true);
+  });
+});
+
+describe("an answer about a worker machine, as it leaves the app", () => {
+  it("drops the token it was called with, and anything shaped like a signed token", () => {
+    const jwt = "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJwZXJzb24ifQ.c2lnbmF0dXJlLWJ5dGVz";
+    expect(
+      scrubbed(
+        {
+          message: "Bad call with secret-access-token-1234 attached",
+          choices: [{ note: `proof ${jwt}` }],
+          name: "worker-0123456789",
+        },
+        ["secret-access-token-1234"],
+      ),
+    ).toEqual({
+      message: "Bad call with [redacted] attached",
+      choices: [{ note: "proof [redacted]" }],
+      name: "worker-0123456789",
+    });
+    // A model id or a version, with its dots, is left alone.
+    expect(scrubbed("claude-opus-5.5 on 1.32.0", [])).toBe("claude-opus-5.5 on 1.32.0");
+  });
+});
+
+describe("a worker machine relay's lease", () => {
+  it("asks the server each time, so a sign-in it revoked ends the lease at once", async () => {
+    fake.state.workerMachinesScope = true;
+    const keeper = await keeperFor();
+    // A token held and good for its fifteen minutes.
+    expect((await keeper.token("machines:workers")).ok).toBe(true);
+    expect(await leaseWorkerMachineRelay(keeper)).toBe(true);
+    // Revoked there: every refresh token it issued is no good any more.
+    fake.state.refresh.clear();
+    expect(await leaseWorkerMachineRelay(keeper)).toBe(false);
+    // Found now, not once the cached token runs out: the sign-in is over.
+    expect(keeper.signedOut()).toBe(true);
+  });
+});
+
+/** A proof's claims, as a server reads them. */
+const claimsOf = (proof: string) =>
+  JSON.parse(Buffer.from(proof.split(".")[1]!, "base64url").toString("utf8")) as Record<
+    string,
+    unknown
+  >;
+
+describe("a worker machine relay's dial", () => {
+  const discovery = {
+    worker_machines_endpoint: "https://hosted.example.test/desktop/worker-machines",
+    worker_machine_connect: "wss://hosted.example.test/desktop/worker-machines/connect",
+  } as unknown as Parameters<typeof workerMachineRelayDial>[0]["discovery"];
+
+  it("is signed with a nonce the server gave just before, for the relay's own address", async () => {
+    const token = {
+      accessToken: "synthetic-access",
+      tokenType: "DPoP" as const,
+      expiresAt: Date.now() + 600_000,
+      subject: "person",
+    };
+    // The nonce last kept has aged out there; the server gives a new one on the next call.
+    const keeper = {
+      subject: "person",
+      token: async () => ({ ok: true as const, token }),
+      fresh: async () => ({ ok: true as const, token }),
+      nonce: { value: "aged" },
+      signedOut: () => false,
+      signOut: async () => undefined,
+      unsaved: () => false,
+    } as unknown as TokenKeeper;
+    const asked: Array<{ url: string; nonce: unknown }> = [];
+    const fetchOf = (async (url: string, init?: RequestInit) => {
+      const proof = new Headers(init?.headers).get("dpop") ?? "";
+      asked.push({ url, nonce: claimsOf(proof)["nonce"] });
+      return asked.length === 1
+        ? new Response("{}", {
+            status: 401,
+            headers: {
+              "dpop-nonce": "fresh-nonce",
+              "www-authenticate": 'DPoP error="use_dpop_nonce"',
+            },
+          })
+        : new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const dialled = await workerMachineRelayDial({
+      discovery,
+      keeper,
+      key,
+      fetch: fetchOf,
+      name: "worker-0123456789",
+    });
+    if (!dialled.ok) throw new Error(dialled.why);
+    expect(dialled.url).toBe(
+      "wss://hosted.example.test/desktop/worker-machines/connect?name=worker-0123456789",
+    );
+    expect(asked.map((each) => each.nonce)).toEqual(["aged", "fresh-nonce"]);
+    const claims = claimsOf(dialled.headers["dpop"]!);
+    expect(claims["htm"]).toBe("GET");
+    expect(claims["htu"]).toBe("wss://hosted.example.test/desktop/worker-machines/connect");
+    expect(claims["nonce"]).toBe("fresh-nonce");
   });
 });

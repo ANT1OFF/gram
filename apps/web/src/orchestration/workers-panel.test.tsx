@@ -22,14 +22,8 @@ import { useThreadsStore } from "@/stores/threads";
 
 import type { Ask } from "./ask-model";
 import { besideShown, closeBeside, openRecordBeside, useBesideStore } from "./beside-store";
-import {
-  FINISHED,
-  FOLDER_MISSING,
-  liveTools,
-  NO_PR_YET,
-  NO_REPOSITORY,
-  WorkerPane,
-} from "./worker-pane";
+import { WorkerPane } from "./worker-pane";
+import { FINISHED, FOLDER_MISSING, liveTools, NO_PR_YET, NO_REPOSITORY } from "./worker-tools";
 import { useWorkersPanelStore, WorkersPanel } from "./workers-panel";
 
 const WORKSPACE = "ws-1" as WorkspaceId;
@@ -595,6 +589,24 @@ describe("a worker's tools", () => {
     expect(off({ git: { repo: true, changedFiles: 0 }, finished: true, prFiles: 4 })).toMatchObject(
       { changes: "4", terminal: FINISHED, files: FINISHED },
     );
+  });
+
+  it("offers Proof only where the repository names checks, counting what covers the change", () => {
+    const git = { repo: true, changedFiles: 1 };
+    expect(off({ git })).not.toHaveProperty("proof");
+    expect(off({ git, verify: { recipe: "none", drivers: [] } })).not.toHaveProperty("proof");
+    const verify = {
+      recipe: "ok",
+      head: "a".repeat(40),
+      drivers: [
+        { name: "unit", run: "t", status: "passed" },
+        { name: "lint", run: "l", status: "notRun" },
+        { name: "rust", run: "r", status: "notRun", coversChange: false },
+      ],
+    } as const;
+    expect(off({ git, verify }).proof).toBe("1/2");
+    // Outside git there is no commit to have checked.
+    expect(off({ git: { repo: false, changedFiles: 0 }, verify })).not.toHaveProperty("proof");
   });
 
   it("names the PR its panel opens: the bound one, over a badge that still names another", () => {

@@ -31,6 +31,12 @@ export interface RolePromptInput {
   readonly agent?: AgentKind | undefined;
   /** Whether its session opens under the outward gate. */
   readonly gated?: boolean | undefined;
+  /**
+   * Where a worker can have a machine of its own (`spawn_worker`'s `sandbox`): the deployment, or
+   * the hosted server the desktop app is signed in to, by its name. Absent: it can't, and the
+   * prompt says nothing of it.
+   */
+  readonly workerMachines?: string | undefined;
 }
 
 /**
@@ -181,6 +187,7 @@ export const rolePrompt = ({
   autonomy,
   agent,
   gated,
+  workerMachines,
 }: RolePromptInput): string =>
   `# Your role: orchestrator of the "${workspaceName}" workspace
 
@@ -196,7 +203,12 @@ ${projects.length > 1 ? "\nWrite a pull request as `owner/repo#N`, never a bare 
 - \`spawn_task\` is not a worker: its chip starts a thread outside the workspace, off the board and out of your digests. Use it only for what deliberately belongs outside: work the user asked to keep separate, a repo or topic unrelated to this workspace, or a one-off the user will drive themselves. Pass \`reason\` saying why in one line; without one it refuses.
 - Before you spawn, see whether a live worker already owns the work: a follow-up or fix on its feature usually goes to it with \`send_message\`. Once a feature has merged, more work is a new worker. Separate asks in one message usually get a feature each.
 - You decide how to cut the work. A change that spans repos can go to **one worker across them**: name the repo where most of the work happens as \`project\` and the others in \`alsoIn\`, and the worker gets a worktree in each, all on the same branch, and opens one pull request per repo. Or it can go to **one worker per repo** under the same \`feature\` name. Choose one worker when the change is a single piece of thinking: the repos must agree on something, or the edits elsewhere are small (a registration, a config entry, a version bump, generated code). Choose several when the pieces are large enough to run side by side, can be reviewed and merged on their own, or when one side's contract should settle before the other starts. When a running worker turns out to need another repo, give it one with \`add_worker_repo\` rather than starting a second worker for a small follow-on.
-- What one worker across repos gives up: Gram's rewind, per-turn diff and review monitor follow its first repo only. So put the substance of the work in \`project\`.
+${
+  workerMachines === undefined
+    ? ""
+    : `- Heavy work (a large build, a long test suite, tests on the other processor) can have a machine of its own, from ${workerMachines}: \`spawn_worker\`'s \`sandbox\` with \`{"own": true}\` and the size, architecture, isolation or environment it needs, or \`{"shareWith"}\` a machine one of your workers has. Give \`reason\` in one sentence. Light work stays on your machine: leave \`sandbox\` out. A worker's machine is released once its work is over.
+`
+}- What one worker across repos gives up: Gram's rewind, per-turn diff and review monitor follow its first repo only. So put the substance of the work in \`project\`.
 - A repo outside this workspace can still be named in \`project\`, \`alsoIn\` or \`add_worker_repo\`: a project Gram knows by its name, one it doesn't by the absolute path of its folder. The call then asks the user to add the repo to the workspace, at every autonomy level; if they decline, carry on without it. It has to be the top folder of a git repository, since workers work in worktrees: a plain folder can't join the workspace, though \`request_directory\` lets you read one.
 - A worker sees only its brief, never this conversation. Write the brief so it stands alone: the goal, the invariants it must keep, the constraints, what done looks like, which files or interfaces matter, and how to verify. When you do split a change that shares a contract, brief the providing side first, or write the contract into every brief.
 - When a brief comes from what the user asked, attach their words rather than retyping them, above all a paste the worker needs as it is (a log, a spec, an error, a long list): pass \`userMessages\` with how many of the user's latest messages in this conversation to attach, and Gram copies them word for word after the brief. Do the same on \`send_message\` to a worker. The brief still says what to do with them, and adds no requirements, acceptance criteria or checklists the user didn't ask for.
