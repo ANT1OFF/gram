@@ -18,12 +18,21 @@ import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import type { Actor } from "../http/fronted-identity.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import type { OutsideService } from "./config.ts";
 import { Embedding } from "./embedding.ts";
 import { EmbedInbound } from "./inbound.ts";
 import { callOutside } from "./outside.ts";
+import {
+  progressKey,
+  WORKSPACE_ID,
+  workspaceMachine,
+  workspaceStartBody,
+  workspaceToStart,
+} from "./workspace-machines.ts";
+import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
 
 export const ON_DEMAND_START_PATH = "/machines/on-demand/start";
 export const ON_DEMAND_STOP_PATH = "/machines/on-demand/stop";
@@ -114,10 +123,14 @@ export class OnDemandHosts extends Data.Class<{
   readonly progress: Map<string, OnDemandProgress>;
   /** Each person's choices as the provider last offered them, and when it was asked. */
   readonly choices: Map<string, { readonly at: number; readonly value?: OnDemandChoices }>;
+  /** Where a workspace is read, for its own machine: absent, none has one. */
+  readonly store?: Pick<ThreadStoreShape, "getWorkspace"> | undefined;
 }> {}
 
-export const makeOnDemandHosts = (provider: OutsideService): OnDemandHosts =>
-  new OnDemandHosts({ provider, progress: new Map(), choices: new Map() });
+export const makeOnDemandHosts = (
+  provider: OutsideService,
+  store?: Pick<ThreadStoreShape, "getWorkspace">,
+): OnDemandHosts => new OnDemandHosts({ provider, progress: new Map(), choices: new Map(), store });
 
 /** A machine as a person's status reads it. */
 export interface OwnedMachine {
@@ -172,6 +185,8 @@ export const parseStart = (
       readonly keep?: true;
       /** Their machine is online: start it again with these picks. */
       readonly restart?: true;
+      /** A workspace's own machine, not theirs (`workspace-machines.ts`). */
+      readonly workspace?: string;
     }
   | string => {
   const value = objectIn(body);
@@ -182,9 +197,13 @@ export const parseStart = (
   for (const flag of ["keep", "restart"] as const)
     if (value[flag] !== undefined && typeof value[flag] !== "boolean")
       return `\`${flag}\` is true or false`;
+  const workspace = value["workspace"];
+  if (workspace !== undefined && (typeof workspace !== "string" || !WORKSPACE_ID.test(workspace)))
+    return "`workspace` is a workspace's id";
   const flags = {
     ...(value["keep"] === true ? { keep: true as const } : {}),
     ...(value["restart"] === true ? { restart: true as const } : {}),
+    ...(workspace === undefined ? {} : { workspace: workspace as string }),
   };
   const listed = value["repositories"];
   if (listed === undefined) return { repositories: [], choices, ...flags };
@@ -325,11 +344,21 @@ export const statusFor = (
   choices?: OnDemandChoices,
   now: number = Date.now(),
 ) => {
-  const mine = ownMachine(machines, person);
-  const kept = hosts.progress.get(person);
+  return statusOf(hosts, ownMachine(machines, person), person, choices, now);
+};
+
+/** The status of `mine`, with the progress kept under `key`. */
+const statusOf = (
+  hosts: OnDemandHosts,
+  mine: OwnedMachine | undefined,
+  key: string,
+  choices?: OnDemandChoices,
+  now: number = Date.now(),
+) => {
+  const kept = hosts.progress.get(key);
   const over =
     kept?.phase === "ready" && mine?.onlineSince === undefined && now - kept.at > READY_GRACE_MS;
-  if (over) hosts.progress.delete(person);
+  if (over) hosts.progress.delete(key);
   const progress = over ? undefined : kept;
   return {
     available: true,
@@ -373,6 +402,19 @@ export const onDemandRequest = (
   Effect.gen(function* () {
     if (path === ON_DEMAND_STATUS_PATH) {
       if (request.method !== "GET") return refusal(405, "MethodNotAllowed", "method not allowed");
+      // A workspace's own machine: its status, with no choices (the workspace's environment is it).
+      const workspace = new URL(request.url, "http://gram").searchParams.get("workspace");
+      if (workspace !== null)
+        return WORKSPACE_ID.test(workspace)
+          ? json(
+              200,
+              statusOf(
+                hosts,
+                workspaceMachine(machines(), actor.id, workspace),
+                progressKey(actor.id, workspace),
+              ),
+            )
+          : refusal(400, "BadRequest", "`workspace` is a workspace's id");
       const choices = yield* choicesFor(hosts, actor.id);
       return json(200, statusFor(hosts, machines(), actor.id, choices));
     }
@@ -383,6 +425,30 @@ export const onDemandRequest = (
     if (body === "too-large") return refusal(413, "TooLarge", "the request is too large");
     if (body === "unreadable") return refusal(400, "BadRequest", "the request could not be read");
     const proof = { statement, method: request.method, path: request.url, body };
+    /** Asks the provider for a start, its progress kept under `key`. */
+    const started = (key: string, json_: Record<string, unknown>) =>
+      Effect.gen(function* () {
+        const answered = yield* callOutside("host provider", hosts.provider, {
+          method: "POST",
+          path: "/hosts/start",
+          json: json_,
+        }).pipe(
+          Effect.flatMap((response) => Effect.promise(() => response.json() as Promise<unknown>)),
+          Effect.result,
+        );
+        if (answered._tag === "Failure")
+          return refusal(502, "ProviderFailed", answered.failure.message);
+        const value = answered.success;
+        const hostKey =
+          typeof value === "object" && value !== null && "hostKey" in value
+            ? value.hostKey
+            : undefined;
+        if (typeof hostKey !== "string" || !HOST_KEY.test(hostKey))
+          return refusal(502, "ProviderFailed", "the host provider gave no host key");
+        const progress: OnDemandProgress = { hostKey, phase: "starting", at: Date.now() };
+        hosts.progress.set(key, progress);
+        return json(202, { progress });
+      });
 
     if (path === ON_DEMAND_STOP_PATH) {
       const progress = hosts.progress.get(actor.id);
@@ -424,40 +490,41 @@ export const onDemandRequest = (
 
     const parsed = parseStart(body);
     if (typeof parsed === "string") return refusal(400, "BadRequest", parsed);
+    if (parsed.workspace !== undefined) {
+      const workspace = yield* workspaceToStart(hosts.store, parsed.workspace);
+      if (workspace?.environment === undefined)
+        return refusal(404, "NotFound", "that workspace has no machine of its own");
+      const theirs = workspaceMachine(machines(), actor.id, workspace.id);
+      if (theirs?.onlineSince !== undefined)
+        return json(200, { machine: { id: theirs.id, name: theirs.name, online: true } });
+      return yield* started(
+        progressKey(actor.id, workspace.id),
+        workspaceStartBody(
+          actor.id,
+          { ...workspace, environment: workspace.environment },
+          parsed.repositories,
+          proof,
+        ),
+      );
+    }
     const mine = ownMachine(machines(), actor.id);
     // Online already: nothing to start, unless they asked for it again with other picks.
     if (mine?.onlineSince !== undefined && parsed.restart !== true)
       return json(200, { machine: { id: mine.id, name: mine.name, online: true } });
-    const answered = yield* callOutside("host provider", hosts.provider, {
-      method: "POST",
-      path: "/hosts/start",
-      json: {
-        kind: "personal",
-        owner: actor.id,
-        options: {
-          repositories: parsed.repositories,
-          ...(Object.keys(parsed.choices).length === 0 ? {} : { choices: parsed.choices }),
-          ...(parsed.keep ? { keep: true } : {}),
-          ...(parsed.restart && mine?.onlineSince !== undefined ? { restart: true } : {}),
-        },
-        proof,
+    const answer = yield* started(actor.id, {
+      kind: "personal",
+      owner: actor.id,
+      options: {
+        repositories: parsed.repositories,
+        ...(Object.keys(parsed.choices).length === 0 ? {} : { choices: parsed.choices }),
+        ...(parsed.keep ? { keep: true } : {}),
+        ...(parsed.restart && mine?.onlineSince !== undefined ? { restart: true } : {}),
       },
-    }).pipe(
-      Effect.flatMap((response) => Effect.promise(() => response.json() as Promise<unknown>)),
-      Effect.result,
-    );
-    if (answered._tag === "Failure")
-      return refusal(502, "ProviderFailed", answered.failure.message);
-    const value = answered.success;
-    const hostKey =
-      typeof value === "object" && value !== null && "hostKey" in value ? value.hostKey : undefined;
-    if (typeof hostKey !== "string" || !HOST_KEY.test(hostKey))
-      return refusal(502, "ProviderFailed", "the host provider gave no host key");
-    const progress: OnDemandProgress = { hostKey, phase: "starting", at: Date.now() };
-    hosts.progress.set(actor.id, progress);
+      proof,
+    });
     // What it has, and what is theirs, may have changed with this start: asked again next read.
     hosts.choices.delete(actor.id);
-    return json(202, { progress });
+    return answer;
   });
 
 /** A short line a provider sends: one line, at most 300 characters. */
@@ -465,8 +532,8 @@ const line = (value: unknown) =>
   typeof value === "string" && value.length <= 300 && !/[\0\n\r]/.test(value) ? value : undefined;
 
 /**
- * The provider's report on `/embed/v1/hosts/progress`: `{owner, hostKey, phase, step?,
- * message?}`. Only a host key this server asked for, for that owner, is taken.
+ * The provider's report on `/embed/v1/hosts/progress`: `{owner, workspace?, hostKey, phase,
+ * step?, message?}`. Only a host key this server asked for, for that owner, is taken.
  */
 export const takeProgress = (
   hosts: OnDemandHosts,
@@ -480,12 +547,15 @@ export const takeProgress = (
     return { status: 400, body: { message: "`owner` and `hostKey` are required" } };
   if (typeof phase !== "string" || !(PHASES as readonly string[]).includes(phase))
     return { status: 400, body: { message: `\`phase\` is one of ${PHASES.join(", ")}` } };
-  const known = hosts.progress.get(owner);
+  // A workspace's own machine reports with its workspace (`workspace-machines.ts`).
+  const workspace = body?.["workspace"];
+  const key = progressKey(owner, typeof workspace === "string" ? workspace : undefined);
+  const known = hosts.progress.get(key);
   if (known === undefined || known.hostKey !== hostKey)
     return { status: 404, body: { message: "no start of that host is waiting for progress" } };
   const message = line(body?.["message"]);
   const step = line(body?.["step"]);
-  hosts.progress.set(owner, {
+  hosts.progress.set(key, {
     hostKey,
     phase: phase as OnDemandPhase,
     ...(message === undefined ? {} : { message }),
@@ -507,7 +577,10 @@ export const OnDemandLive = Layer.effect(
     const embedding = yield* Embedding;
     const provider = embedding.config.hostProvider;
     if (provider === undefined) return undefined;
-    const hosts = makeOnDemandHosts(provider);
+    const hosts = makeOnDemandHosts(
+      provider,
+      Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore)),
+    );
     const inbound = yield* EmbedInbound;
     yield* inbound.route("POST", "hosts/progress", (body) =>
       Effect.sync(() => {

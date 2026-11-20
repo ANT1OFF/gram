@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { loadMarkdown } from "@/components/ai-elements/markdown-loader";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { useSubscription } from "@/lib/effects";
 import { cn } from "@/lib/utils";
 import { useNotificationHistory, unreadNotifications } from "@/stores/notifications";
 import { PreviewSuggestionNotice } from "@/panels/preview-suggestion";
@@ -144,7 +145,7 @@ export function useShowPanelRequests() {
   const previewPane = useFeature("previewPane");
   const serverPage = useServerBrowser();
 
-  useEffect(
+  useSubscription(
     () =>
       useThreadsStore.subscribe((s, prev) => {
         if (s.showPanel && s.showPanel !== prev.showPanel) {

@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useApi } from "@/api/context";
 import { isNotImplemented } from "@/api/errors";
 import { useShortcut } from "@/keyboard/registry";
+import { useSubscription } from "@/lib/effects";
 import { besideShown, useBesideStore } from "@/orchestration/beside-store";
 import { fitShell, useLayoutStore } from "@/stores/layout";
 
@@ -101,7 +102,7 @@ export function useWindowPlacementsSync() {
     };
   }, [api]);
 
-  useEffect(() => {
+  useSubscription(() => {
     const open = (threadId: string) => {
       useLayoutStore.getState().openThread(threadId as ThreadId);
       void navigate({ to: "/t/$threadId", params: { threadId } });

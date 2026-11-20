@@ -7,6 +7,8 @@ dist-e2e/
 playwright-results.json
 # pr:shots output: PR images are attached with `gh --attach`, never committed.
 pr-shots/out/
+# bun run drive's evidence when Gram gives it no folder: never committed.
+drive-out/
 # The embeddable build and the fixture app that proves it (`bun run build:embed`, `e2e:embed`).
 dist-embed/
 .dist-embed-ref

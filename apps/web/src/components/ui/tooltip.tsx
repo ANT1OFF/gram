@@ -1,8 +1,9 @@
 "use client";
 
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useState } from "react";
 
+import { useMountEffect } from "@/lib/effects";
 import { pointerMovedFor, trackPointerMoves } from "@/lib/pointer-moved";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +45,7 @@ function heldOpen(): HeldOpen {
  * controls beside it. Focus and a moving pointer open it as before.
  */
 function Tooltip({ onOpenChange, children, ...props }: TooltipPrimitive.Root.Props) {
-  useEffect(trackPointerMoves, []);
+  useMountEffect(trackPointerMoves);
   const [held] = useState(heldOpen);
   return (
     <TooltipPrimitive.Root

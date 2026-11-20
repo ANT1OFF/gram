@@ -1,5 +1,5 @@
 {
-  "$comment": "The feature map: from the feature a person names to the code, tests and docs that own it, in the app's own words. Paths are globs from the repository root; a docs path may end in #heading. tools/feature-map/check.mjs (bun run lint) fails when a path matches nothing or a heading is gone.",
+  "$comment": "The feature map: from the feature a person names to the code, tests and docs that own it, in the app's own words. Paths are globs from the repository root; a docs path may end in #heading. tools/feature-map/check.mjs (bun run lint) fails when a path matches nothing or a heading is gone. A feature with a screen has a ui block: where a person finds it, and the route, steps and landmark `bun run drive` reaches it by (docs/VERIFICATION.md#reaching-a-feature-by-name).",
   "features": [
     {
       "name": "Workspaces and the orchestrator",
@@ -20,7 +20,24 @@
         "docs/AGENTS_AND_FEATURES.md#overview",
         "docs/AGENTS_AND_FEATURES.md#orchestration-context",
         "docs/AGENTS_AND_FEATURES.md#orchestration-tool-inputs"
-      ]
+      ],
+      "ui": {
+        "where": "Left sidebar, under Orchestrators: a workspace's row opens its orchestrator's chat",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "testid": "overview-workspace-row"
+            }
+          }
+        ],
+        "landmark": {
+          "testid": "since-you-left"
+        },
+        "state": {
+          "testid": "transcript"
+        }
+      }
     },
     {
       "name": "Workers and councils",
@@ -36,7 +53,29 @@
       "docs": [
         "docs/AGENTS_AND_FEATURES.md#workers",
         "docs/AGENTS_AND_FEATURES.md#other-worker-models"
-      ]
+      ],
+      "ui": {
+        "where": "An orchestrator's Workers list: Ctrl+J, or the right panel's Workers",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "testid": "overview-workspace-row"
+            }
+          },
+          {
+            "wait": {
+              "testid": "since-you-left"
+            }
+          },
+          {
+            "key": "ControlOrMeta+KeyJ"
+          }
+        ],
+        "landmark": {
+          "testid": "workers-panel"
+        }
+      }
     },
     {
       "name": "Threads",
@@ -53,7 +92,27 @@
         "packages/server/src/runtime/**/*.test.ts",
         "apps/web/e2e/{thread,turn,tool,conversation}*.spec.ts"
       ],
-      "docs": ["docs/ARCHITECTURE.md"]
+      "docs": ["docs/ARCHITECTURE.md"],
+      "ui": {
+        "where": "Left sidebar, under Solo threads: a thread's row opens its transcript",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "role": "button",
+              "name": "Rewrite the README",
+              "exact": false,
+              "in": {
+                "role": "region",
+                "name": "Solo threads"
+              }
+            }
+          }
+        ],
+        "landmark": {
+          "testid": "transcript"
+        }
+      }
     },
     {
       "name": "Composer",
@@ -67,7 +126,15 @@
         "apps/web/src/composer/**/*.test.{ts,tsx}",
         "apps/web/e2e/{composer,send,new}*.spec.ts"
       ],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#accounts-models-and-speed"]
+      "docs": ["docs/AGENTS_AND_FEATURES.md#accounts-models-and-speed"],
+      "ui": {
+        "where": "New task (Ctrl+N) at the top of the left sidebar, and the box under every thread",
+        "route": "/new",
+        "landmark": {
+          "role": "form",
+          "name": "New thread"
+        }
+      }
     },
     {
       "name": "Switching a thread's agent",
@@ -114,7 +181,26 @@
       "docs": [
         "docs/AGENTS_AND_FEATURES.md#app-tool-approval-results",
         "docs/AGENTS_AND_FEATURES.md#permission-modes"
-      ]
+      ],
+      "ui": {
+        "where": "A worker that asks you: its card at the end of its transcript (billing-api's Idempotent refund webhooks)",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "role": "button",
+              "name": "Idempotent refund webhooks",
+              "exact": false
+            }
+          }
+        ],
+        "landmark": {
+          "testid": "question-card"
+        },
+        "state": {
+          "testid": "transcript"
+        }
+      }
     },
     {
       "name": "Inbox",
@@ -124,7 +210,24 @@
         "apps/web/src/inbox/**/*.test.{ts,tsx}",
         "apps/web/src/orchestration/inbox-*.test.ts"
       ],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"]
+      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"],
+      "ui": {
+        "where": "The \"1 error · 1 question\" line at the top of the left sidebar, or Ctrl+Shift+I",
+        "route": "/",
+        "steps": [
+          {
+            "wait": {
+              "testid": "overview-sidebar"
+            }
+          },
+          {
+            "key": "ControlOrMeta+Shift+KeyI"
+          }
+        ],
+        "landmark": {
+          "testid": "inbox"
+        }
+      }
     },
     {
       "name": "Board",
@@ -135,7 +238,33 @@
         "apps/web/src/orchestration/feature-*"
       ],
       "tests": ["apps/web/src/views/board-*.test.{ts,tsx}", "apps/web/e2e/board*.spec.ts"],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"]
+      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"],
+      "ui": {
+        "where": "Board beside Chat in an orchestrator's title bar",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "testid": "overview-workspace-row"
+            }
+          },
+          {
+            "wait": {
+              "testid": "since-you-left"
+            }
+          },
+          {
+            "click": {
+              "role": "radio",
+              "name": "Board",
+              "exact": false
+            }
+          }
+        ],
+        "landmark": {
+          "testid": "rail-board"
+        }
+      }
     },
     {
       "name": "Quiet mode and views",
@@ -149,7 +278,14 @@
       "purpose": "Workspaces, threads and the Workspace menu around every screen.",
       "code": ["apps/web/src/sidebar/**"],
       "tests": ["apps/web/e2e/{sidebar,titlebar}*.spec.ts"],
-      "docs": ["DESIGN.md"]
+      "docs": ["DESIGN.md"],
+      "ui": {
+        "where": "The left sidebar (Orchestrators, Solo threads, At rest, History, Settings) and the bar above the chat",
+        "route": "/",
+        "landmark": {
+          "testid": "overview-sidebar"
+        }
+      }
     },
     {
       "name": "Command palette and keyboard",
@@ -164,7 +300,24 @@
         "apps/web/src/palette/**/*.test.{ts,tsx}",
         "apps/web/e2e/{command,keyboard}*.spec.ts"
       ],
-      "docs": ["docs/README.md"]
+      "docs": ["docs/README.md"],
+      "ui": {
+        "where": "Search (Ctrl+K) at the top of the left sidebar",
+        "route": "/",
+        "steps": [
+          {
+            "wait": {
+              "testid": "overview-sidebar"
+            }
+          },
+          {
+            "key": "ControlOrMeta+KeyK"
+          }
+        ],
+        "landmark": {
+          "testid": "command-palette"
+        }
+      }
     },
     {
       "name": "Workspace memory and memory updates",
@@ -178,7 +331,41 @@
       "docs": [
         "docs/AGENTS_AND_FEATURES.md#workspace-memory",
         "docs/AGENTS_AND_FEATURES.md#memory-updates-and-selected-harness-support"
-      ]
+      ],
+      "ui": {
+        "where": "An orchestrator's title bar: … → Workspace → Memory",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "testid": "overview-workspace-row"
+            }
+          },
+          {
+            "wait": {
+              "testid": "since-you-left"
+            }
+          },
+          {
+            "click": {
+              "testid": "titlebar-overflow"
+            }
+          },
+          {
+            "click": {
+              "testid": "menu-workspace"
+            }
+          },
+          {
+            "click": {
+              "testid": "menu-memory"
+            }
+          }
+        ],
+        "landmark": {
+          "testid": "memory-overview"
+        }
+      }
     },
     {
       "name": "Files and the shared folder",
@@ -191,7 +378,38 @@
         "packages/server/src/attachments/**"
       ],
       "tests": ["packages/server/src/fs/**/*.test.ts", "apps/web/e2e/{files,folder}*.spec.ts"],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#workspace-shared-folder"]
+      "docs": ["docs/AGENTS_AND_FEATURES.md#workspace-shared-folder"],
+      "ui": {
+        "where": "The right panel's Files tab",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "role": "button",
+              "name": "Search in Settings",
+              "exact": false,
+              "in": {
+                "role": "region",
+                "name": "Orchestrators"
+              }
+            }
+          },
+          {
+            "wait": {
+              "testid": "transcript"
+            }
+          },
+          {
+            "click": {
+              "role": "tab",
+              "name": "Files"
+            }
+          }
+        ],
+        "landmark": {
+          "testid": "files-panel"
+        }
+      }
     },
     {
       "name": "Diff and review panel",
@@ -207,7 +425,39 @@
         "packages/git/src/**/*.test.ts",
         "apps/web/e2e/review*.spec.ts"
       ],
-      "docs": ["docs/ARCHITECTURE.md"]
+      "docs": ["docs/ARCHITECTURE.md"],
+      "ui": {
+        "where": "The right panel's Diff tab (the panel button at the right of the title bar)",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "role": "button",
+              "name": "Search in Settings",
+              "exact": false,
+              "in": {
+                "role": "region",
+                "name": "Orchestrators"
+              }
+            }
+          },
+          {
+            "wait": {
+              "testid": "transcript"
+            }
+          },
+          {
+            "click": {
+              "role": "tab",
+              "name": "Diff"
+            }
+          }
+        ],
+        "landmark": {
+          "role": "tabpanel",
+          "name": "Diff"
+        }
+      }
     },
     {
       "name": "Pull requests and review requests",
@@ -225,7 +475,39 @@
         "packages/server/src/babysit/*.test.ts",
         "apps/web/e2e/pr*.spec.ts"
       ],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#watching-the-default-branch-after-merges"]
+      "docs": ["docs/AGENTS_AND_FEATURES.md#watching-the-default-branch-after-merges"],
+      "ui": {
+        "where": "The right panel's PR tab",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "role": "button",
+              "name": "Search in Settings",
+              "exact": false,
+              "in": {
+                "role": "region",
+                "name": "Orchestrators"
+              }
+            }
+          },
+          {
+            "wait": {
+              "testid": "transcript"
+            }
+          },
+          {
+            "click": {
+              "role": "tab",
+              "name": "PR"
+            }
+          }
+        ],
+        "landmark": {
+          "role": "tabpanel",
+          "name": "PR"
+        }
+      }
     },
     {
       "name": "Merge checks and merge freezes",
@@ -256,7 +538,15 @@
         "docs/AGENTS_AND_FEATURES.md#routines",
         "docs/AGENTS_AND_FEATURES.md#condition-wakes",
         "docs/AGENTS_AND_FEATURES.md#events-instead-of-polling"
-      ]
+      ],
+      "ui": {
+        "where": "Settings → Routines",
+        "route": "/settings/routines",
+        "landmark": {
+          "role": "region",
+          "name": "Routines"
+        }
+      }
     },
     {
       "name": "Terminal and project scripts",
@@ -276,7 +566,45 @@
       "docs": [
         "docs/AGENTS_AND_FEATURES.md#terminals-after-a-restart",
         "docs/AGENTS_AND_FEATURES.md#project-scripts"
-      ]
+      ],
+      "ui": {
+        "where": "The right panel's Terminal tab",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "role": "button",
+              "name": "Search in Settings",
+              "exact": false,
+              "in": {
+                "role": "region",
+                "name": "Orchestrators"
+              }
+            }
+          },
+          {
+            "wait": {
+              "testid": "transcript"
+            }
+          },
+          {
+            "click": {
+              "role": "button",
+              "name": "More tabs"
+            }
+          },
+          {
+            "click": {
+              "role": "menuitem",
+              "name": "Terminal",
+              "exact": false
+            }
+          }
+        ],
+        "landmark": {
+          "testid": "terminal-panel"
+        }
+      }
     },
     {
       "name": "Agent browser and pinned pages",
@@ -309,7 +637,15 @@
         "apps/web/src/panels/connector*.test.tsx",
         "apps/web/e2e/connectors*.spec.ts"
       ],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"]
+      "docs": ["docs/AGENTS_AND_FEATURES.md#overview"],
+      "ui": {
+        "where": "Settings → Connectors",
+        "route": "/settings/connectors",
+        "landmark": {
+          "role": "region",
+          "name": "Connectors"
+        }
+      }
     },
     {
       "name": "Gateways and AI helpers",
@@ -321,7 +657,15 @@
         "apps/web/src/routes/settings.{gateways,ai-helpers}.tsx"
       ],
       "tests": ["packages/server/src/gateway/*.test.ts", "apps/web/e2e/ai-helpers.spec.ts"],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#ai-helpers-and-context-consent"]
+      "docs": ["docs/AGENTS_AND_FEATURES.md#ai-helpers-and-context-consent"],
+      "ui": {
+        "where": "Settings → Agents & models → Gateways",
+        "route": "/settings/gateways",
+        "landmark": {
+          "role": "region",
+          "name": "Gateways"
+        }
+      }
     },
     {
       "name": "Usage",
@@ -333,7 +677,18 @@
         "packages/server/src/runtime/{cost-ledger,limit-wait,rate-limits}.ts"
       ],
       "tests": ["packages/server/src/usage/**/*.test.ts", "apps/web/e2e/usage*.spec.ts"],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#when-the-old-agent-is-out-of-usage"]
+      "docs": ["docs/AGENTS_AND_FEATURES.md#when-the-old-agent-is-out-of-usage"],
+      "ui": {
+        "where": "The usage meter at the right of the title bar, or Settings → Usage",
+        "route": "/usage",
+        "landmark": {
+          "role": "heading",
+          "name": "Usage"
+        },
+        "state": {
+          "role": "main"
+        }
+      }
     },
     {
       "name": "Machines",
@@ -348,7 +703,15 @@
         "packages/server/src/host/**/*.test.ts",
         "apps/web/e2e/machine*.spec.ts"
       ],
-      "docs": ["docs/MACHINES.md", "docs/PROVISIONED_HOSTS.md"]
+      "docs": ["docs/MACHINES.md", "docs/PROVISIONED_HOSTS.md"],
+      "ui": {
+        "where": "Settings → Machines",
+        "route": "/settings/machines",
+        "landmark": {
+          "role": "region",
+          "name": "Machines"
+        }
+      }
     },
     {
       "name": "Phones and remote access",
@@ -359,7 +722,15 @@
         "packages/server/src/http/**"
       ],
       "tests": ["apps/web/src/settings/phone-access-page.test.tsx"],
-      "docs": ["docs/REMOTE_ACCESS.md"]
+      "docs": ["docs/REMOTE_ACCESS.md"],
+      "ui": {
+        "where": "Settings → Phones and browsers",
+        "route": "/settings/phones",
+        "landmark": {
+          "role": "region",
+          "name": "Phones and browsers"
+        }
+      }
     },
     {
       "name": "Settings",
@@ -377,7 +748,19 @@
         "packages/server/src/config.test.ts",
         "apps/web/e2e/settings*.spec.ts"
       ],
-      "docs": ["docs/README.md"]
+      "docs": ["docs/README.md"],
+      "ui": {
+        "where": "The gear at the bottom of the left sidebar, Ctrl+,",
+        "route": "/settings/general",
+        "landmark": {
+          "role": "navigation",
+          "name": "Settings sections"
+        },
+        "state": {
+          "role": "region",
+          "name": "General"
+        }
+      }
     },
     {
       "name": "Appearance and themes",
@@ -395,7 +778,15 @@
         "tools/design-tokens/check.test.mjs",
         "apps/web/e2e/appearance*.spec.ts"
       ],
-      "docs": ["DESIGN.md"]
+      "docs": ["DESIGN.md"],
+      "ui": {
+        "where": "Settings → Appearance",
+        "route": "/settings/appearance",
+        "landmark": {
+          "role": "region",
+          "name": "Appearance"
+        }
+      }
     },
     {
       "name": "Dictation",
@@ -406,7 +797,15 @@
         "tools/sherpa-onnx/**"
       ],
       "tests": ["apps/web/src/dictation/**/*.test.{ts,tsx}", "tools/sherpa-onnx/install.test.mjs"],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#browser-notifications-and-dictation"]
+      "docs": ["docs/AGENTS_AND_FEATURES.md#browser-notifications-and-dictation"],
+      "ui": {
+        "where": "Settings → Voice",
+        "route": "/settings/voice-input",
+        "landmark": {
+          "role": "region",
+          "name": "Voice"
+        }
+      }
     },
     {
       "name": "Worktrees",
@@ -435,7 +834,15 @@
         "packages/server/src/updates/**/*.test.ts",
         "apps/desktop/src/main/update/**/*.test.ts"
       ],
-      "docs": ["docs/UPDATES.md", "docs/RELEASING.md"]
+      "docs": ["docs/UPDATES.md", "docs/RELEASING.md"],
+      "ui": {
+        "where": "Settings → About: the version, updates and What's new",
+        "route": "/settings/about",
+        "landmark": {
+          "role": "region",
+          "name": "About"
+        }
+      }
     },
     {
       "name": "Desktop app",
@@ -468,7 +875,25 @@
       "purpose": "Past threads by workspace and full-text search across transcripts.",
       "code": ["apps/web/src/history/**", "packages/server/src/search/**"],
       "tests": ["apps/web/src/history/*.test.{ts,tsx}", "packages/server/src/search/*.test.ts"],
-      "docs": ["docs/ARCHITECTURE.md"]
+      "docs": ["docs/ARCHITECTURE.md"],
+      "ui": {
+        "where": "History at the bottom of the left sidebar",
+        "route": "/",
+        "steps": [
+          {
+            "click": {
+              "role": "button",
+              "name": "History",
+              "in": {
+                "testid": "overview-sidebar"
+              }
+            }
+          }
+        ],
+        "landmark": {
+          "testid": "history-filter"
+        }
+      }
     },
     {
       "name": "Plans",

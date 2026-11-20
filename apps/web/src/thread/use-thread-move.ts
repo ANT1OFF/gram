@@ -1,6 +1,7 @@
 import { embeddingOn, type HostedDeviceView } from "@gram/contracts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
+import { useSubscription } from "@/lib/effects";
 import type { MoveTarget } from "@/orchestration/move-targets";
 import { useServerSettings } from "@/settings-sync/store";
 
@@ -27,7 +28,7 @@ export function useThreadMove(): {
     if (bridge === undefined || mover === undefined) return;
     void bridge.state().then(setView, () => setView(null));
   }, [bridge, mover]);
-  useEffect(() => {
+  useSubscription(() => {
     if (bridge === undefined || mover === undefined) return undefined;
     read();
     return bridge.onChange(read);

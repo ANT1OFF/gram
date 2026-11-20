@@ -28,6 +28,11 @@ import {
 import { FeatureStage, OrchestrationPause } from "./orchestration.ts";
 import { WorkspaceRoutines } from "./routines.ts";
 
+/** An embedding app's id for an environment: short, printable, no spaces. */
+export const WorkspaceEnvironment = Schema.String.check(
+  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
+);
+
 /** A named set of projects one orchestrator works across. */
 export const Workspace = Schema.Struct({
   id: WorkspaceId,
@@ -47,8 +52,24 @@ export const Workspace = Schema.Struct({
    * worktree, as anywhere else.
    */
   fromProfile: Schema.optionalKey(Schema.Literal(true)),
+  /**
+   * The environment its machine starts in, by the embedding app's id for one (the embed's
+   * `environments`). Absent: the app's default. Gram keeps it and hands it on; the app decides
+   * what it is and whether it may be used.
+   */
+  environment: Schema.optionalKey(WorkspaceEnvironment),
 });
 export type Workspace = typeof Workspace.Type;
+
+/** `workspace` with its environment as a save says: a new one, the default again (null), or kept. */
+export const withWorkspaceEnvironment = (
+  workspace: Workspace,
+  environment: string | null | undefined,
+): Workspace => {
+  if (environment === undefined) return workspace;
+  const { environment: _was, ...rest } = workspace;
+  return environment === null ? rest : { ...rest, environment };
+};
 
 /** A project-derived name, with a numbered suffix when another workspace already uses it. */
 export const availableWorkspaceName = (projectName: string, names: readonly string[]): string => {

@@ -87,6 +87,8 @@ export interface SaveWorkspaceInput {
   readonly homeProjectId: ProjectId;
   /** A new workspace's whole charter; absent starts with the default and the app's roster. Refused with `id`. */
   readonly charter?: OrchestratorCharter | undefined;
+  /** Its machine's environment, by the embedding app's id: null goes back to the default, absent keeps it. */
+  readonly environment?: string | null | undefined;
 }
 
 /** Which workspace's orchestrator to open: a saved one, or the one-project workspace of a project. */

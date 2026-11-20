@@ -1,6 +1,8 @@
 // Workspaces: saving, naming and removing one, the workspace a
 // project opens into, and `open`, which gives a workspace its orchestrator thread.
-import { admitThread } from "../../host/ownership.ts";
+import { admitThread, callerPerson } from "../../host/ownership.ts";
+import { OnDemand } from "../../embedding/on-demand.ts";
+import { workspaceHost } from "../../embedding/workspace-machines.ts";
 import {
   availableWorkspaceName,
   autonomyOf,
@@ -18,6 +20,7 @@ import {
   type ThreadId,
   type WorkspaceState,
   slotAgent,
+  withWorkspaceEnvironment,
 } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -46,6 +49,10 @@ import type { TaskStartup } from "./task-startup.ts";
 
 /** What workspaces take from the rest of the service. */
 export interface WorkspacesDeps {
+  /** The machine a workspace's orchestrator goes on, when it has one of its own. */
+  readonly workspaceHost: (
+    workspace: WorkspaceState["workspace"],
+  ) => Effect.Effect<HostId | undefined, InvalidState>;
   readonly forgetReasons: Digests["forgetReasons"];
   readonly openModel: TaskStartup["openModel"];
   readonly endRecovery: Pauses["endRecovery"];
@@ -255,6 +262,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
                   projectIds,
                   homeProjectId: input.homeProjectId,
                   createdAt: yield* Clock.currentTimeMillis,
+                  ...(input.environment == null ? {} : { environment: input.environment }),
                 },
                 charter,
               };
@@ -274,12 +282,10 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
             }
             const state = yield* store.updateWorkspace(input.id, (current) => ({
               ...current,
-              workspace: {
-                ...current.workspace,
-                name,
-                projectIds,
-                homeProjectId: input.homeProjectId,
-              },
+              workspace: withWorkspaceEnvironment(
+                { ...current.workspace, name, projectIds, homeProjectId: input.homeProjectId },
+                input.environment,
+              ),
             }));
             yield* workspacesChanged;
             if (holder !== undefined) {
@@ -541,8 +547,10 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       }
       const { model, mode, note } = yield* openModel(state.charter, selected);
       const others = projects.filter((project) => project.id !== home.id);
+      // A workspace with an environment of its own runs on a machine of its own, started for it.
+      const hostId = yield* deps.workspaceHost(workspace);
       const thread = yield* creator
-        .prepare({ kind: "current" }, home.root)
+        .prepare({ kind: "current", ...(hostId === undefined ? {} : { hostId }) }, home.root)
         .pipe(
           Effect.flatMap((checkout) =>
             Effect.gen(function* () {
@@ -710,3 +718,21 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
     arrive,
   };
 };
+
+/**
+ * `makeWorkspaces` with each workspace's own machine from the embedder's host provider, where one
+ * is set: absent, no workspace has a machine of its own.
+ */
+export const makeWorkspacesHere = (
+  kit: OrchestrationKit,
+  deps: Omit<WorkspacesDeps, "workspaceHost">,
+) =>
+  Effect.map(Effect.serviceOption(OnDemand), (found) =>
+    makeWorkspaces(kit, {
+      ...deps,
+      workspaceHost: (workspace) =>
+        Effect.flatMap(callerPerson, (person) =>
+          workspaceHost(Option.isSome(found), kit.joinedMachines, person, workspace),
+        ),
+    }),
+  );

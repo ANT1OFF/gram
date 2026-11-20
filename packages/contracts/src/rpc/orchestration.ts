@@ -19,6 +19,7 @@ import {
   OrchestratorCharter,
   StartTaskInput,
   Workspace,
+  WorkspaceEnvironment,
   WorkspaceState,
 } from "../workspaces.ts";
 import { errors, threadRef } from "./shared.ts";
@@ -41,6 +42,8 @@ export const OrchestrationRpcs = RpcGroup.make(
       projectIds: Workspace.fields.projectIds,
       homeProjectId: Workspace.fields.homeProjectId,
       charter: Schema.optionalKey(OrchestratorCharter),
+      /** Its machine's environment (`Workspace.environment`): null goes back to the default, absent keeps it. */
+      environment: Schema.optionalKey(Schema.NullOr(WorkspaceEnvironment)),
     },
     success: WorkspaceState,
     error: errors(NotFound, InvalidState),

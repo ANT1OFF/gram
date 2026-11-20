@@ -20,6 +20,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { listen, useSubscription } from "@/lib/effects";
 import { cn } from "@/lib/utils";
 import { ExpandPresence } from "@/motion";
 import { PanelMessage } from "@/panels/panel-message";
@@ -77,14 +78,13 @@ export function useReviewRequests() {
 /** Mount once: asks the server to poll again when the window regains focus (it throttles). */
 export function useRefreshReviewRequestsOnFocus() {
   const api = useApi();
-  useEffect(() => {
+  useSubscription(() => {
     const refresh = () => {
       api.refreshReviewRequests().catch(() => {
         // Nothing to say: the next scheduled poll tries again.
       });
     };
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
+    return listen(window, "focus", refresh);
   }, [api]);
 }
 
