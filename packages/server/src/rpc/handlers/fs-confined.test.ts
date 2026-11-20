@@ -76,10 +76,10 @@ const expectConfined = (options: { readonly dreamHost?: HostId } = {}) =>
     const { threadId, files } = yield* vouchedThread(options);
     const handlers = yield* fsHandlers;
     for (const read of [
-      handlers["fs.file"]({ path: files.text, threadId }),
-      handlers["fs.image"]({ path: files.image, threadId }),
-      handlers["fs.preview"]({ path: files.note, threadId }),
-      handlers["fs.preview"]({ path: files.page, threadId }),
+      Effect.asVoid(handlers["fs.file"]({ path: files.text, threadId })),
+      Effect.asVoid(handlers["fs.image"]({ path: files.image, threadId })),
+      Effect.asVoid(handlers["fs.preview"]({ path: files.note, threadId })),
+      Effect.asVoid(handlers["fs.preview"]({ path: files.page, threadId })),
     ]) {
       expect(yield* Effect.flip(read)).toMatchObject({ _tag: "InvalidState" });
     }
@@ -120,9 +120,9 @@ describe("a preview outside a thread's folders", () => {
       const { threadId, files } = yield* vouchedThread();
       const handlers = yield* fsHandlers;
       for (const read of [
-        handlers["fs.file"]({ path: files.text, threadId }),
-        handlers["fs.image"]({ path: files.image, threadId }),
-        handlers["fs.preview"]({ path: files.note, threadId }),
+        Effect.asVoid(handlers["fs.file"]({ path: files.text, threadId })),
+        Effect.asVoid(handlers["fs.image"]({ path: files.image, threadId })),
+        Effect.asVoid(handlers["fs.preview"]({ path: files.note, threadId })),
       ]) {
         expect(yield* Effect.flip(read)).toMatchObject({
           _tag: "InvalidState",

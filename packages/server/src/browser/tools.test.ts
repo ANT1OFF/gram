@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { BROWSER_INSPECTION_CAPABILITIES } from "@gram/contracts";
+import { BROWSER_INSPECTION_CAPABILITIES, HostId } from "@gram/contracts";
 import type {
   ApprovalAnswer,
   ApprovalRequest,
@@ -768,10 +768,14 @@ describe("labels, local-only debugging and evidence files", () => {
   it.effect("saves nothing on this disk for a thread whose session runs on another machine", () =>
     Effect.gen(function* () {
       const root = checkout();
-      const capture = { ok: true, page: PAGE, image: { data: PNG_HEAD, mimeType: "image/png" } };
+      const capture: PaneResult = {
+        ok: true,
+        page: PAGE,
+        image: { data: PNG_HEAD, mimeType: "image/png" },
+      };
       for (const thread of [
-        { checkout: { kind: "worktree", path: root, hostId: "their-machine" } },
-        { checkout: { kind: "main", path: root }, dreamHost: "their-machine" },
+        { checkout: { kind: "worktree", path: root, hostId: HostId.make("their-machine") } },
+        { checkout: { kind: "main", path: root }, dreamHost: HostId.make("their-machine") },
       ] as Partial<Thread>[]) {
         const { call, world } = harness({ replies: [capture], thread });
         const shot = yield* Effect.flip(call("browser_save_screenshot", { path: "shots/x.png" }));
