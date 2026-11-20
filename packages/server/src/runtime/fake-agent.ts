@@ -37,6 +37,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { McpCliShape } from "../connectors/mcp-cli.ts";
 import { AgentHosts } from "./agent-hosts.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 type InterruptBehavior =
   /** Emits `turnEnd{interrupted}` and `status idle`, like the Claude SDK in the spike. */
@@ -622,9 +623,10 @@ export const makeFakeAgentAdapter = (
             yield* emit({ type: "mode", mode: autoReport.mode });
             // The identity follows once the session is in the runtime's hands, so the report is
             // heard on its own first.
-            yield* Effect.promise(
-              () => new Promise<void>((resolve) => setTimeout(resolve, autoReport.gapMs)),
-            ).pipe(Effect.andThen(confirm), Effect.forkIn(scope));
+            yield* Effect.promise(() => sleep(autoReport.gapMs)).pipe(
+              Effect.andThen(confirm),
+              Effect.forkIn(scope),
+            );
           } else {
             yield* confirm;
           }

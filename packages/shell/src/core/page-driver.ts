@@ -27,6 +27,7 @@ import {
 } from "@gram/contracts/link-trust";
 import { browserObservations, jpegDimensions } from "./browser-observations.ts";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 /** The part of a CDP session the driver uses. */
 export interface Cdp {
@@ -158,8 +159,6 @@ export interface PageDriver {
   holdConsole(from: number | null): void;
   dispose(): void;
 }
-
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** A ref that names nothing on the page now; the agent takes a fresh snapshot. */
 export class StaleRefError extends Error {}

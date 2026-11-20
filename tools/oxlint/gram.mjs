@@ -12,6 +12,12 @@
 // Each primitive's owner and the files not moved onto it yet are in `allowlists.mjs`; `.oxlintrc.json`
 // scopes the rules to those packages, and test files are exempt.
 //
+// And no sleeping to synchronise: a fixed wait (`page.waitForTimeout`, a hand-rolled
+// `new Promise((r) => setTimeout(r, ms))`) races the thing it waits for, so it flakes when the
+// machine is slow and wastes time when it's fast. Tests wait on the condition; product code that
+// does mean real time (backoff, polling) uses the one shared helper. The files not moved yet are
+// in `allowlists.mjs` with how many each may keep.
+//
 // And one optical stroke for Lucide icons: the `lucide` class sets it per size (styles/base.css),
 // so a `strokeWidth` on the icon is outranked and does nothing.
 //
@@ -149,6 +155,65 @@ const namesSemaphore = (type) =>
 
 const MAPS = new Set(["Map", "WeakMap", "ReadonlyMap"]);
 
+const TIMER_HOSTS = new Set(["window", "globalThis", "self"]);
+const isSetTimeout = (callee) =>
+  (callee.type === "Identifier" && callee.name === "setTimeout") ||
+  (callee.type === "MemberExpression" &&
+    propertyName(callee) === "setTimeout" &&
+    callee.object.type === "Identifier" &&
+    TIMER_HOSTS.has(callee.object.name));
+
+/** The one expression a function's body is: `x => e`, `x => { e; }` or `x => { return e; }`. */
+const soleExpression = (fn) => {
+  if (fn.body.type !== "BlockStatement") return fn.body;
+  if (fn.body.body.length !== 1) return undefined;
+  const [statement] = fn.body.body;
+  if (statement.type === "ExpressionStatement") return statement.expression;
+  if (statement.type === "ReturnStatement") return statement.argument ?? undefined;
+};
+
+const isFunction = (node) =>
+  node?.type === "ArrowFunctionExpression" || node?.type === "FunctionExpression";
+
+/** `settle` itself, or a function whose whole body calls it: `() => settle("timeout")`. */
+const settles = (node, settle) => {
+  if (node?.type === "Identifier") return node.name === settle;
+  if (!isFunction(node)) return false;
+  const call = soleExpression(node);
+  return (
+    call?.type === "CallExpression" &&
+    call.callee.type === "Identifier" &&
+    call.callee.name === settle
+  );
+};
+
+/**
+ * `new Promise((r) => setTimeout(r, ms))` and its spellings: a promise that is only a timer. One
+ * that keeps its timer to clear (`timer = setTimeout(…)`) is a bounded wait's timeout, not a sleep.
+ */
+const isSleepPromise = (node) => {
+  if (node.callee.type !== "Identifier" || node.callee.name !== "Promise") return false;
+  const [executor] = node.arguments;
+  if (!isFunction(executor) || executor.params[0]?.type !== "Identifier") return false;
+  const timer = soleExpression(executor);
+  return (
+    timer?.type === "CallExpression" &&
+    isSetTimeout(timer.callee) &&
+    settles(timer.arguments[0], executor.params[0].name)
+  );
+};
+
+/** Test code: unit tests, Playwright specs and the e2e folders' fixtures and helpers. */
+const isTestFile = (file) =>
+  /\.(test|spec)\.[cm]?[jt]sx?$/.test(file) || /(^|\/)(e2e[^/]*|test|tests|__tests__)\//.test(file);
+
+const SLEEP_HELPERS =
+  "For a real-time wait in product code (backoff, polling, a grace period) use the one helper: `setTimeout` from `node:timers/promises` in Node code (`await setTimeout(ms)`, `setTimeout(ms, value)` for a race), `sleep` from `apps/web/src/lib/sleep.ts` in the web app.";
+const SLEEP_IN_TESTS =
+  "A test that sleeps races what it waits for: it flakes on a slow machine and wastes time on a fast one. Wait on the thing itself: await the real promise or event, `vi.waitFor(() => expect(…))` for a condition, or `vi.useFakeTimers()` with `await vi.advanceTimersByTimeAsync(ms)` when time is the input. Don't swap in a sleep helper: that hides the same race.";
+const WAIT_FOR_TIMEOUT =
+  "`waitForTimeout` races the page: wait on what you need instead, with a web-first assertion (`await expect(locator).toBeVisible()`, `.toHaveText()`, `.toHaveCount()`), `await expect.poll(() => value).toBe(…)`, `await expect(async () => {…}).toPass()`, `page.waitForResponse`/`waitForFunction`, or `page.clock` when time is the input.";
+
 /** Lucide's props that set an icon's stroke, which the `lucide` class's stroke outranks. */
 const LUCIDE_STROKES = new Set(["strokeWidth", "absoluteStrokeWidth"]);
 const CREATORS = new Set(["createLucideIcon"]);
@@ -228,6 +293,45 @@ const clockOf = (sourceCode, node, seen = new Set()) => {
 export default {
   meta: { name: "gram" },
   rules: {
+    "no-sleep": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow fixed waits (`waitForTimeout`, hand-rolled `new Promise(… setTimeout …)` sleeps); wait on the condition, or use the shared helper",
+        },
+      },
+      create(context) {
+        const file = relative(REPO, context.filename).replaceAll("\\", "/");
+        const list = ALLOWLISTS["no-sleep"];
+        if (list.owners.includes(file)) return {};
+        const allowed = list.pending[file] ?? 0;
+        const test = isTestFile(file);
+        const found = [];
+        return {
+          NewExpression(node) {
+            if (isSleepPromise(node))
+              found.push({ node, message: test ? SLEEP_IN_TESTS : SLEEP_HELPERS });
+          },
+          CallExpression(node) {
+            if (
+              node.callee.type === "MemberExpression" &&
+              propertyName(node.callee) === "waitForTimeout"
+            )
+              found.push({ node, message: WAIT_FOR_TIMEOUT });
+          },
+          "Program:exit"() {
+            if (found.length <= allowed) return;
+            const note =
+              allowed > 0
+                ? ` (${file} may keep ${allowed} in tools/oxlint/allowlists.mjs, which only shrinks; it has ${found.length}.)`
+                : "";
+            for (const { node, message } of found)
+              context.report({ node, message: message + note });
+          },
+        };
+      },
+    },
     "lucide-stroke": {
       meta: {
         type: "problem",

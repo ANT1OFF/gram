@@ -16,6 +16,7 @@ import {
 } from "node:fs";
 import { availableParallelism, homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 /** Where the slots live: `GRAM_CHECK_SLOT_DIR`, else the user's cache directory. */
 export function slotDir(env = process.env) {
@@ -118,8 +119,6 @@ export function tryClaim({ dir, slots, owner, now = Date.now(), graceMs = 30_000
 function release(path, pid = process.pid) {
   if (readOwner(path)?.pid === pid) rmSync(path, { recursive: true, force: true });
 }
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Waits for a free slot and resolves with its release function. `onWait` hears once who holds the

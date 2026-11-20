@@ -1,18 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ALLOWLISTS } from "./allowlists.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Lints each source as a file of its own in one oxlint run, and returns each file's diagnostics. */
-const lintEach = (sources, rule = "gram/no-bare-fork", ext = "ts") => {
+const lintEach = (sources, rule = "gram/no-bare-fork", extension = ".ts") => {
   const dir = mkdtempSync(join(tmpdir(), "gram-fork-rule-"));
   try {
     const files = sources.map((source, i) => {
-      const file = join(dir, `fixture-${i}.${ext}`);
+      const file = join(dir, `fixture-${i}${extension}`);
       writeFileSync(file, source);
       return file;
     });
@@ -49,7 +49,7 @@ const lintEach = (sources, rule = "gram/no-bare-fork", ext = "ts") => {
     rmSync(dir, { recursive: true, force: true });
   }
 };
-const lint = (source, rule, ext) => lintEach([source], rule, ext)[0];
+const lint = (source, rule, extension) => lintEach([source], rule, extension)[0];
 
 /** The rule codes the repository's own config reports for a probe file placed in `dir`. */
 const probeConfig = (
@@ -309,6 +309,89 @@ describe("no-adhoc-lock", () => {
   });
 });
 
+describe("no-sleep", () => {
+  const rule = "gram/no-sleep";
+
+  it("refuses waitForTimeout and every spelling of a promise that is only a timer", () => {
+    const found = lint(
+      `await page.waitForTimeout(500);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((r) => { setTimeout(r, 20); });
+      const sleep = (ms) => new Promise(function (done) { return setTimeout(done, ms); });
+      await Promise.race([work, new Promise((resolve) => setTimeout(() => resolve("late"), 9))]);
+      await new Promise((resolve) => window.setTimeout(resolve, 5));
+      await new Promise<void>((resolve) => globalThis.setTimeout(() => { resolve(); }, 5));
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it("says what to wait on instead, in tests and in product code", () => {
+    const sleep = "await new Promise((resolve) => setTimeout(resolve, 20));";
+    const [inTest, inProduct] = [".test.ts", ".ts"].map((extension) =>
+      lint(sleep, rule, extension),
+    );
+    expect(inTest[0].message).toContain("vi.useFakeTimers()");
+    expect(inProduct[0].message).toContain("node:timers/promises");
+    expect(lint("await page.waitForTimeout(5);", rule)[0].message).toContain("expect.poll");
+  });
+
+  it("allows bounded waits that keep their timer, waits on events and the shared helpers", () => {
+    expect(
+      lint(
+        `import { setTimeout as sleep } from "node:timers/promises";
+        await sleep(20);
+        let timer;
+        await Promise.race([work, new Promise((resolve) => { timer = setTimeout(resolve, 9); })]);
+        clearTimeout(timer);
+        await new Promise((resolve) => {
+          child.once("exit", resolve);
+          setTimeout(resolve, 1_000);
+        });
+        await new Promise((resolve) => setTimeout(() => console.log("x"), 5));
+        await new Promise((resolve) => setImmediate(resolve));
+        await expect(locator).toBeVisible();
+      `,
+        rule,
+      ),
+    ).toEqual([]);
+  });
+
+  it("is on everywhere under the repository's own config", () => {
+    const file = join(root, "apps/web/src", `.gram-sleep-probe-${process.pid}.ts`);
+    writeFileSync(file, "export const s = new Promise((r) => setTimeout(r, 1));\n");
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [join(root, "node_modules/oxlint/bin/oxlint"), "--format", "json", file],
+        { cwd: root, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" },
+      );
+      if (result.error) throw result.error;
+      expect(JSON.parse(result.stdout).diagnostics.map((d) => d.code)).toContain("gram(no-sleep)");
+    } finally {
+      rmSync(file, { force: true });
+    }
+  });
+
+  // The allowance only shrinks: a file that has lost a sleep must lower its count in the same change.
+  // One oxlint run per extension, so the parser is the file's own.
+  const pending = Object.entries(ALLOWLISTS["no-sleep"].pending);
+  const found = new Map();
+  for (const extension of new Set(pending.map(([file]) => extname(file)))) {
+    const files = pending.map(([file]) => file).filter((file) => extname(file) === extension);
+    const diagnostics = lintEach(
+      files.map((file) => readFileSync(join(root, file), "utf8")),
+      rule,
+      extension,
+    );
+    files.forEach((file, i) => found.set(file, diagnostics[i].length));
+  }
+  it.each(pending)("%s keeps exactly the %i sleeps it is allowed", (file, count) => {
+    expect(found.get(file), `lower ${file}'s count in tools/oxlint/allowlists.mjs`).toBe(count);
+  });
+});
+
 describe("lucide-stroke", () => {
   const rule = "gram/lucide-stroke";
 
@@ -322,7 +405,7 @@ describe("lucide-stroke", () => {
       export const c = <Ring className="size-3" strokeWidth={1.5} {...props} />;
     `,
       rule,
-      "tsx",
+      ".tsx",
     );
     expect(found.map((d) => d.labels[0].span.line)).toEqual([4, 5, 6]);
     expect(found[0].message).toContain("createLucideIcon");
@@ -345,7 +428,7 @@ describe("lucide-stroke", () => {
         function Local({ Check }) { return <Check strokeWidth={1} />; }
       `,
         rule,
-        "tsx",
+        ".tsx",
       ),
     ).toEqual([]);
   });

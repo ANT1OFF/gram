@@ -10,6 +10,7 @@ import { connect, createServer } from "node:net";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { isInside, realPath } from "@gram/git";
 import { LINE_CHARS, makeBoundedList, makeLineCutter, TRUNCATED } from "../bounded.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 /** Where a project names its dev servers, first found wins. */
 export const LAUNCH_FILES = [".gram/launch.json", ".claude/launch.json"] as const;
@@ -366,7 +367,7 @@ export function createDevServerHost(options: DevServerHostOptions) {
         ? new Promise<void>((done) => server.child.once("exit", () => done()))
         : Promise.resolve();
     kill(server, "SIGTERM");
-    await Promise.race([exited, new Promise((done) => setTimeout(done, STOP_GRACE_MS))]);
+    await Promise.race([exited, sleep(STOP_GRACE_MS)]);
     // Whatever is left of the group, its leader gone or not, is killed.
     kill(server, "SIGKILL");
     free(server.port, holders.get(key));
@@ -480,7 +481,7 @@ export function createDevServerHost(options: DevServerHostOptions) {
         while (Date.now() < deadline && server.exit === undefined) {
           if ((await listening(launch.port, "127.0.0.1")) || (await listening(launch.port, "::1")))
             return { server, ready: true };
-          await new Promise((done) => setTimeout(done, 250));
+          await sleep(250);
         }
         return { server, ready: false };
       } finally {

@@ -54,6 +54,7 @@ import {
   type PageDriver,
   type PageTarget,
 } from "../../core/page-driver.ts";
+import { setTimeout as delay } from "node:timers/promises";
 
 /** What the preview module gives this one: each thread's page, made when first asked for. */
 /**
@@ -295,8 +296,6 @@ const LOCAL_ONLY =
 
 const targetOf = (point: PanePoint): PageTarget =>
   point.ref !== undefined ? { ref: point.ref } : { coordinate: point.coordinate };
-
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Waits for `contents` to stop loading, if it is, for at most `SETTLE_MS`. */
 const settled = (contents: PaneContents, stop: () => boolean = () => false) =>
