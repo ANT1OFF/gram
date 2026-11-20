@@ -1,6 +1,47 @@
 {
   "drivers": [
     {
+      "name": "static",
+      "run": "bun install --frozen-lockfile && bun run check:static",
+      "kind": "lint",
+      "required": true,
+      "timeoutMinutes": 20
+    },
+    {
+      "name": "contracts",
+      "run": "bun install --frozen-lockfile && bun x vitest run --project contracts",
+      "covers": ["packages/contracts/**"],
+      "kind": "unit",
+      "required": true
+    },
+    {
+      "name": "server",
+      "run": "bun install --frozen-lockfile && bun x vitest run --project server --project git --project agents",
+      "covers": [
+        "packages/server/**",
+        "packages/git/**",
+        "packages/agents/**",
+        "packages/contracts/**"
+      ],
+      "kind": "unit",
+      "required": true,
+      "timeoutMinutes": 60
+    },
+    {
+      "name": "web",
+      "run": "bun install --frozen-lockfile && bun x vitest run --project web",
+      "covers": ["apps/web/**", "packages/contracts/**", "packages/themes/**"],
+      "kind": "unit",
+      "required": true,
+      "timeoutMinutes": 40
+    },
+    {
+      "name": "shell",
+      "run": "bun install --frozen-lockfile && bun x vitest run --project shell",
+      "covers": ["packages/shell/**"],
+      "kind": "unit"
+    },
+    {
       "name": "features",
       "run": "bun install --frozen-lockfile && bun run drive --all",
       "covers": ["apps/web/**", "docs/features.json"],

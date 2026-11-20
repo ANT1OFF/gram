@@ -147,8 +147,8 @@ test("keys reach the expanded panel, not the approval hidden behind it", async (
   await page.keyboard.press("1");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("app-shell")).toHaveAttribute("data-panel-expanded", "false");
-  // An answered card folds away once the answer lands; give it the time to.
-  await page.waitForTimeout(1000 * slowdown);
+  // A key that answered would have marked the card pending in its own handler, so Deny would be off
+  // already, and the card fold away once the answer lands.
   await expect(card).toBeVisible();
   await expect(card.getByTestId("approval-deny")).toBeEnabled();
 });

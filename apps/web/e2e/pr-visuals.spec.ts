@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import type { MockOneThreadSimulation } from "../src/api/mock-asks";
 import { pressFirstWorkspaceKey } from "./thread-row";
+import { motionDone } from "./settled";
 
 // The shared pull request vocabulary where the Orchestrator layout shows PRs: a worker's chips under
 // its overview row, their hover card and the feature card. Three workers hold PRs in different
@@ -199,7 +200,7 @@ const seedPrs = (page: Page, made: MockOneThreadSimulation) =>
 const shot = async (name: string, target: ReturnType<Page["locator"]>) => {
   if (SHOTS === undefined) return;
   // Past the hover card's and chips' motion, so the shot is a still frame.
-  await target.page().waitForTimeout(300);
+  await motionDone(target.page());
   await target.screenshot({ path: `${SHOTS}/${name}.png`, animations: "disabled" });
 };
 

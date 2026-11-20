@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { dragAndDrop } from "./drag";
 import { setLayout } from "./layout";
+import { frames, motionDone, steady } from "./settled";
 import { threadRow } from "./thread-row";
 
 // The overview's Solo threads draw only the rows near the view (performance pass item 11): with
@@ -295,7 +296,9 @@ test("opening Parked, and unfolding Solo threads that filled while folded, move 
   expect(await overviewScroll(page)).toBe(0);
   await title.click();
   await expect(rows(page).first()).toBeVisible();
-  await page.waitForTimeout(300);
+  // Unfolded, and done measuring its rows: what the list does to the column it has done by then.
+  await motionDone(overview(page));
+  await steady(solo(page));
   expect(await overviewScroll(page)).toBe(0);
   await expectContiguous(page);
 
@@ -306,7 +309,8 @@ test("opening Parked, and unfolding Solo threads that filled while folded, move 
   const before = await overviewScroll(page);
   await parkedLine.click();
   await expect(parkedLine).toHaveAttribute("aria-expanded", "true");
-  await page.waitForTimeout(300);
+  await motionDone(overview(page));
+  await steady(overview(page).getByTestId("overview-parked"));
   expect(Math.abs((await overviewScroll(page)) - before)).toBeLessThan(1);
 });
 
@@ -396,6 +400,7 @@ test("rows in view stay put when what is above them grows, as the browser keeps 
       added.style.height = "30px";
       pill.parentElement!.insertBefore(added, pill.nextSibling);
     });
-  await page.waitForTimeout(200);
+  // Past the frames the list re-measures in, so a late shift shows too.
+  await frames(page);
   await expect.poll(top).toBeCloseTo(at, 0);
 });

@@ -11,7 +11,7 @@
  */
 
 /** A real movement's events (pointer and mouse, over and move) arrive within this of each other. */
-const SAME_MOVE_MS = 48;
+export const SAME_MOVE_MS = 48;
 
 /**
  * Where the pointer was, by the kind of event that said so. A pointer event's position is fractional

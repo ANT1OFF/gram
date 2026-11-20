@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { SAME_MOVE_MS } from "../src/lib/pointer-moved";
 import { reviewsInPanel } from "./reviews-panel";
+import { frames } from "./settled";
 
 // The panel's tabs show their names. The rarer ones are always in More, named there, however wide
 // the panel, so Focus review shows the same tabs as the panel beside the chat. Short of room, Terminal,
@@ -215,14 +217,39 @@ test("a tab that appears under a resting pointer opens no hint until the pointer
   // The pointer rests where the tab will be, the panel closed: no tab there to hover yet.
   await page.keyboard.press("ControlOrMeta+Alt+b");
   await expect(diff).toBeHidden();
+  // The move's stamp, and later the hover the opening panel brings, as the page hears them.
+  await page.evaluate(() => {
+    const heard = { movedAt: Number.NaN, overTab: false };
+    Object.assign(window, { heard });
+    addEventListener("mousemove", (event) => (heard.movedAt = event.timeStamp), { capture: true });
+    addEventListener(
+      "mouseover",
+      (event) => {
+        const tab = event.target instanceof Element ? event.target.closest('[role="tab"]') : null;
+        if (tab?.textContent?.trim() === "Diff") heard.overTab = true;
+      },
+      { capture: true },
+    );
+  });
+  const heard = () =>
+    page.evaluate(
+      () => (window as unknown as { heard: { movedAt: number; overTab: boolean } }).heard,
+    );
   await page.mouse.move(at.x, at.y);
-  // Still for a moment: a tab that came within a frame or two of a move would be the move's own.
-  await page.waitForTimeout(250);
+  // Still for a moment: a tab that came within a frame or two of a move would be the move's own. A
+  // fresh event is stamped on the clock the hint's gate compares, so this is its own window passing.
+  const { movedAt } = await heard();
+  expect(movedAt).not.toBeNaN();
+  await page.waitForFunction(([moved, gap]) => new Event("probe").timeStamp - moved > gap, [
+    movedAt,
+    SAME_MOVE_MS,
+  ] as const);
   // The panel opens under the still pointer: the browser says the pointer is over the tab, but
   // nobody pointed at it, so its hint stays shut rather than cover the row beside it.
   await page.keyboard.press("ControlOrMeta+Alt+b");
   await expect(diff).toBeVisible();
-  await page.waitForTimeout(300);
+  await expect.poll(async () => (await heard()).overTab).toBe(true);
+  await frames(page);
   await expect(hint).toHaveCount(0);
   // Moving over it is pointing at it.
   await page.mouse.move(at.x + 2, at.y + 1);
