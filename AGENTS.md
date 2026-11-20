@@ -19,6 +19,10 @@ Codex CLIs on their own subscriptions. [README](README.md) introduces it,
   iterating; `bun run check` is the full integration check.
 - Stop only what you started: `bun run check:cancel`, Ctrl-C or the exact PIDs. The Bash guard
   ([guard-bash](tools/agent-guards/guard-bash.mjs)) refuses `pkill`, `killall` and `kill` on `pgrep`.
+- Rules live in checks. When you catch a mistake that could recur, yours or another agent's,
+  prefer a type, lint rule, import boundary or test to a new line here; give the check a message
+  that names the fix, and clear its existing violations in the same change. See
+  [rules live in checks](CONTRIBUTING.md#rules-live-in-checks).
 - Fix demonstrated causes, with a before/after reproduction where feasible. Never weaken
   assertions, skips, timeouts or permission guards to get a pass. Claim only what was tested:
   synthetic success is not live-provider qualification.

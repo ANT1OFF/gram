@@ -194,6 +194,9 @@ export const threadData = (thread: Thread, status?: string): Record<string, unkn
   ...(status === undefined ? {} : { status }),
   ...(thread.spawnedBy === undefined ? {} : { spawnedByThreadId: thread.spawnedBy.threadId }),
   ...(thread.limitWait === undefined ? {} : { limitWait: limitWaitData(thread.limitWait) }),
+  // Archived (parked): kept, and left out of the thread list for History. Every upsert carries the
+  // whole thread, so one without it says the thread is not archived.
+  ...(thread.parked ? { archived: true } : {}),
 });
 
 /**

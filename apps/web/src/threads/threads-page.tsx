@@ -19,12 +19,13 @@ import { threadNeed } from "@/orchestration/needs-you-items";
 import { useDerivedAsks } from "@/orchestration/needs-you-store";
 import { soloDisplay } from "@/orchestration/overview-model";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
-import { useWorkspaces } from "@/orchestration/use-orchestration";
+import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { threadStatusOf } from "@/sidebar/status";
 import { useThreadsStore } from "@/stores/threads";
 
 import {
+  finishedWorkers,
   inThreadsFilter,
   whereOf,
   THREADS_FILTERS,
@@ -32,6 +33,7 @@ import {
   threadsFilterCounts,
   type ThreadListing,
   type ThreadsFilter,
+  withOutcome,
 } from "./threads-model";
 import { WorkspacesList } from "./workspaces-view";
 
@@ -96,6 +98,28 @@ export function ThreadsPage() {
       query,
     );
   }, [summaries, workspaces, groups, query, kinds, elsewhere, places]);
+  // Which of its workers each orchestrator counts finished, as its Workers panel says it.
+  const workerSpaces = useMemo(
+    () => [
+      ...new Set(
+        listings.flatMap((listing) =>
+          listing.summary.thread.spawnedBy === undefined ||
+          listing.summary.thread.workspaceId === undefined
+            ? []
+            : [listing.summary.thread.workspaceId],
+        ),
+      ),
+    ],
+    [listings],
+  );
+  const ledgers = useOrchestratorLedgers(workerSpaces);
+  const byId = useThreadsStore((s) => s.byId);
+  const statusDetail = useThreadsStore((s) => s.statusDetail);
+  const minute = useNow(true, undefined, 60_000);
+  const finished = useMemo(
+    () => finishedWorkers(ledgers.values(), { byId, statusDetail, now: minute }),
+    [ledgers, byId, statusDetail, minute],
+  );
   const counts = useMemo(() => threadsFilterCounts(listings), [listings]);
   // A filter whose last thread left it would show an empty list with nothing to say why: every
   // thread again.
@@ -264,7 +288,12 @@ export function ThreadsPage() {
             ) : (
               <ul data-testid="threads-list" className="flex flex-col gap-px">
                 {shown.map((listing) => (
-                  <ThreadRow key={listing.summary.thread.id} listing={listing} groups={groups} />
+                  <ThreadRow
+                    key={listing.summary.thread.id}
+                    listing={listing}
+                    groups={groups}
+                    finished={finished.has(listing.summary.thread.id)}
+                  />
                 ))}
               </ul>
             )}
@@ -283,16 +312,22 @@ export function ThreadsPage() {
 function ThreadRow({
   listing,
   groups,
+  finished,
 }: {
   listing: ThreadListing;
   groups: Parameters<typeof threadNeed>[0];
+  /** Its orchestrator counts it finished: at rest it says Done, not Stopped. */
+  finished: boolean;
 }) {
   const openThread = useOpenThread();
   const now = useNow(true, undefined, 60_000);
   const { summary, title, place, startedBy, sentFrom } = listing;
   const { thread } = summary;
   const detail = useThreadsStore((s) => s.statusDetail[thread.id]);
-  const display = soloDisplay(threadStatusOf(summary, detail), threadNeed(groups, thread.id));
+  const display = soloDisplay(
+    withOutcome(threadStatusOf(summary, detail), finished),
+    threadNeed(groups, thread.id),
+  );
   const where = whereOf({ title, place, startedBy, sentFrom });
   return (
     <li>
