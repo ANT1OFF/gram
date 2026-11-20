@@ -273,7 +273,7 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     window.addEventListener("mouseup", up);
     return () => window.removeEventListener("mouseup", up);
     // `pointOf` reads refs only.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- `pointOf` reads refs only
   }, [live, send]);
 
   // A wheel listener React adds can't stop the tab from scrolling too; this one can.
@@ -296,7 +296,7 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     element.addEventListener("wheel", wheel, { passive: false });
     return () => element.removeEventListener("wheel", wheel);
     // `pointOf` reads refs only.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- `pointOf` reads refs only
   }, [live, send]);
 
   const pointer = (event: React.MouseEvent, action: "move" | "down") => {

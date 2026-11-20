@@ -37,7 +37,7 @@ export function DiffTree({
     });
 
   // The active item may be gone (its folder closed, the diff changed): the first item takes the Tab stop.
-  // oxlint-disable-next-line react-hooks/exhaustive-deps
+  // oxlint-disable-next-line react/exhaustive-deps -- runs after every render, and only sets state when the Tab stop must move
   useLayoutEffect(() => {
     const tree = treeRef.current;
     if (!tree || tree.querySelector('[role="treeitem"][tabindex="0"]')) return;

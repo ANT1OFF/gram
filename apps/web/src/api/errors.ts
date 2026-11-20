@@ -21,6 +21,18 @@ export function errorMessage(error: unknown): string {
   return tagOf(error) ?? String(error);
 }
 
+/** Where a refusal says the person can put it right: an https page and its words, when it says. */
+export function errorHelp(error: unknown): { url: string; label: string } | undefined {
+  if (tagOf(error) !== "InvalidState") return undefined;
+  const help = Reflect.get(error as object, "help");
+  if (typeof help !== "object" || help === null) return undefined;
+  const url = Reflect.get(help, "url");
+  const label = Reflect.get(help, "label");
+  if (typeof url !== "string" || typeof label !== "string" || !url.startsWith("https://"))
+    return undefined;
+  return { url, label };
+}
+
 /** A missing or unreadable thread folder in the user's terms; `undefined` for any other error. */
 export function folderProblem(error: unknown): string | undefined {
   const tag = tagOf(error);

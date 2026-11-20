@@ -19,8 +19,9 @@ import {
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import { randomUUID } from "node:crypto";
-import { EventHub } from "../events/event-hub.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { EventHub, type EventHubShape } from "../events/event-hub.ts";
+import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
+import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { logDefects, type Handlers } from "../rpc/handlers/common.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { steerOrSend } from "../runtime/steer-or-send.ts";
@@ -46,7 +47,19 @@ export type AnswerOnce = <E>(
   },
   date: string,
   delivery: AnswerDelivery<E>,
+  options?: AnswerOnceOptions,
 ) => Effect.Effect<AnswerQuestionResult, E | MemoryError>;
+
+/** For an answer that must be its own: an embedder's, which is on record as its person's. */
+export interface AnswerOnceOptions {
+  /**
+   * Refuses rather than reports another answer's success: an entry closed already, or one whose
+   * earlier answer is on its way, is not this answer's to settle.
+   */
+  readonly own?: boolean;
+  /** Runs under the lock, once this answer is the one that goes, before it is sent. */
+  readonly beforeSend?: Effect.Effect<void>;
+}
 
 /**
  * The user's answer, delivered once and then closing its entry.
@@ -67,7 +80,7 @@ export type AnswerOnce = <E>(
  */
 export const makeAnswerOnce = (): AnswerOnce => {
   const locks = makeKeyedLock<WorkspaceId>();
-  return (memory, workspaceId, input, date, delivery) => {
+  return (memory, workspaceId, input, date, delivery, options = {}) => {
     const name = input.questionId ?? "That question";
     const read = memory
       .read(workspaceId, QUESTIONS_FILE)
@@ -92,16 +105,24 @@ export const makeAnswerOnce = (): AnswerOnce => {
       }
       if (!entry.open) {
         // Pressed again after this very answer went and closed it: that is done, not a failure.
-        if (entry.closedAs === "answered" && entry.answer === keptAnswer(input.answer)) {
+        if (
+          options.own !== true &&
+          entry.closedAs === "answered" &&
+          entry.answer === keptAnswer(input.answer)
+        ) {
           return { questionId: entry.id, delivered: "sent" as const };
         }
         return yield* new InvalidState({ message: `${name} is closed already.` });
+      }
+      if (entry.pending !== undefined && options.own === true) {
+        return yield* new InvalidState({ message: `An answer to ${name} is on its way already.` });
       }
       if (entry.pending !== undefined && (yield* delivery.holds(answerKeyTag(entry.pending)))) {
         // An earlier attempt got there and didn't close: close it with what that attempt said.
         yield* close(entry.id, entry.answer ?? input.answer);
         return { questionId: entry.id, delivered: "sent" as const };
       }
+      if (options.beforeSend !== undefined) yield* options.beforeSend;
       const key = entry.pending ?? randomUUID().slice(0, 13);
       const id = yield* edit((current) =>
         markAnswerPending(current, { ...input, questionId: entry.id, key }),
@@ -131,6 +152,90 @@ export const isQueuedAnswer = (input: UserInput): boolean =>
   /\(answer key [^)]+\)$/.test(input.text);
 
 /**
+ * Answers are taken one at a time in a workspace however they come: the socket's
+ * `question.answer` and an embedder's `asks/answer` share these locks.
+ */
+const answerOnce = makeAnswerOnce();
+
+/**
+ * The user's answer to one of a workspace orchestrator's questions: steered or sent to the
+ * orchestrator once, then its entry closed (`makeAnswerOnce`). The socket's `question.answer` and
+ * an embedder's `asks/answer` (`embedding/ask-answer.ts`) both answer through it.
+ */
+export const questionAnswerer =
+  (deps: {
+    readonly memory: OrchestrationMemoryShape;
+    readonly store: Pick<ThreadStoreShape, "getWorkspace" | "messagesWith">;
+    readonly hub: Pick<EventHubShape, "publish">;
+    readonly runtimes: Pick<ThreadRuntimesShape, "summaryOf" | "sendOrJoin" | "steer" | "send">;
+  }) =>
+  (
+    {
+      workspaceId,
+      questionId,
+      question,
+      answer,
+    }: {
+      readonly workspaceId: WorkspaceId;
+      readonly questionId?: string | undefined;
+      readonly question: string;
+      readonly answer: string;
+    },
+    options?: AnswerOnceOptions,
+  ) =>
+    Effect.gen(function* () {
+      const { memory, store, hub, runtimes } = deps;
+      const orchestrator = (yield* store.getWorkspace(workspaceId)).workspace.orchestratorThreadId;
+      const summary =
+        orchestrator === undefined ? undefined : yield* runtimes.summaryOf(orchestrator);
+      if (orchestrator === undefined || summary === undefined) {
+        return yield* new InvalidState({
+          message: "This workspace has no orchestrator open to take the answer.",
+        });
+      }
+      const delivery: AnswerDelivery<ThreadNotFound | InvalidState | AgentUnavailable> = {
+        // Steered into a running turn: a steer cancels nothing, so a burst of answers no longer
+        // cuts off one turn after another as it did when steers interrupted (36 of 68
+        // interrupted turns in the 0.8 retro). One queued behind a turn that can't take it
+        // (waiting on the user, or Gram's idle compaction) joins an earlier answer still
+        // waiting, so a burst lands as one turn.
+        deliver: (text) =>
+          steerOrSend(
+            runtimes,
+            orchestrator,
+            { text },
+            runtimes.sendOrJoin(
+              orchestrator,
+              { text },
+              ({ input }, next) => ({ ...input, text: `${input.text}\n\n${next.text}` }),
+              isQueuedAnswer,
+            ),
+          ),
+        holds: (tag) =>
+          Effect.gen(function* () {
+            const queued = (yield* runtimes.summaryOf(orchestrator))?.queue.some((item) =>
+              item.input.text.includes(tag),
+            );
+            if (queued === true) return true;
+            // Only the user messages whose stored form holds the tag are read and decoded.
+            return (yield* store.messagesWith(orchestrator, [tag], "user")).some((message) =>
+              message.parts.some((part) => part.type === "text" && part.text.includes(tag)),
+            );
+          }),
+      };
+      const result = yield* answerOnce(
+        memory,
+        workspaceId,
+        { questionId, question, answer },
+        questionDate(yield* Clock.currentTimeMillis),
+        delivery,
+        options,
+      );
+      yield* hub.publish({ type: "orchestration.changed", workspaceId });
+      return result;
+    });
+
+/**
  * `dream.*` and `memory.*`: the user's side of dreams and of a workspace's memory.
  * Nothing here is an app tool, which is what keeps adoption, restore and the
  * Memory tab's edits the user's alone. The memory calls work while orchestration is paused, since
@@ -143,7 +248,7 @@ export const dreamHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const hub = yield* EventHub;
   const runtimes = yield* ThreadRuntimes;
-  const answerOnce = makeAnswerOnce();
+  const answerQuestionAsUser = questionAnswerer({ memory, store, hub, runtimes });
 
   /** The workspace exists; memory folders are made on demand, so ask first. */
   const guard = (workspaceId: WorkspaceId) => Effect.asVoid(store.getWorkspace(workspaceId));
@@ -182,58 +287,7 @@ export const dreamHandlers = Effect.gen(function* () {
         Effect.andThen(memory.remove(workspaceId, path)),
         Effect.tap(() => changed(workspaceId)),
       ),
-    "question.answer": ({ workspaceId, questionId, question, answer }) =>
-      Effect.gen(function* () {
-        yield* guard(workspaceId);
-        const orchestrator = (yield* store.getWorkspace(workspaceId)).workspace
-          .orchestratorThreadId;
-        const summary =
-          orchestrator === undefined ? undefined : yield* runtimes.summaryOf(orchestrator);
-        if (orchestrator === undefined || summary === undefined) {
-          return yield* new InvalidState({
-            message: "This workspace has no orchestrator open to take the answer.",
-          });
-        }
-        const delivery: AnswerDelivery<ThreadNotFound | InvalidState | AgentUnavailable> = {
-          // Steered into a running turn: a steer cancels nothing, so a burst of answers no longer
-          // cuts off one turn after another as it did when steers interrupted (36 of 68
-          // interrupted turns in the 0.8 retro). One queued behind a turn that can't take it
-          // (waiting on the user, or Gram's idle compaction) joins an earlier answer still
-          // waiting, so a burst lands as one turn.
-          deliver: (text) =>
-            steerOrSend(
-              runtimes,
-              orchestrator,
-              { text },
-              runtimes.sendOrJoin(
-                orchestrator,
-                { text },
-                ({ input }, next) => ({ ...input, text: `${input.text}\n\n${next.text}` }),
-                isQueuedAnswer,
-              ),
-            ),
-          holds: (tag) =>
-            Effect.gen(function* () {
-              const queued = (yield* runtimes.summaryOf(orchestrator))?.queue.some((item) =>
-                item.input.text.includes(tag),
-              );
-              if (queued === true) return true;
-              // Only the user messages whose stored form holds the tag are read and decoded.
-              return (yield* store.messagesWith(orchestrator, [tag], "user")).some((message) =>
-                message.parts.some((part) => part.type === "text" && part.text.includes(tag)),
-              );
-            }),
-        };
-        const result = yield* answerOnce(
-          memory,
-          workspaceId,
-          { questionId, question, answer },
-          questionDate(yield* Clock.currentTimeMillis),
-          delivery,
-        );
-        yield* changed(workspaceId);
-        return result;
-      }),
+    "question.answer": (input) => answerQuestionAsUser(input),
     "memory.versions": ({ workspaceId }) =>
       Effect.andThen(guard(workspaceId), memory.versions(workspaceId)),
     "memory.restore": ({ workspaceId, version }) =>

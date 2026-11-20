@@ -69,7 +69,7 @@ export const createBrowserViewMock = (): BrowserViewApi & BrowserViewMockControl
   return {
     browserViewFeed: (threadId, signal) => {
       if (!mockServerBrowser()) {
-        // eslint-disable-next-line require-yield
+        // eslint-disable-next-line require-yield -- a feed that fails on its first read, as a server without a browser does
         return (async function* (): AsyncGenerator<BrowserViewFeedEvent> {
           throw Object.assign(new Error("This server runs no browser of its own."), {
             _tag: "InvalidState",

@@ -906,6 +906,10 @@ or `gram-host service install`.
 - Bulk worktree removal asks that machine whether a command runs in the worker's terminals, and
   leaves the worker open while one does or while the machine can't be asked. A worker there shows
   no port chips, rather than chips from this machine's processes.
+- Where the server runs the agent browser itself ([without the desktop app](AGENTS_AND_FEATURES.md#the-agent-browser-without-the-desktop-app)),
+  a thread on a joined machine browses that machine's loopback, so its tools reach the dev server
+  it started there. This needs a host that names `loopback-tunnels`. The desktop app's Preview
+  pane still reaches only this computer's loopback.
 - A conversation forks only onto the machine it ran on, since its history is kept there: a fork of
   a joined machine's thread goes into a worktree on that machine, and a fork of one of this
   machine's threads stays here.

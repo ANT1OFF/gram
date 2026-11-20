@@ -21,6 +21,7 @@ import {
 import { useIsFavourite, useIsFavouriteOf, useModelFavourites } from "./model-favourites";
 import { ModelCombobox } from "./model-picker";
 import {
+  allowedModels,
   CUSTOM_GROUP,
   MODEL_SEARCH_THRESHOLD,
   modelOptions,
@@ -29,6 +30,7 @@ import {
   pickerModelId,
   servedRows,
   unlistedWarning,
+  useModelsAllowed,
   useModelsQuery,
   useProviderLabel,
   useRefreshModels,
@@ -90,6 +92,7 @@ function useModelsAcross(
     })),
   });
   const { offered, listed: served, paidBy } = useEmbedShell((s) => s.models);
+  const limit = useModelsAllowed();
   const own: PickerOption<string>[] = [];
   const custom: PickerOption<string>[] = [];
   agents.forEach((agent, index) => {
@@ -98,8 +101,12 @@ function useModelsAcross(
       ? currentOptions
       : modelOptions(
           offeredModels(
-            listings[index]?.data?.models ??
-              (listings[index]?.isError === true ? servedRows(served?.[agent]) : undefined),
+            allowedModels(
+              listings[index]?.data?.models ??
+                (listings[index]?.isError === true ? servedRows(served?.[agent]) : undefined),
+              agent,
+              limit,
+            ),
             agent,
             offered,
             undefined,

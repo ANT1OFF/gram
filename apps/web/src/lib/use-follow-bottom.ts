@@ -16,7 +16,7 @@ export function useFollowBottom<T extends HTMLElement>(content: unknown) {
     const element = ref.current;
     if (element !== null && following.current) element.scrollTop = element.scrollHeight;
     // `content` is the signal, not an input: each time it grows, a following view goes down with it.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `content` is a signal to follow, not an input
   }, [content]);
   const onScroll = (event: UIEvent<T>) => {
     const element = event.currentTarget;

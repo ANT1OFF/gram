@@ -502,7 +502,8 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
           })).status,
         ).toBe(404);
 
-        // A fresh session is an orchestrator's alone, and the body is checked first.
+        // Any other thread than an orchestrator starts fresh only onto a model, and the body is
+        // checked first.
         const fresh = (body: Record<string, unknown>) =>
           call(at, "/embed/v1/thread-fresh-session", { token: TOKEN, body });
         expect((yield* fresh({ threadId: thread.id, person, checkpoint: "no" })).status).toBe(400);
@@ -510,7 +511,15 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
         expect((yield* fresh({ threadId: "no-such-thread", person })).status).toBe(404);
         const plain = yield* fresh({ threadId: thread.id, person, checkpoint: false });
         expect(plain.status).toBe(409);
-        expect(JSON.parse(plain.body).error).toContain("orchestrator");
+        expect(JSON.parse(plain.body).error).toContain("name `model`");
+        // Onto a model, it is the thread's own Start fresh, which waits for the turn here.
+        const onto = yield* fresh({
+          threadId: thread.id,
+          person,
+          model: { agent: "codex", model: "fake-opus" },
+        });
+        expect(onto.status).toBe(409);
+        expect(JSON.parse(onto.body).error).toContain("Wait for this turn");
 
         // A resume after a lost machine is refused for a thread no lost machine cut off.
         const resume = (body: Record<string, unknown>) =>

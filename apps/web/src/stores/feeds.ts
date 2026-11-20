@@ -315,6 +315,5 @@ export function useServerEvents() {
     };
     // A replaced connection brings a new `api`, which must resubscribe, and the query client is used
     // inside; the rule treats both as stable context values and can't see that.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [api, queryClient]);
 }

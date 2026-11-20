@@ -186,6 +186,7 @@ A headless server (`GRAM_HEADLESS=1`) keeps the network tier: PR badges and chec
 - Each request goes to `<url>/api<path>`, `<url>/uploads<path>` or `<url>/codeload<path>`, by the host `gh` asked for, with `Authorization: Bearer <token>` (the token file, when one is named, is read on every call) and `x-gram-upstream-host`. A redirect is handed back to `gh` as it came.
 - A call made for one thread (`merge_when_ready`'s merge, `set_auto_merge`) carries `x-gram-thread: <threadId>`, so the route can act for that thread's person and check what it may do. A sweep of a checkout's badge names no thread.
 - The route answers as GitHub would: `gh` reads the answer as GitHub's.
+- Before a clone is filed (`projects.clone`), the server asks for the repository (`GET /repos/<owner>/<repo>`). A `401`, `403`, `404` or `451` refuses the clone with the answer's `message`; beside it, `help_url` (an https page) and `help_label` give the person a link to put it right. Any other answer, or none within 10 seconds, files the clone as before.
 
 The route is refused on a server that runs work itself, which would hand its agents the same `gh`, and a route that is given and can't be used stops the server at start.
 

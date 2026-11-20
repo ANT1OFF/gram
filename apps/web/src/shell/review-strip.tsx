@@ -211,7 +211,6 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
 function StripText({ text }: { text: string }) {
   return stripLines(text).map((line, at) => (
     // Lines don't move: the message is rendered whole each time.
-    // oxlint-disable-next-line react/no-array-index-key
     <Fragment key={at}>
       {at > 0 && <br />}
       {line.map(renderMark)}

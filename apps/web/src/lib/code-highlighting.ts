@@ -68,7 +68,6 @@ const getHighlighter = (language: BundledLanguage) => {
 export const highlightCode = (
   code: string,
   language: BundledLanguage,
-  // oxlint-disable-next-line eslint-plugin-promise(prefer-await-to-callbacks)
   callback?: (result: TokenizedCode) => void,
 ): TokenizedCode | null => {
   if (!canHighlightCode(code)) return null;
