@@ -134,6 +134,7 @@ export const mountGram: MountGram = async (options) => {
       sidebar: shell.sidebar ?? {},
       document: shell.document ?? {},
       repositories: shell.repositories,
+      environments: shell.environments,
       settings: shell.settings ?? {},
       roleAgents: (shell.roleAgents ?? []).filter((agent) => agent === "grok"),
       titles: Object.fromEntries([

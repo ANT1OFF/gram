@@ -305,6 +305,8 @@ export interface OrchestrationShape {
     readonly projectIds: WorkspaceState["workspace"]["projectIds"];
     readonly homeProjectId: ProjectId;
     readonly charter?: OrchestratorCharter | undefined;
+    /** Its machine's environment: null goes back to the default, absent keeps what it has. */
+    readonly environment?: string | null | undefined;
   }): Effect.Effect<WorkspaceState, NotFound | InvalidState>;
   /**
    * A workspace made or changed by chat that the user approved, all of it or nothing. With

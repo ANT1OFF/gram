@@ -60,7 +60,7 @@ import { makeWorkers } from "./service/workers.ts";
 import { makeSessionPolicy } from "./service/session-policy.ts";
 import { makeTaskStartup } from "./service/task-startup.ts";
 import { makeCharter } from "./service/charter.ts";
-import { makeWorkspaces } from "./service/workspaces.ts";
+import { makeWorkspacesHere } from "./service/workspaces.ts";
 import { makeObservers } from "./service/observers.ts";
 import { makeBoot } from "./service/boot.ts";
 import { makeHeldSpawns } from "./service/held-spawns.ts";
@@ -565,7 +565,7 @@ export const OrchestrationLive = Layer.effect(
       open,
       openFromProfile,
       arrive,
-    } = makeWorkspaces(kit, {
+    } = yield* makeWorkspacesHere(kit, {
       forgetReasons,
       openModel,
       endRecovery,

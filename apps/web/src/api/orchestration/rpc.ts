@@ -1,10 +1,16 @@
 import { iterate, run, untilGone, type RpcContext } from "../rpc-client";
+import { onItsMachine } from "../workspace-machine";
 import type { OrchestrationApi } from "./types";
+
+const workspaceOf = (target: object): string | undefined =>
+  "workspaceId" in target && typeof target.workspaceId === "string"
+    ? target.workspaceId
+    : undefined;
 
 /** `OrchestrationApi` over the RPC client; the ledger feed ends for good once its workspace goes. */
 export const orchestrationRpc = ({ client, connection }: RpcContext): OrchestrationApi => ({
   listWorkspaces: () => run(client["workspace.list"](undefined)),
-  saveWorkspace: ({ id, name, projectIds, homeProjectId, charter }) =>
+  saveWorkspace: ({ id, name, projectIds, homeProjectId, charter, environment }) =>
     run(
       client["workspace.save"]({
         ...(id === undefined ? {} : { id }),
@@ -12,11 +18,15 @@ export const orchestrationRpc = ({ client, connection }: RpcContext): Orchestrat
         projectIds,
         homeProjectId,
         ...(charter === undefined ? {} : { charter }),
+        ...(environment === undefined ? {} : { environment }),
       }),
     ),
   removeWorkspace: (workspaceId) => run(client["workspace.remove"]({ workspaceId })),
-  openOrchestrator: (target) => run(client["orchestrator.open"](target)),
-  startTask: (input) => run(client["workspace.startTask"](input)),
+  // A workspace on a machine of its own starts it first, where it isn't running.
+  openOrchestrator: (target) =>
+    onItsMachine(workspaceOf(target), () => run(client["orchestrator.open"](target))),
+  startTask: (input) =>
+    onItsMachine(workspaceOf(input.target), () => run(client["workspace.startTask"](input))),
   taskPreflight: (input) => run(client["workspace.taskPreflight"](input)),
   setOrchestratorCharter: (workspaceId, charter) =>
     run(client["orchestrator.setCharter"]({ workspaceId, charter })),

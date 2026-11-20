@@ -12,7 +12,7 @@ export const useOnDemandMachine = () => {
   const hosted = useEmbedShell((s) => s.hosted);
   const query = useQuery({
     queryKey: ON_DEMAND_QUERY_KEY,
-    queryFn: fetchOnDemandStatus,
+    queryFn: () => fetchOnDemandStatus(),
     enabled: hosted,
     retry: false,
     refetchInterval: (state) => (isComing(state.state.data) ? 1000 : 30_000),

@@ -1,5 +1,6 @@
 import {
   withRoutineGenerations,
+  withWorkspaceEnvironment,
   withRoutineIds,
   connectorEntryProblem,
   autonomyOf,
@@ -706,7 +707,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       if (!input.projectIds.includes(input.homeProjectId)) {
         throw new MockInvalidState("The home project must be one of the workspace's projects.");
       }
-      const { id, charter, ...rest } = input;
+      const { id, charter, environment, ...rest } = input;
       const fields = { ...rest, name: input.name.trim() };
       if (charter !== undefined && id !== undefined) {
         throw new MockInvalidState(
@@ -726,10 +727,9 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       ) {
         throw new MockInvalidState("A workspace with that name already exists.");
       }
-      const saved =
-        id === undefined
-          ? await create(fields, given)
-          : put({ ...find(id), workspace: { ...find(id).workspace, ...fields } });
+      const made = id === undefined ? await create(fields, given) : find(id);
+      const workspace = id === undefined ? made.workspace : { ...made.workspace, ...fields };
+      const saved = put({ ...made, workspace: withWorkspaceEnvironment(workspace, environment) });
       host.emit({ type: "workspaces.changed" });
       return saved;
     },
