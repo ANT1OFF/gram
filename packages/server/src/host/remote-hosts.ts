@@ -51,25 +51,7 @@ import {
   type StopMarks,
   UNKNOWN_MARKS,
 } from "./stop-marks.ts";
-
-/** The release a host said it runs, kept only when it reads as a release: it is shown as text. */
-const releaseOf = (hello: HostHello): string | undefined =>
-  hello.release !== undefined &&
-  /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[0-9A-Za-z.]{1,32})?$/.test(hello.release)
-    ? hello.release
-    : undefined;
-
-/**
- * This Gram's release, which the installer downloads and machines update to: its version, only when
- * it was built as a release (its build is a commit); undefined when it runs from source.
- */
-export const releaseOfConfig = (config: {
-  readonly appVersion?: string | undefined;
-  readonly appBuild?: string | undefined;
-}): string | undefined =>
-  config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
-    ? config.appVersion
-    : undefined;
+import { releaseOf, releaseOfConfig } from "./releases.ts";
 
 /** A joined machine's host while it is dialled in. */
 interface Online {
@@ -520,9 +502,12 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           current?.confirmedAt !== undefined &&
           // A provisioned host on its own listener's address, whatever access over Tailscale is;
           // a joined machine on the address that access is kept on.
-          (isProvisioned(current)
-            ? options.provisionedOrigin !== undefined && origin === options.provisionedOrigin
-            : origin !== options.provisionedOrigin && (kept === undefined || kept === origin))
+          // A relayed host on the hosted server it came through, and nowhere else.
+          (current.via !== undefined
+            ? origin === current.via
+            : isProvisioned(current)
+              ? options.provisionedOrigin !== undefined && origin === options.provisionedOrigin
+              : origin !== options.provisionedOrigin && (kept === undefined || kept === origin))
         );
       };
       const attach = (dial: AdmittedDial, socket: Socket.Socket) =>
@@ -824,7 +809,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         provisionedOrigin: options.provisionedOrigin,
         closeProvisioned: () => {
           for (const machine of machines.list()) {
-            if (!isProvisioned(machine)) continue;
+            // A relayed host dials through a hosted server, not the provisioned-host listener.
+            if (!isProvisioned(machine) || machine.via !== undefined) continue;
             if (online.has(machine.id)) machines.note(machine.id, { kind: "lost", at: now() });
             bump(machine.id);
             close(machine.id);

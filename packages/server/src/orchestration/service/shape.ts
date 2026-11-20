@@ -697,6 +697,8 @@ export interface OrchestrationShape {
   >;
   /** Refuses an incompatible joined-machine selection before the tool raises a card. */
   checkSpawnMachine(callerId: ThreadId, input: SpawnWorkerInput): Effect.Effect<void, AppToolError>;
+  /** The model a spawn naming `model` (or none) would run on, resolved here. Reads only. */
+  spawnModel(callerId: ThreadId, model: string | undefined): Effect.Effect<ModelRef, AppToolError>;
   /** Whether this spawn needs a card: a project outside the workspace, or one worker past the cap. Reads only. */
   spawnNeedsApproval(callerId: ThreadId, input: SpawnWorkerInput): Effect.Effect<boolean>;
   /** The card's text for such a spawn. */

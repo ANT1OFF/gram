@@ -1,12 +1,9 @@
-import { randomBytes, sign, type KeyObject, createHash, timingSafeEqual } from "node:crypto";
+import { randomBytes, type KeyObject, createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   checkHostedDiscovery,
-  deviceRegistrationBytes,
   HOSTED_DISCOVERY_PATH,
   type HostedDiscovery,
-  HostedDeviceChallenge,
-  HostedDeviceRegistered,
   hostedOrigin,
   HostedThreadImported,
   type HostedThreadExport,
@@ -25,13 +22,12 @@ import {
   HostedThreadWaited,
   HostedTokenAnswer,
   runsSentWork,
+  startsWorkerMachines,
   type HostedWorkspace,
   HostedWorkspaces,
-  type DeviceId,
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 import { dpopProof } from "./dpop.ts";
-import { deviceIdOf, devicePublicKeyText } from "./keys.ts";
 
 /**
  * The calls a desktop app makes to a hosted server it signs in to (`docs/design/personal-device.md`,
@@ -67,14 +63,15 @@ export const HOSTED_SCOPES = [
   "workspaces:export",
   "threads:start",
   "models",
+  "machines:workers",
 ] as const;
 export type HostedScope = (typeof HOSTED_SCOPES)[number];
 
 export type Failed = { readonly ok: false; readonly why: string };
-const failed = (why: string): Failed => ({ ok: false, why });
+export const failed = (why: string): Failed => ({ ok: false, why });
 
-const UNREACHABLE = "The server didn't answer.";
-const UNREADABLE = "The server's answer isn't one Gram reads.";
+export const UNREACHABLE = "The server didn't answer.";
+export const UNREADABLE = "The server's answer isn't one Gram reads.";
 
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -102,7 +99,7 @@ const readBounded = async (response: Response, most: number): Promise<string | u
   return Buffer.concat(parts).toString("utf8");
 };
 
-const jsonOf = async (response: Response): Promise<unknown> => {
+export const jsonOf = async (response: Response): Promise<unknown> => {
   const text = await readBounded(response, HOSTED_ANSWER_MOST_BYTES);
   if (text === undefined) return undefined;
   try {
@@ -360,7 +357,8 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
           (scope !== "workspaces:import" || discovery.thread_import_endpoint !== undefined) &&
           (scope !== "workspaces:export" || givesThreads(discovery)) &&
           (scope !== "threads:start" || runsSentWork(discovery)) &&
-          (scope !== "models" || discovery.models_endpoint !== undefined),
+          (scope !== "models" || discovery.models_endpoint !== undefined) &&
+          (scope !== "machines:workers" || startsWorkerMachines(discovery)),
       ).join(" "),
       state,
       code_challenge: challenge,
@@ -579,7 +577,7 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
 };
 
 /** A call made with a token: its proof when it is bound to the key, once more for a nonce. */
-const authorizedCall = async (
+export const authorizedCall = async (
   keeper: TokenKeeper,
   key: KeyObject,
   scope: HostedScope,
@@ -661,7 +659,7 @@ export const listHostedWorkspaces = async (
 };
 
 /** A refusal's own words, as `{ error: { message } }` or `{ error }` puts them; bounded. */
-const refusalOf = (answer: unknown): string | undefined => {
+export const refusalOf = (answer: unknown): string | undefined => {
   if (typeof answer !== "object" || answer === null || !("error" in answer)) return undefined;
   const { error } = answer;
   const said =
@@ -1038,81 +1036,4 @@ const sameOrigin = (address: string, origin: string): boolean => {
   } catch {
     return false;
   }
-};
-
-/**
- * Registers the device's key: the server gives a challenge for this person, the device signs it,
- * and the server answers with the id it derived from the key, which must be the device's own.
- */
-export const registerHostedDevice = async (
-  calls: HostedCalls & {
-    readonly name: string;
-    readonly platform: "darwin" | "linux" | "win32";
-  },
-): Promise<{ readonly ok: true; readonly deviceId: DeviceId } | Failed> => {
-  const asked = await authorizedCall(
-    calls.keeper,
-    calls.key,
-    "device:register",
-    calls.fetch,
-    "POST",
-    `${calls.discovery.devices_endpoint}/challenge`,
-    {},
-  );
-  if ("why" in asked) return asked;
-  if (asked.status !== 200) return failed("The server refused to register this machine.");
-  const challenge = Schema.decodeUnknownOption(HostedDeviceChallenge)(await jsonOf(asked));
-  if (challenge._tag === "None") return failed(UNREADABLE);
-  const publicKey = devicePublicKeyText(calls.key);
-  const signature = sign(
-    null,
-    deviceRegistrationBytes({
-      origin: calls.discovery.issuer,
-      subject: calls.keeper.subject,
-      publicKey,
-      challenge: challenge.value.challenge,
-    }),
-    calls.key,
-  ).toString("base64url");
-  const registered = await authorizedCall(
-    calls.keeper,
-    calls.key,
-    "device:register",
-    calls.fetch,
-    "POST",
-    calls.discovery.devices_endpoint,
-    {
-      publicKey,
-      challenge: challenge.value.challenge,
-      signature,
-      name: [...calls.name].slice(0, 128).join(""),
-      platform: calls.platform,
-    },
-  );
-  if ("why" in registered) return registered;
-  if (registered.status !== 200 && registered.status !== 201)
-    return failed("The server refused to register this machine.");
-  const answer = Schema.decodeUnknownOption(HostedDeviceRegistered)(await jsonOf(registered));
-  if (answer._tag === "None") return failed(UNREADABLE);
-  // An id the server made up for another key would let it speak for a device it isn't.
-  if (answer.value.deviceId !== deviceIdOf(publicKey))
-    return failed("The server registered another key.");
-  return { ok: true, deviceId: answer.value.deviceId };
-};
-
-/** Forgets the device on the server, as **Sign out** does. Best effort: signing out goes on. */
-export const forgetHostedDevice = async (
-  calls: HostedCalls & { readonly deviceId: string },
-): Promise<boolean> => {
-  const response = await authorizedCall(
-    calls.keeper,
-    calls.key,
-    "device:register",
-    calls.fetch,
-    "DELETE",
-    `${calls.discovery.devices_endpoint}/${encodeURIComponent(calls.deviceId)}`,
-  );
-  if ("why" in response) return false;
-  await response.body?.cancel().catch(() => undefined);
-  return response.status >= 200 && response.status < 300;
 };

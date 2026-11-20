@@ -433,6 +433,8 @@ const box = (models?: ReadonlyArray<AgentModel>) =>
     machines: { list: () => [] },
     // A send asks whether the machine's resume holds the thread off: nothing is owed here.
     stops: makeStopMarks(),
+    // Told of nothing: this test changes no machine while it runs.
+    watch: () => () => undefined,
     list: () => [
       {
         id: HostId.make("m-0123456789abcdef01234567"),

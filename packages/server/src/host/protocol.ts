@@ -37,6 +37,8 @@ import {
   type HostRepoIdentity,
   HostCommandFailed,
   HostFailed,
+  type HostAppToolsAnswer,
+  type HostAppToolsRequest,
   type HostHello,
   type HostId,
   type HostPortScan,
@@ -59,6 +61,7 @@ import {
   type Worktrees,
 } from "@gram/git";
 import * as Cause from "effect/Cause";
+import type { HostAppTools } from "./app-tools-tunnel.ts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -168,6 +171,8 @@ export interface HostService {
   readonly stop?: HostStop;
   /** Its mirrors of workspaces' shared folders; a test's host may leave them out. */
   readonly shared?: HostShared<InvalidState | HostFailed>;
+  /** Its sessions' app-tool calls, carried over its connection (`app-tools-tunnel`). */
+  readonly appTools?: HostAppTools;
   /** Its loopback tunnels (`loopback.ts`); a test's host may leave them out. */
   readonly loopback?: HostLoopback;
 }
@@ -210,6 +215,7 @@ export const HOST_FENCED_REASON =
 
 /** The features this build's host names in its hello, beside its capabilities. */
 export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
+  "app-tools-tunnel",
   "account-scope",
   "thread-places",
   "browser-policy",
@@ -292,6 +298,7 @@ const defined = <A extends object>(value: A): Defined<A> =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
 const noFolders = new HostFailed({ message: "This host doesn't list its folders." });
+const noAppTools = new HostFailed({ message: "This host carries no app-tool calls." });
 const noShared = new HostFailed({ message: "This host keeps no shared folders." });
 const noLoopback = new HostFailed({ message: "This host opens no loopback tunnels." });
 const noThreadPlaces = new HostFailed({
@@ -488,6 +495,12 @@ const handlersFor = (host: HostService) => {
       "host.sessions.addDirectories": ({ handle, paths }) =>
         withSession(handle, (session) => session.addDirectories?.(paths) ?? Effect.succeed(false)),
       "host.sessions.retarget": ({ handle, mcp }) => host.sessions.retarget(handle, mcp),
+      "host.appTools.open": () =>
+        host.appTools === undefined ? Effect.fail(noAppTools) : host.appTools.open,
+      "host.appTools.requests": () =>
+        host.appTools === undefined ? Stream.fail(noAppTools) : host.appTools.requests,
+      "host.appTools.answer": (answer) =>
+        host.appTools === undefined ? Effect.fail(noAppTools) : host.appTools.answer(answer),
       "host.sessions.processId": ({ handle }) =>
         withSession(handle, (session) =>
           (session.processId ?? Effect.succeed(undefined)).pipe(Effect.map((pid) => pid ?? null)),
@@ -806,6 +819,15 @@ export interface HostChecksConnection {
 }
 
 /** A connected host, as the control plane reaches it. */
+/** A host's app-tool calls as the control plane reaches them (`app-tools-tunnel`). */
+export interface HostAppToolsConnection {
+  readonly open: Effect.Effect<{ readonly url: string }, HostFailed | HostUnavailable>;
+  readonly requests: Stream.Stream<HostAppToolsRequest, HostUnavailable>;
+  readonly answer: (
+    answer: HostAppToolsAnswer,
+  ) => Effect.Effect<void, HostFailed | HostUnavailable>;
+}
+
 export interface HostConnection {
   readonly hello: HostHello;
   readonly files: HostFiles;
@@ -819,6 +841,8 @@ export interface HostConnection {
   readonly threadPlaces: HostThreadPlaces | undefined;
   /** Absent for a host from a build that doesn't serve `shared-folders`. */
   readonly shared?: HostShared<InvalidState | HostFailed | HostUnavailable> | undefined;
+  /** Its sessions' app-tool calls, absent from a host that doesn't name `app-tools-tunnel`. */
+  readonly appTools?: HostAppToolsConnection | undefined;
   readonly repos: {
     readonly ensure: (url: string) => Effect.Effect<{ readonly path: string }, WorktreeError>;
     /** Absent for a host from a build that doesn't serve `repo-identity`. */
@@ -1243,6 +1267,14 @@ export const connectHost = (
       guarded(call).pipe(
         Effect.mapError((error) =>
           error instanceof InvalidState || error instanceof HostFailed
+            ? error
+            : unavailable(HOST_NOT_ANSWERING),
+        ),
+      );
+    const appToolsCall = <A, E extends { readonly _tag: string }>(call: Effect.Effect<A, E>) =>
+      guarded(call).pipe(
+        Effect.mapError((error) =>
+          error instanceof HostFailed || error instanceof HostUnavailable
             ? error
             : unavailable(HOST_NOT_ANSWERING),
         ),
@@ -1687,6 +1719,16 @@ export const connectHost = (
       attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
       threadPlaces: hostServes(hello, "thread-places") ? threadPlaces : undefined,
       shared: hostServes(hello, "shared-folders") ? shared : undefined,
+      ...(hostServes(hello, "app-tools-tunnel")
+        ? {
+            appTools: {
+              open: appToolsCall(client["host.appTools.open"]()),
+              requests: hostStream(client["host.appTools.requests"]()),
+              answer: (answer: HostAppToolsAnswer) =>
+                appToolsCall(client["host.appTools.answer"](answer)),
+            },
+          }
+        : {}),
       loopback: hostServes(hello, "loopback-tunnels") ? loopback : undefined,
       ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: {

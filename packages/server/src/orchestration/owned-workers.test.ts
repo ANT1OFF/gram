@@ -98,6 +98,8 @@ const withShared = Layer.succeed(RemoteHosts, {
   machines: { list: () => [] },
   // A send asks whether the machine's resume holds the thread off: nothing is owed here.
   stops: makeStopMarks(),
+  // Told of nothing: these tests change no machine while they run.
+  watch: () => () => undefined,
   list: () => [SHARED],
 } as unknown as RemoteHostsShape);
 

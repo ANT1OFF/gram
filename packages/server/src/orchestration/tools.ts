@@ -36,8 +36,6 @@ import {
   WorkerReportEvidence,
   WorkerState,
   checkoutRoots,
-  effectiveCheckout,
-  hostOf,
   type MemoryWrite,
   seedOrchestratorPlan,
   type ThreadId,
@@ -48,6 +46,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import { randomUUID } from "node:crypto";
 import { defineAppTool, failed } from "../app-tools/definition.ts";
@@ -58,19 +57,11 @@ import { AppToolRegistry } from "../app-tools/registry.ts";
 import { parsePrRef } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { OnDemand, choicesFor } from "../embedding/on-demand.ts";
-import { ownerSubject } from "../host/ownership.ts";
+import { OnDemand } from "../embedding/on-demand.ts";
+import { SignedInWorkers } from "../embedding/signed-in-workers.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
-import {
-  awaitWorkerMachine,
-  isWorkerMachineName,
-  overTotalWords,
-  placementOf,
-  resolveWorkerPicks,
-  startWorkerMachine,
-  workerMachineName,
-} from "../embedding/worker-machines.ts";
+import { placementOf } from "../embedding/worker-machines.ts";
 import { confineQuestionVisuals } from "../preview/mocks.ts";
 import { ThreadPlans } from "../plans/service.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -94,6 +85,7 @@ import { appendEntry, editPassage, memoryRevision, OrchestrationMemory } from ".
 import { prWakeEventOf, prWatchSeenOf, refusal } from "./rules.ts";
 import { MAX_WORKER_REPOS, Orchestration } from "./service.ts";
 import { attachUserWords, USER_MESSAGES_MAX, withBriefFooter } from "./user-words.ts";
+import { makeWorkerSandbox } from "./worker-sandbox.ts";
 
 /**
  * The tools only an orchestrator or a worker is bound, and the wake
@@ -119,120 +111,19 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const verifyStatus = Option.getOrUndefined(yield* Effect.serviceOption(VerifyStatus));
     // Absent unless an embedder's host provider is set: workers then can't ask for own machines.
     const onDemand = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
+    // In the desktop app: a hosted server it is signed in to, asked through the app.
+    const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const joined = () => (remoteHosts === undefined ? [] : remoteHosts.list());
-    /**
-     * Where `sandbox` puts a worker: the name of a machine of its own, started now, or of one its
-     * orchestrator already has; or nothing, for the orchestrator's own machine.
-     */
-    const workerSandbox = (
-      caller: ThreadId,
-      input: {
-        readonly title: string;
-        readonly feature: string;
-        readonly project: string;
-        readonly clientRequestId?: string | undefined;
-      },
-      sandbox: WorkerSandbox,
-    ) =>
-      Effect.gen(function* () {
-        const tool = "spawn_worker";
-        const fail = (message: string) => new AppToolError({ tool, message });
-        if (sandbox.shareWith === undefined && sandbox.own !== true) {
-          if (
-            sandbox.size !== undefined ||
-            sandbox.architecture !== undefined ||
-            sandbox.isolation !== undefined ||
-            sandbox.environment !== undefined
-          )
-            return yield* fail(
-              'size, architecture, isolation and environment are for a machine of its own: add "own": true.',
-            );
-          return undefined;
-        }
-        const orchestrator = yield* store
-          .getThread(caller)
-          .pipe(Effect.mapError(() => fail("Your thread can't be read now.")));
-        const ownHost = hostOf(effectiveCheckout(orchestrator));
-        // A closed machine's holder is no one's to start machines for (`host/ownership.ts`).
-        const owner = ownerSubject(workerHosts?.ownerOf(ownHost));
-        if (onDemand === undefined || owner === undefined)
-          return yield* fail(
-            "Workers can't have machines of their own here: leave out sandbox, and the worker runs on your machine.",
-          );
-        const theirs = (machine: {
-          readonly owner?: string | undefined;
-          readonly onDemand?: string | undefined;
-        }) => machine.onDemand === "worker" && machine.owner === owner;
-        if (sandbox.shareWith !== undefined) {
-          const named = sandbox.shareWith.trim();
-          if (isWorkerMachineName(named)) {
-            const machine = joined().find((each) => each.name === named && theirs(each));
-            if (machine === undefined)
-              return yield* fail(`No machine of your workers is named ${named}.`);
-            return machine.name;
-          }
-          const worker = yield* store
-            .getThread(named as ThreadId)
-            .pipe(Effect.mapError(() => fail(`shareWith names no worker or machine: ${named}.`)));
-          if (worker.spawnedBy?.threadId !== caller)
-            return yield* fail(`${worker.title} is not one of your workers.`);
-          const host = hostOf(effectiveCheckout(worker));
-          const machine = joined().find((each) => each.id === host && theirs(each));
-          if (machine === undefined)
-            return yield* fail(
-              `${worker.title} runs on your machine, not one of its own: leave out sandbox to put this worker there too.`,
-            );
-          return machine.name;
-        }
-        // Picks by the provider's option ids, or by their labels ("No Internet"), as it offers them.
-        const offered = yield* choicesFor(onDemand, owner);
-        const resolved = resolveWorkerPicks(offered?.choices, sandbox);
-        if ("refused" in resolved) return yield* fail(resolved.refused);
-        const picks = resolved.picks;
-        const name = workerMachineName(
-          caller,
-          input.clientRequestId ?? `${input.project}\n${input.feature}\n${input.title}`,
-        );
-        // Asked for already (a retry, or the approval's read of this call): wait for that one.
-        const asked = joined().some((each) => each.name === name && theirs(each))
-          ? ({ kind: "started", name } as const)
-          : yield* startWorkerMachine(onDemand, {
-              owner,
-              name,
-              orchestrator: caller,
-              title: input.title,
-              size: picks.size,
-              architecture: picks.architecture,
-              isolation: picks.isolation,
-              environment: picks.environment,
-            });
-        if (asked.kind === "refused") return yield* fail(asked.message);
-        if (asked.kind === "over-total") {
-          const threads = yield* store.listThreads;
-          const workersOn = (machineName: string) => {
-            const machine = joined().find((each) => each.name === machineName);
-            return machine === undefined
-              ? []
-              : threads
-                  .filter(
-                    (thread) =>
-                      thread.spawnedBy?.threadId === caller &&
-                      !thread.parked &&
-                      hostOf(effectiveCheckout(thread)) === machine.id,
-                  )
-                  .map((thread) => `${thread.title} [thread ${thread.id}]`);
-          };
-          return yield* fail(refusal("over_total", overTotalWords(asked, workersOn)));
-        }
-        const id = yield* awaitWorkerMachine(joined, { name, owner });
-        if (id === undefined)
-          return yield* fail(
-            `The machine ${name} was asked for but hasn't come online yet. Spawn again with the same clientRequestId in a minute, or put the worker on your machine.`,
-          );
-        return name;
-      });
+    const workerSandbox = yield* makeWorkerSandbox({
+      orchestration,
+      store,
+      onDemand,
+      signedIn,
+      workerHosts,
+      joined,
+    });
     /**
      * A question's pictures and mock, confined to the asking thread's folders and made absolute
      * before the question is kept, so a card reads only what is in its worktree or repo.
@@ -256,6 +147,21 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           Effect.mapError((refused) => new AppToolError({ tool, message: refused.message })),
         );
       });
+    /**
+     * Each resolved sandbox spawn's plan, kept from its resolve to its handler: its machine to start,
+     * and whether that machine's provider gives machines back.
+     */
+    const sandboxPlans = new WeakMap<
+      object,
+      {
+        readonly prepare?: Effect.Effect<
+          { readonly abandon?: Effect.Effect<void> | undefined },
+          AppToolError,
+          Scope.Scope
+        >;
+        readonly givesBack: boolean;
+      }
+    >();
     /** One `schedule_wake` at a time, from its count of the other store to its write. */
     const wakeScheduleLock = yield* Semaphore.make(1);
 
@@ -315,8 +221,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           const input =
             placed === undefined || sandbox === undefined
               ? asked
-              : { ...asked, machine: placed, placement: placementOf(placed, sandbox) };
-          yield* orchestration.checkSpawnMachine(caller, input);
+              : { ...asked, machine: placed.name, placement: placementOf(placed.name, sandbox) };
+          // A machine not started yet is checked once it has come, as the spawn places it.
+          if (placed?.prepare === undefined) yield* orchestration.checkSpawnMachine(caller, input);
           // The workspace's standing instructions, then the user's words, which stay last.
           const brief = yield* attachUserWords(
             store,
@@ -332,13 +239,19 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             input.project,
             ...(input.alsoIn ?? []),
           ]);
-          return {
+          const resolved = {
             ...input,
             brief,
             project,
             ...(input.alsoIn === undefined ? {} : { alsoIn }),
             identities,
           };
+          if (placed !== undefined)
+            sandboxPlans.set(resolved, {
+              ...(placed.prepare === undefined ? {} : { prepare: placed.prepare }),
+              givesBack: placed.givesBack,
+            });
+          return resolved;
         }),
       needsApproval: (caller, _input, pinned) => orchestration.spawnNeedsApproval(caller, pinned),
       describe: (caller, input) => orchestration.describeSpawn(caller, input),
@@ -356,7 +269,53 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         },
       }),
       handle: (caller, input) =>
-        orchestration.spawnWorker(caller, input).pipe(
+        Effect.gen(function* () {
+          // Its own machine, started now that the spawn goes ahead, and given back if it doesn't.
+          // A worker placed by `machine` on one a hosted server started is held to the same rule.
+          // Placed by name, it holds the machine's bring-up as any placement does.
+          const plan = sandboxPlans.get(input) ?? workerSandbox.byName(input.machine);
+          sandboxPlans.delete(input);
+          const prepared = plan?.prepare === undefined ? undefined : yield* plan.prepare;
+          const giveBack = prepared?.abandon ?? Effect.void;
+          const spawned = yield* orchestration.spawnWorker(caller, input).pipe(
+            Effect.tapError(() => giveBack),
+            Effect.onInterrupt(() => giveBack),
+          );
+          // On a machine its provider gives back (a signed-in server's), a held brief would name a
+          // machine that is stopped, or released once its other work is over, and could never run
+          // there: the brief is let go first, then the machine, both whatever interrupts them, and
+          // the orchestrator is told to spawn again once it can. An embedder's provider keeps its
+          // machines, so a brief held there stays held, as it always has.
+          if ("held" in spawned && plan?.givesBack === true)
+            return yield* Effect.uninterruptible(
+              Effect.gen(function* () {
+                const cancelled = yield* orchestration
+                  .manageHeldSpawn(caller, { id: spawned.id, action: "cancel" })
+                  .pipe(Effect.result);
+                // A brief that stays held keeps its machine, so it can still run there.
+                if (cancelled._tag === "Success") yield* giveBack;
+                const machine =
+                  prepared?.abandon === undefined
+                    ? "Its machine is shared with your other workers and stays."
+                    : cancelled._tag === "Success"
+                      ? "Its machine was given back."
+                      : "Its machine is kept for it.";
+                const kept =
+                  cancelled._tag === "Success"
+                    ? "Nothing is kept."
+                    : `Its held brief couldn't be let go (${cancelled.failure.message}): cancel it with manage_held_spawn ${spawned.id}.`;
+                return yield* new AppToolError({
+                  tool: "spawn_worker",
+                  message: `${spawned.note} A worker on a machine from a hosted server isn't held, since the machine wouldn't be there for it. ${machine} ${kept} Spawn again once it is allowed (schedule_wake for ${new Date(spawned.until).toISOString()}), or without sandbox to hold it for your machine.`,
+                });
+              }),
+            );
+          // A brief a limit sends back starts nothing now: nor does its machine run.
+          if ("held" in spawned || "routeOffer" in spawned) yield* giveBack;
+          return spawned;
+        }).pipe(
+          // The machine's name stays this try's (`WorkerMachineSource.hold`) until it is over.
+          Effect.scoped,
           Effect.tap((spawned) =>
             // A held brief keeps its plan and is seeded with it when it starts.
             input.plan === undefined || "held" in spawned || "routeOffer" in spawned

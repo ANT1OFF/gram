@@ -299,6 +299,10 @@ describe("checkHostedDiscovery", () => {
       // A model call, with the person's sign-in, goes to the server itself alone.
       { models_endpoint: "https://models.example.net/models" },
       { models_endpoint: "http://gram.example.com/models" },
+      // A worker machine is asked for, and its connection carried, on the server itself alone.
+      { worker_machines_endpoint: "https://machines.example.net/worker-machines" },
+      { worker_machine_connect: "wss://machines.example.net/worker-machines/connect" },
+      { worker_machine_connect: "https://gram.example.com/worker-machines/connect" },
       { version: 2 },
       { client_id: undefined },
     ])

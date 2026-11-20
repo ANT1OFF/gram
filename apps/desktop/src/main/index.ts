@@ -85,7 +85,9 @@ import {
   filterEnvironment,
   makeAskQueue,
   makeHostedDevice,
+  makeWorkerMachineRelays,
   serveSentWorkMessage,
+  serveWorkerMachineMessage,
   vaultSecrets,
   watchPresence,
 } from "@gram/shell/modules/device";
@@ -166,7 +168,8 @@ import {
 import { createAppImageUpdaterPort } from "./update/appimage-port.ts";
 import { linuxUpdateTarget } from "./update/linux-target.ts";
 import { verifyNativeCandidate } from "./update/native-candidate.ts";
-import { createPublicFeed, type AnonymousFetch } from "./update/native-feed.ts";
+import { anonymousFetch } from "./update/anonymous-fetch.ts";
+import { createPublicFeed } from "./update/native-feed.ts";
 import { createElectronUpdaterPort } from "./update/native-port.ts";
 import { nativeRecordStore } from "./update/native-record-store.ts";
 import { createShipIt } from "./update/native-shipit.ts";
@@ -261,7 +264,11 @@ const vaultCrypto: VaultCrypto = {
 let deviceChanged = (): void => undefined;
 const deviceHost = createDeviceHost({
   ready: () => app.whenReady(),
-  changed: () => deviceChanged(),
+  changed: () => {
+    deviceChanged();
+    // Signed out, the sign-in ended, or hosted features off: no relay outlives what covered it.
+    workerMachineRelays.revalidate();
+  },
   failed: (error) =>
     log.error({ source: "device", err: error }, "the personal device didn't start"),
   make: async () => {
@@ -316,7 +323,11 @@ const deviceHost = createDeviceHost({
             : "linux",
         now: () => Date.now(),
         elapsed: () => performance.now(),
-        changed: () => deviceChanged(),
+        changed: () => {
+          deviceChanged();
+          // Signed out, the sign-in ended, or hosted features off: no relay outlives what covered it.
+          workerMachineRelays.revalidate();
+        },
       });
       return { device, end: ended };
     } catch (error) {
@@ -356,6 +367,14 @@ let pagesOrigin: unknown;
 const keepAwake = createKeepAwake(powerSaveBlocker);
 
 /** The server process (src/server); see `server-host.ts`. */
+/**
+ * The connections of machines of a worker's own, from a hosted server, carried to the server as
+ * frames (`docs/design/desktop-worker-machines.md`). Posted to whichever server child runs now.
+ */
+const workerMachineRelays = makeWorkerMachineRelays({
+  device: () => deviceHost.device(),
+  post: (message) => server.post(message),
+});
 const server = createServerHost({
   fork: () => {
     const child = utilityProcess.fork(join(__dirname, "../server/server.js"), [], {
@@ -410,6 +429,8 @@ const server = createServerHost({
     servePaneMessage(message, agentPanes, reply);
     // Work an orchestrator sends to a hosted server: the app holds the sign-in, so it calls.
     serveSentWorkMessage(message, deviceHost.device(), reply);
+    // Machines of a worker's own from a hosted server, and their connections, carried here.
+    serveWorkerMachineMessage(message, deviceHost.device(), workerMachineRelays, reply);
     const announced = pagesOriginFromMessage(message);
     if (announced !== undefined) {
       pagesOrigin = announced;
@@ -476,6 +497,7 @@ if (SMOKE || process.env["CI"]) {
     exiting = true;
     // Best effort: the exit doesn't wait, but lending's commands are asked to stop first.
     void deviceHost.close();
+    workerMachineRelays.close();
     log.fatal({ kind, detail }, "crash");
     process.stderr.write(`${SMOKE ? "SMOKE FAIL" : "fatal"}: ${kind}: ${detail}\n`);
     server.kill("quit");
@@ -697,52 +719,6 @@ function hideWindows() {
 }
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
-/**
- * One GET with no cookies, credentials or `gh`: the signed updater's public feed. A body longer
- * than `maxBytes` aborts the request.
- */
-const anonymousFetch: AnonymousFetch = (url, { accept, maxBytes, redirect }) =>
-  new Promise((resolve, reject) => {
-    const request = net.request({
-      url,
-      method: "GET",
-      credentials: "omit",
-      useSessionCookies: false,
-      redirect,
-    });
-    request.setHeader("Accept", accept);
-    let failure: Error | undefined;
-    const fail = (error: Error) => {
-      failure = error;
-      request.abort();
-    };
-    const timer = setTimeout(() => fail(new Error("timed out")), 15_000);
-    request.on("response", (response) => {
-      const chunks: Buffer[] = [];
-      let bytes = 0;
-      response.on("data", (chunk) => {
-        bytes += chunk.length;
-        if (bytes > maxBytes) fail(new Error(`GitHub's answer for ${url} is too large.`));
-        else chunks.push(chunk);
-      });
-      response.on("end", () => {
-        clearTimeout(timer);
-        if (failure) reject(failure);
-        else resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString("utf8") });
-      });
-      response.on("error", (error: Error) => {
-        clearTimeout(timer);
-        reject(failure ?? error);
-      });
-    });
-    request.on("error", (error) => {
-      clearTimeout(timer);
-      reject(failure ?? error);
-    });
-    request.on("abort", () => reject(failure ?? new Error("aborted")));
-    request.end();
-  });
 
 async function runApp() {
   // Before any window: open on the page background of the theme the renderer last synced.

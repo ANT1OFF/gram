@@ -20,7 +20,6 @@ import { checkLendable, type LendBounds } from "./folders.ts";
 import {
   discoverHosted,
   type Fetch,
-  forgetHostedDevice,
   exportHostedThread,
   givesThreads,
   importHostedThread,
@@ -33,10 +32,16 @@ import {
   hostedMachine,
   stopHostedThread,
   waitHostedThread,
-  registerHostedDevice,
   signInHosted,
   type TokenKeeper,
 } from "./hosted.ts";
+import { forgetHostedDevice, registerHostedDevice } from "./hosted-registration.ts";
+import { parseSignIn, type StoredSignIn } from "./stored-sign-in.ts";
+import {
+  type HostedWorkerMachines,
+  hostedWorkerMachines,
+  NOT_SIGNED_IN,
+} from "./hosted-worker-machines.ts";
 import {
   deviceIdOf,
   devicePrivateKeyFrom,
@@ -171,8 +176,6 @@ export type ThreadMoved =
     }
   | { readonly ok: false; readonly why: string; readonly unknown?: true };
 
-const NOT_SIGNED_IN = { ok: false as const, why: "Sign in to the server first." };
-
 export type ThreadFetched =
   | { readonly ok: true; readonly bundle: unknown }
   | { readonly ok: false; readonly why: string };
@@ -234,7 +237,7 @@ export interface DeviceActivity {
   readonly more: boolean;
 }
 
-export interface HostedDevice {
+export interface HostedDevice extends HostedWorkerMachines {
   readonly state: () => HostedDeviceState;
   /** Reads the local log again: at most `most` lines, newest first. */
   readonly activity: (most: number) => Promise<DeviceActivity>;
@@ -343,29 +346,6 @@ const SERVERS_MOST = 16;
 
 const derived = (secret: Buffer, use: string) =>
   createHmac("sha256", secret).update(`gram-device-${use}-v1`).digest();
-
-interface StoredSignIn {
-  readonly subject: string;
-  readonly refreshToken: string;
-  readonly deviceId: DeviceId;
-  /** Older sign-ins always registered. False means this grant can use the server without lending. */
-  readonly deviceRegistered?: boolean;
-}
-
-const parseSignIn = (text: string | undefined): StoredSignIn | undefined => {
-  if (text === undefined) return undefined;
-  try {
-    const value = JSON.parse(text) as Partial<StoredSignIn>;
-    return typeof value.subject === "string" &&
-      typeof value.refreshToken === "string" &&
-      typeof value.deviceId === "string" &&
-      (value.deviceRegistered === undefined || typeof value.deviceRegistered === "boolean")
-      ? (value as StoredSignIn)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-};
 
 type Store = Pick<DeviceSecrets, "get" | "set" | "remove">;
 
@@ -1137,6 +1117,12 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         clientKey: message.clientKey,
       });
     },
+
+    ...hostedWorkerMachines({
+      servers: () => servers.values(),
+      known,
+      callsOf,
+    }),
 
     stopWork: async (origin, workspace, threadId) => {
       const server = known(origin);

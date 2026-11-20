@@ -53,6 +53,7 @@ import {
   serveHost,
 } from "./protocol.ts";
 import { sessionsOnHost } from "./sessions.ts";
+import { noAppToolsTunnel } from "./app-tools-tunnel.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
 import {
@@ -224,6 +225,41 @@ describe("a host that can't hold the browser off", () => {
         expect(onHost.opened).toEqual([]);
         expect(inServer.opened).toHaveLength(1);
         expect(inServer.opened[0]!.browser).toBe(false);
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live(
+    "a relayed machine whose host carries no app tools is refused in words, not as offline",
+    () =>
+      Effect.gen(function* () {
+        const { onHost, inServer, connection } = yield* routedWith(
+          HOST_FEATURES.filter((feature) => feature !== "app-tools-tunnel"),
+        );
+        // No tunnel to give its sessions, and the relaying server's own address never stands in.
+        const onMachine = agentHostOnMachine(
+          followingSessions(Effect.succeed(connection)),
+          () => false,
+          inServer.host,
+          "worker-0123456789",
+          () => undefined,
+          undefined,
+          undefined,
+          undefined,
+          () => noAppToolsTunnel("worker-0123456789"),
+        );
+        const error = yield* onMachine
+          .open({
+            threadId: THREAD,
+            cwd: "/work",
+            browser: false,
+            mcp: { url: "http://127.0.0.1:1/mcp", headers: { authorization: "Bearer t" } },
+          })
+          .pipe(Effect.scoped, Effect.flip);
+        expect(error).toMatchObject({ _tag: "AgentUnavailable", agent: "claude" });
+        expect(error.message).toBe(noAppToolsTunnel("worker-0123456789"));
+        expect(error.message).toMatch(/gram-host is older than this Gram and can't carry/);
+        expect(onHost.opened).toEqual([]);
+        expect(inServer.opened).toEqual([]);
       }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 
