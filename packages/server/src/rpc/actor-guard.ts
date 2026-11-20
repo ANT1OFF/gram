@@ -410,13 +410,13 @@ export const MEMBER_RPCS: ReadonlySet<string> = new Set([
   "worktree.storage",
 ]);
 
-/** What reaches this server's own disk rather than a thread's folder. */
-const SERVER_DISK: ReadonlySet<string> = new Set([
-  "fs.browse",
-  "fs.tree",
-  "projects.add",
-  "projects.clone",
-]);
+/**
+ * What reaches this server's own disk rather than a thread's folder. Not `projects.clone`: on a
+ * headless server it clones nothing and takes no path, only files the repository's origin under
+ * the data folder (`fileOrigin`), and the machine a thread is placed on clones it with its own
+ * credentials. That is how New project adds a repository there.
+ */
+const SERVER_DISK: ReadonlySet<string> = new Set(["fs.browse", "fs.tree", "projects.add"]);
 /** The listings that reach this server's own disk when they name no thread. */
 const SERVER_DISK_UNLESS_THREAD: ReadonlySet<string> = new Set(["fs.list", "fs.files"]);
 
