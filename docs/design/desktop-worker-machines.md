@@ -287,9 +287,14 @@ subscription token reaches a machine, with its own consent.
   attempt of its stop, and half a minute more if any attempt went unanswered, whatever later ones
   were answered, so a retry's start of that name goes out only after it. A give-back is never cut
   short once begun, whoever stops waiting for it. Each stop sent is held besides, in the stops
-  owed file, from before it is sent until its own answer comes or the app's deadline and half a
-  minute more have passed: no start of the name, after a restart included, goes out before. A
-  stop whose hold can't be written down isn't sent; it is owed. The app, which sends every call,
+  owed file, from before it is sent until its own answer comes, or until the time it may still
+  act has passed: its send-by, its request, the two minutes and more the hosted server may take
+  to act on a stop it took, and half a minute more. No start of the name, after a restart
+  included, goes out before. A stop whose hold can't be written down isn't sent; it is owed.
+  Holds whose time is up are pruned before every write, and nothing is written past what a
+  restart reads back; a file grown past that before is still read, its owings kept, and one that
+  can't be read at all is set aside beside it, never written over. Only the hosted server could
+  bound a stop it took more tightly (an expiry it honours, or the disk it means by name). The app, which sends every call,
   fences them by name where they leave it (`worker-machine-fence.ts`): a start it has received
   drops any stop of that name still waiting to go out (behind a token renewal, say); a start goes
   out only once no stop of the name is on its way, nor for half a minute after one that got no

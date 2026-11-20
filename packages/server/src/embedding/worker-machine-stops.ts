@@ -202,10 +202,10 @@ const memoryStopHolds = (
       answered: (id: string) => {
         if (holds.delete(id)) changed();
       },
-      until: (origin: string, name: string, now: number) => {
+      until: (origin: string, name: string, at: number) => {
         let latest: number | undefined;
         for (const [id, each] of holds) {
-          if (each.until <= now) holds.delete(id);
+          if (each.until <= at) holds.delete(id);
           else if (each.origin === origin && each.name === name)
             latest = Math.max(latest ?? 0, each.until);
         }
