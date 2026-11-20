@@ -247,6 +247,14 @@ is asked again, from the first page, a moment after typing rests, and for the ne
 list is scrolled or walked to its end. A rejection's message is shown in the list. Any other
 `owner/repo` or URL can still be typed and cloned. Read once, at mount.
 
+**Where a workspace's machine starts.** `environments: { list }` offers a choice of environment
+in a new workspace and a workspace's settings. `list({ signal })` answers `environments` (`id`,
+`label` and an optional `detail`, a few words on what it is), the `default` one's id, and an
+optional `manage` link (`label`, `to`: a path under your app) shown under the field. The pick is
+saved on the workspace as `environment`; none means the default. A pick no longer listed is shown
+as starting in the default. Gram stores the id and passes it on; what an environment installs and
+may reach is your app's. Without the option the field is not shown. Read once, at mount.
+
 **The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
 quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while
 anything waits), Search, your `main` groups' icons a gap apart, then at the foot your `foot`

@@ -13,6 +13,7 @@ import type {
   ShellNewEntry,
   ShellPageProps,
   ShellPanel,
+  ShellEnvironments,
   ShellRepositories,
   ShellSettings,
   ShellSidebar,
@@ -58,6 +59,8 @@ export interface EmbedShellState {
   readonly document: ShellDocument;
   /** Where "Add repository" lists repositories; the server's `gh` listing while undefined. */
   readonly repositories: ShellRepositories | undefined;
+  /** The environments a workspace's machine may start in; no choice while undefined. */
+  readonly environments: ShellEnvironments | undefined;
   /** Which of Gram's Settings pages stay and the app's own: all of Gram's while empty. Set once. */
   readonly settings: ShellSettings;
 }
@@ -79,6 +82,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   toolCards: [],
   document: {},
   repositories: undefined,
+  environments: undefined,
   settings: {},
 }));
 
@@ -100,6 +104,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   toolCards: [],
   document: {},
   repositories: undefined,
+  environments: undefined,
   settings: {},
 };
 

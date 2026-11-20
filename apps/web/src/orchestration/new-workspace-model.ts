@@ -33,6 +33,8 @@ export interface NewWorkspaceDraft {
   readonly charter: OrchestratorCharter | undefined;
   /** The workspace the charter was copied from; absent means it started from the defaults. */
   readonly from: WorkspaceId | undefined;
+  /** Where its machine starts, by the embedding app's id; absent is the app's default. */
+  readonly environment?: string | undefined;
 }
 
 export const emptyNewWorkspace: NewWorkspaceDraft = {
@@ -128,6 +130,7 @@ export const createInput = (
       projectIds: [first, ...rest],
       homeProjectId,
       charter: charterOf(draft, starting),
+      ...(draft.environment === undefined ? {} : { environment: draft.environment }),
     },
   };
 };

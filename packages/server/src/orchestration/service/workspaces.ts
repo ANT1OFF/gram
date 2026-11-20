@@ -18,6 +18,7 @@ import {
   type ThreadId,
   type WorkspaceState,
   slotAgent,
+  withWorkspaceEnvironment,
 } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -255,6 +256,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
                   projectIds,
                   homeProjectId: input.homeProjectId,
                   createdAt: yield* Clock.currentTimeMillis,
+                  ...(input.environment == null ? {} : { environment: input.environment }),
                 },
                 charter,
               };
@@ -274,12 +276,10 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
             }
             const state = yield* store.updateWorkspace(input.id, (current) => ({
               ...current,
-              workspace: {
-                ...current.workspace,
-                name,
-                projectIds,
-                homeProjectId: input.homeProjectId,
-              },
+              workspace: withWorkspaceEnvironment(
+                { ...current.workspace, name, projectIds, homeProjectId: input.homeProjectId },
+                input.environment,
+              ),
             }));
             yield* workspacesChanged;
             if (holder !== undefined) {

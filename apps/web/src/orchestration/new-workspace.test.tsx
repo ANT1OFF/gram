@@ -244,6 +244,40 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     );
   });
 
+  it("keeps the environment picked from the embedding app's on the workspace, and none by default", async () => {
+    const list = vi.fn(async () => ({
+      environments: [
+        { id: "default", label: "Default", detail: "Open internet" },
+        { id: "env-node", label: "Node.js", detail: "Open internet · node 22, pnpm" },
+      ],
+      default: "default",
+    }));
+    useEmbedShell.setState({ ...EMPTY_SHELL, environments: { list } });
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const save = vi.spyOn(api, "saveWorkspace");
+    render({ repo: API });
+    const field = await screen.findByTestId("new-workspace-environment");
+    await within(field).findByText("Default");
+    fireEvent.click(within(field).getByTestId("new-workspace-environment-pick"));
+    // The kit's select picks on the pointer, as a person's click does.
+    const option = await screen.findByRole("option", { name: /Node\.js/ });
+    fireEvent.pointerDown(option);
+    fireEvent.pointerUp(option);
+    fireEvent.click(option);
+    await within(field).findByText("Node.js");
+    fireEvent.click(screen.getByTestId("new-workspace-save"));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]![0]).toMatchObject({ environment: "env-node" });
+    expect((await api.listWorkspaces()).at(-1)?.workspace.environment).toBe("env-node");
+  });
+
+  it("shows no environment where the embedding app offers no choice", async () => {
+    const { render } = await mount(settingsWith({ welcomeSeen: true }));
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New workspace" });
+    expect(screen.queryByTestId("new-workspace-environment")).toBeNull();
+  });
+
   it("asks the embedding app what agents can do in the picked GitHub repositories", async () => {
     const access = vi.fn(async ({ repositories }: { repositories: readonly string[] }) => ({
       repositories: repositories.map((fullName) => ({

@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { Expand } from "@/motion";
 import { AddRepository } from "@/new-thread/add-repository";
 import { AutonomyChip } from "@/orchestration/autonomy-chip";
+import { EnvironmentField } from "@/orchestration/environment-field";
 import { RepositoryChecklist } from "@/orchestration/repository-checklist";
 import { ModelsAllowedBy } from "@/composer/models";
 import { SwitchOrchestratorAction } from "@/orchestration/switch-orchestrator";
@@ -445,6 +446,21 @@ function Basics({
           </select>
         </Field>
       )}
+      <EnvironmentField
+        testId="workspace-environment"
+        description="What its machine installs and may reach. A change applies from its next start."
+        value={workspace.environment}
+        disabled={changes.busy}
+        onChange={(environment) => {
+          const result = validateWorkspaceDraft(draftOfWorkspace(workspace), workspace.id);
+          if ("error" in result) return setError(result.error);
+          void changes.saveWorkspace(
+            { ...result.input, environment: environment ?? null },
+            "Environment changed",
+            setError,
+          );
+        }}
+      />
     </SettingsGroup>
   );
 }

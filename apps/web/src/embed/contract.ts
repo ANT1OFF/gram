@@ -610,6 +610,33 @@ export interface ShellRepositories {
   }) => Promise<ShellRepositoryAccessPage>;
 }
 
+/** One environment a workspace's machine may start in, as the embedding app offers it. */
+export interface ShellEnvironment {
+  /** The app's id for it, kept on the workspace (`Workspace.environment`). */
+  readonly id: string;
+  readonly label: string;
+  /** What it is, in a few words: "Open internet · node 22, pnpm". */
+  readonly detail?: string;
+}
+
+/** The environments one person may pick for a workspace's machine, and the one it gets by default. */
+export interface ShellEnvironmentList {
+  readonly environments: readonly ShellEnvironment[];
+  /** What a workspace that names none starts in: one of `environments`. */
+  readonly default: string;
+  /** Where they are made and changed, opened in the app. */
+  readonly manage?: { readonly label: string; readonly to: string };
+}
+
+/**
+ * The environments a workspace's machine may start in, where the embedding app offers a choice:
+ * New and a workspace's settings show a field for it, and the pick is kept on the workspace.
+ * Left out, neither shows one. A rejection's message is shown in the field's place.
+ */
+export interface ShellEnvironments {
+  readonly list: (request: { readonly signal: AbortSignal }) => Promise<ShellEnvironmentList>;
+}
+
 /** One page of the embedding app's own in Settings, at `/settings/<id>`. */
 export interface ShellSettingsPage {
   /** Lower-case words and dashes; its path is `/settings/<id>`. It may not be one of Gram's. */
@@ -691,6 +718,8 @@ export interface ShellContributions {
   readonly document?: ShellDocument;
   /** The repositories "Add repository" offers. Read once, when the app mounts. */
   readonly repositories?: ShellRepositories;
+  /** The environments a workspace's machine may start in. Read once, when the app mounts. */
+  readonly environments?: ShellEnvironments;
   /** Which of Gram's Settings pages stay, and the app's own. Read once, when the app mounts. */
   readonly settings?: ShellSettings;
 }

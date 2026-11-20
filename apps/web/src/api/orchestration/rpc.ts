@@ -4,7 +4,7 @@ import type { OrchestrationApi } from "./types";
 /** `OrchestrationApi` over the RPC client; the ledger feed ends for good once its workspace goes. */
 export const orchestrationRpc = ({ client, connection }: RpcContext): OrchestrationApi => ({
   listWorkspaces: () => run(client["workspace.list"](undefined)),
-  saveWorkspace: ({ id, name, projectIds, homeProjectId, charter }) =>
+  saveWorkspace: ({ id, name, projectIds, homeProjectId, charter, environment }) =>
     run(
       client["workspace.save"]({
         ...(id === undefined ? {} : { id }),
@@ -12,6 +12,7 @@ export const orchestrationRpc = ({ client, connection }: RpcContext): Orchestrat
         projectIds,
         homeProjectId,
         ...(charter === undefined ? {} : { charter }),
+        ...(environment === undefined ? {} : { environment }),
       }),
     ),
   removeWorkspace: (workspaceId) => run(client["workspace.remove"]({ workspaceId })),
