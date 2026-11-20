@@ -39,7 +39,8 @@ The orchestrator's `sandbox` code stops talking to `OnDemandHosts` directly. It 
 for which joined machines are its own. There are two:
 
 - **Embedded** (unchanged): `OnDemandHosts` over `GRAM_HOST_PROVIDER_URL`, naming the orchestrator
-  host's owner in each call, as now.
+  host's owner in each call, as now. A machine shared by `shareWith` goes to the spawn by name,
+  online or not, as it always has: nothing waits for it first.
 - **Signed in** (new): the desktop app, over the same `parentPort` door `send_worker` uses. The
   server asks; the app makes the call to the hosted server with the person's sign-in and answers.
   The server never holds a token, and names no owner: the hosted server takes the person from the

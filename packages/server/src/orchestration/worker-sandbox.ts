@@ -229,22 +229,21 @@ export const makeWorkerSandbox = ({
           if (refused !== undefined) return yield* fail(refused);
         }
         /**
-         * A machine of its workers it shares: online, as it is; offline (it may be released once
-         * its work was over, and sleeps until told otherwise), told it is working and waited for
-         * as the spawn goes ahead. Never given back: it is the other workers' too.
+         * A machine of its workers it shares. An embedder's (`givesBack: false`): by name alone,
+         * online or not, straight to the spawn, as it always was: its provider wakes it, and a
+         * retry of a spawn already made returns that worker without reaching the machine. A hosted
+         * server's, offline (it may be released once its work was over, and sleeps until told
+         * otherwise): told it is working and waited for as the spawn goes ahead, once any
+         * give-back of it is waited out. Never given back: it is the other workers' too.
          */
-        const shared = (machine: {
-          readonly name: string;
-          readonly onlineSince?: number | undefined;
-        }) =>
-          machine.onlineSince !== undefined && !source.givesBack
-            ? { name: machine.name, givesBack: source.givesBack }
+        const shared = (machine: { readonly name: string }) =>
+          !source.givesBack
+            ? { name: machine.name, givesBack: false }
             : {
                 name: machine.name,
-                givesBack: source.givesBack,
+                givesBack: true,
                 prepare: Effect.gen(function* () {
-                  // Its give-back, from a spawn that brought it up, is waited out first.
-                  if (source.givesBack) yield* fence(machine.name);
+                  yield* fence(machine.name);
                   if (
                     joined().find((each) => each.name === machine.name)?.onlineSince !== undefined
                   )
