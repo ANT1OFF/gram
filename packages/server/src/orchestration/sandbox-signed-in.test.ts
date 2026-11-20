@@ -517,7 +517,9 @@ describe("sandbox from a signed-in hosted server", () => {
         expect(result).toMatchObject({
           _tag: "Failure",
           failure: {
-            message: expect.stringMatching(/A worker on a machine of its own isn't held/),
+            message: expect.stringMatching(
+              /A worker on a machine from a hosted server isn't held.*Its machine was given back\. Nothing is kept\./,
+            ),
           },
         });
         expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);

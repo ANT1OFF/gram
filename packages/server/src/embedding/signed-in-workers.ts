@@ -423,6 +423,23 @@ export interface SignedInDeps {
   readonly offered?: OfferedByServer;
   /** Stops a server never confirmed, for machines not registered here, to ask again later. */
   readonly owed?: OwedStops;
+  /** The names a start is on its way for, which no stop owed for an earlier one may end. */
+  readonly starting?: Set<string>;
+}
+
+/**
+ * How long after a start whose outcome wasn't known (no answer, or one interrupted on its way) the
+ * server's "no such machine" is taken as the end of it: a start still on its way may make the
+ * machine after a stop that came first, so until then a 404 settles nothing.
+ */
+export const UNSETTLED_START_MS = 15 * 60_000;
+
+/** A stop a server never confirmed. `unsettled`: its start's outcome wasn't known when it was owed. */
+export interface OwedStop {
+  readonly origin: string;
+  readonly name: string;
+  readonly since: number;
+  readonly unsettled?: true;
 }
 
 /**
@@ -431,16 +448,16 @@ export interface SignedInDeps {
  * restart (`fileOwedStops`).
  */
 export interface OwedStops {
-  readonly list: () => ReadonlyArray<{ readonly origin: string; readonly name: string }>;
-  readonly add: (origin: string, name: string) => void;
+  readonly list: () => ReadonlyArray<OwedStop>;
+  readonly add: (stop: OwedStop) => void;
   readonly remove: (name: string) => void;
 }
 
 export const memoryOwedStops = (): OwedStops => {
-  const owed = new Map<string, string>();
+  const owed = new Map<string, OwedStop>();
   return {
-    list: () => [...owed].map(([name, origin]) => ({ origin, name })),
-    add: (origin, name) => void owed.set(name, origin),
+    list: () => [...owed.values()],
+    add: (stop) => void owed.set(stop.name, stop),
     remove: (name) => void owed.delete(name),
   };
 };
@@ -458,9 +475,15 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
           each !== null &&
           typeof each.origin === "string" &&
           typeof each.name === "string" &&
-          WORKER_MACHINE_NAME.test(each.name)
+          WORKER_MACHINE_NAME.test(each.name) &&
+          Number.isSafeInteger(each.since)
         )
-          owed.add(each.origin, each.name);
+          owed.add({
+            origin: each.origin,
+            name: each.name,
+            since: each.since,
+            ...(each.unsettled === true ? { unsettled: true as const } : {}),
+          });
   } catch {
     // An unreadable file owes nothing; the next stop owed writes it again.
   }
@@ -473,23 +496,44 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
   };
   return {
     list: owed.list,
-    add: (origin, name) => {
-      owed.add(origin, name);
+    add: (stop) => {
+      owed.add(stop);
       save();
     },
     remove: (name) => {
+      if (!owed.list().some((each) => each.name === name)) return;
       owed.remove(name);
       save();
     },
   };
 };
 
-/** Asks again for each stop owed; one confirmed (or one the server knows no more) is let go. */
-export const settleOwedStops = (port: WorkerMachinePortShape, owed: OwedStops) =>
+/**
+ * Asks again for each stop owed; one confirmed is let go, as is one the server knows no more once
+ * no start of it can still be on its way. A name this Gram is starting again, or has registered
+ * since, is the new start's: that machine is no longer owed a stop (the release pass looks after a
+ * registered one), so a debt never stops a retry that took its name.
+ */
+export const settleOwedStops = (
+  port: WorkerMachinePortShape,
+  owed: OwedStops,
+  claimed: (name: string) => boolean = () => false,
+  now: () => number = Date.now,
+) =>
   Effect.gen(function* () {
-    for (const { origin, name } of owed.list()) {
-      const answered = yield* port.call(origin, "stop", { name });
-      if (answered.ok && (answered.status < 300 || answered.status === 404)) owed.remove(name);
+    for (const stop of owed.list()) {
+      if (claimed(stop.name)) {
+        owed.remove(stop.name);
+        continue;
+      }
+      const answered = yield* port.call(stop.origin, "stop", { name: stop.name });
+      if (!answered.ok) continue;
+      if (answered.status < 300) owed.remove(stop.name);
+      else if (
+        answered.status === 404 &&
+        (stop.unsettled !== true || now() - stop.since >= UNSETTLED_START_MS)
+      )
+        owed.remove(stop.name);
     }
   });
 
@@ -537,14 +581,16 @@ export const signedInSource = (
    * pass still tells the server its work is over, and the server reclaims it as it does an idle
    * one. Whether it was stopped.
    */
-  const forget = (name: string) =>
+  const forget = (name: string, unsettled = false) =>
     Effect.gen(function* () {
+      deps.starting?.delete(name);
       let stopped = false;
       let last = "";
       for (let attempt = 0; attempt < STOP_ATTEMPTS && !stopped; attempt += 1) {
         if (attempt > 0) yield* Effect.sleep(deps.stopRetryMs ?? STOP_RETRY_MS);
         const answered = yield* port.call(origin, "stop", { name });
-        stopped = answered.ok && (answered.status < 300 || answered.status === 404);
+        // "No such machine" ends nothing while a start of it may still be on its way.
+        stopped = answered.ok && (answered.status < 300 || (answered.status === 404 && !unsettled));
         // Only the status: what a server answers isn't written to the log.
         last = answered.ok ? `answered ${answered.status}` : "no answer";
       }
@@ -553,7 +599,13 @@ export const signedInSource = (
           Effect.annotateLogs({ machine: name, reason: last }),
         );
         // Registered here, the release pass tells the server; otherwise it is owed a stop.
-        if (named(name) === undefined) deps.owed?.add(origin, name);
+        if (named(name) === undefined)
+          deps.owed?.add({
+            origin,
+            name,
+            since: now(),
+            ...(unsettled ? { unsettled: true as const } : {}),
+          });
         return false;
       }
       deps.owed?.remove(name);
@@ -566,25 +618,45 @@ export const signedInSource = (
     label: plainName(server.server),
     choices: Effect.map(asked, (kept) => kept.value),
     models: Effect.map(asked, (kept) => kept.models),
-    abandon: (name) => Effect.asVoid(forget(name)),
+    givesBack: true,
+    abandon: (name, options) => Effect.asVoid(forget(name, options?.unsettled === true)),
     start: (ask) =>
-      askWorkerMachine(
-        ask,
-        port
-          .call(origin, "start", {
-            name: ask.name,
-            title: ask.title.slice(0, 120),
-            orchestrator: ask.orchestrator,
-            choices: choicesOfAsk(ask),
-          })
-          .pipe(
-            Effect.map((answered) =>
-              answered.ok
-                ? { status: answered.status, body: answered.body }
-                : { failed: answered.why },
+      Effect.suspend(() => {
+        // This start takes the name: no stop owed for an earlier one may end the machine it makes.
+        deps.starting?.add(ask.name);
+        deps.owed?.remove(ask.name);
+        return askWorkerMachine(
+          ask,
+          port
+            .call(origin, "start", {
+              name: ask.name,
+              title: ask.title.slice(0, 120),
+              orchestrator: ask.orchestrator,
+              choices: choicesOfAsk(ask),
+            })
+            .pipe(
+              Effect.map((answered) =>
+                answered.ok
+                  ? { status: answered.status, body: answered.body }
+                  : { failed: answered.why },
+              ),
             ),
+        ).pipe(
+          Effect.tap((started) =>
+            Effect.sync(() => {
+              offered.delete(origin);
+              // A clear refusal made nothing; one with no answer is the spawn's to give back.
+              if (
+                started.kind !== "started" &&
+                started.kind === "refused" &&
+                started.unknown !== true
+              )
+                deps.starting?.delete(ask.name);
+              if (started.kind === "over-total") deps.starting?.delete(ask.name);
+            }),
           ),
-      ).pipe(Effect.tap(() => Effect.sync(() => offered.delete(origin)))),
+        );
+      }),
     theirs: mine,
     arrive: (name) =>
       Effect.gen(function* () {
@@ -651,7 +723,10 @@ export const signedInSource = (
           if (now() >= deadline) return { failed: "timeout" };
           yield* Effect.sleep(deps.everyMs ?? ARRIVE_EVERY_MS);
         }
-      }),
+      }).pipe(
+        // Registered by now, or given back next: no longer a start on its way either way.
+        Effect.ensuring(Effect.sync(() => deps.starting?.delete(name))),
+      ),
     timedOut: (name) =>
       Effect.map(forget(name), (stopped) => {
         const within = `The machine ${name} didn't join within ${Math.round((deps.timeoutMs ?? ARRIVE_TIMEOUT_MS) / 60_000)} minutes`;

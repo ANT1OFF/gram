@@ -215,6 +215,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     ): Effect.Effect<
       | {
           readonly name: string;
+          /** Whether its provider gives machines back (`WorkerMachineSource.givesBack`). */
+          readonly givesBack: boolean;
           /** Starts it and waits for it to come: run once the spawn goes ahead. */
           readonly prepare?: Effect.Effect<
             { readonly abandon?: Effect.Effect<void> | undefined },
@@ -285,7 +287,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             const machine = joined().find((each) => each.name === named && theirs(each));
             if (machine === undefined)
               return yield* fail(`No machine of your workers is named ${named}.`);
-            return { name: machine.name };
+            return { name: machine.name, givesBack: source.givesBack };
           }
           const worker = yield* store
             .getThread(named as ThreadId)
@@ -298,7 +300,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             return yield* fail(
               `${worker.title} runs on your machine, not one of its own: leave out sandbox to put this worker there too.`,
             );
-          return { name: machine.name };
+          return { name: machine.name, givesBack: source.givesBack };
         }
         // Picks by the provider's option ids, or by their labels ("No Internet"), as it offers them.
         const offered = yield* source.choices;
@@ -312,7 +314,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         // Online already (a retry): nothing to start. Otherwise it is started only once the spawn
         // goes ahead, after any approval (`handle`), so a refused or denied spawn starts nothing.
         const already = joined().find((each) => each.name === name && theirs(each));
-        if (already?.onlineSince !== undefined) return { name };
+        if (already?.onlineSince !== undefined) return { name, givesBack: source.givesBack };
         const prepare = Effect.gen(function* () {
           const asked =
             already !== undefined
@@ -328,10 +330,10 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
                     environment: picks.environment,
                   })
                   // Stopped while the start is on its way: the server may start it all the same.
-                  .pipe(Effect.onInterrupt(() => source.abandon(name)));
+                  .pipe(Effect.onInterrupt(() => source.abandon(name, { unsettled: true })));
           if (asked.kind === "refused") {
             // No answer may still have started it: given back, so none runs for nothing.
-            if (asked.unknown === true) yield* source.abandon(name);
+            if (asked.unknown === true) yield* source.abandon(name, { unsettled: true });
             return yield* fail(asked.message);
           }
           if (asked.kind === "over-total") {
@@ -363,7 +365,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           // Given back if the spawn is refused after it came, so none is left running for nothing.
           return already === undefined ? { abandon: source.abandon(name) } : {};
         });
-        return { name, prepare };
+        return { name, givesBack: source.givesBack, prepare };
       });
     /**
      * A question's pictures and mock, confined to the asking thread's folders and made absolute
@@ -388,10 +390,19 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           Effect.mapError((refused) => new AppToolError({ tool, message: refused.message })),
         );
       });
-    /** Each resolved spawn's machine to start, kept from its resolve to its handler. */
-    const sandboxStarts = new WeakMap<
+    /**
+     * Each resolved sandbox spawn's plan, kept from its resolve to its handler: its machine to start,
+     * and whether that machine's provider gives machines back.
+     */
+    const sandboxPlans = new WeakMap<
       object,
-      Effect.Effect<{ readonly abandon?: Effect.Effect<void> | undefined }, AppToolError>
+      {
+        readonly prepare?: Effect.Effect<
+          { readonly abandon?: Effect.Effect<void> | undefined },
+          AppToolError
+        >;
+        readonly givesBack: boolean;
+      }
     >();
     /** One `schedule_wake` at a time, from its count of the other store to its write. */
     const wakeScheduleLock = yield* Semaphore.make(1);
@@ -477,7 +488,11 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             ...(input.alsoIn === undefined ? {} : { alsoIn }),
             identities,
           };
-          if (placed?.prepare !== undefined) sandboxStarts.set(resolved, placed.prepare);
+          if (placed !== undefined)
+            sandboxPlans.set(resolved, {
+              ...(placed.prepare === undefined ? {} : { prepare: placed.prepare }),
+              givesBack: placed.givesBack,
+            });
           return resolved;
         }),
       needsApproval: (caller, _input, pinned) => orchestration.spawnNeedsApproval(caller, pinned),
@@ -498,27 +513,42 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       handle: (caller, input) =>
         Effect.gen(function* () {
           // Its own machine, started now that the spawn goes ahead, and given back if it doesn't.
-          const prepare = sandboxStarts.get(input);
-          sandboxStarts.delete(input);
-          const prepared = prepare === undefined ? undefined : yield* prepare;
+          const plan = sandboxPlans.get(input);
+          sandboxPlans.delete(input);
+          const prepared = plan?.prepare === undefined ? undefined : yield* plan.prepare;
           const giveBack = prepared?.abandon ?? Effect.void;
           const spawned = yield* orchestration.spawnWorker(caller, input).pipe(
             Effect.tapError(() => giveBack),
             Effect.onInterrupt(() => giveBack),
           );
-          // A held brief, or one a limit sends back, starts nothing now: nor does its machine run.
+          // On a machine its provider gives back (a signed-in server's), a held brief would name a
+          // machine that is stopped, or released once its other work is over, and could never run
+          // there: the brief is let go first, then the machine, both whatever interrupts them, and
+          // the orchestrator is told to spawn again once it can. An embedder's provider keeps its
+          // machines, so a brief held there stays held, as it always has.
+          if ("held" in spawned && plan?.givesBack === true)
+            return yield* Effect.uninterruptible(
+              Effect.gen(function* () {
+                const cancelled = yield* orchestration
+                  .manageHeldSpawn(caller, { id: spawned.id, action: "cancel" })
+                  .pipe(Effect.result);
+                yield* giveBack;
+                const machine =
+                  prepared?.abandon === undefined
+                    ? "Its machine is shared with your other workers and stays."
+                    : "Its machine was given back.";
+                const kept =
+                  cancelled._tag === "Success"
+                    ? "Nothing is kept."
+                    : `Its held brief couldn't be let go (${cancelled.failure.message}): cancel it with manage_held_spawn ${spawned.id}.`;
+                return yield* new AppToolError({
+                  tool: "spawn_worker",
+                  message: `${spawned.note} A worker on a machine from a hosted server isn't held, since the machine wouldn't be there for it. ${machine} ${kept} Spawn again once it is allowed (schedule_wake for ${new Date(spawned.until).toISOString()}), or without sandbox to hold it for your machine.`,
+                });
+              }),
+            );
+          // A brief a limit sends back starts nothing now: nor does its machine run.
           if ("held" in spawned || "routeOffer" in spawned) yield* giveBack;
-          // A held brief would keep the machine given back, and could never run there: it is
-          // let go, and the orchestrator told to spawn again once it can.
-          if ("held" in spawned && prepared?.abandon !== undefined) {
-            yield* orchestration
-              .manageHeldSpawn(caller, { id: spawned.id, action: "cancel" })
-              .pipe(Effect.ignore);
-            return yield* new AppToolError({
-              tool: "spawn_worker",
-              message: `${spawned.note} A worker on a machine of its own isn't held, since its machine would sit unused until then: it was given back and nothing is kept. Spawn again once the limit allows (schedule_wake for ${new Date(spawned.until).toISOString()}), or without sandbox to hold it for your machine.`,
-            });
-          }
           return spawned;
         }).pipe(
           Effect.tap((spawned) =>

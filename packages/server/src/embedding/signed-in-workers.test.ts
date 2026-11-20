@@ -808,7 +808,7 @@ describe("stops a server never confirmed", () => {
         const owed = memoryOwedStops();
         const source = signedInSource(SERVER, { port, hosts, owed, stopRetryMs: 0 });
         yield* source.abandon(NAME);
-        expect(owed.list()).toEqual([{ origin: ORIGIN, name: NAME }]);
+        expect(owed.list()).toEqual([{ origin: ORIGIN, name: NAME, since: expect.any(Number) }]);
         yield* settleOwedStops(port, owed);
         expect(owed.list()).toHaveLength(1);
         stopStatus = 200;

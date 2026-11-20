@@ -422,10 +422,20 @@ export interface WorkerMachineSource {
    */
   readonly timedOut: (name: string) => Effect.Effect<string>;
   /**
-   * Gives back a machine started for a spawn that was then refused: stopped there and forgotten
-   * here, where this provider does so.
+   * Whether this provider gives a machine back when asked (`abandon`): the signed-in server does;
+   * an embedder's provider keeps it, and its own retries and reclaim look after it, so a spawn it
+   * held keeps its brief.
    */
-  readonly abandon: (name: string) => Effect.Effect<void>;
+  readonly givesBack: boolean;
+  /**
+   * Gives back a machine started for a spawn that was then refused: stopped there and forgotten
+   * here, where this provider does so. `unsettled`: its start's outcome isn't known, so the server
+   * not knowing it yet ends nothing.
+   */
+  readonly abandon: (
+    name: string,
+    options?: { readonly unsettled?: boolean },
+  ) => Effect.Effect<void>;
 }
 
 /** A model a provider's machines run, as its choices list it: `opus` running `claude-opus-…`. */
@@ -550,5 +560,6 @@ export const embeddedSource = (
       `The machine ${name} was asked for but hasn't come online yet. Spawn again with the same clientRequestId in a minute, or put the worker on your machine.`,
     ),
   // Its provider pauses an idle machine and reclaims it once released (`worker-machine-release.ts`).
+  givesBack: false,
   abandon: () => Effect.void,
 });
