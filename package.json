@@ -76,6 +76,7 @@
     "host-protocol:release": "GRAM_HOST_RELEASED=write vitest run packages/contracts/src/rpc/host-compat.test.ts",
     "packages:pack": "node tools/packages/pack.mjs",
     "packages:verify": "node tools/packages/verify.mjs",
+    "release:key": "node tools/release-rc/release-key.mjs",
     "release:rc": "node tools/release-rc/rc.mjs",
     "release:stable": "node tools/release-stable/stable.mjs",
     "mocks:tokens": "node .agents/skills/mock-build/scripts/mock-tokens.mjs docs/design/mocks/tokens.config.json",

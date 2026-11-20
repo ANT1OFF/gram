@@ -248,9 +248,7 @@ export function resolveSigning({ mode, teamId, identityLines, identity, profile,
   };
   if (mode === "unsigned") return { signed: false, reason: "--unsigned" };
   if (!teamId || !/^[A-Z0-9]{10}$/.test(teamId))
-    return unsigned(
-      "GRAM_MAC_TEAM_ID is not set in packages/shell/src/modules/update/mac-signature.ts",
-    );
+    return unsigned("GRAM_MAC_TEAM_ID is not set in packages/git/src/mac-signature.ts");
   const names = [
     ...new Set(
       identityLines.map((line) => /^\s*\d+\) [0-9A-F]{40} "(.+)"/.exec(line)?.[1]).filter(Boolean),

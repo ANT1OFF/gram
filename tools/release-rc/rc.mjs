@@ -75,6 +75,7 @@ import {
 import { writeUpdaterManifest } from "./updater-manifest.mjs";
 import { withReleaseCheckSlot } from "./check-slot.mjs";
 import { preflightNotary } from "./notary-preflight.mjs";
+import { keychainReleaseKey, pinnedReleaseKey, signReleaseChecksums } from "./release-key.mjs";
 import { CheckRunRefused, describeCheckRun, findCheckRun, waitForCheckRun } from "./ci-check.mjs";
 import { linuxAssetNames, linuxPackageNames } from "../release-linux/linux-lib.mjs";
 import {
@@ -265,7 +266,7 @@ const {
   SIGNED_MAC_BUNDLE_ID,
   macRequirementSha256,
   verifyMacCodeSignature,
-} = await import(update("mac-signature.ts"));
+} = await import(pathToFileURL(join(source, "packages/git/src/mac-signature.ts")).href);
 const signingEnv = {
   PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
   HOME: userInfo().homedir,
@@ -995,6 +996,21 @@ for (const name of [...names.slice(0, 5), ...(linux ? linuxAssetNames(version).c
 writeFileSync(join(assets, "SHA256SUMS.txt"), checksumLines(covered));
 const check6 = tryRun("/usr/bin/shasum", ["-a", "256", "-c", "SHA256SUMS.txt"], { cwd: assets });
 if (check6.status !== 0) fail(`shasum -c failed: ${check6.stdout} ${check6.stderr}`);
+// The publisher's signature of exactly these checksums, with the key in your keychain, once the
+// source pins one: joined machines refuse a release whose list it doesn't verify.
+try {
+  const sumsSignature = signReleaseChecksums({
+    assets,
+    pinnedKey: await pinnedReleaseKey(source),
+    readPrivate: keychainReleaseKey,
+  });
+  if (sumsSignature) {
+    uploads.push(sumsSignature);
+    say(`  ${sumsSignature} … ok (the publisher's release key, verified against the pinned key)`);
+  } else say("  SHA256SUMS.txt.sig … none: the source pins no release key yet");
+} catch (error) {
+  fail(`release signature: ${error.message}`);
+}
 // Signed installs update through Electron's updater: its manifest names the signed ZIP and its
 // SHA-512. An unsigned build gets none, so no signed install is ever offered it.
 if (signing.signed) {

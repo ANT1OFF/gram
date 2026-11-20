@@ -70,7 +70,7 @@ key, password or API key: `codesign` gets the identity's Keychain name and
    or `--apple-id <email> --team-id <TEAMID> --password <app-specific password>`.
    After that, the `.p8` can live somewhere offline.
 4. **Activation.** `GRAM_MAC_TEAM_ID` in
-   [mac-signature.ts](../packages/shell/src/modules/update/mac-signature.ts) is the
+   [mac-signature.ts](../packages/git/src/mac-signature.ts) is the
    Team ID, `ANVR857GFZ`. It isn't secret. This one constant tells the signer, the
    release script and the updater which publisher to trust. Setting it to `null`
    would switch signing off.

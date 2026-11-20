@@ -5,7 +5,10 @@
  * number, never a URL from the wire. The download is checked against that release's
  * `SHA256SUMS.txt` before anything in it runs, unpacked into a staging folder beside the app it
  * runs now, and tested there (`gram-host --help`, as the installer does) before it is moved into
- * place. Then the host writes its plan, the service it runs now and the one it moves to, and starts
+ * place. That list must carry the publisher's signature (`SHA256SUMS.txt.sig`, Ed25519, under the
+ * key pinned in `@gram/git/release-signature`) on Linux, and on macOS once a key is pinned; on
+ * macOS the unpacked app must also be Gram signed by the publisher's Developer ID team, notarized
+ * and stapled, before any of it runs. Then the host writes its plan, the service it runs now and the one it moves to, and starts
  * a supervisor outside its own service (a transient systemd unit, or a launchd job of its own),
  * which the restart doesn't take down. The supervisor moves the service to the new app and waits
  * for the new host to dial in: once its hello has passed, the main Gram asks it `host.update.check`,
@@ -41,6 +44,7 @@ import type {
   HostUpdateProgress,
 } from "@gram/contracts";
 import { relativeInside } from "@gram/git";
+import { CHECKSUMS_SIGNATURE, requireChecksumsSignature } from "@gram/git/release-signature";
 import type { Admission } from "./admission.ts";
 import { lockConflict, takeUpdateLock, updateLockState } from "./update-lock.ts";
 import { RELEASES } from "./install-script.ts";
@@ -326,6 +330,17 @@ export interface SelfUpdateDeps {
   readonly fetch: typeof fetch;
   /** Unpacks the verified download `archive` into the empty folder `into`. */
   readonly unpack: (archive: string, into: string) => Promise<void>;
+  /**
+   * The publisher's release signing key (base64 Ed25519), whose signature the release's
+   * `SHA256SUMS.txt` must carry: always on Linux, and on macOS once one is pinned. `null` (the
+   * placeholder) refuses where it is required.
+   */
+  readonly releaseKey: string | null;
+  /**
+   * Rejects, with the reason for the outcome, unless the app unpacked in `dir` is the publisher's:
+   * on macOS its Developer ID signature, team and notarization. Runs before anything in it does.
+   */
+  readonly verifyApp: (dir: string) => Promise<void>;
   /** Whether the app's host starts: `gram-host --help` under its own binary. */
   readonly probe: (bin: string, entry: string) => Promise<boolean>;
   /** Starts the supervisor outside this host's service, which then moves the service. */
@@ -342,6 +357,21 @@ const checksumOf = async (deps: SelfUpdateDeps, base: string, asset: string) => 
   if (!response.ok) throw new Error(`Couldn't read the release's checksums (${response.status}).`);
   const text = await response.text();
   if (text.length > 64 * 1024) throw new Error("The release's checksum list is too large.");
+  if (deps.platform !== "darwin" || deps.releaseKey !== null) {
+    if (deps.releaseKey === null) requireChecksumsSignature(text, "", null);
+    const signed = await deps.fetch(`${base}/${CHECKSUMS_SIGNATURE}`, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!signed.ok)
+      throw new Error(
+        `Signed release refused: the release has no checksum signature (${signed.status}).`,
+      );
+    const signature = await signed.text();
+    if (signature.length > 1024)
+      throw new Error("Signed release refused: the release's checksum signature is malformed.");
+    requireChecksumsSignature(text, signature, deps.releaseKey);
+  }
   for (const line of text.split("\n")) {
     const [hash, name] = line.trim().split(/\s+/, 2);
     if (
@@ -433,9 +463,15 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
   ) => {
     const target = join(deps.apps, release);
     const ready = appLayout(deps.platform, target);
-    // Unpacked and tested before, by an update that then found the machine busy.
-    if (existsSync(join(target, ".complete")) && (await deps.probe(ready.bin, ready.entry)))
-      return ready;
+    // Unpacked and tested before, by an update that then found the machine busy. Its signature is
+    // checked again, and one that no longer passes is downloaded afresh.
+    if (existsSync(join(target, ".complete"))) {
+      const trusted = await deps.verifyApp(target).then(
+        () => true,
+        () => false,
+      );
+      if (trusted && (await deps.probe(ready.bin, ready.entry))) return ready;
+    }
     const base = `${RELEASES}/v${release}`;
     const want = await checksumOf(deps, base, asset);
     const work = mkdtempSync(join(deps.apps, ".update-"));
@@ -450,6 +486,7 @@ export const makeSelfUpdate = (deps: SelfUpdateDeps) => {
       await deps.unpack(archive, stage);
       rmSync(archive, { force: true });
       progress({ phase: "testing" });
+      await deps.verifyApp(stage);
       const staged = appLayout(deps.platform, stage);
       if (!(await deps.probe(staged.bin, staged.entry)))
         throw new Error(`Gram ${release} didn't start here, so nothing was installed.`);

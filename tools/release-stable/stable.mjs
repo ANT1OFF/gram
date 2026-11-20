@@ -46,6 +46,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { REPO, checksumLines } from "../release-rc/rc-lib.mjs";
 import { writeUpdaterManifest } from "../release-rc/updater-manifest.mjs";
 import {
+  CHECKSUMS_SIGNATURE,
+  checksumsSigned,
+  keychainReleaseKey,
+  pinnedReleaseKey,
+  signReleaseChecksums,
+} from "../release-rc/release-key.mjs";
+import {
   LINUX_BUILD_INFO,
   checkLinuxBuild,
   linuxAssetNames,
@@ -295,7 +302,7 @@ async function checkLinux(dir, { state, source, verifyAttestation }) {
  */
 export async function verifyDownloads(
   dir,
-  { expected, remote, covers, state, source, verifyApp, verifyAttestation },
+  { expected, remote, covers, state, source, pinnedKey, verifyApp, verifyAttestation },
 ) {
   for (const { name, bytes, sha256 } of expected) {
     const file = join(dir, name);
@@ -308,6 +315,21 @@ export async function verifyDownloads(
       stop(`the downloaded ${name} differs from GitHub's digest.`);
   }
   const sums = await checkSums(dir, covers);
+  // Signed with the publisher's key once the source pins one: joined machines require it.
+  const pinned = pinnedKey !== undefined ? pinnedKey : await pinnedReleaseKey(source);
+  const signature = join(dir, CHECKSUMS_SIGNATURE);
+  if (pinned !== null) {
+    if (!expected.some((asset) => asset.name === CHECKSUMS_SIGNATURE) || !existsSync(signature))
+      stop(`the release has no ${CHECKSUMS_SIGNATURE}, and the source pins a release key.`);
+    if (
+      !checksumsSigned(
+        readFileSync(join(dir, "SHA256SUMS.txt")),
+        readFileSync(signature, "utf8"),
+        pinned,
+      )
+    )
+      stop(`${CHECKSUMS_SIGNATURE} doesn't verify against the pinned release key.`);
+  }
   await checkManifest(dir, { source, version: state.version, zipName: state.zipName });
   if (existsSync(join(dir, "BUILD-INFO.json"))) {
     const info = readJson(join(dir, "BUILD-INFO.json"));
@@ -570,14 +592,16 @@ export async function attachLinux(ctx) {
   if (!pending) stop(`${STATE_FILE} records no Linux build to finish.`);
   const { version, sourceCommit: sha } = state;
   const names = linuxAssetNames(version);
-  const linuxNames = new Set([...names.all, "SHA256SUMS.txt"]);
+  const linuxNames = new Set([...names.all, "SHA256SUMS.txt", CHECKSUMS_SIGNATURE]);
 
   // The Mac files exactly as uploaded; Linux files and a new SHA256SUMS.txt only from an earlier
   // try of this phase.
   const draftNow = () =>
     ghJson(ctx.gh.own, ["api", `repos/${REPO}/releases/${state.releaseId}`], "the private draft");
   const release = draftNow();
-  const mac = state.assets.filter((asset) => asset.name !== "SHA256SUMS.txt");
+  const mac = state.assets.filter(
+    (asset) => asset.name !== "SHA256SUMS.txt" && asset.name !== CHECKSUMS_SIGNATURE,
+  );
   const problems = releaseProblems(
     { ...release, assets: release.assets.filter((asset) => !linuxNames.has(asset.name)) },
     { tag: state.tag, target: state.sourceCommit, draft: true, assets: mac },
@@ -668,6 +692,15 @@ export async function attachLinux(ctx) {
     assets,
     entries.map(({ name }) => name),
   );
+  // The publisher's signature of the new list, once the source pins a key (release-key.mjs).
+  const sigPath = join(assets, CHECKSUMS_SIGNATURE);
+  if (existsSync(sigPath)) chmodSync(sigPath, 0o644);
+  rmSync(sigPath, { force: true });
+  const signed = signReleaseChecksums({
+    assets,
+    pinnedKey: ctx.releaseKey?.pinned ?? (await pinnedReleaseKey(ctx.source)),
+    readPrivate: ctx.releaseKey?.readPrivate ?? keychainReleaseKey,
+  });
 
   const row = async (name) => {
     chmodSync(join(assets, name), 0o444);
@@ -679,12 +712,25 @@ export async function attachLinux(ctx) {
   };
   const table = [];
   for (const asset of state.assets)
-    table.push(asset.name === "SHA256SUMS.txt" ? await row(asset.name) : asset);
+    if (asset.name !== CHECKSUMS_SIGNATURE)
+      table.push(asset.name === "SHA256SUMS.txt" ? await row(asset.name) : asset);
+  if (signed) table.push(await row(signed));
   for (const name of names.all) table.push(await row(name));
 
   // Onto the draft (still mutable): each Linux file and the new SHA256SUMS.txt, replacing a copy
   // that differs. Published, the release can't change any more (immutable releases).
-  for (const name of [...names.all, "SHA256SUMS.txt"]) {
+  const stale = draftNow().assets.find((asset) => asset.name === CHECKSUMS_SIGNATURE);
+  if (stale && !signed) {
+    const removed = ctx.gh.own([
+      "api",
+      "--method",
+      "DELETE",
+      `repos/${REPO}/releases/assets/${stale.id}`,
+    ]);
+    if (removed.status !== 0)
+      stop(`removing ${CHECKSUMS_SIGNATURE} from the draft: ${removed.stderr}`);
+  }
+  for (const name of [...names.all, "SHA256SUMS.txt", ...(signed ? [signed] : [])]) {
     const want = table.find((asset) => asset.name === name);
     const there = draftNow().assets.find((asset) => asset.name === name);
     if (there?.digest === `sha256:${want.sha256}` && there.size === want.bytes) continue;
@@ -761,9 +807,15 @@ export async function validate(ctx) {
     remote: release.assets,
     covers: state.assets
       .map((a) => a.name)
-      .filter((n) => !["SHA256SUMS.txt", "latest-mac.yml", "latest-linux.yml"].includes(n)),
+      .filter(
+        (n) =>
+          !["SHA256SUMS.txt", CHECKSUMS_SIGNATURE, "latest-mac.yml", "latest-linux.yml"].includes(
+            n,
+          ),
+      ),
     state,
     source: ctx.source,
+    pinnedKey: ctx.releaseKey?.pinned,
     verifyApp: ctx.verifyApp,
     verifyAttestation: ctx.verifyAttestation,
   });
@@ -1223,6 +1275,9 @@ export async function runPhase(options, seams = {}) {
     say: seams.say ?? ((line) => process.stdout.write(`${line}\n`)),
     gh: ghRunners({ gh, env: seams.env ?? process.env }),
     verifyApp: seams.verifyApp ?? macVerifyApp({ source }),
+    // The release key the source pins and its private half from your keychain; a test, whose
+    // source is this checkout, gives a key of its own.
+    releaseKey: seams.releaseKey,
     // `gh attestation verify` with your login; a test gives a stand-in for Sigstore's verdict.
     verifyAttestation: null,
     updateCheck:

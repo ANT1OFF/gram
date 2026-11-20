@@ -12,6 +12,18 @@
     "./proc": {
       "types": "./src/proc.ts",
       "default": "./src/proc.ts"
+    },
+    "./mac-signature": {
+      "types": "./src/mac-signature.ts",
+      "default": "./src/mac-signature.ts"
+    },
+    "./openssl-testing": {
+      "types": "./src/openssl-testing.ts",
+      "default": "./src/openssl-testing.ts"
+    },
+    "./release-signature": {
+      "types": "./src/release-signature.ts",
+      "default": "./src/release-signature.ts"
     }
   },
   "scripts": {
