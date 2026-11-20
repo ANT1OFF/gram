@@ -42,8 +42,6 @@ import {
   WorkerReportEvidence,
   WorkerState,
   checkoutRoots,
-  effectiveCheckout,
-  hostOf,
   type MemoryWrite,
   seedOrchestratorPlan,
   type ThreadId,
@@ -51,7 +49,6 @@ import {
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -67,20 +64,9 @@ import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand } from "../embedding/on-demand.ts";
 import { SignedInWorkers } from "../embedding/signed-in-workers.ts";
-import { ownerSubject } from "../host/ownership.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
-import {
-  embeddedSource,
-  isWorkerMachineName,
-  modelRefusal,
-  overTotalWords,
-  pinRefusal,
-  placementOf,
-  resolveWorkerPicks,
-  type WorkerMachineSource,
-  workerMachineName,
-} from "../embedding/worker-machines.ts";
+import { placementOf } from "../embedding/worker-machines.ts";
 import { confineQuestionVisuals } from "../preview/mocks.ts";
 import { ThreadPlans } from "../plans/service.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -98,6 +84,7 @@ import {
 import { prWakeEventOf, prWatchSeenOf, refusal } from "./rules.ts";
 import { MAX_WORKER_REPOS, Orchestration } from "./service.ts";
 import { attachUserWords, USER_MESSAGES_MAX, withBriefFooter } from "./user-words.ts";
+import { makeWorkerSandbox, WorkerSandbox } from "./worker-sandbox.ts";
 
 /** An edit of `questions.md` as `modify` takes it, or the tool's refusal in the edit's words. */
 const questionEdit = (tool: string, edit: QuestionEdit) =>
@@ -152,10 +139,6 @@ const checkRevision = (
   return Effect.fail(new AppToolError({ tool, message: refusal("stale_revision", message) }));
 };
 
-/** Why a spawn can't reuse a machine the server reclaimed since: its name isn't given out again. */
-const reclaimedWords = (name: string) =>
-  `The machine ${name} was reclaimed by the server since its work was over, so it isn't there to reuse, and its name isn't given out again. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`;
-
 /** `schedule_wake` lists its condition flat (`WakeConditionInput`); this decodes it as the union. */
 const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
 
@@ -165,22 +148,6 @@ const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
  * them out of every other thread's context, and it is only the first line: a session keeps the tool
  * list it opened with, so each handler asks the service for authority again.
  */
-/**
- * Where a worker runs: on a machine of its own (`own`, with the size and processor its work needs,
- * as the host provider offers them), on one its orchestrator already has (`shareWith`, by its name
- * or a worker's thread id on it), or on its orchestrator's own (left out, or `own: false`).
- */
-const WorkerSandbox = Schema.Struct({
-  own: Schema.optionalKey(Schema.Boolean),
-  size: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  architecture: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  isolation: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  environment: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
-  shareWith: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
-  /** Why it goes there rather than your machine, in a sentence the user reads on its row. */
-  reason: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(400))),
-});
-type WorkerSandbox = typeof WorkerSandbox.Type;
 
 const newStepId = () => Schema.decodeSync(PlanStepId)(randomUUID().slice(0, 8));
 
@@ -204,292 +171,14 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const joined = () => (remoteHosts === undefined ? [] : remoteHosts.list());
-    /**
-     * Each machine name's bring-up under way (`workerSandbox`), with how many tries of its spawn
-     * hold it. Run in the tools' own scope, so it outlives the try that began it.
-     */
-    const machineFlights = new Map<
-      string,
-      {
-        readonly fiber: Fiber.Fiber<{ readonly startedHere: boolean }, AppToolError>;
-        holders: number;
-      }
-    >();
-    const flightScope = yield* Effect.scope;
-    /**
-     * Where `sandbox` puts a worker: the name of a machine of its own, started now, or of one its
-     * orchestrator already has; or nothing, for the orchestrator's own machine.
-     */
-    const workerSandbox = (
-      caller: ThreadId,
-      input: {
-        readonly title: string;
-        readonly feature: string;
-        readonly project: string;
-        readonly clientRequestId?: string | undefined;
-        readonly model?: string | undefined;
-      },
-      sandbox: WorkerSandbox,
-    ): Effect.Effect<
-      | {
-          readonly name: string;
-          /** Whether its provider gives machines back (`WorkerMachineSource.givesBack`). */
-          readonly givesBack: boolean;
-          /** Starts it and waits for it to come: run once the spawn goes ahead. */
-          readonly prepare?: Effect.Effect<
-            { readonly abandon?: Effect.Effect<void> | undefined },
-            AppToolError,
-            Scope.Scope
-          >;
-        }
-      | undefined,
-      AppToolError
-    > =>
-      Effect.gen(function* () {
-        const tool = "spawn_worker";
-        const fail = (message: string) => new AppToolError({ tool, message });
-        if (sandbox.shareWith === undefined && sandbox.own !== true) {
-          if (
-            sandbox.size !== undefined ||
-            sandbox.architecture !== undefined ||
-            sandbox.isolation !== undefined ||
-            sandbox.environment !== undefined
-          )
-            return yield* fail(
-              'size, architecture, isolation and environment are for a machine of its own: add "own": true.',
-            );
-          return undefined;
-        }
-        const orchestrator = yield* store
-          .getThread(caller)
-          .pipe(Effect.mapError(() => fail("Your thread can't be read now.")));
-        const ownHost = hostOf(effectiveCheckout(orchestrator));
-        // A closed machine's holder is no one's to start machines for (`host/ownership.ts`).
-        const owner = ownerSubject(workerHosts?.ownerOf(ownHost));
-        const holder = workerHosts?.ownerOf(ownHost);
-        // The embedder's provider for the orchestrator host's owner; or, for an orchestrator on a
-        // machine of no one's in particular in the desktop app, the server the app is signed in to.
-        const found: WorkerMachineSource | { readonly refused: string } | undefined =
-          onDemand !== undefined
-            ? owner === undefined
-              ? undefined
-              : embeddedSource(onDemand, owner, joined)
-            : signedIn !== undefined && holder === undefined
-              ? yield* signedIn.source.pipe(
-                  Effect.map((each) => ("refused" in each ? each : each.source)),
-                )
-              : undefined;
-        if (found === undefined || "refused" in found)
-          return yield* fail(
-            `Workers can't have machines of their own here${found === undefined ? "" : `: ${found.refused}`}. Leave out sandbox, and the worker runs on your machine.`,
-          );
-        const source = found;
-        const theirs = source.theirs;
-        // Its machines run the provider's models: a worker on another is refused before any
-        // machine is asked for, never started on another model without a word.
-        const models = yield* source.models;
-        if (models !== undefined) {
-          const chosen = yield* orchestration.spawnModel(caller, input.model);
-          const refused =
-            modelRefusal(source.label, models, chosen) ??
-            pinRefusal(
-              `${source.label}'s worker machines`,
-              models.filter((model) => model.agent === chosen.agent),
-              input.model,
-              chosen,
-            );
-          if (refused !== undefined) return yield* fail(refused);
-        }
-        /**
-         * A machine of its workers it shares: online, as it is; offline (it may be released once
-         * its work was over, and sleeps until told otherwise), told it is working and waited for
-         * as the spawn goes ahead. Never given back: it is the other workers' too.
-         */
-        const shared = (machine: {
-          readonly name: string;
-          readonly onlineSince?: number | undefined;
-        }) =>
-          machine.onlineSince !== undefined
-            ? { name: machine.name, givesBack: source.givesBack }
-            : {
-                name: machine.name,
-                givesBack: source.givesBack,
-                prepare: Effect.gen(function* () {
-                  if ((yield* source.unrelease(machine.name)) === "gone")
-                    return yield* fail(reclaimedWords(machine.name));
-                  const arrived = yield* source.arrive(machine.name);
-                  if (typeof arrived !== "string")
-                    return yield* fail(
-                      `${machine.name} is offline and didn't come back, so the worker wasn't placed on it. It was left as it is: wait for it, or spawn on a machine of its own.`,
-                    );
-                  return {};
-                }),
-              };
-        if (sandbox.shareWith !== undefined) {
-          const named = sandbox.shareWith.trim();
-          if (isWorkerMachineName(named)) {
-            const machine = joined().find((each) => each.name === named && theirs(each));
-            if (machine === undefined)
-              return yield* fail(`No machine of your workers is named ${named}.`);
-            return shared(machine);
-          }
-          const worker = yield* store
-            .getThread(named as ThreadId)
-            .pipe(Effect.mapError(() => fail(`shareWith names no worker or machine: ${named}.`)));
-          if (worker.spawnedBy?.threadId !== caller)
-            return yield* fail(`${worker.title} is not one of your workers.`);
-          const host = hostOf(effectiveCheckout(worker));
-          const machine = joined().find((each) => each.id === host && theirs(each));
-          if (machine === undefined)
-            return yield* fail(
-              `${worker.title} runs on your machine, not one of its own: leave out sandbox to put this worker there too.`,
-            );
-          return shared(machine);
-        }
-        // Picks by the provider's option ids, or by their labels ("No Internet"), as it offers them.
-        const offered = yield* source.choices;
-        const resolved = resolveWorkerPicks(offered?.choices, sandbox);
-        if ("refused" in resolved) return yield* fail(resolved.refused);
-        const picks = resolved.picks;
-        const name = workerMachineName(
-          caller,
-          input.clientRequestId ?? `${input.project}\n${input.feature}\n${input.title}`,
-        );
-        // Online already (a retry): nothing to start. Otherwise it is started only once the spawn
-        // goes ahead, after any approval (`handle`), so a refused or denied spawn starts nothing.
-        const seen = joined().find((each) => each.name === name && theirs(each));
-        if (seen?.onlineSince !== undefined) return { name, givesBack: source.givesBack };
-        // Brings the machine up: started (or, registered from an earlier spawn, told it is
-        // working) and waited for. Whether this bring-up started it, and so may give it back.
-        const bringUp = Effect.gen(function* () {
-          // Read as the spawn goes ahead, after any card: what is registered now decides whether
-          // this starts the machine (and may give it back) or waits for one it found.
-          const already = joined().find((each) => each.name === name && theirs(each));
-          // Reused, it may have been released once its earlier work was over, and sleeps until it
-          // is told it is working: told so before it is waited for.
-          if (already !== undefined && (yield* source.unrelease(name)) === "gone")
-            return yield* fail(reclaimedWords(name));
-          const asked =
-            already !== undefined
-              ? ({ kind: "started", name } as const)
-              : yield* source
-                  .start({
-                    name,
-                    orchestrator: caller,
-                    title: input.title,
-                    size: picks.size,
-                    architecture: picks.architecture,
-                    isolation: picks.isolation,
-                    environment: picks.environment,
-                  })
-                  // Stopped while the start is on its way: the server may start it all the same.
-                  .pipe(Effect.onInterrupt(() => source.abandon(name, { unsettled: true })));
-          if (asked.kind === "refused") {
-            // No answer may still have started it: given back, so none runs for nothing.
-            if (asked.unknown === true) yield* source.abandon(name, { unsettled: true });
-            return yield* fail(asked.message);
-          }
-          if (asked.kind === "over-total") {
-            const threads = yield* store.listThreads;
-            const workersOn = (machineName: string) => {
-              const machine = joined().find((each) => each.name === machineName);
-              return machine === undefined
-                ? []
-                : threads
-                    .filter(
-                      (thread) =>
-                        thread.spawnedBy?.threadId === caller &&
-                        !thread.parked &&
-                        hostOf(effectiveCheckout(thread)) === machine.id,
-                    )
-                    .map((thread) => `${thread.title} [thread ${thread.id}]`);
-            };
-            return yield* fail(refusal("over_total", overTotalWords(asked, workersOn)));
-          }
-          const arrived = yield* source.arrive(name).pipe(
-            // Stopped while it waits, with no try left to want it: what it asked for is given back.
-            Effect.onInterrupt(() => (already === undefined ? source.abandon(name) : Effect.void)),
-          );
-          if (typeof arrived !== "string") {
-            // A machine registered here before this try (an earlier spawn of the same id) may
-            // hold that spawn's work on its disk: only a machine this try started is stopped.
-            if (already !== undefined && source.givesBack)
-              return yield* fail(
-                arrived.failed === "timeout"
-                  ? `The machine ${name} is registered here from an earlier spawn of this request and didn't come online, so it was left as it is: it may hold that spawn's work. Wait for it to come back, spawn with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`
-                  : `${arrived.failed} It is registered here from an earlier spawn of this request and was left as it is, since it may hold that spawn's work. Spawn with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
-              );
-            if (arrived.failed === "timeout") return yield* fail(yield* source.timedOut(name));
-            yield* source.abandon(name);
-            return yield* fail(arrived.failed);
-          }
-          return { startedHere: already === undefined };
-        });
-        // Given back if the spawn is refused after it came, so none is left running for nothing:
-        // never while another try of the same request still holds it, nor while a thread is
-        // placed on it (the spawn's own worker made before it failed included), nor when that
-        // can't be read.
-        const giveBack = (othersHold: () => boolean) =>
-          Effect.gen(function* () {
-            if (othersHold()) return;
-            const id = source.idOf(name);
-            if (id !== undefined) {
-              const threads = yield* store.listThreads.pipe(Effect.option);
-              if (threads._tag === "None") return;
-              if (
-                threads.value.some(
-                  (thread) =>
-                    thread.parked !== true &&
-                    [
-                      effectiveCheckout(thread),
-                      thread.checkout,
-                      ...(thread.extraCheckouts ?? []),
-                    ].some((checkout) => checkout !== undefined && hostOf(checkout) === id),
-                )
-              )
-                return;
-            }
-            yield* source.abandon(name);
-          });
-        // An embedder's provider keeps its machines and gives none back: each try brings up its
-        // own, as it always has.
-        if (!source.givesBack)
-          return {
-            name,
-            givesBack: false,
-            prepare: Effect.map(bringUp, (brought) =>
-              brought.startedHere ? { abandon: giveBack(() => false) } : {},
-            ),
-          };
-        // One bring-up of a name at a time (`machineFlights`): a try of the same request while
-        // one is under way (a reconnect, a tool call tried again) joins it rather than starting,
-        // waiting and giving back on its own. The bring-up outlives any one try, and is stopped,
-        // giving back what it started, only once no try holds it.
-        const prepare = Effect.gen(function* () {
-          const flight = yield* Effect.acquireRelease(
-            Effect.gen(function* () {
-              const joining = machineFlights.get(name);
-              if (joining !== undefined) {
-                joining.holders += 1;
-                return joining;
-              }
-              const made = { fiber: yield* Effect.forkIn(bringUp, flightScope), holders: 1 };
-              machineFlights.set(name, made);
-              return made;
-            }),
-            (held) =>
-              Effect.suspend(() => {
-                held.holders -= 1;
-                if (held.holders > 0) return Effect.void;
-                if (machineFlights.get(name) === held) machineFlights.delete(name);
-                return Fiber.interrupt(held.fiber);
-              }),
-          );
-          const brought = yield* Fiber.join(flight.fiber);
-          return brought.startedHere ? { abandon: giveBack(() => flight.holders > 1) } : {};
-        });
-        return { name, givesBack: source.givesBack, prepare };
-      });
+    const workerSandbox = yield* makeWorkerSandbox({
+      orchestration,
+      store,
+      onDemand,
+      signedIn,
+      workerHosts,
+      joined,
+    });
     /**
      * A question's pictures and mock, confined to the asking thread's folders and made absolute
      * before the question is kept, so a card reads only what is in its worktree or repo.
