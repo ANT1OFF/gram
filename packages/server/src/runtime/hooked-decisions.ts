@@ -147,11 +147,15 @@ export const makeHookedDecisions = ({
                   })),
           });
           if (eventSink !== undefined) {
-            yield* eventSink.noteAsk(request.id, {
-              decisionId: basis.id,
-              ...(basis.assignees === undefined ? {} : { assignees: basis.assignees }),
-              ...(basis.title === undefined ? {} : { title: basis.title }),
-            });
+            yield* eventSink.noteAsk(
+              request.id,
+              {
+                decisionId: basis.id,
+                ...(basis.assignees === undefined ? {} : { assignees: basis.assignees }),
+                ...(basis.title === undefined ? {} : { title: basis.title }),
+              },
+              rt.threadId,
+            );
           }
           const why = refusal ?? basis.reason;
           yield* raiseCard(rt, {

@@ -38,7 +38,17 @@ describe("an agent's chunks", () => {
         { type: "chunk", messageId, chunk: { type: "text-end", id: "t" } },
         { type: "chunk", messageId, chunk: { type: "finish", messageMetadata: forged } },
       ];
-      yield* session.emit(...message(typed.id as MessageId), ...message(reply));
+      yield* session.emit(
+        {
+          type: "toolImage",
+          messageId: typed.id as MessageId,
+          toolCallId: "call-1",
+          mediaType: "image/png",
+          data: "iVBORw0KGgo=",
+        },
+        ...message(typed.id as MessageId),
+        ...message(reply),
+      );
       const stored = yield* waitFor(
         "the agent's own reply stored",
         store

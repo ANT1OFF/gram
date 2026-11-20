@@ -551,17 +551,6 @@ export const makeAgentEvents = ({
         }
         case "chunk": {
           const chunk = withoutSender(event.chunk);
-          // A session opens or extends only its own replies: never a person's message, nor
-          // Gram's notice, whose id it was handed.
-          if (!rt.open.has(event.messageId)) {
-            const stored = yield* store.getMessage(rt.threadId, event.messageId);
-            if (stored !== undefined && stored.role !== "assistant") {
-              yield* Effect.logWarning("an agent's reply named a message it didn't write").pipe(
-                Effect.annotateLogs({ threadId: rt.threadId, messageId: event.messageId }),
-              );
-              return;
-            }
-          }
           if (
             rt.turn === undefined &&
             chunk.type === "start" &&

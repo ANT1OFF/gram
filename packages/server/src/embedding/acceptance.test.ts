@@ -25,7 +25,7 @@ import type { OwnEvent } from "../events/event-hub.ts";
 import { type StoredMessage, ThreadStore } from "../persistence/thread-store.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { DecisionHook, REFUSAL_FOR_AGENT } from "./decision-hook.ts";
+import { DECISION_UNAVAILABLE, DecisionHook, REFUSAL_FOR_AGENT } from "./decision-hook.ts";
 import { makeEventSink, type EventSinkShape } from "./event-sink.ts";
 import { ActingPerson } from "./person.ts";
 import { makeActionGuard } from "./guard.ts";
@@ -37,25 +37,9 @@ import {
   serverLayer,
   sessionOf,
   setHosted,
+  settledAt,
   startThread,
 } from "./acceptance-harness.ts";
-
-/** What the receiver holds once the sink has nothing more to send it. */
-const settledAt = (to: { readonly held: ReadonlyArray<SinkEvent> }) =>
-  Effect.gen(function* () {
-    let before = -1;
-    yield* eventually(
-      "the sink to go quiet",
-      Effect.sleep("150 millis").pipe(
-        Effect.map(() => {
-          const quiet = to.held.length === before;
-          before = to.held.length;
-          return quiet;
-        }),
-      ),
-    );
-    return [...to.held];
-  });
 
 /** One person's thread whose reply streams in many deltas, run to its end. */
 const streamedTurn = (text = "say a lot /stream{400}") =>
@@ -320,6 +304,35 @@ describe("decision hook: an agent's outward command", () => {
         });
         expect(session.options).not.toHaveProperty("gateConnectors");
         expect(session.options).not.toHaveProperty("outwardGate");
+        expect(asked).toEqual([]);
+      }).pipe(Effect.provide(serverLayer(hook.url)));
+    }),
+  );
+
+  it.live("a card the hook now governs, with nothing kept of its word, is denied, not run", () =>
+    Effect.gen(function* () {
+      const asked: Array<DecisionRequest> = [];
+      const hook = yield* endpoint<DecisionRequest>((body) => {
+        asked.push(body);
+        return { json: { decision: "allow" } };
+      });
+      yield* Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        // Raised while hosted features were off, so the hook never said anything of it.
+        const thread = yield* startThread("ship it /approve{gh pr merge 12}");
+        const session = yield* sessionOf(thread.id);
+        const card = yield* eventually(
+          "the card",
+          store.listRequests(thread.id).pipe(Effect.map((requests) => requests[0])),
+        );
+        yield* setHosted(true);
+        yield* runtimes
+          .respond(thread.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
+          .pipe(Effect.provideService(ActingPerson, "person-7"));
+        expect(session.responses.map((response) => response.answer)).toEqual([
+          { kind: "approval", decision: "deny", scope: "once", message: DECISION_UNAVAILABLE },
+        ]);
         expect(asked).toEqual([]);
       }).pipe(Effect.provide(serverLayer(hook.url)));
     }),

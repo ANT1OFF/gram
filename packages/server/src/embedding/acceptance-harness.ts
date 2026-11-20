@@ -1,6 +1,11 @@
 // The server the embedding acceptance tests run: the decision hook and event sink on loopback
 // endpoints, a fake agent, and the steps those tests share.
-import { applySettingsPatch, type ServerEvent, type ThreadId } from "@gram/contracts";
+import {
+  applySettingsPatch,
+  type ServerEvent,
+  type SinkEvent,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -145,4 +150,21 @@ export const sessionOf = (threadId: ThreadId) =>
   Effect.gen(function* () {
     const control = yield* FakeAgentControl;
     return yield* control.latest(threadId);
+  });
+
+/** What the receiver holds once the sink has nothing more to send it. */
+export const settledAt = (to: { readonly held: ReadonlyArray<SinkEvent> }) =>
+  Effect.gen(function* () {
+    let before = -1;
+    yield* eventually(
+      "the sink to go quiet",
+      Effect.sleep("150 millis").pipe(
+        Effect.map(() => {
+          const quiet = to.held.length === before;
+          before = to.held.length;
+          return quiet;
+        }),
+      ),
+    );
+    return [...to.held];
   });
