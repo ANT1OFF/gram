@@ -26,6 +26,7 @@ import {
   type PaneKeyModifier,
 } from "@gram/contracts/link-trust";
 import { browserObservations, jpegDimensions } from "./browser-observations.ts";
+export { consoleText } from "./browser-observations.ts";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -217,7 +218,6 @@ export const SNAPSHOT_MAX_CHARS = 40_000;
 /** Visible text longer than this is cut. */
 export const TEXT_MAX_CHARS = 60_000;
 const FIND_MAX_LINES = 30;
-const CONSOLE_MAX_CHARS = 2_000;
 const NAME_MAX_CHARS = 200;
 
 /** One node of `Accessibility.getFullAXTree`, as far as the outline reads it. */
@@ -449,20 +449,6 @@ export function findInOutline(outline: string, query: string): string {
   return hits.length > shown.length
     ? `${shown.join("\n")}\n… (${hits.length - shown.length} more)`
     : shown.join("\n");
-}
-
-/** The text of a console call's arguments, as the console would print them. */
-export function consoleText(args: ReadonlyArray<Record<string, unknown>>): string {
-  const text = args
-    .map((arg) => {
-      const value = arg["value"];
-      if (typeof value === "string") return value;
-      if (value !== undefined) return JSON.stringify(value);
-      const shown = arg["unserializableValue"] ?? arg["description"] ?? arg["type"];
-      return typeof shown === "string" ? shown : "";
-    })
-    .join(" ");
-  return text.length > CONSOLE_MAX_CHARS ? `${text.slice(0, CONSOLE_MAX_CHARS)}…` : text;
 }
 
 // Run in the driver's isolated world on the element (`this`); they read the DOM, never write it.

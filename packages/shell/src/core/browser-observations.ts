@@ -1,9 +1,37 @@
-import type {
-  BrowserDiagnostics,
-  BrowserNetworkFailure,
-  PaneConsoleEntry,
+import { redactText } from "@gram/contracts";
+import {
+  browseTarget,
+  type BrowserDiagnostics,
+  type BrowserNetworkFailure,
+  type PaneConsoleEntry,
 } from "@gram/contracts/link-trust";
 import type { Cdp } from "./page-driver.ts";
+
+const CONSOLE_MAX_CHARS = 2_000;
+
+/** The text of a console call's arguments, as the console would print them. */
+export function consoleText(args: ReadonlyArray<Record<string, unknown>>): string {
+  const text = args
+    .map((arg) => {
+      const value = arg["value"];
+      if (typeof value === "string") return value;
+      if (value !== undefined) return JSON.stringify(value);
+      const shown = arg["unserializableValue"] ?? arg["description"] ?? arg["type"];
+      return typeof shown === "string" ? shown : "";
+    })
+    .join(" ");
+  return text.length > CONSOLE_MAX_CHARS ? `${text.slice(0, CONSOLE_MAX_CHARS)}…` : text;
+}
+
+/**
+ * Whether a line logged by a context of `origin` may be read in words: only a local page's (the
+ * agent's own app, as `network` and `evaluate` are), never a public page's or a file preview's.
+ */
+const readableOrigin = (origin: string | undefined) =>
+  origin !== undefined &&
+  origin !== "null" &&
+  origin !== "about:blank" &&
+  browseTarget(origin).kind === "loopback";
 
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
@@ -35,19 +63,30 @@ export function jpegDimensions(data: string): { width: number; height: number } 
   throw new Error("Page capture dimensions unavailable.");
 }
 
-/** Bounded observations only. Never retain headers, cookies, bodies or raw console arguments. */
+/**
+ * Bounded observations only. Never retain headers, cookies or bodies. A console line keeps its
+ * words, redacted, only when a local page logged it, and only `console` returns them: diagnostics
+ * stay content-free.
+ */
 export function browserObservations(cdp: Cdp, heldFrom: number | null) {
   const since = Date.now();
   let holding = heldFrom;
   let droppedConsole = 0;
   let droppedNetwork = 0;
-  const console: PaneConsoleEntry[] = [];
+  /** Each line as diagnostics say it (no contents), with its redacted words when they may be read. */
+  const console: Array<PaneConsoleEntry & { readonly words?: string }> = [];
+  /** The origin of each execution context, by id, as the page made them. */
+  const origins = new Map<number, string>();
+  const wordsOf = (contextId: unknown, text: () => string) =>
+    typeof contextId === "number" && readableOrigin(origins.get(contextId))
+      ? { words: redactText(text()) }
+      : {};
   const network: BrowserNetworkFailure[] = [];
   const pending = new Map<
     string,
     { url: string; timestamp: number; at: number; status?: number }
   >();
-  const log = (entry: PaneConsoleEntry) => {
+  const log = (entry: PaneConsoleEntry & { readonly words?: string }) => {
     if (holding !== null) return;
     console.push(entry);
     if (console.length > 100) {
@@ -96,15 +135,39 @@ export function browserObservations(cdp: Cdp, heldFrom: number | null) {
               : type === "debug" || type === "trace"
                 ? "debug"
                 : "log";
+      const args = Array.isArray(event["args"]) ? (event["args"] as unknown[]).map(record) : [];
       log({
         level,
-        text: `${Array.isArray(event["args"]) ? event["args"].length : 0} console argument(s); contents omitted.`,
+        text: `${args.length} console argument(s); contents omitted.`,
         at: Date.now(),
+        ...wordsOf(event["executionContextId"], () => consoleText(args)),
       });
     }),
-    cdp.on("Runtime.exceptionThrown", () =>
-      log({ level: "error", text: "Uncaught page exception; contents omitted.", at: Date.now() }),
-    ),
+    cdp.on("Runtime.exceptionThrown", (params) => {
+      const details = record(record(params)["exceptionDetails"]);
+      const description = record(details["exception"])["description"];
+      log({
+        level: "error",
+        text: "Uncaught page exception; contents omitted.",
+        at: Date.now(),
+        ...wordsOf(details["executionContextId"], () =>
+          consoleText([
+            {
+              value: typeof description === "string" ? description : String(details["text"] ?? ""),
+            },
+          ]),
+        ),
+      });
+    }),
+    cdp.on("Runtime.executionContextCreated", (params) => {
+      const context = record(record(params)["context"]);
+      if (typeof context["id"] === "number" && typeof context["origin"] === "string")
+        origins.set(context["id"], context["origin"]);
+    }),
+    cdp.on("Runtime.executionContextDestroyed", (params) => {
+      origins.delete(record(params)["executionContextId"] as number);
+    }),
+    cdp.on("Runtime.executionContextsCleared", () => origins.clear()),
     cdp.on("Network.requestWillBeSent", (params) => {
       if (holding !== null) return;
       const event = record(params);
@@ -139,11 +202,14 @@ export function browserObservations(cdp: Cdp, heldFrom: number | null) {
     cdp.on("Network.loadingFailed", (params) => finish(params, "failed")),
   ];
   return {
-    console: (errors: boolean) => console.filter((line) => !errors || line.level === "error"),
+    console: (errors: boolean): PaneConsoleEntry[] =>
+      console
+        .filter((line) => !errors || line.level === "error")
+        .map(({ level, text, at, words }) => ({ level, text: words ?? text, at })),
     diagnostics: (): BrowserDiagnostics => ({
       since,
       observedAt: Date.now(),
-      console: [...console],
+      console: console.map(({ level, text, at }) => ({ level, text, at })),
       network: [...network],
       droppedConsole,
       droppedNetwork,
