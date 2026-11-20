@@ -101,9 +101,7 @@ ENV GRAM_CONTAINER=1 \
   GRAM_WEB_ROOT=/opt/gram/apps/web/dist \
   GRAM_DATA_DIR=/home/gram/.gram-state \
   GRAM_FAKE_AGENT=0 \
-  GRAM_HEADLESS_BROWSER=/opt/gram/packages/shell/src/modules/agent-browser/headless-host.ts \
-  GRAM_BROWSER_EXECUTABLE=/usr/bin/chromium \
-  GRAM_BROWSER_SANDBOX=0
+  GRAM_BROWSER_EXECUTABLE=/usr/bin/chromium
 EXPOSE 4317
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "/opt/gram/packages/server/src/main.ts"]

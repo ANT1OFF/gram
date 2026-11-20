@@ -78,16 +78,23 @@ are much slower across that boundary.
 
 ## The agent browser
 
-Agents' `browser_*` tools work in the container: the image has Debian's Chromium, and the server
-runs it headless for them ([how](AGENTS_AND_FEATURES.md#the-agent-browser-without-the-desktop-app)).
+Agents' `browser_*` tools work in the container that `compose.yaml` starts: the image has Debian's
+Chromium, and the compose file switches the server's headless browser on for them
+([how](AGENTS_AND_FEATURES.md#the-agent-browser-without-the-desktop-app)). The image alone leaves
+it off: a container started from it without `GRAM_HEADLESS_BROWSER` has no browser, and the tools
+say so.
 It reaches the container's loopback only, so an agent can open and test the dev server it started
 there, and nothing on the internet or your network. The thread's Preview tab shows its page live
 in your browser, and a click or a key in it takes the page over until you hand it back.
 
-Chromium runs without its own sandbox here (`GRAM_BROWSER_SANDBOX=0`), since the container's user
-can't make the namespaces it needs. The container is the boundary, as it is for the agents, which
-run as the same user. Build with `--build-arg CHROMIUM=` to leave Chromium out; the tools then say
-the server's browser couldn't open a page.
+Chromium runs without its own sandbox here (`GRAM_BROWSER_SANDBOX=0` in `compose.yaml`), since the
+container's user can't make the namespaces it needs. The container is the boundary, as it is for
+the agents, which run as the same user. That holds only for threads in this container, so a
+browser without its sandbox opens no page for a thread whose session runs on another machine, a
+[headless control plane](#a-headless-control-plane)'s threads among them: the tools say why. An
+operator who accepts that risk sets `GRAM_BROWSER_UNSANDBOXED_ELSEWHERE=1`; otherwise run the
+browser with its sandbox, or leave it off. Build with `--build-arg CHROMIUM=` to leave Chromium
+out; the tools then say the server's browser couldn't open a page.
 
 ## Hosted features
 
