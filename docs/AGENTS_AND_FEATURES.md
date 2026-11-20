@@ -1464,6 +1464,49 @@ Definitions are read from the project's own folder each time, not from the threa
 an agent editing its worktree's copy changes nothing. No agent tool runs a script: only the
 user's click or key does.
 
+## Verify recipes
+
+A repository can name the commands an agent runs to check its work, its verify drivers, in
+`.gram/verify.json`. The file is optional: without it nothing changes, and Gram adds none of its
+own.
+
+```json
+{
+  "drivers": [
+    { "name": "unit", "run": "bun install --frozen-lockfile && bun run test", "kind": "unit" },
+    {
+      "name": "shots",
+      "run": "bun install --frozen-lockfile && bun run --filter @gram/web pr:shots --set tour",
+      "covers": ["apps/web/**"],
+      "kind": "shots",
+      "required": true,
+      "timeoutMinutes": 20
+    }
+  ]
+}
+```
+
+`name` (lowercase letters, digits and `. _ -`) and `run` (one line) are required. `covers` lists
+path patterns (`*` within a folder name, `**` across folders, a trailing `/` for everything under a
+folder) of the changes a driver checks; without it a driver covers every change. `kind` is one of
+`unit`, `types`, `lint`, `e2e`, `shots`, `flow` and `other`, for reading the recipe at a glance.
+`required` says the repository asks that a worker pass it before it reports done; Gram tells the
+worker so and refuses nothing. `timeoutMinutes` is 1 to 120, 30 when absent.
+
+Agents run drivers with the `verify` tool. Without `driver` it lists them, which cover what the
+branch changed since its base, which are required and how each last ran on the current commit.
+With `driver` it runs that one on the thread's latest commit through
+[Gram's own local checks](#project-local-merge-checks): in a clean worktree outside the agent's
+checkout, on the machine the thread is on, with the record keyed by that commit and the command.
+Uncommitted changes aren't in the run. The thread is told how it ended, with the end of its
+output fenced as data. A pass is reused for that commit only. A driver's records key apart from
+the project's merge check, so no driver's pass counts for `merge_when_ready`.
+
+The recipe is read from the repository's own clone, not the thread's worktree, so an agent editing
+its worktree's copy changes nothing until it is merged and pulled. A folder the user hasn't
+trusted runs no drivers. The first run of each command in a project asks the user, naming the
+command; a changed command asks again. That approval lasts until Gram restarts.
+
 ## Agents after Gram quits
 
 Off by default. **Settings → General → Running work → Run agents after quit** runs this machine's

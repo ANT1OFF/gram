@@ -46,6 +46,7 @@ import { ReviewAppToolsLive } from "../babysit/review-tools.ts";
 import { PanePort } from "../browser/pane-port.ts";
 import { BrowserAppToolsLive } from "../browser/tools.ts";
 import { DevServerAppToolsLive } from "../browser/dev-server-tools.ts";
+import { VerifyAppToolsLive } from "../verify/verify-tools.ts";
 import { PrCommentWakesLive } from "../babysit/pr-comments.ts";
 import { PrCommentReads } from "../git/pr-comments.ts";
 import { BabysitLive } from "../babysit/service.ts";
@@ -1001,6 +1002,7 @@ export const ServerCore = Layer.unwrap(
         // Merged, so the handlers that show an agent's page to a client reach the same port.
         BrowserAppToolsLive.pipe(Layer.provideMerge(PanePort.layer)),
         DevServerAppToolsLive,
+        VerifyAppToolsLive,
         ThreadAssistLive,
         RepoEventsInboundLive,
         ThreadNotesInboundLive,
