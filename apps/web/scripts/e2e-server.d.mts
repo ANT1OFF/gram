@@ -33,12 +33,13 @@ export declare function spawnVite(
   options?: { readonly isolatedDir?: string },
 ): ChildProcess;
 
-export declare function buildForPreview(env?: NodeJS.ProcessEnv): Promise<void>;
+export declare function buildForPreview(env?: NodeJS.ProcessEnv, outDir?: string): Promise<void>;
 
 export declare function spawnVitePreview(
   port: number,
   token: string,
   env?: NodeJS.ProcessEnv,
+  outDir?: string,
 ): ChildProcess;
 
 export interface StartE2eServerOptions {
