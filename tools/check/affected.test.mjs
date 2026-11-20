@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -14,6 +17,22 @@ describe("affected projects", () => {
     );
     // apps/web references packages/shell in its tsconfig without a manifest dependency.
     expect(graph.find((ws) => ws.dir === "apps/web")?.uses).toContain("packages/shell");
+  });
+
+  it("refuses a tsconfig it can't read rather than losing its references", () => {
+    const root = mkdtempSync(join(tmpdir(), "gram-affected-"));
+    try {
+      mkdirSync(join(root, "packages"));
+      mkdirSync(join(root, "apps/web"), { recursive: true });
+      writeFileSync(join(root, "apps/web/package.json"), '{ "name": "@gram/web" }');
+      writeFileSync(
+        join(root, "apps/web/tsconfig.json"),
+        '{ "compilerOptions": {\n    // a comment\n  }, "references": [] }',
+      );
+      expect(() => workspaces(root)).toThrow(/apps\/web\/tsconfig.json must be plain JSON/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("runs a changed workspace and every workspace that depends on it", () => {
