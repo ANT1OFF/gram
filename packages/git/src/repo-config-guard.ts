@@ -345,8 +345,8 @@ export const discoverySignature = (
   };
   let dir = nodePath.resolve(cwd);
   for (;;) {
-    mark(nodePath.join(dir, ".git"));
-    mark(nodePath.join(dir, "HEAD"));
+    markFollowed(nodePath.join(dir, ".git"));
+    markFollowed(nodePath.join(dir, "HEAD"));
     const parent = nodePath.dirname(dir);
     if (parent === dir) break;
     dir = parent;

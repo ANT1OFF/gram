@@ -373,6 +373,31 @@ describe.skipIf(!hasGit)("Gram's own git and a submodule's config", () => {
     }).pipe(provide),
   );
 
+  it.live.skipIf(process.platform === "win32")(
+    "sees a .git link's gitdir file pointed at another repository after Gram's last call",
+    () =>
+      Effect.gen(function* () {
+        const { repo, root, ran, marker } = setup();
+        const good = nodePath.join(root, "good.git");
+        fs.renameSync(nodePath.join(repo, ".git"), good);
+        const evil = nodePath.join(root, "evil.git");
+        fs.cpSync(good, evil, { recursive: true });
+        fs.appendFileSync(
+          nodePath.join(evil, "config"),
+          `[filter "other"]\n\tclean = touch '${marker("relinked")}'; cat\n`,
+        );
+        fs.writeFileSync(nodePath.join(repo, ".gitattributes"), "*.txt filter=other\n");
+        const pointer = nodePath.join(root, "pointer");
+        fs.writeFileSync(pointer, `gitdir: ${good}\n`);
+        fs.symlinkSync(pointer, nodePath.join(repo, ".git"));
+        expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+        fs.writeFileSync(pointer, `gitdir: ${evil}\n`);
+        fs.writeFileSync(nodePath.join(repo, "a.txt"), "two\n");
+        expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+        expect(ran()).toEqual([]);
+      }).pipe(provide),
+  );
+
   it.live("sees a submodule config an agent writes after Gram's last call", () =>
     Effect.gen(function* () {
       const { repo, ran, modules, plantIn } = withSubmodules();
