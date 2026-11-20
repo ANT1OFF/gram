@@ -17,12 +17,14 @@
     "import/no-unassigned-import": ["warn", { "allow": ["**/*.css"] }],
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "warn",
+    "react/set-state-in-effect": "error",
     "react/react-in-jsx-scope": "off",
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
     "no-underscore-dangle": ["warn", { "allow": ["_tag", "__flicker", "__gutters"] }],
     "gram/no-bare-fork": "error",
     "gram/no-focused-tests": "error",
+    "gram/no-sleep": "error",
     "gram/max-lines": "error"
   },
   "overrides": [

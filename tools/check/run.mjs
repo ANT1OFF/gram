@@ -45,6 +45,7 @@ import {
   workersPerSlot,
   writeRun,
 } from "./slots.mjs";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const args = process.argv.slice(2);
@@ -69,8 +70,6 @@ const ci = Boolean(process.env["CI"]);
 const noop = () => {};
 const seconds = (ms) => (ms / 1000).toFixed(1);
 const say = (text) => process.stdout.write(`${text}\n`);
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /** Signals each recorded process group of `run`, ignoring ones already gone. */
 const signalGroups = (groups, signal) => {
   for (const pid of groups) {

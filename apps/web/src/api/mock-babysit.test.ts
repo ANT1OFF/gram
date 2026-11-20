@@ -1,18 +1,15 @@
 import type { ThreadId } from "@gram/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createThreadFeed, syncScheduler } from "@/stores/thread-feed";
 
 import { createMockApi } from "./mock";
 import type { ApiServerEvent } from "./types";
 
-async function waitFor(predicate: () => boolean, label: string) {
-  for (let i = 0; i < 2000; i++) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error(`timed out waiting for ${label}`);
-}
+const waitFor = (predicate: () => boolean, label: string) =>
+  vi.waitUntil(predicate, { timeout: 5_000, interval: 1 }).catch(() => {
+    throw new Error(`timed out waiting for ${label}`);
+  });
 
 describe("MockApi babysit", () => {
   it("binds the PR, then queues a review notice and counts the round", async () => {

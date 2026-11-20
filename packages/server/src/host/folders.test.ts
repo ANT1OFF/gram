@@ -9,7 +9,7 @@ import {
 import * as fsp from "node:fs/promises";
 import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import type { AgentHost, AgentSession, OpenSessionOptions } from "@gram/agents";
 import {
   HOST_PROTOCOL_VERSION,
@@ -497,11 +497,9 @@ describe("a machine's folder listing", () => {
       /** Set once a call that never settles has been made. */
       const hung = { probe: false, realpath: false };
       const untilHung = (which: keyof typeof hung) =>
-        Effect.gen(function* () {
-          for (let i = 0; i < 1000 && !hung[which]; i++)
-            yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5)));
-          expect(hung[which]).toBe(true);
-        });
+        Effect.promise(() =>
+          vi.waitFor(() => expect(hung[which]).toBe(true), { timeout: 5_000, interval: 5 }),
+        );
       // `scratch/.git` stands for a link into a mount that hangs: its probe never settles.
       const io: FolderIo = {
         realpath: (path) => fsp.realpath(path),

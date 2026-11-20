@@ -20,6 +20,7 @@ import type { ViewInput } from "@gram/contracts/link-trust";
 import { previewNavigation, previewRequest } from "../../core/preview-rules.ts";
 import type { PreviewRequestDetails } from "../preview/main.ts";
 import type { PaneContents, PaneViews } from "./pane.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 
 // ---------------------------------------------------------------------------------------------
 // The protocol connection.
@@ -210,7 +211,7 @@ export const launchHeadless = (options: {
         rmSync(userDataDir, { recursive: true, force: true });
         return;
       } catch {
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await sleep(200);
       }
     }
   };

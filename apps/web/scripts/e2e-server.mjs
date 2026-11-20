@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { checkoutPort, findFreePort, isPortFree } from "./dev-ports.mjs";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const E2E_TOKEN_PATH = "/__e2e";
 /** Where this checkout's search for a free e2e port starts; another worktree starts elsewhere. */
@@ -16,8 +17,6 @@ export const DEFAULT_E2E_PORT = checkoutPort(fileURLToPath(new URL("..", import.
 export const E2E_HOST = "127.0.0.1";
 
 const webDir = fileURLToPath(new URL("..", import.meta.url));
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
  * `ours` when `/__e2e` answers with `token`, `foreign` when anything else answers, `down` when
  * nothing listens. Redirects are foreign responses and are never followed.

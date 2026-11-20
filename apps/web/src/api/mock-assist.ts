@@ -10,6 +10,7 @@ import type {
   ThreadRecap,
   ThreadSummary,
 } from "@gram/contracts";
+import { sleep } from "@/lib/sleep";
 
 /** The design's "Bump dependencies" recap, which `simulateRecap` gives `t-deps` unless told otherwise. */
 export const MOCK_DEPS_RECAP: ThreadRecap = {
@@ -74,7 +75,7 @@ export function createMockAssist() {
     recap: async (summary: ThreadSummary): Promise<RecapView | null> => {
       const entry = recaps.get(summary.thread.id);
       if (entry === undefined) return null;
-      await new Promise((resolve) => setTimeout(resolve, entry.delayMs));
+      await sleep(entry.delayMs);
       if (BUSY.has(summary.status) || summary.thread.lastActivityAt > entry.view.lastActiveAt) {
         return null;
       }
