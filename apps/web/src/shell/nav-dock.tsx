@@ -13,6 +13,7 @@ import { useMotionLevel } from "@/motion";
 import { needsYouSpoken } from "@/orchestration/needs-you-entry";
 import { OverviewSidebar } from "@/orchestration/overview-sidebar";
 import { useNeedsYouPill } from "@/orchestration/use-needs-you";
+import { useSettingsLink } from "@/settings/open-settings";
 import { useLayoutStore } from "@/stores/layout";
 import { DOCK_ITEM, NAV_REGION, useNavigationStore } from "@/stores/navigation";
 
@@ -123,13 +124,14 @@ function SettingsItem() {
   const hint = useShortcutHint("settings.open");
   const setup = useLaunchIssues().dismissed;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const link = useSettingsLink(setup.length === 0 ? "/settings" : "/settings/diagnostics");
   const label =
     setup.length === 0
       ? withHint("Settings", hint)
       : `Settings, ${setup.length === 1 ? "1 setup problem" : `${setup.length} setup problems`}`;
   return (
     <Link
-      to={setup.length === 0 ? "/settings" : "/settings/diagnostics"}
+      {...link}
       {...{ [DOCK_ITEM]: "" }}
       data-testid="nav-dock-settings"
       aria-label={label}

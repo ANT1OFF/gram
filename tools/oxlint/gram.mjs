@@ -40,12 +40,15 @@
 // a focus, a measurement), and many short-lived timers churn the garbage collector into jank. Real
 // time goes through the named helpers in `apps/web/src/lib/timers.ts` and its neighbours; the files
 // not moved yet are in `allowlists.mjs` with how many each may keep.
+//
+// And Settings opened through `settings/open-settings.ts`: see `settings-entry.mjs`.
 
 import { dirname, relative, resolve } from "node:path";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 import { importOf, isFunction, isTestFile, propertyName, REPO, soleExpression } from "./ast.mjs";
 import { noRawEffect } from "./no-raw-effect.mjs";
 import { noTimer } from "./no-timer.mjs";
+import { settingsEntry } from "./settings-entry.mjs";
 
 const BARE_FORKS = new Set([
   "fork",
@@ -486,6 +489,7 @@ export default {
         };
       },
     },
+    "settings-entry": settingsEntry,
     "no-adhoc-lock": {
       meta: {
         type: "problem",

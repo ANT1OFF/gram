@@ -847,3 +847,43 @@ describe("no-cross-package-path", () => {
     expect(crosses("packages/server/src", "./main")).toBe(false);
   });
 });
+
+describe("settings-entry", () => {
+  const rule = "gram/settings-entry";
+
+  it("refuses a plain link or navigate to /settings, which pushes a copy of the open tab", () => {
+    const found = lint(
+      `export const a = <Link to="/settings" />;
+      export const b = <Link to={setup ? "/settings" : "/settings/diagnostics"} />;
+      navigate({ to: "/settings" });
+      navigate({ "to": \`/settings/\`, replace: false });
+      router.navigate({ to: "/settings" as const });
+    `,
+      rule,
+      ".tsx",
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 2, 3, 4, 5]);
+    expect(found[0].message).toContain("useSettingsLink");
+  });
+
+  it("allows a tab's own address, a preload, and the helpers' links", () => {
+    expect(
+      lint(
+        `export const a = <Link to="/settings/usage" />;
+        export const b = <Link {...useSettingsLink()} />;
+        navigate({ to: "/settings/routines" });
+        router.preloadRoute({ to: "/settings" });
+        export const c = { from: "/settings" };
+      `,
+        rule,
+        ".tsx",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is on for the web app under the repository's own config", () => {
+    const source = 'navigate({ to: "/settings" });\n';
+    expect(probeConfig("apps/web/src", source)).toContain("gram(settings-entry)");
+    expect(probeConfig("packages/server/src", source)).not.toContain("gram(settings-entry)");
+  });
+});

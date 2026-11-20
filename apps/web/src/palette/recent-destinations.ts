@@ -28,3 +28,9 @@ export const useRecentDestinations = create<RecentDestinationsState>()(
     },
   ),
 );
+
+/** A destination's run, remembered so the unfiltered palette leads with it next time. */
+export const go = (id: string, open: () => void) => () => {
+  useRecentDestinations.getState().visit(id);
+  open();
+};

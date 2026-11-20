@@ -12,6 +12,7 @@ import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { useOpenBoard } from "@/orchestration/open-board";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { toggleWorkersTab } from "@/orchestration/workers-tab";
+import { useOpenSettings } from "@/settings/open-settings";
 import {
   fitShell,
   GRID_PRESETS,
@@ -49,6 +50,7 @@ const FOCUS_KEYS: readonly [FocusDirection, string][] = [
 /** App-wide bindings; component-scoped ones (composer, cards) register where they live. */
 export function useGlobalShortcuts() {
   const navigate = useNavigate();
+  const openSettings = useOpenSettings();
   const router = useRouter();
   const params = useParams({ strict: false });
   const currentId = params.threadId as ThreadId | undefined;
@@ -110,7 +112,7 @@ export function useGlobalShortcuts() {
     keys: "mod+,",
     label: "Settings",
     group: "App",
-    run: () => void navigate({ to: "/settings" }),
+    run: openSettings,
   });
 
   const workspaces = useWorkspaces();
