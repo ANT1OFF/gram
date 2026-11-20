@@ -56,7 +56,7 @@ const withSubmodules = () => {
       key,
       `touch '${marker(name)}'; cat`,
     );
-  return { repo, ran, modules, plantIn };
+  return { repo, root, ran, modules, plantIn };
 };
 
 describe.skipIf(!hasGit)("Gram's own git and the repository's config", () => {
@@ -350,6 +350,25 @@ describe.skipIf(!hasGit)("Gram's own git and a submodule's config", () => {
       const out = yield* proc.run(gh, ["pr", "create"], { cwd: repo });
       expect(out.status).toBe(0);
       expect(out.stdout).toContain("a.txt");
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
+  it.live("sees a submodule's git folder pointed at a shared config after Gram's last call", () =>
+    Effect.gen(function* () {
+      const { repo, root, ran, modules } = withSubmodules();
+      fs.rmSync(nodePath.join(repo, ".gitattributes"));
+      run(repo, "commit", "-qam", "no attributes");
+      const common = nodePath.join(root, "common");
+      fs.cpSync(modules, common, { recursive: true });
+      fs.appendFileSync(
+        nodePath.join(common, "config"),
+        `[filter "planted"]\n\tclean = touch '${nodePath.join(root, "ran-shared")}'; cat\n`,
+      );
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+      fs.writeFileSync(nodePath.join(modules, "commondir"), "../../../../common\n");
+      fs.writeFileSync(nodePath.join(repo, "sub", "l.txt"), "two\n");
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
       expect(ran()).toEqual([]);
     }).pipe(provide),
   );

@@ -333,6 +333,16 @@ export const discoverySignature = (
           : `${path}=>${target.ino}:${target.ctimeNs}:${target.size}`,
     );
   };
+  // A nested or submodule git folder's config, and the shared one its `commondir` names.
+  const markConfigOf = (dir: string) => {
+    markFollowed(nodePath.join(dir, "commondir"));
+    const shared = nestedCommonDir(dir);
+    for (const path of [
+      ...submoduleConfigFiles(dir),
+      ...(shared === undefined ? [] : submoduleConfigFiles(shared)),
+    ])
+      markFollowed(path);
+  };
   let dir = nodePath.resolve(cwd);
   for (;;) {
     mark(nodePath.join(dir, ".git"));
@@ -353,13 +363,7 @@ export const discoverySignature = (
   for (const nested of nestedGitDirs) {
     mark(nested);
     mark(nodePath.join(nested, "index"));
-    markFollowed(nodePath.join(nested, "commondir"));
-    const shared = nestedCommonDir(nested);
-    for (const path of [
-      ...submoduleConfigFiles(nested),
-      ...(shared === undefined ? [] : submoduleConfigFiles(shared)),
-    ])
-      markFollowed(path);
+    markConfigOf(nested);
   }
   // Every gitlink's `.git`, checked out or not: one made later at a gitlink nothing was checked
   // out at is a nested repository whose config the guard hasn't read. Followed too, so a link
@@ -367,8 +371,7 @@ export const discoverySignature = (
   for (const path of gitlinkDotGits) markFollowed(path);
   const submodules = submoduleGitDirs(commonDir);
   if (submodules === undefined) parts.push("submodules:too-many");
-  else
-    for (const sub of submodules) for (const path of submoduleConfigFiles(sub)) markFollowed(path);
+  else for (const sub of submodules) markConfigOf(sub);
   return parts.join("\n");
 };
 
