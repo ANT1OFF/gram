@@ -99,12 +99,19 @@ export interface AskAnswerDeps {
     ) => Effect.Effect<
       { readonly question: MemoryQuestion; readonly threadId: ThreadId } | undefined
     >;
-    readonly answer: (input: {
-      readonly workspaceId: WorkspaceId;
-      readonly questionId: string;
-      readonly question: string;
-      readonly answer: string;
-    }) => Effect.Effect<AnswerQuestionResult, { readonly _tag: string; readonly message: string }>;
+    /**
+     * Answers it as `question.answer` does, but only as this answer (`own`): one closed or with an
+     * answer on its way is refused. `beforeSend` runs once this answer is the one that goes.
+     */
+    readonly answer: (
+      input: {
+        readonly workspaceId: WorkspaceId;
+        readonly questionId: string;
+        readonly question: string;
+        readonly answer: string;
+      },
+      options: { readonly own: true; readonly beforeSend: Effect.Effect<void> },
+    ) => Effect.Effect<AnswerQuestionResult, { readonly _tag: string; readonly message: string }>;
     /** Whether this fiber's person may reach the orchestrator's thread. */
     readonly mayReach: (workspaceId: WorkspaceId, threadId: ThreadId) => Effect.Effect<boolean>;
   };
@@ -343,14 +350,18 @@ export const answerOrchestratorQuestion = (
       }
       const askId = orchestratorQuestionAskId(asked.workspaceId, asked.questionId);
       const note = deps.noteAnswer ?? (() => Effect.void);
-      yield* note(askId, { answeredBy: person, proof });
+      // Noted under the answer's own lock, once this answer is the one that goes: an answer given
+      // meanwhile on the socket is never put on this person's record.
       const failed = yield* questions
-        .answer({
-          workspaceId: asked.workspaceId,
-          questionId: asked.questionId,
-          question: found.question.text,
-          answer: text,
-        })
+        .answer(
+          {
+            workspaceId: asked.workspaceId,
+            questionId: asked.questionId,
+            question: found.question.text,
+            answer: text,
+          },
+          { own: true, beforeSend: note(askId, { answeredBy: person, proof }) },
+        )
         .pipe(
           Effect.provideService(ActingPerson, person),
           Effect.provideService(RoutedFor, { person }),

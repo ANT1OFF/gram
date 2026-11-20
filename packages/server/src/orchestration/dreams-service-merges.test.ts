@@ -550,6 +550,37 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
       ),
     );
 
+    it.effect("takes an answer that must be its own only when it is the one that goes", () =>
+      inDreams((world) =>
+        Effect.gen(function* () {
+          const memory = yield* OrchestrationMemory;
+          const answerIt = makeAnswerOnce();
+          const { workspaceId } = yield* openOrchestrator(world);
+          let noted = 0;
+          const own = { own: true, beforeSend: Effect.sync(() => void noted++) } as const;
+          // Another answer is on its way: this one is refused, not reported as sent.
+          yield* memory.write(
+            workspaceId,
+            "questions.md",
+            `${ANSWERED_FILE}Answer: Yes\nDelivery: pending k-1234\n`,
+          );
+          const { delivery, held } = flaky(0, false);
+          held.push(`Answer to Q1 … (answer key k-1234)`);
+          const busy = { ...ANSWER_TO, answer: "No" };
+          yield* Effect.flip(answerIt(memory, workspaceId, busy, "2026-09-25", delivery, own));
+          expect(noted).toBe(0);
+          // Free, it goes, and is noted first.
+          yield* memory.write(workspaceId, "questions.md", ANSWERED_FILE);
+          const yes = { ...ANSWER_TO, answer: "Yes" };
+          yield* answerIt(memory, workspaceId, yes, "2026-09-25", delivery, own);
+          expect(noted).toBe(1);
+          // Closed by that answer: the same words again are not this answer's to settle.
+          yield* Effect.flip(answerIt(memory, workspaceId, yes, "2026-09-25", delivery, own));
+          expect(noted).toBe(1);
+        }),
+      ),
+    );
+
     it.effect(
       "serialises an id-less question answered by its words and by the id it was given",
       () =>

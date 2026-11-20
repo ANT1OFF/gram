@@ -47,7 +47,19 @@ export type AnswerOnce = <E>(
   },
   date: string,
   delivery: AnswerDelivery<E>,
+  options?: AnswerOnceOptions,
 ) => Effect.Effect<AnswerQuestionResult, E | MemoryError>;
+
+/** For an answer that must be its own: an embedder's, which is on record as its person's. */
+export interface AnswerOnceOptions {
+  /**
+   * Refuses rather than reports another answer's success: an entry closed already, or one whose
+   * earlier answer is on its way, is not this answer's to settle.
+   */
+  readonly own?: boolean;
+  /** Runs under the lock, once this answer is the one that goes, before it is sent. */
+  readonly beforeSend?: Effect.Effect<void>;
+}
 
 /**
  * The user's answer, delivered once and then closing its entry.
@@ -68,7 +80,7 @@ export type AnswerOnce = <E>(
  */
 export const makeAnswerOnce = (): AnswerOnce => {
   const locks = makeKeyedLock<WorkspaceId>();
-  return (memory, workspaceId, input, date, delivery) => {
+  return (memory, workspaceId, input, date, delivery, options = {}) => {
     const name = input.questionId ?? "That question";
     const read = memory
       .read(workspaceId, QUESTIONS_FILE)
@@ -93,16 +105,24 @@ export const makeAnswerOnce = (): AnswerOnce => {
       }
       if (!entry.open) {
         // Pressed again after this very answer went and closed it: that is done, not a failure.
-        if (entry.closedAs === "answered" && entry.answer === keptAnswer(input.answer)) {
+        if (
+          options.own !== true &&
+          entry.closedAs === "answered" &&
+          entry.answer === keptAnswer(input.answer)
+        ) {
           return { questionId: entry.id, delivered: "sent" as const };
         }
         return yield* new InvalidState({ message: `${name} is closed already.` });
+      }
+      if (entry.pending !== undefined && options.own === true) {
+        return yield* new InvalidState({ message: `An answer to ${name} is on its way already.` });
       }
       if (entry.pending !== undefined && (yield* delivery.holds(answerKeyTag(entry.pending)))) {
         // An earlier attempt got there and didn't close: close it with what that attempt said.
         yield* close(entry.id, entry.answer ?? input.answer);
         return { questionId: entry.id, delivered: "sent" as const };
       }
+      if (options.beforeSend !== undefined) yield* options.beforeSend;
       const key = entry.pending ?? randomUUID().slice(0, 13);
       const id = yield* edit((current) =>
         markAnswerPending(current, { ...input, questionId: entry.id, key }),
@@ -149,17 +169,20 @@ export const questionAnswerer =
     readonly hub: Pick<EventHubShape, "publish">;
     readonly runtimes: Pick<ThreadRuntimesShape, "summaryOf" | "sendOrJoin" | "steer" | "send">;
   }) =>
-  ({
-    workspaceId,
-    questionId,
-    question,
-    answer,
-  }: {
-    readonly workspaceId: WorkspaceId;
-    readonly questionId?: string | undefined;
-    readonly question: string;
-    readonly answer: string;
-  }) =>
+  (
+    {
+      workspaceId,
+      questionId,
+      question,
+      answer,
+    }: {
+      readonly workspaceId: WorkspaceId;
+      readonly questionId?: string | undefined;
+      readonly question: string;
+      readonly answer: string;
+    },
+    options?: AnswerOnceOptions,
+  ) =>
     Effect.gen(function* () {
       const { memory, store, hub, runtimes } = deps;
       const orchestrator = (yield* store.getWorkspace(workspaceId)).workspace.orchestratorThreadId;
@@ -206,6 +229,7 @@ export const questionAnswerer =
         { questionId, question, answer },
         questionDate(yield* Clock.currentTimeMillis),
         delivery,
+        options,
       );
       yield* hub.publish({ type: "orchestration.changed", workspaceId });
       return result;

@@ -61,8 +61,10 @@ const fakeDeps = (found: MemoryQuestion | undefined, reach = true, on = threadId
     orchestratorQuestions: {
       find: () =>
         Effect.succeed(found === undefined ? undefined : { question: found, threadId: on }),
-      answer: (input) =>
-        Effect.sync(() => {
+      answer: (input, options) =>
+        Effect.gen(function* () {
+          expect(options.own).toBe(true);
+          yield* options.beforeSend;
           answered.push(input);
           return { questionId: input.questionId, delivered: "sent" as const };
         }),
@@ -226,5 +228,51 @@ describe("the event sink's orchestrator", () => {
         data: { id: "oq:ws-1:Q1", how: "answered", answeredBy: "ada" },
       });
     }),
+  );
+  it.live(
+    "keeps a workspace's asks while it can't be read, and withdraws them once it's gone",
+    () =>
+      Effect.gen(function* () {
+        const to = yield* receiver;
+        let state: "read" | "unreadable" | "gone" = "read";
+        const events = yield* Queue.unbounded<OwnEvent>();
+        yield* makeEventSink({
+          endpoint: { url: to.url, token: "sink-token" },
+          file: ":memory:",
+          on: Effect.succeed(true),
+          threads: Effect.succeed([orchestrator]),
+          events: Stream.fromQueue(events),
+          orchestrators: () =>
+            Effect.sync(() =>
+              state === "gone"
+                ? []
+                : state === "unreadable"
+                  ? [{ workspaceId, questions: [], unread: true as const }]
+                  : [{ workspaceId, thread: orchestrator, questions: [entry()] }],
+            ),
+          retryBase: Duration.millis(5),
+          retryMax: Duration.millis(20),
+          recheck: Duration.millis(5),
+        });
+        yield* eventually(
+          "the opening",
+          Effect.sync(() => to.held.length >= 2),
+        );
+        state = "unreadable";
+        yield* Queue.offer(events, { type: "memory.changed", workspaceId } as never);
+        yield* Effect.sleep("100 millis");
+        expect(to.held).toHaveLength(2);
+        state = "gone";
+        yield* Queue.offer(events, { type: "orchestration.changed", workspaceId } as never);
+        const gone = yield* eventually(
+          "the withdrawal",
+          Effect.sync(() => to.held.length >= 3 && to.held.slice(2)),
+        );
+        expect(gone).toHaveLength(1);
+        expect(gone[0]).toMatchObject({
+          type: "ask.resolved",
+          data: { id: "oq:ws-1:Q1", how: "withdrawn" },
+        });
+      }),
   );
 });

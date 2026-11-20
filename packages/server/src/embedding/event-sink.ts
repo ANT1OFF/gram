@@ -131,6 +131,8 @@ export interface SinkOrchestrator {
   readonly workspaceId: WorkspaceId;
   /** Absent for a workspace with no orchestrator: whatever it asked is withdrawn. */
   readonly thread?: Thread | undefined;
+  /** Its orchestrator couldn't be read now: what it asked stays as it was. */
+  readonly unread?: true | undefined;
   readonly paused?: OrchestrationPause | undefined;
   readonly questions: ReadonlyArray<MemoryQuestion>;
 }
@@ -162,7 +164,9 @@ export interface EventSinkOptions {
   /**
    * A workspace's orchestrator, or every workspace's without one: its thread, its pause and the
    * entries of its `questions.md`, for the asks of its open questions
-   * (`orchestrator-question-asks.ts`) and the `paused` its `thread.upsert` carries. Absent, none.
+   * (`orchestrator-question-asks.ts`) and the `paused` its `thread.upsert` carries. A workspace
+   * left out is gone, and whatever it asked is withdrawn; one that can't be read is `unread`, and
+   * a read that fails as a whole changes nothing. Absent, none.
    */
   readonly orchestrators?: (
     workspaceId?: WorkspaceId,
@@ -341,6 +345,8 @@ export const makeEventSink = (
     const models = new Map<string, string>();
     /** Each paused orchestrator's pause, as its `thread.upsert`s last carried it, by thread. */
     const pauses = new Map<string, string>();
+    /** The thread each workspace's pause is on, so one left by a replaced orchestrator goes. */
+    const pausedThreads = new Map<WorkspaceId, string>();
     /** What an orchestrator's `thread.upsert` adds: its pause, while it is paused. */
     const pausedOf = (threadId: string): Record<string, unknown> => {
       const pause = pauses.get(threadId);
@@ -410,14 +416,35 @@ export const makeEventSink = (
         const orchestrators = yield* options.orchestrators(workspaceId);
         const events: Array<SinkRecord> = [];
         const waiting = new Set<string>();
-        const seen = new Set<string>();
-        for (const { workspaceId: id, thread, paused, questions } of orchestrators) {
-          seen.add(id);
+        /** Workspaces whose orchestrator couldn't be read: their asks stay as they are. */
+        const unread = new Set<string>();
+        for (const {
+          workspaceId: id,
+          thread,
+          paused,
+          questions,
+          unread: failed,
+        } of orchestrators) {
+          if (failed === true) {
+            unread.add(id);
+            continue;
+          }
+          // A pause left on a thread that is no longer the orchestrator goes with it.
+          const before = pausedThreads.get(id);
+          if (before !== undefined && before !== thread?.id) {
+            pauses.delete(before);
+            pausedThreads.delete(id);
+          }
           if (thread === undefined) continue;
           const pause = paused === undefined ? undefined : JSON.stringify(pauseData(paused));
           if (pause !== pauses.get(thread.id)) {
-            if (pause === undefined) pauses.delete(thread.id);
-            else pauses.set(thread.id, pause);
+            if (pause === undefined) {
+              pauses.delete(thread.id);
+              pausedThreads.delete(id);
+            } else {
+              pauses.set(thread.id, pause);
+              pausedThreads.set(id, thread.id);
+            }
             workspaces.set(thread.id, id);
             events.push({
               type: "thread.upsert",
@@ -432,6 +459,14 @@ export const makeEventSink = (
             waiting.add(askId);
             const open = openOrchestratorAsks.get(askId);
             if (open !== undefined && open.threadId === thread.id) continue;
+            // Asked on a thread that is no longer the orchestrator: withdrawn there first.
+            if (open !== undefined)
+              events.push({
+                type: "ask.resolved",
+                threadId: open.threadId,
+                workspaceId: id,
+                data: { id: askId, how: "withdrawn" },
+              });
             openOrchestratorAsks.set(askId, { threadId: thread.id, workspaceId: id });
             events.push({
               type: "ask.opened",
@@ -452,8 +487,9 @@ export const makeEventSink = (
         );
         for (const [askId, where] of openOrchestratorAsks) {
           if (waiting.has(askId)) continue;
-          // A workspace not read now, or whose orchestrator couldn't be, keeps its asks.
-          if (!seen.has(where.workspaceId)) continue;
+          // A workspace not asked about now, or whose orchestrator couldn't be read, keeps its asks.
+          if (workspaceId !== undefined && where.workspaceId !== workspaceId) continue;
+          if (unread.has(where.workspaceId)) continue;
           openOrchestratorAsks.delete(askId);
           const how = orchestratorQuestionHow(byId.get(askId));
           const answer = answerNotes.get(askId);
@@ -553,6 +589,7 @@ export const makeEventSink = (
       openQuestions.clear();
       openOrchestratorAsks.clear();
       pauses.clear();
+      pausedThreads.clear();
       // Read before the snapshot: its threads carry the pauses this finds, so the
       // `thread.upsert`s it made for them are dropped, the snapshot saying the same.
       const asks = (yield* questionEvents()).filter((event) => event.type !== "thread.upsert");
@@ -1152,10 +1189,14 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
             }),
           orchestrators: (workspaceId) =>
             Effect.gen(function* () {
+              // A workspace that is gone is left out; any other failure fails the whole read.
               const states =
                 workspaceId === undefined
                   ? yield* store.listWorkspaces
-                  : [yield* store.getWorkspace(workspaceId)];
+                  : yield* store.getWorkspace(workspaceId).pipe(
+                      Effect.map((state) => [state]),
+                      Effect.catchTag("NotFound", () => Effect.succeed([])),
+                    );
               const found = yield* Effect.forEach(
                 states,
                 (state) =>
@@ -1184,14 +1225,16 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
                     // One workspace that can't be read leaves the others, and keeps its asks.
                     Effect.catchCause((cause) =>
                       Effect.logError("event sink: an orchestrator could not be read", cause).pipe(
-                        Effect.as([] as SinkOrchestrator[]),
+                        Effect.as([
+                          { workspaceId: state.workspace.id, questions: [], unread: true },
+                        ] as SinkOrchestrator[]),
                       ),
                     ),
                   ),
                 { concurrency: 4 },
               );
               return found.flat();
-            }).pipe(Effect.orElseSucceed(() => [] as SinkOrchestrator[])),
+            }),
           // Messages are sent only where the deployment asked: otherwise the hub's word of them
           // is never queued here, and the sink records what it did before there was any.
           events:
