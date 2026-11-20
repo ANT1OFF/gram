@@ -35,6 +35,7 @@ import {
   UNSETTLED_START_MS,
   NO_SIGNED_IN_SERVER,
   settleOwedStops,
+  START_ATTEMPTS,
   tellSignedInRelease,
   plainName,
   RELAYED_MOST,
@@ -696,6 +697,38 @@ describe("worker machines from a signed-in hosted server", () => {
     }),
   );
 
+  it.live("tells a reuse at once of a registered machine the server says failed", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionRelayed(hosts, NAME);
+      const unrelayed: string[] = [];
+      const failed = new Set<string>();
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "status"
+            ? { status: 200, body: { phase: "failed", message: "Recovery failed." } }
+            : { status: 202, body: {} },
+      });
+      const port = bridgeWorkerMachines(app.port);
+      const source = signedInSource(SERVER, {
+        port: { ...port, unrelay: (name) => unrelayed.push(name) },
+        hosts,
+        failed,
+        timeoutMs: 2_000,
+        everyMs: 20,
+      });
+      const arrived = yield* source.arrive(NAME);
+      expect(typeof arrived === "object" && arrived.failed !== "timeout").toBe(true);
+      expect(unrelayed).toEqual([NAME]);
+      expect([...failed]).toEqual([NAME]);
+      // Nothing is stopped: it is registered from an earlier spawn and may hold its work.
+      expect(app.calls.map((each) => each.call)).toEqual(["status"]);
+      // Started again under its name, it may come back: relayed once more.
+      yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
+      expect([...failed]).toEqual([]);
+    }),
+  );
+
   it.live("says the server's own words when it stops starting the machine", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
@@ -842,6 +875,37 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
       // Removed by hand under Settings → Machines: the app is told to stop carrying it.
       hosts.remove(hosts.list()[0]!.id);
       expect(told.at(-1)).toEqual({ machines: [] });
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("stop carrying a machine the server says failed, and keep it registered", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      provisionRelayed(hosts, NAME);
+      const told: Array<Record<string, unknown>> = [];
+      // A recovery that failed before it joined again: failed on every dial until started again.
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "status"
+            ? { status: 200, body: { phase: "failed", message: "Recovery failed." } }
+            : { status: 200, body: {} },
+      });
+      const port = bridgeWorkerMachines(app.port);
+      const recording = {
+        ...port,
+        relays: (machines: ReadonlyArray<{ origin: string; name: string }>, fresh?: boolean) =>
+          told.push({ machines, ...(fresh === true ? { fresh } : {}) }),
+      };
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(recording)),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      while (!app.calls.some((each) => each.call === "status")) yield* Effect.sleep("10 millis");
+      yield* Effect.sleep("20 millis");
+      expect(told.at(-1)).toEqual({ machines: [] });
+      expect(hosts.list().map((each) => each.name)).toEqual([NAME]);
     }).pipe(Effect.scoped),
   );
 
@@ -1231,6 +1295,48 @@ describe("a hosted server's answers about one machine", () => {
       const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
       expect(started.kind).toBe("refused");
       expect(app.calls.map((each) => each.call)).toEqual(["start", "release", "start"]);
+    }),
+  );
+
+  it.live("asks again, after a wait, a start the server is unavailable for", () =>
+    Effect.gen(function* () {
+      let unavailable = 2;
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "start" && unavailable-- > 0
+            ? { status: 503, body: { code: "unavailable" } }
+            : { status: call === "start" ? 202 : 200, body: {} },
+      });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: noMachines,
+        startRetryMs: 5,
+      });
+      expect(yield* source.start({ name: NAME, orchestrator: "o", title: "Again" })).toEqual({
+        kind: "started",
+        name: NAME,
+      });
+      expect(app.calls.map((each) => each.call)).toEqual(["start", "start", "start"]);
+    }),
+  );
+
+  it.live("refuses a start the server stays unavailable for, as nothing started", () =>
+    Effect.gen(function* () {
+      const app = fakeApp({
+        answer: () => ({ status: 503, body: { code: "unavailable" } }),
+      });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: noMachines,
+        startRetryMs: 5,
+      });
+      const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Again" });
+      // Not over the total, and not unknown: there is nothing to give back.
+      expect(started).toMatchObject({ kind: "refused" });
+      expect(started).not.toHaveProperty("unknown");
+      expect(app.calls.map((each) => each.call)).toEqual(
+        Array.from({ length: START_ATTEMPTS }, () => "start"),
+      );
     }),
   );
 

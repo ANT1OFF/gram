@@ -363,6 +363,9 @@ export const UNANSWERED_STOP_HOLD_MS = 30_000;
 /** How many times a machine given back is asked to stop, and the wait between. */
 const STOP_ATTEMPTS = 3;
 const STOP_RETRY_MS = 2_000;
+/** How many times a start the server is unavailable for (`503`) is asked, and the first wait. */
+export const START_ATTEMPTS = 3;
+const START_RETRY_MS = 2_000;
 
 /** How long a desktop waits for a hosted machine to join before it stops it. */
 export const ARRIVE_TIMEOUT_MS = 5 * 60_000;
@@ -441,6 +444,13 @@ export interface SignedInDeps {
   readonly locks?: NameLocks;
   /** Each spawn try's hold on its name, shared by every source (`makeMachineHolds`). */
   readonly holds?: (name: string) => MachineHold;
+  /** How long a start the server is unavailable for waits before it is asked again, doubled. */
+  readonly startRetryMs?: number;
+  /**
+   * Names the server says failed (`…/status` `phase: "failed"`): not relayed, since no dial wakes
+   * one, until a start of the name asks for it again (`forgetReclaimed`, `SignedInWorkersLive`).
+   */
+  readonly failed?: Set<string>;
 }
 
 /**
@@ -618,6 +628,11 @@ export const signedInSource = (
   const origin = server.origin;
   const offered: OfferedByServer = deps.offered ?? new Map();
   const holds = deps.holds ?? makeMachineHolds();
+  /** No longer relayed: no dial wakes a machine the server says failed. */
+  const markFailed = (name: string) => {
+    deps.failed?.add(name);
+    port.unrelay(name);
+  };
   const mine = (machine: ProvidedMachine) =>
     machine.onDemand === "worker" && machine.via === origin && machine.owner === undefined;
   const named = (name: string) => hosts.list().find((each) => each.name === name && mine(each));
@@ -722,17 +737,30 @@ export const signedInSource = (
         // This start takes the name: no stop owed for an earlier one may end the machine it makes.
         deps.starting?.add(ask.name);
         deps.owed?.remove(ask.name);
+        // Asked for again: it may come back, so it is relayed once more.
+        deps.failed?.delete(ask.name);
+        let unavailable = false;
         return askWorkerMachine(
           ask,
           withName(
             deps.locks,
             ask.name,
             Effect.gen(function* () {
-              const send = port.call(origin, "start", {
+              const once = port.call(origin, "start", {
                 name: ask.name,
                 title: ask.title.slice(0, 120),
                 orchestrator: ask.orchestrator,
                 choices: choicesOfAsk(ask),
+              });
+              // Unavailable there (`503`): nothing was started, so it is asked again after a wait
+              // that doubles, a few times at most, and never read as over the total or gone.
+              const send = Effect.gen(function* () {
+                for (let attempt = 1; ; attempt += 1) {
+                  const answered = yield* once;
+                  unavailable = answered.ok && answered.status === 503;
+                  if (!unavailable || attempt >= START_ATTEMPTS) return answered;
+                  yield* Effect.sleep((deps.startRetryMs ?? START_RETRY_MS) * 2 ** (attempt - 1));
+                }
               });
               const first = yield* send;
               // Still released there: taken back, and asked once more, never again.
@@ -759,6 +787,14 @@ export const signedInSource = (
             ),
           ),
         ).pipe(
+          Effect.map((started) =>
+            started.kind === "refused" && unavailable
+              ? {
+                  kind: "refused" as const,
+                  message: `${server.server} can't start machines now, and nothing was started. Spawn again in a few minutes with the same clientRequestId, or leave out sandbox to run the worker on your machine.`,
+                }
+              : started,
+          ),
           Effect.tap((started) =>
             Effect.sync(() => {
               offered.delete(origin);
@@ -793,6 +829,24 @@ export const signedInSource = (
             )
               return { failed: noAppToolsTunnel(name) };
             return machine.id;
+          }
+          if (machine !== undefined) {
+            // Registered and offline: one the server says failed (a recovery that failed before
+            // it joined again) stays failed whatever dials it, so it is told now, not waited on.
+            const left = deadline - now();
+            if (left <= 0) return { failed: "timeout" };
+            const read = yield* port
+              .call(origin, "status", { name })
+              .pipe(Effect.timeoutOption(left));
+            if (read._tag === "None") return { failed: "timeout" };
+            const answered = read.value;
+            const status = answered.ok ? parseMachineStatus(answered.body) : {};
+            if (answered.ok && answered.status < 300 && status.phase === "failed") {
+              markFailed(name);
+              return {
+                failed: `The machine ${name} failed there and stays stopped until it is started again: ${status.message ?? `${server.server} says it failed.`}`,
+              };
+            }
           }
           if (machine === undefined) {
             // No later than the deadline, however long the app or the server takes to answer.
@@ -939,15 +993,37 @@ export const forgetReclaimed = (
    * while its workspace is out of reach for a while, so one answer alone forgets nothing.
    */
   misses: Map<string, number> = new Map(),
+  /**
+   * Names the server says failed: no dial wakes one until it is started again, so it is no longer
+   * relayed, and said once in the log. One that comes back is relayed again.
+   */
+  failed?: Set<string>,
 ) =>
   Effect.gen(function* () {
     for (const machine of hosts.list()) {
       if (machine.via === undefined || machine.onDemand !== "worker") continue;
       if (machine.onlineSince !== undefined) {
         misses.delete(machine.id);
+        failed?.delete(machine.name);
         continue;
       }
       const answered = yield* port.call(machine.via, "status", { name: machine.name });
+      if (
+        failed !== undefined &&
+        answered.ok &&
+        answered.status < 300 &&
+        parseMachineStatus(answered.body).phase === "failed"
+      ) {
+        misses.delete(machine.id);
+        if (!failed.has(machine.name)) {
+          failed.add(machine.name);
+          port.unrelay(machine.name);
+          yield* Effect.logWarning(
+            "a worker machine failed there, and is not dialled until it is started again",
+          ).pipe(Effect.annotateLogs({ machine: machine.name }));
+        }
+        continue;
+      }
       if (!answered.ok || answered.status !== 404) {
         misses.delete(machine.id);
         continue;
@@ -1003,6 +1079,7 @@ export const SignedInWorkersLive = Layer.effect(
     const starting = new Set<string>();
     const locks: NameLocks = makeKeyedLock<string>();
     const holds = makeMachineHolds();
+    const failed = new Set<string>();
     const claimed = (name: string) =>
       starting.has(name) ||
       hosts.list().some((machine) => machine.name === name && machine.via !== undefined);
@@ -1027,7 +1104,10 @@ export const SignedInWorkersLive = Layer.effect(
     const relayed = () =>
       hosts
         .list()
-        .filter((machine) => machine.via !== undefined && machine.onDemand === "worker")
+        .filter(
+          (machine) =>
+            machine.via !== undefined && machine.onDemand === "worker" && !failed.has(machine.name),
+        )
         .map((machine) => ({ origin: machine.via!, name: machine.name }));
     let told = "";
     const sync = (fresh: boolean) => {
@@ -1047,7 +1127,9 @@ export const SignedInWorkersLive = Layer.effect(
     // A machine the server no longer knows (reclaimed after its release, or removed there) is
     // forgotten here, so its relay stops and its name is free.
     const misses = new Map<string, number>();
-    yield* forgetReclaimed(port, hosts, misses).pipe(
+    yield* forgetReclaimed(port, hosts, misses, failed).pipe(
+      // One the pass found failed is no longer among the relays told.
+      Effect.tap(() => Effect.sync(() => sync(false))),
       Effect.andThen(settleOwedStops(port, owed, claimed, Date.now, locks)),
       Effect.catchCause((cause) => Effect.logWarning("the reclaimed-machine pass failed", cause)),
       Effect.repeat(Schedule.spaced(RECLAIMED_EVERY)),
@@ -1067,6 +1149,7 @@ export const SignedInWorkersLive = Layer.effect(
                   starting,
                   locks,
                   holds,
+                  failed,
                 }),
                 server: answered.server,
               }

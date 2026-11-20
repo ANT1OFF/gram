@@ -416,7 +416,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             // hold that spawn's work on its disk: only a machine this try started is stopped.
             if (already !== undefined && source.givesBack)
               return yield* fail(
-                `The machine ${name} is registered here from an earlier spawn of this request and didn't come online, so it was left as it is: it may hold that spawn's work. Wait for it to come back, spawn with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
+                arrived.failed === "timeout"
+                  ? `The machine ${name} is registered here from an earlier spawn of this request and didn't come online, so it was left as it is: it may hold that spawn's work. Wait for it to come back, spawn with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`
+                  : `${arrived.failed} It is registered here from an earlier spawn of this request and was left as it is, since it may hold that spawn's work. Spawn with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
               );
             if (arrived.failed === "timeout") return yield* fail(yield* source.timedOut(name));
             yield* source.abandon(name);

@@ -159,7 +159,19 @@ machine is left running for a spawn that failed. A server that says the machine 
 (`phase: "failed"`), or stopped before its host joined, ends the wait at once with its own words.
 One stopped after its host joined (`phase: "stopped"` with its key) is registered and relayed all
 the same: the relay's dial wakes it there. A machine registered here that the server says is
-stopped is kept, for the same reason.
+stopped is kept, for the same reason. A dial from someone who is now only a viewer keeps a running
+machine alive but never wakes a stopped one: a spawn reusing it waits its five minutes and is told
+so, stopping nothing, and the relay dials again no more than once a minute.
+
+A machine registered here that the server says failed (`phase: "failed"`, a recovery that failed
+before it joined again) stays failed whatever dials it, until a start of its name. So it isn't
+relayed any more and is said once in the log, and a spawn reusing it is told at once, with the
+server's words, rather than waited on. It stays registered, since it may hold an earlier spawn's
+work, and a start of the name relays it again.
+
+A start answered `503` (`busy` or `unavailable`) started nothing: it is asked again after two
+seconds, then four, three times in all, and then refused as the server unavailable, never as over
+the total or gone, with nothing to give back.
 
 ## 4. Who owns and pays for it
 
