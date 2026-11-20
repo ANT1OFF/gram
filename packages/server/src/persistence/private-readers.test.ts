@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
+import { SqlClient } from "../platform/unstable.ts";
 
 const thread = (projectId: string, id: string, overrides: Partial<Thread> = {}): Thread =>
   ({
@@ -73,6 +74,36 @@ describe("a private thread pushed off the closed list", () => {
         expect(
           after.touchesUnreadable({ subject: "bob" }, [`/synthetic/${id}/notes.md`], "read"),
         ).toBe(true);
+      }).pipe(Effect.provide(after.ThreadStore.layerSqlite(file).pipe(Layer.orDie)), Effect.scoped);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("never brings back a reader its live row no longer has, after a restart", () =>
+    Effect.gen(function* () {
+      const dir = mkdtempSync(join(tmpdir(), "gram-private-readers-"));
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+      const file = join(dir, "gram.db");
+      const id = "t-back" as ThreadId;
+      const before = yield* freshModules;
+      yield* Effect.gen(function* () {
+        const store = yield* before.ThreadStore;
+        const sql = yield* SqlClient.SqlClient;
+        const project = yield* store.ensureProject({ root: "/synthetic/repo", name: "repo" });
+        yield* sql`INSERT INTO private_readers (thread_id, data)
+          VALUES (${id}, ${JSON.stringify({ readableBy: "ada", readers: ["carol"] })})`;
+        yield* store.insertThread(
+          thread(project.id, id, { readableBy: "ada", readers: [] } as Partial<Thread>),
+        );
+      }).pipe(
+        Effect.provide(before.ThreadStore.layerSqlite(file).pipe(Layer.orDie)),
+        Effect.scoped,
+      );
+
+      const after = yield* freshModules;
+      yield* Effect.gen(function* () {
+        yield* after.ThreadStore;
+        expect(after.privacyOf(id)?.readableBy).toBe("ada");
+        expect([...after.readersOf(id)]).toEqual([]);
       }).pipe(Effect.provide(after.ThreadStore.layerSqlite(file).pipe(Layer.orDie)), Effect.scoped);
     }).pipe(Effect.scoped),
   );

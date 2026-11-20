@@ -90,6 +90,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
           : yield* projectWorkspaceOf(
               yield* store.listWorkspaces,
               (input.target as { projectId: ProjectId }).projectId,
+              yield* store.listProjects,
             );
       if (state !== undefined) yield* admitWorkspaceReader(state);
       const projectIds = state?.workspace.projectIds ?? [
@@ -201,7 +202,11 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
     Effect.gen(function* () {
       const target = input.target;
       if ("workspaceId" in target) return yield* workspaceStartupKeys(target.workspaceId);
-      const state = yield* projectWorkspaceOf(yield* store.listWorkspaces, target.projectId);
+      const state = yield* projectWorkspaceOf(
+        yield* store.listWorkspaces,
+        target.projectId,
+        yield* store.listProjects,
+      );
       return state === undefined
         ? [projectKey(target.projectId)]
         : startupKeysOf(state.workspace.id, state);

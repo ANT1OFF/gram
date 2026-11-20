@@ -210,7 +210,9 @@ Content-Type: application/json
   palette's filters (and what the helper model is shown for them), the workspace tools an agent
   calls, a finished worker found only in its archive, and a call that names it by its project
   (opening an orchestrator, a task) or by id (`workspace.save`), which answers as if there were no
-  such workspace. A project whose folder is the thread's own is left out of `projects.list`. Who
+  such workspace or project, and makes no other workspace over its folder. A name only it has is no
+  clash for anyone else's. Once its orchestrator has closed, an edit is still held to the machine
+  it last ran on. A project whose folder is the thread's own is left out of `projects.list`. Who
   may read a private thread is kept after it leaves the closed list, so none of this lapses at a
   restart. Its tokens still count in the usage overview's totals, which name no thread or
   workspace, so a breakdown seen by someone else may sum to less than the totals.

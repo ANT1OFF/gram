@@ -1,24 +1,34 @@
-import { NotFound, type ProjectId, type WorkspaceState } from "@gram/contracts";
+import { NotFound, type Project, type ProjectId, type WorkspaceState } from "@gram/contracts";
 import * as Effect from "effect/Effect";
-import { currentReader, readerMayWorkspace } from "../../embedding/readable-by.ts";
+import {
+  currentReader,
+  readerMayWorkspace,
+  touchesUnreadable,
+} from "../../embedding/readable-by.ts";
 
 /**
- * The one-project workspace of `projectId` among `states` that this fiber's reader may act on: a
- * call naming a project never reaches a workspace readable by someone else, who is answered as if
- * the project had none yet.
+ * The one-project workspace of `projectId` among `states`, for this fiber's reader. A project
+ * whose workspace is someone else's, or whose folder is a private thread's (a profile's home), is
+ * answered as no such project: a call naming it never reaches that workspace, nor makes another
+ * over the same folder.
  */
 export const projectWorkspaceOf = (
   states: ReadonlyArray<WorkspaceState>,
   projectId: ProjectId,
-): Effect.Effect<WorkspaceState | undefined> =>
-  Effect.map(currentReader, (reader) =>
-    states.find(
-      (row) =>
-        row.workspace.projectIds.length === 1 &&
-        row.workspace.projectIds[0] === projectId &&
-        readerMayWorkspace(reader, row.workspace, "act"),
-    ),
-  );
+  projects: ReadonlyArray<Pick<Project, "id" | "root">>,
+): Effect.Effect<WorkspaceState | undefined, NotFound> =>
+  Effect.flatMap(currentReader, (reader) => {
+    const own = states.filter(
+      (row) => row.workspace.projectIds.length === 1 && row.workspace.projectIds[0] === projectId,
+    );
+    const root = projects.find((project) => project.id === projectId)?.root;
+    const hidden =
+      own.some((row) => !readerMayWorkspace(reader, row.workspace, "act")) ||
+      (root !== undefined && touchesUnreadable(reader, [root], "act"));
+    return hidden
+      ? Effect.fail(new NotFound({ entity: "project", id: projectId }))
+      : Effect.succeed(own[0]);
+  });
 
 /**
  * Refuses `state` unless this fiber's reader may act on it, with the answer a workspace that
