@@ -12,6 +12,7 @@
   },
   "include": [
     "src",
+    "bombadil",
     "e2e",
     "e2e-embed",
     "e2e-real",

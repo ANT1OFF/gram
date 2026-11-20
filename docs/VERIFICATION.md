@@ -343,6 +343,33 @@ fails at once. A local check, and the local checks a merge accepts, never rerun.
 `GRAM_CHECK_RERUN=0` turns it off. The e2e shards' Playwright already retries a failed test once
 and reports it as flaky.
 
+### Random exploration (trial)
+
+[Bombadil](https://github.com/antithesishq/bombadil) clicks, types, scrolls and navigates the mock
+app at random and checks the properties in [spec.ts](../apps/web/bombadil/spec.ts) on every state
+it captures: its own (no console errors, HTTP errors, uncaught exceptions or unhandled
+rejections), the Inbox count agreeing with its rows, no click adding two history entries, Back
+leaving the page it started from, and no `undefined`, `NaN` or `[object Object]` outside code. It
+serves the e2e preview bundle on 127.0.0.1 with synthetic mock state, in Playwright's Chromium,
+with coverage instrumentation off (with it on, the app never renders). From the root:
+
+```sh
+bun run --filter @gram/web bombadil -- --time-limit 90s
+```
+
+It exits 0 when the time runs out with every property holding, 2 on a violation and 1 on an
+error, and stops at the first violation unless given `--keep-going`. The log, the trace and the
+violation's text go to `apps/web/bombadil-out/`; `--help` lists the flags. A run takes its own
+path each time and its replay diverges, so a trace is a trail of screenshots and values to read,
+not a reproduction.
+
+[bombadil.yml](../.github/workflows/bombadil.yml) runs it for ten minutes nightly and by hand,
+writes a violation to the job summary and uploads its trace. **It is not a gate**: it never runs
+on a pull request and is in no lane, required check or `merge-ci.json`. The four-week trial is
+reviewed around 2026-12-18 for real bugs found, false positives, upgrade churn and whether
+instrumentation works upstream. Pin upgrades are deliberate: each 0.x release can break the spec
+language and the trace format.
+
 ## Protocol, native and live checks
 
 Synthetic child-CLI tests exercise actual Claude/Codex adapters, approval/cancel,
