@@ -58,6 +58,7 @@ import * as Semaphore from "effect/Semaphore";
 import { randomUUID } from "node:crypto";
 import { defineAppTool, failed } from "../app-tools/definition.ts";
 import { inputAliases } from "../app-tools/input.ts";
+import { VerifyStatus } from "../verify/verify-tools.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { parsePrRef } from "../git/merge-when-ready.ts";
@@ -188,6 +189,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const dependencies = yield* PrDependencies;
     const publisher = yield* GitStatePublisher;
     const store = yield* ThreadStore;
+    // Absent in tool-only layers; `report` then notes nothing about verify drivers.
+    const verifyStatus = Option.getOrUndefined(yield* Effect.serviceOption(VerifyStatus));
     // Absent unless an embedder's host provider is set: workers then can't ask for own machines.
     const onDemand = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
@@ -562,14 +565,29 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       }),
       handle: (worker, input) =>
         Effect.gen(function* () {
-          const stored = yield* orchestration.recordReport(worker, input);
+          const verify =
+            input.state === "done" && verifyStatus !== undefined
+              ? yield* verifyStatus.requiredOnHead(worker)
+              : undefined;
+          const stored = yield* orchestration.recordReport(worker, {
+            ...input,
+            ...(verify === undefined ? {} : { verify }),
+          });
           if (stored === undefined) {
             return { reported: false, note: "No orchestrator is listening; carry on." };
           }
           yield* runtimes
             .emitChunk(worker, { type: "data-worker-report", id: randomUUID(), data: stored })
             .pipe(Effect.ignore);
-          return { reported: true, state: stored.state };
+          return {
+            reported: true,
+            state: stored.state,
+            ...(verify === undefined || verify.missing.length === 0
+              ? {}
+              : {
+                  note: `Gram has no pass on ${verify.head.slice(0, 7)} for ${verify.missing.map((name) => `"${name}"`).join(", ")}, which this repository marks required. Your orchestrator sees that with your report; run them with \`verify\` if you can, and report again.`,
+                }),
+          };
         }),
     });
 

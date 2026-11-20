@@ -20,6 +20,7 @@ import {
   type VersionTarget,
   type WorkspaceId,
   type WorkspaceState,
+  type WorkerReportVerify,
 } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -78,6 +79,7 @@ import { type DiskSpace, MachineState } from "../wakes/machine.ts";
 import { AutoMerges } from "../git/auto-merges.ts";
 import { wakeConditionsLayer } from "../wakes/condition-sources.ts";
 import { InstalledVersions } from "../wakes/installed-versions.ts";
+import { VerifyStatus } from "../verify/verify-tools.ts";
 import { UpstreamReleases, type UpstreamRelease } from "../wakes/upstream-releases.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -146,6 +148,8 @@ export interface World {
    * `bun run check:ci`. Absent, the server has none and solo merges wait for CI.
    */
   localCheckRunner?: LocalCheckRunnerShape["run"] | undefined;
+  /** What Gram recorded of a worker's required verify drivers; none unless a test sets it. */
+  verifyRequired?: WorkerReportVerify | undefined;
   /**
    * What GitHub says of branches, by `owner/repo#branch` lower-cased in the repo: a head, `null` for
    * no such branch; absent, it can't be read. `defaultBranches` by `owner/repo` lower-cased.
@@ -652,7 +656,14 @@ export const serverLayer = (
     Layer.mergeAll(OrchestrationAppToolsLive, SentWorkersLive).pipe(
       Layer.provideMerge(Layer.succeed(SentWorkPort)(world.sentWork ?? NO_SENT_WORK)),
     ),
-    OrchestratorAppToolsLive.pipe(Layer.provideMerge(PrDependenciesLive)),
+    OrchestratorAppToolsLive.pipe(
+      Layer.provideMerge(PrDependenciesLive),
+      Layer.provide(
+        Layer.succeed(VerifyStatus)({
+          requiredOnHead: () => Effect.sync(() => world.verifyRequired),
+        }),
+      ),
+    ),
     TranscriptSearchAppToolsLive,
     RoutineAppToolsLive,
     PrAppToolsLive.pipe(

@@ -128,6 +128,14 @@ export const WorkerReportEvidence = Schema.Struct({
 });
 export type WorkerReportEvidence = typeof WorkerReportEvidence.Type;
 
+/** The required verify drivers on a worker's head, as Gram recorded their runs. */
+export const WorkerReportVerify = Schema.Struct({
+  head: Schema.String,
+  passed: Schema.Array(Schema.String),
+  missing: Schema.Array(Schema.String),
+});
+export type WorkerReportVerify = typeof WorkerReportVerify.Type;
+
 /** What a worker tells its orchestrator with the `report` app tool. Its text is worker-authored. */
 export const WorkerReport = Schema.Struct({
   threadId: ThreadId,
@@ -141,6 +149,11 @@ export const WorkerReport = Schema.Struct({
   ),
   /** A lasting fact the worker offers for memory; the orchestrator decides whether to keep it. */
   learned: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(WORKER_REPORT_LEARNED_MAX))),
+  /**
+   * Gram's own record, not the worker's: on a `done` report from a repository whose verify recipe
+   * marks drivers required, which of those that cover the change passed on the reported head.
+   */
+  verify: Schema.optionalKey(WorkerReportVerify),
   /** Epoch ms. */
   at: Schema.Number,
 });
@@ -1071,6 +1084,20 @@ const reportBlock = (report: DigestReport): ReadonlyArray<string> => [
     : report.interfaceUnchanged === true
       ? ["interface: unchanged since you last read it"]
       : ["interface:", quoted(report.interface, DIGEST_REPORT_INTERFACE_MAX)]),
+  ...(report.verify === undefined
+    ? []
+    : [
+        `verify (recorded by Gram on ${report.verify.head.slice(0, 7)}, not the worker's word): ${[
+          ...(report.verify.passed.length === 0
+            ? []
+            : [`passed ${report.verify.passed.map((name) => inline(name)).join(", ")}`]),
+          ...(report.verify.missing.length === 0
+            ? []
+            : [
+                `no pass yet on required ${report.verify.missing.map((name) => inline(name)).join(", ")}`,
+              ]),
+        ].join("; ")}`,
+      ]),
   ...(report.learned === undefined
     ? []
     : [
