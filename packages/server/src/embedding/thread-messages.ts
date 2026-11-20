@@ -10,13 +10,16 @@
 //   thread-interrupt { "threadId", "person": { "id", "name"? } }
 //     → 200 { "interrupted": true }
 //   thread-fresh-session { "threadId", "person": { "id", "name"? }, "checkpoint"?, "model"? }
-//     → 200 { "started": true }                 an orchestrator's fresh session is under way
+//     → 200 { "started": true }                 an orchestrator's fresh session is under way, or
+//                                               any other thread's, on `model`
 //   thread-resume-machine-lost { "threadId", "person": { "id", "name"? } }
 //     → 200 { "resumed": true }                 the conversation a lost machine cut off goes on
 //   each → 404 no such thread, 409 { "error" } one that can't take it now, 400 a body that isn't one
 //
-// A fresh session is for a workspace's orchestrator only (`orchestrator.handoff`, the web app's
-// Fresh session): its agent session is replaced, with memory, charter and ledger as the bridge.
+// An orchestrator's fresh session (`orchestrator.handoff`, the web app's Fresh session) replaces
+// its agent session, with memory, charter and ledger as the bridge. Any other thread's needs a
+// `model` and is its menu's Start fresh in… (`thread.startFreshOn`): a new session on that model in
+// the same thread, which reads the recent turns; `checkpoint` doesn't apply to it.
 // `checkpoint` (default true) has the orchestrator save to memory first; false is a hard cut.
 // `model` (a `ModelRef`) opens the fresh session on it, and it becomes the workspace's orchestrator
 // model: the way onto a model the running session can't carry over to.
@@ -253,7 +256,27 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         const id = threadId as ThreadId;
         const thread = Option.getOrUndefined(yield* store.getThread(id).pipe(Effect.option));
         if (thread === undefined) return refusal(404, "there is no such thread");
-        if (thread.role !== "orchestrator" || thread.workspaceId === undefined)
+        // Any other thread starts fresh only onto a model, as its own menu does (`startFreshOn`).
+        if (thread.role !== "orchestrator") {
+          if (model === undefined)
+            return refusal(
+              409,
+              "a thread that isn't an orchestrator starts fresh only on another model: name `model`",
+            );
+          return yield* asPerson(
+            person,
+            id,
+            "thread.startFreshOn",
+            { threadId: id, model },
+            runtimes.startFreshOn(id, model),
+          ).pipe(
+            Effect.map((result) =>
+              result === "not-yours" ? refusal(409, NOT_YOUR_MACHINE) : answer({ started: true }),
+            ),
+            Effect.catch((error) => Effect.succeed(failed(error))),
+          );
+        }
+        if (thread.workspaceId === undefined)
           return refusal(409, "only a workspace's orchestrator starts a fresh session");
         if (orchestration === undefined) return refusal(409, "this server runs no orchestration");
         const workspaceId = thread.workspaceId;

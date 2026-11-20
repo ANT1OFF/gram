@@ -66,6 +66,13 @@ export const ProfileModel = Schema.Struct({
   gatewayProfile: Schema.optionalKey(ProfileId),
   /** Models to fall back to, in order (`ThreadProfileBinding.fallbacks`). */
   fallbacks: Schema.optionalKey(Schema.Array(ProfileModelChoice)),
+  /**
+   * The other models the thread may be moved to, for a supplier whose deployment serves it only
+   * some. Given, even empty, the thread's sessions run only `model`, `fallbacks` and these
+   * (`ThreadProfileBinding.models`): its pickers offer no other, and a model change, a switch or a
+   * fresh session onto another is refused. Absent: no limit.
+   */
+  choices: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
 });
 export type ProfileModel = typeof ProfileModel.Type;
 
@@ -336,6 +343,19 @@ export const profileBindingOf = (profile: ThreadProfile): ThreadProfileBinding =
   ...(profile.model.fallbacks === undefined || profile.model.fallbacks.length === 0
     ? {}
     : { fallbacks: profile.model.fallbacks }),
+  ...(profile.model.choices === undefined
+    ? {}
+    : {
+        models: [
+          ...new Set(
+            [
+              profile.model.model,
+              ...(profile.model.fallbacks ?? []).map((each) => each.model),
+              ...profile.model.choices,
+            ].map((id) => id.toLowerCase()),
+          ),
+        ],
+      }),
 });
 
 /**

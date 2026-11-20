@@ -13,21 +13,21 @@ The shape is `ThreadProfile` in
 the shape doesn't name is refused rather than dropped, so a supplier never believes something
 was applied that this version doesn't know. A profile that is refused leaves nothing behind.
 
-| Part         | What it is                                                 | What Gram does with it                                                                                                                                      |
-| ------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`    | `1`                                                        | Refuses any other.                                                                                                                                          |
-| `name`       | The profile's name                                         | The thread's title until it gets one of its own.                                                                                                            |
-| `source`     | An id and a version, in the supplier's words               | Kept on the thread as given, so the supplier can tell which of its records a thread came from.                                                              |
-| `agent`      | `claude` or `codex`                                        | The agent the thread runs on.                                                                                                                               |
-| `charter`    | Standing instructions                                      | Added to the agent's system prompt at every session open, so it outlives a resume and a compaction.                                                         |
-| `files`      | Text files, each at a path relative to the thread's folder | Written into the folder before the first session opens. `AGENTS.md` goes here.                                                                              |
-| `skills`     | A name, a description, a body and further files each       | Written where the thread's agent reads a folder's skills: `.claude/skills` for Claude Code, `.agents/skills` for Codex.                                     |
-| `model`      | A model, an effort, a gateway profile's id, fallbacks      | The thread's model. The gateway profile must exist here; its address and key are this Gram's settings. Fallbacks are recorded only.                         |
-| `connectors` | One MCP server by name and address, or none                | Every session of the thread is held to that one server beside Gram's own, or to none, whatever the agent is configured with.                                |
-| `autonomy`   | `supervised`, `publish` or `full`; `publish` when absent   | The thread's outward gate, as a workspace's autonomy sets a worker's.                                                                                       |
-| `workplace`  | `none`, `scratch`, or one to eight repositories            | `none` and `scratch` get a new folder of the thread's own under the data folder. Repositories are cloned and the thread works in worktrees of them (below). |
-| `input`      | The first message                                          | Sent once the thread exists. Without it the session opens and waits.                                                                                        |
-| `role`       | `worker`, or `orchestrator` with the workspace's name      | `worker` when absent. `orchestrator` starts the orchestrator of a workspace made for it ([An orchestrator](#an-orchestrator)).                              |
+| Part         | What it is                                                     | What Gram does with it                                                                                                                                                            |
+| ------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`    | `1`                                                            | Refuses any other.                                                                                                                                                                |
+| `name`       | The profile's name                                             | The thread's title until it gets one of its own.                                                                                                                                  |
+| `source`     | An id and a version, in the supplier's words                   | Kept on the thread as given, so the supplier can tell which of its records a thread came from.                                                                                    |
+| `agent`      | `claude` or `codex`                                            | The agent the thread runs on.                                                                                                                                                     |
+| `charter`    | Standing instructions                                          | Added to the agent's system prompt at every session open, so it outlives a resume and a compaction.                                                                               |
+| `files`      | Text files, each at a path relative to the thread's folder     | Written into the folder before the first session opens. `AGENTS.md` goes here.                                                                                                    |
+| `skills`     | A name, a description, a body and further files each           | Written where the thread's agent reads a folder's skills: `.claude/skills` for Claude Code, `.agents/skills` for Codex.                                                           |
+| `model`      | A model, an effort, a gateway profile's id, fallbacks, choices | The thread's model. The gateway profile must exist here; its address and key are this Gram's settings. Fallbacks are recorded only. `choices` limits the thread's models (below). |
+| `connectors` | One MCP server by name and address, or none                    | Every session of the thread is held to that one server beside Gram's own, or to none, whatever the agent is configured with.                                                      |
+| `autonomy`   | `supervised`, `publish` or `full`; `publish` when absent       | The thread's outward gate, as a workspace's autonomy sets a worker's.                                                                                                             |
+| `workplace`  | `none`, `scratch`, or one to eight repositories                | `none` and `scratch` get a new folder of the thread's own under the data folder. Repositories are cloned and the thread works in worktrees of them (below).                       |
+| `input`      | The first message                                              | Sent once the thread exists. Without it the session opens and waits.                                                                                                              |
+| `role`       | `worker`, or `orchestrator` with the workspace's name          | `worker` when absent. `orchestrator` starts the orchestrator of a workspace made for it ([An orchestrator](#an-orchestrator)).                                                    |
 
 ## An orchestrator
 
@@ -362,8 +362,8 @@ out, by an allowlist that doesn't name it or a denylist that does, the session o
 
 ## What the thread keeps
 
-The thread keeps the charter, the autonomy level, the MCP server, the fallbacks and the
-supplier's `name` and `source` as `Thread.profile`. They are given to every session it opens,
+The thread keeps the charter, the autonomy level, the MCP server, the fallbacks, the models it
+may run and the supplier's `name` and `source` as `Thread.profile`. They are given to every session it opens,
 after a restart, a close and a reopen, and to a fork of it. The files are in the folder and
 nowhere else.
 
@@ -387,6 +387,11 @@ composer.
 - What a headless control plane can't run yet, a profile can't ask for there: Codex, and a model
   on a gateway profile.
 - `fallbacks` are recorded and nothing switches a thread's model by them yet.
+- `model.choices`, given even empty, limits the thread to its model, its fallbacks and these
+  (`Thread.profile.models`), for a supplier whose deployment serves it no other. Its pickers (the
+  prompt box, Continue in…, and for an orchestrator its workspace's Models) list only those, and a
+  model change, a switch, a fresh session or an orchestrator model onto another is refused before
+  anything stops. An alias counts by the model its row runs. Absent, any model.
 - The one MCP server is passed to Claude Code as a remote server of that session and to Codex as
   a server in the thread's own config. Both are covered by tests on synthetic sessions, not by a
   run against a live provider.

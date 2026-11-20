@@ -11,6 +11,7 @@ import { effortSection, modelSection } from "./choice-sections";
 import { useModelFavourites } from "./model-favourites";
 import {
   accountModelWarning,
+  allowedModels,
   defaultModelId,
   effortAfterSwitch,
   effortOptions,
@@ -38,6 +39,22 @@ const models: AgentModel[] = [
   { id: "opus", displayName: "Opus", supportsEffort: true, isDefault: true },
   { id: "haiku", displayName: "Haiku", supportsEffort: false },
 ];
+
+describe("allowedModels", () => {
+  it("lists only what a thread's profile lets it run, by the model each alias runs", () => {
+    const rows: AgentModel[] = [
+      { id: "sonnet", displayName: "Sonnet 5.5", supportsEffort: true },
+      { id: "haiku", displayName: "Haiku 5.5", supportsEffort: false },
+      { id: "claude-opus-5-5", displayName: "Opus 5.5", supportsEffort: true },
+    ];
+    expect(allowedModels(rows, "claude", undefined)).toBe(rows);
+    expect(allowedModels(rows, "claude", {})).toBe(rows);
+    expect(
+      allowedModels(rows, "claude", { models: ["claude-haiku-5-5"] })?.map((m) => m.id),
+    ).toEqual(["haiku"]);
+    expect(allowedModels(rows, "codex", { models: ["claude-haiku-5-5"] })).toEqual([]);
+  });
+});
 
 describe("modelOptions", () => {
   it("uses the server's models and keeps an unknown current model selectable", () => {

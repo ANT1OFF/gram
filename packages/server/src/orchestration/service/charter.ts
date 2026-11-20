@@ -17,6 +17,8 @@ import {
   type SettingsRequirement,
   type WorkspaceId,
   slotAgent,
+  profileAllowsModel,
+  profileModelRefusal,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { type SettingsAuditEntry } from "../../persistence/thread-store.ts";
@@ -197,6 +199,18 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
         return yield* new InvalidState({
           message: `${kindName(orchestratorAgent)} threads can't be orchestrators yet.`,
         });
+      }
+      // An orchestrator whose profile limits its models opens only on one of them.
+      const slot = charter.orchestratorModel;
+      if (
+        slot !== undefined &&
+        "model" in slot &&
+        switchHolderNow !== undefined &&
+        JSON.stringify(slot) !== JSON.stringify(standing?.charter.orchestratorModel)
+      ) {
+        const profile = (yield* findThread(switchHolderNow))?.profile;
+        if (profile !== undefined && !profileAllowsModel(profile, slot.model))
+          return yield* new InvalidState({ message: profileModelRefusal(profile, slot.model) });
       }
       yield* refuseConnectorEntries(charter);
       if (standing === undefined) return;

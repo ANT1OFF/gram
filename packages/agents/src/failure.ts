@@ -1,4 +1,4 @@
-import type { AgentFailure, AgentFailureKind } from "@gram/contracts";
+import { MODEL_NOT_GRANTED, type AgentFailure, type AgentFailureKind } from "@gram/contracts";
 
 const failure = (
   kind: AgentFailureKind,
@@ -25,7 +25,10 @@ const NETWORK =
 
 /** The text is one of the gateway's own refusals, which outrank what the status alone would say. */
 const gatewayWords = (text: string): boolean =>
-  NO_DEPLOYMENTS.test(text) || KEY_DISABLED.test(text) || KEY_RESTRICTED.test(text);
+  NO_DEPLOYMENTS.test(text) ||
+  KEY_DISABLED.test(text) ||
+  KEY_RESTRICTED.test(text) ||
+  MODEL_NOT_GRANTED.test(text);
 
 /**
  * What an error from the model API means, from its HTTP status and the text around it (the error
@@ -44,6 +47,7 @@ export const httpFailure = (
   }
   if (KEY_DISABLED.test(text)) return failure("costGuard", false, httpStatus, code);
   if (KEY_RESTRICTED.test(text)) return failure("modelUnavailable", false, httpStatus, code);
+  if (MODEL_NOT_GRANTED.test(text)) return failure("modelUnavailable", false, httpStatus, code);
   if (httpStatus === undefined) {
     return NETWORK.test(text)
       ? failure("network", true, undefined, code)
