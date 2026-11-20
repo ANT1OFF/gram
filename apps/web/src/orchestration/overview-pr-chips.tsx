@@ -115,6 +115,7 @@ export function WorkerPrChips({
   className = "pr-1.5 pb-1 pl-6",
   style,
   onOpenOwn,
+  numberless,
 }: {
   threadId: ThreadId;
   cardPrs: readonly FeatureCardPr[];
@@ -135,6 +136,11 @@ export function WorkerPrChips({
    * worker pane, its own PR tool, so the orchestrator stays.
    */
   onOpenOwn?: (() => void) | undefined;
+  /**
+   * Its own PR whose number something beside the chips already says (the worker pane's PR tab):
+   * that chip keeps its marks and its name to a screen reader, and leaves the number out.
+   */
+  numberless?: number | undefined;
 }) {
   const own = useWorkerPrChips(threadId, cardPrs);
   const chips = given ?? own;
@@ -207,6 +213,7 @@ export function WorkerPrChips({
           card={card}
           dense={dense}
           onOpenOwn={onOpenOwn}
+          numbered={!(chip.entry.own && chip.entry.number === numberless)}
         />
       ))}
       {moreText}
@@ -228,17 +235,19 @@ const chipClass = (chip: PrChip, dense: boolean) =>
   );
 
 /** What a chip shows: its state's glyph, its number, then its checks, reviews and merge. */
-function PrChipFace({ chip }: { chip: PrChip }) {
+function PrChipFace({ chip, numbered = true }: { chip: PrChip; numbered?: boolean }) {
   const { entry, marks } = chip;
   // The state's glyph keeps GitHub's colour for it, whatever tints the chip.
   return (
     <>
       <PrMarkIcon group="state" mark={marks.state} data-state-glyph={marks.state.kind} />
-      <span
-        className={cn("font-mono text-meta tabular-nums", chip.kind === "draft" && "opacity-60")}
-      >
-        #{entry.number}
-      </span>
+      {numbered && (
+        <span
+          className={cn("font-mono text-meta tabular-nums", chip.kind === "draft" && "opacity-60")}
+        >
+          #{entry.number}
+        </span>
+      )}
       {marks.checks !== undefined &&
         marks.checks.kind !== "none" &&
         marks.checks.kind !== "unknown" && (
@@ -262,12 +271,14 @@ function PrChipButton({
   card,
   dense,
   onOpenOwn,
+  numbered,
 }: {
   chip: PrChip;
   threadId: ThreadId;
   card: boolean;
   dense: boolean;
   onOpenOwn: (() => void) | undefined;
+  numbered: boolean;
 }) {
   const api = useApi();
   const { entry } = chip;
@@ -287,7 +298,7 @@ function PrChipButton({
     onClick: open,
     className: chipClass(chip, dense),
   };
-  const body = <PrChipFace chip={chip} />;
+  const body = <PrChipFace chip={chip} numbered={numbered} />;
   if (!card) {
     return (
       <button type="button" {...props}>
