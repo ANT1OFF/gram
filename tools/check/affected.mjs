@@ -24,6 +24,28 @@ const GLOBAL = [
 const NO_TESTS = [/\.md$/, /^docs\//, /^\.github\//, /^\.gram\//, /^\.agents\//, /^\.claude\//];
 
 /** Every workspace: its directory, package name, Vitest project and the workspaces it uses. */
+/** JSON with tsconfig's comments and trailing commas, as TypeScript reads it. */
+export const parseJsonc = (text) => {
+  let out = "";
+  for (let at = 0; at < text.length; at++) {
+    const char = text[at];
+    if (char === '"') {
+      const end = /"(?:[^"\\]|\\.)*"/y;
+      end.lastIndex = at;
+      const string = end.exec(text)?.[0] ?? text.slice(at);
+      out += string;
+      at += string.length - 1;
+    } else if (char === "/" && text[at + 1] === "/") {
+      while (at < text.length && text[at] !== "\n") at++;
+      out += "\n";
+    } else if (char === "/" && text[at + 1] === "*") {
+      const close = text.indexOf("*/", at + 2);
+      at = close === -1 ? text.length : close + 1;
+    } else out += char;
+  }
+  return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
+};
+
 export function workspaces(root) {
   const list = [];
   for (const group of ["apps", "packages"]) {
@@ -37,13 +59,12 @@ export function workspaces(root) {
         (name) => name.startsWith("@gram/"),
       );
       let references = [];
-      try {
-        const tsconfig = JSON.parse(readFileSync(join(root, dir, "tsconfig.json"), "utf8"));
+      const tsconfigPath = join(root, dir, "tsconfig.json");
+      if (existsSync(tsconfigPath)) {
+        const tsconfig = parseJsonc(readFileSync(tsconfigPath, "utf8"));
         references = (tsconfig.references ?? []).map((ref) =>
           relative(root, join(root, dir, ref.path)),
         );
-      } catch {
-        // No tsconfig, or one with comments: the manifest's dependencies stand alone.
       }
       list.push({ dir, name: manifest.name, project: entry.name, deps, references });
     }

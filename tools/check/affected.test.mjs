@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { affected, workspaces } from "./affected.mjs";
+import { affected, parseJsonc, workspaces } from "./affected.mjs";
 
 const graph = workspaces(fileURLToPath(new URL("../../", import.meta.url)));
 
@@ -44,5 +44,15 @@ describe("affected projects", () => {
       expect(affected([path], graph)).toMatchObject({ all: true });
     expect(affected(["scripts/new-root-script.mjs"], graph)).toMatchObject({ all: true });
     expect(affected(["tools/check/run.mjs"], graph)).toMatchObject({ all: true });
+  });
+
+  it("reads a tsconfig with comments and trailing commas", () => {
+    expect(
+      parseJsonc(`{
+        // a note
+        "a": "http://x", /* block */
+        "b": ["c",],
+      }`),
+    ).toEqual({ a: "http://x", b: ["c"] });
   });
 });
