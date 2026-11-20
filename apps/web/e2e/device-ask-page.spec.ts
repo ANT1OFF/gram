@@ -167,10 +167,12 @@ test.describe("the ask window's page", () => {
           ),
         [id, view(command)] as const,
       );
+    // The arming second runs on the installed clock: the new content's own second, not the first's.
+    await page.clock.install();
     await show("show-aaaaaaaa", "npm test");
-    await page.waitForTimeout(ASK_ARM_MS - 300);
+    await page.clock.runFor(ASK_ARM_MS - 300);
     await show("show-bbbbbbbb", "make");
-    await page.waitForTimeout(500);
+    await page.clock.runFor(500);
     await expect(page.locator("#allow")).toBeDisabled();
     await page.evaluate(() =>
       (window as unknown as { withdrawAsk: (id: string, why: string) => void }).withdrawAsk(

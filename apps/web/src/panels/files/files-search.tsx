@@ -1,12 +1,13 @@
 import type { FsSearchLimit, FsSearchMatch, FsSearchRange, ThreadId } from "@gram/contracts";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { SquareArrowUpRightExit } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { formatCount } from "@/lib/format";
 import { useOpenInEditor, useOpensLocally } from "@/editor/use-open-in-editor";
+import { useDebounced } from "@/lib/timers";
 
 import { filesProblem } from "./files-problem";
 import type { FilesSearch } from "./files-store";
@@ -22,15 +23,6 @@ const LIMIT_TEXT: Record<FsSearchLimit, string> = {
 };
 
 const count = (n: number, noun: string) => `${formatCount(n)} ${noun}${n === 1 ? "" : "s"}`;
-
-function useDebounced<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), ms);
-    return () => clearTimeout(timer);
-  }, [value, ms]);
-  return debounced;
-}
 
 /** The status line: what the search found, announced as it changes. */
 export function searchStatus(
