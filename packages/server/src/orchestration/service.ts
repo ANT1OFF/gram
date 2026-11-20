@@ -100,19 +100,11 @@ export type {
   ReopenFields,
   OrchestrationShape,
 } from "./service/shape.ts";
+import { watched } from "./service/watched-events.ts";
 
 export class Orchestration extends Context.Service<Orchestration, OrchestrationShape>()(
   "@gram/server/Orchestration",
 ) {}
-
-// Hub events worth a place in the queue; status flips and streaming would flood it.
-const watched = (event: ServerEvent): boolean =>
-  event.type === "thread.upsert" ||
-  event.type === "thread.removed" ||
-  event.type === "thread.request" ||
-  event.type === "thread.requestResolved" ||
-  event.type === "thread.background" ||
-  (event.type === "thread.status" && event.status === "error");
 
 export const OrchestrationLive = Layer.effect(
   Orchestration,

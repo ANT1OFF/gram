@@ -13,14 +13,21 @@
 // What was told is kept in memory: after a restart it is told again, which the provider takes as
 // the same word.
 
-import { effectiveCheckout, HostId, hostOf, type Thread, type ThreadId } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  type FeatureLedgerEntry,
+  HostId,
+  hostOf,
+  type Thread,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import { RemoteHosts } from "../host/remote-hosts.ts";
-import { releasableWorkers } from "../orchestration/ledger.ts";
+import { isLiveWorker } from "../orchestration/ledger.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand, type OnDemandHosts } from "./on-demand.ts";
@@ -32,6 +39,21 @@ import {
 import { callOutside } from "./outside.ts";
 
 /** How often worker machines are looked at. */
+/**
+ * The workers whose machine may be told its work is over: finished as the ledger reads them and
+ * with nothing still going on (`isLiveWorker`), so one whose pull request merged while its turn,
+ * a build or a check still runs keeps its machine at work.
+ */
+export const releasableWorkers = (
+  features: ReadonlyArray<Pick<FeatureLedgerEntry, "workers">>,
+): ReadonlySet<ThreadId> =>
+  new Set(
+    features
+      .flatMap((feature) => feature.workers)
+      .filter((worker) => !isLiveWorker(worker))
+      .map((worker) => worker.threadId),
+  );
+
 export const WORKER_RELEASE_EVERY = Duration.minutes(10);
 /** How long a newly online machine is given before it can be released. */
 export const WORKER_RELEASE_SETTLE_MS = 30 * 60_000;

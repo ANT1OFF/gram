@@ -61,6 +61,7 @@ import {
 } from "./own-folder.ts";
 import type { ProfileRepositories } from "./repositories.ts";
 import type { OrchestrationShape } from "../orchestration/service/shape.ts";
+import { sameValue } from "./same-value.ts";
 
 /** What a start gives every thread it makes, wherever it is made. */
 type StartBase = Pick<
@@ -937,27 +938,6 @@ const personOfRecord = (record: object): string | undefined =>
 const stringField = (record: object, field: string): string | undefined => {
   const value: unknown = Reflect.get(record, field);
   return typeof value === "string" ? value : undefined;
-};
-
-/** Two decoded values, alike whatever order their keys were written in. */
-const sameValue = (a: unknown, b: unknown): boolean => {
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return (
-      Array.isArray(a) &&
-      Array.isArray(b) &&
-      a.length === b.length &&
-      a.every((each, index) => sameValue(each, b[index]))
-    );
-  }
-  if (typeof a === "object" && a !== null && typeof b === "object" && b !== null) {
-    const left = Object.entries(a).filter(([, v]) => v !== undefined);
-    const right = new Map(Object.entries(b).filter(([, v]) => v !== undefined));
-    return (
-      left.length === right.size &&
-      left.every(([key, v]) => right.has(key) && sameValue(v, right.get(key)))
-    );
-  }
-  return a === b;
 };
 
 export type ProfileStarter = ReturnType<typeof makeProfileStarter>;

@@ -57,7 +57,7 @@ import { OrchestrationMemory } from "../orchestration/memory.ts";
 import { questionAnswerer } from "../orchestration/dream-handler.ts";
 import { Orchestration, OrchestrationLive } from "../orchestration/service.ts";
 import { WorkerMachineReleaseLive } from "../embedding/worker-machine-release.ts";
-import { SignedInWorkersLive, WorkerMachinePort } from "../embedding/signed-in-workers.ts";
+import { WorkerMachineSourcesLive } from "../embedding/worker-machine-sources.ts";
 import { RoutineEventSourcesLive } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
@@ -69,12 +69,7 @@ import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
 import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
-import {
-  OnDemand,
-  OnDemandLive,
-  ON_DEMAND_PATHS,
-  onDemandRequest,
-} from "../embedding/on-demand.ts";
+import { OnDemand, ON_DEMAND_PATHS, onDemandRequest } from "../embedding/on-demand.ts";
 import { ThreadMessagesInboundLive } from "../embedding/thread-messages.ts";
 import { ThreadImportsInboundLive } from "../embedding/thread-imports.ts";
 import { ThreadStartsInboundLive } from "../embedding/thread-starts.ts";
@@ -199,7 +194,8 @@ import {
   machineManagement,
   placedOnMachine,
 } from "./machine-routes.ts";
-import { releaseOfConfig, RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
+import { releaseOfConfig } from "../host/releases.ts";
+import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
 import {
   authorize,
@@ -1038,17 +1034,7 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),
           // On-demand hosts under the orchestration, whose workers' own machines it starts
           // (`worker-machines.ts`).
-          Layer.provideMerge(
-            OrchestrationLive.pipe(
-              Layer.provideMerge(
-                Layer.mergeAll(
-                  OnDemandLive,
-                  // In the desktop app, worker machines from a hosted server it is signed in to.
-                  SignedInWorkersLive.pipe(Layer.provide(WorkerMachinePort.layer)),
-                ),
-              ),
-            ),
-          ),
+          Layer.provideMerge(OrchestrationLive.pipe(Layer.provideMerge(WorkerMachineSourcesLive))),
           // Gram's own full checks, which the solo merge policy accepts in place of CI, under the
           // orchestration whose ledger shows them.
           Layer.provideMerge(LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer))),

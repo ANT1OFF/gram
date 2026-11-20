@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { AgentEvent } from "../agent.ts";
+import { HostAppToolsAnswer, HostAppToolsRequest } from "./host-app-tools.ts";
 import { Connector } from "../connectors.ts";
 import {
   AgentUnavailable,
@@ -35,6 +36,8 @@ import { SavedDiff } from "../saved-work.ts";
 import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
 import { HostCodexStatus, HostGrokStatus, HostModel, HostOpenCodeStatus } from "./host-agents.ts";
+
+export * from "./host-app-tools.ts";
 
 /**
  * The host protocol's version. Between releases the protocol only grows: a new call, a new optional
@@ -832,36 +835,6 @@ export type HostFilePart = typeof HostFilePart.Type;
  * read; the host only reads it. Paths are the host's own. That holds while the only caller is the
  * host's own parent over a private pipe: a host reached over a network checks paths itself.
  */
-const AppToolsHeaders = Schema.Record(
-  Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/)),
-  Schema.String.check(Schema.isMaxLength(8192)),
-);
-/** The most an app-tool call or answer carries, as text: a tool's whole result fits. */
-export const HOST_APP_TOOLS_MOST_CHARS = 8 * 1024 * 1024;
-
-/** An app-tool call a session made on the host, as it carries it (`host.appTools.requests`). */
-export const HostAppToolsRequest = Schema.Struct({
-  id: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{8,64}$/)),
-  method: Schema.Literals(["POST", "GET", "DELETE"]),
-  headers: AppToolsHeaders,
-  body: Schema.String.check(Schema.isMaxLength(HOST_APP_TOOLS_MOST_CHARS)),
-  /**
-   * The session gave up on the call `id` names before it was answered (its connection closed):
-   * the control plane stops answering it, as it does a session that hangs up on it there.
-   */
-  cancel: Schema.optionalKey(Schema.Literal(true)),
-});
-export type HostAppToolsRequest = typeof HostAppToolsRequest.Type;
-
-/** The control plane's answer to one (`host.appTools.answer`). */
-export const HostAppToolsAnswer = Schema.Struct({
-  id: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{8,64}$/)),
-  status: Schema.Int,
-  headers: AppToolsHeaders,
-  body: Schema.String.check(Schema.isMaxLength(HOST_APP_TOOLS_MOST_CHARS)),
-});
-export type HostAppToolsAnswer = typeof HostAppToolsAnswer.Type;
-
 export const HostRpcs = RpcGroup.make(
   /** The first call on a connection: the host's version, id and capabilities. */
   Rpc.make("host.hello", { success: HostHello }),

@@ -4,12 +4,13 @@ import * as Effect from "effect/Effect";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { makeOnDemandHosts } from "./on-demand.ts";
-import { releasableWorkers } from "../orchestration/ledger.ts";
+
 import {
   releaseDecisions,
   tellRelease,
   WORKER_RELEASE_SETTLE_MS,
   workerMachineWork,
+  releasableWorkers,
 } from "./worker-machine-release.ts";
 
 const now = 10 * WORKER_RELEASE_SETTLE_MS;
