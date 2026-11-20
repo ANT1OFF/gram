@@ -496,6 +496,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       return !budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok;
     }).pipe(Effect.catchCause(() => Effect.succeed(true)));
 
+  /** The live workers a spawn's card counted as it asked for one past the cap, by its input. */
+  const cardCounts = new WeakMap<SpawnWorkerInput, number>();
+
   const describeSpawn: OrchestrationShape["describeSpawn"] = (callerId, input) =>
     Effect.gen(function* () {
       const authority = yield* authorityOf(callerId);
@@ -516,9 +519,10 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         return `Add ${outside.map(repoLabel).join(" and ")} to the "${state.workspace.name}" workspace, and spawn a worker there for ${input.feature}: ${input.title}`;
       }
       const { budget } = yield* survey(state, false);
-      return !budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok
-        ? `${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}. Allow one more, in ${repos} for ${input.feature}: ${input.title}`
-        : plain;
+      if (budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok)
+        return plain;
+      cardCounts.set(input, budget.liveWorkers);
+      return `${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}. Allow one more, in ${repos} for ${input.feature}: ${input.title}`;
     }).pipe(
       Effect.catchCause(() =>
         Effect.succeed(`Spawn a worker in ${input.project} for ${input.feature}`),
@@ -823,6 +827,22 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 `"${input.group}" isn't a usable group name. Use a short slug such as release-0-4.`,
               ),
             );
+          }
+          if (input.carded !== undefined) {
+            const { budget } = yield* survey(state, false);
+            const fits = budgetVerdict({
+              charter: state.charter,
+              liveWorkers: budget.liveWorkers,
+            }).ok;
+            if (!fits && budget.liveWorkers > input.carded) {
+              return yield* toolError(
+                tool,
+                refusal(
+                  "not_admitted",
+                  `${budget.liveWorkers} workers are live now and the charter allows ${budget.maxConcurrentWorkers}, more than when the user said yes, so no worker started. Call spawn_worker again to ask the user for one more.`,
+                ),
+              );
+            }
           }
           if (input.unattended === true || input.uncarded === true) {
             // Under the spawn lock, so a spawn racing this one is counted: what would need the
@@ -1295,7 +1315,12 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       .pipe(Effect.ignore);
 
   const spawnWorker: OrchestrationShape["spawnWorker"] = (callerId, given, carded) => {
-    const named: SpawnWorkerInput = carded === false ? { ...given, uncarded: true } : given;
+    const named: SpawnWorkerInput =
+      carded === false
+        ? { ...given, uncarded: true }
+        : carded === true
+          ? { ...given, carded: cardCounts.get(given) ?? -1 }
+          : given;
     // The machine is checked first, and a held brief keeps its id: a name that is wrong now is
     // refused now, not when the brief is released hours later.
     return (

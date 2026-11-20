@@ -89,4 +89,46 @@ describe.skipIf(!hasGit)("the worker cap under a burst of spawns", () => {
       ),
     GIT_HEAVY,
   );
+
+  // A yes is for one past the count its card showed: two cards answered yes at the same count let
+  // one worker through, and the other finds the count grown under the lock.
+  it.effect(
+    "lets a carded spawn through only while the count is still the one its card showed",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const registry = yield* AppToolRegistry;
+          const orchestration = yield* Orchestration;
+          const { thread, workspaceId } = yield* openOrchestrator(world);
+          yield* orchestration.setCharter(workspaceId, {
+            ...DEFAULT_CHARTER,
+            maxConcurrentWorkers: 1,
+          });
+          const spawnTool = registry
+            .forTransport(thread.id, "orchestrator")
+            .find((tool) => tool.descriptor.name === "spawn_worker")!;
+          const call = (feature: string) =>
+            spawnTool.run({ project: "shop", feature, title: feature, brief: `Do ${feature}.` });
+          yield* call("first");
+          const second = yield* call("second").pipe(Effect.result, Effect.forkScoped);
+          const third = yield* call("third").pipe(Effect.result, Effect.forkScoped);
+          const cards = yield* waitReal(
+            "both cards",
+            store.listRequests(thread.id).pipe(Effect.map((all) => all.length === 2 && all)),
+          );
+          for (const card of cards)
+            yield* runtimes.respond(thread.id, card.id, {
+              kind: "approval",
+              decision: "allow",
+              scope: "once",
+            });
+          const results = [yield* Fiber.join(second), yield* Fiber.join(third)];
+          expect(results.filter((each) => each._tag === "Success")).toHaveLength(1);
+          expect((yield* orchestration.ledger(workspaceId)).budget.liveWorkers).toBe(2);
+        }),
+      ),
+    GIT_HEAVY,
+  );
 });
