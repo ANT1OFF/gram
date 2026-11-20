@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -55,7 +55,13 @@ import {
   UPDATE_FILE,
   type UpdatePlan,
 } from "./self-update.ts";
-import { hostUpdaterOf } from "./self-update-host.ts";
+import { hostUpdaterOf, verifyPublisherApp } from "./self-update-host.ts";
+import {
+  GRAM_MAC_TEAM_ID,
+  macDesignatedRequirement,
+  probeMacCodeSignature,
+  verifyMacCodeSignature,
+} from "@gram/git/mac-signature";
 import { makeAdmission, UPDATING } from "./admission.ts";
 import { legacyLockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
 import type { ServiceCommand } from "./service.ts";
@@ -79,14 +85,33 @@ const temp = () => {
   return dir;
 };
 
-/** A synthetic release: its download, and the checksum list that names it (or another hash). */
-const fakeRelease = (body: string, listed = createHash("sha256").update(body).digest("hex")) => {
+/** A throwaway publisher release key, made for these tests: the host pins its public half. */
+const publisher = (() => {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  return {
+    key: publicKey.export({ format: "der", type: "spki" }).subarray(12).toString("base64"),
+    sign: (text: string) => sign(null, Buffer.from(text), privateKey).toString("base64"),
+  };
+})();
+
+/**
+ * A synthetic release: its download, the checksum list that names it (or another hash), and that
+ * list's signature by the publisher's key (or, with `signature`, another or none).
+ */
+const fakeRelease = (
+  body: string,
+  listed = createHash("sha256").update(body).digest("hex"),
+  signature: (sums: string) => string | undefined = publisher.sign,
+) => {
   const asked: string[] = [];
+  const sums = `${"0".repeat(64)}  other.zip\n${listed}  ${ASSET}\n`;
   const fetcher: typeof fetch = async (input) => {
     const url = String(input);
     asked.push(url);
-    if (url === `${RELEASES}/v${NEW}/SHA256SUMS.txt`)
-      return new Response(`${"0".repeat(64)}  other.zip\n${listed}  ${ASSET}\n`);
+    if (url === `${RELEASES}/v${NEW}/SHA256SUMS.txt`) return new Response(sums);
+    const signed = signature(sums);
+    if (url === `${RELEASES}/v${NEW}/SHA256SUMS.txt.sig` && signed !== undefined)
+      return new Response(`${signed}\n`);
     if (url === `${RELEASES}/v${NEW}/${ASSET}`)
       return new Response(body, { headers: { "content-length": String(body.length) } });
     return new Response("not found", { status: 404 });
@@ -142,6 +167,8 @@ const setup = (
       unpacked.push(readFileSync(archive, "utf8"));
       layOut(into);
     },
+    releaseKey: publisher.key,
+    verifyApp: async () => undefined,
     probe: async (bin) => (options.probe ?? true) && existsSync(bin),
     handOver: async (plan, mode) => {
       handed.push(plan);
@@ -215,6 +242,7 @@ describe("a host updating itself", () => {
     expect(run.refused).toBeUndefined();
     expect(release.asked).toEqual([
       `${RELEASES}/v${NEW}/SHA256SUMS.txt`,
+      `${RELEASES}/v${NEW}/SHA256SUMS.txt.sig`,
       `${RELEASES}/v${NEW}/${ASSET}`,
     ]);
     expect(unpacked).toEqual(["the new app"]);
@@ -285,13 +313,16 @@ describe("a host updating itself", () => {
 
   it("refuses a release the release lists no checksum for", async () => {
     const release = fakeRelease("the new app");
+    const sums = `${"0".repeat(64)}  other.zip\n`;
     const { updater, handed } = setup({
       release: {
         ...release,
         fetcher: async (input, init) =>
           String(input).endsWith("SHA256SUMS.txt")
-            ? new Response(`${"0".repeat(64)}  other.zip\n`)
-            : release.fetcher(input, init),
+            ? new Response(sums)
+            : String(input).endsWith("SHA256SUMS.txt.sig")
+              ? new Response(publisher.sign(sums))
+              : release.fetcher(input, init),
       },
     });
     expect((await steps(updater)).refused).toMatchObject({
@@ -299,6 +330,128 @@ describe("a host updating itself", () => {
       message: `The release lists no checksum for ${ASSET}.`,
     });
     expect(handed).toEqual([]);
+  });
+
+  it("takes a Linux release only when the publisher's key signed its checksums", async () => {
+    const forger = generateKeyPairSync("ed25519").privateKey;
+    const cases: ReadonlyArray<readonly [(sums: string) => string | undefined, string]> = [
+      [() => undefined, "the release has no checksum signature (404)"],
+      [
+        (sums) => sign(null, Buffer.from(sums), forger).toString("base64"),
+        "aren't signed by Gram's publisher",
+      ],
+      [(sums) => publisher.sign(`${sums} `), "aren't signed by Gram's publisher"],
+      [() => "not a signature", "malformed"],
+    ];
+    for (const [signature, message] of cases) {
+      const { apps, home, updater, handed, unpacked, release } = setup({
+        release: fakeRelease("the new app", undefined, signature),
+      });
+      const run = await steps(updater);
+      expect(run.refused).toMatchObject({
+        reason: "failed",
+        message: expect.stringContaining(message),
+      });
+      // Refused before the app itself is downloaded, so nothing of it runs or stays.
+      expect(release.asked).not.toContain(`${RELEASES}/v${NEW}/${ASSET}`);
+      expect(unpacked).toEqual([]);
+      expect(handed).toEqual([]);
+      expect(readFileSyncDir(apps)).toEqual([OLD]);
+      expect(existsSync(join(home, UPDATE_FILE))).toBe(false);
+    }
+  });
+
+  it("refuses every Linux release while the pinned key is the placeholder", async () => {
+    const { updater, handed, release } = setup({ overrides: { releaseKey: null } });
+    expect((await steps(updater)).refused).toMatchObject({
+      reason: "failed",
+      message: expect.stringContaining("pins no release signing key"),
+    });
+    expect(release.asked).toEqual([`${RELEASES}/v${NEW}/SHA256SUMS.txt`]);
+    expect(handed).toEqual([]);
+  });
+
+  it("on macOS, runs nothing of an app its Developer ID check refuses", async () => {
+    const asset = releaseAsset(NEW, "darwin", "arm64")!;
+    const body = "the new mac app";
+    const asked: string[] = [];
+    const sums = `${createHash("sha256").update(body).digest("hex")}  ${asset}\n`;
+    const fetcher: typeof fetch = async (input) => {
+      const url = String(input);
+      asked.push(url);
+      if (url.endsWith("/SHA256SUMS.txt")) return new Response(sums);
+      if (url.endsWith(`/${asset}`)) return new Response(body);
+      return new Response("not found", { status: 404 });
+    };
+    let probed = 0;
+    const mac = (verifyApp: (dir: string) => Promise<void>, releaseKey: string | null = null) =>
+      setup({
+        release: { fetcher, asked },
+        overrides: {
+          platform: "darwin",
+          arch: "arm64",
+          releaseKey,
+          verifyApp,
+          unpack: async (_archive, into) => {
+            const { bin, entry } = appLayout("darwin", into);
+            mkdirSync(join(entry, ".."), { recursive: true });
+            mkdirSync(join(bin, ".."), { recursive: true });
+            writeFileSync(bin, "#!/bin/sh\n", { mode: 0o755 });
+            writeFileSync(entry, "// gram-host\n");
+          },
+          probe: async () => {
+            probed++;
+            return true;
+          },
+        },
+      });
+    // Another team's app, or a broken seal: refused before it runs, its reason the outcome's.
+    const checked: string[] = [];
+    const refused = mac(async (dir) => {
+      checked.push(dir);
+      throw new Error("Signed update refused: the app is not Gram signed by its Developer ID team");
+    });
+    expect((await steps(refused.updater)).refused).toMatchObject({
+      reason: "failed",
+      message: "Signed update refused: the app is not Gram signed by its Developer ID team",
+    });
+    expect(checked).toHaveLength(1);
+    expect(probed).toBe(0);
+    expect(refused.handed).toEqual([]);
+    expect(readFileSyncDir(refused.apps)).toEqual([OLD]);
+    // With no key pinned, macOS asks for no checksum signature: the app's own one stands.
+    expect(asked.some((url) => url.endsWith(".sig"))).toBe(false);
+
+    const good = mac(async () => undefined);
+    expect((await steps(good.updater)).refused).toBeUndefined();
+    expect(probed).toBe(1);
+    expect(good.handed).toHaveLength(1);
+
+    // Once a key is pinned, macOS requires the signed checksums too.
+    const pinned = mac(async () => undefined, publisher.key);
+    expect((await steps(pinned.updater)).refused).toMatchObject({
+      message: expect.stringContaining("no checksum signature"),
+    });
+  });
+
+  it("downloads afresh a cached app that no longer passes its signature check", async () => {
+    const fixture = setup();
+    layOut(join(fixture.apps, NEW));
+    writeFileSync(join(fixture.apps, NEW, ".complete"), "");
+    const checked: string[] = [];
+    const updater = makeSelfUpdate({
+      ...fixture.deps,
+      verifyApp: async (dir) => {
+        checked.push(dir);
+        if (dir === join(fixture.apps, NEW)) throw new Error("Signed update refused: tampered");
+      },
+    });
+    expect((await steps(updater)).refused).toBeUndefined();
+    // The cached copy was refused, so the release was downloaded, checked and staged again.
+    expect(checked).toHaveLength(2);
+    expect(checked[0]).toBe(join(fixture.apps, NEW));
+    expect(fixture.release.asked).toContain(`${RELEASES}/v${NEW}/${ASSET}`);
+    expect(fixture.unpacked).toEqual(["the new app"]);
   });
 
   it("doesn't move to an app that doesn't start, and leaves it out of place", async () => {
@@ -332,12 +485,12 @@ describe("a host updating itself", () => {
       busy: { terminals: 2 },
     });
     expect(flipping.handed).toEqual([]);
-    expect(flipping.release.asked).toHaveLength(2);
+    expect(flipping.release.asked).toHaveLength(3);
     calls = 0;
     const flippingAgain = makeSelfUpdate({ ...flipping.deps, busy: async () => IDLE });
     expect((await steps(flippingAgain)).refused).toBeUndefined();
     // Already unpacked and tested: no second download.
-    expect(flipping.release.asked).toHaveLength(2);
+    expect(flipping.release.asked).toHaveLength(3);
     expect(flipping.handed).toHaveLength(1);
 
     busy = IDLE;
@@ -569,7 +722,7 @@ describe("review regressions", () => {
     await delivery;
     // Once it has answered, the next try goes ahead without downloading again.
     expect((await steps(fixture.updater)).refused).toBeUndefined();
-    expect(fixture.release.asked).toHaveLength(2);
+    expect(fixture.release.asked).toHaveLength(3);
   });
 
   it("takes one start at a time, and none while an update is under way", async () => {
@@ -1225,4 +1378,72 @@ describe("host.update over the wire", () => {
       expect(connection.update).toBeUndefined();
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
+});
+
+describe("the publisher check on a downloaded macOS app", () => {
+  // Synthetic Apple tool output: macOS itself can't run here.
+  const team = GRAM_MAC_TEAM_ID!;
+  const calls: string[][] = [];
+  const apple =
+    (verdicts: {
+      readonly requirement?: number;
+      readonly team?: string;
+      readonly runtime?: boolean;
+      readonly assess?: number;
+    }) =>
+    async (file: string, args: readonly string[]) => {
+      calls.push([file, ...args]);
+      if (args[0] === "--verify") return { status: verdicts.requirement ?? 0, out: "" };
+      if (args[0] === "--display")
+        return {
+          status: 0,
+          out:
+            `Identifier=io.github.ant1off.gram\nTeamIdentifier=${verdicts.team ?? team}\n` +
+            `CodeDirectory v=20500 size=439 flags=${verdicts.runtime === false ? "0x0(none)" : "0x10000(runtime)"} hashes=3+7\n`,
+        };
+      if (args[0] === "--assess")
+        return (verdicts.assess ?? 0) === 0
+          ? { status: 0, out: "/x/Gram.app: accepted\nsource=Notarized Developer ID\n" }
+          : { status: 3, out: "/x/Gram.app: rejected\n" };
+      return { status: 0, out: "The validate action worked!" };
+    };
+  const check = (run: ReturnType<typeof apple>) =>
+    verifyPublisherApp("darwin", (bundle, teamId, options) =>
+      verifyMacCodeSignature(bundle, teamId, options, (b, t, o) =>
+        probeMacCodeSignature(b, t, o, run),
+      ),
+    );
+
+  it("takes Gram signed by the pinned team, sealed, notarized and stapled", async () => {
+    calls.length = 0;
+    await expect(check(apple({}))("/apps/1.17.0")).resolves.toBeUndefined();
+    // The strict deep seal against the requirement that names the pinned team, on the bundle.
+    expect(calls[0]).toEqual([
+      "/usr/bin/codesign",
+      "--verify",
+      "--deep",
+      "--strict",
+      "-R",
+      `=${macDesignatedRequirement(team)}`,
+      "/apps/1.17.0/Gram.app",
+    ]);
+    expect(calls.map(([file]) => file)).toContain("/usr/sbin/spctl");
+  });
+
+  it.each([
+    [{ requirement: 3 }, "not Gram signed by its Developer ID team"],
+    [{ requirement: 1 }, "code signature is invalid or incomplete"],
+    [{ team: "OTHERTEAM1" }, "unexpected bundle identifier or Team ID"],
+    [{ runtime: false }, "lacks the hardened runtime"],
+    [{ assess: 3 }, "Gatekeeper does not accept it as notarized"],
+  ] as const)("refuses %o", async (verdicts, message) => {
+    await expect(check(apple(verdicts))("/apps/1.17.0")).rejects.toThrow(message);
+  });
+
+  it("asks nothing of a Linux app, whose signed checksums stand for it", async () => {
+    const never = verifyPublisherApp("linux", async () => {
+      throw new Error("not asked");
+    });
+    await expect(never("/apps/1.17.0")).resolves.toBeUndefined();
+  });
 });

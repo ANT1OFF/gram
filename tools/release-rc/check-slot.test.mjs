@@ -48,7 +48,7 @@ function releaseFixture({
   const bin = join(root, "bin");
   mkdirSync(bin);
   const source = join(root, "source");
-  mkdirSync(join(source, "packages/shell/src/modules/update"), { recursive: true });
+  mkdirSync(join(source, "packages/git/src"), { recursive: true });
   mkdirSync(join(source, "apps/desktop"), { recursive: true });
   writeFileSync(
     join(source, "package.json"),
@@ -67,7 +67,7 @@ function releaseFixture({
     '"apps/desktop": {"name": "@gram/desktop", "version": "0.4.0"}',
   );
   writeFileSync(
-    join(source, "packages/shell/src/modules/update/mac-signature.ts"),
+    join(source, "packages/git/src/mac-signature.ts"),
     'export const GRAM_MAC_TEAM_ID="FAKETEAM01", SIGNED_MAC_BUILD_SCHEMA=1, SIGNED_MAC_BUNDLE_ID="fake", macRequirementSha256=()=>"", verifyMacCodeSignature=()=>{};',
   );
   const executable = (name, body) =>
