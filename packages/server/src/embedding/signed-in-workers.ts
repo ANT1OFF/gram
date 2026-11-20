@@ -351,6 +351,13 @@ export const NO_SIGNED_IN_SERVER =
 /** The most machines from hosted servers this Gram registers at once (and the app relays). */
 export const RELAYED_MOST = 32;
 
+/**
+ * How long a name is kept after a stop the app didn't answer, before a start of it may go: the
+ * app's own call has given up by then (`HOSTED_CALL_MS`, twice for a nonce), but the request may
+ * still be on its way to the server.
+ */
+export const UNANSWERED_STOP_HOLD_MS = 30_000;
+
 /** How many times a machine given back is asked to stop, and the wait between. */
 const STOP_ATTEMPTS = 3;
 const STOP_RETRY_MS = 2_000;
@@ -420,6 +427,8 @@ export interface SignedInDeps {
   readonly timeoutMs?: number;
   readonly everyMs?: number;
   readonly stopRetryMs?: number;
+  /** How long a name is kept after a stop no one answered (`UNANSWERED_STOP_HOLD_MS`). */
+  readonly unansweredHoldMs?: number;
   /** What each server offered, kept across sources a short while; none kept when left out. */
   readonly offered?: OfferedByServer;
   /** Stops a server never confirmed, for machines not registered here, to ask again later. */
@@ -567,7 +576,10 @@ export const settleOwedStops = (
             owed.remove(stop.name);
             return;
           }
-          const outcome = stopOutcome(yield* port.call(stop.origin, "stop", { name: stop.name }));
+          const answered = yield* port.call(stop.origin, "stop", { name: stop.name });
+          const outcome = stopOutcome(answered);
+          // Unanswered, it may still reach the server: the name is kept a while more.
+          if (!answered.ok) yield* Effect.sleep(UNANSWERED_STOP_HOLD_MS);
           if (outcome === "stopped") owed.remove(stop.name);
           else if (
             outcome === "absent" &&
@@ -627,16 +639,27 @@ export const signedInSource = (
       deps.starting?.delete(name);
       let stopped = false;
       let last = "";
-      for (let attempt = 0; attempt < STOP_ATTEMPTS && !stopped; attempt += 1) {
-        if (attempt > 0) yield* Effect.sleep(deps.stopRetryMs ?? STOP_RETRY_MS);
-        // One at a time with a start of the same name (`withName`).
-        const answered = yield* withName(deps.locks, name, port.call(origin, "stop", { name }));
-        // "No such machine" ends nothing while a start of it may still be on its way.
-        const outcome = stopOutcome(answered);
-        stopped = outcome === "stopped" || (outcome === "absent" && !unsettled);
-        // Only the status: what a server answers isn't written to the log.
-        last = answered.ok ? `answered ${answered.status}` : "no answer";
-      }
+      // The name is this give-back's through every attempt (`withName`): a start of it waits for
+      // the last, so a stop tried again never lands on the machine a retry has since made. One
+      // the app didn't answer may still reach the server late, so the name is kept a while more.
+      yield* withName(
+        deps.locks,
+        name,
+        Effect.gen(function* () {
+          let unanswered = false;
+          for (let attempt = 0; attempt < STOP_ATTEMPTS && !stopped; attempt += 1) {
+            if (attempt > 0) yield* Effect.sleep(deps.stopRetryMs ?? STOP_RETRY_MS);
+            const answered = yield* port.call(origin, "stop", { name });
+            // "No such machine" ends nothing while a start of it may still be on its way.
+            const outcome = stopOutcome(answered);
+            stopped = outcome === "stopped" || (outcome === "absent" && !unsettled);
+            unanswered = !answered.ok;
+            // Only the status: what a server answers isn't written to the log.
+            last = answered.ok ? `answered ${answered.status}` : "no answer";
+          }
+          if (unanswered) yield* Effect.sleep(deps.unansweredHoldMs ?? UNANSWERED_STOP_HOLD_MS);
+        }),
+      );
       if (!stopped) {
         yield* Effect.logWarning("a worker machine given back could not be stopped").pipe(
           Effect.annotateLogs({ machine: name, reason: last }),
@@ -662,6 +685,7 @@ export const signedInSource = (
     choices: Effect.map(asked, (kept) => kept.value),
     models: Effect.map(asked, (kept) => kept.models),
     givesBack: true,
+    idOf: (name) => named(name)?.id,
     abandon: (name, options) => Effect.asVoid(forget(name, options?.unsettled === true)),
     start: (ask) =>
       Effect.suspend(() => {
@@ -795,14 +819,26 @@ export const tellSignedInRelease = (
       reason: released ? "finished" : "working",
     })
     .pipe(
-      Effect.flatMap((answered) =>
-        answered.ok && (answered.status < 300 || answered.status === 404)
+      Effect.flatMap((answered) => {
+        // Taken only when the server applied it: a 2xx that says it knows no such machine
+        // (`known: false`), or a 404, changed nothing there and is told again next pass.
+        const known =
+          answered.ok && typeof answered.body === "object" && answered.body !== null
+            ? (answered.body as { known?: unknown }).known
+            : undefined;
+        return answered.ok && answered.status < 300 && known !== false
           ? Effect.void
           : // Only the status: what a server answers isn't written to the log.
             Effect.fail(
-              new Error(answered.ok ? `the server answered ${answered.status}` : "no answer"),
-            ),
-      ),
+              new Error(
+                !answered.ok
+                  ? "no answer"
+                  : answered.status < 300
+                    ? "the server knows no such machine"
+                    : `the server answered ${answered.status}`,
+              ),
+            );
+      }),
     );
 
 /** The desktop's signed-in worker machines: the source for `sandbox`, and the relay it carries. */
@@ -820,6 +856,8 @@ export class SignedInWorkers extends Context.Service<
 
 /** How often the app is told the whole list of machines it carries, whether or not it changed. */
 export const RELAYS_RESYNC = Duration.minutes(1);
+/** How many passes in a row a machine is answered 404 before it is forgotten here. */
+export const RECLAIMED_AFTER_MISSES = 3;
 /** How often offline relayed machines are asked after, to forget one the server reclaimed. */
 export const RECLAIMED_EVERY = Duration.minutes(10);
 
@@ -830,13 +868,30 @@ export const RECLAIMED_EVERY = Duration.minutes(10);
 export const forgetReclaimed = (
   port: WorkerMachinePortShape,
   hosts: Pick<RemoteHostsShape, "list" | "remove">,
+  /**
+   * How many passes in a row each machine was answered 404: the server says the same of a name
+   * while its workspace is out of reach for a while, so one answer alone forgets nothing.
+   */
+  misses: Map<string, number> = new Map(),
 ) =>
   Effect.gen(function* () {
     for (const machine of hosts.list()) {
       if (machine.via === undefined || machine.onDemand !== "worker") continue;
-      if (machine.onlineSince !== undefined) continue;
+      if (machine.onlineSince !== undefined) {
+        misses.delete(machine.id);
+        continue;
+      }
       const answered = yield* port.call(machine.via, "status", { name: machine.name });
-      if (!answered.ok || answered.status !== 404) continue;
+      if (!answered.ok || answered.status !== 404) {
+        misses.delete(machine.id);
+        continue;
+      }
+      const missed = (misses.get(machine.id) ?? 0) + 1;
+      if (missed < RECLAIMED_AFTER_MISSES) {
+        misses.set(machine.id, missed);
+        continue;
+      }
+      misses.delete(machine.id);
       port.unrelay(machine.name);
       hosts.remove(HostId.make(machine.id));
     }
@@ -924,7 +979,8 @@ export const SignedInWorkersLive = Layer.effect(
     }).pipe(Effect.repeat(Schedule.spaced(RELAYS_RESYNC)), Effect.forkScoped);
     // A machine the server no longer knows (reclaimed after its release, or removed there) is
     // forgotten here, so its relay stops and its name is free.
-    yield* forgetReclaimed(port, hosts).pipe(
+    const misses = new Map<string, number>();
+    yield* forgetReclaimed(port, hosts, misses).pipe(
       Effect.andThen(settleOwedStops(port, owed, claimed, Date.now, locks)),
       Effect.catchCause((cause) => Effect.logWarning("the reclaimed-machine pass failed", cause)),
       Effect.repeat(Schedule.spaced(RECLAIMED_EVERY)),

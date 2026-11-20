@@ -427,6 +427,8 @@ export interface WorkerMachineSource {
    * held keeps its brief.
    */
   readonly givesBack: boolean;
+  /** The id of the machine registered here under `name`, when there is one. */
+  readonly idOf: (name: string) => string | undefined;
   /**
    * Gives back a machine started for a spawn that was then refused: stopped there and forgotten
    * here, where this provider does so. `unsettled`: its start's outcome isn't known, so the server
@@ -565,5 +567,10 @@ export const embeddedSource = (
     ),
   // Its provider pauses an idle machine and reclaims it once released (`worker-machine-release.ts`).
   givesBack: false,
+  idOf: (name) =>
+    machines().find(
+      (machine) =>
+        machine.name === name && machine.owner === owner && machine.onDemand === "worker",
+    )?.id,
   abandon: () => Effect.void,
 });

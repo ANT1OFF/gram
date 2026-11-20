@@ -351,7 +351,7 @@ const ANSWER_FIELDS: Readonly<Record<WorkerMachineCall, ReadonlyArray<string>>> 
   choices: ["choices", "note", "keeps", "models"],
   start: ["name", "message", "asked", "inUse", "total", "machines"],
   status: ["phase", "message", "step", "publicKey", "platform"],
-  release: ["message"],
+  release: ["known", "released", "message"],
   stop: ["stopped", "message"],
 };
 

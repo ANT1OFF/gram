@@ -714,6 +714,26 @@ describe("worker machines from a signed-in hosted server", () => {
     }),
   );
 
+  it.effect("takes a release as told only when the server applied it", () =>
+    Effect.gen(function* () {
+      // As a server answers a release of a name it holds no machine for.
+      let answer = { status: 200, body: { known: false } as unknown };
+      const app = fakeApp({ answer: () => answer });
+      const tell = releaseTeller(undefined, bridgeWorkerMachines(app.port))!;
+      const machine = {
+        id: "m-0123456789abcdef01234567",
+        name: NAME,
+        onDemand: "worker",
+        via: ORIGIN,
+      };
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
+      answer = { status: 404, body: {} };
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
+      answer = { status: 200, body: { known: true, released: false } };
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Success");
+    }),
+  );
+
   it.live(
     "asks a machine that never joined to stop again, and says so when it never confirms",
     () =>
@@ -793,8 +813,19 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
         answer: ({ call }) => ({ status: call === "status" ? 404 : 200, body: {} }),
       });
       const port = bridgeWorkerMachines(app.port);
-      yield* forgetReclaimed({ ...port, unrelay: (name) => unrelayed.push(name) }, hosts);
-      expect(app.calls).toEqual([{ call: "status", body: { name: NAME } }]);
+      const misses = new Map<string, number>();
+      const pass = forgetReclaimed(
+        { ...port, unrelay: (name) => unrelayed.push(name) },
+        hosts,
+        misses,
+      );
+      // Once is a server that can't reach its workspace now as much as one that reclaimed it.
+      yield* pass;
+      yield* pass;
+      expect(hosts.list()).toHaveLength(1);
+      expect(unrelayed).toEqual([]);
+      yield* pass;
+      expect(app.calls).toHaveLength(3);
       expect(unrelayed).toEqual([NAME]);
       expect(hosts.list()).toEqual([]);
     }),
@@ -986,6 +1017,49 @@ describe("stops a server never confirmed", () => {
       yield* Fiber.join(settling);
       expect(log).toEqual(["stop sent", "stop answered", "start sent", "start answered"]);
     }).pipe(Effect.scoped),
+  );
+
+  it.live(
+    "keep a name through every attempt of a stop, so a retry's start never falls between them",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const seen = { stops: 0 };
+        const base = bridgeWorkerMachines(
+          fakeApp({ answer: () => ({ status: 200, body: {} }) }).port,
+        );
+        // The first stop fails on the way; the next goes through.
+        const port: WorkerMachinePortShape = {
+          ...base,
+          call: (_origin, call) =>
+            Effect.sync(() => {
+              log.push(call);
+              if (call === "stop") seen.stops += 1;
+              return call === "stop" && seen.stops === 1
+                ? { ok: true as const, status: 503, body: {} }
+                : {
+                    ok: true as const,
+                    status: call === "start" ? 202 : 200,
+                    body: { stopped: true },
+                  };
+            }),
+        };
+        const locks: NameLocks = makeKeyedLock<string>();
+        const source = signedInSource(SERVER, {
+          port,
+          hosts: unregistered,
+          owed: memoryOwedStops(),
+          starting: new Set(),
+          locks,
+          stopRetryMs: 200,
+        });
+        const givingBack = yield* Effect.forkScoped(source.abandon(NAME));
+        while (seen.stops === 0) yield* Effect.sleep("5 millis");
+        // A retry of the same spawn, in the gap before the stop is tried again.
+        yield* source.start({ name: NAME, orchestrator: "o", title: "Retry" });
+        yield* Fiber.join(givingBack);
+        expect(log).toEqual(["stop", "stop", "start"]);
+      }).pipe(Effect.scoped),
   );
 
   it.effect("never stop a machine a later start took the name of", () =>

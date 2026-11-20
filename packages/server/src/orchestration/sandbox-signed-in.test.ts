@@ -651,4 +651,57 @@ describe("sandbox from a signed-in hosted server", () => {
         }).pipe(Effect.provide(context));
       }).pipe(Effect.scoped),
   );
+
+  it.live("gives back no machine a thread is placed on, when the spawn fails after it came", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      let started = false;
+      const { port, calls } = fakePort((call) => {
+        if (call === "start") started = true;
+        return call === "choices" ? { status: 404, body: {} } : { status: 202, body: {} };
+      });
+      const machine = {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "",
+        onDemand: "worker",
+        via: SERVER.origin,
+        onlineSince: 1,
+      };
+      const hosts = {
+        list: () => (started ? [machine] : []),
+        remove: () => true,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const base = signedInSource(SERVER, { port, hosts, timeoutMs: 1_000, everyMs: 10 });
+      const source = {
+        ...base,
+        start: (ask: Parameters<typeof base.start>[0]) => {
+          machine.name = ask.name;
+          return base.start(ask);
+        },
+      };
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const { session, thread } = yield* openOrchestrator(world);
+        // A worker of this spawn's already runs there: the spawn's own, made before it failed.
+        yield* store.insertThread({
+          ...thread,
+          id: "t-placed-there" as typeof thread.id,
+          checkout: { ...thread.checkout, hostId: machine.id },
+        } as typeof thread);
+        const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
+        expect(result._tag).toBe("Failure");
+        expect(calls.map((each) => each.call)).toEqual(["choices", "start"]);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
 });

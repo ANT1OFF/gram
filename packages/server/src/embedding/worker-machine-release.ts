@@ -78,6 +78,40 @@ export const workerMachineWork = (
       ),
     }));
 
+/**
+ * What to tell the provider of each worker machine this pass. One at work is told it is working
+ * unless that was told this run already: after a restart nothing is kept of what was told, and a
+ * release the provider still holds would have it reclaim a machine its worker came back to. One
+ * whose work is over is told it is released once it has settled (`WORKER_RELEASE_SETTLE_MS`, so
+ * its first worker is placed first), unless that was told already. `told` is by machine id.
+ */
+export const releaseDecisions = (
+  machines: ReadonlyArray<ReleaseMachine>,
+  threads: ReadonlyArray<
+    Pick<Thread, "id" | "checkout" | "currentCheckout" | "spawnedBy" | "parked">
+  >,
+  finished: ReadonlySet<ThreadId>,
+  now: number,
+  told: ReadonlyMap<string, boolean>,
+): ReadonlyArray<{ readonly machine: ReleaseMachine; readonly released: boolean }> =>
+  machines
+    .filter(
+      (machine) =>
+        machine.onDemand === "worker" && (machine.owner !== undefined || machine.via !== undefined),
+    )
+    .flatMap((machine): ReadonlyArray<{ machine: ReleaseMachine; released: boolean }> => {
+      const atWork = threads.some(
+        (thread) =>
+          hostOf(effectiveCheckout(thread)) === machine.id &&
+          !finished.has(thread.id) &&
+          !(thread.spawnedBy === undefined && thread.parked === true),
+      );
+      if (atWork) return told.get(machine.id) === false ? [] : [{ machine, released: false }];
+      const settling =
+        machine.onlineSince !== undefined && now - machine.onlineSince < WORKER_RELEASE_SETTLE_MS;
+      return settling || told.get(machine.id) === true ? [] : [{ machine, released: true }];
+    });
+
 /** Tells the provider a worker machine's work is over, or going on again. 404: it keeps none. */
 export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, released: boolean) =>
   callOutside("host provider", hosts.provider, {
@@ -145,12 +179,16 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         if (Option.isSome(ledger))
           for (const id of finishedWorkers(ledger.value.features)) finished.add(id);
       }
-      for (const { machine, over } of workerMachineWork(machines, threads, finished, Date.now())) {
-        if (told.get(machine.id) === over) continue;
-        // A machine never told it was released needs no word that it is at work.
-        if (!over && !told.has(machine.id)) continue;
-        const sent = yield* tell(machine, over).pipe(Effect.result);
-        if (sent._tag === "Success") told.set(machine.id, over);
+      for (const { machine, released } of releaseDecisions(
+        machines,
+        threads,
+        finished,
+        Date.now(),
+        told,
+      )) {
+        const sent = yield* tell(machine, released).pipe(Effect.result);
+        // Kept only once the provider took it: one it didn't apply is told again next pass.
+        if (sent._tag === "Success") told.set(machine.id, released);
         else
           yield* Effect.logWarning("a worker machine's release could not be told").pipe(
             Effect.annotateLogs({ machine: machine.name, reason: sent.failure.message }),

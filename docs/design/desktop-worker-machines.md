@@ -198,8 +198,19 @@ subscription token reaches a machine, with its own consent.
   When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way), the
   server's "no such machine" (a 404, or a 2xx with `stopped: false`) settles nothing for fifteen
   minutes, since the start may still make it. A start and a stop of one name never overlap here:
-  a stop already on its way is answered before a retry's start of that name goes out. A name a later start takes, or one registered here since, is that start's: no stop owed for
+  a give-back keeps the name through every attempt of its stop, and half a minute more after one
+  no one answered, so a retry's start of that name goes out only after it.
+- **A machine in use is never given back.** A spawn that fails or is interrupted after its machine
+  came gives the machine back only if no open thread is placed on it: not its own worker made
+  before the failure, and not another worker sharing it. A name a later start takes, or one registered here since, is that start's: no stop owed for
   an earlier one ever ends its machine.
+- **Release across a restart.** The release pass keeps what it told in memory only, so after a
+  restart it tells each machine at work that it is working, once, in case the server still holds
+  a release from before; a machine just back online is told so at once, and only a verdict that
+  its work is over waits for it to settle. A release counts as told only once the server applied
+  it (not a 404, nor a 2xx saying it knows no such machine), so one that wasn't is told again.
+- **A machine the server no longer knows** is forgotten here after three passes in a row answer
+  404, since the same answer comes while its workspace is out of reach for a while.
 - **A retry of the same spawn.** A machine registered here before the try (an earlier spawn of the
   same `clientRequestId`) is waited for but never stopped by that try, however long it stays
   offline: it may hold the earlier spawn's work. Only a machine a try started is given back.

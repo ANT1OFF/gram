@@ -313,9 +313,12 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         );
         // Online already (a retry): nothing to start. Otherwise it is started only once the spawn
         // goes ahead, after any approval (`handle`), so a refused or denied spawn starts nothing.
-        const already = joined().find((each) => each.name === name && theirs(each));
-        if (already?.onlineSince !== undefined) return { name, givesBack: source.givesBack };
+        const seen = joined().find((each) => each.name === name && theirs(each));
+        if (seen?.onlineSince !== undefined) return { name, givesBack: source.givesBack };
         const prepare = Effect.gen(function* () {
+          // Read again as the spawn goes ahead, after any card: what is registered now decides
+          // whether this try starts the machine (and may give it back) or waits for one it found.
+          const already = joined().find((each) => each.name === name && theirs(each));
           const asked =
             already !== undefined
               ? ({ kind: "started", name } as const)
@@ -360,7 +363,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           if (typeof arrived !== "string") {
             // A machine registered here before this try (an earlier spawn of the same id) may
             // hold that spawn's work on its disk: only a machine this try started is stopped.
-            if (already !== undefined)
+            if (already !== undefined && source.givesBack)
               return yield* fail(
                 `The machine ${name} is registered here from an earlier spawn of this request and didn't come online, so it was left as it is: it may hold that spawn's work. Wait for it to come back, spawn with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
               );
@@ -368,8 +371,30 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             yield* source.abandon(name);
             return yield* fail(arrived.failed);
           }
-          // Given back if the spawn is refused after it came, so none is left running for nothing.
-          return already === undefined ? { abandon: source.abandon(name) } : {};
+          // Given back if the spawn is refused after it came, so none is left running for nothing:
+          // never while a thread is placed on it, the spawn's own worker made before it failed
+          // included, nor when that can't be read.
+          const giveBack = Effect.gen(function* () {
+            const id = source.idOf(name);
+            if (id !== undefined) {
+              const threads = yield* store.listThreads.pipe(Effect.option);
+              if (threads._tag === "None") return;
+              if (
+                threads.value.some(
+                  (thread) =>
+                    thread.parked !== true &&
+                    [
+                      effectiveCheckout(thread),
+                      thread.checkout,
+                      ...(thread.extraCheckouts ?? []),
+                    ].some((checkout) => checkout !== undefined && hostOf(checkout) === id),
+                )
+              )
+                return;
+            }
+            yield* source.abandon(name);
+          });
+          return already === undefined ? { abandon: giveBack } : {};
         });
         return { name, givesBack: source.givesBack, prepare };
       });

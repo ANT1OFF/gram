@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { makeOnDemandHosts } from "./on-demand.ts";
 import {
+  releaseDecisions,
   tellRelease,
   WORKER_RELEASE_SETTLE_MS,
   workerMachineWork,
@@ -116,4 +117,33 @@ describe("a worker machine's work", () => {
       ]);
     }),
   );
+
+  it("tells a machine at work it is working once each run, even with nothing kept of an earlier release", () => {
+    // After a restart nothing is kept of what was told; the server may still hold a release.
+    const decided = releaseDecisions(
+      [machine("aaaa"), machine("bbbb", { onlineSince: now - 60_000 })],
+      [on("t1", "aaaa"), on("t2", "bbbb")],
+      new Set(),
+      now,
+      new Map(),
+    );
+    // Both at work, the one that has only just come back included: told so at once.
+    expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([
+      ["aaaa", false],
+      ["bbbb", false],
+    ]);
+  });
+
+  it("judges a machine's work over only once it has settled, and says nothing twice", () => {
+    const told = new Map([["cccc", true]]);
+    const decided = releaseDecisions(
+      [machine("aaaa", { onlineSince: now - 60_000 }), machine("bbbb"), machine("cccc")],
+      [],
+      new Set(),
+      now,
+      told,
+    );
+    // aaaa has just come online: not yet. cccc was told already.
+    expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([["bbbb", true]]);
+  });
 });
