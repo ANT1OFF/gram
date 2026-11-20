@@ -26,6 +26,8 @@ export class InvalidState extends Schema.TaggedError<InvalidState>()("InvalidSta
   access: Schema.optionalKey(FolderAccessDenial),
   /** Set when the thread's folder is gone, so a client can offer to restore it. */
   folderMissing: Schema.optionalKey(Schema.Struct({ path: Schema.String })),
+  /** Where the person can put right what was refused, when the refusal knows: an https page. */
+  help: Schema.optionalKey(Schema.Struct({ url: Schema.String, label: Schema.String })),
 }) {}
 
 export const AgentUnavailableReason = Schema.Literals([
