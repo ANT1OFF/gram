@@ -37,13 +37,22 @@ export function workspaces(root) {
         (name) => name.startsWith("@gram/"),
       );
       let references = [];
-      try {
-        const tsconfig = JSON.parse(readFileSync(join(root, dir, "tsconfig.json"), "utf8"));
+      const tsconfigPath = join(root, dir, "tsconfig.json");
+      if (existsSync(tsconfigPath)) {
+        let tsconfig;
+        try {
+          tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8"));
+        } catch (error) {
+          // Read silently, a comment would drop the project references and with them the
+          // workspaces a change reaches.
+          throw new Error(
+            `${relative(root, tsconfigPath)} must be plain JSON, without comments or trailing commas, so the affected-projects graph can read its references: ${error instanceof Error ? error.message : error}`,
+            { cause: error },
+          );
+        }
         references = (tsconfig.references ?? []).map((ref) =>
           relative(root, join(root, dir, ref.path)),
         );
-      } catch {
-        // No tsconfig, or one with comments: the manifest's dependencies stand alone.
       }
       list.push({ dir, name: manifest.name, project: entry.name, deps, references });
     }
