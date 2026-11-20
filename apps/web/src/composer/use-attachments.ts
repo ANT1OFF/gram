@@ -54,7 +54,7 @@ export function useAttachments(
   const draft = useMemo(
     () => (threadId === undefined ? new AttachmentDraft(initial) : threadAttachmentDraft(threadId)),
     // `initial` seeds a new draft once; subsequent render arrays must not replace staged files.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- `initial` seeds a new draft only once
     [threadId, draftId, createdAt],
   );
   const { items, keep } = useSyncExternalStore(draft.subscribe, draft.snapshot, draft.snapshot);

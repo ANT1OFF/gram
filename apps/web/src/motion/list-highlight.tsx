@@ -74,7 +74,7 @@ export function ListHighlight({
     resized.observe(target);
     return () => resized.disconnect();
     // `layout` isn't read: a list that changes around the same option must place it again.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies, react-hooks/exhaustive-deps -- see above
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies, react/exhaustive-deps -- see above
   }, [targetId, layout]);
   return (
     <li

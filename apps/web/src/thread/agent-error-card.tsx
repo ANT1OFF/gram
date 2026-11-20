@@ -277,6 +277,8 @@ function ErrorCard({
   // or the user can move the thread to another model. Never while the server waits the limit out.
   const throttledAgain =
     limited && repeat && error.retryable && !early && current && retried === undefined && !waiting;
+  // A model this thread can't run: the step is another model, in the prompt box's picker.
+  const otherModel = throttledAgain || (error.kind === "modelUnavailable" && current);
   /**
    * Sends the turn's message again at `at` (plus `margin`), if it is still the thread's last error
    * with nothing running by then: "Retry at 11:15" and "Retry automatically in 30 s". Read when it
@@ -401,7 +403,7 @@ function ErrorCard({
             {usage}
           </div>
         ) : (
-          (canRetryNow || throttledAgain) && (
+          (canRetryNow || otherModel) && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {canRetryNow && (
                 <Button
@@ -422,7 +424,7 @@ function ErrorCard({
                   onCancel={() => useRetrySchedule.getState().cancel(key)}
                 />
               )}
-              {throttledAgain && (
+              {otherModel && (
                 <Button
                   size="sm"
                   variant="outline"

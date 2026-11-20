@@ -115,7 +115,7 @@ export const tail = (text: string): string => {
 // Control sequences a shell's output carries for a terminal to act on: colours and cursor moves
 // (CSI), titles and links (OSC, ended by BEL or ST), and the other escapes (charset picks, keypad
 // modes). A plain-text view shows none of them. Matching control characters is the point here.
-/* oxlint-disable no-control-regex */
+/* oxlint-disable no-control-regex -- these patterns match terminal control characters on purpose */
 const CSI = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const OSC = /\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?/g;
 const ESC = /\u001b(?:[ -/]*[0-~])?/g;

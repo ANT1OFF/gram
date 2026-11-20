@@ -110,12 +110,12 @@ const auditContrast = (root: Locator, contrast: Theme["contrast"]) =>
         return [r!, g!, b!, a! / 255];
       };
       // In-page helpers stay inside the evaluated function: Playwright serialises only its body.
-      // oxlint-disable-next-line unicorn/consistent-function-scoping
+      // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page: Playwright serialises only the evaluated function
       const over = (top: number[], bottom: number[]) =>
         [0, 1, 2].map((i) => top[i]! * top[3]! + bottom[i]! * (1 - top[3]!)).concat(1);
-      // oxlint-disable-next-line unicorn/consistent-function-scoping
+      // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page: Playwright serialises only the evaluated function
       const luminance = ([r, g, b]: number[]) => {
-        // oxlint-disable-next-line unicorn/consistent-function-scoping
+        // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page: Playwright serialises only the evaluated function
         const channel = (value: number) => {
           const c = value / 255;
           return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
@@ -137,7 +137,7 @@ const auditContrast = (root: Locator, contrast: Theme["contrast"]) =>
         }
         return layers.reduceRight((below, layer) => over(layer, below), backdrop);
       };
-      // oxlint-disable-next-line unicorn/consistent-function-scoping
+      // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page: Playwright serialises only the evaluated function
       const faded = (start: Element) => {
         for (let node: Element | null = start; node; node = node.parentElement) {
           if (Number(getComputedStyle(node).opacity) < 1) return true;

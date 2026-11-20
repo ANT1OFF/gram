@@ -61,7 +61,9 @@ export const ProjectRpcs = RpcGroup.make(
   /**
    * Clones a repository into `<into or the clone folder>/<repo>` and registers it, or registers the
    * clone already there. `InvalidState` for a remote `parseRepoRemote` refuses or a folder holding
-   * something else; `GitError` when the clone fails, which leaves nothing behind.
+   * something else, or a repository a headless server's GitHub route won't reach (with `help`
+   * when the route says where to put it right); `GitError` when the clone fails, which leaves
+   * nothing behind.
    */
   Rpc.make("projects.clone", {
     payload: CloneProjectPayload,

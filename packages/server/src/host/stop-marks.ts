@@ -297,6 +297,8 @@ export interface StopMarks {
   readonly block: (id: HostId, threadId: ThreadId, reason: string, generation?: number) => void;
   /** Why the thread's session doesn't open on the machine (`block`), if it doesn't. */
   readonly blocked: (id: HostId, threadId: ThreadId) => string | undefined;
+  /** Every thread whose session doesn't open on the machine (`block`), with why. */
+  readonly blocks: (id: HostId) => Readonly<Record<string, string>>;
   /** Told when threads' sessions may open on a machine now: a thread back, or its resume ended. */
   readonly onReady: (listener: (id: HostId) => void) => () => void;
   /** Whether `threadBack` said so of this thread since the machine was last owed a resume. */
@@ -675,6 +677,7 @@ export const makeStopMarks = (
       });
     },
     blocked: (id, threadId) => get(id).blocks?.[threadId],
+    blocks: (id) => get(id).blocks ?? {},
     onReady: (listener) => {
       readyListeners.add(listener);
       return () => void readyListeners.delete(listener);

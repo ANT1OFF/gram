@@ -63,7 +63,6 @@ export function SnoozeDialog({ threadId, onClose }: { threadId: ThreadId; onClos
               aria-label="Time, 24-hour"
               inputMode="numeric"
               placeholder="09:00"
-              // oxlint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               className={FIELD}
               value={time}

@@ -1653,6 +1653,19 @@ page's requests is also paused and put to the pane's rules, then to the Preview'
 rules; a worker's requests get the local-session rules. A page's script can't open a window, and a window that opens all the same (a link, a shifted click) is closed at once, since no command drives it; its first request may still reach loopback, and nothing else. A `browser_navigate` anywhere else is refused
 before any card, and a navigation the page itself starts off loopback ends where it began.
 
+A thread whose session runs on another machine reaches that machine's loopback instead, so
+`localhost:3000` is the dev server the thread started where it runs. This needs the machine's
+host to name the `loopback-tunnels` feature; with an older host the page reaches the server's
+loopback, as before. The server keeps one SOCKS5 listener on its own `127.0.0.1` for each such
+thread (32 at most), and the thread's browser context sends every request there, loopback's
+included. The listener passes on only a connection to `localhost`, `127.0.0.1` or `[::1]` at a
+port from 1024 up, and carries it to that machine's own loopback through its host
+(`host.loopback.*`). The host refuses anything else too. Nothing new runs on the other machine,
+and every rule above still applies in the server. Chromium sends a SOCKS proxy no password, so
+while a listener is open, any process on the server's machine can reach that machine's loopback
+ports through it, and nothing more. The desktop app's Preview pane still reaches only the
+computer it runs on.
+
 Each thread's page is a browser context of its own, sharing no cookies or storage. Four threads
 keep a page at once; the one whose last command is oldest closes for the next, never one with a
 command running. The profile is a fresh temp

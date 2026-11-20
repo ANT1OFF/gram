@@ -225,7 +225,6 @@ export function ChunkedPatch({
             page.patch === "" ? null : (
               <ChunkPage
                 // Pages only ever append, so a page's place is its identity.
-                // oxlint-disable-next-line react/no-array-index-key
                 key={at}
                 file={file}
                 patch={page.patch}

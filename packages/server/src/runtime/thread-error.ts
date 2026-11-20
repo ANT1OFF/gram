@@ -1,5 +1,6 @@
 import {
   KEPT_WORK_GONE_CODE,
+  MODEL_NOT_GRANTED,
   THREAD_ERROR_TEXT_MAX,
   type AgentFailure,
   type AgentKind,
@@ -123,7 +124,9 @@ export const failureText = (
           : `The agent's sign-in or key was refused${status}.`;
       }
       case "modelUnavailable":
-        return `${where} can't serve ${model}${status}. Pick another model.`;
+        return MODEL_NOT_GRANTED.test(detail)
+          ? `${where} refused ${model}${status}: this thread isn't allowed to use it. Pick a model it may use.`
+          : `${where} can't serve ${model}${status}. Pick another model.`;
       case "network":
         return failure.code === RETRIES_EXHAUSTED.code
           ? "The agent kept retrying without reaching the model API, so Gram stopped the turn. Send again once the connection is back."

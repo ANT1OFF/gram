@@ -762,7 +762,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
         return yield* new InvalidState({
           message: "Choose Codex or Claude Code for the orchestrator.",
         });
-      yield* checkFreshTarget(store, hosts, model);
+      yield* checkFreshTarget(store, hosts, model, thread);
       const mode = thread.mode;
       if (mode === "plan" && model.agent !== thread.model.agent)
         return yield* new InvalidState({
