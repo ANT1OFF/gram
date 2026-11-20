@@ -129,7 +129,7 @@
   --edge-raised: color-mix(in srgb, var(--border-strong) 18%, var(--border-subtle));
   --edge-action: color-mix(in srgb, var(--border-strong) 30%, var(--border-subtle));
   /* A settings group's card: in dark its fill is the step (surface-3 sits clearly off the page), so
-     it takes no outline; light's raised step is too faint to carry it alone and keeps the hairline. */
+     it takes no outline; light's white card keeps the hairline, which the eye expects there. */
   --edge-group: transparent;
 
   /* A control laid over a picture (an attachment's remove button): dark in every palette, since

@@ -80,6 +80,18 @@ describe("presets", () => {
       ).toBeGreaterThanOrEqual(1.08);
     }
   });
+
+  it("raises a light preset's cards a visible step off its page", () => {
+    // A card, a settings group or a menu is white in light; a page at white or a shade under it
+    // left the cards flat on it, where dark's cards sit clearly off their page.
+    for (const palette of PRESET_PALETTES.filter((p) => p.mode === "light")) {
+      const { colors } = derivePalette(palette);
+      expect(
+        contrastRatio(colors["surface-3"], colors["surface-2"]),
+        `${palette.id}: lower the page ${palette.seeds.bg} a step under white`,
+      ).toBeGreaterThanOrEqual(1.1);
+    }
+  });
 });
 
 describe("resolvePalette", () => {

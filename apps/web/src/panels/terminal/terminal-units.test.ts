@@ -141,9 +141,11 @@ describe("terminalTheme", () => {
     );
     // Frozen fb2ff2cb matrix, captured before the ANSI correction; moved once on purpose since,
     // when the Minimal light palettes' chrome stepped further off the page and their ANSI black
-    // darkened with it (#d3d3d4 to #cdced0) to hold its contrast there.
+    // darkened with it (#d3d3d4 to #cdced0) to hold its contrast there; and again when the light
+    // presets' pages moved a step under white for their cards, the Minimal terminals' background,
+    // selection and black following the page (Latte's at more contrast holding against the card).
     expect(createHash("sha256").update(JSON.stringify(matrix)).digest("hex")).toBe(
-      "924f73f438a24221b0bd2ab8f27cf205ae49df0206dd26b3f3ccb26572fcc8c9",
+      "9a69c42dbb5ec012926faa1b91378e20bc39b9931c19af06dda821612b551feb",
     );
   });
 
