@@ -173,16 +173,18 @@ that start itself whenever work here needs the machine:
 - **A spawn reusing it** does the same as it waits: started once; failed again after that start,
   the spawn is told at once in the server's words.
 - Each wake is the spawn's start: the name's lock, a release taken back first, a `503` asked again
-  a few times. Nothing else starts a machine: never a dial, a relay, or a pass. A wake whose
-  `…/status` is answered `404 { code: "not_found" }` is tried again while the machine is wanted
-  and still registered here, as one that met a passing error is: the server answers so while the
-  workspace has no cell, and only the three-pass rule below forgets the machine.
+  a few times. Nothing else starts a machine: never a dial, a relay, or a pass. A wake answered
+  `404` (its `…/status`, its start, or the take-back of its release) is tried again while the
+  machine is wanted and still registered here, as one that met a passing error is: the server
+  answers so while the workspace has no cell. A want stops after three `not_found` wakes in a
+  row; only the three-pass rule below forgets the machine. A spawn waiting for a machine it asked
+  for fails on `not_found` only after three in a row, and otherwise waits to its deadline.
 - Whether work still wants the machine is read under the name's lock as each start would go, not
   when the wake was queued: once the last session waiting has gone, no start is sent. One already
   sent is left to the server's idle stop.
 - A machine still wanted and still offline here is looked at again every five seconds, whatever
-  the last look found, until it joins, is no longer wanted, is refused there, or is forgotten here
-  as gone (`forgetReclaimed`): one up
+  the last look found, until it joins, is no longer wanted, is refused there, is answered
+  `not_found` three times in a row, or is forgotten here as gone (`forgetReclaimed`): one up
   there may be stopped while idle before its host dials, and only a start wakes it.
 - Only an answered `stopped` or `failed` uses up a wake. A `…/status` with no answer or a `5xx`,
   or a start answered so (a `502` while the machine is still being stopped there), is tried again
@@ -260,8 +262,9 @@ subscription token reaches a machine, with its own consent.
   `429` from the server is passing: a start is asked again after a wait, and a wake is tried
   again while it is wanted. A start answered `503`, or any other 5xx (a `502` can come from a start
   that failed after its machine was written), stays of unknown outcome, whatever is answered after
-  it and whether or not it is asked again, so its owing is kept and it is given back. All of a name's owings go once its
-  machine is registered here or confirmed stopped under its name's lock.
+  it (over the total, a release whose take-back is answered `404`) and whether or not it is asked
+  again, so its owing is kept and it is given back. All of a name's owings go once its machine is
+  registered here or confirmed stopped under its name's lock.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
   The server's "no such machine" is a 2xx with `stopped: false`, or `404 { code: "not_found" }` on
@@ -271,7 +274,10 @@ subscription token reaches a machine, with its own consent.
   "no such machine" settles nothing for fifteen minutes, since the start may still make it. A
   start and a stop of one name never overlap here: a give-back keeps the name through every
   attempt of its stop, and half a minute more if any attempt went unanswered, whatever later ones
-  were answered, so a retry's start of that name goes out only after it.
+  were answered, so a retry's start of that name goes out only after it. A give-back is never cut
+  short once begun, whoever stops waiting for it. Each stop sent is held besides, in the stops
+  owed file, from before it is sent until its own answer comes or the app's deadline and half a
+  minute more have passed: no start of the name, after a restart included, goes out before.
 - **A machine in use is never given back.** A spawn that fails or is interrupted after its machine
   came gives the machine back only if no open thread is placed on it: not its own worker made
   before the failure, and not another worker sharing it. A name a later start takes, or one registered here since, is that start's: no stop owed for

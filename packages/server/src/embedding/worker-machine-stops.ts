@@ -15,6 +15,16 @@ import type { WorkerMachinePortShape } from "./signed-in-port.ts";
  */
 export const UNANSWERED_STOP_HOLD_MS = 30_000;
 
+/** How long the app is given to answer a call (`signed-in-port.ts`): a stop's reply comes by then. */
+export const STOP_CALL_MS = 45_000;
+
+/**
+ * Until when a stop sent of a name may still reach the server: its call's deadline, then
+ * `UNANSWERED_STOP_HOLD_MS`. Kept with the stops owed, across a restart, and let go only by that
+ * stop's own answer: no start of the name is sent before then (`StopHolds`).
+ */
+export const stopHoldUntil = (sentAt: number) => sentAt + STOP_CALL_MS + UNANSWERED_STOP_HOLD_MS;
+
 /**
  * One lock per machine name: a start and a stop of the same name never overlap, so a stop already
  * on its way is answered before a start of that name goes out, and one that waited for the start
@@ -115,7 +125,57 @@ export interface OwedStops {
   readonly remove: (name: string, attempt?: OwedStop) => void;
   /** Lets go of every owing of `name` on the server at `origin`, and on no other. */
   readonly release: (origin: string, name: string) => void;
+  /** The holds of stops on their way (`stopHoldUntil`), kept beside what is owed. */
+  readonly holds: StopHolds;
 }
+
+/**
+ * The stops sent that may still reach a server, by name and server: each held from before it is
+ * sent until its own answer comes, or its time is up. A start of the name waits until none is.
+ */
+export interface StopHolds {
+  /** Holds `name` on `origin` until `until`, for one stop: its id. */
+  readonly hold: (origin: string, name: string, until: number) => string;
+  /** That stop's own answer came: its hold, and no other, is let go. */
+  readonly answered: (id: string) => void;
+  /** The latest time any stop of `name` on `origin` holds it to, if one still does. */
+  readonly until: (origin: string, name: string, now: number) => number | undefined;
+}
+
+interface StopHold {
+  readonly id: string;
+  readonly origin: string;
+  readonly name: string;
+  readonly until: number;
+}
+
+const memoryStopHolds = (kept: ReadonlyArray<StopHold>, changed: () => void) => {
+  const holds = new Map(kept.map((each) => [each.id, each]));
+  let next = 0;
+  return {
+    list: () => [...holds.values()],
+    holds: {
+      hold: (origin: string, name: string, until: number) => {
+        const id = `${Date.now().toString(36)}-${(next += 1)}-${Math.random().toString(36).slice(2, 8)}`;
+        holds.set(id, { id, origin, name, until });
+        changed();
+        return id;
+      },
+      answered: (id: string) => {
+        if (holds.delete(id)) changed();
+      },
+      until: (origin: string, name: string, now: number) => {
+        let latest: number | undefined;
+        for (const [id, each] of holds) {
+          if (each.until <= now) holds.delete(id);
+          else if (each.origin === origin && each.name === name)
+            latest = Math.max(latest ?? 0, each.until);
+        }
+        return latest;
+      },
+    } satisfies StopHolds,
+  };
+};
 
 /** The most stops kept owed at once: a start that would need one more is refused. */
 export const OWED_MOST = 256;
@@ -123,9 +183,15 @@ export const OWED_MOST = 256;
 /** Which owing a stop is: its attempt id, or, for one kept before ids, its name and time. */
 const owingOf = (stop: OwedStop) => stop.attempt ?? `${stop.name}@${stop.since}`;
 
-export const memoryOwedStops = (): OwedStops => {
+export const memoryOwedStops = (
+  kept: ReadonlyArray<StopHold> = [],
+  changed: () => void = () => undefined,
+): OwedStops & { readonly heldList: () => ReadonlyArray<StopHold> } => {
   const owed = new Map<string, OwedStop>();
+  const held = memoryStopHolds(kept, changed);
   return {
+    holds: held.holds,
+    heldList: held.list,
     list: () => [...owed.values()],
     add: (stop) => {
       if (!owed.has(owingOf(stop))) owed.set(owingOf(stop), stop);
@@ -151,9 +217,27 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
   // Room for every stop that may be owed (`OWED_MOST`), long origins included: one past it, or a
   // file too large to read, would lose them all.
   const file = privateJsonFile(dataDir, "worker-machine-stops.json", 512 * 1024);
-  const owed = memoryOwedStops();
+  let read: { version?: unknown; owed?: unknown; holds?: unknown } | undefined;
   try {
-    const kept = file.read() as { version?: unknown; owed?: unknown } | undefined;
+    read = file.read() as typeof read;
+  } catch {
+    read = undefined;
+  }
+  const keptHolds = (Array.isArray(read?.holds) ? (read.holds as unknown[]) : []).flatMap(
+    (each): StopHold[] =>
+      typeof each === "object" &&
+      each !== null &&
+      typeof (each as StopHold).id === "string" &&
+      typeof (each as StopHold).origin === "string" &&
+      typeof (each as StopHold).name === "string" &&
+      Number.isSafeInteger((each as StopHold).until)
+        ? [each as StopHold]
+        : [],
+  );
+  // Each hold is written as it is made, before its stop is sent, so a restart keeps it.
+  const owed = memoryOwedStops(keptHolds, () => save());
+  try {
+    const kept = read;
     if (kept?.version === 1 && Array.isArray(kept.owed))
       // Every owing kept, however many: one is never left out on reading. Past `OWED_MOST`, no
       // start is admitted until enough are settled.
@@ -180,15 +264,16 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
     // An unreadable file owes nothing; the next stop owed writes it again.
   }
   /** Whether what is owed is on disk now. A write that failed keeps it in memory for this run. */
-  const save = () => {
+  function save() {
     try {
-      file.write({ version: 1, owed: owed.list() });
+      file.write({ version: 1, owed: owed.list(), holds: owed.heldList() });
       return true;
     } catch {
       return false;
     }
-  };
+  }
   return {
+    holds: owed.holds,
     list: owed.list,
     add: (stop) => {
       owed.add(stop);
@@ -247,7 +332,10 @@ export const settleOwedStops = (
             owed.remove(stop.name, stop);
             return;
           }
+          const held = owed.holds.hold(stop.origin, stop.name, stopHoldUntil(now()));
           const answered = yield* port.call(stop.origin, "stop", { name: stop.name });
+          // Its own answer came: its hold goes. Unanswered, it may still land: held its time out.
+          if (answered.ok) owed.holds.answered(held);
           const outcome = stopOutcome(answered);
           const key = owingOf(stop);
           const missed = outcome === "missing" ? (misses.get(key) ?? 0) + 1 : 0;

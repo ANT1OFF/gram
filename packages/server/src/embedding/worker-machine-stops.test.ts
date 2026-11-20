@@ -260,7 +260,7 @@ describe("stops a server never confirmed", () => {
         starting: new Set(),
         locks,
         stopRetryMs: 0,
-        unansweredHoldMs: 60_000,
+        unansweredHoldMs: 1_000,
       });
       yield* Effect.forkScoped(source.abandon(NAME));
       while (seen.stops < 3) yield* Effect.sleep("5 millis");
@@ -268,6 +268,89 @@ describe("stops a server never confirmed", () => {
       yield* Effect.forkScoped(source.start({ name: NAME, orchestrator: "o", title: "Retry" }));
       yield* Effect.sleep("200 millis");
       // Still held for the first stop, which may yet delete what the retry would start.
+      expect(log).toEqual(["stop", "stop", "stop"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("hold a name after a give-back cancelled while its stop was on its way", () =>
+    Effect.gen(function* () {
+      const log: string[] = [];
+      const answer = yield* Deferred.make<void>();
+      const base = bridgeWorkerMachines(
+        fakeApp({ answer: () => ({ status: 202, body: {} }) }).port,
+      );
+      // The stop is posted and waits; its answer, when it comes, is lost.
+      const port: WorkerMachinePortShape = {
+        ...base,
+        call: (_origin, call) =>
+          Effect.gen(function* () {
+            log.push(call);
+            if (call !== "stop") return { ok: true as const, status: 202, body: {} };
+            yield* Deferred.await(answer);
+            return { ok: false as const, why: "no answer" };
+          }),
+      };
+      const source = signedInSource(SERVER, {
+        port,
+        hosts: unregistered,
+        owed: memoryOwedStops(),
+        starting: new Set(),
+        locks: makeKeyedLock<string>(),
+        stopRetryMs: 0,
+        unansweredHoldMs: 1_000,
+      });
+      const giving = yield* Effect.forkScoped(source.abandon(NAME));
+      while (!log.includes("stop")) yield* Effect.sleep("5 millis");
+      // Its caller gives up as the stop is on its way, and a retry of the spawn comes at once.
+      yield* Effect.forkScoped(Fiber.interrupt(giving));
+      yield* Effect.sleep("20 millis");
+      yield* Effect.forkScoped(source.start({ name: NAME, orchestrator: "o", title: "Retry" }));
+      yield* Deferred.succeed(answer, undefined);
+      yield* Effect.sleep("200 millis");
+      // The stop may still land: the retry's start waits out its hold.
+      expect(log.filter((each) => each === "start")).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("hold a name across a restart after a stop no one answered", () =>
+    Effect.gen(function* () {
+      const log: string[] = [];
+      const base = bridgeWorkerMachines(
+        fakeApp({ answer: () => ({ status: 202, body: {} }) }).port,
+      );
+      // Every stop is posted and its answer lost; a start is answered.
+      const port: WorkerMachinePortShape = {
+        ...base,
+        call: (_origin, call) =>
+          Effect.sync(() => {
+            log.push(call);
+            return call === "stop"
+              ? { ok: false as const, why: "no answer" }
+              : { ok: true as const, status: 202, body: {} };
+          }),
+      };
+      const dir = mkdtempSync(join(tmpdir(), "gram-held-"));
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+      const before = signedInSource(SERVER, {
+        port,
+        hosts: unregistered,
+        owed: fileOwedStops(dir),
+        starting: new Set(),
+        stopRetryMs: 0,
+        unansweredHoldMs: 0,
+      });
+      yield* before.abandon(NAME);
+      // This Gram restarts: nothing in memory, only what is on disk.
+      const after = signedInSource(SERVER, {
+        port,
+        hosts: unregistered,
+        owed: fileOwedStops(dir),
+        starting: new Set(),
+        locks: makeKeyedLock<string>(),
+      });
+      yield* Effect.forkScoped(after.start({ name: NAME, orchestrator: "o", title: "Retry" }));
+      yield* Effect.sleep("200 millis");
+      // The stops may still land: the retry's start waits out their hold.
       expect(log).toEqual(["stop", "stop", "stop"]);
     }).pipe(Effect.scoped),
   );
@@ -625,6 +708,37 @@ describe("stops a server never confirmed", () => {
       // Given back, the server knows none yet: still owed, through the start's grace.
       yield* source.abandon(NAME, { unsettled: true });
       expect(owed.list().map((each) => each.name)).toEqual([NAME]);
+    }),
+  );
+
+  it.live("keep owing a start first answered 503, however a later answer refuses it", () =>
+    Effect.gen(function* () {
+      for (const after of [
+        // Released there, and its take-back answered not_found.
+        { start: { status: 409, body: { code: "released" } }, release: 404 },
+        // Over the person's total.
+        { start: { status: 409, body: { code: "over_total" } }, release: 200 },
+      ]) {
+        const starts = [{ status: 503, body: { code: "unavailable" } }, after.start];
+        const app = fakeApp({
+          answer: ({ call }) =>
+            call === "start"
+              ? (starts.shift() ?? after.start)
+              : { status: after.release, body: { code: "not_found" } },
+        });
+        const owed = memoryOwedStops();
+        const source = signedInSource(SERVER, {
+          port: bridgeWorkerMachines(app.port),
+          hosts: unregistered,
+          owed,
+          starting: new Set(),
+          startRetryMs: 1,
+        });
+        const started = yield* source.start({ name: NAME, orchestrator: "o", title: "Heavy" });
+        // The 503 may have reached its machines: given back, and owed until a stop settles it.
+        expect(started).toMatchObject({ kind: "refused", unknown: true });
+        expect(owed.list().map((each) => each.name)).toEqual([NAME]);
+      }
     }),
   );
 

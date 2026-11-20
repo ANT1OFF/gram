@@ -82,6 +82,8 @@ export const sendSignedInStart = (
     readonly startRetryMs?: number | undefined;
     readonly sent?: StartsSent | undefined;
     readonly go?: (() => boolean) | undefined;
+    /** How long a stop of the name may still land there (`StopHolds`): waited out before each ask. */
+    readonly heldFor?: ((name: string) => number) | undefined;
     /**
      * Run once the name is this start's alone, before anything is sent: an answer it gives is
      * the start's, and nothing is sent.
@@ -92,6 +94,8 @@ export const sendSignedInStart = (
   readonly answered: Answered;
   readonly unavailable: boolean;
   readonly skipped?: true;
+  /** The take-back was answered `404 not_found`: proof of nothing alone (`isNotFound`). */
+  readonly missing?: true;
 }> =>
   withName(
     options.locks,
@@ -108,6 +112,14 @@ export const sendSignedInStart = (
       };
       const send = Effect.gen(function* () {
         for (;;) {
+          // A stop sent of the name, here or before a restart, that may still land: waited out,
+          // so it never deletes what this start makes.
+          for (
+            let wait = options.heldFor?.(name) ?? 0;
+            wait > 0;
+            wait = options.heldFor?.(name) ?? 0
+          )
+            yield* Effect.sleep(wait);
           if (options.go !== undefined && !options.go()) return undefined;
           asks += 1;
           const bump = Effect.sync(() => options.sent?.set(name, sentOf(options.sent, name) + 1));
@@ -130,10 +142,12 @@ export const sendSignedInStart = (
       const told = yield* tellSignedInRelease(port, { name, via: origin }, false).pipe(
         Effect.option,
       );
+      // What came before stays: a 503 first leaves the start's outcome unknown all the same.
       if (told._tag === "Some" && told.value === "missing")
         return {
           answered: { ok: true as const, status: 409, body: { code: "name_in_use" } },
-          unavailable: false,
+          unavailable,
+          missing: true as const,
         };
       // Asked once more, within what is left of the asks.
       if (asks >= START_ATTEMPTS) asks = START_ATTEMPTS - 1;
@@ -171,6 +185,7 @@ export const wakeSignedIn = (
     readonly sent?: StartsSent | undefined;
     /** Whether work here still wants it, read as the start would go: none is sent once not. */
     readonly wanted?: (() => boolean) | undefined;
+    readonly heldFor?: ((name: string) => number) | undefined;
   } = {},
 ): Effect.Effect<WakeOutcome> =>
   Effect.gen(function* () {
@@ -204,7 +219,17 @@ export const wakeSignedIn = (
       options.asleep?.delete(machine.name);
       return "started" as const;
     }
-    if (!answered.ok || answered.status >= 500 || answered.status === 429) return "retry" as const;
+    // Passing, as the status read's are: no answer, busy or throttled, and a 404 (the server says
+    // so while its cell is out of reach), the start's own or its take-back's. Woken later, while
+    // it is still wanted; only the three-pass rule forgets it.
+    if (
+      !answered.ok ||
+      answered.status >= 500 ||
+      answered.status === 429 ||
+      answered.status === 404 ||
+      sent.missing === true
+    )
+      return "retry" as const;
     // Only the status: what a server answers isn't written to the log.
     yield* Effect.logWarning("a worker machine work wants could not be woken").pipe(
       Effect.annotateLogs({

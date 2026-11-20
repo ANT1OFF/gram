@@ -226,6 +226,41 @@ describe("a hosted server's answers about one machine", () => {
   );
 });
 
+describe("a machine asked for, as it comes", () => {
+  it.live("fails only once the server answers not_found three times in a row", () =>
+    Effect.gen(function* () {
+      // Accepted, then its status meets a cell out of reach once, then the machine is starting.
+      const reads = [404, 200, 404, 404, 404];
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "status"
+            ? (reads.shift() ?? 404) === 404
+              ? { status: 404, body: { code: "not_found" } }
+              : { status: 200, body: { phase: "starting" } }
+            : { status: 202, body: {} },
+      });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: {
+          list: () => [],
+          remove: () => false,
+          machines: {
+            provision: () => {
+              throw new Error("not registered here");
+            },
+          },
+        },
+        everyMs: 1,
+        timeoutMs: 10_000,
+      });
+      const arrived = yield* source.arrive(NAME);
+      // Not on the first 404, nor after a starting between: on the third in a row.
+      expect(app.calls.filter((each) => each.call === "status")).toHaveLength(5);
+      expect(arrived).toMatchObject({ failed: expect.stringContaining("didn't join") });
+    }),
+  );
+});
+
 describe("a worker machine that work here wants", () => {
   it.live("is started when a worker resumes on it paused, and never for a dial", () =>
     Effect.gen(function* () {
@@ -586,6 +621,29 @@ describe("a worker machine that work here wants", () => {
       const woke = yield* wakeSignedIn(bridgeWorkerMachines(app.port), { name: NAME, via: ORIGIN });
       expect(woke).toBe("started");
       expect(app.calls.map((each) => each.call)).toEqual(["status", "start", "release", "start"]);
+    }),
+  );
+
+  it.live("wakes again later a machine whose start, or its take-back, is answered 404", () =>
+    Effect.gen(function* () {
+      for (const answers of [
+        // The start meets a cell out of reach.
+        { start: { status: 404, body: { code: "not_found" } }, release: 200 },
+        // Still released there, and the take-back meets a cell out of reach.
+        { start: { status: 409, body: { code: "released" } }, release: 404 },
+      ]) {
+        const app = fakeApp({
+          answer: ({ call }) =>
+            call === "status"
+              ? { status: 200, body: { phase: "stopped" } }
+              : call === "start"
+                ? answers.start
+                : { status: answers.release, body: { code: "not_found" } },
+        });
+        expect(
+          yield* wakeSignedIn(bridgeWorkerMachines(app.port), { name: NAME, via: ORIGIN }),
+        ).toBe("retry");
+      }
     }),
   );
 
