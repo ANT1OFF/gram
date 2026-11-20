@@ -182,28 +182,6 @@ describe("a worker's machine brought up for a spawn", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("puts a worker shared onto an embedder's offline machine straight to the spawn", () =>
-    Effect.gen(function* () {
-      // An embedder's machine of Grace's workers, offline here (paused while idle, say).
-      const machine = { id: "m-0123456789abcdef01234567", name: NAME, onDemand: "worker" };
-      const plan = yield* makeWorkerSandbox({
-        orchestration: {} as never,
-        store: {
-          getThread: () => Effect.succeed({ checkout: { kind: "main", path: "/repo" } }),
-        } as never,
-        // Never reached: a share asks the provider nothing.
-        onDemand: {} as never,
-        signedIn: undefined,
-        workerHosts: { ownerOf: () => "grace" } as never,
-        joined: () => [{ ...machine, owner: "grace" }] as never,
-      });
-      const planned = yield* plan(CALLER, INPUT, { shareWith: NAME, reason: "Same build." });
-      // By name alone, as before hosted machines: no wait for it to join ahead of the spawn,
-      // which would stall up to five minutes and then refuse it, a retry of a made spawn too.
-      expect(planned).toEqual({ name: NAME, givesBack: false });
-    }).pipe(Effect.scoped),
-  );
-
   for (const [during, gate] of [
     ["reads which threads are placed on it", "threads"],
     ["waits for its stop", "stop"],

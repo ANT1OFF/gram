@@ -281,11 +281,9 @@ subscription token reaches a machine, with its own consent.
 - **A machine the server no longer knows** is forgotten here only after three passes in a row
   answer its `…/status` `404 { code: "not_found" }`, since the same answer comes while its
   workspace is out of reach for a while. Nothing else forgets a machine a server started.
-- **Reusing a machine.** A hosted server's machine a spawn reuses (one an earlier spawn of the
-  same id left registered, or one it shares that is offline) is told it is working
-  (`released: false`) before it is waited for: one released once its work was over sleeps until
-  then. An embedder's machine shared by `shareWith` goes to the spawn by name, online or not, as it
-  always has: nothing waits for it first.
+- **Reusing a machine.** A machine a spawn reuses (one an earlier spawn of the same id left
+  registered, or one it shares that is offline) is told it is working (`released: false`) before
+  it is waited for: one released once its work was over sleeps until then.
 - **A machine still released.** A start answered `409 { code: "released" }` takes the release
   back (`released: false`) and asks once more, never again. A take-back answered
   `404 { code: "not_found" }` (the release is already due for reclaim) refuses that start as a
