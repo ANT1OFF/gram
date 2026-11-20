@@ -4,6 +4,7 @@
  */
 import {
   AppToolError,
+  isNpmPackageName,
   RELEASE_MIN_AGE_DAYS,
   type ReleasePublishedCondition,
   type Thread,
@@ -327,6 +328,11 @@ export const releasePublishedSource = Effect.gen(function* () {
     arm: (_caller, spec) =>
       Effect.gen(function* () {
         // An owner never starts with a dot; a repo may (`.github`), but isn't `.` or `..`.
+        if (spec.source === "npm" && !isNpmPackageName(spec.name)) {
+          return yield* refuse(
+            `Name an npm package as name or @scope/name, in lowercase, not ${spec.name}.`,
+          );
+        }
         if (spec.source === "github" && !/^[\w-][\w.-]*\/(?!\.\.?$)[\w.-]+$/.test(spec.name)) {
           return yield* refuse(`Name a GitHub repo as owner/repo, not ${spec.name}.`);
         }

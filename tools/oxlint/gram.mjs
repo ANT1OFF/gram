@@ -31,6 +31,10 @@
 // And one optical stroke for Lucide icons: the `lucide` class sets it per size (styles/base.css),
 // so a `strokeWidth` on the icon is outranked and does nothing.
 //
+// And git, `gh` and npm start only through `@gram/git`'s `Proc`: it neutralises what a checkout's
+// own config and hooks would run, for git and for the git `gh` starts. A child started any other
+// way runs a repository's `core.fsmonitor`, filters and hooks as the server.
+//
 // And no raw React effects in product code: see `no-raw-effect.mjs`.
 //
 // And a 24-hour clock in the web app: a time formatted with `hour` or `timeStyle` and no
@@ -40,6 +44,7 @@ import { dirname, relative, resolve } from "node:path";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
 import { importOf, isFunction, isTestFile, propertyName, REPO, soleExpression } from "./ast.mjs";
 import { noRawEffect } from "./no-raw-effect.mjs";
+import { noRawGit } from "./no-raw-git.mjs";
 
 const BARE_FORKS = new Set([
   "fork",
@@ -480,6 +485,7 @@ export default {
         };
       },
     },
+    "no-raw-git": noRawGit,
     "no-adhoc-lock": {
       meta: {
         type: "problem",

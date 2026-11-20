@@ -6,6 +6,7 @@
 // rather than left as an orphan.
 
 import * as fs from "node:fs";
+import * as nodePath from "node:path";
 import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodePath from "@effect/platform-node/NodePath";
@@ -26,6 +27,8 @@ import {
   type Guard,
   type ConfigEntry,
   guardFor,
+  gitlinkPaths,
+  nestedGitDir,
   submoduleGitDirs,
   leadingOptions,
   parseConfigList,
@@ -247,6 +250,8 @@ export const childEnv = (
 
 const isGitExecutable = (exe: string) => /(?:^|[\\/])git(?:\.exe)?$/i.test(exe);
 
+const isGhExecutable = (exe: string) => /(?:^|[\\/])gh(?:\.exe)?$/i.test(exe);
+
 /**
  * For a git child on Windows, `env` plus `core.longpaths=true` as the next `GIT_CONFIG_*` pair after
  * any already set, so a checkout under `.worktrees/<branch>` can pass the 260-character path limit.
@@ -368,10 +373,53 @@ export const PathProbeLive = pathProbeLayer.pipe(Layer.provide(CommandRunnerLive
 
 const GUARD_CACHE_LIMIT = 512;
 
+/** The most nested repositories (submodules and other gitlinks) one guard reads before refusing. */
+const NESTED_LIMIT = 64;
+
+/**
+ * The git folders of the repositories the index's gitlinks point at in the worktree, as far down
+ * as they nest. `undefined` when a listing fails or is cut short, or past `NESTED_LIMIT`: the call
+ * can't be vouched for and doesn't run. A bare repository has no worktree and so none.
+ */
+const gitlinkedGitDirs = (
+  read: (more: ReadonlyArray<string>) => Effect.Effect<ProcOutput, ProcError>,
+): Effect.Effect<ReadonlyArray<string> | undefined, ProcError> =>
+  Effect.gen(function* () {
+    const top = yield* read(["rev-parse", "--show-toplevel"]);
+    if (top.status !== 0 || top.stdout.trim() === "") return [];
+    const found: Array<string> = [];
+    const queue: Array<{ readonly worktree: string; readonly gitDir: string | undefined }> = [
+      { worktree: top.stdout.trim(), gitDir: undefined },
+    ];
+    while (queue.length > 0) {
+      const { worktree, gitDir } = queue.shift()!;
+      // Reading the index starts the repository's fsmonitor unless told not to.
+      const listing = yield* read([
+        "-c",
+        "core.fsmonitor=false",
+        ...(gitDir === undefined ? [] : ["--git-dir", gitDir, "--work-tree", worktree]),
+        "ls-files",
+        "--stage",
+        "-z",
+      ]);
+      if (listing.status !== 0 || listing.truncated) return undefined;
+      for (const path of gitlinkPaths(listing.stdout)) {
+        const at = nodePath.join(worktree, path);
+        const dir = nestedGitDir(at);
+        if (dir === undefined) continue;
+        found.push(dir);
+        if (found.length > NESTED_LIMIT) return undefined;
+        queue.push({ worktree: at, gitDir: dir });
+      }
+    }
+    return found;
+  });
+
 interface CachedGuard {
   readonly signature: string;
   readonly gitDir: string;
   readonly commonDir: string;
+  readonly nestedGitDirs: ReadonlyArray<string>;
   readonly guard: Guard;
 }
 
@@ -394,7 +442,8 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
       const hit = cache.get(key);
       if (
         hit !== undefined &&
-        discoverySignature(options.cwd, hit.gitDir, hit.commonDir) === hit.signature
+        discoverySignature(options.cwd, hit.gitDir, hit.commonDir, undefined, hit.nestedGitDirs) ===
+          hit.signature
       )
         return hit.guard;
       // `git config` reads `GIT_CONFIG` as its `--file`, which the call itself ignores: listed
@@ -417,11 +466,26 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
           new ProcSpawnError({ bin: "git", message: "couldn't read the repository's git config" }),
         );
       const [gitDir, commonDir] = dirs.stdout.trim().split("\n");
-      // A git started inside a submodule reads that one's own config, so it is read here too.
+      // A git started inside a submodule reads that one's own config, so it is read here too:
+      // those under `<common dir>/modules`, and any other nested repository a gitlink in the index
+      // points at, wherever its git folder is (an agent can make one with `git add`).
       const nested: Array<ConfigEntry> = [];
+      const nestedDirs: Array<string> = [];
       if (dirs.status === 0 && commonDir) {
-        const submodules = submoduleGitDirs(commonDir);
-        if (submodules === undefined)
+        const modules = submoduleGitDirs(commonDir);
+        const linked = yield* gitlinkedGitDirs(read);
+        if (modules === undefined || linked === undefined)
+          return yield* Effect.fail(
+            new ProcSpawnError({ bin: "git", message: "the repository has too many submodules" }),
+          );
+        const seen = new Set(modules.map((dir) => nodePath.resolve(dir)));
+        for (const dir of linked)
+          if (!seen.has(nodePath.resolve(dir))) {
+            seen.add(nodePath.resolve(dir));
+            nestedDirs.push(dir);
+          }
+        const submodules = [...modules, ...nestedDirs];
+        if (submodules.length > NESTED_LIMIT)
           return yield* Effect.fail(
             new ProcSpawnError({ bin: "git", message: "the repository has too many submodules" }),
           );
@@ -448,9 +512,10 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
       if (dirs.status === 0 && gitDir && commonDir && !guard.includes && globals.length === 0) {
         if (cache.size >= GUARD_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
         cache.set(key, {
-          signature: discoverySignature(options.cwd, gitDir, commonDir),
+          signature: discoverySignature(options.cwd, gitDir, commonDir, undefined, nestedDirs),
           gitDir,
           commonDir,
+          nestedGitDirs: nestedDirs,
           guard,
         });
       }
@@ -474,6 +539,22 @@ const makeProc = Effect.gen(function* () {
       // The inherited env is filtered here, as data, so the runner (perhaps a worker) gets no function.
       const { omitEnv, ...rest } = options;
       const base = withoutEnv(childEnv(process.env, pathValue, process.platform), omitEnv);
+      if (isGhExecutable(exe)) {
+        // `gh` runs git itself in `cwd` (to find the repository, the branch, the remote), and that
+        // git would read the checkout's config with no guard. The guard's pairs go in the env every
+        // git it starts inherits.
+        const env = { ...base, ...rest.env };
+        const gitExe = resolved.get("git") ?? resolveExecutable("git", process.platform, pathValue);
+        resolved.set("git", gitExe);
+        const guard = yield* repoConfigGuard(gitExe, [], rest, env);
+        return yield* runner.run(
+          exe,
+          bin,
+          args,
+          { ...rest, env: undefined },
+          appendGitConfig(env, guard.pairs),
+        );
+      }
       if (!isGitExecutable(exe)) return yield* runner.run(exe, bin, args, rest, base);
       const env = { ...base, ...rest.env };
       const guard = yield* repoConfigGuard(exe, args, rest, env);

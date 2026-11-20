@@ -93,12 +93,16 @@ const isInclude = (key: string): boolean => {
 };
 
 /**
- * Always set. A remote URL never runs a command through `ext::`, whatever the repository allows.
- * And git never starts a git of its own inside a submodule: that one would read the submodule's
- * config (`.git/modules/<name>/config`), which this guard doesn't see. Status and diff still show
- * a submodule's moved commit (`dirty` reads its HEAD in place), not its uncommitted changes.
+ * Always set. No hook runs: `$GIT_DIR/hooks` and a `core.hooksPath` are both content a checkout's
+ * agent (or whoever planted the repository) can write, and Gram's own merges, fetches, checkouts
+ * and commits are not the user's to vet. A remote URL never runs a command through `ext::`,
+ * whatever the repository allows. And git never starts a git of its own inside a submodule unless
+ * asked on the command line: that one would read the submodule's config, which the guard reads
+ * only for the nested repositories it finds. Status and diff still show a submodule's moved commit
+ * (`dirty` reads its HEAD in place), not its uncommitted changes.
  */
 const ALWAYS: ReadonlyArray<readonly [string, string]> = [
+  ["core.hooksPath", "/dev/null"],
   ["protocol.ext.allow", "never"],
   ["diff.ignoreSubmodules", "dirty"],
   ["status.submoduleSummary", "false"],
@@ -238,6 +242,37 @@ export const submoduleGitDirs = (commonDir: string): ReadonlyArray<string> | und
   return walk(nodePath.join(commonDir, "modules"), 0) ? found : undefined;
 };
 
+/** Index entries `git ls-files -s -z` lists as gitlinks (mode 160000): a nested repository's path. */
+export const gitlinkPaths = (out: string): ReadonlyArray<string> => {
+  const paths: Array<string> = [];
+  for (const record of out.split("\0")) {
+    if (!record.startsWith("160000 ")) continue;
+    const tab = record.indexOf("\t");
+    if (tab >= 0) paths.push(record.slice(tab + 1));
+  }
+  return paths;
+};
+
+/**
+ * The git folder of a nested repository checked out at `path`: its own `.git` folder, or the one a
+ * `.git` file points to (`gitdir: <path>`, relative to the file). `undefined` when there is none,
+ * which is a gitlink git won't start in: nothing is checked out there.
+ */
+export const nestedGitDir = (path: string): string | undefined => {
+  const dotGit = nodePath.join(path, ".git");
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(dotGit);
+  } catch {
+    return undefined;
+  }
+  if (st.isDirectory()) return dotGit;
+  if (!st.isFile()) return undefined;
+  const text = fs.readFileSync(dotGit, "utf8");
+  const match = /^gitdir: (.+?)\r?\n?$/m.exec(text);
+  return match === null ? undefined : nodePath.resolve(path, match[1]!);
+};
+
 /** A submodule git folder's config files, in the order git reads them. */
 export const submoduleConfigFiles = (gitDir: string): ReadonlyArray<string> => [
   nodePath.join(gitDir, "config"),
@@ -258,6 +293,7 @@ export const discoverySignature = (
   gitDir: string,
   commonDir: string,
   lstat: (path: string) => fs.BigIntStats | undefined = lstatOrUndefined,
+  nestedGitDirs: ReadonlyArray<string> = [],
 ): string => {
   const parts: Array<string> = [];
   const mark = (path: string) => {
@@ -279,8 +315,14 @@ export const discoverySignature = (
     nodePath.join(gitDir, "config.worktree"),
     nodePath.join(commonDir, "config"),
     nodePath.join(commonDir, "config.worktree"),
+    // A gitlink added to the index is a nested repository whose config the guard has to read.
+    nodePath.join(gitDir, "index"),
   ])
     mark(path);
+  for (const nested of nestedGitDirs) {
+    mark(nested);
+    for (const path of submoduleConfigFiles(nested)) mark(path);
+  }
   const submodules = submoduleGitDirs(commonDir);
   if (submodules === undefined) parts.push("submodules:too-many");
   else for (const sub of submodules) for (const path of submoduleConfigFiles(sub)) mark(path);

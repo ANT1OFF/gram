@@ -1,4 +1,5 @@
-import { GramRpcs } from "@gram/contracts";
+import { GramRpcs, LOCAL_HOST_ID, type HostId } from "@gram/contracts";
+import * as Effect from "effect/Effect";
 import { describe, expect, test } from "vitest";
 import { threadsMentioned } from "../embedding/readable-by.ts";
 import {
@@ -10,6 +11,7 @@ import {
   UNRECORDED_RPCS,
   VIEWER_RPCS,
 } from "./actor-guard.ts";
+import { namesServerDisk, RUNS_IN_FOLDER } from "./server-disk.ts";
 
 const ada = { id: "user-ada", name: "Ada", role: "member" as const };
 
@@ -86,6 +88,31 @@ describe("what a member may call", () => {
     expect(memberMay("fs.list", { path: "/" }, true)).toBe(false);
     expect(memberMay("fs.files", {}, true)).toBe(false);
     expect(memberMay("fs.list", { threadId: "t", path: "src" }, true)).toBe(true);
+  });
+});
+
+describe("a folder a call runs git or config in, on a headless server", () => {
+  const remote = "/home/ada/work/web";
+  const placeOf = (path: string) =>
+    Effect.succeed((path.startsWith(remote) ? "host-ada" : LOCAL_HOST_ID) as HostId);
+  const names = (payload: unknown) => Effect.runSync(namesServerDisk(payload, placeOf));
+
+  test("is a joined machine's, never the server's own", () => {
+    expect(names({ repoPath: remote })).toBe(false);
+    expect(names({ repoPath: `${remote}/packages/app` })).toBe(false);
+    // Where a person could plant a repository: the shared folder's copy, the data folder, home.
+    for (const repoPath of ["/data/shared/ws-1/repo", "/var/lib/gram", "/", "~/repo", "repo"])
+      expect(names({ repoPath })).toBe(true);
+    expect(names({ root: "/data/shared/ws-1/repo" })).toBe(true);
+    expect(names({ cwd: "/data" })).toBe(true);
+    expect(names({ projectRoot: "/data" })).toBe(true);
+    // Without the machines to ask, any named folder counts as the server's.
+    expect(Effect.runSync(namesServerDisk({ repoPath: remote }, undefined))).toBe(true);
+  });
+
+  test("names only RPCs that exist", () => {
+    const tags = new Set(GramRpcs.requests.keys());
+    for (const tag of RUNS_IN_FOLDER) expect(tags.has(tag)).toBe(true);
   });
 });
 
