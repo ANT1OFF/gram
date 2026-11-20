@@ -65,11 +65,24 @@ test("copies the selection on the platform's chord, and leaves the clipboard alo
   await expect(terminalText(terminal)).toContainText("echo: copyme-7431");
 
   await page.evaluate(() => navigator.clipboard.writeText("what the user had"));
+  // Every write the page asks of the clipboard, from here on.
+  await page.evaluate(() => {
+    const writes: string[] = [];
+    Object.assign(window, { clipboardWrites: writes });
+    const write = navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText = (text) => {
+      writes.push(text);
+      return write(text);
+    };
+  });
+  const writes = () =>
+    page.evaluate(() => (window as unknown as { clipboardWrites: string[] }).clipboardWrites);
   const word = await cellCenter(terminal, "copyme-7431");
   if (!word) throw new Error("the screen has no copyme-7431 text");
   await page.mouse.dblclick(word.x, word.y);
-  // The emulator's own default is to copy as soon as something is selected.
-  await page.waitForTimeout(300);
+  // The emulator's own default is to copy as soon as something is selected, in the double click's
+  // own handler: by the time the click is in, it would have asked to write.
+  expect(await writes()).toEqual([]);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("what the user had");
 
   // The selection lives on a canvas, so the browser's copy has nothing to take on its own.

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { motionDone } from "./settled";
+
 // A worker's title bar holds its fold while nothing changes. Folded, the bar is laid out apart: the
 // workspace's switcher narrows, so the room the title has then is more than unfolding would leave
 // it. Measured folded alone, the folded controls came back, cut the title short, folded again and so on,
@@ -103,7 +105,10 @@ test("a worker's title bar holds its fold at a width where folding frees the roo
   }
   // A little further in, settled, it stays folded.
   await page.setViewportSize({ width: width - 8, height: 720 });
-  await page.waitForTimeout(500);
+  // Laid out at the new width, folded, and done moving, before the bar is watched.
+  await twoFrames(page);
+  await expect(bar).toHaveAttribute("data-fold", "2");
+  await motionDone(page);
   expect(await foldChangesOver(page, 1_000)).toBe(0);
   await expect(bar).toHaveAttribute("data-fold", "2");
 
