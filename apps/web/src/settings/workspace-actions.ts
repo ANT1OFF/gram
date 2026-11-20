@@ -88,7 +88,15 @@ export function useWorkspaceChanges(state: WorkspaceState | undefined) {
     return run(
       () => api.saveWorkspace(input),
       title,
-      "input" in before ? () => api.saveWorkspace(before.input) : undefined,
+      "input" in before
+        ? () =>
+            api.saveWorkspace(
+              // Undo of an environment's change puts back the one it had, or the default.
+              input.environment === undefined
+                ? before.input
+                : { ...before.input, environment: state.workspace.environment ?? null },
+            )
+        : undefined,
       fail,
     );
   };

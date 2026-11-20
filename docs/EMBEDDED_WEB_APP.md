@@ -247,6 +247,15 @@ is asked again, from the first page, a moment after typing rests, and for the ne
 list is scrolled or walked to its end. A rejection's message is shown in the list. Any other
 `owner/repo` or URL can still be typed and cloned. Read once, at mount.
 
+**Where a workspace's machine starts.** `environments: { list }` offers a choice of environment
+in a new workspace and a workspace's settings. `list({ signal })` answers `environments` (`id`,
+`label` and an optional `detail`, a few words on what it is), the `default` one's id, and an
+optional `manage` link (`label`, `to`: a path under your app) shown under the field. The pick is
+saved on the workspace as `environment`; none means the default. A pick no longer listed is shown
+as starting in the default. A workspace with one of its own runs on a machine of its own, which
+your host provider starts in it ([EMBEDDING.md](EMBEDDING.md#a-workspaces-own-machine)); what an
+environment installs and may reach is your app's. Without the option the field is not shown. Read once, at mount.
+
 **More agents for the roles.** `roleAgents: ["grok"]` offers Grok Build beside Claude Code and
 Codex where a workspace's orchestrator and workers are picked. The server decides: it admits Grok
 to those roles only when it runs with `GRAM_ROLE_AGENTS=grok`, and refuses a pick otherwise. Grok

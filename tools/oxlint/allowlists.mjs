@@ -168,7 +168,6 @@ export const MAX_LINES = {
     "apps/web/src/orchestration/dreams-section.tsx": 1424,
     "apps/web/src/orchestration/memory-view.tsx": 805,
     "apps/web/src/orchestration/models.test.ts": 2306,
-    "apps/web/src/orchestration/new-workspace.tsx": 709,
     "apps/web/src/orchestration/overview-sidebar.tsx": 1176,
     "apps/web/src/orchestration/worker-pane.tsx": 892,
     "apps/web/src/orchestration/worker-row.tsx": 795,

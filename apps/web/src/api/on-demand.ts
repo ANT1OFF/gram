@@ -165,8 +165,12 @@ const parseChoices = (value: unknown): OnDemandStatus["choices"] => {
 };
 
 /** Their status, or undefined where the server's deployment starts no machines. */
-export const fetchOnDemandStatus = async (): Promise<OnDemandStatus | undefined> => {
-  const response = await fetch(serverUrl(ON_DEMAND_STATUS_PATH), {
+export const fetchOnDemandStatus = async (
+  /** A workspace's own machine, in place of the person's. */
+  workspace?: string,
+): Promise<OnDemandStatus | undefined> => {
+  const query = workspace === undefined ? "" : `?workspace=${encodeURIComponent(workspace)}`;
+  const response = await fetch(serverUrl(`${ON_DEMAND_STATUS_PATH}${query}`), {
     credentials: "same-origin",
     cache: "no-store",
   });
@@ -196,9 +200,10 @@ const post = async (path: string, body: unknown): Promise<void> => {
 export const startOnDemand = (
   repositories: ReadonlyArray<string>,
   choices: Readonly<Record<string, string>> = {},
-  how: { readonly keep?: boolean; readonly restart?: boolean } = {},
+  how: { readonly keep?: boolean; readonly restart?: boolean; readonly workspace?: string } = {},
 ) =>
   post(ON_DEMAND_START_PATH, {
+    ...(how.workspace === undefined ? {} : { workspace: how.workspace }),
     repositories,
     ...(Object.keys(choices).length === 0 ? {} : { choices }),
     ...(how.keep === true ? { keep: true } : {}),
