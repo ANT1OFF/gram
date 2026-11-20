@@ -27,6 +27,10 @@ import {
   type SinkEvent,
   type SinkEventType,
   type LimitWait,
+  type MemoryQuestion,
+  type OrchestrationPause,
+  parseQuestions,
+  QUESTIONS_FILE,
   type Thread,
   type ThreadId,
   type WorkerQuestion,
@@ -67,6 +71,13 @@ import {
   workerQuestionHow,
 } from "./worker-question-asks.ts";
 import { openOutbox, type Outbox, type SinkEventInput } from "./outbox.ts";
+import {
+  isOrchestratorAsk,
+  orchestratorQuestionAsk,
+  orchestratorQuestionAskId,
+  orchestratorQuestionHow,
+} from "./orchestrator-question-asks.ts";
+import { OrchestrationMemory } from "../orchestration/memory.ts";
 
 /** An event as server code records it: the sink adds when, and the outbox its number. */
 export type SinkRecord = Omit<SinkEventInput, "at" | "type"> & { readonly type: SinkEventType };
@@ -115,6 +126,22 @@ export interface EventSinkShape {
   ): Effect.Effect<void>;
 }
 
+/** A workspace's orchestrator as the sink reads it (`EventSinkOptions.orchestrators`). */
+export interface SinkOrchestrator {
+  readonly workspaceId: WorkspaceId;
+  /** Absent for a workspace with no orchestrator: whatever it asked is withdrawn. */
+  readonly thread?: Thread | undefined;
+  readonly paused?: OrchestrationPause | undefined;
+  readonly questions: ReadonlyArray<MemoryQuestion>;
+}
+
+/** An orchestrator's pause as its `thread.upsert` carries it. */
+const pauseData = (pause: OrchestrationPause): Record<string, unknown> => ({
+  reason: pause.reason,
+  at: pause.at,
+  ...(pause.detail === undefined ? {} : { detail: pause.detail }),
+});
+
 export interface EventSinkOptions {
   readonly endpoint: EndpointConfig;
   /** The outbox's file; `:memory:` for one that goes with the process. */
@@ -132,6 +159,14 @@ export interface EventSinkOptions {
   readonly workerQuestions?: (
     workspaceId?: WorkspaceId,
   ) => Effect.Effect<ReadonlyArray<WorkerQuestion>>;
+  /**
+   * A workspace's orchestrator, or every workspace's without one: its thread, its pause and the
+   * entries of its `questions.md`, for the asks of its open questions
+   * (`orchestrator-question-asks.ts`) and the `paused` its `thread.upsert` carries. Absent, none.
+   */
+  readonly orchestrators?: (
+    workspaceId?: WorkspaceId,
+  ) => Effect.Effect<ReadonlyArray<SinkOrchestrator>>;
   /** The server's events to record; absent in a test that records by hand. */
   readonly events?: Stream.Stream<ServerEvent | OwnEvent>;
   /**
@@ -304,6 +339,13 @@ export const makeEventSink = (
     /** Each thread's workspace, as its upserts said, for the events that name only the thread. */
     const workspaces = new Map<string, string>();
     const models = new Map<string, string>();
+    /** Each paused orchestrator's pause, as its `thread.upsert`s last carried it, by thread. */
+    const pauses = new Map<string, string>();
+    /** What an orchestrator's `thread.upsert` adds: its pause, while it is paused. */
+    const pausedOf = (threadId: string): Record<string, unknown> => {
+      const pause = pauses.get(threadId);
+      return pause === undefined ? {} : { paused: JSON.parse(pause) };
+    };
     const askNotes = new Map<string, AskNote>();
     const answerNotes = new Map<string, AnswerNote>();
     /** Who started each thread, as far as anyone was signed in to say. */
@@ -351,6 +393,94 @@ export const makeEventSink = (
         yield* Queue.offer(wake, true);
       });
 
+    /** The orchestrator questions whose asks are open at the receiver, by ask id. */
+    const openOrchestratorAsks = new Map<
+      string,
+      { readonly threadId: ThreadId; readonly workspaceId: WorkspaceId }
+    >();
+
+    /**
+     * What changed of `workspaceId`'s orchestrator (every workspace's without one): an ask opened
+     * for each open question and resolved for each that closed or went, and a `thread.upsert` when
+     * its pause began, changed or ended.
+     */
+    const orchestratorEvents = (workspaceId?: WorkspaceId) =>
+      Effect.gen(function* () {
+        if (options.orchestrators === undefined) return [];
+        const orchestrators = yield* options.orchestrators(workspaceId);
+        const events: Array<SinkRecord> = [];
+        const waiting = new Set<string>();
+        const seen = new Set<string>();
+        for (const { workspaceId: id, thread, paused, questions } of orchestrators) {
+          seen.add(id);
+          if (thread === undefined) continue;
+          const pause = paused === undefined ? undefined : JSON.stringify(pauseData(paused));
+          if (pause !== pauses.get(thread.id)) {
+            if (pause === undefined) pauses.delete(thread.id);
+            else pauses.set(thread.id, pause);
+            workspaces.set(thread.id, id);
+            events.push({
+              type: "thread.upsert",
+              threadId: thread.id,
+              workspaceId: id,
+              data: { ...threadData(thread), ...createdBy(thread.id), ...pausedOf(thread.id) },
+            });
+          }
+          for (const question of questions) {
+            if (!isOrchestratorAsk(question)) continue;
+            const askId = orchestratorQuestionAskId(id, question.id);
+            waiting.add(askId);
+            const open = openOrchestratorAsks.get(askId);
+            if (open !== undefined && open.threadId === thread.id) continue;
+            openOrchestratorAsks.set(askId, { threadId: thread.id, workspaceId: id });
+            events.push({
+              type: "ask.opened",
+              threadId: thread.id,
+              workspaceId: id,
+              data: orchestratorQuestionAsk(id, question),
+            });
+          }
+        }
+        const byId = new Map(
+          orchestrators.flatMap(({ workspaceId: id, questions }) =>
+            questions.flatMap((question) =>
+              question.id === undefined
+                ? []
+                : [[orchestratorQuestionAskId(id, question.id), question] as const],
+            ),
+          ),
+        );
+        for (const [askId, where] of openOrchestratorAsks) {
+          if (waiting.has(askId)) continue;
+          // A workspace not read now, or whose orchestrator couldn't be, keeps its asks.
+          if (!seen.has(where.workspaceId)) continue;
+          openOrchestratorAsks.delete(askId);
+          const how = orchestratorQuestionHow(byId.get(askId));
+          const answer = answerNotes.get(askId);
+          answerNotes.delete(askId);
+          const by = how === "answered" ? answer?.answeredBy : undefined;
+          events.push({
+            type: "ask.resolved",
+            threadId: where.threadId,
+            workspaceId: where.workspaceId,
+            ...(by === undefined ? {} : { actor: { kind: "person" as const, id: by } }),
+            data: {
+              id: askId,
+              how,
+              ...(by === undefined ? {} : { answeredBy: by }),
+              ...(by === undefined || answer?.proof === undefined ? {} : { proof: answer.proof }),
+            },
+          });
+        }
+        return events;
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError("event sink: orchestrators could not be read", cause).pipe(
+            Effect.as([] as ReadonlyArray<SinkRecord>),
+          ),
+        ),
+      );
+
     /** The worker questions whose asks are open at the receiver, by ask id. */
     const openQuestions = new Map<
       string,
@@ -363,9 +493,10 @@ export const makeEventSink = (
      */
     const questionEvents = (workspaceId?: WorkspaceId) =>
       Effect.gen(function* () {
-        if (options.workerQuestions === undefined) return [];
-        const questions = yield* options.workerQuestions(workspaceId);
         const events: Array<SinkRecord> = [];
+        events.push(...(yield* orchestratorEvents(workspaceId)));
+        if (options.workerQuestions === undefined) return events;
+        const questions = yield* options.workerQuestions(workspaceId);
         const waiting = new Set<string>();
         for (const question of questions) {
           if (!isUsersQuestion(question)) continue;
@@ -420,14 +551,22 @@ export const makeEventSink = (
     /** `sink.started`, then an `ask.opened` for each worker question waiting on the user. */
     const opening = Effect.gen(function* () {
       openQuestions.clear();
-      const asks = yield* questionEvents();
+      openOrchestratorAsks.clear();
+      pauses.clear();
+      // Read before the snapshot: its threads carry the pauses this finds, so the
+      // `thread.upsert`s it made for them are dropped, the snapshot saying the same.
+      const asks = (yield* questionEvents()).filter((event) => event.type !== "thread.upsert");
       const first = yield* started;
       return [
         {
           ...first,
           data: {
             ...first.data,
-            openAsks: [...first.data.openAsks, ...openQuestions.keys()],
+            openAsks: [
+              ...first.data.openAsks,
+              ...openQuestions.keys(),
+              ...openOrchestratorAsks.keys(),
+            ],
           },
         },
         ...asks,
@@ -450,6 +589,7 @@ export const makeEventSink = (
           threads: threads.map((thread) => ({
             ...threadData(thread),
             ...createdBy(thread.id),
+            ...pausedOf(thread.id),
             ...(thread.workspaceId === undefined ? {} : { workspaceId: thread.workspaceId }),
           })),
           openAsks,
@@ -526,7 +666,7 @@ export const makeEventSink = (
             {
               type: "thread.upsert",
               ...scoped(thread.id),
-              data: { ...threadData(thread), ...createdBy(thread.id) },
+              data: { ...threadData(thread), ...createdBy(thread.id), ...pausedOf(thread.id) },
             },
           ];
         }
@@ -704,6 +844,9 @@ export const makeEventSink = (
             if (!(yield* isOn)) return;
             if (isOwnEvent(event)) return yield* recordMessages(event);
             yield* write(eventsOf(event));
+            if (event.type === "memory.changed") {
+              yield* write(yield* orchestratorEvents(event.workspaceId));
+            }
             if (event.type === "orchestration.changed") {
               yield* write(yield* questionEvents(event.workspaceId));
               movedWorkspaces.add(event.workspaceId);
@@ -936,7 +1079,8 @@ const recorded = (event: ServerEvent): boolean =>
   event.type === "thread.request" ||
   event.type === "thread.requestResolved" ||
   event.type === "thread.usage" ||
-  event.type === "orchestration.changed";
+  event.type === "orchestration.changed" ||
+  event.type === "memory.changed";
 
 /** The file the sink's outbox is kept in, beside the server's database. */
 export const eventSinkFile = (dataDir: string): string => join(dataDir, "event-sink.db");
@@ -969,6 +1113,10 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
         }
         const store = yield* ThreadStore;
         const hub = yield* EventHub;
+        // Read only, for the orchestrators' questions: the server's own memory folder.
+        const memory = yield* Effect.gen(function* () {
+          return yield* OrchestrationMemory;
+        }).pipe(Effect.provide(OrchestrationMemory.layerAt(join(config.dataDir, "orchestration"))));
         const inMemory = config.databaseFile === ":memory:";
         if (!inMemory) mkdirSync(config.dataDir, { recursive: true });
         return yield* makeEventSink({
@@ -1002,6 +1150,48 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
               );
               return lists.flat();
             }),
+          orchestrators: (workspaceId) =>
+            Effect.gen(function* () {
+              const states =
+                workspaceId === undefined
+                  ? yield* store.listWorkspaces
+                  : [yield* store.getWorkspace(workspaceId)];
+              const found = yield* Effect.forEach(
+                states,
+                (state) =>
+                  Effect.gen(function* () {
+                    const threadId = state.workspace.orchestratorThreadId;
+                    if (threadId === undefined) {
+                      const none: SinkOrchestrator[] = [
+                        { workspaceId: state.workspace.id, questions: [] },
+                      ];
+                      return none;
+                    }
+                    const thread = yield* store.getThread(threadId);
+                    const content = yield* memory
+                      .read(state.workspace.id, QUESTIONS_FILE)
+                      .pipe(Effect.catchTag("NotFound", () => Effect.succeed(undefined)));
+                    const one: SinkOrchestrator[] = [
+                      {
+                        workspaceId: state.workspace.id,
+                        thread,
+                        paused: state.paused,
+                        questions: content === undefined ? [] : parseQuestions(content),
+                      },
+                    ];
+                    return one;
+                  }).pipe(
+                    // One workspace that can't be read leaves the others, and keeps its asks.
+                    Effect.catchCause((cause) =>
+                      Effect.logError("event sink: an orchestrator could not be read", cause).pipe(
+                        Effect.as([] as SinkOrchestrator[]),
+                      ),
+                    ),
+                  ),
+                { concurrency: 4 },
+              );
+              return found.flat();
+            }).pipe(Effect.orElseSucceed(() => [] as SinkOrchestrator[])),
           // Messages are sent only where the deployment asked: otherwise the hub's word of them
           // is never queued here, and the sink records what it did before there was any.
           events:

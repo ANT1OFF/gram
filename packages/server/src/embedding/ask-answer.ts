@@ -11,7 +11,9 @@
 
 import { NOT_READABLE, readableByOf, readerMay } from "./readable-by.ts";
 import {
+  type AnswerQuestionResult,
   type AnswerWorkerQuestionInput,
+  type MemoryQuestion,
   InvalidState,
   RequestAnswer,
   RequestId,
@@ -37,6 +39,11 @@ import {
   workerQuestionAskId,
 } from "./worker-question-asks.ts";
 import { NOT_YOUR_MACHINE, RoutedFor } from "../host/ownership.ts";
+import {
+  orchestratorQuestionAnswerText,
+  orchestratorQuestionAskId,
+  parseOrchestratorQuestionAskId,
+} from "./orchestrator-question-asks.ts";
 import {
   ANSWER_OVER_HTTP,
   ASK_ANSWER_MAX_BYTES,
@@ -78,6 +85,27 @@ export interface AskAnswerDeps {
      * Whether this fiber's person may reach the asking thread and the workspace's orchestrator,
      * which `workerQuestion.answer` is held to over a socket (`rpc/actor-guard.ts`).
      */
+    readonly mayReach: (workspaceId: WorkspaceId, threadId: ThreadId) => Effect.Effect<boolean>;
+  };
+  /**
+   * For an orchestrator question's ask (`orchestrator-question-asks.ts`): reads the entry and the
+   * orchestrator's thread, and answers it as the user, as the socket's `question.answer` does.
+   * Absent, such an ask is refused.
+   */
+  readonly orchestratorQuestions?: {
+    readonly find: (
+      workspaceId: WorkspaceId,
+      questionId: string,
+    ) => Effect.Effect<
+      { readonly question: MemoryQuestion; readonly threadId: ThreadId } | undefined
+    >;
+    readonly answer: (input: {
+      readonly workspaceId: WorkspaceId;
+      readonly questionId: string;
+      readonly question: string;
+      readonly answer: string;
+    }) => Effect.Effect<AnswerQuestionResult, { readonly _tag: string; readonly message: string }>;
+    /** Whether this fiber's person may reach the orchestrator's thread. */
     readonly mayReach: (workspaceId: WorkspaceId, threadId: ThreadId) => Effect.Effect<boolean>;
   };
   /** Keeps who answered, and the proof, for the ask's `ask.resolved`. */
@@ -137,6 +165,21 @@ export const answerAsk = (
           ),
         )
         .pipe(Effect.catchCause((cause) => Effect.logError("an answer went unrecorded", cause)));
+    const entry = parseOrchestratorQuestionAskId(requestId);
+    if (entry !== undefined) {
+      const failed = yield* answerOrchestratorQuestion(
+        deps,
+        entry,
+        threadId,
+        answer,
+        actor.id,
+        proof,
+      );
+      yield* record(failed);
+      return failed === undefined
+        ? json(200, {})
+        : refusal(failed.status, failed.tag, failed.message);
+    }
     const asked = parseWorkerQuestionAskId(requestId);
     if (asked !== undefined) {
       const failed = yield* answerWorkerQuestion(deps, asked, threadId, answer, actor.id, proof);
@@ -236,6 +279,85 @@ export const answerWorkerQuestion = (
           Effect.catch((error) => Effect.succeed(error)),
           Effect.catchCause((cause) =>
             Effect.logError("an answer to a worker question failed", cause).pipe(
+              Effect.as({ _tag: "Failed", message: "the answer could not be taken" }),
+            ),
+          ),
+        );
+      if (failed === undefined) return undefined;
+      yield* note(askId, undefined);
+      return failed._tag === "NotFound"
+        ? ({ status: 404, tag: failed._tag, message: failed.message } as const)
+        : failed._tag === "Failed"
+          ? ({ status: 500, tag: failed._tag, message: failed.message } as const)
+          : ({ status: 409, tag: failed._tag, message: failed.message } as const);
+    }),
+  );
+
+/**
+ * A person's answer to an orchestrator question's ask: its words become the user's answer, as the
+ * Answer button gives it, on record as theirs with the request's proof. The ask must name the
+ * orchestrator's thread; `undefined` when it was taken.
+ */
+export const answerOrchestratorQuestion = (
+  deps: AskAnswerDeps,
+  asked: { readonly workspaceId: WorkspaceId; readonly questionId: string },
+  threadId: ThreadId,
+  answer: RequestAnswer,
+  person: string,
+  proof: AnswerProof,
+) =>
+  answering.withLock(
+    orchestratorQuestionAskId(asked.workspaceId, asked.questionId),
+    Effect.gen(function* () {
+      const questions = deps.orchestratorQuestions;
+      if (questions === undefined) {
+        return { status: 404, tag: "NotFound", message: "no such question" } as const;
+      }
+      const found = yield* questions.find(asked.workspaceId, asked.questionId);
+      if (found === undefined || found.threadId !== threadId) {
+        return { status: 404, tag: "NotFound", message: "no such question" } as const;
+      }
+      if (answer.kind !== "question") {
+        return {
+          status: 400,
+          tag: "BadRequest",
+          message: "a question takes a question's answer",
+        } as const;
+      }
+      const text = orchestratorQuestionAnswerText(found.question, answer);
+      if (text === undefined) {
+        return { status: 400, tag: "BadRequest", message: "the answer says nothing" } as const;
+      }
+      const reachable = yield* questions
+        .mayReach(asked.workspaceId, threadId)
+        .pipe(Effect.provideService(RoutedFor, { person }));
+      if (!reachable)
+        return { status: 403, tag: "InvalidState", message: NOT_YOUR_MACHINE } as const;
+      // An entry answered already, here or anywhere else, is not answered again.
+      if (!found.question.open) {
+        return {
+          status: 409,
+          tag: "InvalidState",
+          message: `${asked.questionId} no longer waits on an answer`,
+        } as const;
+      }
+      const askId = orchestratorQuestionAskId(asked.workspaceId, asked.questionId);
+      const note = deps.noteAnswer ?? (() => Effect.void);
+      yield* note(askId, { answeredBy: person, proof });
+      const failed = yield* questions
+        .answer({
+          workspaceId: asked.workspaceId,
+          questionId: asked.questionId,
+          question: found.question.text,
+          answer: text,
+        })
+        .pipe(
+          Effect.provideService(ActingPerson, person),
+          Effect.provideService(RoutedFor, { person }),
+          Effect.as(undefined),
+          Effect.catch((error) => Effect.succeed(error)),
+          Effect.catchCause((cause) =>
+            Effect.logError("an answer to an orchestrator question failed", cause).pipe(
               Effect.as({ _tag: "Failed", message: "the answer could not be taken" }),
             ),
           ),
