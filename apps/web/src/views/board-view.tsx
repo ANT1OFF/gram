@@ -1,8 +1,9 @@
 import type { ThreadId, WorkspaceId, WorkspaceState } from "@gram/contracts";
 import { Columns3 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import { EmptyState } from "@/components/empty-state";
+import { useSubscription } from "@/lib/effects";
 import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { VirtualRows, type RowPlace } from "@/lib/virtual-rows";
@@ -95,7 +96,7 @@ const takesFocusOnOpen = (active: Element | null) =>
 function RailBoard({ state }: { state: WorkspaceState }) {
   const workspaceId = state.workspace.id;
   const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  useSubscription(() => {
     const take = () => {
       if (takesFocusOnOpen(document.activeElement)) root.current?.focus({ preventScroll: true });
     };

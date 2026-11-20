@@ -1,9 +1,10 @@
 import { Menu } from "@base-ui/react/menu";
 import { BookOpen, ChevronUp } from "lucide-react";
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { memo, useCallback, useLayoutEffect, useRef, type RefObject } from "react";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { useLayoutSync, useSubscription } from "@/lib/effects";
 import { cn } from "@/lib/utils";
 
 import type { Chapter } from "./parts";
@@ -135,7 +136,7 @@ export function ConversationRail({
   const available = (chapters.length >= RAIL_MIN_MARKS && scrollable) || earlier === true;
   // Disabling the loading button can blur it to body. That is not a new focus owner;
   // deliberate focus/input elsewhere retires this request's keyboard continuation.
-  useEffect(() => {
+  useSubscription(() => {
     if (!available) return;
     const rail = railRef.current;
     if (!rail) return;
@@ -156,7 +157,7 @@ export function ConversationRail({
       for (const event of events) owner.removeEventListener(event, retire, true);
     };
   }, [available]);
-  useLayoutEffect(() => {
+  useLayoutSync(() => {
     if (!available) return;
     const rail = railRef.current;
     if (!rail || typeof ResizeObserver === "undefined") return;

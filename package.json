@@ -82,6 +82,7 @@
     "mocks:tokens": "node .agents/skills/mock-build/scripts/mock-tokens.mjs docs/design/mocks/tokens.config.json",
     "dev:mock": "VITE_API=mock bun run --filter @gram/web dev:web",
     "dev:preview": "node apps/web/scripts/isolated-preview.mjs",
+    "drive": "node apps/web/scripts/drive.mjs",
     "e2e:real": "bun run --filter @gram/web e2e:real",
     "e2e:smoke": "bun run --filter @gram/web e2e subscription-agents.spec.ts launch-checks.spec.ts gateways.spec.ts new-thread-folder.spec.ts --workers=1"
   },

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useLatest } from "@/lib/effects";
 
 /** The names `globals.css` styles with `::highlight()`. */
 export const FIND_HIGHLIGHT = "gram-find";
@@ -88,10 +89,7 @@ export function useFindHighlight(
   onUndrawn: (messageId: string) => void,
 ) {
   const id = useRef(Symbol("find"));
-  const latest = useRef({ getScroller, onUndrawn });
-  useEffect(() => {
-    latest.current = { getScroller, onUndrawn };
-  });
+  const latest = useLatest({ getScroller, onUndrawn });
 
   useEffect(() => {
     const scroller = latest.current.getScroller();

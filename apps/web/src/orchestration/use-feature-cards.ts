@@ -7,10 +7,11 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 
 import { useApi } from "@/api/context";
 import type { Api } from "@/api/types";
+import { useSubscription } from "@/lib/effects";
 
 import { createLedgerWatch, type LedgerWatch } from "./ledger-watch";
 import { useAnsweredWorkers } from "./needs-you-store";
@@ -46,7 +47,7 @@ const watchFor = (api: Api, queryClient: QueryClient): LedgerWatch => {
 export function useFeatureCards(workspaceId: WorkspaceId | undefined): readonly FeatureCard[] {
   const api = useApi();
   const queryClient = useQueryClient();
-  useEffect(() => {
+  useSubscription(() => {
     if (workspaceId === undefined) return;
     return watchFor(api, queryClient).retain(workspaceId);
   }, [api, queryClient, workspaceId]);

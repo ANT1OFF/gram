@@ -105,6 +105,26 @@ body using relative Markdown image links and, from the output directory:
 gh pr edit <pr> --body-file <body.md> --attach ./02-orchestrator-dark.png --attach ./03-board-light.png </dev/null
 ```
 
+### Reaching a feature by name
+
+```sh
+bun run drive --list
+bun run drive memory board --no-shot
+bun run drive --all
+```
+
+`docs/features.json` gives each feature with a screen a `ui` block: `where` says in the app's
+words where a person finds it, and `route`, `steps` and `landmark` say how a driver gets there
+(roles, labels and test ids, never CSS). `bun run drive <feature>` starts the mock UI on the
+realistic scenario, reaches each named feature in a fresh browser and writes `<slug>.aria.yml`
+(the feature's accessibility tree, a few KB: read it before any picture), `<slug>.png`, and with
+`--video` `<slug>.webm`, plus `browser.jsonl` with the page's errors. It writes them to
+`GRAM_VERIFY_EVIDENCE_DIR` with a `manifest.json` when a [verify driver](AGENTS_AND_FEATURES.md#verify-recipes)
+runs it, otherwise to a new folder under `apps/web/drive-out/` (gitignored). `--all` exits 1
+when a feature is not where the map says. When a change moves a control a `ui` block names,
+update the block in the same change: `tools/feature-map/check.mjs` fails on a test id the source
+no longer has, and `apps/web/e2e/feature-map.spec.ts` fails when a landmark doesn't show.
+
 For live clicking, run `bun run dev:preview` for a disposable Chromium window with fresh mock
 storage (see [isolated preview](#isolated-ui-preview)). Or run `bun run dev:mock`, open Gram's
 right panel → Preview, and enter the local Vite URL printed in the terminal. Both use the mock

@@ -1,5 +1,6 @@
 import { useLayoutEffect, type ReactNode } from "react";
 
+import { useLayoutSync } from "@/lib/effects";
 import { MotionRoot } from "@/motion/root";
 import { startFontOverrides } from "@/theme/font-overrides";
 import { startReadingPrefs } from "@/thread/reading";
@@ -27,9 +28,9 @@ export function ThemeRoot({ children }: { children: ReactNode }) {
       stop();
     };
   }, []);
-  useLayoutEffect(() => startFontOverrides(document.documentElement), []);
-  useLayoutEffect(() => startReadingPrefs(document.documentElement), []);
-  useLayoutEffect(() => syncCustomPaletteStyle(document, customPalettes), [customPalettes]);
+  useLayoutSync(() => startFontOverrides(document.documentElement), []);
+  useLayoutSync(() => startReadingPrefs(document.documentElement), []);
+  useLayoutSync(() => syncCustomPaletteStyle(document, customPalettes), [customPalettes]);
 
   return <MotionRoot>{children}</MotionRoot>;
 }

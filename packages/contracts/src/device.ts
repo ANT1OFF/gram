@@ -629,6 +629,13 @@ export const runsSentWork = (discovery: HostedDiscovery): boolean =>
  */
 export const NO_MACHINE_RUNNING = "You have no machine running";
 
+/**
+ * How a hosted Gram begins its refusal to open the orchestrator of a workspace whose own machine
+ * isn't running (`embedding/workspace-machines.ts`): the app starts it as the person, then opens it
+ * again.
+ */
+export const WORKSPACE_MACHINE_NOT_RUNNING = "This workspace's machine isn't running";
+
 /** Whether the server starts the person's own machine from here: it names both calls for it. */
 export const startsMachines = (discovery: HostedDiscovery): boolean =>
   discovery.machine_status_endpoint !== undefined && discovery.machine_start_endpoint !== undefined;

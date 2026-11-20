@@ -56,6 +56,7 @@ import {
 import { shortcutPressed } from "@/keyboard/bindings";
 import { runShortcut, useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { useLatest, useMountEffect, useSubscription } from "@/lib/effects";
 import { listIndexForKey } from "@/lib/list-keys";
 import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
@@ -367,7 +368,7 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
   // Turns started in this thread since the composer mounted: an answer asked for before the latest
   // one started belongs to a turn that's over, even if that one has ended too by now.
   const turns = useRef(0);
-  useEffect(
+  useSubscription(
     () =>
       useThreadsStore.subscribe((s, previous) => {
         const now = s.byId[threadId]?.status;
@@ -501,19 +502,16 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
 
   /** Ends that wait when the composer goes, as switching threads unmounts it. */
   const waitAborts = useRef(new Set<AbortController>());
-  useEffect(() => {
+  useMountEffect(() => {
     const aborts = waitAborts.current;
     return () => {
       for (const abort of aborts) abort.abort();
     };
-  }, []);
+  });
   /** The draft as it is now, for a send that waited to see whether it is still the one pressed. */
   // Every chip, uploading ones too: `ready` leaves those out, and one pasted while the send waited
   // would be dropped by the send and its chip cleared.
-  const latestDraft = useRef({ text, items: attachments.items });
-  useEffect(() => {
-    latestDraft.current = { text, items: attachments.items };
-  });
+  const latestDraft = useLatest({ text, items: attachments.items });
   /**
    * Waits for a dropped connection, up to two minutes, with the message still in the box, so a
    * reload meanwhile keeps it; said until it is back, never a silent spin.

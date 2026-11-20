@@ -22,6 +22,7 @@ import { CreatePrDialog } from "@/components/create-pr-dialog";
 import { Hint } from "@/components/hint";
 import { usePushBranch } from "@/components/push-button";
 import { Button } from "@/components/ui/button";
+import { useSubscription } from "@/lib/effects";
 import { agoText } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { ExpandPresence, Shimmer } from "@/motion";
@@ -195,7 +196,7 @@ export function RecapCard({
 
   // The renderer isn't told every turn's new `lastActivityAt`, so a turn starting is what ends it,
   // and a message landing in the transcript after it, which no quick turn can slip past.
-  useEffect(
+  useSubscription(
     () =>
       useThreadsStore.subscribe((s, previous) => {
         const status = s.byId[threadId]?.status;

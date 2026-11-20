@@ -40,6 +40,12 @@
       "run": "bun install --frozen-lockfile && bun x vitest run --project shell",
       "covers": ["packages/shell/**"],
       "kind": "unit"
+    },
+    {
+      "name": "features",
+      "run": "bun install --frozen-lockfile && bun run drive --all",
+      "covers": ["apps/web/**", "docs/features.json"],
+      "kind": "flow"
     }
   ]
 }
