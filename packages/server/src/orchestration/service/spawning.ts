@@ -75,6 +75,7 @@ import type { LedgerWatch } from "./ledger-watch.ts";
 import { admitMachineCodex, admitMachineGrok, admitMachineOpenCode } from "./machine-admission.ts";
 import type { Projects } from "./projects.ts";
 import type { HeldSpawns } from "./held-spawns.ts";
+import { spawnRecheckRefusal } from "./spawn-recheck.ts";
 import { type HomeWorker, readHomeProfile } from "../../thread-profiles/home.ts";
 import { makeOwnFolder } from "../../thread-profiles/own-folder.ts";
 import { makeThreadId } from "../../runtime/runtime-state.ts";
@@ -828,61 +829,22 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ),
             );
           }
-          if (input.carded !== undefined) {
-            const { budget } = yield* survey(state, false);
-            const fits = budgetVerdict({
-              charter: state.charter,
-              liveWorkers: budget.liveWorkers,
-            }).ok;
-            if (!fits && budget.liveWorkers > input.carded) {
-              return yield* toolError(
-                tool,
-                refusal(
-                  "not_admitted",
-                  `${budget.liveWorkers} workers are live now and the charter allows ${budget.maxConcurrentWorkers}, more than when the user said yes, so no worker started. Call spawn_worker again to ask the user for one more.`,
-                ),
-              );
-            }
-          }
-          if (input.unattended === true || input.uncarded === true) {
+          if (input.carded !== undefined || input.unattended === true || input.uncarded === true) {
             // Under the spawn lock, so a spawn racing this one is counted: what would need the
             // user's card is refused here, never asked, and never let through on a stale count.
-            const unattended = input.unattended === true;
-            const outside = yield* outsideWorkspace(
-              tool,
-              [input.project, ...(input.alsoIn ?? [])],
-              state,
-            );
-            if (outside.length > 0) {
-              const repos = outside.map(repoLabel).join(" and ");
-              return yield* toolError(
-                tool,
-                unattended
-                  ? refusal(
-                      "unattended",
-                      `It needs your approval to add ${repos} to the "${state.workspace.name}" workspace, so no worker started.`,
-                    )
-                  : refusal(
-                      "outside_workspace",
-                      `${repos} joined no workspace meanwhile, so no worker started. Call spawn_worker again to ask the user.`,
-                    ),
-              );
-            }
+            const outside =
+              input.carded === undefined
+                ? yield* outsideWorkspace(tool, [input.project, ...(input.alsoIn ?? [])], state)
+                : [];
             const { budget } = yield* survey(state, false);
-            if (!budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok) {
-              return yield* toolError(
-                tool,
-                unattended
-                  ? refusal(
-                      "unattended_cap",
-                      `It needs your approval: ${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}, so no worker started.`,
-                    )
-                  : refusal(
-                      "not_admitted",
-                      `${budget.liveWorkers} workers are live now and the charter allows ${budget.maxConcurrentWorkers}, so no worker started. Call spawn_worker again to ask the user for one more.`,
-                    ),
-              );
-            }
+            const refused = spawnRecheckRefusal(input, {
+              liveWorkers: budget.liveWorkers,
+              maxConcurrentWorkers: budget.maxConcurrentWorkers,
+              fits: budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok,
+              outside: outside.map(repoLabel).join(" and "),
+              workspaceName: state.workspace.name,
+            });
+            if (refused !== undefined) return yield* toolError(tool, refused);
           }
           const project = yield* resolveProject(tool, input.project, state, call);
           const others: Array<Project> = [];
