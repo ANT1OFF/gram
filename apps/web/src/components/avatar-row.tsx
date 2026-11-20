@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { Avatar, type AvatarProps } from "@/components/ui/avatar";
+import { Avatar, type AvatarMarkProps, type AvatarStatus } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 
 /** How a tag beside the name looks: quiet words, an outlined pill, or code. */
@@ -16,7 +16,7 @@ export type AvatarRowTone = "default" | "muted" | "success" | "working" | "needs
 
 export interface AvatarRowProps {
   /** The row's mark; the row sets its size. */
-  avatar: Omit<AvatarProps, "size">;
+  avatar: AvatarMarkProps;
   /** The name: words, or a link of your own around them. */
   name: ReactNode;
   tags?: readonly AvatarRowTag[];
@@ -26,6 +26,7 @@ export interface AvatarRowProps {
   aside?: ReactNode;
   /** The trailing status, in words. */
   status?: ReactNode;
+  /** Defaults to the mark's status: `waiting` as `working`, `idle` as `muted`. */
   statusTone?: AvatarRowTone;
   /** A 28 px mark and less height, for a dense list. */
   compact?: boolean;
@@ -49,6 +50,15 @@ const TONE: Readonly<Record<AvatarRowTone, string>> = {
   error: "text-danger-text",
 };
 
+const toneOf = (status: AvatarStatus | undefined): AvatarRowTone =>
+  status === undefined
+    ? "default"
+    : status === "waiting"
+      ? "working"
+      : status === "idle"
+        ? "muted"
+        : status;
+
 /**
  * A row for a person or an agent: its mark, its name with tags after it, a meta line under it,
  * and a status at the row's end.
@@ -60,7 +70,7 @@ export function AvatarRow({
   meta,
   aside,
   status,
-  statusTone = "default",
+  statusTone,
   compact = false,
   className,
   testId,
@@ -73,7 +83,12 @@ export function AvatarRow({
       <Avatar {...avatar} size={compact ? "sm" : "md"} />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate text-body-strong">{name}</span>
+          <span className="min-w-0 truncate text-body-strong">
+            {name}
+            {status === undefined && avatar.statusLabel !== undefined && (
+              <span className="sr-only">, {avatar.statusLabel}</span>
+            )}
+          </span>
           {tags.map((tag, index) => {
             const {
               label,
@@ -101,7 +116,9 @@ export function AvatarRow({
         </span>
       )}
       {status !== undefined && (
-        <span className={cn("shrink-0 text-meta", TONE[statusTone])}>{status}</span>
+        <span className={cn("shrink-0 text-meta", TONE[statusTone ?? toneOf(avatar.status)])}>
+          {status}
+        </span>
       )}
     </div>
   );

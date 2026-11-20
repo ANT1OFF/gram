@@ -320,7 +320,12 @@ export const shownCount = (count: number | undefined): number | undefined =>
 
 /** The page a group's heading opens: its `to` where it has a heading and a path under the app. */
 export const headingTo = (group: ShellNavigationGroup): string | undefined =>
-  group.label !== undefined && group.label.trim() !== "" && group.to?.startsWith("/") === true
+  group.label !== undefined &&
+  group.label.trim() !== "" &&
+  group.to !== undefined &&
+  group.to.startsWith("/") &&
+  !group.to.startsWith("//") &&
+  !/[?#\s]/.test(group.to)
     ? group.to
     : undefined;
 

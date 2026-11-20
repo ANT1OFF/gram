@@ -186,6 +186,7 @@ describe("a collapsible navigation group", () => {
     expect(headingTo({ id: "govern", to: "/govern", items })).toBeUndefined();
     expect(headingTo({ ...govern, label: " ", to: "/govern" })).toBeUndefined();
     expect(headingTo({ ...govern, to: "https://elsewhere.example" })).toBeUndefined();
+    expect(headingTo({ ...govern, to: "//elsewhere.example/page" })).toBeUndefined();
     expect(headingTo(govern)).toBeUndefined();
   });
 

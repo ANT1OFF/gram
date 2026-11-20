@@ -10,7 +10,16 @@ export type AvatarGlyph = ComponentType<{ className?: string; "aria-hidden"?: bo
 
 export type AvatarSize = "xs" | "sm" | "md";
 
-export interface AvatarProps {
+/** A status and its words, together: a dot never says its status by colour alone. */
+export type AvatarStatusProps =
+  | { status?: undefined; statusLabel?: undefined }
+  | {
+      status: AvatarStatus;
+      /** The status in words, for a screen reader and the dot's hover. */
+      statusLabel: string;
+    };
+
+interface AvatarBaseProps {
   /** Whose mark it is: its initials come from it, and it is the mark's name when `labelled`. */
   name: string;
   /** `round` for a person, `square` for an agent or anything else that isn't one. */
@@ -19,11 +28,6 @@ export interface AvatarProps {
   glyph?: AvatarGlyph;
   /** In place of the initials taken from `name`. */
   initials?: string;
-  status?: AvatarStatus;
-  /** The status in words, for a screen reader and the dot's hover. */
-  statusLabel?: string;
-  /** 20, 28 or 36 px. Defaults to `md`. */
-  size?: AvatarSize;
   /** Drawn faded: someone away from it, or something switched off. */
   dimmed?: boolean;
   /** Named to a screen reader by `name` and `statusLabel`; otherwise hidden, as beside its name. */
@@ -33,6 +37,14 @@ export interface AvatarProps {
   style?: CSSProperties;
   testId?: string;
 }
+
+/** A mark without its size, as a row that sizes it takes it. */
+export type AvatarMarkProps = AvatarBaseProps & AvatarStatusProps;
+
+export type AvatarProps = AvatarMarkProps & {
+  /** 20, 28 or 36 px. Defaults to `md`. */
+  size?: AvatarSize;
+};
 
 const TILE: Readonly<Record<AvatarSize, string>> = {
   xs: "size-5 text-caption leading-none",
@@ -52,7 +64,7 @@ const DOT_SIZE: Readonly<Record<AvatarSize, string>> = {
   md: "-right-0.5 -bottom-0.5 size-2.5 ring-2",
 };
 
-export const AVATAR_DOT: Readonly<Record<AvatarStatus, string>> = {
+const AVATAR_DOT: Readonly<Record<AvatarStatus, string>> = {
   success: "bg-success",
   working: "bg-status-working",
   waiting: "border border-status-working bg-(--mark-ground,var(--color-background))",
@@ -119,7 +131,9 @@ export function Avatar({
         style={style}
       >
         {Glyph === undefined ? (
-          (initials ?? initialsOf(name)).slice(0, size === "xs" ? 1 : 2)
+          Array.from(initials ?? initialsOf(name))
+            .slice(0, size === "xs" ? 1 : 2)
+            .join("")
         ) : (
           <Glyph aria-hidden className={GLYPH[size]} />
         )}

@@ -229,7 +229,7 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
   useEffect(() => {
     if (at === undefined) return;
     list.current
-      ?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.querySelector<HTMLElement>('[aria-current="page"]:not([data-glide-skip])')
       ?.scrollIntoView?.({ block: "nearest" });
   }, [at]);
   if (groups.length === 0) return null;
@@ -323,7 +323,7 @@ function EmbedGroup({
                 type="button"
                 {...{ [OVERVIEW_STOP]: "" }}
                 data-testid="embed-navigation-toggle"
-                aria-label={group.label}
+                aria-label={hidden === undefined ? group.label : `${group.label}, ${hidden}`}
                 aria-expanded={fold.open}
                 aria-controls={rows}
                 onClick={fold.toggle}

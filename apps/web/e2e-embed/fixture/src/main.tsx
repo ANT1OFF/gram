@@ -246,15 +246,48 @@ function People() {
         <Avatar name="Ada Example" size="xs" status="success" statusLabel="Online" />
         <Avatar name="Ada Example" size="sm" status="idle" statusLabel="Away" />
         <Avatar name="Ada Example" status="success" statusLabel="Online" labelled />
-        <Avatar name="Build bot" shape="square" glyph={Bot} size="xs" status="working" />
-        <Avatar name="Build bot" shape="square" glyph={Bot} size="sm" status="waiting" />
-        <Avatar name="Build bot" shape="square" glyph={Bot} status="needs" />
-        <Avatar name="Build bot" shape="square" glyph={Bot} status="error" dimmed />
+        <Avatar
+          name="Build bot"
+          shape="square"
+          glyph={Bot}
+          size="xs"
+          status="working"
+          statusLabel="Working"
+        />
+        <Avatar
+          name="Build bot"
+          shape="square"
+          glyph={Bot}
+          size="sm"
+          status="waiting"
+          statusLabel="Waiting on checks"
+        />
+        <Avatar
+          name="Build bot"
+          shape="square"
+          glyph={Bot}
+          status="needs"
+          statusLabel="Needs you"
+        />
+        <Avatar
+          name="Build bot"
+          shape="square"
+          glyph={Bot}
+          status="error"
+          statusLabel="Failed"
+          dimmed
+        />
       </div>
       <div className="flex flex-col divide-y divide-border">
         <AvatarRow
           testId="fixture-agent-row"
-          avatar={{ name: "Build bot", shape: "square", glyph: Bot, status: "working" }}
+          avatar={{
+            name: "Build bot",
+            shape: "square",
+            glyph: Bot,
+            status: "working",
+            statusLabel: "Working",
+          }}
           name="Build bot"
           tags={[
             { label: "Shared", look: "badge" },
@@ -266,7 +299,7 @@ function People() {
           statusTone="working"
         />
         <AvatarRow
-          avatar={{ name: "Ada Example", status: "success" }}
+          avatar={{ name: "Ada Example", status: "success", statusLabel: "Online" }}
           name="Ada Example"
           tags={["You", "Lead"]}
           meta="Lead"
@@ -274,7 +307,13 @@ function People() {
         />
         <AvatarRow
           compact
-          avatar={{ name: "Check bot", shape: "square", glyph: Bot, status: "needs" }}
+          avatar={{
+            name: "Check bot",
+            shape: "square",
+            glyph: Bot,
+            status: "needs",
+            statusLabel: "Waiting on someone",
+          }}
           name="Check bot"
           meta="Waiting on a review"
           status="Waiting on someone"

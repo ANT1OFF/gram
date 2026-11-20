@@ -97,7 +97,7 @@ function TreeItem({
         <div className="min-w-0 flex-1">{node.content ?? node.label}</div>
       </div>
       {parent && (
-        <ul id={rows} hidden={!expanded} className="ml-3 flex flex-col pl-3">
+        <ul id={rows} role="list" hidden={!expanded} className="ml-3 flex flex-col pl-3">
           {node.children?.map((child, index, all) => (
             <TreeItem
               key={child.id}
@@ -144,7 +144,12 @@ export function TreeList({
     );
   };
   return (
-    <ul aria-label={label} data-testid={testId} className={cn("flex flex-col", className)}>
+    <ul
+      role="list"
+      aria-label={label}
+      data-testid={testId}
+      className={cn("flex flex-col", className)}
+    >
       {nodes.map((node, index) => (
         <TreeItem
           key={node.id}

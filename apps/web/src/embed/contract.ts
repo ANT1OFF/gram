@@ -61,7 +61,9 @@ export interface ShellPageProps {
 export type ShellMarkStatus = "success" | "working" | "waiting" | "needs" | "idle" | "error";
 
 /** A person's or an agent's mark, drawn in place of a destination's icon (the kit's `Avatar`). */
-export interface ShellMark {
+export type ShellMark = ShellMarkBase & ShellMarkStatusWords;
+
+export interface ShellMarkBase {
   /** Whose mark it is, for its initials. Defaults to the row's `label`. */
   readonly name?: string;
   /** `round` for a person (the default), `square` for an agent or anything else. */
@@ -69,14 +71,20 @@ export interface ShellMark {
   /** Drawn in place of the initials. */
   readonly glyph?: ShellIcon;
   readonly initials?: string;
-  readonly status?: ShellMarkStatus;
-  /** The status in words: said after the row's name to a screen reader, and the dot's hover. */
-  readonly statusLabel?: string;
   readonly dimmed?: boolean;
   /** On the mark's tile, for a fill of your own. */
   readonly className?: string;
   readonly style?: CSSProperties;
 }
+
+/** A mark's status and its words, together: a dot never says its status by colour alone. */
+export type ShellMarkStatusWords =
+  | { readonly status?: undefined; readonly statusLabel?: undefined }
+  | {
+      readonly status: ShellMarkStatus;
+      /** The status in words: said after the row's name to a screen reader, and the dot's hover. */
+      readonly statusLabel: string;
+    };
 
 /** One destination in a navigation group. */
 export interface ShellNavigationItem {

@@ -28,9 +28,11 @@ export { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export {
   Avatar,
   type AvatarGlyph,
+  type AvatarMarkProps,
   type AvatarProps,
   type AvatarSize,
   type AvatarStatus,
+  type AvatarStatusProps,
 } from "@/components/ui/avatar";
 export { Badge } from "@/components/ui/badge";
 export { Button, buttonVariants } from "@/components/ui/button";
