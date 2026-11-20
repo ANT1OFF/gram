@@ -39,8 +39,15 @@ The orchestrator's `sandbox` code stops talking to `OnDemandHosts` directly. It 
 for which joined machines are its own. There are two:
 
 - **Embedded** (unchanged): `OnDemandHosts` over `GRAM_HOST_PROVIDER_URL`, naming the orchestrator
-  host's owner in each call, as now. A machine shared by `shareWith` goes to the spawn by name,
-  online or not, as it always has: nothing waits for it first.
+  host's owner in each call, as now, and behaving as it did before this feature:
+  - A machine of its own is started and waited for as the call is resolved, so its machine and
+    model are admitted before any approval card.
+  - A machine shared by `shareWith` goes to the spawn by name, online or not: nothing waits for it
+    first.
+  - Every `409` from `/hosts/start` is over the total, whatever its `code`.
+  - The release pass judges a machine by the workers the ledger reads finished, keeps what it told
+    by machine name, and tells a take-back that failed again on the next pass.
+  - The orchestrator's prompt says nothing of `sandbox`; the tool's description does.
 - **Signed in** (new): the desktop app, over the same `parentPort` door `send_worker` uses. The
   server asks; the app makes the call to the hosted server with the person's sign-in and answers.
   The server never holds a token, and names no owner: the hosted server takes the person from the
@@ -378,15 +385,15 @@ server's to relax for a desktop's ask or not. Until it does, the desktop refuses
 
 ## 8. Where it is built
 
-| Piece                                     | Where                                                                  |
-| ----------------------------------------- | ---------------------------------------------------------------------- |
-| Discovery fields, the scope, the calls    | `contracts/src/device.ts`, `shell/modules/device/hosted.ts`            |
-| The app's answers and the relay           | `shell/modules/device/serve-machines.ts`, wired in `apps/desktop`      |
-| The server's door, the provider, the dial | `server/src/embedding/signed-in-workers.ts`                            |
-| One provider shape for both sources       | `server/src/embedding/worker-machines.ts` (`WorkerMachineSource`)      |
-| A relayed host                            | `PairedMachine.via`, `DialRoute` `relayed` (`host/paired-machines.ts`) |
-| Release                                   | `embedding/worker-machine-release.ts` (`releaseTeller`)                |
-| The orchestrator's prompt                 | One line on `sandbox`, only where a provider offers it (`prompt.ts`)   |
+| Piece                                     | Where                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| Discovery fields, the scope, the calls    | `contracts/src/device.ts`, `shell/modules/device/hosted.ts`               |
+| The app's answers and the relay           | `shell/modules/device/serve-machines.ts`, wired in `apps/desktop`         |
+| The server's door, the provider, the dial | `server/src/embedding/signed-in-workers.ts`                               |
+| One provider shape for both sources       | `server/src/embedding/worker-machines.ts` (`WorkerMachineSource`)         |
+| A relayed host                            | `PairedMachine.via`, `DialRoute` `relayed` (`host/paired-machines.ts`)    |
+| Release                                   | `embedding/worker-machine-release.ts` (`releaseTeller`)                   |
+| The orchestrator's prompt                 | One line on `sandbox`, only where a hosted server offers it (`prompt.ts`) |
 
 ## 9. Tests
 

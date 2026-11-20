@@ -209,7 +209,10 @@ export const makeWorkerSandbox = ({
               : undefined;
         if (found === undefined || "refused" in found)
           return yield* fail(
-            `Workers can't have machines of their own here${found === undefined ? "" : `: ${found.refused}`}. Leave out sandbox, and the worker runs on your machine.`,
+            found === undefined
+              ? // As it always was, word for word: an embedded Gram's orchestrators read it.
+                "Workers can't have machines of their own here: leave out sandbox, and the worker runs on your machine."
+              : `Workers can't have machines of their own here: ${found.refused}. Leave out sandbox, and the worker runs on your machine.`,
           );
         const source = found;
         const theirs = source.theirs;
@@ -290,9 +293,10 @@ export const makeWorkerSandbox = ({
         );
         // Online already (a retry): nothing to start, unless a try that brought it up is still
         // placing its worker, which this one then joins (`machineFlights`), so that try's
-        // cancellation never gives it back under this one. Otherwise it is started only once the
-        // spawn goes ahead, after any approval (`handle`), so a refused or denied spawn starts
-        // nothing.
+        // cancellation never gives it back under this one. Otherwise a hosted server's is started
+        // only once the spawn goes ahead, after any approval (`handle`), so a refused or denied
+        // spawn starts nothing; an embedder's is started and waited for here, before any card, so
+        // the spawn's machine and model are admitted before it asks, as they always were.
         const seen = joined().find((each) => each.name === name && theirs(each));
         if (seen?.onlineSince !== undefined && !(source.givesBack && machineFlights.has(name)))
           return { name, givesBack: source.givesBack };
@@ -362,20 +366,24 @@ export const makeWorkerSandbox = ({
           }
           return { startedHere: already === undefined };
         });
+        // An embedder's provider keeps its machines and gives none back: brought up now, as the
+        // call is resolved, and placed by name.
+        if (!source.givesBack) {
+          yield* bringUp;
+          return { name, givesBack: false };
+        }
         // Given back if the spawn is refused after it came, so none is left running for nothing:
         // never while another try of the same request still holds it, nor while a thread is
         // placed on it (the spawn's own worker made before it failed included), nor when that
         // can't be read.
-        const giveBack = (flight?: Flight) =>
+        const giveBack = (flight: Flight) =>
           Effect.gen(function* () {
-            if (flight !== undefined && (flight.holders > 1 || flight.closing !== undefined))
-              return;
+            if (flight.holders > 1 || flight.closing !== undefined) return;
             // No try joins it from here on (`closing`), so none takes a machine being given back.
             const closing = yield* Deferred.make<void>();
-            if (flight !== undefined) flight.closing = closing;
+            flight.closing = closing;
             let stopped = false;
             const open = Effect.suspend(() => {
-              if (flight === undefined) return Effect.void;
               // Given back: the next try brings one up afresh. Kept: tries join it again.
               if (stopped && machineFlights.get(name) === flight) machineFlights.delete(name);
               flight.closing = undefined;
@@ -403,16 +411,6 @@ export const makeWorkerSandbox = ({
               yield* source.abandon(name);
             }).pipe(Effect.ensuring(open));
           });
-        // An embedder's provider keeps its machines and gives none back: each try brings up its
-        // own, as it always has.
-        if (!source.givesBack)
-          return {
-            name,
-            givesBack: false,
-            prepare: Effect.map(bringUp, (brought) =>
-              brought.startedHere ? { abandon: giveBack() } : {},
-            ),
-          };
         // One bring-up of a name at a time (`machineFlights`): a try of the same request while
         // one is under way (a reconnect, a tool call tried again) joins it rather than starting,
         // waiting and giving back on its own. The bring-up outlives any one try, and is stopped,
@@ -425,7 +423,7 @@ export const makeWorkerSandbox = ({
           const brought = yield* Fiber.join(flight.fiber);
           return brought.startedHere ? { abandon: giveBack(flight) } : {};
         });
-        return { name, givesBack: source.givesBack, prepare };
+        return { name, givesBack: true, prepare };
       });
     /**
      * The plan for a worker `spawn_worker` places by `machine` on one a hosted server started: it
