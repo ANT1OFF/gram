@@ -88,7 +88,7 @@ describe("a remote thread's loopback proxy", () => {
   it("carries a connection to localhost to the thread's own machine's port", async () => {
     const { server, port } = await upper();
     servers.push(server);
-    proxies = loopbackProxies(() => Effect.succeed(tunnels()), run);
+    proxies = loopbackProxies(() => Effect.succeed({ tunnels: tunnels() }), run);
     const proxy = await Effect.runPromise(proxies.proxyFor(remoteThread));
     expect(proxy).toMatch(/^socks5:\/\/127\.0\.0\.1:\d+$/);
     // The same listener for the thread's next command.
@@ -117,16 +117,41 @@ describe("a remote thread's loopback proxy", () => {
   it("answers a port nothing listens on as refused", async () => {
     const { server, port } = await upper();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    proxies = loopbackProxies(() => Effect.succeed(tunnels()), run);
+    proxies = loopbackProxies(() => Effect.succeed({ tunnels: tunnels() }), run);
     const proxy = (await Effect.runPromise(proxies.proxyFor(remoteThread)))!;
     expect((await socks(proxy, "localhost", port)).code).toBe(0x05);
   });
 
+  it("keeps a thread's proxy while its machine is away, refusing its connections", async () => {
+    let away = true;
+    const { server, port } = await upper();
+    servers.push(server);
+    proxies = loopbackProxies(() => Effect.succeed(away ? undefined : { tunnels: tunnels() }), run);
+    const proxy = (await Effect.runPromise(proxies.proxyFor(remoteThread)))!;
+    // Never this machine's loopback meanwhile, where the same port answers.
+    expect((await socks(proxy, "localhost", port)).code).toBe(0x01);
+    away = false;
+    expect(await Effect.runPromise(proxies.proxyFor(remoteThread))).toBe(proxy);
+    expect(await socks(proxy, "localhost", port, "back")).toEqual({ code: 0, answer: "BACK" });
+  });
+
+  it("closes with a connection still open", async () => {
+    const { server, port } = await upper();
+    servers.push(server);
+    proxies = loopbackProxies(() => Effect.succeed({ tunnels: tunnels() }), run);
+    const proxy = (await Effect.runPromise(proxies.proxyFor(remoteThread)))!;
+    const idle = connect(Number(new URL(proxy).port), "127.0.0.1");
+    await new Promise((resolve) => idle.once("connect", resolve));
+    await proxies.close();
+    proxies = undefined;
+    expect(port).toBeGreaterThan(0);
+  });
+
   it("gives no proxy to a thread on this machine, or on a host without tunnels", async () => {
-    proxies = loopbackProxies(() => Effect.succeed(tunnels()), run);
+    proxies = loopbackProxies(() => Effect.succeed({ tunnels: tunnels() }), run);
     const local = { ...remoteThread, checkout: { hostId: LOCAL_HOST_ID } } as unknown as Thread;
     expect(await Effect.runPromise(proxies.proxyFor(local))).toBeUndefined();
-    const older = loopbackProxies(() => Effect.succeed(undefined), run);
+    const older = loopbackProxies(() => Effect.succeed({ tunnels: undefined }), run);
     expect(await Effect.runPromise(older.proxyFor(remoteThread))).toBeUndefined();
   });
 });

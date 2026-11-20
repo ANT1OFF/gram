@@ -1108,7 +1108,7 @@ const loopbackProxiesHere = Effect.gen(function* () {
     (threadId) =>
       store.getThread(threadId as ThreadId).pipe(
         Effect.flatMap((thread) => hosts.get(sessionHostOf(thread))),
-        Effect.map((host) => host.loopback),
+        Effect.map((host) => ({ tunnels: host.loopback })),
         Effect.orElseSucceed(() => undefined),
       ),
     run,

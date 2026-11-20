@@ -98,7 +98,13 @@ export const loopbackHostOf = (host: string): LoopbackHost | undefined => {
 };
 
 /** The thread's machine's tunnels now, if it runs elsewhere and its host serves them. */
-export type LoopbackOf = (threadId: string) => Effect.Effect<HostLoopbackConnection | undefined>;
+/**
+ * The thread's machine as its host reaches it now: its tunnels, `undefined` among them for a
+ * host that serves none; `undefined` for a machine not reachable now (or no thread).
+ */
+export type LoopbackOf = (
+  threadId: string,
+) => Effect.Effect<{ readonly tunnels: HostLoopbackConnection | undefined } | undefined>;
 
 /** Starts `effect` in the listeners' owner's scope, so nothing outlives it. */
 export type RunFork = <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
@@ -146,7 +152,14 @@ const serveSocks = (
     const forward = (chunk: Buffer) => {
       for (let at = 0; at < chunk.length; at += LOOPBACK_CHUNK_BYTES) {
         const data = chunk.subarray(at, at + LOOPBACK_CHUNK_BYTES).toString("base64");
-        writes = writes.then(() => Effect.runPromise(Effect.ignore(tunnels!.send(tunnelId, data))));
+        // A chunk the host didn't take ends the connection, rather than leave a gap in it.
+        writes = writes.then(() =>
+          Effect.runPromise(
+            tunnels!
+              .send(tunnelId, data)
+              .pipe(Effect.catch(() => Effect.sync(() => socket.destroy()))),
+          ),
+        );
       }
       socket.pause();
       void writes.then(() => socket.resume());
@@ -191,9 +204,14 @@ const serveSocks = (
 };
 
 /** Closes a listener once it is made; one that failed to listen is already gone. */
-const closeOne = (made: Promise<{ server: Server }>) =>
+const closeOne = (made: Promise<{ server: Server; sockets: Set<Socket> }>) =>
   made.then(
-    ({ server }) => new Promise<void>((resolve) => server.close(() => resolve())),
+    ({ server, sockets }) =>
+      new Promise<void>((resolve) => {
+        // `close` waits for every open connection, a dev server's hot reload socket included.
+        server.close(() => resolve());
+        for (const socket of sockets) socket.destroy();
+      }),
     () => {},
   );
 
@@ -210,10 +228,23 @@ export interface LoopbackProxies {
  */
 export const loopbackProxies = (loopbackOf: LoopbackOf, run: RunFork): LoopbackProxies => {
   // In order of use, the least recent first.
-  const listeners = new Map<string, Promise<{ server: Server; proxy: string }>>();
+  const listeners = new Map<
+    string,
+    Promise<{ server: Server; sockets: Set<Socket>; proxy: string }>
+  >();
   const listen = (threadId: string) =>
-    new Promise<{ server: Server; proxy: string }>((resolve, reject) => {
-      const server = createServer((socket) => serveSocks(socket, loopbackOf(threadId), run));
+    new Promise<{ server: Server; sockets: Set<Socket>; proxy: string }>((resolve, reject) => {
+      const sockets = new Set<Socket>();
+      const server = createServer((socket) => {
+        sockets.add(socket);
+        socket.once("close", () => sockets.delete(socket));
+        // A machine that isn't reachable now refuses the connection; its host may dial in again.
+        serveSocks(
+          socket,
+          Effect.map(loopbackOf(threadId), (reached) => reached?.tunnels),
+          run,
+        );
+      });
       server.once("error", reject);
       server.listen(0, "127.0.0.1", () => {
         const address = server.address();
@@ -222,14 +253,18 @@ export const loopbackProxies = (loopbackOf: LoopbackOf, run: RunFork): LoopbackP
           reject(new Error("The loopback proxy has no port."));
           return;
         }
-        resolve({ server, proxy: `socks5://127.0.0.1:${address.port}` });
+        resolve({ server, sockets, proxy: `socks5://127.0.0.1:${address.port}` });
       });
     });
   return {
     proxyFor: (thread) =>
       Effect.gen(function* () {
         if (sessionHostOf(thread) === LOCAL_HOST_ID) return undefined;
-        if ((yield* loopbackOf(thread.id)) === undefined) return undefined;
+        // A host that serves no tunnels keeps the server's loopback, as before them. One that
+        // isn't reachable now keeps its proxy, refusing connections until it is back, so the
+        // page never falls back to the server's loopback for a moment.
+        const reached = yield* loopbackOf(thread.id);
+        if (reached !== undefined && reached.tunnels === undefined) return undefined;
         let made = listeners.get(thread.id);
         if (made === undefined) {
           for (const [other, old] of listeners) {

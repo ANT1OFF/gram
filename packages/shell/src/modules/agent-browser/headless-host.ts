@@ -106,6 +106,8 @@ export const headlessPanes = (options: {
   const phases = new Map<string, ViewStatus>();
   /** Where each thread's loopback is, as its latest request said, when not this machine's. */
   const loopbackProxies = new Map<string, string>();
+  /** A thread's page being closed for another loopback, which its next command waits for. */
+  const reopening = new Map<string, Promise<void>>();
   let browser: HeadlessBrowser | undefined;
   let views: ReturnType<typeof headlessViews> | undefined;
   const viewsNow = () => {
@@ -161,18 +163,24 @@ export const headlessPanes = (options: {
       const thread = typeof threadId === "string" ? threadId : undefined;
       if (thread !== undefined) {
         // A page made for another machine's loopback, or for this one's, isn't the thread's now:
-        // the thread moved, or its machine's host came or went. The next command makes another.
+        // the thread moved, or its machine's host came or went. It is closed once no command runs
+        // on it, and the next command makes another; a command arriving meanwhile waits for that.
+        await reopening.get(thread);
         const proxy =
           typeof loopbackProxy === "string" && isLoopbackProxy(loopbackProxy)
             ? loopbackProxy
             : undefined;
-        if (proxy !== loopbackProxies.get(thread)) {
-          if (proxy === undefined) loopbackProxies.delete(thread);
-          else loopbackProxies.set(thread, proxy);
-          if ((running.get(thread) ?? 0) === 0 && (await views?.peek(thread)) !== undefined) {
+        if (proxy === undefined) loopbackProxies.delete(thread);
+        else loopbackProxies.set(thread, proxy);
+        const built = views?.builtWith(thread);
+        if ((running.get(thread) ?? 0) === 0 && built !== undefined && built.proxy !== proxy) {
+          const closing = (async () => {
             await views?.close(thread);
             panes.closed(thread);
-          }
+          })();
+          reopening.set(thread, closing);
+          await closing;
+          if (reopening.get(thread) === closing) reopening.delete(thread);
         }
         running.set(thread, (running.get(thread) ?? 0) + 1);
         views?.touch(thread);

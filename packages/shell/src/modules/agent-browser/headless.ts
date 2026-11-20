@@ -1029,9 +1029,13 @@ export const headlessViews = (
   close(threadId: string): Promise<void>;
   /** The thread's page if it has one, without counting as a use of it. */
   peek(threadId: string): Promise<PaneContents | undefined>;
+  /** The loopback proxy the thread's page was made with; `undefined` when it has no page. */
+  builtWith(threadId: string): { readonly proxy: string | undefined } | undefined;
 } => {
   // In order of use, the least recent first.
   const pages = new Map<string, Promise<PaneContents | undefined>>();
+  /** The proxy each page in `pages` was made with. */
+  const proxies = new WeakMap<Promise<PaneContents | undefined>, string | undefined>();
   const touch = (threadId: string) => {
     const page = pages.get(threadId);
     if (page === undefined) return;
@@ -1048,17 +1052,21 @@ export const headlessViews = (
         closed(other);
       });
     }
-    const made = openHeadlessPage(connection, gate, loopbackProxyOf(threadId)).catch(
-      (error: unknown) => {
-        failed(error);
-        return undefined;
-      },
-    );
+    const proxy = loopbackProxyOf(threadId);
+    const made = openHeadlessPage(connection, gate, proxy).catch((error: unknown) => {
+      failed(error);
+      return undefined;
+    });
+    proxies.set(made, proxy);
     pages.set(threadId, made);
     return made;
   };
   return {
     touch,
+    builtWith: (threadId) => {
+      const page = pages.get(threadId);
+      return page === undefined ? undefined : { proxy: proxies.get(page) };
+    },
     peek: async (threadId) => {
       const page = await pages.get(threadId);
       return page === undefined || page.isDestroyed() ? undefined : page;
