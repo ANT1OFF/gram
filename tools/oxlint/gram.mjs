@@ -17,6 +17,9 @@
 // machine is slow and wastes time when it's fast. Tests wait on the condition; product code that
 // does mean real time (backoff, polling) uses the one shared helper. The files not moved yet are
 // in `allowlists.mjs` with how many each may keep.
+//
+// And a 24-hour clock in the web app: a time formatted with `hour` or `timeStyle` and no
+// `hourCycle: "h23"` reads `2:05 PM` wherever the locale's default is 12-hour.
 
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -208,6 +211,70 @@ const SLEEP_IN_TESTS =
 const WAIT_FOR_TIMEOUT =
   "`waitForTimeout` races the page: wait on what you need instead, with a web-first assertion (`await expect(locator).toBeVisible()`, `.toHaveText()`, `.toHaveCount()`), `await expect.poll(() => value).toBe(…)`, `await expect(async () => {…}).toPass()`, `page.waitForResponse`/`waitForFunction`, or `page.clock` when time is the input.";
 
+/** The Date methods that format with locale options; `toLocaleTimeString` always shows the hour. */
+const LOCALE_FORMATS = new Set(["toLocaleString", "toLocaleDateString", "toLocaleTimeString"]);
+
+/** `x as const`, `x satisfies T` and `(x)` are `x`. */
+const unwrap = (node) => {
+  while (
+    node?.type === "TSAsExpression" ||
+    node?.type === "TSSatisfiesExpression" ||
+    node?.type === "ParenthesizedExpression"
+  )
+    node = node.expression;
+  return node;
+};
+
+/** The initialiser of the `const` an identifier names in this file, if it has one. */
+const constInit = (sourceCode, node) => {
+  for (let scope = sourceCode.getScope(node); scope; scope = scope.upper) {
+    const variable = scope.variables.find((value) => value.name === node.name);
+    if (!variable) continue;
+    const definition = variable.defs.find((value) => value.type === "Variable");
+    return definition?.parent.kind === "const" ? definition.node.init : undefined;
+  }
+};
+
+/**
+ * What a formatter's options say about the clock: whether they ask for the hour, and whether they
+ * pin a 24-hour cycle. `undefined` when the options come from somewhere this file can't see (a
+ * parameter, an import, a spread of one), so only what is certain is reported.
+ */
+const clockOf = (sourceCode, node, seen = new Set()) => {
+  node = unwrap(node);
+  if (node === undefined) return { hour: false, h23: false };
+  if (node.type === "Identifier") {
+    if (seen.has(node.name)) return undefined;
+    seen.add(node.name);
+    const init = constInit(sourceCode, node);
+    return init === undefined ? undefined : clockOf(sourceCode, init, seen);
+  }
+  if (node.type === "ConditionalExpression") {
+    const a = clockOf(sourceCode, node.consequent, seen);
+    const b = clockOf(sourceCode, node.alternate, seen);
+    return a && b ? { hour: a.hour || b.hour, h23: a.h23 || b.h23 } : undefined;
+  }
+  if (node.type !== "ObjectExpression") return undefined;
+  const clock = { hour: false, h23: false };
+  for (const property of node.properties) {
+    if (property.type === "SpreadElement") {
+      const inner = clockOf(sourceCode, property.argument, seen);
+      if (inner === undefined) return undefined;
+      clock.hour ||= inner.hour;
+      clock.h23 ||= inner.h23;
+      continue;
+    }
+    const key = propertyName({ ...property, property: property.key });
+    const value = unwrap(property.value);
+    if (key === "hour" || key === "timeStyle") clock.hour = true;
+    else if (key === "hourCycle" || key === "hour12") {
+      if (value.type !== "Literal") return undefined;
+      clock.h23 = key === "hourCycle" ? value.value === "h23" : value.value === false;
+    }
+  }
+  return clock;
+};
+
 export default {
   meta: { name: "gram" },
   rules: {
@@ -246,6 +313,46 @@ export default {
                 : "";
             for (const { node, message } of found)
               context.report({ node, message: message + note });
+          },
+        };
+      },
+    },
+    "clock-24h": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            'Format a time of day with `hourCycle: "h23"`, Gram\'s 24-hour clock (CLOCK_TIME in apps/web/src/lib/time.ts)',
+        },
+      },
+      create(context) {
+        if (exempt("clock-24h", context)) return {};
+        const sourceCode = context.sourceCode;
+        const check = (node, options, always = false) => {
+          const clock = clockOf(sourceCode, options);
+          if (clock === undefined || clock.h23 || !(always || clock.hour)) return;
+          context.report({
+            node,
+            message:
+              'Gram\'s times are 24-hour, and without `hourCycle: "h23"` this reads `2:05 PM` wherever the locale defaults to a 12-hour clock. Use formatStamp (or formatClockTime, formatDay) from apps/web/src/lib/time.ts, or spread its `CLOCK_TIME` into these options.',
+          });
+        };
+        const formatter = (node) => {
+          const callee = node.callee;
+          if (callee.type === "Identifier" && callee.name === "dateTimeFormat")
+            check(node, node.arguments[1]);
+          else if (callee.type === "MemberExpression" && propertyName(callee) === "DateTimeFormat")
+            check(node, node.arguments[1]);
+        };
+        return {
+          NewExpression: formatter,
+          CallExpression(node) {
+            formatter(node);
+            const callee = node.callee;
+            if (callee.type !== "MemberExpression") return;
+            const name = propertyName(callee);
+            if (LOCALE_FORMATS.has(name))
+              check(node, node.arguments[1], name === "toLocaleTimeString");
           },
         };
       },

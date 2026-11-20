@@ -28,6 +28,23 @@ Run `bun run check:scaffold` and the checks the change calls for, chosen from th
 [verification matrix](docs/VERIFICATION.md#task-verification-matrix). `bun run check` is the
 complete application check; browser and native checks have their own setup.
 
+## Rules live in checks
+
+The code is what an agent reads most, so a rule works best when the code enforces it. In order of preference, a rule is:
+
+1. **Code and architecture**: a type, an API that cannot be misused, a lint rule, an import boundary.
+2. **Verification**: a test, a property, a check script an agent can run before anyone reviews.
+3. **Prose**, here or in `AGENTS.md`, only for judgment calls a check cannot make.
+
+- **Turn a correction into a check.** When a review or an agent catches a mistake that could recur, add or tighten a check instead of another sentence. When a rule in `AGENTS.md` gains a check, cut the rule down to a pointer to it.
+- **A check's message names the fix.** Agents read lint and check output and act on it, so a message says the root cause, what to do instead (the helper, the file, the doc) and the escape hatch if there is one. "X is forbidden" is not enough.
+- **A new rule clears its existing violations** in the same change. When there are too many, it starts with a shrink-only allowlist, as `tools/oxlint/allowlists.mjs` and the design-tokens check do, so new code cannot add any.
+- **Pull weeds early.** A workaround left in the tree becomes the pattern the next agent copies. Check that a pattern is the current one before you copy it.
+- **A timer is not a way to wait.** Never use `setTimeout`, `requestAnimationFrame`, `queueMicrotask` or a sleep to wait for state to settle or a test to catch up. Wait on the thing itself: a promise, an event, a locator, `expect.poll`. Timers are for real time: debounce, backoff, polling, clocks.
+- **Derive in render.** A React effect talks to something outside React. A value that follows from props or state is computed while rendering, not copied into state by an effect.
+- **A comment says why, never excuses a shortcut.** "For now", "workaround" and "temporary" come with a linked issue or a fix. Delete a comment the code no longer matches.
+- **Prove the change by running it**: the checks the [verification matrix](docs/VERIFICATION.md#task-verification-matrix) calls for, and for behaviour, the app itself (`bun run dev:preview`, `pr:shots`).
+
 ## Pull requests
 
 - Work on a feature branch and open a PR; never push directly to `main`.
