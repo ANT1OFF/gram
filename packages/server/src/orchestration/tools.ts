@@ -268,7 +268,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           ...(input.browser === true ? { browser: true } : {}),
         },
       }),
-      handle: (caller, input) =>
+      handle: (caller, input, { carded }) =>
         Effect.gen(function* () {
           // Its own machine, started now that the spawn goes ahead, and given back if it doesn't.
           // A worker placed by `machine` on one a hosted server started is held to the same rule.
@@ -277,7 +277,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           sandboxPlans.delete(input);
           const prepared = plan?.prepare === undefined ? undefined : yield* plan.prepare;
           const giveBack = prepared?.abandon ?? Effect.void;
-          const spawned = yield* orchestration.spawnWorker(caller, input).pipe(
+          // Let through with no card on a count read before the spawn lock: counted again under it.
+          const spawned = yield* orchestration.spawnWorker(caller, input, carded).pipe(
             Effect.tapError(() => giveBack),
             Effect.onInterrupt(() => giveBack),
           );

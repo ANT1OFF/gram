@@ -824,31 +824,43 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ),
             );
           }
-          if (input.unattended === true) {
+          if (input.unattended === true || input.uncarded === true) {
             // Under the spawn lock, so a spawn racing this one is counted: what would need the
             // user's card is refused here, never asked, and never let through on a stale count.
+            const unattended = input.unattended === true;
             const outside = yield* outsideWorkspace(
               tool,
               [input.project, ...(input.alsoIn ?? [])],
               state,
             );
             if (outside.length > 0) {
+              const repos = outside.map(repoLabel).join(" and ");
               return yield* toolError(
                 tool,
-                refusal(
-                  "unattended",
-                  `It needs your approval to add ${outside.map(repoLabel).join(" and ")} to the "${state.workspace.name}" workspace, so no worker started.`,
-                ),
+                unattended
+                  ? refusal(
+                      "unattended",
+                      `It needs your approval to add ${repos} to the "${state.workspace.name}" workspace, so no worker started.`,
+                    )
+                  : refusal(
+                      "outside_workspace",
+                      `${repos} joined no workspace meanwhile, so no worker started. Call spawn_worker again to ask the user.`,
+                    ),
               );
             }
             const { budget } = yield* survey(state, false);
             if (!budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok) {
               return yield* toolError(
                 tool,
-                refusal(
-                  "unattended_cap",
-                  `It needs your approval: ${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}, so no worker started.`,
-                ),
+                unattended
+                  ? refusal(
+                      "unattended_cap",
+                      `It needs your approval: ${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}, so no worker started.`,
+                    )
+                  : refusal(
+                      "not_admitted",
+                      `${budget.liveWorkers} workers are live now and the charter allows ${budget.maxConcurrentWorkers}, so no worker started. Call spawn_worker again to ask the user for one more.`,
+                    ),
               );
             }
           }
@@ -1282,18 +1294,21 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       })
       .pipe(Effect.ignore);
 
-  const spawnWorker: OrchestrationShape["spawnWorker"] = (callerId, named) =>
+  const spawnWorker: OrchestrationShape["spawnWorker"] = (callerId, given, carded) => {
+    const named: SpawnWorkerInput = carded === false ? { ...given, uncarded: true } : given;
     // The machine is checked first, and a held brief keeps its id: a name that is wrong now is
     // refused now, not when the brief is released hours later.
-    (named.machine === undefined
-      ? Effect.succeed(named)
-      : machineNamed("spawn_worker", named.machine).pipe(
-          Effect.map((id) => {
-            const { machine: _machine, ...rest } = named;
-            return id === undefined ? rest : { ...rest, machine: id };
-          }),
-        )
+    return (
+      named.machine === undefined
+        ? Effect.succeed(named)
+        : machineNamed("spawn_worker", named.machine).pipe(
+            Effect.map((id) => {
+              const { machine: _machine, ...rest } = named;
+              return id === undefined ? rest : { ...rest, machine: id };
+            }),
+          )
     ).pipe(Effect.flatMap((input) => spawnGated(callerId, input)));
+  };
 
   const spawnGated: OrchestrationShape["spawnWorker"] = (callerId, input) =>
     pausedSpawnGate(callerId, input).pipe(
