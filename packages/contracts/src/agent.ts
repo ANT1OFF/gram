@@ -294,8 +294,17 @@ export const RateLimitEvent = Schema.Struct({
 export const StartupDiagnostic = Schema.Struct({
   key: Schema.String,
   source: Schema.String,
+  /**
+   * About what is installed rather than this start (the CLI's version): it shows once per key,
+   * and a repeat only counts in Notifications, however long apart.
+   */
+  once: Schema.optionalKey(Schema.Boolean),
 });
 export type StartupDiagnostic = typeof StartupDiagnostic.Type;
+
+/** What a notice offers beyond dismissing it: `updateCli` opens the agent CLIs' update rows. */
+export const AgentNoticeAction = Schema.Literals(["updateCli"]);
+export type AgentNoticeAction = typeof AgentNoticeAction.Type;
 
 /** Something the user should see that isn't part of the transcript (auth, retries, version skew). */
 export const NoticeEvent = Schema.Struct({
@@ -303,6 +312,7 @@ export const NoticeEvent = Schema.Struct({
   level: Schema.Literals(["info", "warning", "error"]),
   message: Schema.String,
   startupDiagnostic: Schema.optionalKey(StartupDiagnostic),
+  action: Schema.optionalKey(AgentNoticeAction),
 });
 
 /**

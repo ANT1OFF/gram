@@ -1,4 +1,4 @@
-import { AgentUnavailable, isWindowsBatchFile } from "@gram/contracts";
+import { AgentUnavailable, isWindowsBatchFile, type StartupDiagnostic } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { win32 } from "node:path";
 import { createHash } from "node:crypto";
@@ -112,8 +112,14 @@ export const expectedCliVersion = (sdkVersion: string): string | undefined => {
   return match ? `2.1.${match[1]}` : undefined;
 };
 
-/** How far ahead of the SDK's matched CLI an installed CLI may be before we warn. */
+/**
+ * How far either side of the SDK's matched CLI an installed CLI may be before we warn. Claude Code
+ * ships a patch most days and its stable channel trails latest by several, so a CLI a few patches
+ * behind the SDK is the ordinary state, not a problem: what an older CLI lacks, the adapter gates
+ * by version (`supportsFastControl`, `restoresSessionCost`) or the SDK's initialize names.
+ */
 const MAX_NEWER_PATCHES = 10;
+const MAX_OLDER_PATCHES = 10;
 
 const semver = (version: string) => {
   const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
@@ -143,8 +149,8 @@ export const restoresSessionCost = (cliVersion: string | undefined): boolean => 
 };
 
 /**
- * A warning for skew likely to matter: a CLI older than the SDK's matched CLI, more than
- * `MAX_NEWER_PATCHES` newer, or on a different major/minor. Never a failure.
+ * A warning for skew likely to matter: a CLI more than `MAX_OLDER_PATCHES` older than the SDK's
+ * matched CLI, more than `MAX_NEWER_PATCHES` newer, or on a different major/minor. Never a failure.
  */
 export const versionWarning = (cliVersion: string, sdkVersion: string): string | undefined => {
   const expected = expectedCliVersion(sdkVersion);
@@ -153,14 +159,42 @@ export const versionWarning = (cliVersion: string, sdkVersion: string): string |
   if (cli === undefined || matched === undefined) return undefined;
   const sameLine = cli.major === matched.major && cli.minor === matched.minor;
   const ahead = cli.patch - matched.patch;
-  if (sameLine && ahead >= 0 && ahead <= MAX_NEWER_PATCHES) return undefined;
+  if (sameLine && ahead >= -MAX_OLDER_PATCHES && ahead <= MAX_NEWER_PATCHES) return undefined;
   const relation = !sameLine
     ? "on a different release line than"
     : ahead < 0
-      ? "older than"
+      ? "much older than"
       : "much newer than";
   return `Claude Code ${cliVersion} is ${relation} ${expected}, which Agent SDK ${sdkVersion} is built for; some features may misbehave.`;
 };
+
+/**
+ * `versionWarning` as a notice about the installed CLI: keyed by the CLI and SDK versions, so it
+ * shows once per installed version however many threads start on it, and offers the update.
+ */
+export const versionNotice = (
+  cliVersion: string,
+  sdkVersion: string,
+): VersionNotice | undefined => {
+  const message = versionWarning(cliVersion, sdkVersion);
+  return message === undefined
+    ? undefined
+    : {
+        message,
+        startupDiagnostic: {
+          source: "Claude Code version",
+          key: createHash("sha256")
+            .update(JSON.stringify(["claude-cli-version", cliVersion, sdkVersion]))
+            .digest("hex"),
+          once: true,
+        },
+      };
+};
+
+export interface VersionNotice {
+  readonly message: string;
+  readonly startupDiagnostic: StartupDiagnostic;
+}
 
 export type AuthProblem = "not-logged-in" | "api-key-auth" | "third-party-provider" | "unparseable";
 

@@ -1244,6 +1244,14 @@ export const makeClaudeHost = (
       for (const warning of prepared.warnings) {
         emit({ type: "notice", level: "warning", message: warning });
       }
+      if (prepared.versionNotice !== undefined)
+        emit({
+          type: "notice",
+          level: "warning",
+          message: prepared.versionNotice.message,
+          startupDiagnostic: prepared.versionNotice.startupDiagnostic,
+          action: "updateCli",
+        });
       const identity = identityFromInitialization(init, {
         agentSessionId,
         model: o.model?.model ?? "default",

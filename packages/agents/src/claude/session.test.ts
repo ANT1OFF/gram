@@ -45,6 +45,7 @@ import {
   seenServer,
   type SeenServer,
 } from "./connectors.ts";
+import type { VersionNotice } from "./binary.ts";
 import { ClaudeEnvironment } from "./environment.ts";
 import { AsyncPushQueue } from "./input-queue.ts";
 import { ClaudeSdk, type ClaudeSdkShape } from "./sdk.ts";
@@ -186,6 +187,7 @@ interface HarnessOptions {
   /** Added to the environment the session runs in. */
   readonly env?: Readonly<Record<string, string>>;
   readonly warnings?: ReadonlyArray<string>;
+  readonly versionNotice?: VersionNotice;
   readonly auth?: Effect.Effect<void, AgentUnavailable>;
   /** Registers a gateway key provider, as the server does. */
   readonly gateway?: GatewayKeyProviderShape;
@@ -283,6 +285,9 @@ const harness = (options: HarnessOptions = {}) => {
             sdkExecutable: "/bin/claude",
             env: { PATH: "/bin", CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1", ...options.env },
             warnings: options.warnings ?? [],
+            ...(options.versionNotice === undefined
+              ? {}
+              : { versionNotice: options.versionNotice }),
             ...(options.cliVersion === undefined ? {} : { cliVersion: options.cliVersion }),
           }),
           checkAuth: () =>
@@ -428,7 +433,11 @@ describe("ClaudeHost.open", () => {
 
   it.effect("passes adapter options and emits identity at warm-up", () =>
     Effect.gen(function* () {
-      const h = harness({ warnings: ["version skew"] });
+      const versionNotice: VersionNotice = {
+        message: "Claude Code 2.1.300 is much older than 2.1.328",
+        startupDiagnostic: { key: "a".repeat(64), source: "Claude Code version", once: true },
+      };
+      const h = harness({ warnings: ["probe fallback"], versionNotice });
       const session = yield* openSession({
         permissionMode: "plan",
         model: { agent: "claude", model: "haiku" },
@@ -451,8 +460,16 @@ describe("ClaudeHost.open", () => {
       const unset = harness();
       yield* openSession({}).pipe(Effect.provide(unset.layer));
       expect(query(unset).options.permissionMode).toBe("default");
-      expect(yield* take(session, 3)).toEqual([
-        { type: "notice", level: "warning", message: "version skew" },
+      expect(yield* take(session, 4)).toEqual([
+        { type: "notice", level: "warning", message: "probe fallback" },
+        // About the install, not the session: keyed to show once per version, with the update.
+        {
+          type: "notice",
+          level: "warning",
+          message: versionNotice.message,
+          startupDiagnostic: versionNotice.startupDiagnostic,
+          action: "updateCli",
+        },
         {
           type: "identity",
           agentSessionId: "id-1",

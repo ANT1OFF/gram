@@ -22,6 +22,12 @@ const warning = (id = "worker-1", diagnosticKey = key) => ({
   threadId: id as ThreadId,
   startupDiagnostic: { key: diagnosticKey, source: "Codex MCP startup" },
 });
+/** A notice about the installed CLI, keyed per version (`version` repeated into a digest). */
+const cli = (version: string, worker: string) => ({
+  ...warning(worker),
+  title: "Claude Code is much older than 2.1.328",
+  startupDiagnostic: { key: version.repeat(64), source: "Claude Code version", once: true },
+});
 beforeEach(() => {
   localStorage.clear();
   useNotificationHistory.setState({ entries: [], quiet: {} });
@@ -74,6 +80,28 @@ describe("notification retention and startup quieting", () => {
     expect(cleared.getState().record(warning("worker-3"), at + 300)).toBe(false);
     expect(cleared.getState().record(warning("worker-4"), at + DIAGNOSTIC_COOLDOWN_MS)).toBe(true);
     expect(unreadNotifications(cleared.getState())).toBe(1);
+    vi.restoreAllMocks();
+  });
+
+  it("shows a notice about the installed CLI once per version, through cooldowns and reloads", () => {
+    const store = createNotificationHistory(() => localStorage);
+    const at = Date.now();
+    expect(store.getState().record(cli("c", "worker-1"), at)).toBe(true);
+    // Every later thread on the same CLI, long past the start-up cooldown, only counts.
+    expect(store.getState().record(cli("c", "worker-2"), at + DIAGNOSTIC_COOLDOWN_MS)).toBe(false);
+    expect(store.getState().record(cli("c", "worker-3"), at + 5 * DIAGNOSTIC_COOLDOWN_MS)).toBe(
+      false,
+    );
+    vi.spyOn(Date, "now").mockReturnValue(at + 6 * DIAGNOSTIC_COOLDOWN_MS);
+    const reopened = createNotificationHistory(() => localStorage);
+    expect(reopened.getState().record(cli("c", "worker-4"), at + 6 * DIAGNOSTIC_COOLDOWN_MS)).toBe(
+      false,
+    );
+    expect(reopened.getState().entries[0]).toMatchObject({ count: 4 });
+    // A different installed version is a different notice.
+    expect(reopened.getState().record(cli("d", "worker-5"), at + 6 * DIAGNOSTIC_COOLDOWN_MS)).toBe(
+      true,
+    );
     vi.restoreAllMocks();
   });
 

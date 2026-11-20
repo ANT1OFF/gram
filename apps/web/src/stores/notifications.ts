@@ -163,9 +163,14 @@ export function createNotificationHistory(storage: () => Storage | undefined) {
       const state = get();
       const key =
         n.kind === "info" && digest(n.startupDiagnostic?.key) ? n.startupDiagnostic.key : undefined;
+      // A notice about what is installed (`once`) stays quiet as long as it keeps recurring; one
+      // about a start comes back after the cooldown.
+      const once = key !== undefined && n.startupDiagnostic?.once === true;
       const quiet = boundedQuiet(state.quiet, at);
       const alert =
-        key === undefined || quiet[key] === undefined || at - quiet[key] >= DIAGNOSTIC_COOLDOWN_MS;
+        key === undefined ||
+        quiet[key] === undefined ||
+        (!once && at - quiet[key] >= DIAGNOSTIC_COOLDOWN_MS);
       const entries = state.entries.filter((e) => timestamp(e.lastSeen, at));
       const previous = key === undefined ? undefined : entries.find((e) => e.diagnosticKey === key);
       const body = text(n.body, 2000);
@@ -189,7 +194,8 @@ export function createNotificationHistory(storage: () => Storage | undefined) {
       };
       const retained = {
         entries: [entry, ...entries.filter((e) => e !== previous)].slice(0, HISTORY_LIMIT),
-        quiet: key !== undefined && alert ? boundedQuiet({ ...quiet, [key]: at }, at) : quiet,
+        quiet:
+          key !== undefined && (alert || once) ? boundedQuiet({ ...quiet, [key]: at }, at) : quiet,
       };
       set({ ...retained, storageUnavailable: !save(retained) });
       return alert;

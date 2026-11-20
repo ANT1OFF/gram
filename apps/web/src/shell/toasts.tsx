@@ -161,6 +161,19 @@ export function Toasts() {
                 <span className="block font-medium">{n.title}</span>
                 {n.body && <span className="block text-meta text-muted-foreground">{n.body}</span>}
               </button>
+              {n.action === "updateCli" && (
+                <button
+                  type="button"
+                  className="shrink-0 rounded-sm font-medium text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    dismiss(n);
+                    // Diagnostics holds each agent CLI's row with its update.
+                    void navigate({ to: "/settings/diagnostics" });
+                  }}
+                >
+                  Update
+                </button>
+              )}
               <button
                 type="button"
                 aria-label="Dismiss"
