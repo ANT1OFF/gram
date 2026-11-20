@@ -47,6 +47,7 @@ export function workspaces(root) {
           // workspaces a change reaches.
           throw new Error(
             `${relative(root, tsconfigPath)} must be plain JSON, without comments or trailing commas, so the affected-projects graph can read its references: ${error instanceof Error ? error.message : error}`,
+            { cause: error },
           );
         }
         references = (tsconfig.references ?? []).map((ref) =>
