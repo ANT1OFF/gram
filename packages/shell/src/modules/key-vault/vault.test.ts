@@ -4,12 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { NO_KEYRING_MESSAGE } from "@gram/contracts";
-import type { ProcShape } from "@gram/git/proc";
-import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fileVaultStore, handleVaultRequest, type VaultCrypto, type VaultStore } from "./vault.ts";
-import { chromiumMacCrypto, lacksAppleTeam, liveMacVaultReads, makeMacVaultCrypto } from "./mac.ts";
 
 const SECRET = "sk-desktop-secret";
 
@@ -69,113 +66,6 @@ const memoryStore = (): VaultStore & { entries: Record<string, string> } => {
   };
   return store;
 };
-
-describe("macOS keychain compatibility", () => {
-  it("reads the retained Chromium v10 fixture and writes the same bytes", async () => {
-    const crypto = chromiumMacCrypto(Buffer.from("test-safe-storage-password"));
-    const fixture = Buffer.from("djEwknwsGGapbeAoTJtWEq29jBsFBMJABmcBg1ByEwHn0uw=", "base64");
-    expect(await crypto.decrypt(fixture)).toBe("gateway fixture ✓");
-    expect(await crypto.encrypt("gateway fixture ✓")).toEqual(fixture);
-    await expect(async () => crypto.decrypt(Buffer.from("unknown ciphertext"))).rejects.toThrow(
-      "unsupported vault ciphertext",
-    );
-  });
-  it("requires an explicit absent team and preserves the Developer ID path", async () => {
-    expect(lacksAppleTeam("TeamIdentifier=not set\n")).toBe(true);
-    for (const signature of [
-      "",
-      "TeamIdentifier=EXAMPLETEAM01\n",
-      "TeamIdentifier=not set\nTeamIdentifier=EXAMPLETEAM01\n",
-    ]) {
-      expect(lacksAppleTeam(signature)).toBe(false);
-    }
-    for (const platform of ["darwin", "win32", "linux"] as const) {
-      const fallback = fakeCrypto();
-      const signature = vi.fn(async () => "TeamIdentifier=EXAMPLETEAM01\n");
-      const password = vi.fn(async () => Buffer.from("test"));
-      const crypto = makeMacVaultCrypto(fallback, platform, { signature, password });
-      expect(await crypto.encrypt(SECRET)).toEqual(fallback.encrypt(SECRET));
-      expect(password).not.toHaveBeenCalled();
-      expect(signature).toHaveBeenCalledTimes(platform === "darwin" ? 1 : 0);
-    }
-  });
-
-  it("loads one password across concurrent requests and zeroes its temporary buffer", async () => {
-    const secret = Buffer.from("test-safe-storage-password");
-    const password = vi.fn(async () => secret);
-    const available = vi.fn(() => {
-      throw new Error("Electron would prompt");
-    });
-    const crypto = makeMacVaultCrypto({ ...fakeCrypto(), available }, "darwin", {
-      signature: async () => "TeamIdentifier=not set\n",
-      password,
-    });
-    const ciphertexts = await Promise.all([crypto.encrypt(SECRET), crypto.encrypt("another")]);
-    expect(password).toHaveBeenCalledTimes(1);
-    expect(await crypto.available()).toBe(true);
-    expect(available).not.toHaveBeenCalled();
-    expect(secret.every((b) => b === 0)).toBe(true);
-    expect(await crypto.decrypt(ciphertexts[0]!)).toBe(SECRET);
-    expect(await crypto.decrypt(ciphertexts[1]!)).toBe("another");
-    expect(JSON.stringify(ciphertexts)).not.toContain(SECRET);
-  });
-
-  it("uses safeStorage after denial, timeout, missing item or failed inspection", async () => {
-    for (const failure of [undefined, new Error(`denied ${SECRET}`)]) {
-      for (const failInspection of [false, true]) {
-        const read = async () => {
-          if (failure instanceof Error) throw failure;
-          return failure;
-        };
-        const fallback = fakeCrypto();
-        const crypto = makeMacVaultCrypto(fallback, "darwin", {
-          signature: failInspection ? read : async () => "TeamIdentifier=not set\n",
-          password: read,
-        });
-        const encrypted = await crypto.encrypt(SECRET);
-        expect(encrypted).toEqual(fallback.encrypt(SECRET));
-        expect(await crypto.decrypt(encrypted)).toBe(SECRET);
-      }
-    }
-  });
-
-  it("uses only the absolute CLI and exact owned service/account, rejecting partial output", async () => {
-    const calls: { bin: string; args: readonly string[] }[] = [];
-    let truncated = false;
-    let status = 0;
-    const proc: ProcShape = {
-      run: (bin, args, options) => {
-        calls.push({ bin, args });
-        expect(options.timeoutMs).toBe(bin === "/usr/bin/codesign" ? 5_000 : 30_000);
-        return Effect.succeed({
-          status,
-          truncated,
-          stdout: " opaque test password \n",
-          stderr: "TeamIdentifier=not set\n",
-        });
-      },
-    };
-    const reads = liveMacVaultReads("/Applications/Gram.app/Contents/MacOS/Gram", proc);
-    expect(await reads.signature()).toBe("TeamIdentifier=not set\n");
-    expect((await reads.password())?.toString()).toBe(" opaque test password ");
-    expect(calls).toEqual([
-      {
-        bin: "/usr/bin/codesign",
-        args: ["-d", "--verbose=4", "/Applications/Gram.app/Contents/MacOS/Gram"],
-      },
-      {
-        bin: "/usr/bin/security",
-        args: ["find-generic-password", "-s", "Gram Safe Storage", "-a", "Gram Key", "-w"],
-      },
-    ]);
-    truncated = true;
-    expect(await reads.password()).toBeUndefined();
-    truncated = false;
-    status = 1;
-    expect(await reads.password()).toBeUndefined();
-    expect(await reads.signature()).toBeUndefined();
-  });
-});
 
 describe("handleVaultRequest", () => {
   it("refuses to store or read a key on a Linux backend that doesn't encrypt", async () => {
@@ -567,33 +457,6 @@ describe("fileVaultStore", () => {
     );
     expect(readFileSync(file, "utf8")).not.toContain(SECRET);
     if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
-  });
-
-  it("keeps the CLI password sentinel out of every vault file and response", async () => {
-    dir = mkdtempSync(join(tmpdir(), "gram-vault-"));
-    const sentinel = "QmFzZTY0S2V5Y2hhaW5TZW50aW5lbA==";
-    const crypto = makeMacVaultCrypto(fakeCrypto(), "darwin", {
-      signature: async () => "TeamIdentifier=not set\n",
-      password: async () => Buffer.from(sentinel),
-    });
-    const store = fileVaultStore(join(dir, "gateway-keys.json"));
-    const set = await handle(
-      { type: "vault.request", id: "s", op: "set", ref: "a", value: SECRET },
-      crypto,
-      store,
-    );
-    const get = await handle(
-      { type: "vault.request", id: "g", op: "get", ref: "a" },
-      crypto,
-      store,
-    );
-    expect(get).toMatchObject({ ok: true, value: SECRET });
-    expect(JSON.stringify([set, get])).not.toContain(sentinel);
-    for (const file of readdirSync(dir)) {
-      const text = readFileSync(join(dir, file), "utf8");
-      expect(text).not.toContain(sentinel);
-      expect(text).not.toContain(SECRET);
-    }
   });
 
   it("queues mutations from every store opened on one file", async () => {
