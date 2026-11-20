@@ -8,12 +8,15 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    }
+    },
+    "./palette.json": "./palette.json"
   },
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "palette:data": "bun scripts/palette-data.ts"
   },
   "devDependencies": {
+    "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

@@ -189,6 +189,7 @@
       "name": "@gram/themes",
       "version": "0.0.0",
       "devDependencies": {
+        "@types/node": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
       },

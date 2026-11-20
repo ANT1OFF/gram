@@ -580,6 +580,16 @@ Each part applies only while the person hasn't chosen it; their own choice alway
 same `defaults` to `applyGramTheme` on the pages you draw before Gram mounts, so they paint the
 same palette.
 
+### Gram's palette as data
+
+An app that draws its own pages in Gram's colours, and would rather not run Gram's code to learn
+them, reads `packages/themes/palette.json` (exported as `@gram/themes/palette.json`) at the commit
+it pins. It holds the default palette and its pair: `defaultPaletteId`, then `light` and `dark`,
+each the preset's `id` and its `colors`, every colour the theme names (`surface-1`, `fg`, `accent`,
+…) derived at standard contrast, as `#rrggbb`. It is plain JSON, so a build or a CI job can fetch
+it for a commit with no checkout or install. The themes package's `palette:data` script writes
+it, and a test fails when it differs from what the theme's sources derive.
+
 ## Pages that look like Gram's
 
 `@gram/web/kit` exports Gram's own controls: `Button`, `ButtonGroup`, `Badge`, `Alert`, `Switch`,
