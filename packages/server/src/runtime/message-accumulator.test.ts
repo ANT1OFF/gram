@@ -8,7 +8,10 @@ const feed = (acc: MessageAccumulator, chunks: ReadonlyArray<unknown>) =>
 
 describe("MessageAccumulator", () => {
   it("persists completed-only native web details on one card after reload", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("web-message") });
+    const mapper = makeCodexMapper({
+      requestScope: "s",
+      newMessageId: () => MessageId.make("web-message"),
+    });
     const acc = new MessageAccumulator("web-message");
     const action = {
       type: "findInPage",
@@ -95,7 +98,10 @@ describe("MessageAccumulator", () => {
   });
 
   it("persists the Codex cancelled-tool result before finishing the interrupted message", () => {
-    const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("cancelled") });
+    const mapper = makeCodexMapper({
+      requestScope: "s",
+      newMessageId: () => MessageId.make("cancelled"),
+    });
     const acc = new MessageAccumulator("cancelled");
     const started = mapper.map({
       method: "turn/started",

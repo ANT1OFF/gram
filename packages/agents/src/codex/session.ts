@@ -1119,7 +1119,9 @@ export const makeCodexHost = (
       const cardUp = (): boolean =>
         [...pending.values()].some((request) => request.method !== "item/tool/requestUserInput");
       const diagnosticScope = JSON.stringify([home, o.model?.profileId]);
+      const idScope = newId();
       const mapper = makeCodexMapper({
+        requestScope: idScope,
         threadId,
         freshSession: o.resumeId === undefined,
         diagnosticScope,
@@ -1169,7 +1171,13 @@ export const makeCodexHost = (
           );
           return;
         }
-        const card = toPendingRequest(request, mapper.changes, level ?? false, promptsOnce);
+        const card = toPendingRequest(
+          request,
+          idScope,
+          mapper.changes,
+          level ?? false,
+          promptsOnce,
+        );
         if (card === undefined) {
           emit({
             type: "notice",

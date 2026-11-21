@@ -30,7 +30,11 @@ const itemEvent = (item: ThreadItem, completed = false): ServerNotification =>
 const chunks = (events: readonly AgentEvent[]) =>
   events.flatMap((e) => (e.type === "chunk" ? [e.chunk] : []));
 const mapper = () =>
-  makeCodexMapper({ newMessageId: () => MessageId.make("m"), threadId: "thread" });
+  makeCodexMapper({
+    requestScope: "s",
+    newMessageId: () => MessageId.make("m"),
+    threadId: "thread",
+  });
 
 describe("Codex reasoning lifecycle", () => {
   it("opens silent reasoning at item start and closes an empty completed payload", () => {

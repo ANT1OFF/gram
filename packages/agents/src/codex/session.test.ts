@@ -64,6 +64,8 @@ interface StoredThread {
 const harness = (
   options: {
     readonly homes?: ReadonlyArray<CodexHome>;
+    /** The host's ids, "id-1" each by default. */
+    readonly newId?: () => string;
     readonly cliVersion?: string | null;
     readonly gateReady?: boolean;
     readonly nativeGateReady?: boolean;
@@ -300,7 +302,7 @@ const harness = (
       ),
     messages: Stream.empty,
   };
-  const layer = CodexHostLayer({ newId: () => "id-1" }).pipe(
+  const layer = CodexHostLayer({ newId: options.newId ?? (() => "id-1") }).pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(CodexServers)({
@@ -833,12 +835,12 @@ describe("CodexSession", () => {
         type: "request",
         request: { kind: "approval", toolName: "Bash" },
       });
-      yield* session.respond(RequestId.make("codex-0"), {
+      yield* session.respond(RequestId.make("codex-id-1-0"), {
         kind: "approval",
         decision: "allow",
         scope: "always",
       });
-      yield* session.respond(RequestId.make("codex-0"), {
+      yield* session.respond(RequestId.make("codex-id-1-0"), {
         kind: "approval",
         decision: "deny",
         scope: "once",
@@ -904,6 +906,29 @@ const drain = (session: AgentSession, n: number) =>
   take(session, 3 + n).pipe(Effect.map((events) => events.slice(3)));
 
 describe("Codex approval delivery", () => {
+  it.effect("never raises a card under an id an earlier session of the thread used", () =>
+    Effect.gen(function* () {
+      let ids = 0;
+      const h = harness({ newId: () => `id-${++ids}` });
+      const cardOf = Effect.gen(function* () {
+        const session = yield* openSession().pipe(Effect.provide(h.layer));
+        // The app-server counts its requests from zero again, as a restarted one does.
+        h.push(commandRequest(0, "echo hello"));
+        const [raised] = yield* Stream.runCollect(
+          Stream.take(
+            Stream.filter(session.events, (event) => event.type === "request"),
+            1,
+          ),
+        );
+        return raised?.type === "request" ? raised.request.id : undefined;
+      });
+      const first = yield* cardOf;
+      const second = yield* cardOf;
+      expect(first).toBeDefined();
+      expect(second).not.toBe(first);
+    }),
+  );
+
   it.effect("keeps an undelivered answer pending for a successful retry", () =>
     Effect.gen(function* () {
       let attempts = 0;
@@ -914,7 +939,7 @@ describe("Codex approval delivery", () => {
       });
       const session = yield* openSession().pipe(Effect.provide(h.layer));
       h.push(commandRequest(73, "echo hello"));
-      const requestId = RequestId.make("codex-73");
+      const requestId = RequestId.make("codex-id-1-73");
       const failure = yield* Effect.flip(session.respond(requestId, allowOnce));
       expect(failure._tag).toBe("AnswerUndelivered");
       expect(h.responses).toEqual([]);
@@ -1213,7 +1238,7 @@ describe("CodexSession under the outward gate", () => {
             type: "request",
             request: expect.objectContaining({
               kind: "approval",
-              id: "codex-2",
+              id: "codex-id-1-2",
               toolName: "Bash",
               input: {
                 command: "/bin/zsh -lc 'git push origin HEAD:main'",
@@ -1228,12 +1253,12 @@ describe("CodexSession under the outward gate", () => {
         ]);
 
         // "Always" can't be asked for, and a stale client that sends it still gets one run.
-        yield* session.respond(RequestId.make("codex-2"), allowAlways);
+        yield* session.respond(RequestId.make("codex-id-1-2"), allowAlways);
         expect(h.responses[2]).toEqual([2, { decision: "accept" }]);
 
         // A denied push goes back to the model; `cancel` would end the turn.
         h.push(commandRequest(3, "cd sub && gh pr create --fill"));
-        yield* session.respond(RequestId.make("codex-3"), deny);
+        yield* session.respond(RequestId.make("codex-id-1-3"), deny);
         expect(h.responses[3]).toEqual([3, { decision: "decline" }]);
       }),
   );
@@ -1269,12 +1294,12 @@ describe("CodexSession under the outward gate", () => {
               : [],
           ),
         ).toEqual([
-          ["codex-2", ["once"]],
-          ["codex-3", ["once"]],
-          ["codex-4", ["once"]],
+          ["codex-id-1-2", ["once"]],
+          ["codex-id-1-3", ["once"]],
+          ["codex-id-1-4", ["once"]],
         ]);
-        yield* session.respond(RequestId.make("codex-2"), allowAlways);
-        yield* session.respond(RequestId.make("codex-4"), deny);
+        yield* session.respond(RequestId.make("codex-id-1-2"), allowAlways);
+        yield* session.respond(RequestId.make("codex-id-1-4"), deny);
         expect(h.responses.slice(2)).toEqual([
           [2, { decision: "accept" }],
           [4, { decision: "decline" }],
@@ -1307,7 +1332,7 @@ describe("CodexSession under the outward gate", () => {
             e.type === "request" && e.request.kind === "approval" ? [e.request.scopes] : [],
           ),
         ).toEqual([["once", "always"], ["once", "session"], ["once"]]);
-        yield* session.respond(RequestId.make("codex-1"), allowAlways);
+        yield* session.respond(RequestId.make("codex-id-1-1"), allowAlways);
         expect(h.responses).toEqual([[1, { decision: "acceptForSession" }]]);
       }),
   );
@@ -1352,8 +1377,8 @@ describe("CodexSession under the outward gate", () => {
           e.type === "request" && e.request.kind === "approval" ? [e.request.scopes] : [],
         ),
       ).toEqual([["once", "always"], ["once"], ["once", "session"]]);
-      yield* session.respond(RequestId.make("codex-0"), deny);
-      yield* session.respond(RequestId.make("codex-1"), allowOnce);
+      yield* session.respond(RequestId.make("codex-id-1-0"), deny);
+      yield* session.respond(RequestId.make("codex-id-1-1"), allowOnce);
       expect(h.responses).toEqual([
         [0, { decision: "decline" }],
         [1, { decision: "accept" }],
@@ -1424,7 +1449,7 @@ describe("CodexSession under the outward gate", () => {
       expect(yield* drain(session, 1)).toEqual([
         { type: "request", request: expect.objectContaining({ scopes: ["once", "always"] }) },
       ]);
-      yield* session.respond(RequestId.make("codex-0"), deny);
+      yield* session.respond(RequestId.make("codex-id-1-0"), deny);
       expect(h.responses).toEqual([[0, { decision: "cancel" }]]);
     }),
   );
