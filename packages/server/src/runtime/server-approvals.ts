@@ -388,7 +388,12 @@ export const makeServerApprovals = ({
    * into a denial that says why. A rejection, and an
    * answer to any other card, pass as they are.
    */
-  const confirmedByHook = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
+  const confirmedByHook = (
+    threadId: ThreadId,
+    requestId: RequestId,
+    answer: RequestAnswer,
+    shown: string | undefined,
+  ) =>
     Effect.gen(function* () {
       const asked = hooked.asked.get(hookedKey(threadId, requestId));
       // The card as it stood when answered: the answer is for it, and for no other under its id.
@@ -396,6 +401,10 @@ export const makeServerApprovals = ({
         Effect.map((requests) => requests.find((request) => request.id === requestId)),
         Effect.orElseSucceed(() => undefined),
       );
+      // Given for another card under the id: the hook is never asked to approve this one for it.
+      // Checked again under the lock (`deliverToSession`).
+      if (shown !== undefined && card?.shown !== shown)
+        return yield* new RequestNotFound({ threadId, requestId });
       const confirmed = (given: RequestAnswer): Confirmed => ({ answer: given, asked, card });
       if (decisions === undefined || answer.kind !== "approval" || answer.decision !== "allow") {
         return confirmed(answer);
@@ -458,7 +467,7 @@ export const makeServerApprovals = ({
   ) =>
     // The hook is asked before the lock is taken, so a slow endpoint holds up nothing else of
     // the thread; whether the card still waits is read under the lock, as it always was.
-    confirmedByHook(threadId, requestId, given).pipe(
+    confirmedByHook(threadId, requestId, given, shown).pipe(
       Effect.flatMap((confirmed) => deliverToSession(threadId, requestId, confirmed, given, shown)),
     );
 

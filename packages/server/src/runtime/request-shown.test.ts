@@ -118,4 +118,39 @@ describe("an answer given for a card", () => {
       expect(session.responses.map((response) => response.requestId)).toEqual([ID]);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
+
+  it.effect("gives a key to a card stored without one when its request is replayed", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const thread = yield* runtimes.create({
+        projectRoot: "/work/repo",
+        checkout: { kind: "main", path: "/work/repo" },
+        input: { text: "one" },
+      });
+      const session = yield* waitFor(
+        "the first send",
+        fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+      );
+      // As a server before keys stored it.
+      const asked = approval("rm -rf build");
+      if (asked.type !== "request") throw new Error("not a request");
+      yield* store.putRequest(thread.id, asked.request, 1);
+      yield* session.emit(asked);
+      const card = yield* waitFor(
+        "the card with a key",
+        store
+          .listRequests(thread.id)
+          .pipe(
+            Effect.map(
+              (requests) =>
+                requests.find((request) => request.id === ID && request.shown !== undefined) ??
+                false,
+            ),
+          ),
+      );
+      expect(card).toMatchObject({ kind: "approval", input: { command: "rm -rf build" } });
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
 });

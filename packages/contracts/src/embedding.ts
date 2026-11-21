@@ -114,8 +114,10 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *
  * - `sink.started`: the server started, with `data.threads`, every open thread as `thread.upsert`
  *   would send it, so a receiver can put right anything a crash kept from the outbox, and
- *   `data.openAsks`, the ids of every card open now: any other card a receiver holds open is
- *   withdrawn (a server that restarts drops its cards, so the list is then empty).
+ *   `data.openAsks`, every card open now as `{id, shown?}` (`shown` the card's key, as
+ *   `ask.opened` carried it, for an answer through `asks/answer` to name): any other card a
+ *   receiver holds open is withdrawn (a server that restarts drops its cards, so the list is then
+ *   empty).
  *   `data.restarted` is true on the first one a server process sends.
  * - `thread.upsert` `{id, title?, role?, status?, spawnedByThreadId?, model?, createdBy?,
  *   limitWait?}` (`createdBy` is the id of the signed-in person who started the thread, where

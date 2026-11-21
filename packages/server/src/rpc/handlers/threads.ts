@@ -74,6 +74,7 @@ export const PERSON_NAMES_NO_ID =
 import { ThreadRuntimes, type ForkPlan } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
 import { clientInput } from "../../runtime/user-input.ts";
+import { makeRespondHandlers } from "./respond.ts";
 import { taskCheckoutRequest } from "./task-checkout.ts";
 
 // Narrow the union before handing codecs to the receipt store, so each handler keeps its
@@ -416,9 +417,7 @@ export const threadHandlers = Effect.gen(function* () {
     "thread.stopTask": ({ threadId, taskId }) => runtimes.stopTask(threadId, taskId),
     "thread.restartSession": ({ threadId, midTurn }) => runtimes.restartSession(threadId, midTurn),
     "thread.startSession": ({ threadId }) => runtimes.startSession(threadId),
-    "thread.respond": ({ threadId, requestId, answer, shown }) =>
-      runtimes.respond(threadId, requestId, answer, shown),
-    "thread.respondMany": ({ answers }) => runtimes.respondMany(answers),
+    ...makeRespondHandlers(store, runtimes),
     // The user's own pick, which the orchestration's auto downgrade must leave alone.
     "thread.setMode": ({ threadId, mode }) =>
       (orchestration === undefined ? Effect.void : orchestration.userChoseMode(threadId)).pipe(

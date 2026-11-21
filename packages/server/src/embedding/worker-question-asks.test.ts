@@ -321,7 +321,7 @@ describe("the event sink's worker question asks", () => {
         Effect.sync(() => to.held.length >= 2 && to.held),
       );
       expect(opened[0]!.type).toBe("sink.started");
-      expect(opened[0]!.data["openAsks"]).toEqual(["wq:ws-1:WQ7"]);
+      expect(opened[0]!.data["openAsks"]).toEqual([{ id: "wq:ws-1:WQ7" }]);
       expect(opened[1]).toMatchObject({
         type: "ask.opened",
         threadId,

@@ -179,8 +179,9 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),
   /**
-   * Answers a card. With `shown`, the card's key as it was listed, only that card takes it:
-   * `RequestNotFound` once the agent has asked again under the id.
+   * Answers a card, naming it by `shown`, its key as it was listed: only that card takes it,
+   * `RequestNotFound` once the agent has asked again under the id. An answer that names no card
+   * is refused (`InvalidState`) for one that has a key; a card the server raised has none.
    */
   Rpc.make("thread.respond", {
     payload: {

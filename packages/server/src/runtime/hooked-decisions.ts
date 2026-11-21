@@ -37,8 +37,12 @@ const canonical = (value: unknown): unknown =>
         )
       : value;
 
-/** Whether a card asks what `request` asks, leaving out what the server added to it. */
+/**
+ * Whether a card asks what `request` asks, leaving out what the server added to it. A card stored
+ * with no key (by a server before keys) never does, so asking again puts it up with one.
+ */
 const sameAsk = (card: PendingRequest, request: PendingRequest): boolean => {
+  if (card.shown === undefined) return false;
   const { shown: _shown, ...asked } = card;
   const { shown: _given, ...again } = request;
   const { decisionReason: _reason, ...shownCard } = asked as typeof asked & {
