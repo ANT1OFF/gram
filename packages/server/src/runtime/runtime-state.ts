@@ -110,6 +110,8 @@ export interface Turn {
   producedOutput?: boolean;
   /** The latest top-level message it opened, which carries how the turn ended. */
   reply?: MessageId;
+  /** Its replies this Gram saw finish and let go of: none goes on again (`feed-writer.ts`). */
+  closed?: Set<MessageId>;
   model: ModelRef;
   /**
    * Epoch ms the latest input of the turn's main conversation reached the agent: its start, a steer

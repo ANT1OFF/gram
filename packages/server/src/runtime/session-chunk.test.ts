@@ -98,4 +98,80 @@ describe("an agent's chunks", () => {
       expect(yield* store.getMessage(thread.id, finished.id)).toEqual(finished);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
+
+  it.effect(
+    "goes on only with the current turn's latest reply, never an earlier one or a lane",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        const { thread, session } = yield* createRunning;
+        yield* session.completeTurn("the first answer");
+        const first = yield* waitFor(
+          "the first turn's reply, ended",
+          store
+            .listMessages(thread.id)
+            .pipe(
+              Effect.map(
+                (messages) => messages.find((m) => m.metadata?.turnEnd !== undefined) ?? false,
+              ),
+            ),
+        );
+        const oldTurn = (yield* store.getMessageTurn(thread.id, first.id))!.turnId!;
+        yield* runtimes.send(thread.id, { text: "two" });
+        yield* waitFor(
+          "the second send",
+          Effect.sync(() => session.sent.length === 2),
+        );
+        const opening = "opening" as MessageId;
+        yield* session.emit(...message(opening, "under way"));
+        const turn = yield* waitFor(
+          "the second turn's reply stored",
+          store
+            .getMessageTurn(thread.id, opening)
+            .pipe(Effect.map((placed) => placed?.turnId ?? false)),
+        );
+        // Replies stored as a Gram before this one left them, none of them open here.
+        const stored = (id: string, turnId: typeof turn, lane = false) =>
+          store.upsertMessage(
+            thread.id,
+            {
+              id,
+              role: "assistant",
+              parts: [{ type: "text", text: `kept ${id}` }],
+              metadata: lane ? { parentToolUseId: "task-1" } : {},
+            },
+            turnId,
+          );
+        yield* stored("earlier", turn);
+        yield* stored("lane", turn, true);
+        yield* stored("other-turn", oldTurn);
+        yield* stored("latest", turn);
+        const before = yield* Effect.forEach(["earlier", "lane", "other-turn"], (id) =>
+          store.getMessage(thread.id, id),
+        );
+        yield* session.emit(
+          ...message("earlier" as MessageId, "rewritten"),
+          ...message("lane" as MessageId, "rewritten"),
+          ...message("other-turn" as MessageId, "rewritten"),
+          ...message("latest" as MessageId, "goes on"),
+        );
+        yield* waitFor(
+          "the latest reply gone on",
+          store
+            .getMessage(thread.id, "latest")
+            .pipe(
+              Effect.map(
+                (m) =>
+                  m?.parts.some((part) => part.type === "text" && part.text === "goes on") === true,
+              ),
+            ),
+        );
+        expect(
+          yield* Effect.forEach(["earlier", "lane", "other-turn"], (id) =>
+            store.getMessage(thread.id, id),
+          ),
+        ).toEqual(before);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
 });

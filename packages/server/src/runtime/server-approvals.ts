@@ -11,6 +11,7 @@ import {
   type AppToolApprovalResolution,
   type PermissionMode,
   type ApprovalRequest,
+  type PendingRequest,
   type RequestAnswer,
   RequestNotFound,
   InvalidState,
@@ -35,7 +36,12 @@ import {
   type Decided,
   type DecisionHookShape,
 } from "../embedding/decision-hook.ts";
-import { hookedKey, type HookedRequests, requestActions } from "../embedding/hooked-requests.ts";
+import {
+  type AskedRequest,
+  hookedKey,
+  type HookedRequests,
+  requestActions,
+} from "../embedding/hooked-requests.ts";
 
 /** Why one answer of `respondMany` wasn't given, in words a row of the inbox can show. */
 export const respondFailure = (cause: Cause.Cause<unknown>): string => {
@@ -117,6 +123,17 @@ export interface ServerApprovalsDeps {
  * Cards the server raises and answers itself, and `respond`, which takes an answer to the server's
  * card or the agent session's.
  */
+/** A person's answer as the agent is to get it, and the card and hook record it was given for. */
+interface Confirmed {
+  readonly answer: RequestAnswer;
+  readonly asked: AskedRequest | undefined;
+  readonly card: PendingRequest | undefined;
+}
+
+/** Whether two cards under one id ask the same thing: what's raised again can't change it. */
+const sameCard = (a: PendingRequest, b: PendingRequest | undefined): boolean =>
+  b !== undefined && JSON.stringify(a) === JSON.stringify(b);
+
 export const makeServerApprovals = ({
   store,
   hub,
@@ -374,28 +391,30 @@ export const makeServerApprovals = ({
   const confirmedByHook = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
     Effect.gen(function* () {
       const asked = hooked.asked.get(hookedKey(threadId, requestId));
+      // The card as it stood when answered: the answer is for it, and for no other under its id.
+      const card = yield* store.listRequests(threadId).pipe(
+        Effect.map((requests) => requests.find((request) => request.id === requestId)),
+        Effect.orElseSucceed(() => undefined),
+      );
+      const confirmed = (given: RequestAnswer): Confirmed => ({ answer: given, asked, card });
       if (decisions === undefined || answer.kind !== "approval" || answer.decision !== "allow") {
-        return answer;
+        return confirmed(answer);
       }
       if (asked === undefined) {
         // A card for what the hook governs, with nothing kept of what it said: never let through
         // unasked, however the hook's word on it was lost.
-        const card = yield* store.listRequests(threadId).pipe(
-          Effect.map((requests) => requests.find((request) => request.id === requestId)),
-          Effect.orElseSucceed(() => undefined),
-        );
         const governed =
           card === undefined ||
           (card.kind === "approval" &&
             requestActions(card).length > 0 &&
             (yield* decisions.enabled));
-        if (!governed) return answer;
-        return {
+        if (!governed) return confirmed(answer);
+        return confirmed({
           kind: "approval",
           decision: "deny",
           scope: "once",
           message: DECISION_UNAVAILABLE,
-        } satisfies RequestAnswer;
+        });
       }
       const thread = yield* store.getThread(threadId).pipe(Effect.option);
       // This runs in the call of whoever answered the card.
@@ -421,34 +440,45 @@ export const makeServerApprovals = ({
           title: refusalText(each.action, reason),
           threadId,
         });
-        return {
+        return confirmed({
           kind: "approval",
           decision: "deny",
           scope: "once",
           message: refusalForAgent(each.action, reason),
-        } satisfies RequestAnswer;
+        });
       }
-      return { ...answer, scope: "once" } satisfies RequestAnswer;
+      return confirmed({ ...answer, scope: "once" });
     });
 
   const respondToSession = (threadId: ThreadId, requestId: RequestId, given: RequestAnswer) =>
     // The hook is asked before the lock is taken, so a slow endpoint holds up nothing else of
     // the thread; whether the card still waits is read under the lock, as it always was.
     confirmedByHook(threadId, requestId, given).pipe(
-      Effect.flatMap((answer) => deliverToSession(threadId, requestId, answer, given)),
+      Effect.flatMap((confirmed) => deliverToSession(threadId, requestId, confirmed, given)),
     );
 
-  /** `given` is the person's own answer, which the sink reports; `answer` is what the agent gets. */
+  /**
+   * `given` is the person's own answer, which the sink reports; `confirmed.answer` is what the
+   * agent gets, and only while the card it was given for is the one still waiting under its id:
+   * an agent that asked again meanwhile, with something else, never gets the first one's answer.
+   */
   const deliverToSession = (
     threadId: ThreadId,
     requestId: RequestId,
-    answer: RequestAnswer,
-    given: RequestAnswer = answer,
+    confirmed: Confirmed,
+    given: RequestAnswer = confirmed.answer,
   ) =>
     withSession(threadId, (rt, session) =>
       Effect.gen(function* () {
-        const waiting = yield* store.listRequests(threadId);
-        if (!waiting.some((request) => request.id === requestId)) {
+        const { answer } = confirmed;
+        const waiting = (yield* store.listRequests(threadId)).find(
+          (request) => request.id === requestId,
+        );
+        if (
+          waiting === undefined ||
+          !sameCard(waiting, confirmed.card) ||
+          hooked.asked.get(hookedKey(threadId, requestId)) !== confirmed.asked
+        ) {
           return yield* new RequestNotFound({ threadId, requestId });
         }
         yield* noteAnswer(threadId, requestId, given);

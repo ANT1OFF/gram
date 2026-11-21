@@ -1,7 +1,7 @@
 // An agent's approval requests as the thread puts them up: a card in front of a person, or, while
 // the decision hook is on, the hook's answer first (`decideRequest`).
 import type { AgentSession } from "@gram/agents";
-import type { PendingRequest } from "@gram/contracts";
+import type { PendingRequest, RequestId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -172,5 +172,28 @@ export const makeHookedDecisions = ({
       );
     });
 
-  return { raiseCard, decideRequest };
+  /**
+   * Makes way for a request an agent raised under `requestId`, which is another request whatever
+   * it was before: what the hook said, or is saying, of the earlier one is never taken for it, and
+   * its card comes down, since an answer given to that card is for the earlier one. Holds the
+   * lock. Gives the request's key in the hook's bookkeeping.
+   */
+  const replaceAsked = (rt: Runtime, requestId: RequestId) =>
+    Effect.gen(function* () {
+      const key = hookedKey(rt.threadId, requestId);
+      hooked.asked.delete(key);
+      const replaced = hooked.deciding.delete(key);
+      const takenDown = yield* store.removeRequest(rt.threadId, requestId);
+      if (takenDown) {
+        yield* hub.publish({ type: "thread.requestResolved", threadId: rt.threadId, requestId });
+      }
+      if (replaced || takenDown) {
+        yield* Effect.logWarning("an agent asked again under an id already in hand").pipe(
+          Effect.annotateLogs({ threadId: rt.threadId, requestId }),
+        );
+      }
+      return key;
+    });
+
+  return { raiseCard, decideRequest, replaceAsked };
 };

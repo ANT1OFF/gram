@@ -276,7 +276,7 @@ export const makeAgentEvents = ({
       yield* becomeIdle(rt);
     });
 
-  const { raiseCard, decideRequest } = makeHookedDecisions({
+  const { raiseCard, decideRequest, replaceAsked } = makeHookedDecisions({
     store,
     hub,
     hooked,
@@ -735,15 +735,8 @@ export const makeAgentEvents = ({
             );
             return;
           }
-          // A request under an id already in hand is another request: what the hook said, or is
-          // saying, of the first is never taken for it.
-          const key = hookedKey(rt.threadId, request.id);
-          hooked.asked.delete(key);
-          if (hooked.deciding.delete(key)) {
-            yield* Effect.logWarning("an agent asked again under an id the hook is deciding").pipe(
-              Effect.annotateLogs({ threadId: rt.threadId, requestId: request.id }),
-            );
-          }
+          // A request under an id already in hand is another request (`replaceAsked`).
+          const key = yield* replaceAsked(rt, request.id);
           if (
             request.kind === "approval" &&
             decisions !== undefined &&
