@@ -56,14 +56,25 @@ const personHome = () => {
 };
 
 const agy = process.env["AGY_BIN"] ?? "agy";
-const hasAgy = spawnSync(agy, ["--version"], { encoding: "utf8" }).status === 0;
+const agyProbe = spawnSync(agy, ["--version"], { encoding: "utf8" });
+const hasAgy = agyProbe.status === 0;
+const agyVersion = (agyProbe.stdout ?? "").trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
+const agyPremiseSkip = (() => {
+  if (!hasAgy) return "agy is unavailable";
+  if (agyVersion === null) return "could not parse agy --version (requires agy 1.5.13 or newer)";
+  const major = Number(agyVersion[1]);
+  const minor = Number(agyVersion[2]);
+  const patch = Number(agyVersion[3]);
+  if (major > 1 || (major === 1 && (minor > 5 || (minor === 5 && patch >= 13)))) return undefined;
+  return `requires agy 1.5.13 or newer, found ${agyVersion[0]}`;
+})();
 /** Also run a turn on the model, which spends the signed-in plan's quota. */
 const live = hasAgy && process.env["GRAM_LIVE_AGY"] === "1";
 
 interface Run {
   readonly asked: boolean;
   readonly output: string;
-  readonly stop: () => void;
+  readonly stop: () => Promise<void>;
 }
 
 /** An MCP server of the session's own, as Gram passes its app tools, that marks when it starts. */
@@ -88,6 +99,7 @@ const acp = (
 ): Promise<Run> =>
   new Promise((resolve, reject) => {
     const child = spawn(agy, ["acp", ...args], { cwd, env, stdio: ["pipe", "pipe", "ignore"] });
+    const closed = new Promise<void>((done) => child.once("close", () => done()));
     let buffer = "";
     let asked = false;
     let output = "";
@@ -147,7 +159,14 @@ const acp = (
         await call("session/set_mode", { sessionId, modeId: "default" });
         await call("session/prompt", { sessionId, prompt: [{ type: "text", text: prompt }] });
       }
-      resolve({ asked, output, stop: () => child.kill("SIGTERM") });
+      resolve({
+        asked,
+        output,
+        stop: () => {
+          child.kill("SIGTERM");
+          return closed;
+        },
+      });
     })().catch(reject);
   });
 
@@ -192,41 +211,58 @@ const standIn = () =>
     (server) => Effect.sync(server.close),
   );
 
-const agyPath = () =>
-  spawnSync("sh", ["-c", `command -v '${agy}'`], { encoding: "utf8" }).stdout.trim();
+const localGeminiEnv = (home: string, url: string) => ({
+  PATH: process.env["PATH"] ?? "/usr/bin",
+  HOME: home,
+  DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
+  GEMINI_API_KEY: "placeholder",
+  GOOGLE_GEMINI_BASE_URL: url,
+});
 
-/**
- * Opens Gram's Antigravity host where `place` puts a repository's own customizations, expecting a
- * refusal that starts nothing, then shows `agy acp` alone runs them there.
- */
-const refusedWhereAgyRuns = (
-  place: (
-    root: string,
-    work: string,
-  ) => { cwd: string; marks: ReturnType<typeof repoCustomizations> },
-) =>
+const repoWorkspaces = [
+  {
+    name: "a work folder with its own hooks and MCP servers",
+    skipReason: hasAgy ? undefined : "agy is unavailable",
+    place: (root: string, work: string) => ({ cwd: work, marks: repoCustomizations(root, work) }),
+  },
+  {
+    name: "a linked work folder whose real repository has hooks and MCP servers",
+    skipReason: agyPremiseSkip,
+    place: (root: string, work: string) => {
+      const repo = join(root, "repo");
+      mkdirSync(join(repo, "sub"), { recursive: true });
+      spawnSync("git", ["init", "-q", repo], {
+        env: {
+          PATH: process.env["PATH"],
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_CONFIG_NOSYSTEM: "1",
+        },
+      });
+      const lnk = join(work, "lnk");
+      symlinkSync(join(repo, "sub"), lnk);
+      return { cwd: lnk, marks: repoCustomizations(root, repo) };
+    },
+  },
+];
+
+type PlaceCustomizations = (typeof repoWorkspaces)[number]["place"];
+
+/** Gram must refuse the workspace before looking for or starting an executable. */
+const refuseRepoCustomizations = (place: PlaceCustomizations) =>
   Effect.scoped(
     Effect.gen(function* () {
       const { root, home, work, data } = personHome();
       try {
         const { cwd, marks } = place(root, work);
-        const gemini = yield* standIn();
-        const base = {
-          PATH: process.env["PATH"] ?? "/usr/bin",
-          HOME: home,
-          DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
-          GEMINI_API_KEY: "placeholder",
-          GOOGLE_GEMINI_BASE_URL: gemini.url,
-        };
         const geminiDir = antigravityGeminiDir(data);
         const host = yield* Effect.provide(
           Effect.gen(function* () {
             return yield* AntigravityHost;
           }),
           AntigravityHostLive({
-            ownedHome: () => prepareOwnedAntigravityHome(data, home, base),
+            ownedHome: () => prepareOwnedAntigravityHome(data, home, { HOME: home }),
             geminiDir,
-            binaryPath: agyPath(),
+            binaryPath: join(root, "unavailable-agy"),
           }),
         );
         const opened = yield* Effect.flip(
@@ -244,21 +280,44 @@ const refusedWhereAgyRuns = (
         expect(existsSync(geminiDir)).toBe(false);
         expect(existsSync(marks.hook)).toBe(false);
         expect(existsSync(marks.server)).toBe(false);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }),
+  );
 
+/** Show that plain `agy acp` runs the customizations even with Gram's owned home. */
+const agyRunsRepoCustomizations = (place: PlaceCustomizations) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { root, home, work, data } = personHome();
+      try {
+        const { cwd, marks } = place(root, work);
+        const gemini = yield* standIn();
+        const base = localGeminiEnv(home, gemini.url);
         yield* prepareOwnedAntigravityHome(data, home, base);
         const bare = yield* Effect.promise(() =>
-          acp(base, ["--gemini-dir", geminiDir], cwd, sessionServer(join(root, "own")), "hi"),
-        );
-        yield* Effect.promise(() =>
-          vi.waitFor(
-            () => {
-              expect(existsSync(marks.hook)).toBe(true);
-              expect(existsSync(marks.server)).toBe(true);
-            },
-            { timeout: 30_000 },
+          acp(
+            base,
+            ["--gemini-dir", antigravityGeminiDir(data)],
+            cwd,
+            sessionServer(join(root, "own")),
+            "hi",
           ),
         );
-        bare.stop();
+        try {
+          yield* Effect.promise(() =>
+            vi.waitFor(
+              () => {
+                expect(existsSync(marks.hook)).toBe(true);
+                expect(existsSync(marks.server)).toBe(true);
+              },
+              { timeout: 30_000 },
+            ),
+          );
+        } finally {
+          yield* Effect.promise(bare.stop);
+        }
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
@@ -310,28 +369,35 @@ describe("Gram's own Antigravity home", () => {
     }),
   );
 
-  it.effect.skipIf(!hasAgy)(
-    "keeps the person's MCP servers from Antigravity",
+  it.effect.skipIf(agyPremiseSkip !== undefined)(
+    `keeps the person's MCP servers from Antigravity${agyPremiseSkip ? ` (${agyPremiseSkip})` : ""}`,
     () =>
       Effect.gen(function* () {
         const { root, home, work, marker, own, data } = personHome();
         try {
-          const base = { PATH: process.env["PATH"] ?? "/usr/bin", HOME: home };
+          const gemini = yield* standIn();
+          const base = localGeminiEnv(home, gemini.url);
           const unowned = yield* Effect.promise(() => acp(base, [], work, sessionServer(own)));
-          yield* Effect.promise(() =>
-            vi.waitFor(() => expect(existsSync(marker)).toBe(true), { timeout: 30_000 }),
-          );
-          unowned.stop();
+          try {
+            yield* Effect.promise(() =>
+              vi.waitFor(() => expect(existsSync(marker)).toBe(true), { timeout: 30_000 }),
+            );
+          } finally {
+            yield* Effect.promise(unowned.stop);
+          }
           rmSync(marker);
           rmSync(own, { force: true });
           const env = yield* prepareOwnedAntigravityHome(data, home, base);
           const owned = yield* Effect.promise(() =>
             acp(env, ["--gemini-dir", antigravityGeminiDir(data)], work, sessionServer(own)),
           );
-          yield* Effect.promise(() =>
-            vi.waitFor(() => expect(existsSync(own)).toBe(true), { timeout: 30_000 }),
-          );
-          owned.stop();
+          try {
+            yield* Effect.promise(() =>
+              vi.waitFor(() => expect(existsSync(own)).toBe(true), { timeout: 30_000 }),
+            );
+          } finally {
+            yield* Effect.promise(owned.stop);
+          }
           expect(existsSync(marker)).toBe(false);
         } finally {
           rmSync(root, { recursive: true, force: true });
@@ -340,32 +406,14 @@ describe("Gram's own Antigravity home", () => {
     120_000,
   );
 
-  it.effect.skipIf(!hasAgy)(
-    "refuses to open where the work folder has its own hooks and MCP servers, which agy would run",
-    () =>
-      refusedWhereAgyRuns((root, work) => ({ cwd: work, marks: repoCustomizations(root, work) })),
-    120_000,
-  );
-
-  it.effect.skipIf(!hasAgy)(
-    "refuses a linked work folder whose real repository has them, which agy would run",
-    () =>
-      refusedWhereAgyRuns((root, work) => {
-        const repo = join(root, "repo");
-        mkdirSync(join(repo, "sub"), { recursive: true });
-        spawnSync("git", ["init", "-q", repo], {
-          env: {
-            PATH: process.env["PATH"],
-            GIT_CONFIG_GLOBAL: "/dev/null",
-            GIT_CONFIG_NOSYSTEM: "1",
-          },
-        });
-        const lnk = join(work, "lnk");
-        symlinkSync(join(repo, "sub"), lnk);
-        return { cwd: lnk, marks: repoCustomizations(root, repo) };
-      }),
-    120_000,
-  );
+  for (const { name, place, skipReason } of repoWorkspaces) {
+    it.effect(`refuses ${name}`, () => refuseRepoCustomizations(place));
+    it.effect.skipIf(skipReason !== undefined)(
+      `agy runs the customizations in ${name}${skipReason ? ` (${skipReason})` : ""}`,
+      () => agyRunsRepoCustomizations(place),
+      120_000,
+    );
+  }
 
   it.effect.skipIf(!live)(
     "keeps the person's allow rules from Antigravity, and its commands see their HOME",
@@ -377,13 +425,13 @@ describe("Gram's own Antigravity home", () => {
           const prompt = "Run exactly this shell command: echo $HOME";
           const server = sessionServer(join(root, "unused"));
           const unowned = yield* Effect.promise(() => acp(base, [], work, server, prompt));
-          unowned.stop();
+          yield* Effect.promise(unowned.stop);
           expect(unowned.asked).toBe(false);
           const env = yield* prepareOwnedAntigravityHome(data, home, base);
           const owned = yield* Effect.promise(() =>
             acp(env, ["--gemini-dir", antigravityGeminiDir(data)], work, server, prompt),
           );
-          owned.stop();
+          yield* Effect.promise(owned.stop);
           expect(owned.asked).toBe(true);
           expect(owned.output).toContain(home);
         } finally {
