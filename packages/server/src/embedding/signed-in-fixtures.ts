@@ -6,7 +6,9 @@ import type { RemoteHosts } from "../host/remote-hosts.ts";
 import type { WorkerMachineMessagePort } from "./signed-in-port.ts";
 
 export const ORIGIN = "https://hosted.example.test";
-export const SERVER = { origin: ORIGIN, server: "Example hosted" };
+/** The sign-in machines are asked for under there (`WorkerMachineServer.account`). */
+export const ACCOUNT = "account-ada-0123456789";
+export const SERVER = { origin: ORIGIN, server: "Example hosted", account: ACCOUNT };
 export const NAME = "worker-0123456789";
 
 export type Call = { readonly call: string; readonly body: Record<string, unknown> };
@@ -16,7 +18,16 @@ export type Call = { readonly call: string; readonly body: Record<string, unknow
  * server's answer to each call; `relayed` runs when the server asks the app to carry a machine.
  */
 export const fakeApp = (options: {
-  readonly server?: { readonly server?: typeof SERVER; readonly why?: string };
+  readonly server?: {
+    readonly server?: typeof SERVER & { readonly formerAccounts?: ReadonlyArray<string> };
+    readonly why?: string;
+  };
+  /** Every sign-in's marks, as the app answers `marks`: none unless given. */
+  readonly marks?: () => ReadonlyArray<{
+    readonly origin: string;
+    readonly account: string;
+    readonly formerAccounts: ReadonlyArray<string>;
+  }>;
   readonly answer: (call: Call) => { readonly status: number; readonly body: unknown };
   readonly relayed?: (name: string, toServer: (message: unknown) => void) => void;
   readonly fromServer?: (message: Record<string, unknown>) => void;
@@ -41,6 +52,7 @@ export const fakeApp = (options: {
       const op = message["op"] as string;
       asked.push(op);
       if (op === "server") respond({ ok: true, ...(options.server ?? { server: SERVER }) });
+      else if (op === "marks") respond({ ok: true, marks: options.marks?.() ?? [] });
       else if (op === "call") {
         const call = {
           call: message["call"] as string,
@@ -68,6 +80,7 @@ export const provisionRelayed = (hosts: RemoteHosts["Service"], name: string) =>
     platform: "linux",
     onDemand: "worker",
     via: ORIGIN,
+    viaAccount: ACCOUNT,
   });
   if (result.kind !== "provisioned") throw new Error(result.message);
   return { key, id: result.machine.id };
