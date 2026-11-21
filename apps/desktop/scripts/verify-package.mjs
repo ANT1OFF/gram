@@ -658,6 +658,33 @@ if (platform === "linux") {
         !fs.existsSync(ran),
         fs.existsSync(ran) ? "a foreign script ran" : "refused",
       );
+      // The probe takes paths and a word from its caller: pointed at another folder's natives,
+      // or handed shell text for its marker, it runs neither.
+      const foreignAsar = path.join(scratch, "foreign.asar");
+      for (const name of ["sherpa-onnx-node", "node-pty"]) {
+        fs.mkdirSync(path.join(foreignAsar, "node_modules", name), { recursive: true });
+        fs.writeFileSync(
+          path.join(foreignAsar, "node_modules", name, "index.js"),
+          `require("node:fs").writeFileSync(${JSON.stringify(ran)}, "");\n`,
+        );
+      }
+      const probeScript = path.join(packedAsar, "out/server/native-probe.js");
+      const switches = ["--ozone-platform=headless", "--no-sandbox"];
+      for (const args of [
+        [probeScript, foreignAsar, scratch, marker, ...switches],
+        [probeScript, packedAsar, scratch, `X;touch ${ran}`, ...switches],
+        [probeScript, packedAsar, scratch, `$(touch ${ran})`, ...switches],
+      ])
+        spawnSync(path.join(appDir, "gram"), args, {
+          env: { PATH: "/usr/bin:/bin", HOME: scratch },
+          stdio: "ignore",
+          timeout: 20_000,
+        });
+      check(
+        "packaged probe loads no caller's folder and runs no caller's shell text",
+        !fs.existsSync(ran),
+        fs.existsSync(ran) ? "the probe ran a caller's code" : "refused",
+      );
     } finally {
       fs.rmSync(scratch, { recursive: true, force: true });
     }

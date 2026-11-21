@@ -139,7 +139,7 @@ describe("sandbox from a signed-in hosted server", () => {
         expect(asked).toContain("start");
         expect(asked.at(-1)).toBe("stop");
         const started = calls.find((each) => each.call === "start")!.body as { name: string };
-        expect(calls.at(-1)!.body).toEqual({ name: started.name });
+        expect(calls.at(-1)!.body).toEqual({ name: started.name, notAfter: expect.any(Number) });
         expect(yield* store.listThreads).toEqual(before);
         expect(existsSync(join(world.repo, ".worktrees"))).toBe(false);
       }).pipe(Effect.provide(context));
@@ -244,7 +244,7 @@ describe("sandbox from a signed-in hosted server", () => {
         const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
         expect(result._tag).toBe("Failure");
         expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);
-        expect(calls.at(-1)!.body).toEqual({ name: machine.name });
+        expect(calls.at(-1)!.body).toEqual({ name: machine.name, notAfter: expect.any(Number) });
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );
@@ -918,6 +918,7 @@ describe("sandbox from a signed-in hosted server", () => {
           name: machine.name,
           released: false,
           reason: "working",
+          notAfter: expect.any(Number),
         });
         // It came back: nothing timed out, and nothing of it was stopped or started anew.
         expect(calls.map((each) => each.call)).not.toContain("stop");
