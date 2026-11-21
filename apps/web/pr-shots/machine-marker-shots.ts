@@ -19,51 +19,54 @@ const HOSTED_LOGO = `data:image/svg+xml;base64,${Buffer.from(
  */
 const openMachineMarkers = async (page: Page, { hosted = false } = {}) => {
   const made = await openBoardSidebar(page);
-  await page.evaluate(([ids, viaServer, logo]) => {
-    const mock = window.gramMock!;
-    const atlas = "m-0123456789abcdef01234567";
-    const studio = "m-89abcdef0123456701234567";
-    const sandbox = "m-456789abcdef012301234567";
-    const lettered = "m-cdef0123456789ab01234567";
-    const now = Date.now();
-    mock.setMachines([
-      {
-        id: atlas,
-        name: "atlas",
-        kind: "joined",
-        onlineSince: now - 2 * 3_600_000,
-      },
-      {
-        id: studio,
-        name: "studio",
-        kind: "joined",
-        offline: { kind: "lost", at: now - 420_000 },
-      },
-      {
-        id: sandbox,
-        name: "sandbox-1",
-        kind: "provisioned",
-        onlineSince: now - 720_000,
-        ...(viaServer ? { hosted: { name: "Example Cloud", logo } } : {}),
-      },
-      ...(viaServer
-        ? [
-            {
-              id: lettered,
-              name: "worker-5c1e9a2b70",
-              kind: "provisioned",
-              onlineSince: now - 300_000,
-              hosted: { name: "Northwind" },
-            },
-          ]
-        : []),
-    ] as never);
-    mock.placeOnMachine(ids.working, atlas);
-    mock.placeOnMachine(ids.waiting[0], viaServer ? lettered : atlas);
-    mock.placeOnMachine(ids.inReview, studio);
-    mock.placeOnMachine(ids.ungrouped, sandbox);
-    mock.placeOnMachine("t-flaky" as never, atlas);
-  }, [made, hosted, HOSTED_LOGO] as const);
+  await page.evaluate(
+    ([ids, viaServer, logo]) => {
+      const mock = window.gramMock!;
+      const atlas = "m-0123456789abcdef01234567";
+      const studio = "m-89abcdef0123456701234567";
+      const sandbox = "m-456789abcdef012301234567";
+      const lettered = "m-cdef0123456789ab01234567";
+      const now = Date.now();
+      mock.setMachines([
+        {
+          id: atlas,
+          name: "atlas",
+          kind: "joined",
+          onlineSince: now - 2 * 3_600_000,
+        },
+        {
+          id: studio,
+          name: "studio",
+          kind: "joined",
+          offline: { kind: "lost", at: now - 420_000 },
+        },
+        {
+          id: sandbox,
+          name: "sandbox-1",
+          kind: "provisioned",
+          onlineSince: now - 720_000,
+          ...(viaServer ? { hosted: { name: "Example Cloud", logo } } : {}),
+        },
+        ...(viaServer
+          ? [
+              {
+                id: lettered,
+                name: "worker-5c1e9a2b70",
+                kind: "provisioned",
+                onlineSince: now - 300_000,
+                hosted: { name: "Northwind" },
+              },
+            ]
+          : []),
+      ] as never);
+      mock.placeOnMachine(ids.working, atlas);
+      mock.placeOnMachine(ids.waiting[0], viaServer ? lettered : atlas);
+      mock.placeOnMachine(ids.inReview, studio);
+      mock.placeOnMachine(ids.ungrouped, sandbox);
+      mock.placeOnMachine("t-flaky" as never, atlas);
+    },
+    [made, hosted, HOSTED_LOGO] as const,
+  );
   await threadRow(page, made.working).getByTestId("overview-worker-machine").waitFor();
   return made;
 };
