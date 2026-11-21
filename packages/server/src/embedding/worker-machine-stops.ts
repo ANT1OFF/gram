@@ -316,7 +316,7 @@ export const STOPS_FILE_MOST = 512 * 1024;
 const STOPS_FILE_READ_MOST = 16 * 1024 * 1024;
 
 /** `memoryOwedStops` kept in `<dataDir>/remote-access/worker-machine-stops.json`. */
-export const fileOwedStops = (dataDir: string): OwedStops => {
+export const fileOwedStops = (dataDir: string, now: () => number = Date.now): OwedStops => {
   // Room for every stop that may be owed (`OWED_MOST`), long origins included: one past it, or a
   // file too large to read, would lose them all.
   const file = privateJsonFile(dataDir, "worker-machine-stops.json", STOPS_FILE_MOST);
@@ -342,6 +342,9 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       keepFile = true;
     }
   }
+  // No stop holds a name past `STOP_HOLD_MS` from now: one read back further ahead was written
+  // before the clock stepped back, and would keep every start of its name waiting that much longer.
+  const readAt = now();
   const keptHolds = (Array.isArray(read?.holds) ? (read.holds as unknown[]) : []).flatMap(
     (each): StopHold[] =>
       typeof each === "object" &&
@@ -350,11 +353,16 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       typeof (each as StopHold).origin === "string" &&
       typeof (each as StopHold).name === "string" &&
       Number.isSafeInteger((each as StopHold).until)
-        ? [each as StopHold]
+        ? [
+            {
+              ...(each as StopHold),
+              until: Math.min((each as StopHold).until, readAt + STOP_HOLD_MS),
+            },
+          ]
         : [],
   );
   // Each hold is written as it is made, before its stop is sent, so a restart keeps it.
-  const owed = memoryOwedStops(keptHolds, () => save());
+  const owed = memoryOwedStops(keptHolds, () => save(), now);
   try {
     const kept = read;
     if (kept?.version === 1 && Array.isArray(kept.owed))
