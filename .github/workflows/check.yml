@@ -136,13 +136,6 @@ jobs:
           path: ~/.bun/install/cache
           key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
       - run: bun install --frozen-lockfile
-      # Check every project in the supported bounded compiler mode first. The static stages'
-      # incremental typecheck then reuses only this same fresh checkout's successful build cache.
-      - name: Typecheck within a bounded memory budget
-        run: bun run typecheck --singleThreaded
-        env:
-          # Native TypeScript is Go: bound its heap so the typecheck stays predictable.
-          GOMEMLIMIT: 2GiB
       - run: node tools/check/run.mjs --only static
       - run: bun run build:bundles
 

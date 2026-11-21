@@ -185,7 +185,8 @@ These synthetic runs qualify browser UI paths only.
 | `bun run check:docs`           | Tracked authored Markdown local links/anchors, known text boundaries and documented Bun script names |
 | `bun run fmt:check`            | Repository formatting                                                                                |
 | `bun run lint`                 | Exact dependency pins, the design-token drift check and warning-free lint                            |
-| `bun run typecheck`            | All TypeScript project references                                                                    |
+| `bun run typecheck`            | All TypeScript project references, with `bun check -b`; writes nothing                               |
+| `bun run build:packages`       | `tsc -b`: the same check, and writes each package's `dist` for `packages:pack`                       |
 | `bun run check:static`         | Pins/lint/format/types without Vitest                                                                |
 | `bun run test <affected-file>` | Focused Vitest using the pinned Node runner                                                          |
 | `bun run check:affected`       | Static stages, then only the Vitest projects the branch can affect against `origin/main`             |
@@ -231,10 +232,10 @@ checkout, never with a `pkill -f` pattern, which also kills other worktrees' run
 and `kill` on `pgrep` matches are out too; kill only the exact PIDs your own command started.
 On CI (`CI` set) there is no slot and Vitest keeps three workers.
 
-The root `test` script, for focused runs, caps Vitest at three workers. On constrained runners the
-supported compiler command is `GOMEMLIMIT=2GiB bun run typecheck --singleThreaded`;
-CI runs it before normal incremental `check:ci` on that same fresh checkout.
-Do not reuse another source's cache to claim a type pass.
+The root `test` script, for focused runs, caps Vitest at three workers. `bun run typecheck` keeps
+no cache, so every run checks every project from source. It starts one thread per core; on a
+machine short of memory, `bun run typecheck --threads 2` uses less. It takes tsc's
+`--singleThreaded` and `--checkers` without complaint and ignores them.
 
 ## Browser checks
 
@@ -620,8 +621,8 @@ as its evidence, and a manual run. The macOS jobs start once `check static` has 
 commit, the source the jobs' conditions come from, and falls back to every lane on any other
 checkout, so a branch's own copy of the classifier never picks its lanes. Prose (Markdown outside `apps/`, `packages/`
 and `tools/`, and everything under `docs/`, but the mock files and the mock-build skill that tests read) gets a docs job: frozen
-install, `bun run check:docs` and `bun run fmt:check`. Everything else runs `check static` (a
-bounded typecheck, the check's static stages via `node tools/check/run.mjs --only static`, and the
+install, `bun run check:docs` and `bun run fmt:check`. Everything else runs `check static` (the
+check's static stages via `node tools/check/run.mjs --only static`, and the
 bundle build) and whichever of these lanes its paths reach:
 
 | Lane      | Jobs                                                                                                                         | Skipped when the change only touches                       |

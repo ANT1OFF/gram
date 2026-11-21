@@ -54,6 +54,12 @@ const option = (name) => {
   const i = args.indexOf(name);
   return i === -1 ? undefined : args[i + 1];
 };
+// `typecheck` is `bun check --no-script`. A Bun without its type checker runs this script for it
+// instead, which would run `typecheck` again without end.
+if (flag("--no-script"))
+  throw new Error(
+    "This Bun has no type checker, so `bun check` ran the check script. Install the Bun that .bun-version names.",
+  );
 const affectedMode = flag("--affected");
 const only = option("--only");
 if (only !== undefined && only !== "static" && only !== "tests")

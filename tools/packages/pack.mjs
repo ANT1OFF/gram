@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Packs the published workspace packages as registry tarballs, from an existing build
-// (`bun run typecheck` emits each package's `dist`, and `build:embed` the web app's). Publishes
+// (`bun run build:packages` emits each package's `dist`, and `build:embed` the web app's). Publishes
 // nothing.
 //
 //   node tools/packages/pack.mjs --canary --scope @owner [--out out/packages]
@@ -136,7 +136,7 @@ for (const folder of PUBLISHED) {
           });
     for (const [from, to] of copies) {
       if (!existsSync(from)) {
-        throw new Error(`${folder}: ${to} isn't built. Run \`bun run typecheck\` first.`);
+        throw new Error(`${folder}: ${to} isn't built. Run \`bun run build:packages\` first.`);
       }
       mkdirSync(dirname(join(stage, "dist", to)), { recursive: true });
       cpSync(from, join(stage, "dist", to));

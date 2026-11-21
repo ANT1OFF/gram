@@ -68,7 +68,8 @@
     "lint": "node tools/check-dependency-pins.mjs && node tools/feature-map/check.mjs && node tools/design-tokens/check.mjs && node tools/oxlint/comments-base.mjs && oxlint --deny-warnings",
     "fmt": "bun fmt --no-script",
     "fmt:check": "bun fmt --no-script --check",
-    "typecheck": "tsc -b",
+    "typecheck": "bun check --no-script -b",
+    "build:packages": "tsc -b",
     "test": "vitest run --maxWorkers=3",
     "test:loop": "node tools/check/test-loop.mjs",
     "check:scaffold": "node tools/check-public-scaffold.mjs",
@@ -103,10 +104,10 @@
     "sherpa-onnx-win-x64": "2.0.0"
   },
   "engines": {
-    "bun": ">=1.4.4",
+    "bun": ">=1.4.5",
     "node": ">=26"
   },
-  "packageManager": "bun@1.4.4",
+  "packageManager": "bun@1.4.5",
   "patchedDependencies": {
     "@effect/platform-node-shared@4.1.4": "patches/@effect__platform-node-shared@4.1.4.patch"
   },
