@@ -38,7 +38,8 @@ export const GITHUB_ROUTE_NEEDS_HEADLESS =
  * read to what a thread may see only when it knows the thread, and an answer read for nobody in
  * particular could otherwise reach an agent.
  */
-export const NO_THREAD = "this call is made for no thread, and behind a GitHub route every call is";
+export const NO_THREAD =
+  "this GitHub call names no thread, and behind a GitHub route every call must name the thread it is made for.";
 
 /** What `gh` is given while no thread is named: it is never sent on. */
 const PLACEHOLDER = "gram-relay";

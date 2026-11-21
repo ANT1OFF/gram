@@ -189,9 +189,9 @@ A headless server (`GRAM_HEADLESS=1`) keeps the network tier: PR badges and chec
 
 - The server serves a socket at `github-relay/gh.sock` in its data folder and points `gh` at it (`GH_CONFIG_DIR`, with `http_unix_socket`). `gh` is given a placeholder `GH_TOKEN`, which is never sent on.
 - Each request goes to `<url>/api<path>`, `<url>/uploads<path>` or `<url>/codeload<path>`, by the host `gh` asked for, with `Authorization: Bearer <token>` (the token file, when one is named, is read on every call) and `x-gram-upstream-host`. A redirect is handed back to `gh` as it came.
-- A call made for one thread (`merge_when_ready`'s merge, `set_auto_merge`) carries `x-gram-thread: <threadId>`, so the route can act for that thread's person and check what it may do. A sweep of a checkout's badge names no thread.
+- A call made for one thread (`merge_when_ready`'s merge, `set_auto_merge`) carries `x-gram-thread: <threadId>`, so the route can act for that thread's person and check what it may do. Every call names one: the relay answers a call that names none with a `403` of its own and sends nothing on.
 - The route answers as GitHub would: `gh` reads the answer as GitHub's.
-- Before a clone is filed (`projects.clone`), the server asks for the repository (`GET /repos/<owner>/<repo>`). A `401`, `403`, `404` or `451` refuses the clone with the answer's `message`; beside it, `help_url` (an https page) and `help_label` give the person a link to put it right. Any other answer, or none within 10 seconds, files the clone as before.
+- Adding a repository (`projects.clone`) is made for no thread, so it asks GitHub nothing: the origin is filed, and the route answers for the repository when the first thread's machine clones it.
 
 The route is refused on a server that runs work itself, which would hand its agents the same `gh`, and a route that is given and can't be used stops the server at start.
 

@@ -23,8 +23,6 @@ import {
   projectFolderTrusted,
 } from "../../settings/folder-trust.ts";
 import { fileOrigin } from "../../thread-profiles/repositories.ts";
-import { githubRelayed } from "../../embedding/github-relay.ts";
-import { routeRefusal } from "../../embedding/route-reach.ts";
 import { currentReader, touchesUnreadable } from "../../embedding/readable-by.ts";
 import {
   projectScriptsDir,
@@ -34,15 +32,6 @@ import {
 } from "../../scripts/project-scripts.ts";
 import { logDefects, type Handlers } from "./common.ts";
 import { sessionHandlers } from "./sessions.ts";
-
-/** The GitHub repository a remote names, on github.com; undefined for any other host. */
-const githubRepoOf = (remote: RepoRemote): { owner: string; repo: string } | undefined => {
-  if (remote.kind === "github") return { owner: remote.owner, repo: remote.repo };
-  const [owner, repo, ...rest] = remote.path.replace(/^\/+/, "").split("/");
-  return remote.host.toLowerCase() === "github.com" && owner && repo && rest.length === 0
-    ? { owner, repo }
-    : undefined;
-};
 
 /**
  * The URL a headless server files a repository's origin under: a GitHub repository's https
@@ -133,17 +122,6 @@ export const projectHandlers = Effect.gen(function* () {
         if (config?.headless === true) {
           const parsed = parseRepoRemote(remote);
           if ("error" in parsed) return yield* new InvalidState({ message: parsed.error });
-          // Where `gh` reaches GitHub through the deployment's route, a repository it won't reach
-          // is refused here, with the route's reason, rather than on the machine much later.
-          const github = githubRepoOf(parsed);
-          if (github !== undefined && githubRelayed()) {
-            const refused = yield* routeRefusal(proc, config.dataDir, github.owner, github.repo);
-            if (refused !== undefined)
-              return yield* new InvalidState({
-                message: `Couldn't add ${github.owner}/${github.repo}: ${refused.message}`,
-                ...(refused.help === undefined ? {} : { help: refused.help }),
-              });
-          }
           const filed = yield* fileOrigin(proc, config.dataDir, originUrl(parsed));
           return yield* store.ensureProject({ root: filed.path, name: filed.name });
         }
