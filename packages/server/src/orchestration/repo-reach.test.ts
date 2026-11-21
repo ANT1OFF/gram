@@ -3,10 +3,13 @@ import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import { vi } from "vitest";
 import { hasGit } from "../git/test-repo.ts";
+import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import {
   completeTurn,
   makeWorld,
   openOrchestrator,
+  prBadge,
+  publishGit,
   spawn,
   withServer,
   type Server,
@@ -92,6 +95,67 @@ describe.skipIf(!hasGit)("repositories an agent names behind a GitHub route", ()
           expect(
             yield* worker.session.callTool("pr_bind", { repo: "acme/app", number: 12 }),
           ).toMatchObject({ bound: { repo: "acme/app", number: 12 } });
+        }),
+      ),
+    { timeout: 90_000 },
+  );
+
+  it.effect(
+    "refuse pr_status on a pull request out of the thread's reach, before any read",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          world.originRepos.set(world.repo, "acme/app");
+          const { session } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "mail", title: "Mail" });
+          yield* completeTurn(worker.session);
+          const runtimes = yield* ThreadRuntimes;
+          const bindTo = (repo: string) =>
+            runtimes.updateThread(worker.thread.id, (t) => ({
+              ...t,
+              boundPr: { repo, number: 5, monitor: false },
+            }));
+          yield* bindTo("someone/private");
+          const refused = yield* worker.session.callTool("pr_status", {}).pipe(Effect.flip);
+          expect(refused.message).toContain("isn't a repository this thread works in");
+          expect(
+            world.ghCalls.filter((call) => call.join(" ").includes("someone/private")),
+          ).toEqual([]);
+          yield* bindTo("acme/app");
+          expect(yield* worker.session.callTool("pr_status", {})).toMatchObject({
+            bound: { repo: "acme/app", number: 5 },
+          });
+        }),
+      ),
+    { timeout: 90_000 },
+  );
+
+  it.effect(
+    "refuse pr_status on a badge out of reach, for its own thread or another's",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          world.originRepos.set(world.repo, "acme/app");
+          const { session } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "mail", title: "Mail" });
+          yield* completeTurn(worker.session);
+          const other = yield* spawn(session, { feature: "docs", title: "Docs" });
+          yield* completeTurn(other.session);
+          const outside = "isn't a repository this thread works in";
+          const elsewhere = prBadge({ url: "https://github.com/someone/private/pull/9" });
+          yield* publishGit(world, worker.thread, { pr: elsewhere });
+          // Another thread's branch badge in a repository the caller doesn't work in.
+          const theirs = yield* other.session
+            .callTool("pr_status", { threadId: worker.thread.id })
+            .pipe(Effect.flip);
+          expect(theirs.message).toContain(outside);
+          // Its own badge in another repository than its bound PR's.
+          yield* (yield* ThreadRuntimes).updateThread(worker.thread.id, (t) => ({
+            ...t,
+            boundPr: { repo: "acme/app", number: 5, monitor: false },
+          }));
+          const own = yield* worker.session.callTool("pr_status", {}).pipe(Effect.flip);
+          expect(own.message).toContain(outside);
         }),
       ),
     { timeout: 90_000 },

@@ -41,6 +41,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { randomUUID } from "node:crypto";
+import { forThread } from "../embedding/gh-thread.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { upsertsChanging } from "../events/upsert-changes.ts";
 import { asBackground } from "../github/budget.ts";
@@ -406,7 +407,7 @@ export const BabysitLive = Layer.effect(
           rereviewTimers,
           thread.id,
           Effect.sleep(config.babysitQuietWindow).pipe(
-            Effect.andThen(requestRereview(thread.id, head)),
+            Effect.andThen(requestRereview(thread.id, head).pipe(forThread(thread.id))),
           ),
         );
       });
@@ -1110,16 +1111,15 @@ export const BabysitLive = Layer.effect(
         Effect.asVoid,
       );
 
-    yield* Queue.take(due).pipe(
-      Effect.flatMap((threadId) => Effect.exit(deliver(threadId))),
-      Effect.forever,
-      Effect.forkScoped,
-    );
-    yield* Queue.take(humanDue).pipe(
-      Effect.flatMap((threadId) => Effect.exit(deliverHuman(threadId))),
-      Effect.forever,
-      Effect.forkScoped,
-    );
+    for (const [queue, run] of [
+      [due, deliver],
+      [humanDue, deliverHuman],
+    ] as const)
+      yield* Queue.take(queue).pipe(
+        Effect.flatMap((threadId) => Effect.exit(run(threadId).pipe(forThread(threadId)))),
+        Effect.forever,
+        Effect.forkScoped,
+      );
     // Replayed: the publisher's start-up refresh may land before this observes, and a PR that
     // hasn't changed since publishes nothing more to compare against the mark it kept.
     yield* publisher.observe({ onState, onRound }, { replay: true });
