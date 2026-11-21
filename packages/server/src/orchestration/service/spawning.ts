@@ -72,7 +72,12 @@ import {
   type OrchestrationShape,
 } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
-import { admitMachineCodex, admitMachineGrok, admitMachineOpenCode } from "./machine-admission.ts";
+import {
+  admitMachineAcp,
+  admitMachineCodex,
+  admitMachineOpenCode,
+  placedModelsOf,
+} from "./machine-admission.ts";
 import type { Projects } from "./projects.ts";
 import type { HeldSpawns } from "./held-spawns.ts";
 import { spawnRecheckRefusal } from "./spawn-recheck.ts";
@@ -388,13 +393,14 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           tool,
           refusal(
             "not_admitted",
-            `${name} runs direct Claude, Codex, OpenCode and Grok Build sessions only. Choose a worker model on its own CLI, or spawn on this machine.`,
+            `${name} runs direct Claude, Codex, OpenCode, Grok Build and Antigravity sessions only. Choose a worker model on its own CLI, or spawn on this machine.`,
           ),
         );
       if (chosen.agent === "codex") return yield* admitMachineCodex(tool, machine, name, chosen);
       if (chosen.agent === "opencode")
         return yield* admitMachineOpenCode(tool, machine, name, chosen);
-      if (chosen.agent === "grok") return yield* admitMachineGrok(tool, machine, name, chosen);
+      if (chosen.agent === "grok" || chosen.agent === "antigravity")
+        return yield* admitMachineAcp(tool, machine, name, chosen);
       if (machine?.tools?.some((entry) => entry.tool === "claude" && !entry.found))
         return yield* toolError(
           tool,
@@ -946,14 +952,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           // one, else this machine's list.
           const machineRecord =
             hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId);
-          const placedModels =
-            chosen.agent === "codex"
-              ? machineRecord?.codex?.models
-              : chosen.agent === "opencode"
-                ? machineRecord?.opencode?.models
-                : chosen.agent === "grok"
-                  ? machineRecord?.grok?.models
-                  : machineRecord?.models;
+          const placedModels = placedModelsOf(machineRecord, chosen.agent);
           const efforts =
             input.effort === undefined
               ? []

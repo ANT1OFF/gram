@@ -14,14 +14,14 @@ export const XAI_BASE_URL = "https://api.x.ai/v1";
  * OpenRouter, Claude Code gets Anthropic's models and Codex OpenAI's, the ones each runs well, and
  * OpenCode every other maker's: never Anthropic's, which stay with Claude Code. On xAI, Codex and
  * OpenCode get every model and Claude Code none, as xAI no longer serves the Anthropic API. Grok
- * Build runs on its own sign-in, never on a gateway.
+ * Build and Antigravity run on their own sign-in, never on a gateway.
  */
 export const gatewayModelForAgent = (
   profile: Pick<GatewayProfile, "kind">,
   model: Pick<GatewayModel, "id">,
   agent: AgentKind,
 ): boolean => {
-  if (agent === "grok") return false;
+  if (agent === "grok" || agent === "antigravity") return false;
   if (profile.kind === "xai") return agent !== "claude";
   if (profile.kind !== "openrouter") return true;
   switch (agent) {

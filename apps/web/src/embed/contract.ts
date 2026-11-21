@@ -282,7 +282,7 @@ export interface ShellMachines {
  * is offered; the deployment still has to refuse a model it does not allow.
  */
 /** The agents whose models the prompt box lists. */
-export type ShellAgent = "claude" | "codex" | "opencode" | "grok";
+export type ShellAgent = "claude" | "codex" | "opencode" | "grok" | "antigravity";
 
 /** One model the prompt box lists, as the embedding app's `ShellModels.offered` is given it. */
 export interface ShellModelChoice {
@@ -724,8 +724,8 @@ export interface ShellContributions {
   readonly settings?: ShellSettings;
   /**
    * Agents beyond Claude Code and Codex the pickers offer for the orchestrator and worker roles,
-   * where the server admits them too (`GRAM_ROLE_AGENTS`): only `grok` is taken. Read once, when
-   * the app mounts.
+   * where the server admits them too (`GRAM_ROLE_AGENTS`): only `grok` and `antigravity` are taken.
+   * Read once, when the app mounts.
    */
   readonly roleAgents?: readonly ShellAgent[];
 }
