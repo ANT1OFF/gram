@@ -789,7 +789,9 @@ export const HostedDeviceRegistered = Schema.Struct({ deviceId: DeviceId });
 
 /**
  * A token endpoint's answer, as Gram reads it: OAuth's fields, and `sub`, the person's subject
- * id, which Gram's protocol adds so a device knows whom it signs for.
+ * id, which Gram's protocol adds so a device knows whom it signs for. `organization`, where a
+ * server gives it: the organisation the grant is for, so what is made under one sign-in is told
+ * apart from the same person's in another (`WorkerMachineServer.account`).
  */
 export const HostedTokenAnswer = Schema.Struct({
   access_token: Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,4096}$/)),
@@ -798,6 +800,7 @@ export const HostedTokenAnswer = Schema.Struct({
   refresh_token: Schema.optional(Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,4096}$/))),
   scope: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),
   sub: Id,
+  organization: Schema.optional(Id),
 });
 export type HostedTokenAnswer = typeof HostedTokenAnswer.Type;
 
@@ -934,20 +937,61 @@ export interface WorkerMachineServer {
   readonly origin: string;
   /** What the server calls itself, as the app shows it. */
   readonly server: string;
+  /**
+   * An opaque mark of the sign-in machines are asked for under there (who the person is on that
+   * server, as the app hashes it). What is made under one sign-in is acted on only under it.
+   */
+  readonly account?: string;
+  /**
+   * The marks this same sign-in had before `account` (one of its own, until a renewal named its
+   * organisation): what was made under them is this sign-in's, and is moved to `account`.
+   */
+  readonly formerAccounts?: ReadonlyArray<string>;
+}
+
+/**
+ * One signed-in server's sign-in as worker machines carry it: its mark, and the marks it had
+ * before, whose machines and stops are moved to it. Told for every sign-in, paused or not.
+ */
+export interface WorkerMachineMarks {
+  readonly origin: string;
+  readonly account: string;
+  readonly formerAccounts: ReadonlyArray<string>;
 }
 
 export type WorkerMachineOp =
   /** Which server, if any, worker machines may be asked of now. */
   | { readonly op: "server" }
+  /** The mark of every sign-in the app holds, paused or not, with its former marks. */
+  | { readonly op: "marks" }
   /** One call to the server, answered with its status and JSON body as received. */
   | {
       readonly op: "call";
       readonly origin: string;
       readonly call: WorkerMachineCall;
       readonly body: Readonly<Record<string, unknown>>;
+      /**
+       * The latest time (milliseconds since the epoch) the app may send it: past it, after a
+       * token renewal say, it isn't sent at all. A stop carries one, so a stop that comes late
+       * can never land after the time its sender held the name for.
+       */
+      readonly sendBy?: number;
+      /**
+       * The sign-in it is for (`WorkerMachineServer.account`): signed in there as someone else,
+       * the app sends nothing and says so.
+       */
+      readonly account?: string;
     }
-  /** Keep carrying this machine's connection, dialling the relay again whenever it ends. */
-  | { readonly op: "relay"; readonly origin: string; readonly name: string }
+  /**
+   * Keep carrying this machine's connection, dialling the relay again whenever it ends: under
+   * the sign-in `account` alone, where one is given (`WorkerMachineServer.account`).
+   */
+  | {
+      readonly op: "relay";
+      readonly origin: string;
+      readonly name: string;
+      readonly account?: string;
+    }
   /** Stop carrying it. */
   | { readonly op: "unrelay"; readonly name: string }
   /**
@@ -957,7 +1001,11 @@ export type WorkerMachineOp =
    */
   | {
       readonly op: "relays";
-      readonly machines: ReadonlyArray<{ readonly origin: string; readonly name: string }>;
+      readonly machines: ReadonlyArray<{
+        readonly origin: string;
+        readonly name: string;
+        readonly account?: string;
+      }>;
       readonly fresh?: true;
     };
 
@@ -967,12 +1015,13 @@ export type WorkerMachineRequestMessage = {
 } & WorkerMachineOp;
 
 /**
- * Each op's answer. `server` answers the server, or none with why; `call`, the server's status and
- * body (at most 256 KiB, read as JSON, `undefined` when it isn't); `signIn`: the person must sign
- * in to it again first.
+ * Each op's answer. `server` answers the server, or none with why; `marks`, every sign-in's marks;
+ * `call`, the server's status and body (at most 256 KiB, read as JSON, `undefined` when it isn't);
+ * `signIn`: the person must sign in to it again first.
  */
 export type WorkerMachineResult =
   | { readonly ok: true; readonly server?: WorkerMachineServer; readonly why?: string }
+  | { readonly ok: true; readonly marks: ReadonlyArray<WorkerMachineMarks> }
   | { readonly ok: true; readonly status: number; readonly body: unknown }
   | { readonly ok: true }
   | { readonly ok: false; readonly why: string; readonly signIn?: true };
@@ -981,6 +1030,14 @@ export interface WorkerMachineResponseMessage {
   readonly type: "machines.response";
   readonly id: string;
   readonly result: WorkerMachineResult;
+}
+
+/**
+ * The app's word to this machine's server that its sign-ins changed (one signed in or out, a
+ * pause, a new mark): the server asks for every sign-in's marks again (`marks`).
+ */
+export interface WorkerMachineSignInsMessage {
+  readonly type: "machines.signins";
 }
 
 /**

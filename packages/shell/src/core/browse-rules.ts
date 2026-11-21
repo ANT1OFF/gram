@@ -52,6 +52,12 @@ export type AgentNavigation =
   | { readonly kind: "refuse"; readonly reason: BrowseRefusal; readonly host?: string | undefined };
 
 /** Where `url` goes when an agent's page navigates to it: asked for, clicked, or redirected. */
+/** Whether `url` is one of Gram's own pages (a file preview), which the agent never reads. */
+export function isAppPage(url: string, context: BrowseContext): boolean {
+  const decision = agentNavigation(url, context);
+  return decision.kind === "refuse" && decision.reason === "app";
+}
+
 export function agentNavigation(url: string, context: BrowseContext): AgentNavigation {
   const target = browseTarget(url);
   if (target.kind === "loopback") {

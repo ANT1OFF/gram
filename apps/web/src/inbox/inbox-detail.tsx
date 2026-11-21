@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { ThreadMachineMarker } from "@/thread/machine-marker";
+import { askFingerprint } from "@/orchestration/ask-actions";
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
 import {
   answerKey,
@@ -515,8 +516,9 @@ export function InboxDetail({
             </p>
           )
         ) : item.ask !== undefined ? (
-          // A new ask starts afresh: nothing picked, read in place unless it must be read in full.
-          <AskDetail key={item.key} item={item} card={card} />
+          // A new ask, or another request where this one was, starts afresh: nothing picked, the
+          // slip guard armed again, read in place unless it must be read in full.
+          <AskDetail key={askFingerprint(item.ask)} item={item} card={card} />
         ) : item.wait !== undefined && item.threadId !== undefined ? (
           <ul className="px-2">
             <WaitingItemRow

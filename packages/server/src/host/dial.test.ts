@@ -9,7 +9,7 @@ import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import { dialForever, dialOnce } from "./dial.ts";
+import { dialForever, dialOnce, HOST_DIAL_TOKEN_HEADER } from "./dial.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
@@ -95,13 +95,20 @@ const mainGram = (
   Effect.acquireRelease(
     Effect.promise(
       () =>
-        new Promise<{ port: number; dials: () => number; close: () => void }>((resolve) => {
+        new Promise<{
+          port: number;
+          dials: () => number;
+          heads: () => ReadonlyArray<string>;
+          close: () => void;
+        }>((resolve) => {
           const sockets: Array<NetSocket> = [];
+          const heads: Array<string> = [];
           const timers: Array<ReturnType<typeof setInterval>> = [];
           const server = createServer((socket) => {
             sockets.push(socket);
             socket.on("error", () => {});
             socket.once("data", (head) => {
+              heads.push(head.toString());
               const key = /sec-websocket-key: *(.+)\r\n/i.exec(head.toString())?.[1]?.trim() ?? "";
               const accept = createHash("sha1")
                 .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
@@ -131,6 +138,7 @@ const mainGram = (
             resolve({
               port: typeof address === "object" && address !== null ? address.port : 0,
               dials: () => sockets.length,
+              heads: () => heads,
               close: () => {
                 for (const timer of timers) clearInterval(timer);
                 for (const socket of sockets) socket.destroy();
@@ -279,6 +287,31 @@ describe("dialOnce", () => {
         300,
       );
       expect(why).toMatch(/^nothing from the main Gram for \d+ seconds$/);
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+});
+
+describe("a dial with a launcher's token", () => {
+  // An embedder that launched the host tells its hosts apart by this token, not by the key alone.
+  it.live("carries the token as it is at each dial, and no header without one", () =>
+    Effect.gen(function* () {
+      const main = yield* mainGram(undefined);
+      const { hostId, options } = keyed(main);
+      let token: string | undefined = "first-token";
+      const dial = { ...options, dialToken: () => token };
+      yield* dialOnce(dial, servedHost(hostId), Effect.void, 300);
+      token = "rotated-token";
+      yield* dialOnce(dial, servedHost(hostId), Effect.void, 300);
+      token = undefined;
+      yield* dialOnce(dial, servedHost(hostId), Effect.void, 300);
+      yield* dialOnce(options, servedHost(hostId), Effect.void, 300);
+      const sent = main
+        .heads()
+        .map((head) =>
+          new RegExp(`^${HOST_DIAL_TOKEN_HEADER}: *(.+)\r$`, "im").exec(head)?.[1]?.trim(),
+        );
+      expect(sent).toEqual(["first-token", "rotated-token", undefined, undefined]);
+      expect(main.heads().every((head) => /x-gram-host-signature: /i.test(head))).toBe(true);
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 });

@@ -365,6 +365,36 @@ export const readableOnly = <A>(
     }),
   );
 
+/** A workspace as the reader rule asks about it: its id and orchestrator, where it has one. */
+interface WorkspaceKey {
+  readonly id: string;
+  readonly orchestratorThreadId?: string | undefined;
+}
+
+/** Whether `reader` may see the workspace `workspace` (`privacyOfWorkspace`), at `level`. */
+export const readerMayWorkspace = (
+  reader: Reader | undefined,
+  workspace: WorkspaceKey,
+  level: Level = "read",
+): boolean => {
+  const orchestrator = workspace.orchestratorThreadId as ThreadId | undefined;
+  return readerMay(
+    reader,
+    level === "read"
+      ? privacyOfWorkspace(workspace.id, orchestrator)
+      : readableByOfWorkspace(workspace.id, orchestrator),
+  );
+};
+
+/** `items` this fiber's reader may see, by the workspace each is of (`readerMayWorkspace`). */
+export const readableWorkspacesOnly = <A>(
+  items: ReadonlyArray<A>,
+  workspaceOf: (item: A) => WorkspaceKey,
+): Effect.Effect<ReadonlyArray<A>> =>
+  Effect.map(currentReader, (reader) =>
+    items.filter((item) => readerMayWorkspace(reader, workspaceOf(item))),
+  );
+
 /**
  * The `readableBy` a thread made in this fiber inherits from the agent whose tool call makes it
  * (`Reader.fromThread`): a private thread's agent makes only threads private to the same person.

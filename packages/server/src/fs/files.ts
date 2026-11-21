@@ -368,7 +368,7 @@ export const listFolder = (
 export { languageFor };
 
 /** `path` opened read-only for as long as the scope lasts. */
-const openForRead = (
+export const openForRead = (
   path: string,
   flags: number = constants.O_RDONLY,
 ): Effect.Effect<FileHandle, NotFound | InvalidState, Scope.Scope> =>

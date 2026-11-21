@@ -15,6 +15,7 @@ apps/web/test-results*/
 apps/web/playwright-report*/
 apps/web/playwright-results.json
 apps/web/dist-e2e/
+apps/web/dist-bombadil/
 # Bombadil's exploration log and trace (apps/web/scripts/bombadil.mjs)
 apps/web/bombadil-out/
 

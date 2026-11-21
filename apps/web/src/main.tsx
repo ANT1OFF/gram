@@ -1,3 +1,9 @@
+// Before anything else: the replayable mock replaces timers and randomness that later modules keep.
+// oxlint-disable-next-line import/no-unassigned-import -- it must run before any other module
+import "./api/mock-modes/install";
+// oxlint-disable-next-line import/no-unassigned-import -- Motion's switch, apart from install's
+import "./api/mock-modes/still-motion";
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";

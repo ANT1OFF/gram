@@ -1,7 +1,13 @@
 // A thread as the event sink sends it on `thread.upsert` and `sink.started`: the fields a
 // receiver shows of it, and nothing of its conversation.
 
-import type { LimitWait, Thread, ThreadError } from "@gram/contracts";
+import {
+  type LimitWait,
+  redactText,
+  type Thread,
+  type ThreadError,
+  THREAD_ERROR_TEXT_MAX,
+} from "@gram/contracts";
 
 /**
  * The error a thread's last failed turn ended with, as `thread.upsert` carries it: Gram's own
@@ -48,3 +54,21 @@ export const threadData = (thread: Thread, status?: string): Record<string, unkn
   // whole thread, so one without it says the thread is not archived.
   ...(thread.parked ? { archived: true } : {}),
 });
+
+/**
+ * What `thread.status` adds for a thread in `error`: the line Gram set with it (many errors never
+ * reach `lastError`, such as a session that ended or a send the agent didn't take), on one line,
+ * redacted and clipped as a `ThreadError`'s text is. Any other status adds nothing.
+ */
+export const errorDetailData = (
+  status: string,
+  detail: string | undefined,
+): Record<string, unknown> => {
+  if (status !== "error" || detail === undefined) return {};
+  const line = redactText(detail).replaceAll(/\s+/g, " ").trim();
+  if (line === "") return {};
+  return {
+    detail:
+      line.length <= THREAD_ERROR_TEXT_MAX ? line : `${line.slice(0, THREAD_ERROR_TEXT_MAX)}…`,
+  };
+};

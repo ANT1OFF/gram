@@ -5,10 +5,24 @@ import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import { AppActivity } from "../../git/activity.ts";
 import { ThreadVisibility } from "../../git/visibility.ts";
+import { currentReader } from "../../embedding/readable-by.ts";
 import type { Handlers } from "./common.ts";
+
+/**
+ * Whose windows a caller's are: its signed-in person's, or the one key of a server everyone
+ * shares as one (the desktop's, or callers with no person). A window is known by this and its id.
+ */
+const ownerKey = Effect.map(currentReader, (reader) =>
+  reader === undefined ? "server" : `person:${reader.subject ?? ""}`,
+);
+
+/** A window's key in the registry: its owner and its id. */
+const keyOf = (owner: string, windowId: string) => `${owner}\u0000${windowId}`;
 
 interface Registration {
   readonly placement: WindowPlacement;
+  /** Whose window it is (`ownerKey`): only that caller's stream shows it, or its reports change it. */
+  readonly owner: string;
   /** The watch that registered it, so a reconnect's newer watch isn't forgotten by the old one. */
   readonly token: object;
   readonly sidebarCollapsed?: boolean;
@@ -30,8 +44,9 @@ export const makeWindowPlacements = Effect.gen(function* () {
   const changes = yield* PubSub.sliding<true>(1);
   const visibility = yield* Effect.serviceOption(ThreadVisibility);
   const activity = yield* Effect.serviceOption(AppActivity);
-  const snapshot = (): WindowPlacements => ({
-    windows: [...windows.values()].map((w) => w.placement),
+  /** `owner`'s windows: no one else's window or thread ids are shown to them. */
+  const snapshot = (owner: string): WindowPlacements => ({
+    windows: [...windows.values()].filter((w) => w.owner === owner).map((w) => w.placement),
   });
   const changed = PubSub.publish(changes, true).pipe(
     Effect.andThen(
@@ -66,21 +81,23 @@ export const makeWindowPlacements = Effect.gen(function* () {
   const watch = (windowId: string, name: string): Stream.Stream<WindowPlacements> =>
     Stream.unwrap(
       Effect.gen(function* () {
+        const owner = yield* ownerKey;
+        const key = keyOf(owner, windowId);
         const wakes = yield* PubSub.subscribe(changes);
         const token = {};
         yield* Effect.acquireRelease(
           Effect.sync(() => {
-            const threadIds = windows.get(windowId)?.placement.threadIds ?? [];
-            windows.set(windowId, { placement: { windowId, name, threadIds }, token });
+            const threadIds = windows.get(key)?.placement.threadIds ?? [];
+            windows.set(key, { placement: { windowId, name, threadIds }, owner, token });
           }).pipe(Effect.andThen(changed)),
           () =>
             Effect.sync(() => {
-              if (windows.get(windowId)?.token === token) windows.delete(windowId);
+              if (windows.get(key)?.token === token) windows.delete(key);
             }).pipe(Effect.andThen(changed)),
         );
         return Stream.concat(
-          Stream.fromIterable([snapshot()]),
-          Stream.fromSubscription(wakes).pipe(Stream.map(snapshot)),
+          Stream.fromIterable([snapshot(owner)]),
+          Stream.fromSubscription(wakes).pipe(Stream.map(() => snapshot(owner))),
         );
       }),
     );
@@ -92,10 +109,11 @@ export const makeWindowPlacements = Effect.gen(function* () {
     state: Pick<Registration, "sidebarCollapsed" | "visible" | "focused" | "focusedThreadId"> = {},
   ) =>
     Effect.gen(function* () {
-      const current = windows.get(windowId);
+      const key = keyOf(yield* ownerKey, windowId);
+      const current = windows.get(key);
       if (current === undefined) return;
       const { sidebarCollapsed, visible, focused, focusedThreadId } = state;
-      windows.set(windowId, {
+      windows.set(key, {
         ...current,
         placement: { ...current.placement, threadIds },
         ...(sidebarCollapsed === undefined ? {} : { sidebarCollapsed }),
