@@ -187,6 +187,11 @@ export interface PreviewState {
    * it. Absent while it has none, as every local page starts, and always for an agent's page.
    */
   readonly webRtc?: boolean | undefined;
+  /**
+   * The user's WebRTC switch may go on for this page now: a local page at the address they typed,
+   * none of Gram's own, with no agent driving it or handed it since. Absent otherwise.
+   */
+  readonly webRtcOffered?: boolean | undefined;
 }
 
 /**
@@ -233,8 +238,13 @@ export interface PreviewBounds {
  * link question.
  */
 export interface DesktopPreview {
-  /** Loads `url`, a loopback URL, in `threadId`'s preview; false when refused or it can't open. */
-  open(threadId: string, url: string): Promise<boolean>;
+  /**
+   * Loads `url`, a loopback URL, in `threadId`'s preview; false when refused or it can't open.
+   * `typed` says the user typed it in the address strip, the one page the WebRTC switch is offered
+   * on (`setWebRtc`); a port chip, a re-open or an agent's panel never says so. Shells older than
+   * the switch ignore it.
+   */
+  open(threadId: string, url: string, options?: { readonly typed?: boolean }): Promise<boolean>;
   /**
    * Loads `url`, an http(s) page off loopback (`webUrl`), in `threadId`'s preview, in a session
    * with the user's sign-ins. Only for what the user typed in the address strip, once; false when
@@ -277,10 +287,12 @@ export interface DesktopPreview {
   pick?(threadId: string): Promise<PickedElement | null>;
   cancelPick?(threadId: string): void;
   /**
-   * Lets `threadId`'s local page use WebRTC, or takes it away again: the page is made again and
-   * re-opened at its address. Only the user's own switch calls it; an agent's page never has
-   * WebRTC, and an agent taking the pane turns it off. False for a web page, or no page. Absent
-   * from shells that predate it.
+   * Lets `threadId`'s local page use WebRTC, or takes it away again: the page is made again, in a
+   * session of its own with nothing in it, and re-opened at its address. Only the user's own switch
+   * calls it, and only where `PreviewState.webRtcOffered` says; an agent's page never has WebRTC,
+   * and an agent taking the pane turns it off. Everything served at that origin gets it, code an
+   * agent writes into the app included, so the app turns it off as the thread's agent starts a
+   * turn. False where it is refused, for a web page, or no page. Absent from shells that predate it.
    */
   setWebRtc?(threadId: string, allowed: boolean): Promise<boolean>;
   /** Subscribes to `threadId`'s page changing; returns the unsubscribe function. */

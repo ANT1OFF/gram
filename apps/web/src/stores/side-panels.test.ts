@@ -478,15 +478,13 @@ describe("panel requests", () => {
       url: "https://organization.example.invalid/docs",
       typed: true,
     });
-    for (const refused of [
-      "file:///etc/passwd",
-      "javascript:alert(1)",
-      "data:text/html,x",
-      "http://localhost:3000/",
-    ]) {
+    for (const refused of ["file:///etc/passwd", "javascript:alert(1)", "data:text/html,x"]) {
       s().openWebPreview(B, refused);
       expect(s().previewPages[B]!.url).toBe("https://organization.example.invalid/docs");
     }
+    // A loopback address the user typed is theirs too: the pane opens it on loopback, said typed.
+    s().openWebPreview(B, "http://localhost:3000/");
+    expect(s().previewPages[B]).toMatchObject({ url: "http://localhost:3000/", typed: true });
   });
 
   it("holds a web page's re-open token only while the shell reports it", () => {

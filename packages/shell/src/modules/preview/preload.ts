@@ -6,7 +6,8 @@ import type { PreloadIpc } from "../../preload.ts";
 /** The preview module's bridge half: each thread's Preview tab page (`installPreview` serves it). */
 export const previewPreload = (ipc: PreloadIpc): Pick<DesktopBridge, "preview"> => ({
   preview: {
-    open: (threadId, url) => ipc.invoke(Channels.previewOpen, { threadId, url }),
+    open: (threadId, url, options) =>
+      ipc.invoke(Channels.previewOpen, { threadId, url, typed: options?.typed === true }),
     openWeb: (threadId, url) => ipc.invoke(Channels.previewOpenWeb, { threadId, url }),
     reopenWeb: (threadId, token) => ipc.invoke(Channels.previewReopenWeb, { threadId, token }),
     setBounds: (threadId, bounds) => ipc.send(Channels.previewBounds, { threadId, bounds }),

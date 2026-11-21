@@ -45,14 +45,23 @@ export class MockPreview implements DesktopPreview {
     }
   }
 
-  async open(threadId: string, url: string): Promise<boolean> {
+  async open(
+    threadId: string,
+    url: string,
+    options?: { readonly typed?: boolean },
+  ): Promise<boolean> {
     // As the shell: loopback only here; a web page only through `openWeb`.
     const target = loopbackUrl(url);
     if (target === undefined) return false;
     this.#reopenable.delete(threadId);
     const loaded = await this.#load(threadId, target);
-    // As the shell: anything else opening in the thread makes its page again with no WebRTC.
-    this.#emit(threadId, { webView: undefined, webRtc: undefined });
+    // As the shell: anything else opening in the thread makes its page again with no WebRTC, and
+    // the switch is offered only on an address the user typed.
+    this.#emit(threadId, {
+      webView: undefined,
+      webRtc: undefined,
+      webRtcOffered: options?.typed === true ? true : undefined,
+    });
     return loaded;
   }
 
@@ -91,6 +100,7 @@ export class MockPreview implements DesktopPreview {
       webView: undefined,
       driver: "agent",
       webRtc: undefined,
+      webRtcOffered: undefined,
     });
   }
 
@@ -179,7 +189,10 @@ export class MockPreview implements DesktopPreview {
   /** Dev and e2e hook: who drives `threadId`'s page, as the shell reports it. */
   drive(threadId: string, driver: "agent" | "user"): void {
     // As the shell's `contentsFor`: an agent taking the page makes it again with no WebRTC.
-    this.#emit(threadId, driver === "agent" ? { driver, webRtc: undefined } : { driver });
+    this.#emit(
+      threadId,
+      driver === "agent" ? { driver, webRtc: undefined, webRtcOffered: undefined } : { driver },
+    );
   }
 
   /** Dev and e2e hook: the agent's latest labelled input, and whether it records the page. */
@@ -199,10 +212,12 @@ export class MockPreview implements DesktopPreview {
     this.drive(threadId, "user");
   }
 
-  /** As the shell's: the user's switch, refused while an agent drives the page. */
+  /** As the shell's: the user's switch, only where it is offered; off again is a no-op when off. */
   setWebRtc(threadId: string, allowed: boolean): Promise<boolean> {
     const page = this.#pages.get(threadId);
-    if (page === undefined || page.state.driver === "agent") return Promise.resolve(false);
+    if (page === undefined) return Promise.resolve(false);
+    if ((page.state.webRtc === true) === allowed) return Promise.resolve(true);
+    if (allowed && page.state.webRtcOffered !== true) return Promise.resolve(false);
     this.#emit(threadId, { webRtc: allowed ? true : undefined });
     this.reload(threadId);
     return Promise.resolve(true);

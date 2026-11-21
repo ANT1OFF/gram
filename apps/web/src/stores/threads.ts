@@ -18,6 +18,7 @@ import { create } from "zustand";
 
 import type { ApiServerEvent, CloseThreadOptions } from "@/api/types";
 import { useBindingsStore } from "@/keyboard/bindings-store";
+import { endWebRtcAtTurn } from "@/panels/preview-webrtc";
 import { limitPercent, resetText, windowWord } from "@/usage/limit-format";
 
 import { useNotificationHistory } from "./notifications";
@@ -206,6 +207,8 @@ export const createThreadsSlice = (
         if (event.status === "starting" || event.status === "running") {
           useSuggestionsStore.getState().clear(event.threadId);
         }
+        // And ends the user's WebRTC switch on the thread's page, which serves what the agent writes.
+        endWebRtcAtTurn(event.threadId, get?.().byId[event.threadId]?.status, event.status);
         // Most of these only move the activity line, several a second per working thread; that
         // leaves `byId` alone, so the sidebar and every `byId` subscriber sit it out. Every one
         // states the compaction under way, so one without it says none is.

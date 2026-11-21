@@ -67,6 +67,7 @@ import { installAgentHandlers, type PreviewAgent } from "./agent-handlers.ts";
 export type { PreviewAgent, PreviewRequestDetails } from "./agent-handlers.ts";
 import { installPickHandlers } from "./pick-handlers.ts";
 import { guardWebRtc, heldForGuard, webRtcGuardHeld } from "./webrtc-guard.ts";
+import { installWebRtcSwitch, originOf, switchOriginOf } from "./webrtc-allowance.ts";
 
 /**
  * No `persist:` prefix, so their cookies and storage live in memory and are gone at quit. The local
@@ -77,6 +78,8 @@ export const PREVIEW_PARTITIONS = {
   local: "gram-preview",
   web: "gram-preview-web",
   privateWeb: "gram-preview-lan",
+  /** A thread's page the user let use WebRTC: `${webRtc}-<n>`, its storage cleared each time. */
+  webRtc: "gram-preview-webrtc",
 } as const;
 
 /** Which kind of session a thread's page is in: loopback and agents' pages, or the user's web pages. */
@@ -119,6 +122,8 @@ export interface PreviewOptions {
   readonly lookupWebHost?: WebLookup | undefined;
   /** How the web session's proxy connects to an address it checked; directly when absent. */
   readonly dialWebAddress?: WebDial | undefined;
+  /** Gram's own loopback origins (its server's, its dev web app's), whose pages never get WebRTC. */
+  readonly appOrigins?: (() => Iterable<string>) | undefined;
 }
 
 interface Preview {
@@ -152,17 +157,13 @@ interface Preview {
    * the page again with the guard on.
    */
   readonly webRtcOrigin: string | undefined;
+  /**
+   * The origin of the address the user typed for this local page in the address strip; gone once
+   * anything else opens in the thread or an agent is handed the page. Only there is the WebRTC
+   * switch offered (`webrtc-allowance.ts`).
+   */
+  typedOrigin: string | undefined;
 }
-
-/** `url`'s origin, `undefined` for one that has none. */
-const originOf = (url: string) => {
-  try {
-    const { origin } = new URL(url);
-    return origin === "null" ? undefined : origin;
-  } catch {
-    return undefined;
-  }
-};
 
 /** What main can reach of the previews, for tools that act on a page from the main process. */
 export interface PreviewHost {
@@ -193,6 +194,8 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
    * another session, with a proxy of its own.
    */
   const privatePartitions = new Map<string, number>();
+  /** Each thread's partition number for a page the user let use WebRTC. */
+  const webRtcPartitions = new Map<string, number>();
   /** Each web session's proxy, by the realm it asks for its credential in. */
   const proxies = new Map<string, { readonly proxy: WebProxy; readonly ses: Session }>();
   /**
@@ -401,9 +404,16 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     threadId: string,
     network: WebNetwork | undefined,
     destination: string | undefined,
+    webRtc = false,
   ) => {
     let partition: string = PREVIEW_PARTITIONS.local;
-    if (kind === "web" && network === "private") {
+    if (kind === "local" && webRtc) {
+      // Its own, so nothing another local page left (a service worker, storage, cache), an agent's
+      // above all, is served into a page with WebRTC.
+      const n = webRtcPartitions.get(threadId) ?? webRtcPartitions.size + 1;
+      webRtcPartitions.set(threadId, n);
+      partition = `${PREVIEW_PARTITIONS.webRtc}-${n}`;
+    } else if (kind === "web" && network === "private") {
       const key = `${threadId} ${destination ?? ""}`;
       let n = privatePartitions.get(key);
       if (n === undefined) {
@@ -423,6 +433,9 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     sessions.set(partition, ses);
     return ses;
   };
+
+  /** Where the user's switch may give a page WebRTC now. */
+  const switchOrigin = switchOriginOf(options.agent, options.appOrigins);
 
   const stateOf = (preview: Preview): PreviewState | null => {
     const contents = preview.view.webContents;
@@ -448,6 +461,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       ...(recording ? { recording } : {}),
       ...(preview.token === undefined ? {} : { webView: preview.token }),
       ...(preview.webRtcOrigin === undefined ? {} : { webRtc: true }),
+      ...(switchOrigin(preview) === undefined ? {} : { webRtcOffered: true }),
     };
   };
 
@@ -514,7 +528,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     const destination = web === "private" ? destinationOf(opening ?? "") : undefined;
     const view = new WebContentsView({
       webPreferences: {
-        session: sessionOf(kind, threadId, web, destination),
+        session: sessionOf(kind, threadId, web, destination, webRtcOrigin !== undefined),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -552,6 +566,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
           ? guardWebRtc(view.webContents, (fields, message) => options.log.warn(fields, message))
           : Promise.resolve(true),
       webRtcOrigin: kind === "local" ? webRtcOrigin : undefined,
+      typedOrigin: undefined,
     };
     const contents = view.webContents;
     previewContents.add(contents);
@@ -623,7 +638,8 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
         else report(next);
       });
     const steer = (event: { preventDefault(): void }, url: string, redirect: boolean) => {
-      if (leavesWebRtc(url)) {
+      // Only where a local page may load: a link off loopback still goes to the link question.
+      if (leavesWebRtc(url) && previewNavigation(url) === "load") {
         event.preventDefault();
         guardAgain(url);
       } else if (kind === "local") steerLocal(event, url);
@@ -763,6 +779,11 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
           : replace(known, kind, url);
     touch(preview);
     preview.watchers.add(sender);
+    // Only the address strip says the user typed it; a port chip, a re-open, an agent's panel don't.
+    preview.typedOrigin =
+      kind === "local" && Reflect.get(input as object, "typed") === true
+        ? originOf(url)
+        : undefined;
     await openIn(preview, kind, url);
     return true;
   };
@@ -832,22 +853,19 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     preview.error = undefined;
     preview.view.webContents.reload();
   });
-  // The user's own switch: the page is made again, with WebRTC or without, at the same address.
-  ipc.handle(Channels.previewSetWebRtc, async (input, event) => {
-    const preview = previewFor(input, event.sender);
-    const allowed: unknown =
-      typeof input === "object" && input !== null ? Reflect.get(input, "allowed") : undefined;
-    if (preview?.kind !== "local" || typeof allowed !== "boolean") return false;
-    if (options.agent?.driverOf(preview.threadId) === "agent") return false;
-    if ((preview.webRtcOrigin !== undefined) === allowed) return true;
-    // For the origin the page is on as the user switches it, and no other.
-    const url = preview.view.webContents.getURL();
-    const origin = loopbackUrl(url) === undefined ? undefined : originOf(url);
-    if (allowed && origin === undefined) return false;
-    const next = replace(preview, "local", undefined, allowed ? origin : undefined);
-    if (loopbackUrl(url) !== undefined) await openIn(next, "local", url);
-    report(next);
-    return true;
+  installWebRtcSwitch(ipc, {
+    previewFor,
+    originFor: switchOrigin,
+    remake: async (preview, origin) => {
+      const next = replace(preview, "local", undefined, origin);
+      const ses = next.view.webContents.session;
+      // Nothing a page with WebRTC on before left in its partition: it starts empty each time.
+      if (origin !== undefined)
+        await Promise.all([ses.clearStorageData(), ses.clearCache()]).catch(() => {});
+      return next;
+    },
+    open: (preview, url) => openIn(preview, "local", url),
+    report,
   });
   installAgentHandlers(ipc, previewFor, options.agent);
   installPickHandlers(ipc, previewFor);
@@ -879,8 +897,12 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       // An agent's page never has WebRTC: one the user let have it is made again without, and only
       // for an agent that takes the pane; a peek leaves the user's page as it is and gets none.
       const allowed = known?.webRtcOrigin !== undefined;
-      if (!allowed && contentsOf(threadId) !== undefined && known !== undefined)
+      if (!allowed && contentsOf(threadId) !== undefined && known !== undefined) {
+        // The agent has the page now: the user's switch is not offered on it again until they
+        // type an address for it themselves.
+        known.typedOrigin = undefined;
         return whenGuarded(known);
+      }
       if (!make) return undefined;
       // A web page the user opened is never the agent's: it closes, unread, for a page of its own,
       // and can't be re-opened in its session after.

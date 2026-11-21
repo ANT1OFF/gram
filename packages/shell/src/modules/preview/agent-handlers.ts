@@ -44,6 +44,8 @@ export interface PreviewAgent {
   userInput(contents: WebContents): void;
   /** Who drives the thread's page, once its agent has used it. */
   driverOf(threadId: string): "agent" | "user" | undefined;
+  /** Whether `url` is one of Gram's own pages the server named for the thread (a file preview). */
+  isAppPage?(threadId: string, url: string): boolean;
   actionOf?(threadId: string): { readonly summary: string; readonly at: number } | undefined;
   recordingOf?(threadId: string): boolean;
   handBack(threadId: string): void;

@@ -111,7 +111,9 @@ async function main() {
   };
 
   const before = turn.connections;
-  await invoke(Channels.previewOpen, { threadId: "t-probe", url });
+  // As the address strip opens what the user typed, the one page the WebRTC switch is offered on.
+  const typeIt = () => invoke(Channels.previewOpen, { threadId: "t-probe", url, typed: true });
+  await typeIt();
   host.contentsOf("t-probe")?.setBackgroundThrottling(false);
   const first = await probed("t-probe");
   await delay(1500);
@@ -165,8 +167,10 @@ async function main() {
       (await stateOf("t-probe"))?.webRtc === undefined,
     opened.found,
   );
+  check("the switch is refused on a page the user didn't type", (await allow()) === false);
 
   // The page leaves the origin it was switched on for: made again guarded, there.
+  await typeIt();
   await allow();
   const left = (await settled()).page;
   const elsewhere = `http://localhost:${dev.address().port}/`;
@@ -184,6 +188,7 @@ async function main() {
   );
 
   // An agent's peek leaves the user's page alone; an agent taking it makes it again guarded.
+  await typeIt();
   await allow();
   const theirs = (await settled()).page;
   check(

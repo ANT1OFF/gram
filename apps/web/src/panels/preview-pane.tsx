@@ -43,6 +43,7 @@ import { showPage } from "@/pages/page-pane-store";
 import { useCoveredByOverlay } from "./preview-cover";
 import { AgentActivity, DriverButton, ToolButton } from "./preview-strip";
 import { ServerPreview, useServerPage } from "./server-preview";
+import { turnUnderWay } from "./preview-webrtc";
 
 /** The shell's preview, or the mock API's stand-in for it; absent where neither has one. */
 const previewBridge = (): DesktopPreview | undefined =>
@@ -64,7 +65,7 @@ const unopened = (url: string): PreviewState => ({
  */
 const loads = new Map<string, { readonly id: number; readonly done: Promise<boolean> }>();
 
-/** The requests whose typed web address was asked for already: each is asked for once. */
+/** The requests whose typed address was asked for already: each is asked for once. */
 const typedSent = new Set<number>();
 
 const load = (
@@ -80,9 +81,13 @@ const load = (
   // closed since is re-opened by the shell's own token and record, which it alone decides on.
   // Anything else, wherever it has gone since, opens on loopback only.
   let done: Promise<boolean>;
+  // A local address the user typed is the one page the WebRTC switch is offered on, once too.
   if (page.typed === true && !typedSent.has(id)) {
     typedSent.add(id);
-    done = bridge.openWeb?.(threadId, url) ?? Promise.resolve(false);
+    done =
+      loopbackUrl(url) === undefined
+        ? (bridge.openWeb?.(threadId, url) ?? Promise.resolve(false))
+        : bridge.open(threadId, url, { typed: true });
   } else if (page.webView !== undefined) {
     done = bridge.reopenWeb?.(threadId, page.webView) ?? Promise.resolve(false);
   } else {
@@ -126,6 +131,8 @@ function ShellPreview({
   const adoptPreviewPage = useLayoutStore((s) => s.adoptPreviewPage);
   const ports = useThreadsStore((s) => s.byId[threadId]?.ports);
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
+  // The WebRTC switch stays off while the agent works: what it writes is served at that address.
+  const working = useThreadsStore((s) => turnUnderWay(s.byId[threadId]?.status));
   const roots = useMemo(
     () =>
       thread === undefined
@@ -290,9 +297,8 @@ function ShellPreview({
     const typedFile = previewFileTarget(target);
     const url = typedFile === undefined ? previewAddress(target) : undefined;
     setRefused(url === undefined && typedFile === undefined);
-    // The one place a web page is asked for: the user typing it here.
-    if (url !== undefined && loopbackUrl(url) !== undefined) openPreview(threadId, url);
-    else if (url !== undefined) openWebPreview(threadId, url);
+    // The one place a web page is asked for, or a local one is said to be typed: the user typing it.
+    if (url !== undefined) openWebPreview(threadId, url);
     else if (typedFile !== undefined) previewFile(threadId, typedFile, { previewPane: true });
   };
   // A file shows as its path, and its board, while the page is still the file the server served.
@@ -396,23 +402,25 @@ function ShellPreview({
             <SquareMousePointer />
           </ToolButton>
         )}
-        {bridge?.setWebRtc !== undefined && current !== null && current.webView === undefined && (
-          <ToolButton
-            label={
-              current.driver === "agent"
-                ? "WebRTC stays off while an agent drives the page"
-                : current.webRtc === true
+        {bridge?.setWebRtc !== undefined &&
+          current !== null &&
+          (current.webRtc === true || current.webRtcOffered === true) && (
+            <ToolButton
+              label={
+                current.webRtc === true
                   ? "Turn WebRTC off for this page"
-                  : "Let this page use WebRTC (it reloads)"
-            }
-            disabled={current.driver === "agent"}
-            pressed={current.webRtc === true}
-            testId="preview-webrtc"
-            onClick={() => void bridge.setWebRtc?.(threadId, current.webRtc !== true)}
-          >
-            <Radio />
-          </ToolButton>
-        )}
+                  : working
+                    ? "WebRTC stays off while the agent works"
+                    : "Let this address use WebRTC: it reloads, and anything served here gets it, code the agent writes included. It ends when the agent next starts."
+              }
+              disabled={current.webRtc !== true && working}
+              pressed={current.webRtc === true}
+              testId="preview-webrtc"
+              onClick={() => void bridge.setWebRtc?.(threadId, current.webRtc !== true)}
+            >
+              <Radio />
+            </ToolButton>
+          )}
         <ToolButton
           label={
             inspecting
