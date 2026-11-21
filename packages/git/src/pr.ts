@@ -27,8 +27,10 @@ import * as Request from "effect/Request";
 import * as RequestResolver from "effect/RequestResolver";
 import { parseGitDiffCapped, type DiffFile } from "./diff.ts";
 import { gh, ghApi, git, repoTop, tryRepoTop } from "./exec.ts";
+import { asGhCaller, ghCallEnvOf, ghCallerKey } from "./gh-caller.ts";
 import { fromGitPath } from "./paths.ts";
 import { makeTtlCache, PR_POLL_TTL_MS, trackBadgeCache } from "./pr-cache.ts";
+import { type CallerPrMemo, makePrMemo, type PrMemo, THREADS_MAX_AGE_MS } from "./pr-memo.ts";
 import { Proc } from "./proc.ts";
 import { detectRateLimit, type RateLimitSignal } from "./rate-limit.ts";
 import { originTips } from "./refs.ts";
@@ -885,38 +887,6 @@ const restFallback = (
         node === undefined ? undefined : toPrStatus(node, NOT_ANCHORED, bots),
       );
 
-/**
- * How long a PR's review threads are reused before they ride a sweep again. A thread someone opens
- * or replies to moves the PR's `updatedAt`, which refetches them at once; resolving one on
- * github.com may not, and this is how long that can go unseen.
- */
-export const THREADS_MAX_AGE_MS = 120_000;
-
-interface CarriedThreads {
-  /** The `reviewThreads` connection as GitHub returned it. */
-  readonly threads: unknown;
-  /** `headRefOid|updatedAt` of the PR when they were read. */
-  readonly stamp: string;
-  readonly at: number;
-}
-
-/**
- * What one resolver remembers between documents: the PR each branch last resolved to, so its full
- * fields can ride the same document as the candidates it is chosen from, and each PR's review
- * threads, so they needn't.
- */
-export interface PrMemo {
-  readonly known: Map<string, number>;
-  readonly threads: Map<string, CarriedThreads>;
-  /** Forgets the threads, for a write that may have resolved or added one. */
-  readonly clear: () => void;
-}
-
-export const makePrMemo = (): PrMemo => {
-  const threads = new Map<string, CarriedThreads>();
-  return { known: new Map(), threads, clear: () => threads.clear() };
-};
-
 const branchKey = (repo: string, branch: string) => `${repo.toLowerCase()}#${branch}`;
 const prKey = (repo: string, number: number) => `${repo.toLowerCase()}#${number}`;
 
@@ -929,7 +899,7 @@ const reviewedBadge = (
   block: { readonly repo: string; readonly number: number; readonly fields: PrFieldSet },
   anchoring: Pick<ChosenPr, "headMatches" | "aheadOfPr">,
   bots: ReadonlyArray<ReviewBot>,
-  memo: PrMemo,
+  memo: CallerPrMemo,
   now: number,
 ): PrStatus | undefined => {
   const key = prKey(block.repo, block.number);
@@ -947,7 +917,7 @@ type Entry = Request.Entry<GetPrStatus>;
 const resolveChunk = (
   chunk: ReadonlyArray<Entry>,
   bots: ReadonlyArray<ReviewBot>,
-  memo: PrMemo,
+  memo: CallerPrMemo,
 ): Effect.Effect<void, never, Proc> =>
   Effect.gen(function* () {
     const first = chunk[0];
@@ -1107,13 +1077,19 @@ export const makePrResolver = (
   reviewBots: Effect.Effect<ReadonlyArray<ReviewBot>> = Effect.succeed(DEFAULT_REVIEW_BOTS),
   memo: PrMemo = makePrMemo(),
 ): RequestResolver.RequestResolver<GetPrStatus> =>
-  RequestResolver.make<GetPrStatus>((entries) =>
-    Effect.gen(function* () {
-      const bots = yield* reviewBots;
-      for (let start = 0; start < entries.length; start += GQL_BRANCHES_PER_QUERY) {
-        yield* resolveChunk(entries.slice(start, start + GQL_BRANCHES_PER_QUERY), bots, memo);
-      }
-    }).pipe(Effect.provideService(Proc, proc)),
+  RequestResolver.grouped(
+    RequestResolver.make<GetPrStatus>((entries) => {
+      // One caller a batch (`grouped`), each read under its own `GhCallEnv`.
+      const env = ghCallEnvOf(entries[0].context);
+      const mine = memo.forCaller(ghCallerKey(env));
+      return Effect.gen(function* () {
+        const bots = yield* reviewBots;
+        for (let start = 0; start < entries.length; start += GQL_BRANCHES_PER_QUERY) {
+          yield* resolveChunk(entries.slice(start, start + GQL_BRANCHES_PER_QUERY), bots, mine);
+        }
+      }).pipe(Effect.provideService(Proc, proc), asGhCaller(env));
+    }),
+    (entry) => ghCallerKey(ghCallEnvOf(entry.context)),
   );
 
 const sharedResolvers = new WeakMap<
@@ -1291,7 +1267,12 @@ export class Pr extends Context.Service<
      * fails: a lookup that can't be answered now is simply asked again by `status`.
      */
     readonly prime: (
-      lookups: ReadonlyArray<{ readonly cwd: string; readonly bound?: BoundPrRef | undefined }>,
+      lookups: ReadonlyArray<{
+        readonly cwd: string;
+        readonly bound?: BoundPrRef | undefined;
+        /** Whom a bound lookup is made for (`GhCallEnv`); the caller's own when absent. */
+        readonly caller?: Readonly<Record<string, string>> | undefined;
+      }>,
     ) => Effect.Effect<void>;
   }
 >()("@gram/git/Pr") {}
@@ -1649,9 +1630,13 @@ export const PrLive = Layer.effect(
         // and a request issued as each checkout's `git` runs finish is a turn of its own.
         const ready = yield* Effect.forEach(
           lookups,
-          ({ cwd, bound }) =>
+          ({ cwd, bound, caller }) =>
             bound !== undefined
-              ? Effect.succeed(boundBadges.get({ cwd, bound }))
+              ? Effect.succeed(
+                  caller === undefined
+                    ? boundBadges.get({ cwd, bound })
+                    : asGhCaller(caller)(boundBadges.get({ cwd, bound })),
+                )
               : provide(resolvePrInputs(cwd)).pipe(
                   Effect.flatMap((inputs) =>
                     Effect.map(Clock.currentTimeMillis, (now) => {
