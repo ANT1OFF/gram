@@ -220,7 +220,14 @@ test("the Terminal tab is a shell of your own in the worker's worktree, taken on
   await composer.click();
   await pane(page).getByTestId("beside-tab-terminal").click();
   const terminal = pane(page).getByTestId("terminal");
-  await expect(terminalText(terminal)).toContainText(`Gram mock shell in ${checkout}`);
+  await expect(terminalText(terminal)).toContainText("Gram mock shell in");
+  const cwds = () =>
+    page.evaluate(
+      async (worker) =>
+        (await window.gramMock!.terminalList(worker as never)).map((each) => each.cwd),
+      made.searchWorker,
+    );
+  await expect.poll(cwds).toEqual([checkout]);
   await expect(composer).toBeFocused();
   await expect(pane(page).getByTestId("beside-terminal")).toHaveCount(0);
 

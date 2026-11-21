@@ -693,11 +693,7 @@ function ToolBody({
         />
       );
     case "terminal":
-      return (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <TerminalPanel key={worker} threadId={worker} focusOnOpen={false} />
-        </div>
-      );
+      return <TerminalPanel key={worker} threadId={worker} focusOnOpen={false} />;
     case "changes":
       // A finished worker's, as its PR lists them: its branch is merged, its tree clean.
       if (finished && prFiles !== undefined) {
