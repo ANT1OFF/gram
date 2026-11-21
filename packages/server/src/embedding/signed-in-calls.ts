@@ -3,6 +3,7 @@
 // stopped or failed there, and a release told.
 
 import * as Effect from "effect/Effect";
+import { fenceRefusalOf, RELEASE_ACTS_WITHIN_MS } from "./signed-in-fences.ts";
 import type { Refused, WorkerMachinePortShape } from "./signed-in-port.ts";
 import { codeOf, isNotFound, type NameLocks, withName } from "./worker-machine-stops.ts";
 
@@ -273,7 +274,13 @@ export const tellSignedInRelease = (
       const answered = yield* port.call(
         machine.via,
         "release",
-        { name: machine.name, released, reason: released ? "finished" : "working" },
+        {
+          name: machine.name,
+          released,
+          reason: released ? "finished" : "working",
+          // Reached later, it does nothing, and is told again: never on a newer start of the name.
+          notAfter: Date.now() + RELEASE_ACTS_WITHIN_MS,
+        },
         { account: machine.account },
       );
       if (!answered.ok) {
@@ -293,6 +300,19 @@ export const tellSignedInRelease = (
           ? (answered.body as { known?: unknown }).known
           : undefined;
       if (known === false) return yield* Effect.fail(new Error("the server knows no such machine"));
+      // Its fence held it back, so nothing changed there. Late: asked again now, in time. The
+      // name another run now: told again next pass, decided afresh, for the run it is then.
+      const fenced = fenceRefusalOf(answered);
+      if (fenced === "expired") {
+        last = "it came after its time";
+        continue;
+      }
+      const applied =
+        typeof answered.body === "object" && answered.body !== null
+          ? (answered.body as { applied?: unknown }).applied
+          : undefined;
+      if (fenced === "superseded" || applied === false)
+        return yield* Effect.fail(new Error("the server applied it to no run of the machine"));
       return "applied" as const;
     }
     // Only what went wrong, in a few words: what a server answers isn't written to the log.

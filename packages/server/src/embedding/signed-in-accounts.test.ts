@@ -7,6 +7,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { ServerConfig } from "../config.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
@@ -332,6 +333,62 @@ describe("a sign-in that isn't the one new machines are asked of", () => {
       yield* workersOver(app, hosts, disk.dir);
       yield* until(() => disk.owedAccounts()[0] === ORG);
       expect(hosts.list().map((each) => each.viaAccount)).toEqual([ORG]);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("a spawn under way as its sign-in takes its organisation's mark", () => {
+  it.live("finds its machine under the new mark, and asks and owes under it from then on", () =>
+    Effect.gen(function* () {
+      const key = generateHostKey();
+      const real = yield* RemoteHosts.make(memoryMachineStore());
+      // The machine's host dials in only once the test says so.
+      const online = { now: false };
+      const hosts = {
+        ...real,
+        list: () => real.list().map((each) => (online.now ? { ...each, onlineSince: 1 } : each)),
+      };
+      const asked: Array<string | undefined> = [];
+      const base = bridgeWorkerMachines(
+        fakeApp({
+          answer: () => ({ status: 200, body: { phase: "running", publicKey: key.publicKey } }),
+        }).port,
+      );
+      const port: WorkerMachinePortShape = {
+        ...base,
+        call: (origin, call, body, options) => {
+          asked.push(options?.account);
+          return base.call(origin, call, body, options);
+        },
+      };
+      // The layer's word of the sign-in's mark now (`markOf`), as its marks were last told.
+      const promoted = { now: false };
+      const source = signedInSource(
+        { ...SERVER, account: OWN },
+        {
+          port,
+          hosts,
+          owed: memoryOwedStops(),
+          everyMs: 5,
+          timeoutMs: 2_000,
+          markOf: (_origin, account) => (promoted.now && account === OWN ? ORG : undefined),
+        },
+      );
+      const arriving = yield* Effect.forkScoped(source.arrive(NAME));
+      // Registered under the mark the spawn began under.
+      yield* until(() => real.list()[0]?.viaAccount === OWN);
+      // A renewal names the organisation: the layer moves the machine, and tells its new mark.
+      real.machines.remark(ORIGIN, OWN, ORG);
+      promoted.now = true;
+      asked.length = 0;
+      yield* Effect.sleep("30 millis");
+      online.now = true;
+      // The spawn finds its own machine, moved, rather than failing it as another sign-in's.
+      const arrived = yield* Fiber.join(arriving);
+      expect(arrived).toBe(real.list()[0]?.id);
+      expect(real.list().map((each) => each.viaAccount)).toEqual([ORG]);
+      expect(asked.length).toBeGreaterThan(0);
+      expect(new Set(asked)).toEqual(new Set([ORG]));
     }).pipe(Effect.scoped),
   );
 });
