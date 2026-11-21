@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
+import { ORIGIN_KEY_HEADER } from "../http/auth.ts";
 
 // Which processes the server's tree holds with N open threads, and who started them: zombies (`Z`),
 // git and the agent CLI, sampled over time. Threads open without a prompt, so nothing is spent.
@@ -195,12 +196,16 @@ const bootFrom = (server: ChildProcess) =>
 const bootCookie = (port: number, token: string) =>
   Effect.promise(
     () =>
-      new Promise<string>((resolve, reject) => {
+      new Promise<{ cookie: string; key: string }>((resolve, reject) => {
         const req = httpRequest(
           { host: "127.0.0.1", port, path: `/?boot=${token}`, agent: false },
           (res) => {
             res.resume();
-            resolve((res.headers["set-cookie"]?.[0] ?? "").split(";")[0] ?? "");
+            // The cookie, and the page's key from the redirect's fragment.
+            resolve({
+              cookie: (res.headers["set-cookie"]?.[0] ?? "").split(";")[0] ?? "",
+              key: String(res.headers.location).split("#gram-key=")[1] ?? "",
+            });
           },
         );
         req.on("error", reject);
@@ -258,7 +263,7 @@ describe.skipIf(!CENSUS || process.platform === "win32")("server process census"
         server.stderr?.resume();
 
         const { port, token } = yield* bootFrom(server);
-        const cookie = yield* bootCookie(port, token);
+        const { cookie, key: pageKey } = yield* bootCookie(port, token);
         const protocol = yield* Layer.build(
           RpcClient.layerProtocolSocket().pipe(
             Layer.provide(Socket.layerWebSocket(`ws://127.0.0.1:${port}/ws`)),
@@ -268,7 +273,9 @@ describe.skipIf(!CENSUS || process.platform === "win32")("server process census"
                   new (globalThis.WebSocket as unknown as new (
                     url: string,
                     init: { headers: Record<string, string> },
-                  ) => globalThis.WebSocket)(url, { headers: { cookie } }),
+                  ) => globalThis.WebSocket)(url, {
+                    headers: { cookie, [ORIGIN_KEY_HEADER]: pageKey },
+                  }),
               ),
             ),
             Layer.provide(RpcSerialization.layerJson),

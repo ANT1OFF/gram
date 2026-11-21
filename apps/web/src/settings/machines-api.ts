@@ -1,4 +1,5 @@
 import { serverUrl } from "@/api/server-base";
+import { withOriginKey } from "../api/origin-key";
 
 /**
  * The machines joined to this Gram, managed over plain same-origin POSTs that the server's auth
@@ -230,14 +231,17 @@ export interface JoinLink {
 }
 
 const post = (path: string, body?: unknown): Promise<Response> =>
-  fetch(serverUrl(path), {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    ...(body === undefined
-      ? {}
-      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-  });
+  fetch(
+    serverUrl(path),
+    withOriginKey({
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      ...(body === undefined
+        ? {}
+        : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+    }),
+  );
 
 const refusal = async (response: Response, fallback: string): Promise<MachinesError> => {
   const text = await response.text().catch(() => "");

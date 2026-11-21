@@ -1,6 +1,7 @@
 import type { RequestAnswer, RespondManyResult } from "@gram/contracts";
 
 import { serverUrl } from "../server-base";
+import { withOriginKey } from "../origin-key";
 
 /**
  * A server whose people sign in through a fronting proxy takes an answer to a card only as its own
@@ -22,18 +23,21 @@ export const postAnswer = async (
   /** The card's key as it was listed: only that card takes the answer. */
   shown?: string,
 ): Promise<void> => {
-  const response = await fetch(serverUrl(ASK_ANSWER_PATH), {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      threadId,
-      requestId,
-      answer,
-      ...(shown === undefined ? {} : { shown }),
+  const response = await fetch(
+    serverUrl(ASK_ANSWER_PATH),
+    withOriginKey({
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        threadId,
+        requestId,
+        answer,
+        ...(shown === undefined ? {} : { shown }),
+      }),
     }),
-  });
+  );
   if (response.ok) return;
   const value: unknown = await response.json().catch(() => undefined);
   const error =

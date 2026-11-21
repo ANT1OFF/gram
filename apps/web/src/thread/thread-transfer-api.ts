@@ -1,4 +1,5 @@
 import { serverUrl } from "@/api/server-base";
+import { withOriginKey } from "../api/origin-key";
 
 /**
  * A thread out of this server as a bundle (`POST /threads/export`), and the read-only copy it
@@ -10,13 +11,16 @@ export class ThreadTransferError extends Error {}
 const post = async (path: string, body: unknown, fallback: string): Promise<unknown> => {
   let response: Response;
   try {
-    response = await fetch(serverUrl(path), {
-      method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    response = await fetch(
+      serverUrl(path),
+      withOriginKey({
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
   } catch {
     throw new ThreadTransferError(fallback);
   }

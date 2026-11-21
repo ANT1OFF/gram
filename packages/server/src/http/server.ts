@@ -7,7 +7,6 @@ import { GitHubRelayLive } from "../embedding/github-relay.ts";
 import { type AnswerNote, EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
-import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { GramRpcs, parseQuestions, QUESTIONS_FILE, type RequestId } from "@gram/contracts";
 import * as Context from "effect/Context";
@@ -21,7 +20,6 @@ import * as ByteSize from "effect/ByteSize";
 import * as Layer from "effect/Layer";
 import { mkdirSync } from "node:fs";
 import { createServer } from "node:http";
-import { Readable } from "node:stream";
 import { McpRoute } from "../app-tools/http-mcp.ts";
 import { ClaudeAiSeenLive } from "../connectors/claude-ai-seen.ts";
 import { McpTokens } from "../app-tools/mcp-tokens.ts";
@@ -123,18 +121,15 @@ import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { mayReachThread, ownersOf, ServerWork } from "../host/ownership.ts";
-import { compressedStatic } from "./compressed-static.ts";
+import { AppShell, StaticRoutes } from "./app-shell.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
   Headers,
-  HttpPlatform,
   HttpRouter,
   HttpServer,
   HttpServerRequest,
-  HttpServerRespondable,
   HttpServerResponse,
-  HttpStaticServer,
   type Rpc,
   type RpcGroup,
   RpcSerialization,
@@ -199,8 +194,10 @@ import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { authTarget } from "./auth-target.ts";
 import {
   authorize,
+  ORIGIN_KEY_FRAGMENT,
   contentSecurityPolicy,
-  makeLaunchToken,
+  type LaunchSecrets,
+  makeLaunchSecrets,
   MCP_PATH,
   tokenCookieName,
 } from "./auth.ts";
@@ -247,11 +244,11 @@ const recordOf = (response: HttpServerResponse.HttpServerResponse): Record<strin
   };
 };
 
-/** The per-launch secret carried by the boot URL. */
-export class LaunchToken extends Context.Service<LaunchToken, { readonly token: string }>()(
+/** This launch's boot token, cookie and origin key (`LaunchSecrets`). */
+export class LaunchToken extends Context.Service<LaunchToken, LaunchSecrets>()(
   "@gram/server/LaunchToken",
 ) {
-  static readonly layer = Layer.sync(LaunchToken, () => ({ token: makeLaunchToken() }));
+  static readonly layer = Layer.sync(LaunchToken, makeLaunchSecrets);
 }
 
 export const serverPort = (server: HttpServer.HttpServer["Service"]): number =>
@@ -265,7 +262,9 @@ export const bootLine = (port: number, token: string): string =>
 export const AuthMiddleware = HttpRouter.middleware(
   Effect.gen(function* () {
     const server = yield* HttpServer.HttpServer;
-    const { token } = yield* LaunchToken;
+    const { token, cookie: launchCookie, originKey } = yield* LaunchToken;
+    // The server's, beside its static routes; a router without them serves nothing in its place.
+    const shell = yield* Effect.serviceOption(AppShell);
     const config = yield* ServerConfig;
     const mcpTokens = yield* McpTokens;
     const port = serverPort(server);
@@ -770,7 +769,7 @@ export const AuthMiddleware = HttpRouter.middleware(
         const decision = isRemote
           ? remote.authorize(authRequest)
           : authorize(
-              { port, token, extraOrigins: config.extraOrigins },
+              { port, token, cookie: launchCookie, originKey, extraOrigins: config.extraOrigins },
               {
                 method: request.method,
                 url: request.url,
@@ -815,9 +814,19 @@ export const AuthMiddleware = HttpRouter.middleware(
                               : unmarkLocalApp(request),
                           );
             break;
+          case "shell":
+            response = Option.isSome(shell)
+              ? yield* shell.value.serve
+              : HttpServerResponse.text("unauthorized: this page's key is missing", {
+                  status: 401,
+                });
+            break;
           case "boot":
-            response = yield* HttpServerResponse.redirect("/", { status: 302 }).pipe(
-              HttpServerResponse.setCookie(tokenCookieName(port), token, {
+            // The key goes in the fragment, which the page reads and no server is ever sent.
+            response = yield* HttpServerResponse.redirect(`/#${ORIGIN_KEY_FRAGMENT}${originKey}`, {
+              status: 302,
+            }).pipe(
+              HttpServerResponse.setCookie(tokenCookieName(port), launchCookie, {
                 httpOnly: true,
                 sameSite: "strict",
                 path: "/",
@@ -875,67 +884,6 @@ const asCaller = <A, E, R>(
     // Only a verified statement names an actor: any other caller's word for one is taken off.
     actor === undefined ? unmarkActor(request) : markActor(request, actor),
   );
-
-/**
- * Gives a file response's stream an `'error'` listener as soon as it exists. Effect's Node
- * `fileResponse` opens a `ReadStream` that the response's `pipeline` only listens to once it is
- * written, so an `open` failing in between had no listener and Node killed the server: on a
- * machine out of descriptors (EMFILE) it died serving a page's script, and the page never loaded. With a
- * listener the error stays on the stream, and `pipeline` fails that one response with it.
- */
-export const guardFileBody = (
-  response: HttpServerResponse.HttpServerResponse,
-): HttpServerResponse.HttpServerResponse => {
-  const body = response.body;
-  if (body._tag === "Raw" && body.body instanceof Readable) {
-    body.body.on("error", () => {
-      // Reported by the response's pipeline, which reads the error the stream keeps.
-    });
-  }
-  return response;
-};
-
-/**
- * Node's `HttpPlatform` with {@link guardFileBody} on every file response. It runs in the step that
- * made the stream, and the `open` it guards can only fail once the event loop turns.
- */
-export const GuardedHttpPlatform = Layer.effect(HttpPlatform.HttpPlatform)(
-  Effect.gen(function* () {
-    const platform = yield* HttpPlatform.HttpPlatform;
-    return HttpPlatform.HttpPlatform.of({
-      ...platform,
-      fileResponse: (path, options) =>
-        Effect.map(platform.fileResponse(path, options), guardFileBody),
-    });
-  }),
-).pipe(Layer.provide(NodeHttpPlatform.layer));
-
-const StaticRoutes = Layer.unwrap(
-  Effect.gen(function* () {
-    const { webRoot } = yield* ServerConfig;
-    return webRoot === undefined
-      ? HttpRouter.add(
-          "GET",
-          "/*",
-          HttpServerResponse.text("Gram server: no web root configured", { status: 404 }),
-        )
-      : Layer.effectDiscard(
-          Effect.gen(function* () {
-            const router = yield* HttpRouter.HttpRouter;
-            const files = yield* HttpStaticServer.make({
-              root: webRoot,
-              index: "index.html",
-              spa: true,
-            });
-            yield* router.add(
-              "GET",
-              "/*",
-              compressedStatic(webRoot)(files).pipe(Effect.catch(HttpServerRespondable.toResponse)),
-            );
-          }),
-        ).pipe(Layer.provide(GuardedHttpPlatform));
-  }),
-);
 
 /**
  * Serves `group` as JSON over the `/ws` WebSocket. A handler's defect fails only its own request:
@@ -1243,6 +1191,7 @@ export const ServerLayer: Layer.Layer<
       ).pipe(
         // One starter for the RPC and the route, so one id makes one thread either way in.
         Layer.provide(ProfileStarters.layer),
+        Layer.provide(AppShell.layer),
       ),
       {
         disableListenLog: true,

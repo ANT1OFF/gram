@@ -1,6 +1,7 @@
 import { run, type RpcContext } from "../rpc-client";
 import { serverUrl } from "../server-base";
 import type { FilesApi } from "./types";
+import { withOriginKey } from "../origin-key";
 
 /**
  * A joined machine's folders, over the local-only `/machines/*` routes rather than the RPC socket a
@@ -8,13 +9,16 @@ import type { FilesApi } from "./types";
  * back as the contract's error (`_tag`, `message`), as `folderProblem` reads it.
  */
 const machineFolders = async <A>(path: string, body: object): Promise<A> => {
-  const response = await fetch(serverUrl(path), {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const response = await fetch(
+    serverUrl(path),
+    withOriginKey({
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
   const value: unknown = await response.json().catch(() => undefined);
   if (response.ok) return value as A;
   const error =

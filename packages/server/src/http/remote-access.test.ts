@@ -31,7 +31,17 @@ const claim = (
 
 describe("private browser access", () => {
   it("has a meaningful before/after: loopback auth refuses the configured remote, which still needs pairing", () => {
-    expect(authorize({ port: PORT, token: "synthetic-local" }, request())).toMatchObject({
+    expect(
+      authorize(
+        {
+          port: PORT,
+          token: "synthetic-local",
+          cookie: "synthetic-local",
+          originKey: "synthetic-key",
+        },
+        request(),
+      ),
+    ).toMatchObject({
       status: 403,
     });
     const access = createRemoteAccess(ORIGIN, PORT);
@@ -112,7 +122,12 @@ describe("private browser access", () => {
     ).toMatchObject({ status: 401 });
     expect(
       authorize(
-        { port: PORT, token: "synthetic-local" },
+        {
+          port: PORT,
+          token: "synthetic-local",
+          cookie: "synthetic-local",
+          originKey: "synthetic-key",
+        },
         request({ headers: { host: `127.0.0.1:${PORT}` }, cookies }),
       ),
     ).toMatchObject({ status: 401 });

@@ -41,6 +41,7 @@ import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { WORKSPACE_EXPORT_PATH } from "../transfer/routes.ts";
 import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
+import { ORIGIN_KEY_HEADER } from "./auth.ts";
 
 const proxy = makeTestProxy();
 
@@ -75,8 +76,8 @@ const server = (embedding: boolean, fronted = true) =>
   );
 
 const info = Effect.gen(function* () {
-  const { token } = yield* LaunchToken;
-  return { port: serverPort(yield* HttpServer.HttpServer), token };
+  const { token, originKey } = yield* LaunchToken;
+  return { port: serverPort(yield* HttpServer.HttpServer), token, originKey };
 });
 
 const send = (
@@ -754,9 +755,9 @@ describe("threads readable by one person", () => {
   layer(server(false), { excludeTestServices: true })("with no signed-in person", (it) => {
     it.effect("are shown to no one, failing closed", () =>
       Effect.gen(function* () {
-        const { port, token } = yield* info;
+        const { port, token, originKey } = yield* info;
         const runtimes = yield* ThreadRuntimes;
-        const host = { host: `127.0.0.1:${port}` };
+        const host = { host: `127.0.0.1:${port}`, [ORIGIN_KEY_HEADER]: originKey };
         const boot = yield* send(port, "GET", `/?boot=${token}`, undefined, host);
         const app = yield* client(port, { ...host, cookie: boot.setCookie.split(";")[0] ?? "" });
         const hidden = yield* runtimes.create({
@@ -791,9 +792,9 @@ describe("threads readable by one person", () => {
     (it) => {
       it.effect("are no one's to take out over a route of the local app's", () =>
         Effect.gen(function* () {
-          const { port, token } = yield* info;
+          const { port, token, originKey } = yield* info;
           const runtimes = yield* ThreadRuntimes;
-          const host = { host: `127.0.0.1:${port}` };
+          const host = { host: `127.0.0.1:${port}`, [ORIGIN_KEY_HEADER]: originKey };
           const boot = yield* send(port, "GET", `/?boot=${token}`, undefined, host);
           const local = {
             ...host,

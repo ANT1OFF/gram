@@ -2,6 +2,7 @@ import { RemoteAccessStatus } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 
 import { serverUrl } from "@/api/server-base";
+import { withOriginKey } from "../api/origin-key";
 
 /**
  * Phone access is managed over plain same-origin POSTs that the server's auth layer answers
@@ -13,14 +14,17 @@ export class PhoneAccessError extends Error {}
 const decodeStatus = Schema.decodeUnknownSync(RemoteAccessStatus);
 
 const post = async (path: string, body?: unknown): Promise<Response> =>
-  fetch(serverUrl(path), {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    ...(body === undefined
-      ? {}
-      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-  });
+  fetch(
+    serverUrl(path),
+    withOriginKey({
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      ...(body === undefined
+        ? {}
+        : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+    }),
+  );
 
 /** The server's own words for a refusal, when it sent JSON `{ message }` or plain text. */
 const refusal = async (response: Response, fallback: string): Promise<PhoneAccessError> => {

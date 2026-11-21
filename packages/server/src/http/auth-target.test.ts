@@ -89,7 +89,10 @@ describe("authentication targets agree with the actual router", () => {
       "/%2e/?boot=synthetic",
     ]) {
       expect(
-        authorize({ port: 4321, token: "synthetic" }, request(path, "127.0.0.1:4321")),
+        authorize(
+          { port: 4321, token: "synthetic", cookie: "synthetic", originKey: "synthetic-key" },
+          request(path, "127.0.0.1:4321"),
+        ),
       ).toMatchObject({ status: 403 });
       expect(remote.authorize(request(path, remote.host))).toMatchObject({ status: 403 });
     }

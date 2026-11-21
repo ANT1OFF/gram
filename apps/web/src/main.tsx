@@ -10,9 +10,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { ApiProvider, createApi } from "./api/context";
+import { takeOriginKey } from "./api/origin-key";
 import { installKeyboard } from "./keyboard/registry";
 import { createAppRouter } from "./router";
 import "./styles/globals.css";
+
+// Before the router reads the address: the boot redirect's fragment is the server's key.
+takeOriginKey(window.location, window.history);
 
 const queryClient = new QueryClient();
 
