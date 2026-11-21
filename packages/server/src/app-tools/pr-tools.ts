@@ -47,19 +47,15 @@ import {
 import { ghThreadEnv } from "../embedding/github-relay.ts";
 import { ghFolderOf } from "../fs/folders.ts";
 import { GitRefresh } from "../git/platform.ts";
-import { checkSiteOf, LocalChecks } from "../git/local-checks.ts";
+import { checkSiteOf } from "../git/check-site.ts";
+import { LocalChecks } from "../git/local-checks.ts";
 import { MergeFreezes } from "../git/merge-freezes.ts";
-import {
-  mergeBlocker,
-  MergeWhenReady,
-  parsePrRef,
-  prName,
-  soloGateCantPass,
-} from "../git/merge-when-ready.ts";
+import { mergeBlocker, MergeWhenReady, parsePrRef, prName } from "../git/merge-when-ready.ts";
+import { soloGateCantPass } from "../git/solo-gate.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { makeMergeFreezeTool } from "./merge-freeze-tool.ts";
 import { makeRunMonitorTool } from "./run-monitor-tool.ts";
-import { refuseOutOfReach, repoOutOfReach } from "../git/repo-reach.ts";
+import { refuseOutOfReach, repoOfIdentity, repoOutOfReach } from "../git/repo-reach.ts";
 import {
   withOwnedBranch,
   endedPrText,
@@ -415,10 +411,16 @@ export const PrAppToolsLive = Layer.effectDiscard(
         Effect.gen(function* () {
           const thread = yield* store.getThread(threadId as ThreadId);
           yield* refuseOrchestratorPr("pr_status", thread);
+          const theirs =
+            threadId === caller ? undefined : repoOfIdentity(thread.checkout.cloneIdentity);
+          yield* refuseOutOfReach("pr_status", store, caller, {
+            repos: [thread.boundPr?.repo, theirs],
+          });
           if (refresh) yield* refreshes.request(thread.checkout.path, true);
           const badge = yield* currentPr(thread);
-          const repo =
-            thread.boundPr?.repo ?? (badge === undefined ? undefined : repoFromPrUrl(badge.url));
+          const badgeRepo = badge === undefined ? undefined : repoFromPrUrl(badge.url);
+          const repo = thread.boundPr?.repo ?? badgeRepo;
+          yield* refuseOutOfReach("pr_status", store, caller, { repos: [repo, badgeRepo] });
           const reviewPolicy =
             repo === undefined ? undefined : yield* reviewPolicyFor(thread, repo);
           const configuration =
@@ -1407,7 +1409,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const gateWarning =
             localGate === undefined || badge === undefined || !isBadgeOf(badge, pr)
               ? undefined
-              : soloGateCantPass(badge, localGate.reason);
+              : soloGateCantPass(badge, localGate.reason, configuration?.declaredCiOnly);
           if (localGate !== undefined && updated.workspaceId !== undefined)
             yield* store.appendOrchestrationEvent(updated.workspaceId, {
               at: yield* Clock.currentTimeMillis,
@@ -1427,6 +1429,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
                   badge,
                   yield* reviewPolicyFor(updated, pr.repo),
                   reviewBotsOf(yield* store.getSettings),
+                  undefined,
+                  configuration?.declaredCiOnly,
                 );
           return {
             ...(byOrchestrator ? { threadId: thread.id } : {}),

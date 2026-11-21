@@ -23,7 +23,17 @@ import {
 } from "./terminals-store";
 
 /** The thread's terminals: one by default, more via "New terminal", each in its own tab. */
-export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
+export function TerminalPanel({
+  threadId,
+  focusOnOpen = true,
+}: {
+  threadId: ThreadId;
+  /**
+   * Whether a terminal takes the keys as it opens. Off, one takes them only when they are in the
+   * panel already (its + or its tabs), and a click in it gives them to it.
+   */
+  focusOnOpen?: boolean;
+}) {
   const api = useApi();
   const entry = useTerminalsStore((s) => s.byThread[threadId]);
   const setActive = useTerminalsStore((s) => s.setActive);
@@ -42,6 +52,7 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
   }, [api, threadId]);
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const keysInPanel = () => panelRef.current?.contains(document.activeElement) === true;
 
   const report = (error: unknown) => setProblem(terminalProblem(error));
   const newTerminal = () => {
@@ -158,6 +169,7 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
             script={entry.scripts?.[id]}
             onExit={(exit) => setRun(threadId, id, scriptRunState(exit))}
             onRestart={() => restartTerminal(api, threadId, id).catch(report)}
+            takesKeys={focusOnOpen ? undefined : keysInPanel}
           />
         ))}
       </div>

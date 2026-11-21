@@ -42,7 +42,7 @@ import {
   machineFolderLine,
 } from "@/new-thread/machine-folder";
 import { ProjectPicker } from "@/new-thread/project-picker";
-import { useFolderStatus, useIsGitRepo, useMachineFolderStatus } from "@/new-thread/use-folder";
+import { useIsGitRepo, useMachineFolderStatus, useStartFolder } from "@/new-thread/use-folder";
 import { AlsoRepositories } from "@/new-thread/also-repositories";
 import { FolderPicker } from "@/new-thread/where-chips";
 import { ChatAuthorityLine } from "@/new-thread/authority-line";
@@ -217,7 +217,7 @@ function ConfiguredNewThreadDraft() {
     );
   }, []);
   const pathValue = typedRoot ?? defaultFolder ?? recents[0]?.root ?? "";
-  const folderStatus = useFolderStatus(pathValue);
+  const folderStatus = useStartFolder(pathValue, recents);
   const folder = folderStatus.state === "valid" ? folderStatus.folder : undefined;
   const projectRoot = folder?.path ?? "";
   const project = projects.find((p) => p.root === projectRoot);

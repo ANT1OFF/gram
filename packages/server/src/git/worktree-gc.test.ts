@@ -12,6 +12,7 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 import {
+  GhCallEnv,
   Pr,
   PrLookupError,
   Proc,
@@ -22,6 +23,7 @@ import {
 } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { vi } from "vitest";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
 import {
   ARCHIVED_GRACE_MS,
@@ -557,6 +559,34 @@ describe("sweepStep", () => {
     expect(sweepStep(withoutPr, { clean: true, pushed: true, prSettled: false })).toBeUndefined();
     expect(sweepStep({ ...withoutPr, free: true }, { ...none, noPrOpen: false })).toBe("free");
   });
+});
+
+vi.mock("../embedding/github-relay.ts", async (actual) => ({
+  ...(await actual<Record<string, unknown>>()),
+  ghThreadEnv: (threadId: string) => ({ GH_TOKEN: `gram-thread:${threadId}` }),
+}));
+
+describe("the sweep's PR lookups", () => {
+  it.effect("are made for the worktree's thread", () =>
+    Effect.gen(function* () {
+      const tokens: Array<string | undefined> = [];
+      const recording = Layer.succeed(Pr, {
+        status: () =>
+          Effect.gen(function* () {
+            tokens.push((yield* GhCallEnv)["GH_TOKEN"]);
+            return badge("MERGED");
+          }),
+        checks: () => Effect.succeed([]),
+        prime: () => Effect.void,
+        seenChecks: () => Effect.succeed(undefined),
+        detail: () => Effect.succeed({ available: false }),
+      });
+      yield* checkMissingWorktree(thread(), undefined, true).pipe(
+        Effect.provide(Layer.mergeAll(ProcLive, recording)),
+      );
+      expect(tokens).toEqual(["gram-thread:t-worker"]);
+    }),
+  );
 });
 
 describe("checkMissingWorktree", () => {

@@ -24,11 +24,13 @@ import {
   type ReleasePublishedCondition,
   type Project,
   type RoutineTriggerState,
+  type ThreadId,
   type Workspace,
   type RoutineEvent,
   type RoutineTrigger,
 } from "@gram/contracts";
 import { ghApi, Proc, Tools } from "@gram/git";
+import { forThreadIf } from "../embedding/gh-thread.ts";
 import { githubRelayed } from "../embedding/github-relay.ts";
 import { projectRepo } from "../git/repo-reach.ts";
 import * as Clock from "effect/Clock";
@@ -67,6 +69,8 @@ export interface EventLookContext {
    * (`githubRelayed`), the only ones a routine's look reads by name (`triggerRepo`).
    */
   readonly workspaceRepos?: ReadonlyArray<string> | undefined;
+  /** The thread the look reads GitHub for: its workspace's orchestrator, absent while it has none. */
+  readonly reader?: ThreadId | undefined;
 }
 
 /**
@@ -74,7 +78,7 @@ export interface EventLookContext {
  * project is no longer one of the workspace's), and the workspace's projects' repos.
  */
 export const lookContextOf = (
-  workspace: Pick<Workspace, "projectIds" | "homeProjectId">,
+  workspace: Pick<Workspace, "projectIds" | "homeProjectId" | "orchestratorThreadId">,
   routine: {
     readonly project?: string | undefined;
     readonly trigger?: RoutineTriggerState | undefined;
@@ -89,6 +93,7 @@ export const lookContextOf = (
     projectRepo: project === undefined ? undefined : projectRepo(project),
     baseline: routine.trigger?.baseline,
     workspaceRepos: projects.flatMap((each) => projectRepo(each) ?? []),
+    reader: workspace.orchestratorThreadId,
   };
 };
 
@@ -519,7 +524,7 @@ export const RoutineEventSourcesLive = Layer.effect(
             return releaseLookOf(on, list, context.baseline, now);
           }
         }
-      });
+      }).pipe(forThreadIf(context.reader));
 
     return RoutineEventSources.of({ look });
   }),
