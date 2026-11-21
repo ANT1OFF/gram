@@ -10,10 +10,6 @@ import { branchDeleteLooksSafe, mergedPrRef } from "./merged-cleanup";
 import { ThreadContextMenuItems } from "./thread-action-items";
 import { useThreadDialogs } from "./thread-dialogs-store";
 
-// The context menu of a row that stands for one thread (the overview's workers and solo threads),
-// and what makes such a row a drag source for the grid's panes.
-
-/** Opens a row's context menu at `anchor`, as a right-click there would. */
 function openRowMenu(anchor: HTMLElement) {
   const rect = anchor.getBoundingClientRect();
   anchor.dispatchEvent(
@@ -83,7 +79,6 @@ export function WorkerMenuItems({
               threadId,
               preset: {
                 removeWorktree: true,
-                // The row's summary may be behind on git it doesn't list by.
                 deleteBranch: branchDeleteLooksSafe(useThreadsStore.getState().byId[threadId]?.git),
               },
             })
@@ -100,7 +95,6 @@ export function WorkerMenuItems({
 /** A worker's whole row menu. */
 export function WorkerRowMenuItems({ threadId }: { threadId: ThreadId }) {
   const summary = useThreadsStore((s) => s.byId[threadId]);
-  // What the thread's own merged notice offers, for a worker nobody opens again once it merged.
   const cleanable =
     summary !== undefined &&
     summary.thread.checkout.kind === "worktree" &&

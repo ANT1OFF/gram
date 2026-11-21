@@ -30,19 +30,9 @@ import { WorkerRunChip } from "./overview-run-chip";
 import type { WatchedRun } from "./overview-run-chip-model";
 import { useOrchestratorLedger } from "./use-orchestration";
 
-// A worker's pull requests under its overview row:
-// a chip per PR in the PR vocabulary (pr-marks-model.ts): its state's glyph and number, then its
-// checks, people's review, the review bot and where its merge stands. A click opens the PR: the
-// thread's own in its PR panel, one it follows on GitHub. Hovering or focusing one shows its card.
-
-// The chip's words stay quiet: its glyphs carry the colour (the state's in GitHub's, the checks'
-// red when they fail), so a failing or merged PR adds one coloured mark, not a tinted pill.
 const TONE: Record<PrChipTone, string> = {
-  // What blocks the merge, or something for someone to look at: outlined, never filled red or
-  // amber; the failing check's own glyph is the alarm.
   danger: "bg-transparent text-foreground ring-1 ring-border-strong ring-inset",
   warning: "bg-transparent text-foreground ring-1 ring-border-strong ring-inset",
-  // Merged: the colour on its glyph only, the number muted.
   merged: "bg-transparent text-muted-foreground",
   plain: "bg-sidebar-row-hover text-muted-foreground",
 };
@@ -55,10 +45,8 @@ export function useWorkerPrChips(
   threadId: ThreadId,
   cardPrs: readonly FeatureCardPr[],
 ): readonly PrChip[] {
-  // The thread and its git state only, so a worker's activity ticks don't rebuild its chips.
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const git = useThreadsStore((s) => s.byId[threadId]?.git);
-  // The worker's ledger row: its PRs' merge intents and dependencies, and who fixes its CI.
   const { data: ledger } = useOrchestratorLedger(thread?.workspaceId);
   const worker = useMemo(
     () =>
@@ -225,7 +213,6 @@ export function WorkerPrChips({
 
 const NO_RUNS: readonly WatchedRun[] = [];
 
-/** A chip's box: its tone, and 16 px tall on a row's status line or 20 px elsewhere. */
 const chipClass = (chip: PrChip, dense: boolean) =>
   cn(
     "inline-flex cursor-default items-center gap-1 rounded-(--radius-sm) px-1.5 text-meta outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -234,10 +221,8 @@ const chipClass = (chip: PrChip, dense: boolean) =>
     chip.kind === "merged" && "px-0.5",
   );
 
-/** What a chip shows: its state's glyph, its number, then its checks, reviews and merge. */
 function PrChipFace({ chip, numbered = true }: { chip: PrChip; numbered?: boolean }) {
   const { entry, marks } = chip;
-  // The state's glyph keeps GitHub's colour for it, whatever tints the chip.
   return (
     <>
       <PrMarkIcon group="state" mark={marks.state} data-state-glyph={marks.state.kind} />
@@ -348,18 +333,15 @@ export function useChipsFit(count: number): {
   const [fits, setFits] = useState(true);
   useLayoutEffect(() => {
     const at = line.current;
-    // No chips, nothing to fit.
     if (at === null || count === 0) return setFits(true);
     const measure = () => {
       const room = ghost.current;
       if (room === null) return setFits(true);
       const outer = at.getBoundingClientRect();
-      // On the line's own row, or wrapped below it into the hidden one.
       setFits(room.getBoundingClientRect().top - outer.top < Math.max(1, outer.height / 2));
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
-    // Measured on the next frame, never inside the observer's own delivery.
     let frame = 0;
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame);

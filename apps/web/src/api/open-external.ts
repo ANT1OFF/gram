@@ -5,13 +5,8 @@ import { askToOpen } from "@/links/link-dialog";
 
 import type { Api } from "./types";
 
-/**
- * Whether links open in this browser rather than through the server. A hosted server runs away
- * from the person, where its opener would open nothing they can see: there the page opens it.
- */
 const opensHere = (): boolean => useEmbedShell.getState().hosted;
 
-/** Opens an http(s) `url` in a new tab of this browser, the opener cut off from this page. */
 const openInTab = (url: string): void => {
   if (isExternalUrl(url)) window.open(url, "_blank", "noopener,noreferrer");
 };

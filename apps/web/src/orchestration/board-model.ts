@@ -17,9 +17,6 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 
-// Pure derivations for the orchestration board: which column a worker stands in, what a feature's
-// row holds, and which workspace's board a thread opens. No React, so it is tested without a browser.
-
 /** Shared by the production board callbacks and card presentation. */
 export const liveWorkerEntry = (
   worker: WorkerLedgerEntry,
@@ -63,14 +60,12 @@ export const workerTitle = (
 export const leastAdvanced = (states: readonly WorkerState[]): WorkerState | undefined =>
   states.length === 0 ? undefined : featureState(states);
 
-/** What `sectionsOf` needs of a feature, which both a board row and a ledger entry are. */
 interface Groupable {
   readonly feature: string;
   readonly group?: string | undefined;
   readonly state: WorkerState;
 }
 
-/** Several features run as one effort: the band over their rows, with the stage of the whole. */
 interface FeatureSection<T> {
   readonly group: string;
   readonly state: WorkerState;

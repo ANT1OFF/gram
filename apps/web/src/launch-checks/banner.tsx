@@ -18,13 +18,10 @@ import { CommandText } from "./command-text";
 import { firstRunCovers, launchIssues, type LaunchIssue } from "./issues";
 import { useLaunchChecks } from "./use-launch-checks";
 
-/** A dismissal as `onboarding.dismissedLaunchIssues` stores it. */
 const dismissalKey = (version: string, issueId: string): string => `${version}:${issueId}`;
 
 interface BannerFoldState {
-  /** The problems (`dismissalKey`) seen in full once, on this machine: they show as the chip. */
   readonly folded: readonly string[];
-  /** Opened or closed from the chip, for this window; unset, `folded` decides. */
   readonly open: boolean | undefined;
   fold: (keys: readonly string[]) => void;
   setOpen: (open: boolean) => void;
@@ -59,15 +56,12 @@ export const useBannerFold = create<BannerFoldState>()(
  */
 export function useLaunchBanner() {
   const issues = useLaunchIssues();
-  // The first-run screen's readiness card says these with their remedies: one warning, not two.
   const welcome = useWelcomeShowing();
   const { cleared, dropCleared } = issues;
   const shown = welcome ? issues.shown.filter((issue) => !firstRunCovers(issue)) : issues.shown;
   const shownKeys = welcome
     ? issues.shownKeys.filter((_, index) => !firstRunCovers(issues.shown[index]!))
     : issues.shownKeys;
-  // Those the card is showing count as seen: off it, they are the title bar's chip, not a banner
-  // that arrives fresh on the next page.
   const covered = welcome
     ? issues.shownKeys.filter((_, index) => firstRunCovers(issues.shown[index]!))
     : [];
@@ -109,7 +103,6 @@ export function useLaunchIssues(): {
   const diagnostics = useDiagnostics();
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
-  // Hides at once, before the save lands or when it fails.
   const [dismissedHere, setDismissedHere] = useState<ReadonlySet<string>>(new Set());
   const ready = checks !== undefined && settings !== undefined && !diagnostics.isPending;
   const version = diagnostics.data?.version ?? "";
@@ -119,8 +112,6 @@ export function useLaunchIssues(): {
   const isDismissed = (issue: LaunchIssue) => gone.has(dismissalKey(version, issue.id));
   const shown = all.filter((issue) => !isDismissed(issue));
   const dismissed = all.filter(isDismissed);
-  // A dismissal holds while its problem stands: one that cleared (gh signed in, say) is dropped,
-  // so the problem coming back later shows again. Dismissals from other versions are dropped too.
   const standing = new Set(all.map((issue) => dismissalKey(version, issue.id)));
   const kept = saved.filter((key) => standing.has(key));
   const cleared = ready && kept.length < saved.length;
@@ -139,13 +130,6 @@ export function useLaunchIssues(): {
   return { shown, shownKeys, dismissed, dismiss, cleared, dropCleared };
 }
 
-/**
- * Mount once in the root layout: what's missing or signed out on this machine, until dismissed.
- * Shown once, it folds to the title bar's chip at the user's next move, which opens it again
- * (`useBannerFold`). Dismissed, a problem that still stands leaves both for a dot on Settings (the
- * window's top left), whose hover names it and whose Diagnostics page has it in full.
- */
-/** The CLI update control and its progress, for a banner that offers an update. */
 const cliUpdate = lazyPart(() => import("./cli-update"));
 
 export function LaunchChecksBanner() {
@@ -162,7 +146,6 @@ export function LaunchChecksBanner() {
   const [checking, setChecking] = useState(false);
   const cliUpdates = useFeature("cliUpdates", { settled: true });
   useFoldAfterShowing(expanded, shownKeys);
-  // What the first-run card shows has been seen, as a banner shown once has: folded from here on.
   const coveredKeys = covered.join("\n");
   useEffect(() => {
     if (coveredKeys === "") return;
@@ -170,13 +153,11 @@ export function LaunchChecksBanner() {
     const { folded, fold } = useBannerFold.getState();
     if (keys.some((key) => !folded.includes(key))) fold(keys);
   }, [coveredKeys]);
-  // Once per change, from the one banner the shell mounts rather than every reader of the issues.
   useEffect(() => {
     if (cleared) dropCleared();
     // oxlint-disable-next-line react/exhaustive-deps -- `dropCleared` is recreated every render; the effect runs once per change of `cleared`
   }, [cleared]);
 
-  // A banner that offers an update shows once the control is in hand, rather than gaining it late.
   const offersUpdate = expanded && cliUpdates && issues.some((issue) => issue.update !== undefined);
   const update = cliUpdate.useModule(offersUpdate);
   if (!expanded || (offersUpdate && update === undefined)) return null;
@@ -185,8 +166,7 @@ export function LaunchChecksBanner() {
     setChecking(true);
     try {
       await recheck();
-    } catch {
-      // The previous result stays up; Diagnostics shows the details.
+    } catch (_thePreviousResultStaysUpDiagnosticsShowsTheDetails) {
     } finally {
       setChecking(false);
     }
@@ -235,18 +215,11 @@ export function LaunchChecksBanner() {
   );
 }
 
-/** The banner, by the attribute only it carries. */
 const BANNER = '[data-testid="launch-checks-banner"]';
 
-/**
- * Folds the banner at the user's first move once it has shown: another page, or a click or key
- * outside it. The fold waits for the move's own handlers, so a click lands where it was aimed
- * before the banner's row leaves the layout.
- */
 function useFoldAfterShowing(expanded: boolean, keys: readonly string[]) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const shownOn = useRef<string | undefined>(undefined);
-  // By value, so a fresh array of the same keys re-runs nothing.
   const joined = keys.join("\n");
   useEffect(() => {
     if (!expanded) {

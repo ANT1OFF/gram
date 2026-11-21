@@ -4,16 +4,8 @@ import { useSyncExternalStore, type SyntheticEvent } from "react";
 
 import { DrawnCheck, useMotionLevel } from "@/motion";
 
-/**
- * Which setting a save belongs to, so it can say "Saved" beside itself. A row marks itself touched
- * when its control is clicked, typed in or changed, including a menu it opens elsewhere, since
- * React events reach the row through a portal; a save asked for soon after belongs to the row
- * touched last. Taken at the moment the save is asked for, so a field that saves as it loses focus
- * to another row's click is still the one that says so: that click lands after the save starts.
- */
 let touched: { row: string; at: number } | undefined;
 
-/** How long after a touch a save still counts as that row's. */
 const TOUCH_WINDOW_MS = 5000;
 
 /** How long "Saved" stays. */
@@ -50,7 +42,6 @@ export function markSaved(row: string | undefined): void {
   saved = { row, seq: mine };
   notify();
   setTimeout(() => {
-    // A later save, here or on another row, has taken over the mark and its own timer.
     if (saved?.seq !== mine) return;
     saved = undefined;
     notify();
@@ -78,7 +69,6 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-/** The save `row` shows "Saved" for, as a counter that rises with each one; none once it goes. */
 function useSavedSeq(row: string): number | undefined {
   return useSyncExternalStore(
     subscribe,

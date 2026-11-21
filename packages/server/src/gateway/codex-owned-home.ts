@@ -29,24 +29,14 @@ export interface OwnCodexProvider {
 const isTable = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** The value of `object`'s own property `key`; nothing inherited is ever read. */
 const own = (object: unknown, key: string): unknown =>
   isTable(object) && Object.hasOwn(object, key) ? object[key] : undefined;
 
-/** An environment variable's name: the only way a kept provider may name a credential. */
 const ENV_NAME = /^[A-Z_][A-Z0-9_]{0,127}$/;
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/;
 const isCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0;
 
-/**
- * Each key a kept provider's table may have, and the value the gated home writes for it, or
- * `invalid` for one it won't (the provider is then not kept). Only these keys are ever read, as own
- * properties, and the written table holds only what they return: everything else in the user's
- * table, an inline token, literal headers or query parameters, an auth command and any key a later
- * Codex adds, is never read and never written. A credential can only be named by the variable it
- * is in.
- */
 const invalid = Symbol("invalid");
 const PROVIDER_SCHEMA = new Map<string, (value: unknown) => unknown>([
   ["name", (value) => (typeof value === "string" && value.length <= 200 ? value : invalid)],
@@ -133,7 +123,6 @@ const readUserConfig = (source: string): Promise<Record<string, unknown>> =>
     },
   );
 
-/** Whether the user's home holds a login file. Only whether it exists: it is never read. */
 const hasLogin = (source: string): Promise<boolean> =>
   stat(join(source, "auth.json")).then(
     (found) => found.isFile(),
@@ -162,11 +151,6 @@ export const ownedCodexProvider = (
     }
   });
 
-/**
- * Whether anything is at the gated home's login path, of any kind; nothing there is read. A gated
- * home on a machine's own provider holds no login file, and Gram never removes one: with anything
- * there it refuses to start, and leaves it as it is.
- */
 const somethingAt = (path: string): Promise<boolean> =>
   lstat(path).then(
     () => true,
@@ -201,7 +185,6 @@ export const prepareOwnedCodexHome = (
         throw new Error("Native and owned homes coincide");
       const auth = join(source, "auth.json");
       const user = await readUserConfig(source);
-      // Only without a login: a ChatGPT install keeps its ChatGPT home whatever it configures.
       const provider = (await hasLogin(source)) ? undefined : ownCodexProvider(user);
       if (provider === undefined && requireAuth && !(await stat(auth)).isFile())
         throw new Error("Native login file missing");
@@ -213,11 +196,8 @@ export const prepareOwnedCodexHome = (
       await rm(join(target, "rules", OUTWARD_RULES_FILE), { force: true });
       const link = join(target, "auth.json");
       if (provider !== undefined) {
-        // Its own provider authenticates itself. No login file is linked, and none is removed:
-        // one there (a link from when the machine had a login, or anything else) refuses.
         if (await somethingAt(link)) throw new Error("A login file is in the gated home");
       } else if ((await readlink(link).catch(() => undefined)) !== auth) {
-        // A CLI may replace its credential file on refresh. Restore the link before every open.
         await rm(link, { force: true });
         await symlink(auth, link, "file");
       }
@@ -232,8 +212,6 @@ export const prepareOwnedCodexHome = (
       ]) {
         if (user[key] !== undefined) config[key] = user[key];
       }
-      // A machine's gateway may refuse hosted search (for example, when it cannot bound its
-      // server-side work). Keep its explicit opt-out when preparing the gated home.
       if (provider !== undefined && user["web_search"] === "disabled") {
         config["web_search"] = "disabled";
       }
@@ -250,13 +228,10 @@ export const prepareOwnedCodexHome = (
               forced_login_method: "chatgpt",
               cli_auth_credentials_store: "file",
             }
-          : // That one provider, as the user's configuration defines it, and no other.
-            {
+          : {
               model_provider: provider.name,
               model_providers: { [provider.name]: provider.table },
             }),
-        // Approval policy and sandbox belong to thread/start and thread/resume. Codex 0.162.1
-        // rejects `untrusted` in config.toml even though it accepts the per-thread RPC policy.
         features: {
           exec_policy: true,
           shell_snapshot: false,
@@ -270,7 +245,6 @@ export const prepareOwnedCodexHome = (
       await chmod(file, 0o600);
       return target;
     } catch {
-      // TOML/parser errors may contain config values. Surface setup advice, never the input.
       throw new Error(
         "Gram could not prepare its native Codex home. Check codex login, auth.json and the Gram data directory.",
       );

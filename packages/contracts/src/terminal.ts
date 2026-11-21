@@ -26,7 +26,6 @@ export const TerminalInfo = Schema.Struct({
 export type TerminalInfo = typeof TerminalInfo.Type;
 
 export const TerminalEvent = Schema.Union([
-  /** The capped scrollback, sent once on subscribe before any `data`. */
   Schema.Struct({ type: Schema.Literal("replay"), data: Schema.String }),
   Schema.Struct({ type: Schema.Literal("data"), data: Schema.String }),
   Schema.Struct({

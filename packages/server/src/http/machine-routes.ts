@@ -130,19 +130,15 @@ export const claudeTokenCaptureFor = (hosts: RemoteHostsShape, start?: StartSetu
     },
   });
 
-/** A code the browser shows for `claude setup-token`: printable, short, no control characters. */
 const SIGN_IN_CODE = /^[A-Za-z0-9#._~+/=-]{1,512}$/;
 
-/** Asks the machine to delete its token; true when it answered, whether or not it had one. */
 const forgetOn = (hosts: RemoteHostsShape, id: string) =>
   hosts.connection(HostId.make(id)).pipe(
     Effect.flatMap((connection) => connection.claude.forgetToken),
     Effect.map(() => {
       try {
         hosts.machines.tokenSent(id, false);
-      } catch {
-        // Only the record; the machine deleted it.
-      }
+      } catch (_onlyTheRecordTheMachineDeletedIt) {}
       return true;
     }),
     Effect.orElseSucceed(() => false),
@@ -159,15 +155,9 @@ const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body
 const refuse = (message: string, status = 403) => HttpServerResponse.text(message, { status });
 
 const JOIN_BODY_MAX = 512;
-/**
- * An owner's or a person's subject, as fronted sign-in names people (or one no person signs in
- * with): printable, at most 128 characters.
- */
 const OWNER = /^[\x21-\x7e]{1,128}$/;
-/** A folder request's body: a machine's id, a path and a limit. */
 const FOLDER_BODY_MAX = 8_192;
 
-/** A small JSON object body of at most `max` bytes, or undefined for anything else. */
 const jsonBody = (max: number) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -187,11 +177,6 @@ const jsonBody = (max: number) =>
     }
   });
 
-/**
- * A request from a machine's host, not a browser: no `Origin` (every browser fetch that could
- * carry a body cross-site, and every browser WebSocket, sends one), and over the tailnet address
- * only. Forwarding headers from Tailscale Serve are expected and grant nothing.
- */
 const fromAHost = (request: HttpServerRequest.HttpServerRequest, remote: RemoteAccess) =>
   request.headers["host"] === remote.host && request.headers["origin"] === undefined;
 
@@ -204,13 +189,11 @@ export const hostRoute = (
   hosts: RemoteHostsShape,
   remote: RemoteAccess,
   path: string,
-  /** This Gram's release, which the installer downloads; undefined when run from source. */
   appVersion?: string,
 ) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     if (!fromAHost(request, remote)) return refuse("forbidden");
-    // The installer holds no secret, and installs nothing without the join link it is given.
     if (path === HOST_INSTALL_PATH) {
       if (request.method !== "GET") return refuse("forbidden");
       return HttpServerResponse.text(installScript(remote.origin, appVersion), {
@@ -247,16 +230,10 @@ export const hostRoute = (
     return yield* dialIn(hosts, remote.origin, "joined");
   });
 
-/**
- * Takes a host's dial at `origin`: its signed headers checked by the rules of `route`, then its
- * WebSocket served as that machine's connection until it closes.
- */
 const dialIn = (hosts: RemoteHostsShape, origin: string, route: DialRoute) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     if (request.method !== "GET") return refuse("forbidden");
-    // Before its signature is looked at: a dial that asks for no WebSocket connects nothing, and
-    // must not spend one of the nonces the dials that do are counted by.
     if (
       request.headers["upgrade"]?.toLowerCase() !== "websocket" ||
       !/(?:^|,)\s*upgrade\s*(?:,|$)/i.test(request.headers["connection"] ?? "")
@@ -264,7 +241,6 @@ const dialIn = (hosts: RemoteHostsShape, origin: string, route: DialRoute) =>
       return refuse("WebSocket required", 400);
     const decision = hosts.machines.authorizeConnect(origin, request.headers, route);
     if (decision.kind === "refused") return refuse(decision.message, decision.status);
-    // Pinned before the upgrade yields, so access turned off or moved during it drops the dial.
     const dial = hosts.admit(decision.machine, origin);
     const socket = yield* request.upgrade.pipe(Effect.option);
     if (socket._tag === "None") return refuse("WebSocket required", 400);
@@ -301,7 +277,6 @@ export const provisionedRoute = <E, R>(
     return refuse("forbidden");
   });
 
-/** What the installer prints on a machine already joined to this Gram, whose service it moves. */
 const MOVED_SERVICE = /^gram-host: This machine already joined \S+; moving its service/m;
 
 /**
@@ -338,21 +313,12 @@ export const movedOverSsh = <M extends { readonly publicKey: string }>(
   return machines.find((machine) => fingerprintOf(machine.publicKey) === printed);
 };
 
-/**
- * Whether an install over SSH is running: each mints the one join link, which replaces any other,
- * so a second would spend the first's.
- */
 let sshJoinRunning = false;
 const SSH_JOIN_BUSY = {
   reason: "ssh-running",
   message: "Gram is adding a machine over SSH. Try again once that finishes.",
 };
 
-/**
- * The settings page's view: the machines, each offline one with why, and the join link waiting, if
- * one is; this Gram's release and protocol, which a machine's must match, and the command that
- * updates a machine to them while access over Tailscale is on.
- */
 const machinesStatus = (
   hosts: RemoteHostsShape,
   remote: RemoteAccess | undefined,
@@ -370,7 +336,6 @@ const machinesStatus = (
   };
 };
 
-/** Why an install over SSH failed, from its exit. */
 const sshFailure = (ran: Exit.Exit<string, SshJoinFailed>) => {
   const failure =
     ran._tag === "Failure"
@@ -388,19 +353,12 @@ export const machineManagement = (
   hosts: RemoteHostsShape,
   remote: RemoteAccess | undefined,
   path: string,
-  /** This Gram's release, which the installer run over SSH downloads; undefined from source. */
   appVersion?: string,
-  /** `ssh`, for tests. */
   ssh?: string,
-  /** The `claude setup-token` capture; without one, its routes refuse. */
   capture?: ClaudeTokenCapture,
-  /** Whether machines can dial in, and why not; read from `remote` when left out. */
   access?: DialAccess,
-  /** A joined machine's folders through its host; without them, the folder routes refuse. */
   folders?: (id: HostId) => HostFolders,
-  /** Whether provisioned hosts are turned on; off, none can be registered. */
   provisionedOn = false,
-  /** For a caller that only looks after provisioned hosts: it removes no machine a person joined. */
   provisionedOnly = false,
 ) =>
   Effect.gen(function* () {
@@ -428,8 +386,6 @@ export const machineManagement = (
             : on.check(folder);
         return yield* answer.pipe(
           Effect.map((value) => json(value)),
-          // The contract's error as the page reads it: its tag, its words and, for a missing
-          // folder, which one.
           Effect.catch((error) =>
             Effect.succeed(
               json(
@@ -460,11 +416,6 @@ export const machineManagement = (
           typeof platform !== "string"
         )
           return json({ message: "Give the host's name and its public key." }, 400);
-        // A host started on demand: for one person (`personal`), for the threads placed on it by
-        // name (`thread`), or for an orchestrator's workers (`worker`). An owner always comes
-        // with a kind, and a host of any kind always with its owner: the subject of the person it
-        // is for, or one no person signs in with, which leaves it to the server's own work. One
-        // with no owner would be open to every caller, so it is refused (`host/ownership.ts`).
         if (
           (owner !== undefined && (typeof owner !== "string" || !OWNER.test(owner))) ||
           (onDemand !== undefined &&
@@ -473,7 +424,6 @@ export const machineManagement = (
             onDemand !== "worker") ||
           (owner !== undefined && onDemand === undefined) ||
           (onDemand !== undefined && owner === undefined) ||
-          // The one person beside its owner who may reach it, only for a host with an owner.
           (person !== undefined &&
             (typeof person !== "string" || !OWNER.test(person) || owner === undefined))
         )
@@ -496,7 +446,6 @@ export const machineManagement = (
         })();
         if (result === undefined) return json({ message: "The host couldn't be saved." }, 500);
         if (result.kind === "refused") return json({ message: result.message }, result.status);
-        // The address it dials and what it should say it is, for whoever starts the host.
         return json({
           hostId: result.machine.id,
           fingerprint: fingerprintOf(result.machine.publicKey),
@@ -510,7 +459,6 @@ export const machineManagement = (
             { reason: "tailscale-off", message: "Turn on access over Tailscale first." },
             409,
           );
-        // A new link would replace the one an install over SSH is using.
         if (sshJoinRunning) return json(SSH_JOIN_BUSY, 409);
         return json(hosts.machines.mint(remote.origin));
       case MACHINES_SSH_HOSTS_PATH:
@@ -527,7 +475,6 @@ export const machineManagement = (
         if (sshJoinRunning) return json(SSH_JOIN_BUSY, 409);
         const before = new Set(hosts.machines.list().map((machine) => machine.id));
         const link = hosts.machines.mint(remote.origin);
-        // Built before the flag is set: it throws on what it won't embed.
         const script = installScript(remote.origin, appVersion, { link: link.url });
         sshJoinRunning = true;
         const ran = yield* runOverSsh(target, script, ssh === undefined ? {} : { ssh }).pipe(
@@ -538,14 +485,11 @@ export const machineManagement = (
         const joined = joinedOverSsh(before, hosts.machines.list(), output);
         if (ran._tag === "Failure" && (joined === undefined || joined === "rejoined"))
           return json({ message: failure?.message ?? "The install over SSH failed.", output }, 502);
-        // Run again on a machine already joined here: its service moved, and it joined before.
         if (joined === "rejoined") {
           const moved = movedOverSsh(hosts.machines.list(), output);
           try {
             if (moved !== undefined) hosts.machines.installedOverSsh(moved.id, target);
-          } catch {
-            // Only what its update runs is lost; the move itself happened.
-          }
+          } catch (_onlyWhatItsUpdateRunsIsLostTheMove) {}
           return json({ ...machinesStatus(hosts, remote, appVersion, access), joined, output });
         }
         if (joined === undefined)
@@ -565,8 +509,6 @@ export const machineManagement = (
         } catch {
           return json({ message: "The change couldn't be saved.", output }, 500);
         }
-        // Joined with the printed key, then stopped (its service didn't start, say): it is confirmed,
-        // and the person reads what went wrong.
         return json({
           ...machinesStatus(hosts, remote, appVersion, access),
           joined: joined.id,
@@ -590,8 +532,6 @@ export const machineManagement = (
         return json(machinesStatus(hosts, remote, appVersion, access));
       }
       case MACHINES_UPDATE_ALL_PATH: {
-        // Only this Gram's own release, over each machine's own connection; one too old to update
-        // itself keeps its Update, which runs the installer.
         for (const machine of hosts.machines.list())
           if (machine.confirmedAt !== undefined) hosts.update(machine.id);
         return json(machinesStatus(hosts, remote, appVersion, access));
@@ -600,8 +540,6 @@ export const machineManagement = (
         const id = (yield* jsonBody(256))?.["id"];
         const machine = typeof id === "string" ? hosts.machines.get(id) : undefined;
         if (machine === undefined) return refuse("no such machine", 404);
-        // A host that updates itself does, to this Gram's release only: the request names no
-        // version or address. Its row shows how it goes.
         if (machine.confirmedAt !== undefined) {
           const asked = hosts.update(machine.id);
           if (asked.kind === "started" || asked.kind === "current")
@@ -613,9 +551,6 @@ export const machineManagement = (
           if (asked.kind === "unavailable" && appVersion === undefined)
             return json({ reason: "no-release", message: asked.message }, 409);
         }
-        // Otherwise the install over SSH runs again where Gram added the machine: it moves the
-        // service to this Gram's release and keeps the join. Any other machine runs
-        // `updateCommand` itself.
         if (remote === undefined)
           return json(
             { reason: "tailscale-off", message: "Turn on access over Tailscale first." },
@@ -640,7 +575,6 @@ export const machineManagement = (
         const { failure, output } = sshFailure(ran);
         if (failure !== undefined || ran._tag === "Failure")
           return json({ message: failure?.message ?? "The update over SSH failed.", output }, 502);
-        // The machine at that address now may not be the one that joined: say so, and keep nothing.
         if (movedOverSsh([machine], output) === undefined)
           return json(
             {
@@ -689,12 +623,6 @@ export const machineManagement = (
           }
           return json(machinesStatus(hosts, remote, appVersion, access));
         }
-        /**
-         * Held for the whole removal: no run starts for it and nothing is sent to it, and every
-         * send already in flight is answered first. Then it deletes any token while it can still be
-         * reached, recorded or not (a write whose reply was lost leaves one too), and only then is
-         * it forgotten.
-         */
         const removal = Effect.gen(function* () {
           const forgot = yield* forgetOn(hosts, id);
           const tokenLeft = !forgot && hosts.machines.get(id)?.claudeTokenSetAt !== undefined;
@@ -802,11 +730,6 @@ export const placedOnMachine = (
   store: Pick<ThreadStore["Service"], "getThread"> | undefined,
   remoteHosts: Pick<RemoteHostsShape, "connection"> & Partial<Pick<RemoteHostsShape, "origin">>,
   headers: Readonly<Record<string, string | undefined>>,
-  /**
-   * The address the request came in on, when the machine must have dialled that same one: a
-   * thread on a provisioned host is let through only on their listener, and one on a joined
-   * machine only on the tailnet address.
-   */
   origin?: string,
 ) =>
   Effect.gen(function* () {

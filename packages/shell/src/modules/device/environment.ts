@@ -1,15 +1,3 @@
-/**
- * The environment a lent machine's command runs with: the one Gram probed from the person's login
- * shell, minus variables that read as credentials. This is hygiene, not a boundary: it misses what
- * it doesn't know, and a command can read the same values from files.
- *
- * On the way out, the exact values removed here are redacted from what the command prints. That
- * catches a value printed as it is. It doesn't catch one printed in pieces, with a line break or a
- * colour code inside it, or encoded (base64, percent, JSON escapes), and a value shorter than
- * `REDACT_MIN_LENGTH` is removed from the environment but not redacted.
- */
-
-/** Name segments that mark a credential, matched between `_` separators. */
 const CREDENTIAL_SEGMENTS = new Set([
   "PASS",
   "PWD",
@@ -27,7 +15,6 @@ const CREDENTIAL_SEGMENTS = new Set([
   "BEARER",
 ]);
 
-/** Words that mark a credential wherever they sit in a name, separators aside: `PGPASSWORD`. */
 const CREDENTIAL_WORDS = [
   "PASSWORD",
   "PASSWD",
@@ -42,11 +29,6 @@ const CREDENTIAL_WORDS = [
   "CONNECTIONSTRING",
 ];
 
-/**
- * Names removed whatever their segments say: they lend the person's signing agent or tickets,
- * raise a password window, point a tool at a credential store, or choose the program Git signs
- * in with.
- */
 const ALWAYS_REMOVED = new Set([
   "SSH_AUTH_SOCK",
   "SSH_AGENT_PID",
@@ -61,16 +43,8 @@ const ALWAYS_REMOVED = new Set([
   "KRB5CCNAME",
 ]);
 
-/**
- * Git's settings-by-environment (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_0`, `GIT_CONFIG_VALUE_0`)
- * can carry a sign-in header, and Git fails with only some of them, so all go together.
- */
 const GIT_CONFIG = /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/;
 
-/**
- * Names kept though a segment matches: they hold no secret and tools break without them.
- * `DBUS_SESSION_BUS_ADDRESS` is not among them: the session bus is how a keyring is asked.
- */
 const ALWAYS_KEPT = new Set([
   "PWD",
   "OLDPWD",
@@ -84,16 +58,13 @@ const ALWAYS_KEPT = new Set([
   "DESKTOP_SESSION",
 ]);
 
-/** A URL that signs in, as in `postgres://app:hunter2@db/app` or `https://token@host/`. */
 const URL_WITH_SIGN_IN = /^\s*[a-z][a-z0-9+.-]*:\/\/([^/\s@]+)@/i;
 
 const TOKEN_NAME_LENGTH = 20;
 
-/** `password=…` and its kin inside a value, as connection strings spell them. */
 const NAMED_SECRET =
   /(?:^|[\s;&?,])(?:password|passwd|pwd|secret|accountkey|sharedaccesskey|sharedaccesssignature|sig|token|api[-_]?key)=([^\s;&,]+)/gi;
 
-/** Values that are a token or a key whatever the variable is called. */
 const TOKEN_SHAPE =
   /(?:\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bglpat-[A-Za-z0-9_-]{16,}|\bxox[abeprs]-[A-Za-z0-9-]{10,}|(?<![\w/.-])sk-[A-Za-z0-9_-]{20,}|\bAKIA[0-9A-Z]{16}\b|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.|-----BEGIN [A-Z ]*PRIVATE KEY)/;
 
@@ -114,14 +85,11 @@ const decoded = (text: string): string => {
   }
 };
 
-/** The parts of a removed value that are secrets on their own, beside the value itself. */
 const secretParts = (value: string): Array<string> => {
   const parts: Array<string> = [];
   const signIn = URL_WITH_SIGN_IN.exec(value)?.[1];
   if (signIn !== undefined) {
     const colon = signIn.indexOf(":");
-    // With no password a long name is the token, as in `https://ghp_…@github.com`; a short one
-    // is only a name, as in `ssh://git@github.com`.
     const secret = colon === -1 ? signIn : signIn.slice(colon + 1);
     if (colon !== -1 || secret.length >= TOKEN_NAME_LENGTH) parts.push(secret, decoded(secret));
   }
@@ -167,9 +135,7 @@ interface Node {
   readonly next: Map<number, Node>;
   readonly depth: number;
   fail: Node | undefined;
-  /** The length of the longest secret that ends here, or zero. */
   ends: number;
-  /** How much of the text's end, arriving here, could still grow into a secret. */
   open: number;
 }
 
@@ -223,22 +189,17 @@ export const makeRedactor = (
     if (node === undefined) continue;
     for (const [unit, child] of node.next) {
       child.fail = node.fail === undefined ? root : step(node.fail, unit);
-      // A shorter secret ending here lies inside the longer one, so the longest is enough.
       if (child.ends === 0) child.ends = child.fail.ends;
-      // A whole secret that starts no longer one holds nothing back but what its end could start.
       child.open = child.next.size > 0 ? child.depth : child.fail.open;
       queue.push(child);
     }
   }
 
   let state = root;
-  /** Text not yet let go, and where it starts in everything pushed so far. */
   let held = "";
   let heldFrom = 0;
   let seen = 0;
-  /** Where secrets were found in the held text, joined where they overlap, in order. */
   let found: Array<[from: number, to: number]> = [];
-  /** Up to where the last mark let go already covers; text before it is swallowed. */
   let covered = 0;
 
   const take = (text: string): void => {
@@ -257,7 +218,6 @@ export const makeRedactor = (
     held += text;
   };
 
-  /** Lets go of everything before `upTo`, with the secrets in it marked. */
   const release = (upTo: number): string => {
     let out = "";
     let at = Math.max(heldFrom, covered);
@@ -280,12 +240,9 @@ export const makeRedactor = (
   return {
     push: (chunk) => {
       take(chunk);
-      // Nothing from where a secret could be starting.
       const safe = Math.max(seen - state.open, heldFrom);
       const last = found.at(-1);
       if (last === undefined || last[0] >= safe || last[1] <= safe) return release(safe);
-      // A found stretch that begins before anything still open: nothing can change where it
-      // starts, so its mark goes now and whatever joins it later is covered by it.
       const out = release(last[0]) + REDACTED;
       found = [];
       covered = last[1];

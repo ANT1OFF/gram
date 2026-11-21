@@ -8,8 +8,6 @@ import {
 
 import type { MockBoardSimulation, MockReleaseSimulation, MockScenes } from "./mock-orchestration";
 
-// `release-0-8-0` beside the board scenario: a group that has collected a release's worth of work.
-
 /**
  * `release-0-8-0`, a group at its `fixes` stage that has collected a release's worth of work:
  * thirty-odd merged, delivered and archived features, `worktree-sweep` among them, around four

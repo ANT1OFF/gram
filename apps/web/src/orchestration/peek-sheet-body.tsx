@@ -93,7 +93,6 @@ function SheetHead({
   );
 }
 
-/** The ledger row of a worker, from its own workspace's ledger. */
 function useLedgerEntry(threadId: ThreadId) {
   const workspaceId = useThreadsStore((s) => s.byId[threadId]?.thread.workspaceId);
   const { data: ledger } = useOrchestratorLedger(workspaceId);
@@ -111,7 +110,6 @@ function WorkerPeekView({
 }) {
   const { threadId } = target;
   const title = useThreadsStore((s) => s.byId[threadId]?.thread.title) ?? target.title;
-  // At work by the test every row's glyph takes: its turn, or work running under it.
   const running = useThreadsStore((s) => {
     const summary = s.byId[threadId];
     return summary !== undefined && threadWorking(summary, s.statusDetail[threadId]);
@@ -224,14 +222,12 @@ function PrPeekView({
     prDetailStamp(s.byId[threadId]?.git, s.byId[threadId]?.thread.boundPr),
   );
   const entry = useLedgerEntry(threadId);
-  // The PR panel's own query, so a peek and the panel share one fetch.
   const { data } = useQuery({ ...prDetailQuery(api, threadId, stamp), enabled: known });
   const detail = detailFor(data?.detail, target);
   const pr = prPeekOf(ledgerPrOf(entry, target), detail);
   const url = pr.url ?? target.url;
   const now = useNow(pr.runs.some((run) => checkState(run).running === true));
   const merged = pr.state === "merged";
-  // GitHub's shape for its state, and its colour only once merged.
   const Icon = PR_STATE_DISPLAY[pr.state ?? "open"].icon;
   return (
     <>

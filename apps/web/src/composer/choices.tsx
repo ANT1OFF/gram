@@ -67,7 +67,6 @@ export interface ChoiceSection {
   readonly body?: ReactNode;
 }
 
-/** Registers one section's shortcut; a component, so the sections can come and go. */
 function SectionShortcut({
   id,
   keys,
@@ -85,7 +84,6 @@ function SectionShortcut({
   return null;
 }
 
-/** The keys that move between the popover's rows outside the model's search. */
 const MOVES = new Set(["ArrowDown", "ArrowUp", "Home", "End"]);
 
 /**
@@ -130,8 +128,6 @@ export function ComposerChoices({
   const phone = usePhone();
   const [open, setOpenState] = useState(false);
   const [active, setActive] = useState<string | undefined>(sections[0]?.id);
-  // Counts openings, so each one starts its sections afresh: reopened while the last closing still
-  // animates out, the model search would otherwise keep the query its pick left.
   const [opening, setOpening] = useState(0);
   const trigger = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
@@ -140,7 +136,6 @@ export function ComposerChoices({
   const hintOf = (section: ChoiceSection) =>
     section.shortcut === undefined ? "" : shortcutHint(section.shortcut.id, overrides);
 
-  // A pick rings the mark once it lands, and not for a value that changed by itself.
   const [pending, setPending] = useState<{ id: string; value: string }>();
   const [landed, setLanded] = useState(0);
   if (
@@ -157,26 +152,21 @@ export function ComposerChoices({
       setActive(at ?? sections.find((section) => section.unavailable === undefined)?.id);
       if (!open) {
         setOpening(opening + 1);
-        // A pick the server never took doesn't ring the mark for a later, unrelated change.
         setPending(undefined);
       }
     } else if (open) onClose?.();
     setOpenState(next);
   };
-  // An ask from outside opens the model's section as its shortcut does. Kept in a ref, so a
-  // re-render with new callbacks doesn't subscribe again.
   const asked = useRef(() => {});
   useEffect(() => {
     asked.current = () => setOpen(true, "model");
   });
   useEffect(() => onAsked?.(() => asked.current()), [onAsked]);
 
-  /** A pick; the popover closes on it, the phone's sheet stays open for the next. */
   const pick = (section: ChoiceSection, option: ChoiceOption) => {
     if (option.disabled) return;
     if (!phone || option.opens) setOpen(false);
     if (option.value === section.value) return;
-    // It opens something to confirm: nothing is set yet, so nothing rings or is said.
     if (option.opens) {
       section.onChange?.(option.value);
       return;
@@ -194,7 +184,6 @@ export function ComposerChoices({
         : `${section.label}: ${section.named}`;
   const name = sections.map((section) => withHint(said(section), hintOf(section))).join(" · ");
   const warnings = sections.flatMap((section) => (section.warning ? [section.warning] : []));
-  // The tooltip names the agent the mark stands for before the model, "Codex · GPT-5.5".
   const tip = [
     ...sections.map((section) => {
       const line = withHint(said(section), hintOf(section));
@@ -214,9 +203,7 @@ export function ComposerChoices({
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!MOVES.has(event.key)) return;
     const target = event.target as HTMLElement;
-    // The model's search moves through its own list.
     if (target.closest("[data-model-search]")) return;
-    // Down from the open Model heading goes into its search, where its list is.
     const search =
       event.key === "ArrowDown" && target.getAttribute("aria-expanded") === "true"
         ? target.closest("[data-choice-section]")?.querySelector<HTMLElement>("input")
@@ -240,7 +227,6 @@ export function ComposerChoices({
             : (at - 1 + all.length) % all.length;
     all[next]?.focus();
   };
-  /** Where focus lands as the popover opens: the search, else the open section's current value. */
   const initialFocus = () => {
     const el = popup.current;
     const section = el?.querySelector<HTMLElement>(`[data-choice-section="${active}"]`);
@@ -273,8 +259,6 @@ export function ComposerChoices({
     </span>
   );
 
-  // A phone has no hover to say the values, so the chip says them in short words, and opens a sheet
-  // from the bottom in place of the popover.
   if (phone)
     return (
       <Drawer.Root open={open} onOpenChange={(next) => setOpen(next)}>
@@ -342,7 +326,6 @@ export function ComposerChoices({
         ))}
       </Hint>
       <Popover.Portal>
-        {/* Above the whole composer, so the popover never covers the draft. */}
         <Popover.Positioner
           side="top"
           align="start"
@@ -389,11 +372,6 @@ export function chipModelName(named: string): string {
 const ROW =
   "relative flex w-full cursor-default items-center gap-2 rounded-sm text-body outline-none select-none hover:row-cursor focus-visible:row-cursor";
 
-/**
- * One dimension in the popover: a heading that says its value and shortcut, and, once open, its
- * list with the current value checked and a line on what each costs. One section is open at a
- * time; one that doesn't apply is greyed, and says why on hover and once opened.
- */
 function Section({
   id,
   section,
@@ -419,7 +397,6 @@ function Section({
     "aria-expanded": expanded,
     "aria-controls": `${id}-body`,
     "aria-disabled": unavailable || undefined,
-    // Why it doesn't apply, said to a screen reader as the hint says it on hover.
     "aria-description": unavailable ? `${section.label}: ${section.unavailable}` : undefined,
     "data-testid": unavailable ? `unavailable-${section.id}` : `choices-${section.id}`,
     onClick: onExpand,
@@ -445,7 +422,6 @@ function Section({
       )}
     </>
   );
-  // Why it doesn't apply, or why it warns, on hover and focus.
   const why = unavailable ? `${section.label}: ${section.unavailable}` : section.warning;
   const heading =
     why === undefined ? (

@@ -35,24 +35,9 @@ import {
 import { workspaceTrees } from "./tree-model";
 import type { NeedsYouList } from "./use-needs-you";
 
-// Every workspace's asks and the Needs you list, derived once per window and read here by every
-// view that shows them: the sidebar's count, each orchestrator's stack, Quiet, the menu bar, away
-// notifications, the Board's chips. Each view used to derive them for itself, ten times over on
-// every change to any thread.
-//
-// They are derived here, outside React, as their store inputs change (the threads, the answers
-// held or sent, what is set aside in settings), so a view never reads them a commit behind what it
-// reads from those stores; a burst of server events derives them once, at its end. What comes from
-// queries (the workspaces, their open questions, ledgers and projects) `NeedsYouSource` hands in.
-// A derivation that says what the last one said keeps the last one's lists, so the views that read
-// them sit out changes that don't touch them.
-
-/** What `NeedsYouSource` reads from queries and hands in. */
 interface QueriedInputs {
   readonly workspaces: readonly WorkspaceState[];
-  /** Each workspace's open questions. */
   readonly questions: ReadonlyMap<WorkspaceId, readonly MemoryQuestion[]>;
-  /** Each workspace's ledger, which carries its workers' forwarded questions. */
   readonly ledgers: ReadonlyMap<WorkspaceId, OrchestratorLedger>;
   readonly projects: readonly Project[];
 }
@@ -74,7 +59,6 @@ export interface DerivedAsks {
 }
 
 interface DerivedAsksState extends DerivedAsks {
-  /** Takes the queried inputs anew and derives again. */
   setQueried(queried: QueriedInputs): void;
 }
 
@@ -88,7 +72,6 @@ const NO_QUERIED: QueriedInputs = {
   projects: [],
 };
 
-/** The asks, with and without Later's, and Needs you, from everything they are read from. */
 const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?: number } => {
   const { byId } = useThreadsStore.getState();
   const { held, sent } = useAskStackStore.getState();
@@ -99,7 +82,6 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
   const sleeping = asleep(snoozes, now);
   const away = new Map([...snoozes].filter(([id]) => sleeping.ids.has(id)));
   const cleared = new Set(inbox?.cleared ?? []);
-  // Set aside in settings: away from every view.
   const setAside = new Set([...away.keys(), ...cleared]);
   const answered = hiddenIds({ held, sent });
 
@@ -116,7 +98,6 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
       orchestratorThreadId,
       source: {
         groups: groupInbox(inboxEntries(tree, projectName)),
-        // An answer to an open question is a message to the orchestrator, so it needs one.
         questions:
           orchestratorThreadId === undefined ? [] : (questions.get(tree.workspace.id) ?? []),
         workerQuestions: ledgers.get(tree.workspace.id)?.questions ?? [],
@@ -143,8 +124,6 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
     return [...askKeysByThread(before).keys()].filter((id) => !left.has(id)).toSorted();
   })();
 
-  // Needs you: the asks with Later's, every standing failure and every thread's waits, less what
-  // is answered or dismissed, with what is put away for Later apart.
   const hidden = new Set([...answered, ...cleared]);
   const failures = new Map<WorkspaceId, readonly FailureItem[]>(
     withLater.map((w) => [
@@ -155,13 +134,8 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
   const threads = Object.values(byId).filter(
     (summary): summary is NonNullable<typeof summary> => summary !== undefined,
   ) as readonly NeedsYouThread[];
-  // The threads outside any workspace bring their requests and errors while they need the user, as
-  // the window title and the dock badge count them.
   const solo = split.listed.filter((summary) => threadNeedsYou(summary));
   const soloErrors = soloFailures(solo, hidden, projectName);
-  // What a thread needs the user for beyond its asks and its error, in its workspace's group or
-  // with the solo threads: every thread the title and the badge count has an item.
-  // A failure covers its thread dismissed or not: a dismissed red build stays dismissed.
   const covered = new Set(
     withLater
       .flatMap((w) => standingFailures(ledgers.get(w.workspaceId), byId, NOTHING_HIDDEN))
@@ -204,15 +178,12 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
 };
 
 let queried = NO_QUERIED;
-/** Whether a `NeedsYouSource` has handed anything in; until one has, nothing reads the lists. */
 let sourced = false;
 let wake: ReturnType<typeof setTimeout> | undefined;
 
 export const useDerivedAsks = create<DerivedAsksState>()((set, get) => {
   const derive = () => {
     const next = deriveAsks(queried, Date.now());
-    // A snoozed item comes back on its own when it wakes; at least a second on, so a clock a
-    // little behind the wake doesn't spin.
     clearTimeout(wake);
     wake =
       next.wakes === undefined
@@ -235,8 +206,6 @@ export const useDerivedAsks = create<DerivedAsksState>()((set, get) => {
     }
     set({ asks, withLater, soloAsks, needsYou, answered });
   };
-  // Run from the input stores' listeners: a derivation that fails is logged, never thrown at
-  // whoever changed the store, and never keeps that store's later listeners from hearing of it.
   const safely = () => {
     try {
       derive();
@@ -256,7 +225,6 @@ export const useDerivedAsks = create<DerivedAsksState>()((set, get) => {
   useServerSettings.subscribe((s, previous) => {
     if (s.settings?.inbox !== previous.settings?.inbox) changed();
   });
-  // A parked thread outside any workspace needs the user while its PR has attention unseen.
   useAttentionStore.subscribe((s, previous) => {
     if (s.acknowledged !== previous.acknowledged || s.loaded !== previous.loaded) changed();
   });

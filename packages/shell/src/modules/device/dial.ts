@@ -22,7 +22,6 @@ import { hashAccessToken, signDeviceDial } from "./keys.ts";
  */
 export const deviceConnectUrl = (deviceConnect: string, workspace: string): URL => {
   const url = new URL(deviceConnect);
-  // A WebSocket address can't carry a fragment.
   url.hash = "";
   url.searchParams.set("workspace", workspace);
   return url;
@@ -68,9 +67,5 @@ export const deviceDialHeaders = (key: KeyObject, dial: DeviceDialFor): Record<s
  */
 export const layerWebSocketWithHeaders = Layer.succeed(Socket.WebSocketConstructor)(
   (url, options) =>
-    new globalThis.WebSocket(
-      url,
-      // Node's WebSocket takes `{ protocols, headers }` where the standard takes protocols only.
-      options as unknown as string | Array<string> | undefined,
-    ),
+    new globalThis.WebSocket(url, options as unknown as string | Array<string> | undefined),
 );

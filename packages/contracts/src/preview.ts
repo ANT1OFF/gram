@@ -5,11 +5,6 @@ import type {
 } from "./browser-inspection.ts";
 import type { PaneResult } from "./agent-browse.ts";
 
-// What the Preview tab may show. The user opens any web page there; what an agent or the server
-// asks it to open (`show_panel`, a suggestion) stays on loopback. The server, the shell's preview
-// view and the web app all read these rules, so none of them can be talked into a page another
-// would refuse. Schema-free, for the shell's main process.
-
 /** The hosts a preview may load, as the WHATWG URL parser spells them. */
 export const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -57,7 +52,6 @@ export function previewUrl(target: string): string | undefined {
   return loopbackUrl(trimmed);
 }
 
-/** An IPv4 address, whose sites are on a local network more often than not, and served as http. */
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 
 /**
@@ -145,7 +139,6 @@ export function isPreviewFilesUrl(raw: string): boolean {
   try {
     decoded = decodeURIComponent(first);
   } catch {
-    // Malformed escapes: refuse what can't be read, as the listener would answer it.
     return true;
   }
   return decoded.toLowerCase() === PREVIEW_FILES_SEGMENT;

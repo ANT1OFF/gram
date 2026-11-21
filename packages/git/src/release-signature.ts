@@ -1,8 +1,3 @@
-// The publisher's release signature: an Ed25519 signature over a release's `SHA256SUMS.txt`,
-// published beside it as `SHA256SUMS.txt.sig` (base64). The private half lives only in the
-// publisher's macOS keychain (`bun run release:key keygen` makes it); GitHub
-// never holds it, so a release changed on GitHub alone no longer verifies.
-
 import { createPublicKey, verify } from "node:crypto";
 
 /** The file a release's checksum signature is published as. */
@@ -15,7 +10,6 @@ export const CHECKSUMS_SIGNATURE = "SHA256SUMS.txt.sig";
 export const GRAM_RELEASE_PUBLIC_KEY: string | null =
   "WJQzqS72egfjClRWY2oBKqBm9XyEAtOCwZHkaeMgQx8=";
 
-/** The SPKI DER prefix of an Ed25519 public key, before its raw 32 bytes. */
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 /** Whether `key` is base64 of a raw 32-byte Ed25519 public key. */

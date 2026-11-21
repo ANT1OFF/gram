@@ -1,11 +1,3 @@
-// The user's WebRTC switch on a thread's Preview page (`DesktopPreview.setWebRtc`) gives WebRTC to
-// whatever serves that address, and any agent working in the thread's folder may write the app it
-// serves: the thread's own, another thread's or a worker's on the same folder. So the switch stays
-// off while a turn is under way in any thread whose folders overlap the page's thread's, and goes
-// off whenever the app hears of one, by an event or a reconnect's snapshot alike. Turning it off is
-// a no-op where it is off already, so it is asked on every such status, not only at a turn's start.
-// A process an agent left running (a watcher, a dev server) starts no turn, and isn't seen.
-
 import {
   checkoutRoots,
   type DesktopPreview,
@@ -21,7 +13,6 @@ export const turnUnderWay = (status: ThreadStatus | undefined): boolean =>
   status === "needsApproval" ||
   status === "needsInput";
 
-/** The shell's preview, or the mock API's stand-in for it. */
 const previewBridge = (): DesktopPreview | undefined =>
   typeof window === "undefined"
     ? undefined
@@ -37,7 +28,6 @@ const foldersOf = (thread: Folders) => [
   ...(thread.additionalDirectories ?? []),
 ];
 
-/** `path` is `root` or inside it. */
 const within = (path: string, root: string) => {
   const base = root.replace(/[\\/]+$/, "");
   if (base === "") return false;

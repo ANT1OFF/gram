@@ -1,8 +1,3 @@
-// What a model is told about a thread's pull requests: checks, the AI reviewer's verdict and
-// people's reviews kept apart, and what blocks the merge. Shared by the server's helper consumers
-// so they describe PRs consistently. Pure: it reads a badge and what the caller already holds,
-// and asks GitHub nothing.
-
 import {
   approvingBotOnHead,
   mergeReviewPolicyOf,
@@ -160,7 +155,6 @@ export interface PrContextInput {
   readonly mergeReviewPolicy?: "solo" | "bot" | undefined;
 }
 
-/** A GitHub-supplied string as one short line that can't close the fence. */
 const clean = (text: string, max = NAME_MAX_CHARS): string => {
   const line = text
     .replace(/[<>\r\n\t]+/g, " ")
@@ -169,7 +163,6 @@ const clean = (text: string, max = NAME_MAX_CHARS): string => {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 };
 
-/** A bot's login as people say it: `example-code-review[bot]` is "example-code-review". */
 const botName = (login: string): string => clean(login.replace(/\[bot\]$/i, "").replace(/\*/g, ""));
 
 const pendingFor = (ms: number): PendingFor =>
@@ -195,12 +188,10 @@ const stateOf = (badge: PrStatus): PrContext["state"] =>
 const checksOf = (input: PrContextInput): PrContext["checks"] => {
   const { badge, seen, now } = input;
   const head = badge.headRefOid;
-  // Names read under another head or rollup describe another state of the PR.
   const same = seen !== undefined && seen.stamp === prChecksStamp(badge) ? seen : undefined;
   const marked = same?.checks.some((check) => check.required === true) === true;
   const gating = (same?.checks ?? []).filter((check) => !marked || check.required === true);
   const fresh = same !== undefined && now - same.at <= CHECK_NAMES_MAX_AGE_MS;
-  // Without a fresh read of its own, the names the badge carries, under the same age limit.
   const failing = fresh
     ? gating.filter((c) => c.status === "failing").map((c) => clean(c.name))
     : requiredChecksOf(badge) === "failing" &&
@@ -278,8 +269,6 @@ const humansOf = (input: PrContextInput): PrContext["humans"] => {
   const { badge, bots } = input;
   const latest = new Map<string, HumanReviewContext>();
   for (const review of badge.review?.humanReviews ?? []) {
-    // People's verdicts only: an app account never lands here, and a person whose login a bot
-    // pattern matches is still a person.
     latest.delete(review.author);
     latest.set(review.author, {
       who: clean(review.author),
@@ -325,7 +314,6 @@ const blockersOf = (
     out.push({ kind: "changesRequested", by: "unknown" });
   }
   if (ctx.decision === "REVIEW_REQUIRED") out.push({ kind: "approvalMissing" });
-  // The workspace may explicitly choose solo; GitHub approvals remain separate.
   if (ctx.armed !== undefined && ctx.armed.reviewPolicy !== "solo") {
     if (
       !(
@@ -441,7 +429,6 @@ const MERGE_WORDS: Record<string, string> = {
 
 interface Line {
   readonly text: string;
-  /** Lower stays longer when the block is cut. */
   readonly rank: number;
 }
 
@@ -579,7 +566,6 @@ export const prContextLines = (
   return lines.map((line) => line.text);
 };
 
-/** What the AI reviewer said, in a few words: "approved on head", "reviewing now". */
 const botSaid = (bot: NonNullable<PrContext["bot"]>): string =>
   bot.reviewing
     ? "reviewing now"
@@ -664,11 +650,9 @@ export const threadPrContexts = ({
     });
   });
 
-/** Credits reviewers in general with an approval. */
 const BLURRED_APPROVAL =
   /\b(approved by (the )?reviewers?|(?<!\bAI )reviewers? (have |has )?approved|(?<!\bAI )reviewers? signed off)\b/i;
 
-/** A PR the text names, `owner/repo#N` or `#N`. */
 const PR_REFERENCE = /(?:\b([\w.-]+\/[\w.-]+))?#(\d+)\b/g;
 
 /**

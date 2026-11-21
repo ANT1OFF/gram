@@ -1,8 +1,3 @@
-// The server's door to the native shell's Preview pane over Electron's utilityProcess
-// parentPort, or, with no desktop app, to a headless browser host the server forks
-// (`GRAM_HEADLESS_BROWSER`). The shell owns every browsing rule; this module carries requests and
-// stops waiting when a request times out or its caller is interrupted.
-
 import { fork as nodeFork, type ChildProcess, type ForkOptions } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
@@ -76,9 +71,6 @@ const timedOut: PaneResult = {
   message: "The Preview pane didn't answer in time.",
 };
 
-// ---------------------------------------------------------------------------------------------
-// Desktop: Electron main, over the utilityProcess port.
-
 /** Electron's `process.parentPort` as the server sees it. */
 export interface PaneMessagePort {
   postMessage(message: unknown): void;
@@ -131,12 +123,8 @@ export const bridgePane = (
   };
 };
 
-// ---------------------------------------------------------------------------------------------
-// No desktop app: a headless browser host, forked.
-
 type Fork = (modulePath: string, args: ReadonlyArray<string>, options: ForkOptions) => ChildProcess;
 
-/** What the browser host is started with: where things are, and which browser to run. */
 const HOST_ENV = [
   "PATH",
   "HOME",
@@ -196,14 +184,12 @@ export const forkedPanePort = (
     for (const listener of Array.from(listeners)) listener({ data });
   };
   const stops = new Set<() => void>();
-  /** The requests the current host hasn't answered. */
   const open = new Set<string>();
   let child: ChildProcess | undefined;
   const live = (): ChildProcess => {
     if (child !== undefined) return child;
     const started = fork(modulePath, [], {
       stdio: ["ignore", "inherit", "inherit", "ipc"],
-      // Not the server's own flags, such as `--watch` in development.
       execArgv: [],
       env: browserHostEnv(process.env),
     });

@@ -1,12 +1,3 @@
-// Threaded orchestration's decisions as pure functions: who has authority, which workers are
-// delegated, where a worker stands, what the charter's one cap allows, what a digest says and
-// whether it is worth a wake.
-//
-// Everything here is a function over plain data. No Effect services, no I/O and no clocks: a rule
-// that needs the time takes `now`. The orchestration service (`service.ts`) and the orchestration
-// app tools are the only callers; they gather the facts, and what follows from them is decided
-// here, where it can be tested without a server.
-
 import { dreamSupportFor, type OutwardGate, type ToolAudience } from "@gram/agents";
 import {
   browserScope,
@@ -96,10 +87,6 @@ import { redactText } from "../logging/redact.ts";
 import { AGENT_NAMES } from "../runtime/agent-names.ts";
 import { ROLE_AGENTS } from "./role-agents.ts";
 
-// ---------------------------------------------------------------------------------------------
-// Authority, delegation, audience
-// ---------------------------------------------------------------------------------------------
-
 /** The parts a thread can play in orchestration. A worker has no `Thread.role`: it is any thread with `spawnedBy`. */
 export type OrchestrationRole = ThreadRole | "worker";
 
@@ -119,10 +106,6 @@ export const ADMITTED: Readonly<Record<OrchestrationRole, ReadonlyArray<AgentKin
   }),
 };
 
-/**
- * Agent kinds whose gated session only opens on a prepared Gram-owned native or gateway home.
- * Codex alone: an allow rule in `~/.codex` runs a push unasked under any policy.
- */
 const GATE_NEEDS_OWNED_HOME: ReadonlyArray<AgentKind> = ["codex"];
 
 /**
@@ -145,7 +128,6 @@ export const hasAuto = (
 ): boolean =>
   kind !== "codex" || (input.gate === undefined && input.autoReviewReady && input.gateway !== true);
 
-/** Both supported Dream harnesses retain their existing gate requirements. */
 const DREAM_NEEDS_NO_GATE: ReadonlyArray<AgentKind> = [];
 
 /** Whether threads of this agent kind may take the role. */
@@ -216,10 +198,6 @@ export const toolAudience = (input: {
     return "worker";
   return "plain";
 };
-
-// ---------------------------------------------------------------------------------------------
-// Autonomy
-// ---------------------------------------------------------------------------------------------
 
 /** What a level of autonomy leaves the outward gate asking about; `full` asks about nothing. */
 export const gateOfAutonomy = (autonomy: Autonomy): OutwardGate | undefined =>
@@ -388,7 +366,6 @@ export const mergeDelegationStands = (input: {
     state.paused !== undefined ||
     (feature !== undefined && state.pausedFeatures?.includes(feature) === true);
   if (callerId === target.id) {
-    // `listeningWorkspace`: only the workspace whose orchestrator spawned the worker speaks for it.
     if (
       target.spawnedBy === undefined ||
       state.workspace.orchestratorThreadId !== target.spawnedBy.threadId
@@ -410,10 +387,6 @@ export const mergeDelegationStands = (input: {
     paused,
   });
 };
-
-// ---------------------------------------------------------------------------------------------
-// Permission modes
-// ---------------------------------------------------------------------------------------------
 
 /** The mode a worker is spawned in: the charter's when it names one, else what orchestration starts in. */
 export const startMode = (
@@ -438,10 +411,6 @@ export const startModeFor = (
   const mode = startMode(settings, charter);
   return !auto && mode === "auto" ? "bypassPermissions" : mode;
 };
-
-// ---------------------------------------------------------------------------------------------
-// Worker models
-// ---------------------------------------------------------------------------------------------
 
 /** A worker model as the orchestrator names it: `agent:model`. */
 export const workerModelLabel = (model: Pick<ModelRef, "agent" | "model">): string =>
@@ -470,7 +439,6 @@ export type RosterUnavailable = ReadonlyMap<number, string>;
  */
 export type RosterCatalogue = ReadonlyMap<AgentKind, ReadonlyArray<CatalogueRow>>;
 
-/** The catalogue row a pinned entry on no gateway profile runs, if its agent's catalogue has one. */
 const catalogueRowOf = (
   entry: Pick<ModelRef, "agent" | "model" | "profileId">,
   catalogue: RosterCatalogue | undefined,
@@ -517,7 +485,6 @@ export const closestWorkerModel = (
 ): string | undefined => {
   const prefixed = /^(claude|codex):(.*)$/i.exec(named.trim());
   const agent = prefixed?.[1]?.toLowerCase();
-  // By the model part alone: a shared `claude:` would make every Claude entry look near.
   const candidates = allowed
     .filter((each) => agent === undefined || each.agent === agent)
     .map((each) => {
@@ -533,7 +500,6 @@ export const closestWorkerModel = (
   return closestName(candidates, prefixed?.[2] ?? named);
 };
 
-/** The entry a worker gets when the orchestrator names none, if the user marked one. */
 const defaultWorkerModel = (allowed: ReadonlyArray<RosterModel>): RosterModel | undefined =>
   allowed.find((each) => each.default === true);
 
@@ -543,12 +509,6 @@ export const fallbackOf = (
   own: Pick<ModelRef, "agent" | "model">,
 ): RosterModel | undefined => workerFallback(allowed, own);
 
-/**
- * The entries `wanted` names through their agent's catalogue (`resolveModel`): `claude:fable`,
- * `claude:Fable 5.2` or a bare `fable` name the entry stored as `claude-fable-5-2` while the
- * catalogue says `fable` runs that id, and an entry stored as `fable` by its pinned id likewise.
- * Only entries on no gateway profile, whose catalogue is the agent's own.
- */
 const byCatalogue = (
   allowed: ReadonlyArray<RosterModel>,
   wanted: string,
@@ -645,7 +605,6 @@ export const matchWorkerModel = (
   };
 };
 
-/** A gateway profile as the roster checks read it. */
 interface RosterProfile {
   readonly id: string;
   readonly keyRef: string;
@@ -671,11 +630,9 @@ export interface RosterContext {
 
 const isGatewayKind = (agent: AgentKind): boolean => agent === "codex";
 
-/** Whether an entry has to run on a gateway profile here, its harness's own login being no use. */
 const needsGateway = (agent: AgentKind, context: RosterContext): boolean =>
   agent === "codex" && context.gated === true && context.gateReady !== true;
 
-/** Whether `profile` lists `id`, as `models.list` would offer it: its own models, or a custom one. */
 const lists = (profile: RosterProfile, id: string, custom: ReadonlyArray<string>): boolean =>
   profile.models.some((each) => each.id === id) || custom.includes(id);
 
@@ -700,7 +657,6 @@ export const workerModelUnavailable = (
     if (profile.keyRef === "") {
       return "its gateway profile has no key; add a gateway key in Settings → Gateways";
     }
-    // A profile whose models were never fetched lists none, which says nothing against the entry.
     return profile.models.length > 0 && !lists(profile, model.model, input.customModels ?? [])
       ? `its gateway profile doesn't offer ${model.model}; pick one that does in Settings → Workspaces`
       : undefined;
@@ -743,7 +699,6 @@ export const rosterOf = (
   return allowed.map((each, index) => {
     const note = each.useFor?.replace(/\s+/g, " ").trim() ?? "";
     const why = unavailable.get(index);
-    // One that follows a tier is named by its tier, and `runsOn` says its model.
     const shown = each.tier === undefined ? workerModelDisplayName(each, catalogue) : undefined;
     return {
       model: rosterName(each),
@@ -881,12 +836,6 @@ export const modeAfterDowngrade = (input: {
 }): PermissionMode | undefined =>
   input.openedIn === "auto" && input.reported === "default" ? "bypassPermissions" : undefined;
 
-// ---------------------------------------------------------------------------------------------
-// Worker and feature state
-// ---------------------------------------------------------------------------------------------
-
-// `workerState`, `featureState` and their order live in the contracts, so the board's live overlay
-// and the web's mock ledger use the same rule as the ledger.
 export {
   WORKER_STATE_ORDER,
   featureState,
@@ -894,10 +843,6 @@ export {
   workerStateBase,
   type WorkerStateInput,
 } from "@gram/contracts";
-
-// ---------------------------------------------------------------------------------------------
-// Refusals
-// ---------------------------------------------------------------------------------------------
 
 /** Why an orchestration tool refused, as the prefix of its error message. */
 export type RefusalCode =
@@ -937,10 +882,6 @@ export type RefusalCode =
  * test) can tell refusals apart without parsing prose.
  */
 export const refusal = (code: RefusalCode, message: string): string => `${code}: ${message}`;
-
-// ---------------------------------------------------------------------------------------------
-// The orchestrator → worker loop guard
-// ---------------------------------------------------------------------------------------------
 
 /** `USER_HOLD_IDLE_MS` lives in the contracts, so the worker view's hold chip says the same. */
 export { USER_HOLD_IDLE_MS };
@@ -1020,10 +961,6 @@ export const checkWorkerSend = (check: WorkerSendCheck): WorkerSendVerdict => {
   return { ok: true, recentSends: [...recent, check.now] };
 };
 
-// ---------------------------------------------------------------------------------------------
-// The charter's cap
-// ---------------------------------------------------------------------------------------------
-
 export type BudgetVerdict =
   | { readonly ok: true }
   | {
@@ -1051,11 +988,6 @@ export const budgetVerdict = (input: {
       }
     : { ok: true };
 
-// ---------------------------------------------------------------------------------------------
-// Overlap
-// ---------------------------------------------------------------------------------------------
-
-/** Neutral defaults; workspaces can replace this list, including with an empty list. */
 const DEFAULT_OVERLAP_IGNORE_PATHS: ReadonlyArray<string> = [
   "bun.lock",
   "bun.lockb",
@@ -1157,7 +1089,6 @@ export const overlaps = (
   return out;
 };
 
-/** How many shared paths an overlap names before it counts the rest. */
 const OVERLAP_PATHS_NAMED = 3;
 
 /** The first shared paths and a count of the rest, so a false alarm can be told at a glance. */
@@ -1199,50 +1130,31 @@ export const scopeOverlap = (
   return [...shared].toSorted();
 };
 
-// ---------------------------------------------------------------------------------------------
-// The digest as a diff
-// ---------------------------------------------------------------------------------------------
-
-/** What the last acknowledged digest knew about one worker. */
 interface WorkerSnapshot {
   readonly state: WorkerState;
-  /** Kept so a worker that has gone can still be named. */
   readonly feature: string;
   readonly title: string;
-  /** The agent it ran on, so a switch the user made is told once. */
   readonly agent?: AgentKind | undefined;
-  /** Its latest `report.interface`. */
   readonly interface?: string | undefined;
   readonly overlapsWith: ReadonlyArray<string>;
   readonly actionKey?: string | undefined;
   readonly reportKey?: string | undefined;
-  /** How many of its turns had ended with nothing queued behind them. */
   readonly turnEnds?: number | undefined;
-  /** The quiet condition already delivered, so it survives snapshots taken during a turn. */
   readonly quietKey?: string | undefined;
-  /** Its worktree was gone, so the digest that said so isn't repeated. */
   readonly worktreeMissing?: true | undefined;
-  /** Its open PRs with failing checks (`ciFixPrKey`), so they can be named once it has gone. */
   readonly failing?: ReadonlyArray<string> | undefined;
-  /** Those no live worker owned, already told, so the note isn't repeated. */
   readonly orphaned?: ReadonlyArray<string> | undefined;
 }
 
-/** A worker's open PRs whose checks fail, by `ciFixPrKey`, sorted. */
 const failingPrKeys = (worker: FeatureLedgerEntry["workers"][number]): ReadonlyArray<string> =>
   ledgerPrsOf(worker)
     .filter((pr) => pr.state === "open" && checksOf(pr.checks) === "failing")
     .map(ciFixPrKey)
     .toSorted();
 
-/**
- * A failing PR no live worker owns (`workerOwnsCiFix`), as a digest note the orchestrator acts on:
- * the user hears of a failing check only when an agent asks them.
- */
 const orphanedChecksNote = (feature: string, pr: string, why: string): string =>
   `Feature ${feature}: ${pr} has failing checks and no live worker owns them (${why}). Follow it up: brief or spawn a worker to fix them, or close the PR; ask the user only if a fix needs them.`;
 
-/** Report timestamps do not turn unchanged worker-authored evidence into news. */
 const reportEvidenceKey = (report: Omit<WorkerReport, "threadId" | "at">): string =>
   createHash("sha256")
     .update(
@@ -1252,7 +1164,6 @@ const reportEvidenceKey = (report: Omit<WorkerReport, "threadId" | "at">): strin
         report.interface,
         report.prUrl,
         report.evidence,
-        // Only when given, so a report from before `learned` keeps the key it was stored with.
         ...(report.learned === undefined ? [] : [report.learned]),
         ...(report.verify === undefined ? [] : [report.verify]),
       ]),
@@ -1273,7 +1184,6 @@ export const newDigestReports = (
   });
 };
 
-/** A changed wait's concrete owner and next step, from recorded facts only. */
 const actionEvidenceText = (worker: FeatureLedgerEntry["workers"][number]): string => {
   const request = worker.pendingRequests[0];
   if (request !== undefined)
@@ -1311,7 +1221,6 @@ const actionEvidenceText = (worker: FeatureLedgerEntry["workers"][number]): stri
   return "wait evidence changed; read this worker's current row before choosing the next action";
 };
 
-/** Ages and activity text are intentionally excluded: only changed actionable records count. */
 const actionEvidenceKey = (worker: FeatureLedgerEntry["workers"][number]): string =>
   createHash("sha256")
     .update(
@@ -1321,8 +1230,6 @@ const actionEvidenceKey = (worker: FeatureLedgerEntry["workers"][number]): strin
           ...(worker.morePrs ?? []),
           ...(worker.alsoIn ?? []).flatMap((repo) => [repo.pr, ...(repo.morePrs ?? [])]),
         ]
-          // A PR opened and closed inside one window leaves no actionable wait.
-          // Its closure still matters through worker-state or dependency transitions.
           .filter((pr) => pr !== undefined && pr.state !== "closed")
           .map((pr) =>
             pr?.state === "merged"
@@ -1362,10 +1269,8 @@ export interface DigestDiff {
   readonly nextSnapshot: DigestSnapshot;
 }
 
-/** States an orchestrator's own spawn and an ordinary turn start move a worker between. */
 const QUIET_STATES: ReadonlySet<WorkerState> = new Set<WorkerState>(["briefed", "working"]);
 
-/** Statuses of a worker that isn't doing anything and won't until someone writes to it. */
 const AT_REST: ReadonlySet<ThreadStatus> = new Set<ThreadStatus>(["idle", "cold"]);
 
 const WENT_QUIET = "ended its turn without reporting; read its last messages with get_thread";
@@ -1374,21 +1279,12 @@ const WORKTREE_GONE =
   "its worktree was deleted outside Gram and its agent stopped, with any uncommitted work lost; restore it with restore_worktree, or archive the worker";
 
 const READY_NEXT = "Merging is the user's: tell them it is ready, and in what order to merge";
-/** At `full` the merge is the orchestrator's to make, and the user's standing decisions say how. */
 const READY_NEXT_FULL =
   "Merge it as your standing decisions and the order of merging allow (`set_auto_merge`, or brief its workers), and tell the user what you merged; ask only what no decision covers";
 const DELIVERED_NEXT = "merging or whatever comes next is yours or the user's to decide";
-/** An archived worker leaves the publisher's watch and its GitHub sweeps, and `list_workers`. */
 const MERGED_NEXT =
   "archive its workers with `archive_thread` once you no longer need them; their worktrees and branches stay";
 
-/**
- * What a feature reaching `state` as a whole is worth saying, from its workers' states. Every
- * sentence about pull requests is made from PR facts alone: a `delivered` sibling has none, so
- * beside one the note speaks of "every pull request" rather than "every worker", and a feature that
- * finished through `delivered` is told in as many words that nothing is merged. An orchestrator in
- * a live run read "every pull request is merged" over branches that were not in main.
- */
 const featureNote = (
   state: WorkerState,
   workers: ReadonlyArray<WorkerState>,
@@ -1494,14 +1390,12 @@ export const digestDiff = (input: {
   const notes: Array<string> = [];
   const next: Record<string, WorkerSnapshot> = {};
   let loud = false;
-  // A failing PR is its live worker's to fix; one none owns is the orchestrator's, told once.
   const ownedCi = ciFixOwnedPrs(ledger.features.flatMap((feature) => feature.workers));
 
   for (const feature of ledger.features) {
     const quietFeature = held(feature.feature);
     for (const worker of feature.workers) {
       const before = snapshot[worker.threadId];
-      // Sticky: a report that doesn't restate the interface leaves it standing.
       const contract =
         worker.lastReport?.interface ?? input.interfaces?.[worker.threadId] ?? before?.interface;
       const turnEnds = input.turnEnds?.[worker.threadId] ?? 0;
@@ -1523,12 +1417,9 @@ export const digestDiff = (input: {
         ...(worker.worktreeMissing === true ? { worktreeMissing: true as const } : {}),
       };
       const failing = failingPrKeys(worker);
-      // A live worker's own failing PRs are in `ownedCi`; what's left has no live owner.
       const orphaned = failing.filter((key) => !ownedCi.has(key));
       if (failing.length > 0) next[worker.threadId] = { ...next[worker.threadId]!, failing };
       if (orphaned.length > 0) next[worker.threadId] = { ...next[worker.threadId]!, orphaned };
-      // Told as it loses its owner: an archived worker's PR facts are no longer refreshed, so one
-      // archived before the last digest, or first seen archived, has nothing new to say.
       for (const key of orphaned) {
         if (before === undefined || before.state === "archived") continue;
         if (before.orphaned?.includes(key) === true) continue;
@@ -1543,7 +1434,6 @@ export const digestDiff = (input: {
         );
         loud ||= !quietFeature;
       }
-      // Parking is housekeeping, even when stale quiet, interface or worktree flags remain.
       if (worker.state === "archived") continue;
       const named = { threadId: worker.threadId, feature: worker.feature, title: worker.title };
       const atReport = input.turnEndsAtReport?.[worker.threadId];
@@ -1572,7 +1462,6 @@ export const digestDiff = (input: {
       );
       if (worker.worktreeMissing === true && before?.worktreeMissing !== true)
         remarks.push(WORKTREE_GONE);
-      // Only the user moves a worker to the other agent; its bindings and its orchestrator stay.
       const switched =
         before?.agent !== undefined && worker.agent !== undefined && before.agent !== worker.agent;
       if (switched)
@@ -1656,7 +1545,6 @@ export const digestDiff = (input: {
     const state = featureState(states);
     const note = featureNote(state, states, input.autonomy);
     if (note !== undefined && previousFeatures.get(feature.feature) !== state) {
-      // Archiving a sibling can advance the feature too; only actionable worker changes wake.
       notes.push(`Feature ${feature.feature}: ${note}.`);
     }
   }
@@ -1705,7 +1593,6 @@ export const quietWorkers = (input: {
         !worker.userIntervened &&
         worker.pendingRequests.length === 0 &&
         worker.overlapsWith.length === 0 &&
-        // A pending wake is a reason to keep the worker, which its row has to say.
         (worker.wakes ?? []).length === 0,
     )
     .map((worker) => worker.threadId);
@@ -1819,10 +1706,6 @@ export const digestGroups = (
     }));
 };
 
-// ---------------------------------------------------------------------------------------------
-// Wake reasons
-// ---------------------------------------------------------------------------------------------
-
 /** How long a worker's request waits on the user before its orchestrator hears of it. */
 export const REQUEST_PENDING_WAKE_MS = 600_000;
 /** How long a worker's question waits before its orchestrator, which may answer it, hears of it. */
@@ -1892,8 +1775,6 @@ export type WakeEvent =
     }
   | { readonly type: "paused"; readonly reason: PauseReason };
 
-// Titles can be an agent's own words (`set_title`), and `serializeDigest` prints reasons as they
-// are, so a title is flattened to one short line that can't open a tag before it goes into one.
 const flatten = (text: string): string =>
   text.replaceAll(/\s+/g, " ").trim().replaceAll("<", "‹").replaceAll(">", "›");
 
@@ -1953,7 +1834,6 @@ export const wakeWorthy = (event: WakeEvent): string | undefined => {
       if (event.error === undefined) return `${label(event.worker)} is in error`;
       const status =
         event.error.httpStatus === undefined ? "" : ` (HTTP ${event.error.httpStatus})`;
-      // Our own sentence, but an unclassified one quotes the API's message, so it is flattened too.
       return `${label(event.worker)} is in error, ${event.error.kind}${status}: "${flatten(event.error.text)}"`;
     }
     case "pr": {
@@ -1961,7 +1841,7 @@ export const wakeWorthy = (event: WakeEvent): string | undefined => {
       return reason === undefined ? undefined : `${label(event.worker)}: ${reason}`;
     }
     case "overlap":
-      return undefined; // Advisory changed paths alone are not a coordination blocker.
+      return undefined;
     case "worktreeMissing":
       return `${label(event.worker)} lost its worktree, deleted outside Gram`;
     case "dependencyDrags":
@@ -2018,8 +1898,6 @@ export const coalesceReasons = (pending: ReadonlyArray<PendingReason>): Readonly
     const rest = said.map((each) =>
       each.startsWith(name) ? each.slice(name.length).replace(/^:? /, "") : each,
     );
-    // `Woken by:` joins entries with commas, so one worker's own are kept apart by semicolons, and
-    // an entry that would run past what `serializeDigest` keeps of one goes on in a second.
     const entries: Array<string> = [];
     let entry = `${name}:`;
     for (const each of rest) {
@@ -2046,11 +1924,6 @@ export const wakesWithoutDiff = (event: WakeEvent): boolean =>
   event.type === "paused" ||
   (event.type === "workerRemoved" && !event.parked);
 
-// ---------------------------------------------------------------------------------------------
-// Housekeeping
-// ---------------------------------------------------------------------------------------------
-
-/** How many workers a housekeeping note names before it counts the rest. */
 const TIDY_NAMED = 5;
 
 const named = (labels: ReadonlyArray<string>): string =>
@@ -2058,7 +1931,6 @@ const named = (labels: ReadonlyArray<string>): string =>
     ? labels.join(", ")
     : `${labels.slice(0, TIDY_NAMED).join(", ")} and ${labels.length - TIDY_NAMED} more`;
 
-/** Whether a stage reads as unfinished: a free label, or a plan's step short of its last. */
 const stageShort = (stage: FeatureStage | undefined): stage is FeatureStage =>
   stage !== undefined && (stage.plan === undefined || stage.stage !== stage.plan.at(-1));
 
@@ -2143,7 +2015,6 @@ export const tidyNotes = (input: {
   }
 
   const known = new Set(input.features.map((feature) => feature.feature));
-  // A stage at its plan's last step, or a free label, says where the group ended.
   const empty = input.groups.filter(
     (group) =>
       group.state === "archived" &&
@@ -2159,10 +2030,6 @@ export const tidyNotes = (input: {
 
   return { notes, noted: now.toSorted() };
 };
-
-// ---------------------------------------------------------------------------------------------
-// Handoff
-// ---------------------------------------------------------------------------------------------
 
 /** How full an orchestrator's context is, in percent, when its digest says so. */
 export const CONTEXT_NOTE_PCT = 90;
@@ -2186,16 +2053,11 @@ export const contextNote = (
   };
 };
 
-/** Background work as a restart names it; `outbox.ts`'s `BackgroundWork`. */
 type BackgroundWork = Pick<BackgroundTask, "kind" | "description" | "command" | "subagentType">;
 
 /** How many pieces of stopped background work a restart names before it counts the rest. */
 export const RESTART_WORK_NAMED = 5;
 
-/**
- * An agent's words about its background work, made safe to sit in a server note: one line, no
- * markup that could pass for a tag, no backticks to break out of the quoting, secrets redacted.
- */
 const workText = (text: string): string => {
   const line = redactText(text)
     .replaceAll(/\s+/g, " ")
@@ -2274,10 +2136,6 @@ export const restartContinuation = (lost: ReadonlyArray<BackgroundWork>): string
       : ` The restart also stopped your background work (${workList(lost)}); start again what you still need.`
   }`;
 
-// ---------------------------------------------------------------------------------------------
-// Wrap-up turns
-// ---------------------------------------------------------------------------------------------
-
 /** What a worker's turn end says about whether it gets a wrap-up turn (`wrapUpDue`). */
 export interface WrapUpFacts {
   readonly reason: "completed" | "interrupted" | "error" | "maxTurns";
@@ -2336,7 +2194,6 @@ export const wrapUpDue = (facts: WrapUpFacts): "ended" | "stopped" | undefined =
   )
     return undefined;
   if (facts.stopAsked) return "stopped";
-  // An interrupt nobody here asked for is the user's; a synthesized end is a crash or a restart's.
   return facts.reason === "interrupted" || facts.synthesized ? undefined : "ended";
 };
 
@@ -2344,11 +2201,6 @@ export const wrapUpDue = (facts: WrapUpFacts): "ended" | "stopped" | undefined =
 export const wrapUpText = (why: "ended" | "stopped"): string =>
   `${why === "stopped" ? "Your orchestrator stopped you." : "Your turn ended without a `report`."} Don't start new work. Call \`report\` once, saying what is done, what you tried and ruled out, and what remains, then end your turn.`;
 
-// ---------------------------------------------------------------------------------------------
-// Scheduled wakes
-// ---------------------------------------------------------------------------------------------
-
-/** An ISO 8601 date and time that says its zone: `Z` or an offset. */
 const ZONED_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
 
 /**
@@ -2363,7 +2215,6 @@ export const wakeDueAt = (
   if ((input.at === undefined) === (input.inMinutes === undefined)) {
     return { ok: false, reason: "Pass exactly one of `at` and `inMinutes`." };
   }
-  // `Date.parse` reads a time without a zone as the server's local one, which the caller never said.
   const zoned = input.at === undefined || ZONED_TIME.test(input.at.trim());
   const at =
     input.inMinutes !== undefined
@@ -2408,10 +2259,8 @@ export const prWakeDueAt = (
     ? { ok: true, at: now + WAKE_MAX_MINUTES * 60_000 }
     : wakeDueAt(input, now);
 
-/** One line of a condition's facts, which are server words but may quote a title. */
 const factLine = (value: string): string => value.replaceAll(/\s+/g, " ").trim().slice(0, 200);
 
-/** "head 1a2b3c4, outcome reported done": a condition's facts inline, for a digest's note. */
 const factsInline = (facts: Readonly<Record<string, string>>): string =>
   Object.entries(facts)
     .map(([key, value]) => `${key} ${factLine(value)}`)
@@ -2475,11 +2324,6 @@ export const orchestratorWakeNote = (wake: {
   return `${set} fired: ${pr} ${firedWords(wake.fired)}${head}. ${note}`;
 };
 
-// ---------------------------------------------------------------------------------------------
-// Wakes on another PR's events, and declared dependencies
-// ---------------------------------------------------------------------------------------------
-
-/** `HH:MM` of an epoch ms in UTC, with its date: `2026-10-09T14:30`. */
 const minuteOf = (at: number): string => new Date(at).toISOString().slice(0, 16);
 
 export type { PrWakeFired };
@@ -2545,8 +2389,6 @@ export const prWakeEventOf = (
       now.state === "open" &&
       (now.checks === "passing" || now.checks === "failing") &&
       (seen.checks === "pending" || moved),
-    // A verdict on a head newer than the look before is new; on the same head, only a look that
-    // read the reviews then can say it changed.
     verdict:
       seen !== undefined &&
       now.reviewed === true &&
@@ -2557,7 +2399,6 @@ export const prWakeEventOf = (
   return event === undefined ? undefined : fired(event);
 };
 
-/** "merged", "got a new push": a fired event as the notice says it. */
 const firedWords = (fired: PrWakeFired): string => {
   switch (fired.event) {
     case "merged":
@@ -2575,7 +2416,6 @@ const firedWords = (fired: PrWakeFired): string => {
   }
 };
 
-/** The fenced block a PR event's notice carries, for the agent to read the facts from. */
 const prEventBlock = (pr: PrRef, fired: PrWakeFired): string =>
   [
     "```pr-event",
@@ -2653,11 +2493,6 @@ export const dependencyWakeText = (
   return `${prRefText(dependency)}, which your ${prRefText(dependent)} depends on, ${firedWords(fired)}.\n${prEventBlock(dependency, fired)}\n${advice}`;
 };
 
-// ---------------------------------------------------------------------------------------------
-// Features and their branches
-// ---------------------------------------------------------------------------------------------
-
-/** The longest feature slug `spawn_worker` takes. */
 const FEATURE_SLUG_MAX = 48;
 
 /**
@@ -2675,7 +2510,6 @@ export const featureSlug = (raw: string): string | undefined => {
   return slug === "" || slug.length > FEATURE_SLUG_MAX ? undefined : slug;
 };
 
-/** The most words of the user's first line a task's feature is named from. */
 const TASK_FEATURE_WORDS = 5;
 
 /**
@@ -2712,10 +2546,6 @@ export const featureBranch = (feature: string): string | undefined => {
   const slug = featureSlug(feature);
   return slug === undefined ? undefined : `feat/${slug}`;
 };
-
-// ---------------------------------------------------------------------------------------------
-// Joining a workspace
-// ---------------------------------------------------------------------------------------------
 
 /** What `joinRefusal` reads of the thread that would join. */
 export interface JoiningThread {
@@ -2761,7 +2591,6 @@ export const joinRefusal = (input: {
   return undefined;
 };
 
-/** The default branches a feature is never named after. */
 const BASE_BRANCHES = new Set(["main", "master", "trunk", "develop"]);
 
 /**
@@ -2796,10 +2625,6 @@ export const joinedFeature = (input: {
   }
   return taskFeature(input.title, taken);
 };
-
-// ---------------------------------------------------------------------------------------------
-// Stages and groups
-// ---------------------------------------------------------------------------------------------
 
 export type StageVerdict =
   | { readonly ok: true; readonly stage: FeatureStage }

@@ -3,12 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useServerSettings } from "@/settings-sync/store";
 
-// What Needs you sets aside, kept in settings so it outlasts a reload and a restart: failures
-// dismissed from the failure card or the Needs you panel (`inbox.cleared`, named for the
-// Inbox that first wrote it), and items put away for Later until a wake time (`inbox.snoozed`).
-// Both are hidden from every view that reads `useWorkspaceAsks` or the failure card, through the same
-// hidden ids as an answer; a snoozed one comes back on its own when it wakes.
-
 /** How long Later puts an item away. */
 export const SNOOZE_MS = 60 * 60_000;
 
@@ -65,10 +59,8 @@ export type SetAsideHow =
   | "unsnooze"
   | "clear";
 
-/** A save still in flight, which the next one builds on, so two quick ones both stay. */
 let pending: NonNullable<Settings["inbox"]> | undefined;
 
-/** The patch that sets `ids` aside, built on `settings` as they are and on any save in flight. */
 const setAsidePatch = (
   settings: Settings | undefined,
   ids: readonly string[],
@@ -106,10 +98,6 @@ export const saveCleared = (
   ids: readonly string[],
 ): Promise<void> => saveSetAside(save, ids, "clear");
 
-/**
- * The ids snoozed now, each with the epoch ms it wakes. Re-renders when the soonest wakes, so it
- * comes back on its own.
- */
 function useAsleep(): ReadonlyMap<string, number> {
   const snoozed = useServerSettings((s) => s.settings?.inbox?.snoozed);
   const [now, setNow] = useState(() => Date.now());
@@ -123,14 +111,12 @@ function useAsleep(): ReadonlyMap<string, number> {
   }, [snoozed, now]);
   useEffect(() => {
     if (wakes === undefined) return;
-    // At least a second, so a clock a little behind the wake doesn't spin.
     const timer = setTimeout(() => setNow(Date.now()), Math.max(1_000, wakes - Date.now()));
     return () => clearTimeout(timer);
   }, [wakes]);
   return away;
 }
 
-/** Every failure id dismissed. */
 function useCleared(): ReadonlySet<string> {
   const cleared = useServerSettings((s) => s.settings?.inbox?.cleared);
   return useMemo(() => new Set(cleared ?? []), [cleared]);

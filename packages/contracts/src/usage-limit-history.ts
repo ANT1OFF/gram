@@ -1,7 +1,3 @@
-// Subscription limit history: the windows' readings over past weeks, downsampled into fixed
-// buckets and kept by the server so the Usage page can chart them. Only the shares, resets and
-// credit balances the app already reads, never a token, a login or an account identifier.
-
 import * as Schema from "effect/Schema";
 import { AgentKind } from "./domain.ts";
 

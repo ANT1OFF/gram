@@ -63,7 +63,6 @@ export const SelectedHarnessSupport = Schema.Struct({
 });
 export type SelectedHarnessSupport = typeof SelectedHarnessSupport.Type;
 
-/** Only explicit discovered modalities qualify image input; aliases retain their observation. */
 const bareModelId = (id: string) => id.replace(/\[1m\]$/i, "");
 export const imageInputSupport = (
   models: ReadonlyArray<AgentModel> | undefined,

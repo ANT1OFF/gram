@@ -106,7 +106,6 @@ const gateOf = (outside: OutsideAllowed) => ({
 
 const megabytes = (bytes: number) => Math.max(1, Math.round(bytes / 2 ** 20));
 
-/** A file of at most `maxBytes` read through a checked handle, for `send_file`. */
 const fetchFile = (
   path: string,
   cwd: string,
@@ -136,11 +135,6 @@ const fetchFile = (
     return { path: target, size: bytes.length, data: bytes.toString("base64") };
   }).pipe(Effect.scoped);
 
-/**
- * A part of a file a thread produced: scoped as a preview is (`previewTarget`), then opened as a
- * file outside the folders is, whichever it was, so it is a regular file reached through no link
- * swapped in since, and never a credential file, in a checkout or out of it.
- */
 const filePart = (
   path: string,
   roots: ReadonlyArray<string>,
@@ -210,7 +204,6 @@ export const fileReadsOn = (proc: ProcShape): HostFileReads => {
 /** How long the host keeps a thread's attachments after the last one arrived, unless told sooner. */
 export const HOST_ATTACHMENTS_MAX_AGE_MS = 7 * DAY_MS;
 
-/** A thread id as a folder name: only what an id can hold, never a path of its own. */
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
@@ -253,14 +246,12 @@ export const attachmentsOnHost = (
         const tooLarge = new InvalidState({
           message: `${name} is over the ${megabytes(maxBytes)} MB attachment limit`,
         });
-        // Base64 inflates by a third, so an oversized payload is refused before it is decoded.
         if (Math.floor((data.length * 3) / 4) > maxBytes + 2) return yield* tooLarge;
         const bytes = Buffer.from(data, "base64");
         if (bytes.length === 0) return yield* new InvalidState({ message: `${name} is empty` });
         if (bytes.length > maxBytes) return yield* tooLarge;
         const path = join(folder, `${randomUUID().slice(0, 8)}-${sanitizeAttachmentName(name)}`);
         const partial = `${path}.partial`;
-        // Written beside and then renamed, so a put given up on never leaves a file the agent reads.
         yield* Effect.tryPromise({
           try: async () => {
             await mkdir(folder, { recursive: true, mode: 0o700 });

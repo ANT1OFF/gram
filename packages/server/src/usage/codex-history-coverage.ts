@@ -21,10 +21,8 @@ interface Scope {
   order?: number;
   before?: Threshold;
   required?: Threshold;
-  /** Actual start counter, or a conservative requirement derived from observed counter evidence. */
   barrier?: TokenUsage;
   requests: TokenUsage;
-  /** Observed native turn requirements constrain coverage, never mint request amounts. */
   minimum?: Threshold;
   counter?: TokenUsage;
 }
@@ -51,12 +49,9 @@ export function makeCodexHistoryCoverage() {
     unprovenFrom: number | undefined;
   const refuse = (from: number) => {
     refused = true;
-    // Refusal affects this uncertain suffix, never unrelated established prefixes.
     if (unprovenFrom !== undefined && unprovenFrom <= from) return;
     const end = Math.min(ordered.length, (unprovenFrom ?? ordered.length) + 1);
     unprovenFrom = from;
-    // Notify only newly uncertain positions (including the former boundary).
-    // Repeated refusals cannot repeatedly traverse an already uncertain suffix.
     for (let i = from; i < end; i++) mark(ordered[i]!, i > from);
   };
   const charge = (from: number) => {
@@ -75,12 +70,8 @@ export function makeCodexHistoryCoverage() {
     let preceding: Threshold =
       dirtyFrom === 0 ? {} : (scopes.get(ordered[dirtyFrom - 1]!)!.required ?? {});
     for (let i = dirtyFrom; i < ordered.length; i++) {
-      // Bound replay/late-evidence repair work as well as retained metadata.
       const state = scopes.get(ordered[i]!)!;
       if (!charge(i)) {
-        // Failed preceding-requirement repair is not merely a completeness change.
-        // Preserve unrelated established prefixes; retire this boundary's stale proof
-        // only when the newly preceding evidence differs from its cached evidence.
         if (JSON.stringify(state.before) !== JSON.stringify(preceding)) {
           delete state.before;
           mark(ordered[i]!, true);
@@ -157,8 +148,6 @@ export function makeCodexHistoryCoverage() {
         mark(turn, false);
       }
       if (state.barrier !== undefined || counter === undefined) return;
-      // Subtract only a proven contribution. With an unknown start this may overestimate
-      // the necessary covering counter; it never invents an attributable amount.
       const barrier: Record<string, number> = {};
       for (const key of keys) {
         if (counter[key] === undefined) continue;
@@ -197,8 +186,6 @@ export function makeCodexHistoryCoverage() {
       }
       const state = scope(turn);
       if (state === undefined) return "refused";
-      // These are minimum requirements, not full amounts. Absent optional detail
-      // cannot erase a positive lane already witnessed on another request.
       const combined = Object.fromEntries(
         keys.map((key) => [key, (state.requests[key] ?? 0) + (tokens[key] ?? 0)]),
       ) as unknown as TokenUsage;
@@ -206,8 +193,6 @@ export function makeCodexHistoryCoverage() {
         refuse(scopes.get(turn)?.order ?? ordered.length);
         return "refused";
       }
-      // No scope start was observed: use the last actually observed counter as a
-      // conservative barrier, rather than assuming this response was already included.
       const barrier = state.barrier ?? counter ?? zero();
       state.barrier = barrier;
       state.requests = combined;
@@ -225,7 +210,6 @@ export function makeCodexHistoryCoverage() {
       recompute();
       const state = scopes.get(turn);
       if (state?.order === undefined || state.before === undefined) return false;
-      // The allocation uses preceding scopes, not later evidence/refusal in its own scope.
       if (unprovenFrom !== undefined && state.order > unprovenFrom) return false;
       const minimum: Threshold = { ...state.before };
       for (const key of keys)

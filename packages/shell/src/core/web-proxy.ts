@@ -1,13 +1,3 @@
-// The web session's own proxy (`modules/preview`): every connection the Preview tab's web session
-// makes goes through it, an HTTP proxy on loopback that this process owns. Chromium hands it the
-// host name, unresolved, and it resolves the name once, checks every address (`proxyTargets`) and
-// connects to one of those very addresses, so what was checked is what is reached: no second
-// lookup, cache or other resolver can send the connection elsewhere. HTTPS and WebSockets are
-// CONNECT tunnels, end to end, so a site's certificate is still checked against its name; plain
-// http is forwarded one request at a time. It answers only a client with the credential made at
-// launch, which Chromium gets from the app's `login` event, so no other process on this computer
-// can use it as a way out.
-
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import {
@@ -100,17 +90,12 @@ export async function boundedLookup(
   }
 }
 
-/**
- * Opens the first of `addresses` that answers, in order, within `DIAL_MS` for them all; stops as
- * soon as `signal` aborts, leaving nothing open. `undefined` when none answered.
- */
 async function dialFirst(
   dial: WebDial,
   addresses: readonly string[],
   port: number,
   signal: AbortSignal,
 ): Promise<Socket | undefined> {
-  // Monotonic, so a change to the wall clock neither stretches nor cuts it.
   const deadline = performance.now() + DIAL_MS;
   for (const address of addresses) {
     if (signal.aborted || performance.now() >= deadline) return undefined;
@@ -142,7 +127,6 @@ async function dialFirst(
   return undefined;
 }
 
-/** Headers that belong to one hop, never passed on. */
 const HOP = new Set([
   "connection",
   "keep-alive",
@@ -184,15 +168,12 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
   };
   const challenge = `Basic realm="${realm}"`;
 
-  /** Where a client may connect to `host:port`, looked up once and checked; `undefined` refuses. */
   const targets = async (host: string, port: number) => {
     const hostname = hostnameOf(host);
     if (hostname === undefined) return undefined;
     if (options.admits !== undefined && !options.admits(hostname)) return undefined;
     const allowPrivate =
       privateDestination !== undefined && destinationKey(hostname, port) === privateDestination;
-    // A literal needs no lookup, nor a loopback or (here) unreachable private name; any other
-    // name gets exactly one, bounded and failing closed.
     const named = hostZone(hostname);
     const needsLookup =
       isIP(hostname.replace(/^\[|\]$/g, "")) === 0 &&
@@ -207,7 +188,6 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
   server.on("error", (error) => options.onError?.(error));
   server.on("clientError", (_error, socket) => socket.destroy());
 
-  // HTTPS and WebSockets: a tunnel to a checked address.
   server.on("connect", (req: IncomingMessage, client: Duplex, head: Buffer) => {
     client.on("error", () => client.destroy());
     if (!authorized(req.headers["proxy-authorization"])) {
@@ -249,7 +229,6 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
     })();
   });
 
-  // Plain http: one request at a time, to a checked address.
   server.on("request", (req: IncomingMessage, res: ServerResponse) => {
     if (!authorized(req.headers["proxy-authorization"])) {
       res.writeHead(407, { "proxy-authenticate": challenge, "content-length": "0" }).end();
@@ -291,7 +270,6 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
             );
         return;
       }
-      // An agent of its own, whose one connection is the socket to the address just checked.
       const agent = new Agent({ keepAlive: false });
       agent.createConnection = () => upstream;
       const outgoing = httpRequest({
@@ -315,7 +293,6 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
     })();
   });
 
-  // An upgrade that isn't a tunnel: Chromium tunnels its WebSockets, so nothing else asks for one.
   server.on("upgrade", (_req: IncomingMessage, socket: Duplex) => socket.destroy());
 
   await new Promise<void>((resolve, reject) => {

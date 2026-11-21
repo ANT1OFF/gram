@@ -202,7 +202,6 @@ export const makeAutomaticDream = (deps: {
       if (!(yield* modelAvailable(model))) {
         let refused = false;
         yield* store.updateAutomaticDreamState(id, (s) => {
-          // Model discovery is asynchronous; a settings save may have reset the count.
           if (s.epoch !== state.epoch) return s;
           refused = true;
           return {
@@ -214,8 +213,6 @@ export const makeAutomaticDream = (deps: {
         if (refused) yield* deps.changed(id);
         return;
       }
-      // Persist before the side effect. Unknown failures/interruption spend this batch;
-      // only a proven prelaunch deferral may restore it under the same epoch and claim.
       const standing = yield* store.getWorkspace(id);
       if (
         (yield* gate(standing)) !== undefined ||
@@ -321,8 +318,6 @@ export const makeAutomaticDream = (deps: {
           state.lastFailureDreamId !== d.id,
       );
       if (failed !== undefined) {
-        // Consumption and failure bookkeeping share one conditional SQLite update.
-        // Settings saves use a different lock and may have established a fresh epoch.
         const consumed = yield* consume(
           yield* store.getWorkspace(id),
           "The last memory update failed or was cancelled. Counting a fresh batch of completed threads.",
@@ -335,7 +330,6 @@ export const makeAutomaticDream = (deps: {
         (d) => d.id === observedId && d.status === "completed" && state.lastSuccessDreamId !== d.id,
       );
       if (completed !== undefined) {
-        // Record before attempting: our own status events cannot retry a provider refusal.
         let observed = false;
         yield* store.updateAutomaticDreamState(id, (s) => {
           if (
@@ -354,7 +348,6 @@ export const makeAutomaticDream = (deps: {
     for (const workspace of yield* store.listWorkspaces) {
       if (workspace.charter.automaticDreamThreshold === undefined) continue;
       const kept = yield* history(workspace.workspace.id);
-      // Keep progress, baseline completions missed while stopped, and never launch at boot.
       yield* store.updateAutomaticDreamState(workspace.workspace.id, (s) => ({
         ...s,
         seen: [

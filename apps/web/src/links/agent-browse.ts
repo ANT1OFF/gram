@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-/** The shell's "Agent may browse" list; the mock's in e2e, and none in a browser, which has no pane. */
 const shellList = () =>
   typeof window === "undefined"
     ? undefined

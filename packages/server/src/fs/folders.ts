@@ -118,13 +118,11 @@ export interface BrowseOptions {
   readonly limit?: number;
 }
 
-/** What `folder`'s own `.git` is, as `repoFolder` reads it; `undefined` without one. */
 const gitKind = (folder: string): FolderListing["git"] => {
   try {
     const git = statSync(join(folder, ".git"), { throwIfNoEntry: false });
     return git === undefined ? undefined : git.isDirectory() ? "repository" : "linked";
   } catch {
-    // Not "no repository": adding the folder is what reports why it couldn't be read.
     return "unreadable";
   }
 };
@@ -200,7 +198,6 @@ export const repoFolder = (
     ),
   );
 
-/** `path` with every link resolved, or why it can't be read. */
 const realFolder = (path: string) =>
   Effect.tryPromise({ try: () => realPath(path), catch: (error) => folderError(error, path) });
 
@@ -239,7 +236,6 @@ export const canonicalRepoFolder = (
     if (!own.isDirectory()) {
       return yield* new InvalidState({ message: linkedCheckoutMessage(path) });
     }
-    // Nothing of Gram's own environment may point git elsewhere.
     const read = yield* runGit(path, ["rev-parse", "--show-toplevel"], {
       omitEnv: (name) => name.startsWith("GIT_"),
       timeoutMs: 15_000,
@@ -276,14 +272,11 @@ export const registerRepo = (
 > =>
   Effect.gen(function* () {
     const root = yield* repoFolder(input, home);
-    // `projectRootKey`, as `repositoryCandidates` and the store compare: lexical, so a project's
-    // stored spelling matches without the disk, and case-folded only on Windows.
     const key = projectRootKey(root);
     const known = (yield* store.listProjects).find(
       (project) => projectRootKey(project.root) === key,
     );
     if (known !== undefined) return { project: known, created: false };
-    // The store decides `created` in one transaction, so a registration racing this one isn't ours.
     return yield* store.registerProject({ root, name: basename(root) || root, repoRoot: root });
   });
 
@@ -292,12 +285,7 @@ export const registerRepo = (
  * all of them, none deeper. Nothing for a folder that is missing or can't be listed.
  */
 export const reposIn = (folder: string): Effect.Effect<ReadonlyArray<string>> =>
-  Effect.promise(() =>
-    readdir(folder, { withFileTypes: true }).catch(
-      // A default folder that was moved or never made just has nothing in it to offer.
-      () => [],
-    ),
-  ).pipe(
+  Effect.promise(() => readdir(folder, { withFileTypes: true }).catch(() => [])).pipe(
     Effect.map((dirents) =>
       dirents
         .filter((d) => d.isDirectory() || d.isSymbolicLink())
@@ -346,7 +334,6 @@ export const repoIdentity = (root: string): Effect.Effect<string | undefined> =>
       const git = statSync(join(root, ".git"), { bigint: true, throwIfNoEntry: false });
       return git?.isDirectory() === true ? `${git.dev}:${git.ino}` : undefined;
     } catch {
-      // Unreadable is no identity; the caller compares, and a mismatch refuses.
       return undefined;
     }
   });

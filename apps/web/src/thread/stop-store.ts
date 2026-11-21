@@ -3,10 +3,6 @@ import { create } from "zustand";
 
 import type { Api } from "@/api/types";
 
-// When the user last pressed Stop on each thread, so the turn it ends can say "Stopped by you". A
-// turn ended by a restart, a pause or the orchestrator says only "Stopped". Kept for the session:
-// after a reload, a stop reads as "Stopped".
-
 interface StopState {
   readonly stoppedAt: Readonly<Record<string, number>>;
   stopped(threadId: ThreadId, at: number): void;

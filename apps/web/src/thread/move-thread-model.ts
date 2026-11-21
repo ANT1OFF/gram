@@ -1,5 +1,3 @@
-// Moving one thread to a server signed in to (docs/design/move-a-thread.md): where it can go, and
-// why "Move to a server…" is greyed when it can't. The dialog draws from these.
 import type { HostedDeviceView, Thread } from "@gram/contracts";
 
 import { type MoveTarget, moveTargets } from "@/orchestration/move-targets";

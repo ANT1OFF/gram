@@ -1,6 +1,3 @@
-// A small hosted server for tests: discovery, sign-in, tokens bound to the device key, devices
-// and workspaces. Test support only; nothing ships it.
-
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { deviceRegistrationBytes } from "@gram/contracts";
@@ -106,7 +103,6 @@ export const fakeServer = () => {
     machineStarts: [] as Array<Record<string, unknown>>,
     machineAhead: [] as Array<string>,
   };
-  /** The threads the device sent, by its key: only these may be followed. */
   const sent = new Map<string, string>();
   const ownThread = (asked: Record<string, unknown>) =>
     [...sent.values()].includes(String(asked["threadId"]));
@@ -208,7 +204,6 @@ export const fakeServer = () => {
         ...(state.organization === undefined ? {} : { organization: state.organization }),
       });
     }
-    // Everything else needs a token bound to the key that proves the call.
     const auth = (request.headers.authorization ?? "").replace(/^DPoP /, "");
     const held = state.access.get(auth);
     const proof = checkProof(
@@ -304,7 +299,6 @@ export const fakeServer = () => {
         branch: `thread/${threadId}`,
       });
     }
-    // The person's own machine: a start goes through `machineAhead`, one phase per read.
     if (url.pathname === "/api/machine/start" && held.scope === "threads:start") {
       state.machineStarts.push(JSON.parse(await readBody(request)) as Record<string, unknown>);
       if (state.machine !== "running" && state.machineAhead.length === 0)
@@ -316,7 +310,6 @@ export const fakeServer = () => {
       state.machine = state.machineAhead.shift() ?? state.machine;
       return json(200, { phase: state.machine, starting: state.machineAhead.length > 0 });
     }
-    // Reaches what its own organisation owns, as a GitHub App installed there would.
     if (url.pathname === "/api/threads/check" && held.scope === "threads:start") {
       const asked = JSON.parse(await readBody(request)) as { repositories: string[] };
       return json(200, {

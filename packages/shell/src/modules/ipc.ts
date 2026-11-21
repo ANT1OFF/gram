@@ -1,7 +1,3 @@
-// How a shell module's main half registers its IPC: through the app's trust check, so a module
-// never sees a message from a page outside the app (`isTrustedSenderUrl`), and never registers a
-// channel of its own without it.
-
 import type { IpcMain, IpcMainEvent, IpcMainInvokeEvent } from "electron";
 
 /** The app's IPC, every channel behind its trust check. */

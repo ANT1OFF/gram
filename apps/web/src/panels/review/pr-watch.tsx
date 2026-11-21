@@ -13,7 +13,6 @@ import { BindPrForm, FollowingStatus, usePrBinding } from "./pr-binding";
 import { Notice, useReviewAction } from "./review-thread-card";
 import { TogglePill } from "./toggle-switch";
 
-/** The most bot rounds the budget field accepts. */
 const MAX_BABYSIT_ROUNDS = 20;
 
 /** The budget field's text as a round count within 1–`MAX_BABYSIT_ROUNDS`; the default when it isn't one. */
@@ -47,7 +46,6 @@ export function PrWatch({
   const reviewMonitor = useThreadsStore(
     (s) => s.byId[threadId]?.thread.boundPr?.reviewMonitor === true,
   );
-  // The target PR's badge, not the branch's: bound to another PR, the branch's round isn't this one's.
   const roundInFlight = useThreadsStore((s) => {
     const entry = s.byId[threadId];
     return targetBadge(entry?.git, entry?.thread.boundPr)?.review?.roundInFlight === true;
@@ -98,7 +96,6 @@ export function PrWatch({
           on={reviewMonitor}
           label="Watch reviews"
           title={on ? "Watch PR relies on this; turn Watch PR off first" : REVIEWS_HINT}
-          // Babysitting relies on the monitor; turn babysit off first.
           disabled={pending || on}
           onToggle={() =>
             void action.run(async () => {

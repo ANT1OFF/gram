@@ -1,15 +1,3 @@
-// `POST /embed/v1/repo-events`: pull request, check and review events told to the server by
-// whoever receives the repository host's webhooks, in place of the server asking for them. An
-// event carries no state of its own: it names what changed, and the server reads it then, as it
-// reads everything else, so a forged or stale event costs a read and shows nothing untrue.
-//
-//   { "events": [ { "repo": "owner/name", "number": 12, "branch": "feat/x", "kind": "check" } ] }
-//
-// `number` and `branch` are both optional: a pull request just opened is known to its checkout by
-// its head branch alone, and an event naming neither is about every checkout of the repository.
-// `kind` (`pull_request`, `check`, `review`, `comment`) says what happened; it is checked and
-// otherwise unused, since the read shows whatever changed.
-
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { RepoEvents, type PushedRepoEvent } from "../git/publisher.ts";
@@ -54,7 +42,6 @@ export const RepoEventsInboundLive = Layer.effectDiscard(
     const embedding = yield* Embedding;
     yield* inbound.route("POST", "repo-events", (body) =>
       Effect.gen(function* () {
-        // Where the sweeps still ask GitHub themselves, an event would only add reads to theirs.
         if (embedding.config.repoEvents !== "pushed") {
           return refusal(409, "repository events aren't pushed here (GRAM_REPO_EVENTS)");
         }
@@ -62,7 +49,6 @@ export const RepoEventsInboundLive = Layer.effectDiscard(
         if (!Array.isArray(listed) || listed.length === 0 || listed.length > REPO_EVENTS_MAX) {
           return refusal(400, `\`events\` is a list of 1 to ${REPO_EVENTS_MAX} events`);
         }
-        // A check suite's events name one pull request many times over: each is looked up once.
         const events = new Map<string, PushedRepoEvent>();
         for (const each of listed) {
           const event = parseRepoEvent(each);

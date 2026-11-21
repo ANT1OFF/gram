@@ -11,7 +11,6 @@ import { readMockFile } from "../mock-files";
 import { MockInvalidState } from "../mock-fs";
 import type { MockWorld } from "../mock-world";
 
-/** Each mock world's saved scripts, by project: what `.gram/scripts.json` holds on the server. */
 const saved = new WeakMap<MockWorld, Map<ProjectId, ProjectScript[]>>();
 
 const scriptsOf = (world: MockWorld) => {

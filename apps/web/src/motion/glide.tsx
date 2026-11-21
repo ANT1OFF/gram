@@ -10,7 +10,6 @@ export function GlideList({ id, children }: { id?: string; children: ReactNode }
 }
 
 type GlideItemProps = Omit<HTMLMotionProps<"li">, "layout" | "layoutId"> & {
-  /** Stable across lists: an item rendered under a new parent glides from its old position. */
   glideId: string;
 };
 

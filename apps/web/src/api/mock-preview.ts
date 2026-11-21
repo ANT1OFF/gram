@@ -50,13 +50,10 @@ export class MockPreview implements DesktopPreview {
     url: string,
     options?: { readonly typed?: boolean },
   ): Promise<boolean> {
-    // As the shell: loopback only here; a web page only through `openWeb`.
     const target = loopbackUrl(url);
     if (target === undefined) return false;
     this.#reopenable.delete(threadId);
     const loaded = await this.#load(threadId, target);
-    // As the shell: anything else opening in the thread makes its page again with no WebRTC, and
-    // the switch is offered only on an address the user typed.
     this.#emit(threadId, {
       webView: undefined,
       webRtc: undefined,
@@ -133,7 +130,6 @@ export class MockPreview implements DesktopPreview {
       this.#pages.set(threadId, page);
     }
     const { frame } = page;
-    // Another fragment of the page it shows is a same-document navigation, with no load to wait for.
     const sameDocument =
       page.state.url !== target && page.state.url.split("#")[0] === target.split("#")[0];
     if (sameDocument) {
@@ -166,7 +162,6 @@ export class MockPreview implements DesktopPreview {
     });
   }
 
-  // A cross-origin frame's history is out of the page's reach, so the mock has none.
   back(): void {}
 
   forward(): void {}
@@ -188,7 +183,6 @@ export class MockPreview implements DesktopPreview {
 
   /** Dev and e2e hook: who drives `threadId`'s page, as the shell reports it. */
   drive(threadId: string, driver: "agent" | "user"): void {
-    // As the shell's `contentsFor`: an agent taking the page makes it again with no WebRTC.
     this.#emit(
       threadId,
       driver === "agent" ? { driver, webRtc: undefined, webRtcOffered: undefined } : { driver },
@@ -244,7 +238,6 @@ export class MockPreview implements DesktopPreview {
     resolve({ ...element, url: this.#pages.get(threadId)?.state.url ?? "" });
   }
 
-  // Explicit test replays may replace these methods. The iframe mock has no CDP inspection.
   async inspect(
     _threadId: string,
     _target?: { ref?: string; region?: BrowserRegion },

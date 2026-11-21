@@ -18,14 +18,10 @@ export const promptHistoryHandlers = Effect.gen(function* () {
     "thread.promptHistory": ({ threadId, limit }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        // Never the prompts of a thread the caller may not see (`embedding/readable-by.ts`).
         const others = (yield* readableOnly(yield* store.listThreads, (other) => other))
           .filter((other) => other.id !== threadId && other.projectId === thread.projectId)
           .toSorted((a, b) => b.lastActivityAt - a.lastActivityAt)
           .slice(0, PROMPT_HISTORY_THREADS);
-        // Only the prompts: a project's replies run to tens of MB, all decoded on the event loop
-        // each time a thread opened. And of those only as many as ↑ walks, newest first: an
-        // orchestrator's thousands of digests are user messages too.
         const cap = Math.max(0, Math.min(limit ?? PROMPT_HISTORY_LIMIT, PROMPT_HISTORY_LIMIT));
         const seen = new Set<string>();
         const transcripts: Array<ReadonlyArray<GramUIMessage>> = [];
@@ -35,7 +31,6 @@ export const promptHistoryHandlers = Effect.gen(function* () {
             yield* findUserMessages(store, t.id, {
               from: "newest",
               count: Math.max(1, cap) - seen.size,
-              // What `promptsFromMessages` would take: typed, and not recalled already.
               keep: (message) => {
                 const text = promptText(message);
                 if (text === "" || seen.has(text)) return false;

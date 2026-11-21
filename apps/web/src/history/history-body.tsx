@@ -59,9 +59,7 @@ import {
 import { HistoryPreview, previewFacts } from "./history-preview";
 import { useHistoryStore } from "./history-view";
 
-/** The folders whose agents' past sessions History reads, the most recently used first. */
 const SESSION_ROOTS = 8;
-/** The most past sessions read per folder and agent. */
 const SESSIONS_PER_ROOT = 25;
 
 export const OUTCOME_GLYPH: Readonly<Record<HistoryOutcome, { icon: LucideIcon; tone: string }>> = {
@@ -74,7 +72,6 @@ export const OUTCOME_GLYPH: Readonly<Record<HistoryOutcome, { icon: LucideIcon; 
 };
 const IMPORTED_GLYPH = { icon: History, tone: "text-muted-foreground" };
 
-/** What each filter says while it lists nothing: a title, and what goes there. */
 const EMPTY: Readonly<Record<HistoryFilter, { title: string; line: string }>> = {
   all: {
     title: "Nothing finished yet",
@@ -99,13 +96,11 @@ const EMPTY: Readonly<Record<HistoryFilter, { title: string; line: string }>> = 
   },
 };
 
-/** The past sessions no thread shows, of the folders most recently worked in. */
 function usePastSessions(roots: readonly string[]) {
   const api = useApi();
   const agents = useAvailableAgents();
   return useQueries({
     queries: roots.map((root) => ({
-      // Under the resume list's key, so a resume anywhere makes this stale too.
       queryKey: [...sessionsQueryKey(root), agents, "history"],
       queryFn: () => listResumableSessions(api, agents, root, SESSIONS_PER_ROOT),
       retry: false,
@@ -144,13 +139,11 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
     [projects, summaries],
   );
   const past = usePastSessions(roots);
-  // Minute resolution is enough for the days and the times rows show, and for what has settled.
   const settle = useSettleRule();
   const { now } = settle;
   const by = useLayoutStore((s) => s.doneGrouping);
   const filter = useHistoryStore((s) => s.filter);
   const setFilter = useHistoryStore((s) => s.setFilter);
-  // Read, not subscribed, and let go of once it opened, so the next open starts empty.
   const [query, setQuery] = useState(() => useHistoryStore.getState().seed ?? "");
   useMountEffect(() => {
     if (useHistoryStore.getState().seed !== undefined)
@@ -193,7 +186,6 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
     ],
   );
   const found = useMemo(() => searchHistory(entries, filter, query), [entries, filter, query]);
-  // Only workers come in pages: the other chips wait on none of them.
   const paged = filter === "all" || filter === "done" || filter === "workers";
   const shown = useMemo(
     () => doneWindow(found, by, now, paged ? horizons : new Map<WorkspaceId, number>(), limit),
@@ -204,8 +196,6 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
     if (waitsOn !== undefined && !busy) loadMore(waitsOn);
   }, [waitsOn, busy, loadMore]);
   const rows = shown.groups.flatMap((group) => group.rows);
-  // One width for every row's time, the longest's: a row that finished on another day says its
-  // date too ("14 Jun 08:00"), and a column as wide as each row's own time moved its status left.
   const timeWidth = rows.reduce(
     (widest, entry) => Math.max(widest, historyWhen(entry.finishedAt, now).length),
     0,
@@ -245,7 +235,6 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
   };
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown" && event.key !== "Enter") return;
-    // Return on a chip picks the chip.
     if (event.key === "Enter" && (event.target as HTMLElement).dataset["historyFilter"]) return;
     const next = listIndexForKey(event.key, activeIndex, rows.length);
     if (next !== undefined) {
@@ -325,8 +314,7 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
                 line={EMPTY[filter].line}
                 action={
                   filter === "all"
-                    ? // On a fresh account, what was done before Gram is the one thing to find here.
-                      { label: "Find past CLI sessions", onClick: () => changeFilter("imported") }
+                    ? { label: "Find past CLI sessions", onClick: () => changeFilter("imported") }
                     : { label: "Show everything", onClick: () => changeFilter("all") }
                 }
               />
@@ -399,11 +387,6 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
   );
 }
 
-/**
- * How a row reads: its glyph and outcome word, a status, apart from what Enter does to it, an
- * action (an imported session is "imported" and resumes; everything else opens), and where it ran,
- * a workspace named for its one repo said once, whatever its case ("Gram · gram" is "Gram").
- */
 const rowWords = (entry: HistoryEntry) => ({
   glyph: entry.outcome === undefined ? IMPORTED_GLYPH : OUTCOME_GLYPH[entry.outcome],
   word: entry.outcome === undefined ? "imported" : OUTCOME_LABEL[entry.outcome],
@@ -432,17 +415,14 @@ function HistoryRow({
   index: number;
   active: boolean;
   resuming: boolean;
-  /** Under its workspace's heading: the row leaves the workspace's name to it. */
   grouped: boolean;
   when: string;
-  /** The longest time in the list, in characters: the width every row's time takes. */
   timeWidth: number;
   whenLong: string;
   onHover: () => void;
   onOpen: () => void;
 }) {
   const { glyph, word, action, full } = rowWords(entry);
-  // Under the workspace's own heading, only the repo, and nothing where the repo is the workspace.
   const where = grouped
     ? entry.repo.toLowerCase() === entry.place.toLowerCase()
       ? ""
@@ -470,7 +450,6 @@ function HistoryRow({
         entry.finishedAt === undefined ? undefined : new Date(entry.finishedAt).toISOString()
       }
       title={whenLong}
-      // A phone's row says its time in its second line, after its words: no column to keep.
       style={phone ? undefined : { minWidth: `${timeWidth}ch` }}
       className="min-w-10 text-right tabular-nums"
     >
@@ -478,8 +457,6 @@ function HistoryRow({
     </time>
   );
   if (phone) {
-    // Two lines on a phone: the whole title, then where, how it ended and when. No agent glyph:
-    // the row is the title's, and a narrow column can't spare the room.
     return (
       <div
         {...row}
@@ -535,7 +512,6 @@ function HistoryRow({
         </span>
       )}
       <span className="ml-auto flex shrink-0 items-center gap-3 pl-3 text-meta text-muted-foreground">
-        {/* The cursor row's action, ahead of the status columns so they stay aligned. */}
         {active && (
           <span
             data-testid="history-action"
@@ -557,7 +533,6 @@ function HistoryRow({
   );
 }
 
-/** The cursor row's preview, from its workspace's ledger and finished workers and its thread. */
 function Preview({
   entry,
   now,

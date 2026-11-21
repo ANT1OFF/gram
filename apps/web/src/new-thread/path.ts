@@ -44,7 +44,6 @@ export function tildify(path: string, home: string | undefined): string {
 export const baseName = (path: string): string =>
   path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
-/** A clone folder's name: `<repo>+<16 hex>`, the repo with a group's subgroups joined by `+`. */
 const CLONE_FOLDER = /^(.+)\+[0-9a-f]{16}$/;
 
 /**
@@ -94,7 +93,6 @@ export type MessagePart =
   | { readonly text: string }
   | { readonly path: string; readonly label: string };
 
-/** An absolute or home-relative path, up to the next space or quote. */
 const PATH_IN_TEXT = /(?<=^|[\s("'`])~?\/[^\s"'`()]+/g;
 
 /**

@@ -9,11 +9,6 @@ import { useNow } from "@/lib/use-now";
 import { useThreadsStore } from "@/stores/threads";
 import { heldStateText, limitShareText } from "@/usage/limit-format";
 
-// A low-priority brief the orchestrator asked for near a usage limit, held instead of spawned:
-// when it starts on its own, why it waits, and Release now to start it without waiting. The
-// feature card and the Board both draw it.
-
-/** Release now: the worker arrives with the ledger; a refusal says why in a toast. */
 function useRelease(workspaceId: WorkspaceId, held: FeatureCardHeld) {
   const api = useApi();
   const [pending, setPending] = useState(false);
@@ -34,7 +29,6 @@ function useRelease(workspaceId: WorkspaceId, held: FeatureCardHeld) {
   return { pending, release };
 }
 
-/** Why it is held, for the tooltip and screen readers. */
 const heldWhy = (held: FeatureCardHeld): string =>
   held.reason ??
   (held.waitsForSlot === true
@@ -111,7 +105,6 @@ export function HeldBriefChip({
         <Hourglass aria-hidden className="mt-0.5 size-icon-row shrink-0 text-muted-foreground" />
         <span className="line-clamp-2 min-w-0 font-medium break-words">{held.title}</span>
       </span>
-      {/* A station is narrow: "until 18:00" on a line of its own, Release now under it. */}
       <span className="pl-4.5 text-meta whitespace-nowrap text-muted-foreground">
         <span className="sr-only">Paused brief: </span>
         <span data-testid="held-until" className="tabular-nums">

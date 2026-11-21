@@ -14,13 +14,8 @@ import { useLayoutStore } from "@/stores/layout";
 import { StatePill } from "@/thread/orchestration-cards";
 import { presentState } from "@/thread/orchestration-model";
 
-// A feature's or a group's stage on the Board: the current stage as
-// a chip, its note and who set it in the tooltip, with the plan's steps as pips a click sets; and a
-// group's band over its lines, folded.
-
 export type SetStage = ReturnType<typeof useSetStage>;
 
-/** Whether the stage is a step of a plan, which the pips can show. */
 const planned = (stage: FeatureStage) => stage.plan?.includes(stage.stage) === true;
 
 /** The stage under a feature's name or beside a group's: a chip, then the plan's pips. */
@@ -180,7 +175,6 @@ export function GroupBand({
         </div>
       </ExpandPresence>
       <Expand open={!folded} id={linesId}>
-        {/* An inset rule, not an indent, so the lines keep the stations' columns. */}
         <ul
           aria-label={`Features in ${group.group}`}
           className="divide-y divide-border/60 shadow-[inset_2px_0_0_var(--color-border-strong)]"

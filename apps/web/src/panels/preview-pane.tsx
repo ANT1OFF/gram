@@ -45,11 +45,9 @@ import { AgentActivity, DriverButton, ToolButton } from "./preview-strip";
 import { ServerPreview, useServerPage } from "./server-preview";
 import { folderBusy } from "./preview-webrtc";
 
-/** The shell's preview, or the mock API's stand-in for it; absent where neither has one. */
 const previewBridge = (): DesktopPreview | undefined =>
   window.gram?.preview ?? window.gramMock?.shell.preview;
 
-/** What the tab says of a page the shell refused or couldn't reach, such as an unforwardable port. */
 const unopened = (url: string): PreviewState => ({
   url,
   title: "",
@@ -59,13 +57,8 @@ const unopened = (url: string): PreviewState => ({
   error: "it can't be opened here",
 });
 
-/**
- * The load of each thread's latest request, so coming back to its tab, or a second mount of it,
- * doesn't load the page again.
- */
 const loads = new Map<string, { readonly id: number; readonly done: Promise<boolean> }>();
 
-/** The requests whose typed address was asked for already: each is asked for once. */
 const typedSent = new Set<number>();
 
 const load = (
@@ -77,11 +70,7 @@ const load = (
 ) => {
   const known = loads.get(threadId);
   if (known?.id === id) return known.done;
-  // What the user typed opens in a session with their sign-ins, once. Their web page the shell
-  // closed since is re-opened by the shell's own token and record, which it alone decides on.
-  // Anything else, wherever it has gone since, opens on loopback only.
   let done: Promise<boolean>;
-  // A local address the user typed is the one page the WebRTC switch is offered on, once too.
   if (page.typed === true && !typedSent.has(id)) {
     typedSent.add(id);
     done =
@@ -104,9 +93,6 @@ const load = (
  */
 export function PreviewPane({ threadId }: { threadId: ThreadId }) {
   const bridge = previewBridge();
-  // With no shell to draw a page (a browser tab), the page shown is the one the thread's agent
-  // drives in the server's own browser, when the server runs one. A file the user opened here
-  // keeps the tab until the agent browses again.
   const page = useLayoutStore((s) => s.previewPages[threadId]);
   const serverBrowser = useServerBrowser();
   const server = useServerPage(threadId, bridge === undefined && serverBrowser);
@@ -131,8 +117,6 @@ function ShellPreview({
   const adoptPreviewPage = useLayoutStore((s) => s.adoptPreviewPage);
   const ports = useThreadsStore((s) => s.byId[threadId]?.ports);
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
-  // The WebRTC switch stays off while any agent works in the thread's folders: what it writes is
-  // served at that address.
   const working = useThreadsStore((s) => folderBusy(s.byId, threadId));
   const roots = useMemo(
     () =>
@@ -156,14 +140,12 @@ function ShellPreview({
   const driven = page?.driven === true;
   const typed = page?.typed === true;
   const webView = page?.webView;
-  // A page another window opened, which the shell still holds: this window's requests start empty.
   useEffect(() => {
     if (bridge === undefined || pageId !== undefined) return;
     let live = true;
     void bridge.state(threadId).then((held) => {
       if (!live || held === null) return;
       loads.delete(threadId);
-      // An agent's page, perhaps on a public host it was allowed, is shown as it is too.
       const id = adoptPreviewPage(threadId, held.url, held.driver !== undefined, held.webView);
       if (id !== undefined) loads.set(threadId, { id, done: Promise.resolve(true) });
     });
@@ -173,7 +155,6 @@ function ShellPreview({
   }, [bridge, threadId, pageId, adoptPreviewPage]);
 
   const file = page?.file;
-  // A file asks the server first: Markdown's text to render here, or where an HTML page loads from.
   const filePreview = useQuery({
     queryKey: ["preview-file", threadId, file, pageId],
     queryFn: () => api.previewFile(threadId, file!),
@@ -182,7 +163,6 @@ function ShellPreview({
     staleTime: Infinity,
   });
   const markdown = filePreview.data?.kind === "markdown" ? filePreview.data : undefined;
-  // A mock opens at its board and theme: what follows the address the server gave.
   const at = page?.at ?? "";
   const pageUrl =
     file === undefined
@@ -195,7 +175,6 @@ function ShellPreview({
     let live = true;
     void (async () => {
       if (driven) {
-        // The agent's page is in the shell already, wherever it has gone since.
         const next = await bridge.state(threadId);
         if (live) setState(next ?? unopened(pageUrl));
         return;
@@ -204,8 +183,6 @@ function ShellPreview({
       let opened = await first;
       let next = opened ? await bridge.state(threadId) : null;
       if (opened && next === null) {
-        // The shell closed the page for more recent threads': load where it had gone, once, however
-        // many mounts of the tab find it gone, since a re-open is good once.
         if (loads.get(threadId)?.done === first) loads.delete(threadId);
         opened = await load(bridge, threadId, pageId, pageUrl, { typed, webView });
         next = opened ? await bridge.state(threadId) : null;
@@ -217,11 +194,7 @@ function ShellPreview({
     };
   }, [bridge, threadId, pageId, pageUrl, driven, typed, webView]);
 
-  // The shell's page is only this tab's while a page is what it shows: not over Markdown, nor while
-  // a file's address is still being asked for.
   const current = page === undefined || pageUrl === undefined ? null : state;
-  // Where the page went, so the tab comes back to it after the shell has closed it. A file is asked
-  // for again instead: its address is the server's, and lasts only as long as the server.
   useEffect(() => {
     if (file === undefined && pageId !== undefined && current !== null && !current.loading) {
       notePreviewPage(threadId, {
@@ -233,8 +206,6 @@ function ShellPreview({
     }
   }, [threadId, pageId, file, current, driven, notePreviewPage]);
 
-  // Picking an element for the next message: the shell's own loopback pages only, never a web
-  // page opened with the user's sign-ins.
   const picking = usePagePicksStore((s) => s.picking[threadId] === true);
   const pickable =
     bridge?.pick !== undefined &&
@@ -257,14 +228,12 @@ function ShellPreview({
       usePagePicksStore.getState().setPicking(threadId, false);
     }
   };
-  // A pick ends with the tab: its page stays, but nothing would show it is picking.
   useEffect(() => () => bridge?.cancelPick?.(threadId), [bridge, threadId]);
 
   const failed = current?.error !== undefined;
   const inspectionAvailable =
     current?.browserInspection !== undefined && bridge?.inspect !== undefined;
   const inspectionVisible = inspecting && inspectionAvailable;
-  // Capability loss immediately restores the live view; the exit control stays usable.
   const showing =
     bridge !== undefined && current !== null && !failed && !covered && !inspectionVisible;
   useLayoutEffect(() => {
@@ -298,11 +267,9 @@ function ShellPreview({
     const typedFile = previewFileTarget(target);
     const url = typedFile === undefined ? previewAddress(target) : undefined;
     setRefused(url === undefined && typedFile === undefined);
-    // The one place a web page is asked for, or a local one is said to be typed: the user typing it.
     if (url !== undefined) openWebPreview(threadId, url);
     else if (typedFile !== undefined) previewFile(threadId, typedFile, { previewPane: true });
   };
-  // A file shows as its path, and its board, while the page is still the file the server served.
   const board = at.includes("#") ? at.slice(at.indexOf("#")) : "";
   const shownUrl =
     file !== undefined && (current === null || current.url === pageUrl)
@@ -312,8 +279,6 @@ function ShellPreview({
     page !== undefined &&
     (filePreview.isFetching || (markdown === undefined && (current === null || current.loading)));
   const fileFailed = file !== undefined && filePreview.isError;
-  // Only the user pins, and only a page a thread of a workspace drafted as an HTML file: a copy of
-  // its folder goes into Gram's state, so later edits in the worktree don't change it.
   const workspaceId = thread?.workspaceId;
   const pinnable =
     file !== undefined && filePreview.data?.kind === "html" && workspaceId !== undefined;
@@ -528,7 +493,6 @@ function ShellPreview({
               path={markdown.path}
               content={markdown.content}
               onOpen={(target) => {
-                // Another page stays here; any other file opens in Files, as from Files itself.
                 if (previewFileKind(target) !== undefined) {
                   previewFile(threadId, target, { previewPane: true });
                 } else {

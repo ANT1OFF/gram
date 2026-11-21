@@ -121,18 +121,8 @@ export const CONTRAST_TARGETS: Record<Contrast, { text: number; ui: number }> = 
 /** The most translucent any look may make chrome surfaces; derivation stays legible down to it. */
 export const MIN_SURFACE_ALPHA = 0.85;
 
-/**
- * GitHub's merged purple, per mode. The one colour no palette seeds: a merged PR should read as
- * merged at a glance to anyone who knows GitHub, whatever the theme's accents are.
- */
 const GITHUB_MERGED = { dark: "#a371f7", light: "#8250df" } as const;
 
-/**
- * The providers' brand colours, per mode, as `provider-*` tokens: Anthropic's orange, and OpenAI's
- * black and white (white on a dark surface, near-black on a light one). Like merged, no palette
- * seeds them, so a provider keeps its colour in every theme; a value moves only as far as the `ui`
- * floor needs on the surfaces.
- */
 const PROVIDER_BRAND = {
   anthropic: { dark: "#d97757", light: "#c4522a" },
   openai: { dark: "#ffffff", light: "#0a0a0a" },
@@ -144,10 +134,8 @@ const PROVIDER_BRAND = {
  */
 export const SECTION_TINT = 0.14;
 
-/** Lightness above which a background reads as light. */
 const LIGHT_BG_THRESHOLD = 0.6;
 
-/** Only the newly added families opt into text-grade SGR colors; existing presets stay unchanged. */
 const TEXT_GRADE_ANSI_IDS = new Set(
   ["neutral", "rose", "forest", "ocean", "ember", "violet", "petrol"].flatMap((id) => [
     id,
@@ -172,16 +160,8 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
   const surface1 = s.surface;
   const surface2 = s.bg;
   const lighterSurface = luminance(surface1) > luminance(surface2) ? surface1 : surface2;
-  // A raised card, a field or a menu: in dark a clear step off the page, so a card reads by its fill
-  // rather than by an outline; in light, white, the step a light page leaves room for (the light
-  // presets keep their page a step under white so it shows). Near-black surfaces take the larger
-  // step, where a small one barely shows; mid-tone ones already separate.
   const raisedStep = hexToOklch(lighterSurface).l < 0.3 ? 0.055 : 0.035;
   const surface3 = dark ? shiftLightness(lighterSurface, raisedStep) : "#ffffff";
-  // Hover sits a shade past the raised step in dark, so a row on a card still lights under the
-  // pointer; on a palette whose surfaces are already light enough that the shade would cost the text
-  // its floor, it keeps the plain step toward the text. In light it steps off the darker of the page
-  // and the chrome, so a lit row and a control's track still show on chrome that sits below the page.
   const darkerSurface = luminance(surface1) < luminance(surface2) ? surface1 : surface2;
   const plainHover = mix(dark ? surface2 : darkerSurface, s.text, 0.07);
   const surfaceHover = dark
@@ -205,20 +185,12 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
   const accent = deriveAccent(s, surfaces, target);
   const onAccent = pickOnAccent(accent, s, target.text) ?? "#000000";
   const warning = ui(s.yellow);
-  // The third text level (hints, a step's evidence, a pending line): a shade toward the text, and
-  // text-grade, so what it says reads at the text floor wherever it sits. It replaces fading the
-  // muted text with opacity, which left it near 3:1 on a light page.
   const fgSubtle = text(mix(s.muted, s.text, 0.15));
   const diffAddBg = mix(surface2, s.green, 0.13);
   const diffDelBg = mix(surface2, s.red, 0.13);
-  // Hunk rows show page text and line numbers on the add/remove tints; the text shifts to hold its
-  // floor there, so the tint stays strong enough to read as added or removed.
   const onDiff = (color: string) =>
     ensureContrast(color, [diffAddBg, diffDelBg], target.text, toward);
   const fg = onDiff(text(s.text));
-  // Text drawn on a tint of itself holds its floor there too, the tint made as `tintOf` makes it.
-  // The tint follows every shift, so it takes a few passes to settle. More contrast drops the tints
-  // (web tokens.css).
   const tintedText = (
     seed: string,
     strengths: readonly number[],
@@ -234,12 +206,8 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
     }
     return color;
   };
-  // Destructive badges and buttons: error text on its tint (web tokens.css: 10%, 15% on hover).
   const dangerText = (seed: string) =>
     tintedText(seed, [0.1, 0.15], [surface1, surface2, surface3], mix);
-  // A sidebar section's count is its hue on a tint of it (web tokens.css --section-tint-strength),
-  // over the sidebar and the section head's hover. The pill is `color-mix(in srgb, …, transparent)`,
-  // which the browser composites in gamma-encoded sRGB, not OKLab as `mix` blends.
   const sectionText = (seed: string) =>
     tintedText(
       seed,
@@ -247,14 +215,11 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
       [surface1, surface2, surface3, surfaceHover],
       (bg, color, strength) => composite(color, strength, bg),
     );
-  // Selected text keeps the text floor: the tint backs off where the accent would take it below.
   const selection =
     [0.3, 0.24, 0.18, 0.12, 0.08, 0.04]
       .map((strength) => mix(surface2, s.accent, strength))
       .find((tint) => contrastRatio(fg, tint) >= target.text) ?? surface2;
 
-  // Warning words sit on a tint of themselves too (a badge, a notice: 10% and 15%), over a page, a
-  // card or a hovered row.
   const warningText = tintedText(
     s.yellow,
     [0.1, 0.15],
@@ -268,14 +233,8 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
     "surface-3": surface3,
     "surface-hover": surfaceHover,
     fg,
-    // Metadata and second lines: well clear of the floor, and a clear step below the text, so a
-    // title and the status under it read as two levels rather than one flat block. Near halfway to
-    // the muted seed in dark, a little past it in light, where dark text on a pale page needs the
-    // larger step to look as far apart: firm enough to read at a glance, far enough to be secondary.
     "fg-muted": onDiff(text(mix(s.text, s.muted, contrast === "more" ? 0.2 : dark ? 0.45 : 0.6))),
     "fg-subtle": fgSubtle,
-    // Card and control edges: visible against the page in both modes, still a hairline. Light takes
-    // a step more, where a pale edge on a near-white page all but vanished.
     "border-subtle": mix(surface2, s.text, dark ? 0.14 : 0.2),
     "border-strong": ui(mix(surface2, s.muted, 0.7)),
     accent,
@@ -291,10 +250,6 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
     "success-text": sectionText(s.green),
     "warning-text": warningText,
     "info-text": sectionText(s.cyan),
-    // Statuses label rows, notices and count badges as text, so they're text-grade. Amber means
-    // "needs you" and nothing else: status-needs is its text, status-needs-mark its dots, icons and
-    // borders (ui-grade, so it stays a clean amber rather than darkening to text). Working takes
-    // the accent, failing danger, done success or idle, and informational marks stay neutral.
     "status-needs": sectionText(s.yellow),
     "status-needs-mark": warning,
     "status-working": sectionText(accent),
@@ -329,17 +284,12 @@ function normalizeSeeds(seeds: SeedTokens): SeedTokens {
   return out;
 }
 
-/** Candidates for text on the accent, in order of preference (palette-harmonious first). */
 const onAccentCandidates = (s: SeedTokens) => [s.bg, s.text, "#ffffff", "#000000"];
 
 function pickOnAccent(accent: string, s: SeedTokens, target: number): string | undefined {
   return onAccentCandidates(s).find((c) => contrastRatio(c, accent) >= target);
 }
 
-/**
- * The accent must reach `ui` contrast against surfaces and leave some on-accent colour at `text`
- * contrast. Tries each on-accent candidate and keeps the accent that moved least from the seed.
- */
 function deriveAccent(
   s: SeedTokens,
   surfaces: readonly string[],
@@ -398,7 +348,6 @@ function deriveAnsi(
         continue;
       ansi[key] = text(ansi[key]);
     }
-    // Preserve the brightness step after raising a dim normal color to the text floor.
     for (const key of ["red", "green", "yellow", "blue", "magenta", "cyan"] as const) {
       const brightKey = `bright${key[0]!.toUpperCase()}${key.slice(1)}` as AnsiKey;
       ansi[brightKey] = text(bright(ansi[key]));

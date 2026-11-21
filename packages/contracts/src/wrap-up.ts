@@ -3,10 +3,6 @@ import type { GitState } from "./git.ts";
 import { TurnId } from "./ids.ts";
 import type { GramUIMessage } from "./ui-message.ts";
 
-// The agent's own end-of-turn box: the `wrap_up` app tool's recap, and the one question and the
-// buttons it may leave the user. It costs no helper call and needs no helper consent, and for the
-// turn it covers it stands in place of the helper's recap.
-
 /** A recap longer than this is refused, not cut: two or three short sentences. */
 export const WRAP_UP_RECAP_MAX_CHARS = 300;
 
@@ -31,7 +27,6 @@ export const WrapUpAppAction = Schema.Literals(["push", "create_pr", "merge"]);
 export type WrapUpAppAction = typeof WrapUpAppAction.Type;
 
 export const WrapUpButton = Schema.Union([
-  /** Sends `message` as the user's next message. */
   Schema.Struct({ kind: Schema.Literal("reply"), label: Schema.String, message: Schema.String }),
   Schema.Struct({ kind: Schema.Literal("app"), action: WrapUpAppAction }),
 ]);
@@ -108,7 +103,6 @@ export const latestWrapUp = (
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]!;
     if (message.role === "user") return undefined;
-    // A subagent's transcript is not the turn's own: its tools aren't the thread's.
     if (message.metadata?.parentToolUseId !== undefined) continue;
     latest ??= message.metadata?.turnId;
     const part = message.parts.findLast((p) => p.type === "data-wrap-up");

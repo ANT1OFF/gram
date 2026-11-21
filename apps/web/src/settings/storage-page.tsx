@@ -47,17 +47,14 @@ import { useSaveSettings } from "./use-save-settings";
 const STORAGE_KEY = ["worktree.storage"] as const;
 const sizeKey = (path: string) => ["worktree.size", path] as const;
 
-/** Groups listed open when the page loads; a long one starts folded. */
 const OPEN_UP_TO = 8;
 
 type Size = { readonly bytes: number; readonly partial: boolean } | "error";
 
-/** What a pending confirmation removes, and how it is worded. */
 interface Pending {
   readonly title: string;
   readonly entries: readonly StorageWorktree[];
   readonly confirmLabel: string;
-  /** The worktree the user is confirming by name, with the work the dialog shows. */
   readonly confirmed?: readonly ConfirmedRemoval[];
   readonly prune?: boolean;
 }
@@ -125,10 +122,7 @@ export function StoragePage() {
 
   const remove = (entry: StorageWorktree) => {
     const risk = workAtRisk(entry);
-    // Gram's own with nothing to lose: no question asked. Work at risk, or another tool's: a
-    // confirmation that names it, and the server keeps it if more work turns up meanwhile.
     if (entry.missing || (risk === undefined && entry.madeByGram)) {
-      // A gone folder's own repo is pruned; the others are left alone.
       void run({ title: "", entries: [entry], confirmLabel: "" });
       return;
     }
@@ -327,7 +321,6 @@ function CleanUpInactive({ onReview }: { onReview: (days: number) => void }) {
   );
 }
 
-/** The plan "Clean up inactive" works out first, then the one confirmation. */
 function InactivePlan({
   days,
   onClose,
@@ -681,7 +674,6 @@ function RowAction({
   destructive = false,
   children,
 }: {
-  /** Names the row, since the visible text is the same on every one. */
   label: string;
   onClick: () => void;
   destructive?: boolean;

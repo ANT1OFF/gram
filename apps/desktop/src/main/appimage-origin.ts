@@ -1,9 +1,3 @@
-// Whether this process runs from an AppImage, and which file that is. The AppImage runtime sets
-// `$APPIMAGE` (the file) and `$APPDIR` (its mount) for the app it starts, and every process that
-// app starts inherits them: a .deb install opened from another AppImage's terminal sees that app's
-// `$APPIMAGE`. So the file counts only when this process's own executable is inside `$APPDIR`'s
-// mount. Login items (`autostartExec`) and the AppImage updater (`locateAppImage`) both ask here,
-// so the rule can't drift between them.
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
@@ -37,7 +31,6 @@ export function appImageOrigin(
   const appDir = env["APPDIR"];
   if (!appDir || !isAbsolute(appDir)) return { fromMount: false };
   const mount = real(appDir);
-  // The file system's root is no AppImage mount, though every path is under it.
   if (mount === dirname(mount)) return { fromMount: false };
   const inside = relative(mount, real(execPath));
   if (inside === "" || inside.startsWith("..") || isAbsolute(inside)) return { fromMount: false };

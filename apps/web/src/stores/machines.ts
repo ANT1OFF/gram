@@ -2,10 +2,6 @@ import type { MachineState } from "@gram/contracts";
 import { create } from "zustand";
 
 interface MachinesState {
-  /**
-   * The confirmed machines threads can run on, as the server last sent them (`machines.snapshot`);
-   * undefined until its first snapshot, when which machines there are isn't known yet.
-   */
   readonly machines: ReadonlyArray<MachineState> | undefined;
   replace(machines: ReadonlyArray<MachineState>): void;
 }

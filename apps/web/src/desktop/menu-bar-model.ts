@@ -21,9 +21,6 @@ import type { WorkspaceAsks } from "@/orchestration/ask-stack";
 import { isBusy } from "@/orchestration/wait-model";
 import type { StripWorkspace } from "@/views/quiet-model";
 
-// The menu bar's (tray's) menu, built by the same rule as the asks' notifications (`awayAsk`): the
-// exact command and extras, and an Allow or Merge only when they are shown whole. No React.
-
 /** What the page keeps of an ask it put in the menu, to answer or open it when it is picked. */
 export interface ShownTrayAsk extends ShownAsk {
   /** Where Open goes: the stack on the workspace's orchestrator, else the asking thread. */
@@ -50,7 +47,6 @@ export interface BuiltTrayMenu {
 export const trayAskToken = (scope: string, fingerprint: string): string =>
   awayAskId(JSON.stringify([scope, fingerprint]));
 
-/** One ask's menu entry, and what the page keeps to act on it. */
 const trayAskOf = (
   ask: Ask,
   workspace: Pick<WorkspaceAsks, "workspaceId" | "name" | "orchestratorThreadId">,
@@ -58,7 +54,6 @@ const trayAskOf = (
   const away = awayAsk(ask, true);
   const fingerprint = askFingerprint(ask);
   const id = trayAskToken(askScope(ask, workspace.workspaceId), fingerprint);
-  // The cut line is the submenu's own "Open to review"; the menu says it once.
   const lines = away.text.split("\n").filter((line) => line !== NOTICE_CUT_LINE);
   return {
     entry: {
@@ -101,7 +96,6 @@ export const trayMenuOf = (
       asks.set(entry.id, shown);
     }
   }
-  // Quiet's strip: each workspace's Now workers; busy counts a live turn and a wait on automation.
   const workers = new Map(strip.map((w) => [w.workspaceId, w.workers]));
   const workspaces = new Map<string, ShownTrayWorkspace>();
   const lines: TrayWorkspace[] = all.map((workspace) => {

@@ -11,10 +11,6 @@ import { cn } from "@/lib/utils";
 import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 
-/**
- * What the sender is to the workspace, when it is anything: its orchestrator, or a worker. A worker
- * since removed still sent as one, which its origin's feature says.
- */
 const senderRole = (origin: MessageOrigin, spawned: boolean) =>
   origin.role === "orchestrator"
     ? "orchestrator"
@@ -28,7 +24,6 @@ const DELIVERY = {
   queue: { label: "queued", hint: "Queued for after the turn" },
 } as const;
 
-/** The sender's mark: its agent's, or a plain one once the app no longer has the thread. */
 function SenderAvatar({ agent }: { agent: string | undefined }) {
   return (
     <span
@@ -54,12 +49,10 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
   const sender = useThreadsStore((s) => s.byId[origin.threadId]?.thread);
   const ready = useThreadsStore((s) => s.ready);
   const gone = ready && sender === undefined;
-  // A sender the embedding app shows in a place of its own is named by that place, and opens there.
   const place = useEmbedShell((s) =>
     s.threadsPage.places?.find((each) => each.ids.includes(origin.threadId)),
   );
   const role = place?.name ?? senderRole(origin, sender?.spawnedBy !== undefined);
-  // Absent only on a message sent before every send carried its mode, when the default queued.
   const delivery = DELIVERY[origin.mode ?? "queue"];
   const body = (
     <>
@@ -140,8 +133,6 @@ export function AskedByLink({ askedBy }: { askedBy: AskedBy }) {
       sent from <span className="font-medium text-foreground">{name}</span>
     </>
   );
-  // No dot before it: on a line of its own a leading dot hangs, and beside the toggle the cut-off
-  // words already part them. Under the toggle it lines up with the words, past the avatar.
   const tone = "shrink-0 text-meta text-muted-foreground";
   const quiet = `${tone} max-sm:pl-6.5`;
   if (place === undefined && ready && asker === undefined) {
@@ -182,14 +173,9 @@ export function AskedByLink({ askedBy }: { askedBy: AskedBy }) {
 interface OpenBriefs {
   readonly open: ReadonlySet<string>;
   toggle(messageId: string): void;
-  /** Opens one a search is about to land in, and leaves one that's open alone. */
   reveal(messageId: string): void;
 }
 
-/**
- * The orchestrator's messages a reader opened, by message id. Here rather than in the row, which
- * the transcript's list unmounts on scroll and on leaving the thread, and only while the app is open.
- */
 const useOpenBriefs = create<OpenBriefs>()((set) => ({
   open: new Set(),
   reveal: (messageId) =>
@@ -202,7 +188,6 @@ const useOpenBriefs = create<OpenBriefs>()((set) => ({
     }),
 }));
 
-/** The first line of a message, for its folded row. */
 const firstLine = (text: string) => text.trimStart().split("\n", 1)[0] ?? "";
 
 /**
@@ -241,11 +226,6 @@ export function ThreadMessage({
   );
 }
 
-/**
- * "Message from orchestrator ▸", with the start of its words: the orchestrator's message to a
- * worker, folded so the worker's own work leads the transcript. A click opens it, and a search that
- * lands in it opens it too. The worker's header already links to its orchestrator.
- */
 function OrchestratorMessage({
   origin,
   messageId,
@@ -261,7 +241,6 @@ function OrchestratorMessage({
   const toggle = useOpenBriefs((s) => s.toggle);
   const revealed = useRevealStore((s) => s.request?.messageId === messageId);
   const open = toggled || revealed;
-  // Kept open once the search's flash is over.
   useEffect(() => {
     if (revealed) useOpenBriefs.getState().reveal(messageId);
   }, [revealed, messageId]);
@@ -274,7 +253,6 @@ function OrchestratorMessage({
       data-folded={open ? undefined : ""}
       className="flex w-full max-w-full min-w-0 flex-col gap-1"
     >
-      {/* Too narrow for both (a phone), the asker takes a line of its own under the toggle. */}
       <div className="flex w-full min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
         <button
           type="button"

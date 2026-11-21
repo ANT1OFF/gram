@@ -6,7 +6,6 @@ const keyOf = (threadId: ThreadId, turn: string) => `${threadId}:${turn}`;
 interface TurnFoldsState {
   open: ReadonlySet<string>;
   toggle(threadId: ThreadId, turn: string): void;
-  /** Opens a fold something is about to scroll into, and leaves one that's open alone. */
   reveal(threadId: ThreadId, turn: string): void;
 }
 

@@ -21,7 +21,6 @@ export function microphoneAccess(media: MediaAccess, platform: NodeJS.Platform):
     const status = media.getMediaAccessStatus("microphone");
     return ACCESS.has(status) ? (status as MicrophoneAccess) : "unknown";
   } catch {
-    // Electron throws on a platform it has no status for.
     return "unknown";
   }
 }
@@ -37,9 +36,7 @@ export async function requestMicrophoneAccess(
   if (platform === "darwin" && media.askForMediaAccess !== undefined) {
     try {
       await media.askForMediaAccess("microphone");
-    } catch {
-      // Answered below from the status, which is what the page acts on either way.
-    }
+    } catch (_answeredBelowFromTheStatusWhichIsWhatThe) {}
   }
   return microphoneAccess(media, platform);
 }

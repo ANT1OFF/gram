@@ -13,7 +13,6 @@ import { useLayoutStore } from "@/stores/layout";
 export function ShortcutOverlay() {
   const open = useLayoutStore((s) => s.overlayOpen);
   const setOpen = useLayoutStore((s) => s.setOverlayOpen);
-  // Opened from a key with no trigger: closing gives the focus back to where typing was.
   const opener = useOpener(open);
 
   return (
@@ -32,7 +31,6 @@ export function ShortcutOverlay() {
   );
 }
 
-/** The sheet's content, mounted while it is open, so it opens with the field empty every time. */
 function ShortcutSheet() {
   const [query, setQuery] = useState("");
   return (

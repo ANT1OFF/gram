@@ -25,7 +25,6 @@ export const MAX_MACHINES = 16;
  * control plane registers one per unit of work it places, so far more than a person joins.
  */
 export const MAX_PROVISIONED = 256;
-/** How many dials' nonces can be in their window at once; past it, dials wait. */
 const NONCES_KEPT = 4096;
 /**
  * How many of one machine's dials can be in their window at once: several times what a host
@@ -123,11 +122,9 @@ export type MachineKind = "provisioned";
 export const isProvisioned = (machine: Pick<PairedMachine, "kind">) =>
   machine.kind === "provisioned";
 
-/** Whether `machine` has `name`, as work placed by name reads it: in any case, trimmed. */
 const sameName = (machine: Pick<PairedMachine, "name">, name: string) =>
   machine.name.trim().toLowerCase() === name.trim().toLowerCase();
 
-/** Where a machine of this kind may dial in. */
 const routeOf = (machine: Pick<PairedMachine, "kind" | "via">): DialRoute =>
   machine.via !== undefined ? "relayed" : isProvisioned(machine) ? "provisioned" : "joined";
 
@@ -138,7 +135,6 @@ const routeOf = (machine: Pick<PairedMachine, "kind" | "via">): DialRoute =>
 export const isRelayOrigin = (value: unknown): value is string =>
   typeof value === "string" && value.length <= 512 && hostedOrigin(value) === value;
 
-/** A sign-in's opaque mark (`PairedMachine.viaAccount`): base64url, as the app makes it. */
 const isAccountMark = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(value);
 
@@ -147,22 +143,9 @@ const isAccountMark = (value: unknown): value is string =>
  * kept in memory only, and never anything from the dial itself (its signature, nonce or key).
  */
 export type MachineProblem =
-  /** It dialled, signed by its key, before a person here confirmed it. */
   | { readonly kind: "unconfirmed"; readonly at: number }
-  /**
-   * A dial named it but its key didn't sign it, or signed it for another address. Anyone on the
-   * tailnet who knows its id can send one, so this is only ever shown, never acted on.
-   */
   | { readonly kind: "bad-signature"; readonly at: number }
-  /**
-   * A dial it signed carried a time this far from this machine's clock: positive when ahead. An
-   * old dial of its own replayed later reads the same, and is as harmless: only ever shown.
-   */
   | { readonly kind: "clock"; readonly at: number; readonly skewMs: number }
-  /**
-   * It said hello in another protocol version, or without something this build needs: one of the
-   * two builds needs an update. Its release, when it sent one.
-   */
   | {
       readonly kind: "mismatch";
       readonly at: number;
@@ -170,11 +153,8 @@ export type MachineProblem =
       readonly release?: string;
       readonly missing?: ReadonlyArray<string>;
     }
-  /** It dialled in but didn't say hello, in time or as itself. */
   | { readonly kind: "no-hello"; readonly at: number }
-  /** Its connection closed. */
   | { readonly kind: "lost"; readonly at: number }
-  /** Access over Tailscale moved to another address, which it doesn't dial. */
   | { readonly kind: "moved"; readonly at: number };
 
 export interface PairedMachineStore {
@@ -213,7 +193,6 @@ export interface ProvisionRequest {
 }
 
 export type ProvisionResult =
-  /** `created` is false when this key was already registered as a provisioned host. */
   | {
       readonly kind: "provisioned";
       readonly machine: PairedMachine;
@@ -291,7 +270,6 @@ const isMachine = (value: unknown): value is PairedMachine => {
     (m["claudeTokenSetAt"] === undefined || Number.isSafeInteger(m["claudeTokenSetAt"])) &&
     (m["sshTarget"] === undefined ||
       (typeof m["sshTarget"] === "string" && SSH_TARGET.test(m["sshTarget"]))) &&
-    // A provisioned host is confirmed when it is registered, and was never installed over SSH.
     (m["kind"] === undefined ||
       (m["kind"] === "provisioned" &&
         m["confirmedAt"] !== undefined &&
@@ -306,7 +284,6 @@ const isMachine = (value: unknown): value is PairedMachine => {
   );
 };
 
-/** A machines file's entries, each valid and of the kind the file holds; throws otherwise. */
 const machinesIn = (value: unknown, provisioned: boolean, most: number): PairedMachine[] => {
   if (value === undefined) return [];
   const record = value as Record<string, unknown> | null;
@@ -341,17 +318,12 @@ export const fileMachineStore = (dataDir: string): PairedMachineStore => {
   return {
     read,
     write: (machines) => {
-      // Never repair an unsafe or corrupt file silently.
       const kept = read();
       const joined = machines.filter((machine) => !isProvisioned(machine));
       const provisioned = machines.filter(isProvisioned);
       const changed = (kind: boolean, next: ReadonlyArray<PairedMachine>) =>
         JSON.stringify(kept.filter((machine) => isProvisioned(machine) === kind)) !==
         JSON.stringify(next);
-      // Each file is written only when its own machines changed, so a Gram that never had a
-      // provisioned host never has their file.
-      // The joined machines' file first, which the hosts' is never without: a write that stops
-      // between the two leaves nothing on disk that this run doesn't also hold.
       if (changed(false, joined) || file.read() === undefined)
         file.write({ version: 1, machines: joined });
       if (changed(true, provisioned)) hostsFile.write({ version: 1, machines: provisioned });
@@ -371,7 +343,6 @@ const dialNoncesPath = (dataDir: string) => join(dataDir, "remote-access", "dial
 /** The `seen` the nonces file's modified time holds, whether or not its content can be read. */
 export const dialNoncesLastSeen = (dataDir: string): number | undefined => {
   try {
-    // A second on, for a filesystem that keeps whole seconds.
     return Math.ceil(lstatSync(dialNoncesPath(dataDir)).mtimeMs) + 1000;
   } catch {
     return undefined;
@@ -403,8 +374,6 @@ export const fileNonceStore = (dataDir: string): DialNonceStore => {
         seen: record["seen"] as number,
       };
     },
-    // Its modified time is `seen`, which survives what makes the content unreadable. It is set
-    // before the file replaces the old one, so a write that fails never lowers it.
     write: ({ nonces, floor, seen }) => file.write({ version: 1, floor, seen, nonces }, seen),
     lastSeen: () => dialNoncesLastSeen(dataDir),
   };
@@ -439,25 +408,14 @@ export const createPairedMachines = (
   store: PairedMachineStore,
   now: () => number = Date.now,
   nonceStore: DialNonceStore = memoryNonceStore(),
-  /**
-   * Told after the machines or a machine's last problem changed (one joined, was confirmed or
-   * removed, or a dial of one was refused), so what shows them can follow without asking again.
-   */
   onChange: () => void = () => {},
 ) => {
   let machines = store.read();
   let invitation: { code: string; origin: string; expiresAt: number } | undefined;
-  /** Recent dials' nonces with when they stop mattering, as the last run left them. */
   const nonces = new Map<string, number>();
-  /** No dial signed at or before this is taken; the latest time a dial was accepted at. */
   let floor = 0;
   let seen = 0;
-  /**
-   * Set while the last run's dials can't be bounded at all: then none is taken, and each dial
-   * tries again to load them, so storage put right is used without a restart.
-   */
   let blind = false;
-  /** Loads the last run's nonces, or a bound on them; false when there is neither. */
   const load = () => {
     try {
       const kept = nonceStore.read();
@@ -465,9 +423,6 @@ export const createPairedMachines = (
       for (const [nonce, until] of kept.nonces) nonces.set(nonce, until);
       return true;
     } catch {
-      // The last run's nonces are unknown, but every dial it accepted was signed at most the
-      // skew past the latest time it saw, or past now: none of those is taken, whatever the
-      // clock did.
       const last = nonceStore.lastSeen?.();
       if (last === undefined) return false;
       floor = Math.max(now(), last) + CONNECT_SKEW_MS;
@@ -476,7 +431,6 @@ export const createPairedMachines = (
     }
   };
   blind = !load();
-  /** Each machine's last problem since this Gram started. */
   const problems = new Map<string, MachineProblem>();
   const note = (id: string, problem: MachineProblem | undefined) => {
     if (problem === undefined) {
@@ -490,7 +444,6 @@ export const createPairedMachines = (
     machines = next;
     onChange();
   };
-  /** Memory first, so a removal holds even when saving it throws (until a restart re-reads it). */
   const forget = (next: PairedMachine[]) => {
     machines = next;
     try {
@@ -510,24 +463,15 @@ export const createPairedMachines = (
     }
     return key;
   };
-  /**
-   * Records a dial's nonce: `replayed` when it was seen before, `full` when the set is full of
-   * nonces still in their window, which refuses the dial rather than forget one that could then
-   * be replayed.
-   */
-  /** Each machine's accepted dials still in their window, by when each leaves it. This run's only. */
   const dialsOf = new Map<string, number[]>();
   const record = (
     machineId: string,
     nonce: string,
     signed: number,
-    /** The time the dial was checked at: one reading, so pruning can't pass the dial's window. */
     at: number,
   ): "ok" | "stale" | "replayed" | "full" | "unsaved" => {
     const until = signed + CONNECT_SKEW_MS;
     const own = (dialsOf.get(machineId) ?? []).filter((expires) => expires >= at);
-    // Let go once past their window, which the skew check refuses, and the floor raised past
-    // them, so a clock set back later doesn't bring them into it again.
     for (const [kept, expires] of nonces)
       if (expires < at) {
         nonces.delete(kept);
@@ -537,7 +481,6 @@ export const createPairedMachines = (
     if (nonces.has(nonce)) return "replayed";
     if (nonces.size >= NONCES_KEPT || own.length >= DIALS_PER_MACHINE) return "full";
     dialsOf.set(machineId, [...own, until]);
-    // Kept in memory even when saving fails, so this run still refuses its replay.
     nonces.set(nonce, until);
     seen = Math.max(seen, at);
     try {
@@ -584,7 +527,6 @@ export const createPairedMachines = (
       const id = hostIdOf(request.publicKey);
       if (byId(id) !== undefined)
         return { kind: "refused", status: 409, message: "This machine has already joined." };
-      // A provisioned host's name and id stay its own, as `provision` keeps every name.
       if (
         machines.some(
           (machine) =>
@@ -640,8 +582,6 @@ export const createPairedMachines = (
           status: 400,
           message: "The host's key isn't valid.",
         };
-      // One started on demand with no owner would be open to every caller (`host/ownership.ts`),
-      // except a worker host a desktop asked a hosted server for: the desktop's, like a joined one.
       if (request.viaAccount !== undefined && !isAccountMark(request.viaAccount))
         return { kind: "refused", status: 400, message: "That sign-in mark isn't valid." };
       if (
@@ -679,8 +619,6 @@ export const createPairedMachines = (
             status: 409,
             message: "That key belongs to a machine that joined with a link.",
           };
-        // The same registration again changes nothing; another name or platform for the key is a
-        // mistake to say so about, not to settle silently either way.
         return existing.name === request.name &&
           existing.platform === request.platform &&
           existing.owner === request.owner &&
@@ -695,9 +633,6 @@ export const createPairedMachines = (
               message: `That key is already registered as "${existing.name}". Remove it first to change that.`,
             };
       }
-      // Work is placed by name, and a name two machines share places nothing: a new host never
-      // takes one in use, so registering can't make a machine unaddressable.
-      // Nor a name that reads as a machine's id, which work is placed by as well.
       if (
         /^m-[a-f0-9]{24}$/i.test(request.name.trim()) ||
         machines.some((machine) => sameName(machine, request.name))
@@ -810,33 +745,25 @@ export const createPairedMachines = (
         return { kind: "refused", status: 401, message: "unauthorized: machine not joined" };
       const at = now();
       if (Math.abs(at - claim.time) > CONNECT_SKEW_MS) {
-        // Its clock, only when the machine's own key signed the time it is off by.
         if (verifyConnect(key, claim, claim.signature))
           note(machine.id, { kind: "clock", at, skewMs: claim.time - at });
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       }
-      // At or before a nonce let go, or the bound on a history it couldn't read: see `DialNonces`.
       if (claim.time <= floor)
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       if (!verifyConnect(key, claim, claim.signature)) {
-        // Anyone can send one, so it never replaces a reason the machine's own key stood behind.
         const kept = problems.get(machine.id)?.kind;
         if (kept === undefined || kept === "bad-signature")
           note(machine.id, { kind: "bad-signature", at });
         return { kind: "refused", status: 401, message: "unauthorized: bad signature" };
       }
-      // Before its nonce is kept: a machine not confirmed yet neither spends the dials' room nor
-      // writes them, and its replay is refused all the same.
       if (machine.confirmedAt === undefined) {
         note(machine.id, { kind: "unconfirmed", at });
         return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
       }
-      // Retried only for a confirmed machine's signed dial; `record` checks it against the floor
-      // a load sets.
       if (blind) blind = !load();
       if (blind)
         return { kind: "refused", status: 503, message: "unavailable: dial history unreadable" };
-      // Checked after the signature, so a forged dial can't spend a real one's nonce.
       const nonce = record(machine.id, claim.nonce, claim.time, at);
       if (nonce === "stale")
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
@@ -844,7 +771,6 @@ export const createPairedMachines = (
         return { kind: "refused", status: 401, message: "unauthorized: dial replayed" };
       if (nonce === "full")
         return { kind: "refused", status: 401, message: "unauthorized: too many dials; wait" };
-      // Unsaved, it could be replayed after a restart: refused rather than taken on that risk.
       if (nonce === "unsaved")
         return { kind: "refused", status: 503, message: "unavailable: dial couldn't be recorded" };
       return { kind: "ok", machine };
@@ -887,19 +813,13 @@ export const machineView = (
         readonly selfUpdate?: boolean;
       }
     | undefined,
-  /**
-   * Its last problem, and whether access over Tailscale is on, for why it is offline; its update,
-   * while one runs or since one ended.
-   */
   status: {
     readonly problem?: MachineProblem | undefined;
     readonly tailscale?: DialAccess;
     readonly update?: MachineUpdate | undefined;
   } = {},
 ) => {
-  // A provisioned host dials its own listener, whatever access over Tailscale is.
   const access = isProvisioned(machine) ? "on" : (status.tailscale ?? "on");
-  // Tailscale down here explains a lost connection better than the loss itself.
   const offline: OfflineReason | undefined =
     online !== undefined
       ? undefined
@@ -921,28 +841,21 @@ export const machineView = (
     ...(machine.claudeTokenSetAt === undefined
       ? {}
       : { claudeTokenSetAt: machine.claudeTokenSetAt }),
-    // Only while it is online: what its `claude auth status` said (the classification alone) and
-    // which of its tools it found.
     ...(online?.status === undefined
       ? {}
       : {
           claudeSignIn: online.status.status.claudeSignIn,
           claudeSignInCheckedAt: online.status.at,
           tools: online.status.status.tools,
-          // What its Claude Code lists, for resolving a worker's tier there; absent from an
-          // older host, which then resolves against this machine's lists.
           ...(online.status.status.models === undefined
             ? {}
             : { models: online.status.status.models }),
-          // Its Codex, from a host that runs Codex sessions; absent from one that doesn't.
           ...(online.status.status.codex === undefined
             ? {}
             : { codex: online.status.status.codex }),
-          // Its OpenCode, from a host that runs OpenCode sessions; absent from one that doesn't.
           ...(online.status.status.opencode === undefined
             ? {}
             : { opencode: online.status.status.opencode }),
-          // Its Grok Build, from a host that runs Grok Build sessions.
           ...(online.status.status.grok === undefined ? {} : { grok: online.status.status.grok }),
           ...(online.status.status.antigravity === undefined
             ? {}

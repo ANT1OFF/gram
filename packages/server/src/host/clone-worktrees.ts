@@ -49,9 +49,6 @@ export const cloneWorktrees = (
           const local = yield* tip(repo, `refs/heads/${base}`);
           const tracked =
             local === undefined ? undefined : yield* tip(repo, `refs/remotes/origin/${base}`);
-          // A default branch created by clone stays at its original tip. Prefer its refreshed
-          // origin when it contains that local tip; keep an explicitly selected local branch's
-          // additional/divergent work, and local tags, HEAD and commits.
           if (local === undefined || tracked === undefined) return { ref: base, oid };
           const ancestor = yield* git(repo, ["merge-base", "--is-ancestor", local, tracked]);
           if (ancestor.status === 1) return { ref: base, oid };
@@ -107,7 +104,6 @@ export const cloneWorktrees = (
               ? undefined
               : yield* tip(request.repoPath, `refs/heads/${request.branch}`);
           const created = yield* worktrees.create({ ...request, base: base.oid });
-          // A pre-existing branch is checked out as-is; its historical base isn't known here.
           const { base: _base, ...checkout } = created.checkout;
           return {
             ...created,

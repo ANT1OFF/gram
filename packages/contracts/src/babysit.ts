@@ -1,5 +1,3 @@
-// Review monitor notices and babysit mode.
-
 import * as Schema from "effect/Schema";
 import { ChecksRollup } from "./git.ts";
 import { HumanReview, ReviewVerdict } from "./review.ts";
@@ -70,8 +68,6 @@ export const serializeReviewNotice = (notice: ReviewNotice, reviewBotConfigured 
   ];
   if (notice.ciFailed.length > 0)
     lines.push(`CI failed:\n${fenceNames("the failing checks' names", notice.ciFailed)}`);
-  // The findings are the bot's reading of the PR, whose text anyone with a PR can shape: data to
-  // weigh, inside a fence, never lines of the notice's own.
   const findings = [
     ...(notice.blockers.length === 0
       ? []
@@ -128,7 +124,6 @@ export const serializeHumanReviewNotice = (notice: HumanReviewNotice): string =>
           ? " on the head"
           : ` on ${review.commitOid.slice(0, 7)}, not the head`;
     const body = review.body.trim();
-    // A login is GitHub's alphabet only; anything else is dropped rather than shown.
     const who = /^[A-Za-z0-9-]{1,39}$/.test(review.author) ? review.author : "a reviewer";
     const said = `${who} ${HUMAN_VERDICT_TEXT[review.verdict]}${where}${fresh.has(review.id) ? " (new)" : ""}`;
     if (body === "") lines.push(`${said}, with no comment.`);

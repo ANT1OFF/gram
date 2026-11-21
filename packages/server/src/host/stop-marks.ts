@@ -1,20 +1,3 @@
-// What this Gram remembers of each joined machine's stops and restores (`stop-resume.ts`): one
-// record per machine, for the disk and start of its host last seen (`HostHello.diskId`, `bootId`),
-// holding whether it was readied to stop, which threads' sessions it put to rest, what each stop
-// kept of a folder, and the resume it owes: under which generation, which threads' folders are
-// confirmed back, which couldn't be, and which folders a resume set out to put back and didn't
-// finish with. The record is kept across a restart of this Gram (`persisted`), written whole.
-//
-// The rules that keep a session from opening over folders that aren't there:
-// - What lifts a debt (a thread's folders confirmed back, a resume completed, a thread at rest
-//   reopened) is written before it is taken as so: when the write fails, nothing changes.
-// - So is a host dialling in (`arrive`): a disk the record can't keep is refused, never admitted.
-// - What only adds caution (a stop, a lost connection, an `expect`) holds at once, and its write
-//   is tried again at the next change.
-// - A record that can't be read is a debt (`unknown`): its threads wait for a resume.
-// What waits on a machine now (`wanting`, `awaiting`), how many resumes run, and the diff behind a
-// save are this process's alone.
-
 import {
   effectiveCheckout,
   HostDiskId,
@@ -91,7 +74,6 @@ export const RETIRED_DISKS_KEPT = 64;
  */
 export const BLOCK_REASON_MAX_CHARS = 2048;
 
-/** What a stop said it kept of a folder, as kept across a restart: without the diff behind it. */
 const KeptRecordStored = Schema.Struct({
   commit: Schema.String,
   caughtUp: Schema.Boolean,
@@ -351,10 +333,8 @@ export interface StopMarks {
   readonly forget: (id: HostId) => void;
 }
 
-/** One folder of one thread, as a key. */
 const folder = (threadId: ThreadId, cwd: string) => `${threadId}\0${cwd}`;
 
-/** A record as kept: what is empty left out, nothing at all when nothing is kept. */
 const tidy = (record: MachineMarks): MachineMarks | undefined => {
   const value: Record<string, unknown> = {};
   for (const [key, field] of Object.entries(record)) {
@@ -370,13 +350,8 @@ const tidy = (record: MachineMarks): MachineMarks | undefined => {
 export const makeStopMarks = (
   now: () => number = Date.now,
   holdMs: number = STOP_HOLD_MS,
-  /** Told when a machine starts or stops being waited on (`wantedSince`). */
   onWanted: (id: HostId) => void = () => {},
   stallMs: number = RESUME_STALL_MS,
-  /**
-   * Where the records are kept across a restart: those kept before, and where each change goes,
-   * every machine's at once. Kept in memory alone when left out.
-   */
   persisted?: {
     readonly initial: MachineMarksByHost;
     /** Throws when the records couldn't be kept. */
@@ -384,15 +359,12 @@ export const makeStopMarks = (
     readonly failed?: (error: unknown) => void;
   },
 ): StopMarks => {
-  /** Each machine's record, as this process holds it. */
   const records = new Map<HostId, MachineMarks>();
-  /** How many resumes run now, by machine and by the generation each runs for. */
   const running = new Map<HostId, Map<number, number>>();
   const savedDiffs = new Map<HostId, Map<string, SavedDiff>>();
   const waiting = new Map<HostId, number>();
   const waitingSince = new Map<HostId, number>();
   const cancels = new Map<HostId, number>();
-  /** The disk a host of each machine was last refused on (`fenced`), for `readmit`. */
   const refused = new Map<HostId, string>();
   const threadsAwaiting = new Map<HostId, Set<ThreadId>>();
   const readyListeners = new Set<(id: HostId) => void>();
@@ -400,13 +372,10 @@ export const makeStopMarks = (
     for (const listener of readyListeners) {
       try {
         listener(id);
-      } catch {
-        // A listener's failure is its own.
-      }
+      } catch (_aListenersFailureIsItsOwn) {}
     }
   };
   for (const [key, value] of Object.entries(persisted?.initial ?? {})) {
-    // The time this Gram was down isn't time a resume made no progress in.
     records.set(
       key as HostId,
       value.owed === undefined ? value : { ...value, owed: { ...value.owed, progress: now() } },
@@ -419,13 +388,7 @@ export const makeStopMarks = (
     if (value === undefined) into.delete(id);
     else into.set(id, value);
   };
-  /** Each machine's record as last written: what another machine's write falls back to. */
   let written = new Map(records);
-  /**
-   * Writes every record, with the machine's as `next`; throws when that fails. When every record
-   * as held can't be written, the others go as they were last written, so a record that can't be
-   * kept (one grown too big) costs its own machine's writes alone, never another's.
-   */
   const save = (id: HostId, next: MachineMarks) => {
     if (persisted === undefined) return;
     const all = new Map(records);
@@ -444,10 +407,6 @@ export const makeStopMarks = (
       written = others;
     }
   };
-  /**
-   * A change that lifts a debt, or a host's arrival: written first, and only then taken as so.
-   * When the write fails, nothing changes and `MarksNotKept` is thrown.
-   */
   const commit = (id: HostId, next: MachineMarks) => {
     try {
       save(id, next);
@@ -457,10 +416,6 @@ export const makeStopMarks = (
     }
     put(records, id, next);
   };
-  /**
-   * A change that only adds caution: it holds at once. A write that fails leaves it to the next
-   * write, which writes every record as this process holds it.
-   */
   const note = (id: HostId, next: MachineMarks) => {
     put(records, id, next);
     try {
@@ -470,36 +425,30 @@ export const makeStopMarks = (
     }
   };
 
-  /** The stop mark, unless its hold ran out with the machine there all along. */
   const stopOf = (record: MachineMarks) => {
     const stop = record.stop;
     return stop === undefined || stop.left || now() - stop.at < holdMs ? stop : undefined;
   };
-  /** The threads at rest, unless the stop they were put to rest for didn't hold. */
   const restedIn = (record: MachineMarks): ReadonlyArray<ThreadId> =>
     record.stop !== undefined && stopOf(record) === undefined ? [] : (record.rested ?? []);
   const generationOf = (record: MachineMarks) => record.owed?.generation ?? record.generation ?? 0;
   const current = (id: HostId, generation: number | undefined) =>
     generation === undefined || generationOf(get(id)) === generation;
-  /** The record owing a resume afresh: a new generation, nothing back yet, no stall. */
   const owe = (record: MachineMarks): MachineMarks => {
     const generation = (record.generation ?? 0) + 1;
     const { back: _, stalled: __, ...rest } = record;
     return { ...rest, generation, owed: { progress: now(), generation } };
   };
-  /** As `owe`, for a disk its folders weren't last seen on. */
   const oweOnOtherDisk = (record: MachineMarks): MachineMarks => {
     const owing = owe(record);
     return { ...owing, owed: { ...owing.owed!, replaced: true } };
   };
-  /** The record once the machine takes work again (`back`). */
   const backOf = (record: MachineMarks): MachineMarks => {
     const told = record.expected;
     const { stop: _, expected: __, ...rest } = record;
     const owes =
       record.owed === undefined &&
       (stopOf(record)?.left === true || (told !== undefined && now() - told < EXPECT_FOR_MS));
-    // The threads at rest stay for the resume, unless the stop they were for didn't hold.
     const kept = { ...rest, rested: restedIn(record) };
     return owes ? owe(kept) : kept;
   };
@@ -510,8 +459,6 @@ export const makeStopMarks = (
       let verdict: DiskVerdict = { kind: "unknown" };
       if (said.diskId !== undefined) {
         const known = record.disk;
-        // Not the machine any more, whatever is online: refused, with nothing written or changed,
-        // unless this disk was said to be let back (`readmit`), once.
         const letIn =
           record.readmit?.disk === said.diskId && now() - record.readmit.at < EXPECT_FOR_MS;
         if (record.retired?.includes(said.diskId) === true) {
@@ -540,8 +487,6 @@ export const makeStopMarks = (
         };
         if (known === undefined) verdict = { kind: "first" };
         else if (known.id !== said.diskId) {
-          // Its folders aren't on this disk: owed a resume before any session opens, in the same
-          // write as the disk, so a restart never finds the one without the other.
           const { expected: _, ...rest } = record;
           record = oweOnOtherDisk({
             ...rest,
@@ -555,8 +500,6 @@ export const makeStopMarks = (
             known.boot !== undefined && known.boot === said.bootId
               ? { kind: "redial" }
               : { kind: "restarted" };
-        // A disk the host can't say is the same from one start to the next owes a resume at each
-        // start, the first one too; a redial of the same start only picks up its connection.
         if (said.diskUnknown === true && verdict.kind !== "redial" && record.owed === undefined)
           record = oweOnOtherDisk(record);
       }
@@ -571,7 +514,6 @@ export const makeStopMarks = (
       if (saved === undefined) diffs.delete(key);
       else diffs.set(key, saved);
       savedDiffs.set(id, diffs);
-      // The oldest kept first: past the limit, they go.
       const entries = Object.entries(get(id).kept ?? {}).filter(([each]) => each !== key);
       entries.push([key, bare]);
       note(id, { ...get(id), kept: Object.fromEntries(entries.slice(-KEPT_FOLDERS_MAX)) });
@@ -585,7 +527,6 @@ export const makeStopMarks = (
     },
     stopped: (id, threads) => {
       const record = get(id);
-      // Readied again while still readied adds to the threads at rest; a new stop starts over.
       const before = stopOf(record) === undefined ? [] : (record.rested ?? []);
       note(id, {
         ...record,
@@ -606,9 +547,7 @@ export const makeStopMarks = (
       if (stop !== undefined && !stop.left) note(id, { ...record, stop: { ...stop, left: true } });
     },
     back: (id) => note(id, backOf(get(id))),
-    // Written first: whoever said it is told when it didn't hold.
     expect: (id) => commit(id, { ...get(id), expected: now() }),
-    // The leaving disk's fence is the `expect`: taken back now. A retired disk's, at its arrival.
     readmit: (id) => {
       const disk = refused.get(id);
       if (disk === undefined) return undefined;
@@ -621,8 +560,6 @@ export const makeStopMarks = (
     resuming: (id) => {
       const record = get(id);
       if (record.owed === undefined) return false;
-      // No progress for too long: said (`stalled`), so whatever waits on it stops waiting. The
-      // gate stays shut: only a resume that completes opens it.
       if (record.stalled === undefined && now() - record.owed.progress >= stallMs)
         note(id, { ...record, stalled: now() });
       return true;
@@ -662,8 +599,6 @@ export const makeStopMarks = (
         note(id, { ...record, owed: { ...record.owed, progress: now() } });
     },
     resumed: (id, generation, completed = true) => {
-      // Counted off the generation it ran for, whatever the machine owes now: a resume of a disk
-      // the machine has since left never keeps the next one from starting.
       const runs = running.get(id);
       const of = generation ?? generationOf(get(id));
       const count = (runs?.get(of) ?? 1) - 1;
@@ -676,9 +611,7 @@ export const makeStopMarks = (
       try {
         if (generation !== undefined) stopMarks.settle(id, generation);
         else stopMarks.settle(id, of);
-      } catch {
-        // Not written, so still owed: the next resume settles it.
-      }
+      } catch (_notWrittenSoStillOwedTheNextResumeSettles) {}
     },
     threadBack: (id, threadId, generation) => {
       if (!current(id, generation)) return;
@@ -712,21 +645,18 @@ export const makeStopMarks = (
       if (!current(id, generation)) throw new MarksNotKept("The machine is owed afresh.");
       const record = get(id);
       if (record.owedFolders?.includes(cwd) === true) return;
-      // Written before anything is put back there: a restart finds it owed, whatever was made.
       commit(id, { ...record, owedFolders: [...(record.owedFolders ?? []), cwd] });
     },
     folderDone: (id, cwd, generation) => {
       if (!current(id, generation)) return;
       const record = get(id);
       const owedThere = record.owedFolders?.includes(cwd) === true;
-      // Only where a folder there is checked (`onOtherDisk`): elsewhere being there is enough.
       const owed = record.owed;
       const confirm =
         owed !== undefined &&
         (owed.replaced === true || owed.unknown === true) &&
         owed.confirmed?.includes(cwd) !== true;
       if (!owedThere && !confirm) return;
-      // Lifts a debt: written first, the folder and its confirmation together.
       commit(id, {
         ...record,
         ...(owedThere
@@ -746,8 +676,6 @@ export const makeStopMarks = (
     },
     awaited: (id) => threadsAwaiting.get(id) ?? new Set(),
     cancel: (id) => {
-      // The stop is taken back; a resume the machine owes stays owed: its folders may not be
-      // there, whatever became of the stop.
       const { stop: _, expected: __, rested: ___, last: ____, ...rest } = get(id);
       cancels.set(id, (cancels.get(id) ?? 0) + 1);
       commit(id, rest);
@@ -786,7 +714,6 @@ export const makeStopMarks = (
       running.delete(id);
       savedDiffs.delete(id);
       threadsAwaiting.delete(id);
-      // What was kept of a machine removed: one left in the file is dropped at the next start.
       note(id, {});
     },
   };

@@ -14,10 +14,8 @@ import {
 
 import type { HostTheme, LookDefaults } from "./contract";
 
-/** Where Gram keeps the person's theme, as its theme store persists it. */
 const STORAGE_KEY = "gram.theme";
 
-/** The persisted state, or nothing where storage can't be read or holds no theme. */
 function storedState(): Record<string, unknown> {
   try {
     const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as {
@@ -27,16 +25,13 @@ function storedState(): Record<string, unknown> {
       ? (stored.state as Record<string, unknown>)
       : {};
   } catch {
-    // A private window, blocked site data or a damaged value: the defaults.
     return {};
   }
 }
 
-/** Whether the OS asks for `query`; no where the browser can't say. */
 const matches = (query: string) =>
   typeof window.matchMedia === "function" && window.matchMedia(query).matches;
 
-/** The OS's preferences, read once, as the page opens. */
 function systemPrefs(): SystemPrefs {
   return {
     prefersDark: matches("(prefers-color-scheme: dark)"),
@@ -64,7 +59,6 @@ export function applyGramTheme(theme?: HostTheme, defaults?: LookDefaults): void
   syncCustomPaletteStyle(document, custom);
   const palettes = [...PRESET_PALETTES, ...custom, ...hostPalettes(theme)];
   const root = document.documentElement;
-  // No transitions until the theme has painted, so nothing fades into it from the page's default.
   root.setAttribute("data-theme-booting", "");
   applyAttributes(
     root,
@@ -74,7 +68,6 @@ export function applyGramTheme(theme?: HostTheme, defaults?: LookDefaults): void
       palettes,
     ),
   );
-  // Two frames on, as Gram's own `ThemeRoot` clears it once the synced theme has painted.
   requestAnimationFrame(() =>
     requestAnimationFrame(() => root.removeAttribute("data-theme-booting")),
   );

@@ -9,7 +9,6 @@ export type TaskTarget =
 export const taskTargetKey = (target: TaskTarget): string =>
   target.kind === "workspace" ? `w:${target.workspaceId}` : `p:${target.projectId}`;
 
-/** Most useful first: bookmarked, then the most recently opened. */
 const byUse = (a: Project, b: Project) =>
   Number(b.bookmarked) - Number(a.bookmarked) || (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0);
 
@@ -26,7 +25,6 @@ export const reposWithoutWorkspace = (
   return projects.filter((p) => !taken.has(p.id)).toSorted(byUse);
 };
 
-/** Whether `target` still names something the picker offers. */
 const offered = (
   target: TaskTarget,
   workspaces: readonly WorkspaceState[],
@@ -77,7 +75,6 @@ export function startingTaskTarget(input: {
       having.find((state) => state.workspace.projectIds.length === 1) ??
       having.find((state) => state.workspace.homeProjectId === current.projectId) ??
       having[0];
-    // Also before the projects list has it, which would otherwise fall through to another target.
     return {
       target:
         mine === undefined ? { kind: "repo", projectId: current.projectId } : inWorkspace(mine),

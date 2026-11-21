@@ -25,7 +25,6 @@ export const FILE_MAX_BYTES = 512 * 1024;
 export const FILE_MAX_BYTES_CEILING = 2 * 1024 * 1024;
 const BINARY_SNIFF_BYTES = 8 * 1024;
 
-/** A filesystem failure as a contract error with a message fit for the user, never the raw error. */
 const fileError = (
   error: unknown,
   path: string,
@@ -88,13 +87,6 @@ export const resolveScoped = (
     return target;
   });
 
-/**
- * The first of `roots` that holds `path`, an absolute path: by where both really are, then, for a
- * root that no longer resolves, as written. `undefined` when none does. Where a path really is
- * (`physicalPathAsync`) doesn't depend on whether it exists, so `/var/x` and `/private/var/x`, or a
- * link to a checkout and the checkout, are one place, and a refusal says nothing about what is
- * outside a root.
- */
 const rootHolding = (
   path: string,
   roots: ReadonlyArray<string>,
@@ -127,7 +119,6 @@ export const resolveScopedIn = (
       : yield* resolveScoped(input, root);
   });
 
-/** `input` as a regular file inside `root`; a folder, a missing path and an escape are all none. */
 const fileIn = (input: string, root: string): Effect.Effect<Option.Option<string>> =>
   resolveScoped(input, root).pipe(
     Effect.flatMap((target) =>
@@ -184,10 +175,6 @@ export const mentionHints = (forms: ReadonlyArray<string>): string[] =>
         ...new Set(forms.map((form) => basename(form.replaceAll("\\", "/"))).filter(Boolean)),
       ];
 
-/**
- * `path` as `fileAnywhere` resolves it, lexically: `~` expanded and `.` segments and repeated
- * separators collapsed. A relative path is left as written.
- */
 const lexical = (path: string): string => {
   const expanded = expandHome(path.trim());
   return isAbsolute(expanded) ? resolve(expanded) : path;
@@ -202,12 +189,9 @@ const lexical = (path: string): string => {
  */
 export const writesPath = (text: string, forms: ReadonlyArray<string>): boolean => {
   const wanted = new Set(forms.flatMap((form) => [form, lexical(form)]));
-  // Compared lexically too: `fs.resolve` answers `/tmp/r/./a.md` with `/tmp/r/a.md`, which the
-  // preview then asks for.
   return writtenFileRefs(text).some((ref) => wanted.has(ref.path) || wanted.has(lexical(ref.path)));
 };
 
-/** `expanded`, an absolute path, when it names a regular file; for paths outside every root. */
 const fileAnywhere = (expanded: string): Effect.Effect<Option.Option<string>> => {
   const target = resolve(expanded);
   return attempt(() => stat(target), target).pipe(
@@ -267,8 +251,6 @@ export const resolveFileRefs = (
         if (absolute || /[\\/]/.test(path)) {
           return found.length === 1 ? [{ path, resolved: found[0]! }] : [];
         }
-        // A bare name is one file only if no root has another of that name at any depth. The
-        // listing leaves out ignored files, so what was found at a root counts beside it.
         const named = yield* byName(path);
         const matches = new Set(found);
         for (const { root, path: file } of named) {
@@ -283,7 +265,6 @@ export const resolveFileRefs = (
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-/** Folders first, then natural name order (`file2` before `file10`), case-insensitive. */
 const compareEntries = (
   a: { readonly name: string; readonly kind: FsEntry["kind"] },
   b: { readonly name: string; readonly kind: FsEntry["kind"] },
@@ -293,10 +274,6 @@ const compareEntries = (
 const kindOf = (dirent: Dirent): FsEntry["kind"] =>
   dirent.isSymbolicLink() ? "symlink" : dirent.isDirectory() ? "dir" : "file";
 
-/**
- * Names in `dir` that git ignores, in one `git check-ignore` call. Folders get a trailing `/` so
- * folder patterns like `dist/` match. Outside a repo, or when git fails, nothing is ignored.
- */
 const ignoredNames = (
   dir: string,
   entries: ReadonlyArray<{ readonly name: string; readonly kind: FsEntry["kind"] }>,
@@ -309,7 +286,6 @@ const ignoredNames = (
       stdin,
       maxOutputBytes: 64 * 1024 * 1024,
     }).pipe(Effect.option);
-    // Exit 1 means "nothing ignored"; anything else (128: not a repo) means no answer.
     if (Option.isNone(out) || (out.value.status !== 0 && out.value.status !== 1)) {
       return new Set<string>();
     }
@@ -380,7 +356,6 @@ export const openForRead = (
 const sameFile = (a: { dev: bigint; ino: bigint }, b: { dev: bigint; ino: bigint }) =>
   a.dev === b.dev && a.ino === b.ino;
 
-/** How much `readUpTo` reads at a time, so what it allocates follows the file, not the limit. */
 const READ_CHUNK = 64 * 1024;
 
 /**
@@ -439,7 +414,6 @@ export const openOutside = (
       return yield* new InvalidState({ message: `Not a regular file: ${target}` });
     }
     if (race.checked) yield* Effect.promise(race.checked);
-    // Windows has no O_NOFOLLOW; the identity checks below cover it there.
     const handle = yield* openForRead(
       real,
       constants.O_RDONLY |
@@ -475,7 +449,6 @@ export const readFilePreview = (
     const handle = opened ?? (yield* openForRead(path));
     const info = yield* attempt(() => handle.stat(), path);
     if (info.isDirectory()) return yield* new InvalidState({ message: `Is a folder: ${path}` });
-    // At most one byte past the limit, so a file that grew since `stat` is still cut off there.
     const bytes = yield* attempt(
       () => readUpTo(handle, info.size > maxBytes ? BINARY_SNIFF_BYTES : maxBytes + 1),
       path,
@@ -514,7 +487,6 @@ export const previewTarget = (
     if (!(yield* outsideRoots(path, roots))) {
       return { target: yield* resolveScopedIn(path, roots), outside: false };
     }
-    // Refused before the transcript is asked: whether a message names it changes nothing.
     if (isCredentialPath(path)) {
       return yield* new InvalidState({
         message: `Gram doesn't preview files that may hold credentials: ${path}`,

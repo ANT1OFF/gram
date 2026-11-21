@@ -21,10 +21,6 @@ import {
   type WorkerStateInput,
 } from "@gram/contracts";
 
-// The orchestration mock's ledger rows: a worker's state from its thread by the server's own rule
-// (`workerState`), its PR rows, and features as far along as their slowest worker (`featureState`).
-
-/** What the mock knows of a worker, as the facts the server's rule reads. */
 type MockWorkerFacts = Pick<ThreadSummary, "thread" | "status" | "git"> &
   Partial<Pick<ThreadSummary, "pendingRequests">>;
 
@@ -51,7 +47,6 @@ export const mockStateInput = (
     pendingRequestCount: summary.pendingRequests?.length ?? 0,
     ...(badge === undefined ? {} : { pr: prFactsOf(badge) }),
     reopened: reopenedSinceMerge(thread, [badge]),
-    // Known to have no GitHub remote: no PR can be opened, so done is delivered.
     canOpenPr: !(git?.repo === true && git.origin === undefined),
     ...(thread.lastError === undefined
       ? {}

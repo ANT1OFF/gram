@@ -1,9 +1,3 @@
-// electron-updater's AppImage updater behind `NativeUpdaterPort`, for the Linux AppImage. It checks
-// the feed and downloads the AppImage, checking the manifest's SHA-512. Installing is Gram's own:
-// electron-updater's would unlink the running AppImage and move its shared cache file into place,
-// so instead the verified snapshot is written beside the AppImage and renamed over it
-// (`installAppImage`), after the stop fence. Nothing here touches Squirrel.Mac or ShipIt: no
-// install is ever pending outside Gram, and the restart is Electron's own relaunch.
 import { AppImageUpdater } from "electron-updater";
 
 import { nativeChannelName } from "@gram/shell/modules/update";
@@ -42,12 +36,9 @@ export function createAppImageUpdaterPort(options: {
   const updater = options.updater ?? new AppImageUpdater();
   const install = options.install ?? installAppImage;
   let staging: Promise<void> | undefined;
-  // Nothing happens unasked: no download on a check, and electron-updater never installs on quit;
-  // its own install is never called.
   updater.autoDownload = false;
   updater.autoInstallOnAppQuit = false;
   updater.autoRunAppAfterInstall = false;
-  // Every download is the whole AppImage: no embedded block map is trusted.
   updater.disableDifferentialDownload = true;
   updater.fullChangelog = false;
   updater.logger = {
@@ -59,7 +50,6 @@ export function createAppImageUpdaterPort(options: {
   return {
     useFeed(channel) {
       updater.setFeedURL(feedOptions(options.feed, channel));
-      // Setting the channel allows downgrades; nothing here ever does.
       updater.channel = nativeChannelName(channel);
       updater.allowPrerelease = channel === "prerelease";
       updater.allowDowngrade = false;
@@ -97,7 +87,6 @@ export function createAppImageUpdaterPort(options: {
       return staging;
     },
 
-    // Gram's own rename is the whole install: nothing waits outside it.
     pendingInstall: async () => false,
     disarm: async () => true,
 

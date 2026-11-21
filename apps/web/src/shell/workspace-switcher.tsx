@@ -40,7 +40,6 @@ import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 
 import { TitlebarPopover } from "./titlebar-popover";
 
-/** ⌘1–⌘9 pick the workspaces in the switcher's order. */
 const WORKSPACE_KEYS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
 const ITEM = "data-switcher-item";
@@ -70,7 +69,6 @@ export function useWorkspaceKeys(): void {
   const workspaces = useWorkspaces();
   const switchTo = useSwitchWorkspace();
   const ref = useRef({ workspaces, switchTo });
-  // Before paint, not after: a key pressed as a workspace appears must already find it.
   useLayoutEffect(() => {
     ref.current = { workspaces, switchTo };
   });
@@ -96,7 +94,6 @@ export function useWorkspaceKeys(): void {
   }, [ref]);
 }
 
-/** Arrow keys, Home and End move between the popover's items. */
 const moveFocus = (event: KeyboardEvent<HTMLElement>) => {
   const items = [...event.currentTarget.querySelectorAll<HTMLElement>(`[${ITEM}]`)];
   const active = items.indexOf(document.activeElement as HTMLElement);
@@ -115,7 +112,6 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
   const api = useApi();
   const navigate = useNavigate();
   const workspaces = useWorkspaces();
-  // A solo thread in view is in no workspace, whichever one the Board would show.
   const inSolo = useViewSolo();
   const soloWord = useSoloWord();
   const viewed = useViewWorkspace();
@@ -129,7 +125,6 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
     queryFn: () => api.listProjects(),
   });
 
-  // Each workspace's share of Needs you, as its line in the overview counts it.
   const counts = useNeedsYouCounts().byWorkspace;
   const settle = useSettleRule();
   const solo = useMemo(
@@ -152,7 +147,6 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
   const name = inSolo ? (soloWord ?? "Solo") : (current?.workspace.name ?? "Threads");
-  // Its keys, as far as there are workspaces to take them: "⌘1–⌘3".
   const keyed = Math.min(workspaces.length, WORKSPACE_KEYS.length);
   const firstKey = shortcutHint("workspace.switch1", overrides);
   const lastKey = shortcutHint(`workspace.switch${keyed}`, overrides);
@@ -173,7 +167,6 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
           popup.querySelector<HTMLElement>(`[${ITEM}]`)
         )?.focus()
       }
-      // In a solo thread the bar names no workspace but Solo, so it says what Solo is.
       hint={
         inSolo
           ? `Solo: ${EXPLAIN.solo}\n${withHint("Switch workspace", switchKeys)}`
@@ -254,11 +247,8 @@ function SoloThreads({
   leading: boolean;
   onOpen: (threadId: ThreadId) => void;
 }) {
-  // Ages to the minute, while the popover is open.
   const now = useNow(true, undefined, 60_000);
   return (
-    // A column, so each row is the menu's width: a button on its own takes its words' width, and a
-    // long title then ran past the menu's edge with its age.
     <section aria-label="Solo threads" data-testid="solo-threads" className="flex flex-col">
       <h2
         className={cn(

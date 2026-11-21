@@ -1,4 +1,3 @@
-// The install record on disk: one small owner-only file, read once and removed at launch.
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open, rename, rm, writeFile } from "node:fs/promises";
@@ -20,7 +19,6 @@ export function nativeRecordStore(dir: string) {
     async read(): Promise<NativeInstallRecord | undefined> {
       let handle;
       try {
-        // Non-blocking, so a FIFO planted at the path can't hold the launch on its read.
         handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       } catch {
         return undefined;

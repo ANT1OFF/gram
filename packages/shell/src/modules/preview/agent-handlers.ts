@@ -1,6 +1,3 @@
-// What the Preview tab asks of the agent browser for a thread's page it drives: hand it back or
-// take it over, and the agent's own inspection and viewport, on loopback pages only.
-
 import type { WebContents } from "electron";
 
 import type {
@@ -55,7 +52,6 @@ export interface PreviewAgent {
   viewport(threadId: string, preset: BrowserViewportPreset): Promise<PaneResult>;
 }
 
-/** The thread's page an IPC message names, as the preview module finds it. */
 type PreviewLookup = (
   input: unknown,
   sender: WebContents,

@@ -1,6 +1,3 @@
-// A sign-in to a hosted server as this computer keeps it in its secrets (`hosted-device.ts`): who
-// signed in, the refresh token, and this device's id there. Read field by field, or not at all.
-
 import { createHash, randomBytes } from "node:crypto";
 
 import type { DeviceId } from "@gram/contracts";

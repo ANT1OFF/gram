@@ -46,7 +46,6 @@ export function TokenDialog({
 
   const captureId = phase.step === "run" ? phase.captureId : undefined;
   const state = phase.step === "run" ? phase.run.state : undefined;
-  // Polls the run while it waits for the token or sends it.
   useEffect(() => {
     if (captureId === undefined || (state !== "waiting" && state !== "sending")) return;
     let stopped = false;
@@ -67,7 +66,6 @@ export function TokenDialog({
   }, [captureId, state]);
 
   const close = () => {
-    // A run still waiting for its token stops with the dialog.
     if (captureId !== undefined && state === "waiting")
       void machinesApi.claudeToken.cancel(captureId);
     onClose();

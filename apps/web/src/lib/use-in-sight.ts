@@ -16,7 +16,6 @@ export function useInSight(anchor: RefObject<Element | null>): boolean {
     if (!element || typeof IntersectionObserver === "undefined") {
       return () => document.removeEventListener("visibilitychange", onVisibility);
     }
-    // An element under `display: none` has no box, so it stops intersecting the viewport.
     const observer = new IntersectionObserver((entries) => {
       const last = entries.at(-1);
       if (last) setShown(last.isIntersecting);

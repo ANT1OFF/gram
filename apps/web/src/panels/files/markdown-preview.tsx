@@ -9,10 +9,6 @@ import { resolveInCheckout } from "./relative-path";
 
 const LINK = "text-link underline underline-offset-2";
 
-/**
- * Raw HTML stays sanitized; harden is dropped because it rewrites `../x` to `/x` and blocks relative
- * images before the components below can resolve them. Those components are the URL policy here.
- */
 const REHYPE_PLUGINS: MessageResponseProps["rehypePlugins"] = (defaults) => [
   defaults.raw!,
   defaults.sanitize!,
@@ -22,7 +18,6 @@ interface MarkdownFile {
   threadId: ThreadId;
   root: string;
   path: string;
-  /** Outside the thread's checkouts, where only paths the thread's messages name can be read. */
   elsewhere?: boolean | undefined;
   onOpen: (target: string) => void;
 }
@@ -86,7 +81,6 @@ const COMPONENTS = { a: MarkdownLink, img: MarkdownImage };
 export function MarkdownPreview({ content, ...file }: MarkdownFile & { content: string }) {
   return (
     <MarkdownFileContext value={file}>
-      {/* A readable measure, centred once the panel is wide, at the transcript's body size. */}
       <div
         data-testid="markdown-preview"
         className="mx-auto w-full max-w-3xl px-6 py-5 text-reading leading-relaxed"

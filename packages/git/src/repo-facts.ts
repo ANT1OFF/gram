@@ -1,17 +1,3 @@
-// What the git sweep asks of every checkout on every pass although it rarely changes: the repo's
-// roots and `origin`'s URL. Each is a `git` run, and asked of eight checkouts every 15 s they were a
-// third of an idle server's processes. Kept per checkout they cost a few `stat`s instead:
-//
-// - the roots stand while the checkout, its toplevel and its git dir are all there and are still
-//   the same repo: a removed worktree is asked again (and found gone) on its next read, and a
-//   clone, `git init` or new worktree in its folder is read anew, its `.git` being another file;
-// - the URL stands while the repo's config files are unchanged, so `git remote set-url`, `remote
-//   add` or a new clone in the same folder is read at once.
-//
-// Both are asked again after `REPO_FACTS_TTL_MS` regardless, for config no stat sees (an include,
-// the global file). A path that isn't on disk is never kept, so fakes answering for made-up paths
-// see every call. Kept per `Proc`, as the PR resolver is, so a test's fake never shares a cache.
-
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import * as Effect from "effect/Effect";
@@ -29,17 +15,11 @@ interface Kept<A> {
 }
 
 interface Facts {
-  /** With the checkout's `rootsIdentity` as it was read. */
   readonly roots: Map<string, Kept<RepoRoots> & { readonly identity: string }>;
-  /** With the config stamp it was read under. */
   readonly origins: Map<string, Kept<string | undefined> & { readonly stamp: string }>;
-  /** `origin/<name>` tips by name list, with the stamp of their ref files it was read under. */
   readonly originTips: Map<string, Kept<ReadonlyMap<string, string>> & { readonly stamp: string }>;
-  /** `origin/HEAD`'s target, with the stamp of the ref file it was read under. */
   readonly originHeads: Map<string, Kept<string | undefined> & { readonly stamp: string }>;
-  /** Each checkout's HEAD as the PR lookup reads it, with the stamp of the files behind it. */
   readonly heads: Map<string, Kept<CheckoutHead> & { readonly stamp: string }>;
-  /** The upstream each checkout's last HEAD read named, kept or not: whose ref the next stamp covers. */
   readonly upstreams: Map<string, string>;
 }
 
@@ -68,7 +48,6 @@ const present = (path: string): boolean => {
   }
 };
 
-/** Identity of one file as of now: `-` when it doesn't exist, `undefined` when it can't be read. */
 const fileStamp = (path: string): string | undefined => {
   try {
     const stat = fs.statSync(path, { throwIfNoEntry: false });
@@ -78,24 +57,16 @@ const fileStamp = (path: string): string | undefined => {
   }
 };
 
-/**
- * What says `roots` still answer for `cwd`: where `cwd` resolves to, whether it holds a `.git` of its
- * own (a repo started below a toplevel), and which `.git` the toplevel has. A clone, `git init` or
- * worktree made where another was leaves a new `.git`, so another inode and birth time, even when
- * the old git dir is still there. `undefined` when any of it can't be read.
- */
 const rootsIdentity = (cwd: string, roots: RepoRoots): string | undefined => {
   const real = tryRealPathSync(cwd);
   if (real === undefined) return undefined;
   try {
-    // As bigints: on NTFS a file index past 2^53 would round as a number.
     const dotGit = fs.statSync(nodePath.join(roots.top, ".git"), {
       bigint: true,
       throwIfNoEntry: false,
     });
     if (dotGit === undefined) return undefined;
     const own = present(nodePath.join(cwd, ".git"));
-    // Where the filesystem keeps no birth time, the change time stands in, missing more often.
     const born = dotGit.birthtimeNs === 0n ? `c${dotGit.ctimeNs}` : `${dotGit.birthtimeNs}`;
     return `${real}|${own}|${dotGit.dev}:${dotGit.ino}:${born}`;
   } catch {
@@ -103,7 +74,6 @@ const rootsIdentity = (cwd: string, roots: RepoRoots): string | undefined => {
   }
 };
 
-/** The repo's own config files as of now: the shared one and the checkout's `config.worktree`. */
 const configStamp = (roots: RepoRoots): string | undefined => {
   const shared = fileStamp(nodePath.join(roots.common, "config"));
   const own = fileStamp(nodePath.join(roots.gitDir, "config.worktree"));
@@ -138,7 +108,6 @@ export const cachedRepoRoots = (
 const readOriginUrl = (cwd: string) =>
   git(cwd, ["config", "--get", "remote.origin.url"]).pipe(
     Effect.map((out) => ({
-      // 1 is "no such key": as much an answer as a URL.
       known: out.status === 0 || out.status === 1,
       url: out.status === 0 ? out.stdout.trim() || undefined : undefined,
     })),
@@ -153,7 +122,6 @@ export const cachedOriginUrl = (cwd: string): Effect.Effect<string | undefined, 
     if (!present(cwd)) return (yield* readOriginUrl(cwd)).url;
     const facts = factsOf(yield* Proc);
     const roots = yield* cachedRepoRoots(cwd).pipe(Effect.orElseSucceed(() => undefined));
-    // Stamped before the read, so a change landing during it is seen by the next one.
     const stamp = roots === undefined ? undefined : configStamp(roots);
     const kept = facts.origins.get(cwd);
     if (
@@ -188,7 +156,6 @@ export const cachedOriginHead = (cwd: string): Effect.Effect<string | undefined,
     if (!present(cwd)) return yield* readOriginHead(cwd);
     const facts = factsOf(yield* Proc);
     const roots = yield* cachedRepoRoots(cwd).pipe(Effect.orElseSucceed(() => undefined));
-    // Stamped before the read, so a change landing during it is seen by the next one.
     const ref =
       roots === undefined
         ? undefined
@@ -210,12 +177,6 @@ export const cachedOriginHead = (cwd: string): Effect.Effect<string | undefined,
     return head;
   });
 
-/**
- * Where `refs/remotes/origin/<name>` for each of `names` stands on disk: its loose file and the
- * repo's `packed-refs`. Git writes a ref by renaming a new file over it and packs refs by rewriting
- * `packed-refs`, so any change to a tip changes this. `undefined` for a ref store no stat follows
- * (reftable) or a stamp that can't be read.
- */
 const tipsStamp = (roots: RepoRoots, names: ReadonlyArray<string>): string | undefined => {
   if (fileStamp(nodePath.join(roots.common, "reftable")) !== "-") return undefined;
   const files = [
@@ -240,7 +201,6 @@ export const cachedOriginTips = <E>(
     if (!present(cwd)) return yield* read;
     const facts = factsOf(yield* Proc);
     const roots = yield* cachedRepoRoots(cwd).pipe(Effect.orElseSucceed(() => undefined));
-    // Stamped before the read, so a change landing during it is seen by the next one.
     const stamp = roots === undefined ? undefined : tipsStamp(roots, names);
     const key = `${cwd}\0${names.join("\0")}`;
     const kept = facts.originTips.get(key);
@@ -273,13 +233,6 @@ export interface CheckoutHead {
   readonly branch: string;
 }
 
-/**
- * Where everything `CheckoutHead` comes from stands on disk: the checkout's `HEAD`, the ref it names,
- * the config that says its upstream, and that upstream's ref, guessed from the last read (a remote's
- * or, for a local upstream, a branch's). Git rewrites each of these by renaming a new file over it,
- * so a commit, checkout, reset, fetch, push or `--set-upstream-to` changes it. `undefined` for a ref
- * store no stat follows (reftable) or a stamp that can't be read.
- */
 const headStamp = (roots: RepoRoots, upstream: string | undefined): string | undefined => {
   if (fileStamp(nodePath.join(roots.common, "reftable")) !== "-") return undefined;
   const headFile = nodePath.join(roots.gitDir, "HEAD");
@@ -324,7 +277,6 @@ export const cachedCheckoutHead = <E>(
     const facts = factsOf(yield* Proc);
     const roots = yield* cachedRepoRoots(cwd).pipe(Effect.orElseSucceed(() => undefined));
     const guess = facts.upstreams.get(cwd);
-    // Stamped before the read, so a change landing during it is seen by the next one.
     const stamp = roots === undefined ? undefined : headStamp(roots, guess);
     const kept = facts.heads.get(cwd);
     if (

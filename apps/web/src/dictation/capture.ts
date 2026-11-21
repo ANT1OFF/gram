@@ -31,7 +31,6 @@ export interface Microphone {
 interface Graph {
   readonly context: AudioContext;
   readonly node: AudioWorkletNode;
-  /** Has the worklet post what it gathered; resolves once the page has it. */
   flush(): Promise<void>;
 }
 
@@ -57,7 +56,6 @@ const tell = (node: AudioWorkletNode, message: "start" | "stop" | "flush") =>
 export function createMicrophone(): Microphone {
   let built: Promise<Graph> | undefined;
   let opened: Promise<Open> | undefined;
-  /** Where frames go now; with none, they are a held microphone's pre-roll. */
   let sink: ((samples: Float32Array) => void) | undefined;
   let preRoll: Float32Array[] = [];
   let keeping = false;
@@ -71,13 +69,11 @@ export function createMicrophone(): Microphone {
   };
 
   const build = async (): Promise<Graph> => {
-    // Chromium resamples the device to the context's rate, so no resampler is needed here.
     const context = new AudioContext({
       sampleRate: SPEECH_SAMPLE_RATE,
       latencyHint: "interactive",
     });
     try {
-      // Built by Vite as a module of its own: the audio thread loads it by URL, never this bundle.
       const { default: workletUrl } = await import("./capture-worklet?worker&url");
       await context.audioWorklet.addModule(workletUrl);
       const node = new AudioWorkletNode(context, "gram-capture", {
@@ -90,7 +86,6 @@ export function createMicrophone(): Microphone {
         else onFrame(event.data);
       });
       node.port.start();
-      // Running, a context holds the output device open; a press resumes it.
       if (opened === undefined) await context.suspend();
       return {
         context,
@@ -120,8 +115,6 @@ export function createMicrophone(): Microphone {
   };
 
   const open = async (): Promise<Open> => {
-    // Together: the sooner the microphone runs, the less of the first word is lost, and a graph
-    // warmed at the composer's focus is already here.
     const [stream, audio] = await Promise.allSettled([
       navigator.mediaDevices.getUserMedia({
         audio: {
@@ -149,7 +142,6 @@ export function createMicrophone(): Microphone {
   const close = ({ stream, source, graph: { context, node } }: Open) => {
     source.disconnect();
     for (const track of stream.getTracks()) track.stop();
-    // Unless a press has opened it again already.
     if (opened !== undefined) return;
     tell(node, "stop");
     void context.suspend();
@@ -193,17 +185,14 @@ export function createMicrophone(): Microphone {
     ready: () => {
       if (!keeping || sink !== undefined) return;
       hold();
-      // A held microphone is a nicety: the press that needs it reports what's wrong.
       acquire().catch((error: unknown) => console.warn("dictation", error));
     },
     start: async (deliver) => {
       clearTimeout(holdTimer);
-      // A device unplugged while held ended its stream: open whatever is there now.
       if (opened !== undefined && sink === undefined && !(await live())) letGo();
       const held = preRoll;
       preRoll = [];
       for (const frame of held) deliver(frame);
-      // From here, even before the microphone answers, so no frame goes to the pre-roll.
       sink = deliver;
       let audio: Open;
       try {
@@ -213,7 +202,6 @@ export function createMicrophone(): Microphone {
         throw error;
       }
       return {
-        // Another composer's press took the microphone over; this one's stop is no longer its.
         flush: () => (sink === deliver ? audio.graph.flush() : Promise.resolve()),
         stop: () => {
           if (sink !== deliver) return;

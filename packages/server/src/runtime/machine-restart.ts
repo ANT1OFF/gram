@@ -1,7 +1,3 @@
-// A joined machine that restarted under a thread's session (`EndedEvent.restartedMachine`): what
-// the thread does next. The conversation is still on that machine, so a turn the restart cut short
-// goes on there in the same Claude session, unless the user is the one it waits on.
-
 /** The `noticeKeys` key of the queued note a continued turn starts with. */
 export const MACHINE_RESTART_KEY = "machine-restart";
 

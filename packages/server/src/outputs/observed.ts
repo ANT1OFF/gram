@@ -1,7 +1,3 @@
-// Which transcript chunks say a thread produced a file, read as the runtime folds them: no file is
-// opened here. The runtime hands each one to its observers (`RuntimeObserver.onOutput`), and
-// `WorkspaceOutputs` checks and records it.
-
 import { outputKindOf, type GramUIMessageChunk, type OutputSource } from "@gram/contracts";
 import { fileURLToPath } from "node:url";
 
@@ -12,7 +8,6 @@ export interface ObservedOutput {
   readonly source: OutputSource;
 }
 
-/** A tool part as the accumulator holds it. */
 type ToolPart = Readonly<Record<string, unknown>> & { readonly type: string };
 
 const toolName = (part: ToolPart): string | undefined => {

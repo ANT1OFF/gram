@@ -19,19 +19,11 @@ import {
 import { cn } from "@/lib/utils";
 import { painted } from "@/lib/timers";
 
-// A list that draws only the rows near its scroller's view, inside a scroller it shares with other
-// content (the overview's sections, the Board's lines). Rows keep their own height, measured as they
-// draw. The row last focused and one being dragged stay drawn wherever they scroll to, so focus that
-// comes back to a row and a drag's end both still find it. Tab and Shift+Tab go on to the next or
-// previous row by index, drawing it first; other keys that walk rows do the same through
-// `virtualRowOf` and `revealVirtualRow`, since a row's neighbour may not be drawn.
-
 /** Marks a virtualized list's root; each drawn row carries its index as `data-index`. */
 export const VIRTUAL_LIST = "data-virtual-list";
 
 interface ListHandle {
   readonly count: number;
-  /** The row that counts as the current one, or -1. */
   readonly current: number;
   scrollTo: (index: number) => void;
 }
@@ -49,13 +41,11 @@ export interface RowPlace {
 const TABBABLE =
   'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
-/** What Tab stops on in `row`. */
 const tabStops = (row: Element): HTMLElement[] =>
   [...row.querySelectorAll<HTMLElement>(TABBABLE)].filter(
     (element) => element.tabIndex >= 0 && element.closest("[hidden], [inert]") === null,
   );
 
-/** The nearest ancestor that scrolls vertically. */
 const scrollParent = (element: HTMLElement | null): HTMLElement | null => {
   for (let at = element?.parentElement ?? null; at !== null; at = at.parentElement) {
     const { overflowY } = getComputedStyle(at);
@@ -64,7 +54,6 @@ const scrollParent = (element: HTMLElement | null): HTMLElement | null => {
   return null;
 };
 
-/** Where `list` starts in its scroller's content; undefined while it isn't laid out. */
 const offsetIn = (list: HTMLElement, scroller: HTMLElement): number | undefined => {
   if (list.getClientRects().length === 0) return undefined;
   return (
@@ -72,12 +61,6 @@ const offsetIn = (list: HTMLElement, scroller: HTMLElement): number | undefined 
   );
 };
 
-/**
- * A drawn row's height to the fraction of a pixel, as the page lays it out: the virtualizer's own
- * measure rounds it, and a 27.5 px row placed at 28 px would push each row under it half a pixel
- * further down. While the list is hidden (a folded section, the closed Parked line) its rows have
- * no box, and keep what was known of them rather than 0, so showing the list moves nothing.
- */
 function measureShown(
   element: HTMLElement,
   entry: ResizeObserverEntry | undefined,
@@ -89,16 +72,12 @@ function measureShown(
     return instance.itemSizeCache.get(key) ?? instance.options.estimateSize(index);
   }
   const size = entry?.borderBoxSize[0]?.blockSize ?? element.getBoundingClientRect().height;
-  // The virtualizer keeps a measure only when it differs from the size it assumed. A row as tall
-  // as the estimate would then follow the estimate when it changes (the drawn rows' average), so
-  // it is kept here.
   if (!instance.itemSizeCache.has(key) && instance.measurementsCache[index]?.size === size) {
     instance.itemSizeCache.set(key, size);
   }
   return size;
 }
 
-/** The average height of the rows measured so far, or undefined before any is. */
 function typicalSize(
   instance: Virtualizer<HTMLElement, HTMLElement> | undefined,
 ): number | undefined {
@@ -108,10 +87,6 @@ function typicalSize(
   return sum / instance.itemSizeCache.size;
 }
 
-/**
- * The average height of the measured rows of each size class (`sizeClass`), so a few rows of one
- * kind (a two-line row) don't change the guess for the many of another not drawn yet.
- */
 function typicalByClass<T>(
   instance: Virtualizer<HTMLElement, HTMLElement> | undefined,
   items: readonly T[],
@@ -171,12 +146,10 @@ export function VirtualRows<T>({
   className?: string;
   children: (item: T, index: number, place: RowPlace) => ReactNode;
 }) {
-  // The virtualizer is a mutable instance; the compiler must not memoize around it.
   "use no memo";
   const root = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLElement | null>(null);
   const [margin, setMargin] = useState(0);
-  // By key: the rows reorder (latest first) under them.
   const [focused, setFocused] = useState<string>();
   const [dragged, setDragged] = useState<string>();
   const keep = new Set<number>();
@@ -208,9 +181,6 @@ export function VirtualRows<T>({
       elementScroll(offset, options, instance);
       scrollWritten.current?.();
     },
-    // Rows not drawn yet are as tall as the drawn ones are on average: the given estimate is only a
-    // first guess, and each row off from it by half a pixel moves the rows under it.
-    // With size classes, a row is guessed from the drawn rows of its own kind, when any is drawn.
     estimateSize: (index) => {
       const item = items[index];
       if (byClass === undefined || sizeClass === undefined || item === undefined) return typical;
@@ -225,15 +195,10 @@ export function VirtualRows<T>({
   });
   virtualizerRef.current = virtualizer;
 
-  // What sits above the list in the scroller moves where it starts: a section folding, a workspace
-  // opening, the window resizing. Scrolled into the list, the rows in view stay where they are, as
-  // the browser's scroll anchoring keeps rows in flow, which it doesn't do for placed ones.
   useLayoutEffect(() => {
     const list = root.current;
     const parent = (scroller.current ??= scrollParent(list));
     if (list === null || parent === null) return;
-    // Keep content and scroll offsets separately: a queued event must not absorb content that
-    // grew since the write. Row-size corrections also update the scroll offset synchronously.
     let seenOffset: number | undefined;
     let seenScroll = parent.scrollTop;
     scrollWritten.current = () => {
@@ -246,9 +211,6 @@ export function VirtualRows<T>({
       const at = offset - parent.scrollTop;
       if (seen !== undefined && seen < 0 && Math.abs(at - seen) >= 0.5) {
         parent.scrollTop += at - seen;
-        // Report the compensation before another row measurement can write a correction from
-        // the old offset. This is an anchor adjustment, not an absolute scroll command, so row
-        // height corrections must still apply while the native scroll event is pending.
         offsetChanged.current?.(parent.scrollTop, virtualizer.isScrolling);
       }
       seenScroll = parent.scrollTop;
@@ -273,7 +235,6 @@ export function VirtualRows<T>({
     observer.observe(list);
     observer.observe(parent);
     for (const child of parent.children) observer.observe(child);
-    // A section turned on or off in Settings comes and goes as a child of its own.
     const added = new MutationObserver((records) => {
       for (const record of records) {
         for (const node of record.addedNodes) if (node instanceof Element) observer.observe(node);
@@ -310,8 +271,6 @@ export function VirtualRows<T>({
     return item === undefined ? undefined : rowKey(item);
   };
 
-  // Tab from a row's last stop goes to the next row's first, drawn if it wasn't; Shift+Tab back.
-  // Out of the list's ends, the page's own order takes over.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Tab" || event.altKey || event.metaKey || event.ctrlKey) return;
     const list = root.current;
@@ -329,8 +288,6 @@ export function VirtualRows<T>({
     });
   };
 
-  // Tabbed into from outside, the page's order lands on the first (or last) drawn row, which may
-  // be far from the list's first (or last): the focus goes on to that one instead.
   const enterAtEnd = (target: EventTarget, from: EventTarget | null) => {
     const list = root.current;
     const row = rowAt(target);

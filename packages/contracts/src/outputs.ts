@@ -1,8 +1,3 @@
-// What a workspace's threads produced, in one place: screenshots and recordings the browser tools
-// saved, images tool calls returned, files an agent sent the user, and media or documents it wrote.
-// Recorded as each lands (the server's `outputs/`), never by scanning a disk. An entry names the
-// file and the thread that made it; its bytes are read through that thread's own scoped paths
-// (`fs.image`, `attachment.read`, the Files panel), so this list grants nothing.
 import * as Schema from "effect/Schema";
 import { ThreadId, WorkspaceId } from "./ids.ts";
 

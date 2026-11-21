@@ -10,12 +10,7 @@ import { DialogShell } from "@/thread/dialog-shell";
 
 import { shellAsksAboutLinks, usePageTrustedLinks } from "./trusted-links";
 
-/**
- * "Open external link?" for a link in a message, in a browser. It leads with the host the link
- * really goes to, so a look-alike stands out, and offers to trust that exact host from then on.
- */
 function LinkDialog({ isOpen, ...props }: LinkSafetyModalProps) {
-  // Mounted only while open, so the checkbox starts clear every time.
   return isOpen ? <OpenLinkDialog {...props} /> : null;
 }
 
@@ -107,7 +102,6 @@ const useLinkQuestion = create<{ pending: PendingQuestion | undefined }>(() => (
  */
 export function askToOpen(url: string): Promise<boolean> {
   if (isTrustedLink(url, usePageTrustedLinks.getState().hosts)) return Promise.resolve(true);
-  // A new question replaces one still unanswered, which then opens nothing.
   useLinkQuestion.getState().pending?.answer(false);
   return new Promise((resolve) => {
     let answered = false;

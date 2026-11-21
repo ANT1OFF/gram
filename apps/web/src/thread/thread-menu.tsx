@@ -27,7 +27,6 @@ import { useSwitchOffer } from "./use-switch-offer";
 import { useThreadMove } from "./use-thread-move";
 import { useForkAvailability, useForkThread, WORKTREE_NOTICE } from "./use-fork";
 
-/** The dialogs the menu opens, each loaded the first time it's asked for or once the shell is idle. */
 const forkDialog = lazyPart(() => import("./fork-dialog"));
 
 /**
@@ -46,15 +45,12 @@ export function useThreadMenu(threadId: ThreadId): {
 } {
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const folder = thread?.checkout.path;
-  // Any thread moves to the other agent from here: a plain thread or worker from the composer's chip
-  // too, the orchestrator from the workspace settings' Models too.
   const offer = useSwitchOffer(threadId);
   const openInEditor = useOpenInEditor();
   const local = useOpensLocally();
   const { available, reason } = useForkAvailability(threadId);
   const { fork, error, clearError } = useForkThread(threadId);
   const { mover, view } = useThreadMove();
-  // Offered once the desktop app can send a thread and has read where; greyed with the reason.
   const moveRefusal =
     thread === undefined || view === undefined ? undefined : threadMoveRefusal(thread, view);
   const moveOffered = mover !== undefined && thread !== undefined && view !== undefined;
@@ -79,7 +75,6 @@ export function useThreadMenu(threadId: ThreadId): {
               {offer.fresh === undefined ? continueLabel(offer.to) : freshLabel(offer.to)}…
             </Menu.Item>
           ) : (
-            // Greyed, it says why on hover, in the words the server would refuse with.
             <Hint
               label={offer.refusal}
               side="bottom"
@@ -195,7 +190,6 @@ export function AllActivityItem({
   return (
     <Menu.CheckboxItem
       data-testid="menu-all-activity"
-      // One toggle, so the menu closes on it and the chat shows the change at once.
       closeOnClick
       className={className}
       checked={on}

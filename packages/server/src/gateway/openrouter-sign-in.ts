@@ -66,7 +66,6 @@ export const listenForCode = (timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<CodeListe
     const code = new Promise<string>((resolve, reject) => {
       settle = { resolve, reject };
     });
-    // A caller that never awaits the code mustn't see an unhandled rejection.
     code.catch(() => undefined);
     let server: Server | undefined;
     const close = () => {

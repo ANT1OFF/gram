@@ -11,10 +11,6 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { filesWord } from "./saved-work-words";
 
-// What was last saved of a worker's work on a joined machine (`Thread.savedWork`): the time, the
-// files and their diff. The machine-lost card names it, as do the task's card and the worker's row,
-// and View diff opens the diff as the machine last sent it, which is readable while it is away.
-
 /** View diff's dialog (`saved-diff-dialog.tsx`), loaded when first opened. */
 export const SavedDiffDialog = lazy(() => import("./saved-diff-dialog"));
 
@@ -56,7 +52,6 @@ export function SavedFiles({ saved, shown = 2 }: { saved: SavedWork; shown?: num
         <li className="flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-muted-foreground">
           <FileText aria-hidden className="size-icon-row shrink-0" />
           <span className="min-w-0 flex-1 truncate">and {filesWord(restCount)} more</span>
-          {/* The ones past what the record lists have no counts here; the diff has them. */}
           {saved.more === 0 && <SavedLines saved={restLines} />}
         </li>
       )}

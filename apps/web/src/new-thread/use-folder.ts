@@ -13,10 +13,6 @@ import { baseName, splitForCompletion } from "./path";
 export const withTrailingSlash = (path: string): string =>
   path === "" || /[\\/]$/.test(path) ? path : `${path}/`;
 
-/**
- * Where folders are listed: this Mac's, or a joined machine's through its host (`hostId`), never
- * this disk for that. Each has its own query key, so the two never share an answer.
- */
 const browsing = (api: Api, hostId: HostId | undefined) =>
   hostId === undefined
     ? {

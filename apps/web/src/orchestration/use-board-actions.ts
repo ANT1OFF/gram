@@ -32,7 +32,6 @@ import {
 } from "./stage-model";
 import { stageHolds } from "./use-orchestration";
 
-/** A failure of something done with one click, where there is no form to say it in. */
 const notifyError = (title: string, error: unknown) =>
   useThreadsStore
     .getState()
@@ -90,8 +89,6 @@ export function useSetStage(workspaceId: WorkspaceId) {
       hold.release();
       queryClient.setQueryData(workspacesKey, workspaces);
       queryClient.setQueryData(ledgerKey, ledger);
-      // What was put back may itself be stale by now: a ledger streamed in, or the workspaces were
-      // read again, while the call ran.
       void queryClient.invalidateQueries({ queryKey: ledgerKey });
       void queryClient.invalidateQueries({ queryKey: workspacesKey });
       notifyError("Couldn't set the stage", error);
@@ -143,7 +140,6 @@ export function useSetGroup(workspaceId: WorkspaceId) {
 
 interface HandoffState {
   readonly marks: Readonly<Record<string, HandoffMark>>;
-  /** The workspace whose "Fresh session" confirmation is open, from a menu or the palette. */
   readonly confirming: WorkspaceId | undefined;
   mark(workspaceId: WorkspaceId, mark: HandoffMark): void;
   clear(workspaceId: WorkspaceId): void;
@@ -185,15 +181,10 @@ export function useHandoff(state: WorkspaceState | undefined) {
   const mark = useHandoffStore((s) =>
     workspaceId === undefined ? undefined : s.marks[workspaceId],
   );
-  // Ticks only while a handoff is claimed, so the claim is dropped when it has run too long.
   const now = useNow(mark !== undefined, undefined, 5_000);
   const running = handoffRunning(mark, summary?.thread, now);
   const starting = useRef(false);
 
-  /**
-   * `checkpoint: false` skips saving to memory first: a hard cut. `model` opens the fresh session
-   * on it, for a model the running session can't carry over to.
-   */
   const start = async (options?: {
     readonly checkpoint?: boolean;
     readonly model?: ModelRef;
@@ -227,10 +218,6 @@ export function useHandoff(state: WorkspaceState | undefined) {
   };
 }
 
-/**
- * Sends the orchestrator one of the board's requests as a message of the user's: queued behind its
- * current turn when it is busy, never steered into it. Resolves to whether it was queued.
- */
 const sendRequest = async (api: Api, orchestratorId: ThreadId, text: string): Promise<boolean> =>
   (await api.send(orchestratorId, { text })).queued;
 
@@ -245,11 +232,6 @@ export const sendDiscover = (api: Api, orchestratorId: ThreadId): Promise<boolea
 /** How long Tidy up or Discover shows that it went, before it can be pressed again. */
 export const TIDY_SENT_MS = 2_500;
 
-/**
- * A board request (Tidy up, Discover): why it can't be sent, if it can't, whether it has just gone
- * (`sent` or `queued`, for `TIDY_SENT_MS`), whether it is resting (pending or just gone, so a
- * second press can't queue a second one), and the call. A failure is a toast.
- */
 function useOrchestratorRequest(
   state: WorkspaceState,
   send: (api: Api, orchestratorId: ThreadId) => Promise<boolean>,
@@ -301,18 +283,12 @@ export const useDiscover = (state: WorkspaceState) =>
 
 const NO_QUESTIONS: readonly MemoryQuestion[] = [];
 
-/**
- * Every entry of the workspace's `questions.md`, open and closed. A
- * workspace with no such file, or no memory yet, has none: that the read failed is not worth a word
- * on a board header.
- */
 const questionsQuery = (api: Api, workspaceId: WorkspaceId | undefined) => ({
   queryKey: ["memory", workspaceId, "questions"],
   queryFn: async () => {
     try {
       return parseQuestions((await api.readMemory(workspaceId!, QUESTIONS_FILE)).content);
     } catch {
-      // No questions.md is the ordinary case, and the Memory view is where a real fault is said.
       return NO_QUESTIONS;
     }
   },
@@ -331,7 +307,6 @@ export function useOpenQuestionCounts(
   workspaceIds: readonly WorkspaceId[],
 ): ReadonlyMap<WorkspaceId, number> {
   const api = useApi();
-  // As one string, so the map only changes when a count does.
   const counts = useQueries({
     queries: workspaceIds.map((id) => questionsQuery(api, id)),
     combine: (results) =>

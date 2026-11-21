@@ -27,7 +27,6 @@ import type { ProjectsApi } from "./types";
  */
 export function createProjectsMock(world: MockWorld) {
   let holdClones = false;
-  /** Which repository each mock clone is of, by folder, so a second clone of it is adopted. */
   const clones = new Map<string, string>();
   const find = (match: (project: ReturnType<MockWorld["projects"]>[number]) => boolean) =>
     world.projects().find(match);
@@ -39,7 +38,6 @@ export function createProjectsMock(world: MockWorld) {
     }
     const existing = find((p) => p.root === path);
     if (existing) return existing;
-    // Registered, not opened: the server leaves it out of the recents too.
     const { lastOpenedAt: _unopened, ...made } = mockProject(path, `p-${world.ids()}`);
     const trust = options?.trust;
     const added =
@@ -91,7 +89,6 @@ export function createProjectsMock(world: MockWorld) {
           `${target} already exists and isn't a clone of ${label}. Move it, or change where new clones go in Settings → General.`,
         );
       }
-      // The mock's GitHub has every repository but one, for the failure path.
       if (remote.repo === "missing") {
         throw Object.assign(
           new Error(
@@ -104,7 +101,6 @@ export function createProjectsMock(world: MockWorld) {
       clones.set(target, remoteKey(remote));
       return addProject(target);
     },
-    // A clone's origin is what it was cloned from; every other mock repository is EXAMPLE's.
     projectOrigins: async (projectIds) => ({
       origins: world.projects().flatMap((project) => {
         if (!projectIds.includes(project.id)) return [];

@@ -35,16 +35,10 @@ import {
   type HelperScheduler,
 } from "./scheduler.ts";
 
-/** Bumped whenever the prompt or the output shape changes, so stored recaps are made again. */
 const RECAP_PROMPT_VERSION = 2;
 
-/** The last turns a recap reads, as the design's "the last three turns". */
 const RECAP_TURNS = 3;
 
-/**
- * Room for the recent turns, about 6k of the recap's 8k-token budget; the opening, the plan and the
- * facts take the rest.
- */
 const CONVERSATION_MAX_CHARS = 24_000;
 const OPENING_MAX_CHARS = 2_000;
 
@@ -135,7 +129,6 @@ export const validRecap = (raw: ThreadRecap, material: RecapMaterial): ThreadRec
   };
 };
 
-/** Whether a user message's text can open the recap: one that says something, and no command. */
 const openingText = (text: string) => text !== "" && !text.startsWith("/");
 
 const textOf = (message: GramUIMessage | undefined): string =>
@@ -175,7 +168,6 @@ export interface RecapDeps {
   readonly focused: (threadId: ThreadId) => Effect.Effect<boolean>;
 }
 
-/** A recap with the plan and PRs it was made from, as `replyBasis` of them, for checking its replies. */
 interface MadeRecap {
   readonly view: RecapView;
   readonly basis: string;
@@ -197,11 +189,6 @@ const describeResult = (result: HelperResult<unknown>): string =>
       ? `failed (${result.failure})`
       : result._tag.toLowerCase();
 
-/**
- * When the thread last settled: its last turn's end. `lastActivityAt` alone won't do, since it moves
- * when a turn starts and not when its reply lands, so a long turn that finished while you were
- * away would look seen.
- */
 const settledAt = (thread: Thread, last: { readonly endedAt: number | undefined } | undefined) =>
   Math.max(thread.lastActivityAt, last?.endedAt ?? 0);
 
@@ -211,14 +198,10 @@ export const makeRecaps = (deps: RecapDeps): Recaps => {
     Effect.gen(function* () {
       const threadId = thread.id;
       const rev = yield* deps.feedRev(threadId);
-      // A fork's copied conversation has no turns of its own yet, and is still worth recapping.
       const turnId = (yield* deps.lastTurn(threadId))?.id;
       if (rev === undefined) return undefined;
-      // Without a turn, only a conversation copied in makes it more than an empty thread.
       const last = yield* deps.recentMessages(threadId, 1);
       if (turnId === undefined && last.length === 0) return undefined;
-      // The agent recapped the turn itself with `wrap_up`: that is the recap, and no helper is
-      // asked, so it needs neither the helper's consent nor its call.
       const wrapUp = turnId === undefined ? undefined : latestWrapUp(last, turnId);
       if (wrapUp !== undefined) {
         return {
@@ -240,10 +223,8 @@ export const makeRecaps = (deps: RecapDeps): Recaps => {
           : { number: git.pr.number, state: git.pr.state, title: git.pr.title };
       const prs = yield* deps.prContext(thread, git);
       const plan = yield* deps.plan(threadId);
-      // Read only when the scheduler runs the job or its answer needs checking, and then once.
       const material = yield* Effect.cached(
         Effect.gen(function* () {
-          // The opening is the oldest that isn't a command; the latest, the newest that says anything.
           const opening = (yield* deps.userMessages(threadId, {
             from: "oldest",
             count: 1,
@@ -331,7 +312,6 @@ export const makeRecaps = (deps: RecapDeps): Recaps => {
       const thread = yield* deps.getThread(threadId);
       if (BUSY.has(yield* deps.status(threadId)) || (yield* deps.focused(threadId))) return;
       const settled = settledAt(thread, yield* deps.lastTurn(threadId));
-      // Seen since it settled: opening it again shows nothing new, so there's nothing to prepare.
       if (thread.lastViewedAt !== undefined && thread.lastViewedAt >= settled) return;
       yield* run(thread, "background", settled);
     }).pipe(

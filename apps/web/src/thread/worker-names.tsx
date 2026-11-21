@@ -4,10 +4,6 @@ import type { ReactNode } from "react";
 
 import { useBesideLink } from "@/orchestration/beside-link";
 
-// Worker names in an orchestrator's messages as links to the worker views ("From a message",
-// buildout "Reaching workers"). A rehype pass after the PR references: it marks each whole-word
-// occurrence of a worker's title, longest first, outside code, links and headings.
-
 export const WORKER_REF_TAG = "worker-ref";
 
 interface HastText {
@@ -47,12 +43,10 @@ const OPAQUE = new Set([
   "h6",
 ]);
 
-/** Names shorter than this read as ordinary words too often to link. */
 const MIN_NAME = 4;
 
 const escape = (text: string) => text.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** One pattern for every name, longest first, matching whole words only. */
 const workerNamePattern = (names: readonly WorkerNameRef[]): RegExp | undefined => {
   const usable = names
     .filter((name) => name.title.trim().length >= MIN_NAME)
@@ -122,7 +116,6 @@ function WorkerRef({
   return <WorkerRefLink threadId={id as ThreadId}>{children}</WorkerRefLink>;
 }
 
-/** A worker's name as a link: beside its orchestrator's chat on a plain click, its view otherwise. */
 function WorkerRefLink({ threadId, children }: { threadId: ThreadId; children?: ReactNode }) {
   const beside = useBesideLink(threadId);
   return (

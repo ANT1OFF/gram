@@ -3,7 +3,6 @@ import type { ShortcutGroup } from "@/keyboard/registry";
 
 const GROUP_ORDER: ShortcutGroup[] = ["App", "Navigation", "Thread", "Composer", "Terminal"];
 
-/** Numbered shortcut families the overlay lists on one row. */
 const FAMILIES = [
   { prefix: "pane.move-", label: "Move focus between panes" },
   { prefix: "layout.preset", label: "Layout preset 1–6" },
@@ -12,7 +11,6 @@ const FAMILIES = [
 interface ShortcutRow {
   id: string;
   label: string;
-  /** One chord, or each member's chord for a family. */
   keys: readonly string[];
 }
 
@@ -54,7 +52,6 @@ export function groupShortcuts(bindings: readonly BindingRow[]): ShortcutSection
   });
 }
 
-/** Words a chord answers to beyond its glyphs: `cmd k`, `option ]`, `ctrl shift tab`. */
 const keyWords = (keys: string): string =>
   keys
     .toLowerCase()

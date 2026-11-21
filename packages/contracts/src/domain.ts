@@ -35,9 +35,6 @@ import { RunWatch } from "./run-watch.ts";
 import { ReviewVerdict } from "./review.ts";
 import { CompactionActivity, ThreadStatus } from "./thread-status.ts";
 
-// ---------------------------------------------------------------------------------------------
-// Agents, models, profiles
-
 import { AgentKind } from "./agent-kind.ts";
 export { AgentKind };
 
@@ -176,13 +173,8 @@ export const helperContextAllowed = (profile: GatewayProfile, kind: string): boo
   profile.helperContext?.baseURL === profile.baseURL &&
   (profile.helperContext.scope === "conversation" || kind === "title");
 
-/** LiteLLM modes an agent can hold a conversation in. */
 const CONVERSATION_MODES: ReadonlySet<string> = new Set(["chat", "responses"]);
 
-/**
- * Ids that name a model no agent can talk to, for a gateway whose catalog doesn't say: embeddings,
- * rerankers, OCR, speech and image models, and tool-less `fusion` panels.
- */
 const NOT_FOR_AGENTS =
   /embed|rerank|ocr|document-ai|whisper|transcri|tts|speech|realtime|image|dall-e|moderation|^fusion/i;
 
@@ -237,7 +229,6 @@ export const helperChoice = (
   if (profile.helperModel !== undefined) {
     return { model: profile.helperModel, effort: profile.helperEffort };
   }
-  // Only what an agent could run: the first model is otherwise often an embedding model.
   const usable = profile.models.filter(gatewayModelUsable);
   if (usable.some((model) => model.id === DEFAULT_HELPER.model)) return DEFAULT_HELPER;
   const first = usable[0];
@@ -271,9 +262,6 @@ export const helperFallbackChoice = (
     : undefined;
 };
 
-// ---------------------------------------------------------------------------------------------
-// Projects, threads, labels
-
 export const Label = Schema.Struct({
   id: LabelId,
   name: Schema.String,
@@ -282,7 +270,6 @@ export const Label = Schema.Struct({
 });
 export type Label = typeof Label.Type;
 
-/** Commands run in an isolated head-on-base checkout; absent command disables the local gate. */
 const ProjectCheckCommand = Schema.String.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(16_384),
@@ -533,7 +520,6 @@ export const MonitorMark = Schema.Struct({
    * the thread, or passed over as a bot's, a Gram thread's own or an untrusted author's.
    */
   comments: Schema.optionalKey(
-    // A plain id is how an earlier build kept one; it has no time, so it reads as old.
     Schema.Array(
       Schema.Union([Schema.String, Schema.Struct({ id: Schema.String, at: Schema.String })]),
     ).check(Schema.isMaxLength(MONITOR_MARK_COMMENTS_MAX)),
@@ -799,7 +785,6 @@ export const ThreadProfileBinding = Schema.Struct({
 });
 export type ThreadProfileBinding = typeof ThreadProfileBinding.Type;
 
-/** A model id as a profile's `models` are matched: lower-cased, with no `[1m]` window or date. */
 const plainModelId = (id: string): string =>
   id
     .trim()
@@ -1279,9 +1264,6 @@ export const UserInput = Schema.Struct({
 });
 export type UserInput = typeof UserInput.Type;
 
-// ---------------------------------------------------------------------------------------------
-// Permission updates (mirrors the Claude Agent SDK's `PermissionUpdate`)
-
 export const PermissionBehavior = Schema.Literals(["allow", "deny", "ask"]);
 export type PermissionBehavior = typeof PermissionBehavior.Type;
 
@@ -1329,21 +1311,12 @@ export const PermissionUpdate = Schema.Union([
 ]);
 export type PermissionUpdate = typeof PermissionUpdate.Type;
 
-// ---------------------------------------------------------------------------------------------
-// Pending requests and answers
-
 export const ApprovalScope = Schema.Literals(["once", "session", "always"]);
 export type ApprovalScope = typeof ApprovalScope.Type;
 
 const requestFields = {
   id: RequestId,
-  /** The tool call this request gates, when the agent exposes one. */
   toolUseId: Schema.optionalKey(Schema.String),
-  /**
-   * This card's own key, which the server mints each time it puts a card up. An agent can ask
-   * again under the same `id`; an answer that names the `shown` it was given for is taken only by
-   * that card, never by a later one under the id (`thread.respond`).
-   */
   shown: Schema.optionalKey(Schema.String),
 };
 
@@ -1466,9 +1439,6 @@ export type PlanAnswer = typeof PlanAnswer.Type;
 
 export const RequestAnswer = Schema.Union([ApprovalAnswer, QuestionAnswer, PlanAnswer]);
 export type RequestAnswer = typeof RequestAnswer.Type;
-
-// ---------------------------------------------------------------------------------------------
-// Plan and usage
 
 export const PlanItemStatus = Schema.Literals(["pending", "inProgress", "completed", "cancelled"]);
 export type PlanItemStatus = typeof PlanItemStatus.Type;

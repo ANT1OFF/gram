@@ -1,6 +1,3 @@
-// The git plumbing checkpoints and turn undo share: runs that fail on a non-zero exit, refs read once
-// and pinned to the commit they name, and a private index. Not exported from the package.
-
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as nodePath from "node:path";
@@ -32,7 +29,6 @@ export const repoTopOrFail = (repo: string) =>
     ),
   );
 
-/** What one read of a ref found. */
 type RefRead =
   | { readonly kind: "commit"; readonly oid: string }
   | { readonly kind: "missing" }

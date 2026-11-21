@@ -40,7 +40,6 @@ export const CHUNK_HUNKS = DEFAULT_CHUNK_HUNKS;
  */
 export const MAX_LOADED_LINES = 10_000;
 
-/** A patch row's height, for the space an off-screen chunk keeps while it isn't drawn. */
 const ROW_PX = 20;
 
 const KIND: Record<GeneratedKind, { what: string; sections: string }> = {
@@ -52,7 +51,6 @@ const KIND: Record<GeneratedKind, { what: string; sections: string }> = {
 const scopeKey = (scope: DiffScope) =>
   scope.kind === "turn" ? `turn:${scope.turnId}` : scope.kind;
 
-/** Lines of a chunk's patch, notes and headers left out. */
 const patchLines = (patch: string) => patch.match(/^[ +-]/gm)?.length ?? 0;
 
 const hunkHeaders = (patch: string) => patch.match(/^@@/gm)?.length ?? 0;
@@ -62,11 +60,6 @@ interface PageParam {
   readonly fingerprint?: string;
 }
 
-/**
- * A file's chunks and summary, cached by file and by what the list said of it: collapsing the file,
- * switching turn and back, or a refresh that left it as it was keeps what was loaded. Nothing is
- * asked for until `load` or `summarize`.
- */
 function useDiffChunks(source: DiffChunkSource, file: DiffFile) {
   const api = useApi();
   const key = [
@@ -148,7 +141,6 @@ export function ChunkedPatch({
   const summarized = summary.data?.summary;
   const last = pages.at(-1);
   const lines = pages.reduce((sum, page) => sum + patchLines(page.patch), 0);
-  // Each page's first hunk, counted across the pages before it (a few dozen pages at most).
   const offsets = pages.map((_, at) =>
     pages.slice(0, at).reduce((sum, page) => sum + hunkHeaders(page.patch), 0),
   );
@@ -224,7 +216,6 @@ export function ChunkedPatch({
           {pages.map((page, at) =>
             page.patch === "" ? null : (
               <ChunkPage
-                // Pages only ever append, so a page's place is its identity.
                 key={at}
                 file={file}
                 patch={page.patch}
@@ -282,18 +273,15 @@ export function ChunkedPatch({
   );
 }
 
-/** How far the loaded hunks reach, in words. */
 function chunkStatus(last: DiffChunk, lines: number) {
   const total = last.totalHunks;
   const count = `${lines.toLocaleString("en-US")} ${lines === 1 ? "line" : "lines"}`;
   if (last.next === undefined) {
     return `All ${total.toLocaleString("en-US")} ${total === 1 ? "hunk" : "hunks"} loaded · ${count}`;
   }
-  // A hunk the caps split counts once it has fully loaded.
   return `${last.next.hunk.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} hunks loaded · ${count}`;
 }
 
-/** One loaded chunk: drawn only while near the screen, keeping its height while it isn't. */
 const ChunkPage = memo(function ChunkPage({
   file,
   patch,
@@ -328,7 +316,6 @@ const ChunkPage = memo(function ChunkPage({
   );
 });
 
-/** Sections a summary shows before "Show all". */
 const SUMMARY_ROWS = 12;
 
 function SummaryList({ summary, noun }: { summary: DiffSummary; noun: string }) {

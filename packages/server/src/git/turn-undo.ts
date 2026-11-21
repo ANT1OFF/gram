@@ -21,7 +21,6 @@ export const UNDO_RUNNING =
 
 const files = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
 
-/** Up to three paths, then how many more. */
 const listed = (paths: ReadonlyArray<string>) =>
   paths.length <= 3
     ? paths.join(", ")
@@ -135,7 +134,6 @@ export const makeTurnUndo =
         };
         return { receipt } as const;
       });
-      // The runtime's own refusal: something runs, is queued, or waits on the user.
       const outcome = yield* runtimes
         .whileIdle(threadId, undo, (done) =>
           "receipt" in done

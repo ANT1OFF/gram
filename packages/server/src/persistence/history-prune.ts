@@ -1,12 +1,8 @@
-// The start's sweep of the append-only history tables (`pruneHistory`), run by the store's start.
-
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type { SqlClient } from "../platform/unstable.ts";
 import { DAY_MS } from "../zone-time.ts";
 
-// What the start's sweep keeps of the append-only history tables (`pruneHistory`). Nothing shows
-// these past their windows; each rule keeps whatever something still reads.
 /**
  * `orchestration_events`: 90 days. A worker's `spawn` event stays while the worker does, open or
  * closed and reopenable: a `clientRequestId` retry reads it to tell a finished spawn from one a
@@ -27,7 +23,6 @@ export const HELPER_USAGE_KEPT_MS = 400 * DAY_MS;
 /** `helper_events`: 30 UTC days of daily counts, of which the helper reads the last 7. */
 export const HELPER_EVENTS_KEPT_MS = 30 * DAY_MS;
 
-/** The UTC day `at` falls on, as the helper tables key their rows. */
 const utcDayOf = (at: number) => new Date(at).toISOString().slice(0, 10);
 
 /**
@@ -57,7 +52,6 @@ export const pruneHistory = (sql: SqlClient.SqlClient, now: number) =>
       }),
     )
     .pipe(
-      // History it couldn't prune now waits for the next start; nothing depends on it going.
       Effect.catchCause((cause) =>
         Effect.logWarning("couldn't prune the history tables").pipe(
           Effect.annotateLogs({ cause: Cause.pretty(cause) }),

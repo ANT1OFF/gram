@@ -1,15 +1,3 @@
-/**
- * `ciStuck`: a hosted CI job of a PR or an Actions run sits queued, with no runner, past its
- * minutes; or a run waits for a maintainer to approve it, as a fork's does, so no CI runs at all.
- *
- * GitHub is read through `CiJobs`, gently. A PR's checks come from `Pr.checks`, the one small
- * GraphQL read the PR monitors share: one read made in the last minute is reused, and a read in
- * the cache's few seconds answers every wake on the PR. Only when a PR has no Actions check at all
- * is the REST API asked whether a run awaits approval (one call, and one more for the PR's head
- * when any run does). A run's jobs are one REST call; the run itself is read only once nothing of
- * it is in flight, to tell an approval from a finish. All of it is paced to the background share
- * of the allowance, and an unreachable `gh` is "couldn't tell", never a finding.
- */
 import {
   AppToolError,
   CI_STUCK_DEFAULT_MINUTES,
@@ -61,9 +49,7 @@ export interface CiJobsShape {
 
 export class CiJobs extends Context.Service<CiJobs, CiJobsShape>()("@gram/server/CiJobs") {}
 
-/** How old a PR's checks, read by anyone, may be and still answer a look. */
 const PR_CHECKS_REUSE_MS = 60_000;
-/** How long one run's read answers for the other wakes on it. */
 const RUN_READ_REUSE_MS = 20_000;
 
 const NullableString = Schema.optionalKey(Schema.NullOr(Schema.String));
@@ -94,7 +80,6 @@ const decodePull = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ head: Schema.Struct({ sha: Schema.String }) })),
 );
 
-/** GitHub has no such run. */
 const GONE = /not found|HTTP 404/i;
 
 const msOf = (iso: string | null | undefined): number | undefined => {
@@ -144,7 +129,6 @@ export const CiJobsLive = Layer.effect(
             since: msOf(job.created_at ?? job.started_at),
           }));
         if (jobs.some((job) => job.status !== "completed")) return { queued };
-        // Nothing in flight: the run says whether it waits for an approval or is over.
         const view = yield* api(cwd, `repos/${repo}/actions/runs/${runId}`);
         if (view === undefined) return undefined;
         if (view.status !== 0) return GONE.test(view.stderr) ? null : undefined;
@@ -158,7 +142,6 @@ export const CiJobsLive = Layer.effect(
 
     const run: CiJobsShape["run"] = (cwd, repo, runId) =>
       Effect.gen(function* () {
-        // Per caller (`GhCallEnv`): a run read for one thread is never another's answer.
         const key = `${yield* currentGhCaller}\u0000${repo.toLowerCase()}#${runId}`;
         const now = yield* Clock.currentTimeMillis;
         const kept = runReads.get(key);
@@ -170,7 +153,6 @@ export const CiJobsLive = Layer.effect(
         return state;
       });
 
-    /** A fork's run waiting for approval has no check on the PR: asked of the REST API instead. */
     const approvalFor = (cwd: string, repo: string, number: number) =>
       Effect.gen(function* () {
         const listed = yield* api(
@@ -283,7 +265,6 @@ export const judgeCiStuck = (
   return { met: false, seen: firstSeen };
 };
 
-/** A met look's facts, as a refusal says them. */
 const factsText = (facts: Readonly<Record<string, string>>) =>
   Object.entries(facts)
     .map(([key, value]) => `${key}: ${value}`)
@@ -334,7 +315,6 @@ export const ciStuckSource = Effect.gen(function* () {
         };
         const state = yield* read(yield* folderOf(caller), filled);
         if (state === null) return yield* refuse(`${spec.repo} has no run ${spec.runId}.`);
-        // Unreadable now: the first look that reads it is the baseline.
         if (state === undefined) return { spec: filled };
         const look = judgeCiStuck(filled, state, undefined, yield* Clock.currentTimeMillis);
         if (look.met) return yield* refuse(`That is so already: ${factsText(look.facts)}.`);

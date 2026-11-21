@@ -24,7 +24,6 @@ import type { CreateThreadInput, ThreadRuntimesShape } from "./thread-runtimes.t
  */
 export const heldCheckoutPaths = (
   threads: ReadonlyArray<Pick<Thread, "checkout" | "extraCheckouts">>,
-  /** Only the checkouts on this machine: another machine's folder at the same path is another. */
   on?: HostId,
 ): Array<string> =>
   threads.flatMap((thread) =>
@@ -39,7 +38,6 @@ export const heldCheckoutPaths = (
  */
 export const usedCheckoutPaths = (
   threads: ReadonlyArray<Pick<Thread, "checkout" | "extraCheckouts" | "currentCheckout">>,
-  /** Only the checkouts on this machine, as `heldCheckoutPaths` takes it. */
   on?: HostId,
 ): Array<string> => [
   ...heldCheckoutPaths(threads, on),
@@ -51,7 +49,6 @@ export const usedCheckoutPaths = (
   ),
 ];
 
-/** Why a thread couldn't be started in the checkout asked for. */
 type CreateInCheckoutError = InvalidState | NotFound | GitError | CheckoutInUse | AgentUnavailable;
 
 export interface ThreadCreator {
@@ -88,10 +85,8 @@ export const makeThreadCreator = (deps: {
 }): ThreadCreator => {
   const prepare: ThreadCreator["prepare"] = (asked, projectRoot) =>
     Effect.gen(function* () {
-      // Placed first, so the guard below reads the machine the checkout is really made on.
       const request =
         deps.checkouts.place === undefined ? asked : yield* deps.checkouts.place(asked);
-      // The checkouts held on the machine the request is placed on.
       const on = checkoutRequestHost(request) ?? LOCAL_HOST_ID;
       const open = heldCheckoutPaths(yield* deps.store.listThreads, on);
       return yield* deps.checkouts.prepare(request, open, projectRoot);
@@ -140,7 +135,6 @@ export const prepareWithOthers = (
     if (others.length === 0) return { checkout, extraCheckouts: [], additionalDirectories: [] };
     const branch = checkout.kind === "worktree" ? checkout.branch : undefined;
     if (branch === undefined) {
-      // Another machine has none of this disk's folders: there each repository needs a worktree.
       if (hostOf(checkout) !== LOCAL_HOST_ID) {
         yield* deps.discard(checkout);
         return yield* new InvalidState({

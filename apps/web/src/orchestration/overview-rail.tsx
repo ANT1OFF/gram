@@ -51,16 +51,12 @@ export const CLOSE_AFTER_MS = 300;
 
 const STOP = { [OVERVIEW_STOP]: "" };
 
-/** What a menu, card, list or dialog opened from the sidebar is drawn in, portalled out of it. */
 const POPUP = '[data-surface="overlay"], [role="menu"], [role="listbox"], [role="dialog"]';
 
-/** The current workspace's tile, or the solo threads' while one is in view: the solid tile. */
 const CURRENT = "aria-[current=true]:bg-sidebar-row-active aria-[current=true]:text-foreground";
 
-/** Opens the sidebar over the page at once, from a tile whose click means "show me the rest". */
 type OpenNow = () => void;
 
-/** One of the strip's tiles: an icon or a monogram, its name on hover and to a screen reader. */
 function Tile({
   label,
   testId,
@@ -83,7 +79,6 @@ function Tile({
     <Hint
       label={label}
       side="right"
-      // The sidebar beside the strip says each name in full, where a tooltip would cover it.
       disabled={useStripOpen()}
       render={
         <button
@@ -117,7 +112,6 @@ function Tile({
  */
 export function OverviewRail() {
   const hosted = useEmbedShell((s) => s.hosted);
-  // An embedding app may turn the peek off: the strip then opens only from its Expand tile.
   const peek = useEmbedShell((s) => s.sidebar.peek !== false);
   const threadsListed = useThreadsListed();
   const [open, setOpen] = useState(false);
@@ -127,7 +121,6 @@ export function OverviewRail() {
   const width = useLayoutStore((s) => s.sidebarWidth);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   useMountEffect(trackPointerMoves);
-  // Where the strip ends, which the sidebar opens beside: read as it opens.
   const [left, setLeft] = useState(0);
   const show = (next: boolean) => {
     if (next) setLeft(strip.current?.getBoundingClientRect().right ?? 0);
@@ -142,7 +135,6 @@ export function OverviewRail() {
     show(next);
   };
   useEffect(() => () => clearTimeout(timer.current), []);
-  // The column may still be narrowing to the strip as it opens: the sidebar keeps beside its edge.
   useSubscription(() => {
     const element = strip.current;
     if (!open || element === null) return;
@@ -150,7 +142,6 @@ export function OverviewRail() {
     observer.observe(element);
     return () => observer.disconnect();
   }, [open]);
-  // Going somewhere closes it: a row picked in it has done its job.
   const [at, setAt] = useState(pathname);
   if (at !== pathname) {
     setAt(pathname);
@@ -170,13 +161,10 @@ export function OverviewRail() {
     node instanceof Element &&
     (strip.current?.contains(node) === true ||
       overlay.current?.contains(node) === true ||
-      // A menu, card or dialog opened from the sidebar is portalled out of it, but is still its.
       node.closest(POPUP) !== null);
   const leave = (event: { relatedTarget: EventTarget | null }) => {
     if (!inside(event.relatedTarget)) later(false, CLOSE_AFTER_MS);
   };
-  // While it is open, wherever the pointer goes decides: onto the page closes it after a moment,
-  // back onto the strip, the sidebar or something opened from it keeps it.
   useEffect(() => {
     if (!open) return;
     const over = (event: PointerEvent) => {
@@ -204,8 +192,6 @@ export function OverviewRail() {
         data-surface="chrome"
         data-open={open || undefined}
         {...{ [OVERVIEW_ROOT]: "compact" }}
-        // Layout can put the strip under a parked pointer (including Chromium's initial origin).
-        // Only an actual move onto it starts a hover, and leaving cancels that pending open.
         onPointerMove={(event) => {
           if (
             !open &&
@@ -216,12 +202,9 @@ export function OverviewRail() {
             later(true, OPEN_AFTER_MS);
         }}
         onPointerLeave={leave}
-        // A click on a tile goes somewhere itself: the sidebar a resting pointer was about to open
-        // would only cover where it went.
         onClick={() => {
           if (!open) clearTimeout(timer.current);
         }}
-        // From the keyboard only: a click's focus is the click's, which goes somewhere itself.
         onFocus={(event) => {
           if (event.target instanceof Element && event.target.matches(":focus-visible")) now(true);
         }}
@@ -263,16 +246,10 @@ export function OverviewRail() {
   );
 }
 
-/**
- * The title bar's height, a drag region as the title bar is. Hide sidebar sits in it, in the spot
- * the open sidebar's and the title bar's take, so the toggle never moves; under macOS's window
- * buttons the row is theirs, and the toggle leads the strip just below.
- */
 function TitleRow() {
   const underLights = useWindowLights((s) => s.inset > 0);
   return (
     <div className="flex h-(--titlebar-height) shrink-0 items-center self-stretch px-2 [-webkit-app-region:drag]">
-      {/* The title bar's own toggle's size and place, so it is the same spot in every mode. */}
       {!underLights && <HideTile className="size-7" />}
     </div>
   );
@@ -292,7 +269,6 @@ function HideTile({ className }: { className?: string }) {
   );
 }
 
-/** Needs you, always there with a dot while anything waits, and Search: the open sidebar's head. */
 function OwnHead() {
   const underLights = useWindowLights((s) => s.inset > 0);
   const { count, parts, openAsks } = useNeedsYouPill();
@@ -313,15 +289,12 @@ function OwnHead() {
   );
 }
 
-/** The embedding app's switcher, Needs you while anything waits, and Search. */
 function HostedHead({ expand }: { expand: boolean }) {
   const own = useNeedsYouPill();
-  // The embedding app's own count of what needs someone, where it gives one.
   const host = useHostAttention();
   const count = host?.count ?? own.count;
   return (
     <div className="flex shrink-0 flex-col items-center gap-px">
-      {/* With the peek off, the way back to the open sidebar, at the strip's head. */}
       {expand && (
         <Tile
           label="Expand sidebar"
@@ -333,7 +306,6 @@ function HostedHead({ expand }: { expand: boolean }) {
         </Tile>
       )}
       <EmbedSwitcher placement="rail" className="mb-2" />
-      {/* An embedding app with nothing waiting has no tile: its own row for it is in its places. */}
       {(host === undefined || count > 0) && (
         <Tile
           label={
@@ -379,10 +351,8 @@ function SearchTile() {
   );
 }
 
-/** One monogram per workspace, in the switcher's order, as the open overview's rows. */
 function WorkspaceTiles() {
   const workspaces = useWorkspaces();
-  // A solo thread in view is in no workspace: no tile is marked.
   const solo = useViewSolo();
   const viewed = useViewWorkspace();
   const current = solo ? undefined : viewed;
@@ -395,8 +365,6 @@ function WorkspaceTiles() {
     ),
   );
   const { statuses, ledgers } = useWorkspaceStatuses(own);
-  // Each workspace's share of Needs you, and the workers its asks wait on, as the open overview's
-  // lines read them.
   const { byWorkspace } = useNeedsYouCounts();
   const asking = useMemo(
     () => new Map(asks.map((each) => [each.workspaceId as string, askingOf(each.asks)] as const)),
@@ -427,12 +395,6 @@ function WorkspaceTiles() {
 
 const NO_ASKING: ReadonlySet<ThreadId> = new Set();
 
-/**
- * A workspace's monogram: one letter of its name ("B" for billing-api), two only where another
- * starts with the same one (`monograms`). A dot at its top says it asks something, a soft pulsing
- * one at its foot that its orchestrator or workers are at work; paused or parked, it fades. Its name and state are its
- * hint and its accessible name; a click goes to it.
- */
 function WorkspaceTile({
   mark,
   state,
@@ -484,7 +446,6 @@ function WorkspaceTile({
   );
 }
 
-/** The threads outside any workspace, as one glyph; a click shows them in the sidebar beside it. */
 function SoloTile({ openNow }: { openNow: OpenNow }) {
   const here = useViewSolo();
   return (
@@ -500,7 +461,6 @@ function SoloTile({ openNow }: { openNow: OpenNow }) {
   );
 }
 
-/** History and Settings, at the foot as the open sidebar has them. */
 function StripFoot() {
   const historyHint = useShortcutHint("history.open");
   const historyOpen = useHistoryStore((s) => s.open);
@@ -523,7 +483,6 @@ function StripFoot() {
   );
 }
 
-/** The open sidebar, over the page beside the strip, sliding in unless motion is reduced. */
 function SidebarOver({
   ref,
   left,
@@ -548,7 +507,6 @@ function SidebarOver({
       data-testid="overview-rail-overlay"
       onBlur={onBlur}
       className={cn(
-        // On an opaque surface: the sidebar's own is see-through, for the window behind it.
         "fixed inset-y-0 z-40 flex bg-surface-1 shadow-overlay",
         slides && "transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out)",
         shown ? "translate-x-0 opacity-100" : "-translate-x-3 opacity-0",

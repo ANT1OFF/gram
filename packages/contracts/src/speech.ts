@@ -65,7 +65,6 @@ export const SPEECH_ACCURATE_MODELS: readonly SpeechModelId[] = [
  */
 export const SPEECH_ACCURATE_MIN_MEMORY_BYTES = 16 * 1024 ** 3;
 
-/** A file's relative path inside a model directory: no `..`, no absolute path, no backslash. */
 const ModelPath = Schema.String.check(
   Schema.isPattern(/^(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/),
 );
@@ -104,7 +103,6 @@ export const SpeechModelSource = Schema.Struct({
 });
 export type SpeechModelSource = typeof SpeechModelSource.Type;
 
-/** A Hugging Face repo id, `<owner>/<name>`. */
 const HfRepo = Schema.String.check(
   Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/),
 );
@@ -120,7 +118,6 @@ export const SpeechRecognizer = Schema.Union([
     /** The streaming chunk the encoder was exported for, which the recogniser flushes on stop. */
     chunkMs: Schema.Int.check(Schema.isGreaterThan(0)),
   }),
-  /** A NeMo transducer that decodes a finished clip at once. */
   Schema.Struct({
     kind: Schema.Literal("sherpa-onnx-offline-transducer"),
     encoder: ModelPath,
@@ -128,7 +125,6 @@ export const SpeechRecognizer = Schema.Union([
     joiner: ModelPath,
     tokens: ModelPath,
   }),
-  /** A voice activity detector, which recognises no words. */
   Schema.Struct({
     kind: Schema.Literal("sherpa-onnx-silero-vad"),
     model: ModelPath,
@@ -136,11 +132,8 @@ export const SpeechRecognizer = Schema.Union([
 ]);
 export type SpeechRecognizer = typeof SpeechRecognizer.Type;
 
-/** What was checked about a model's files, and how it came out. */
 const SpeechModelEvidence = Schema.Struct({
-  /** What was checked: a reproduced export, the upstream digests. */
   kind: Schema.String,
-  /** `verified`; `absent` (looked for, not published); `unverified` (published, not checked). */
   status: Schema.String,
   detail: Schema.String,
 });
@@ -214,7 +207,6 @@ export type SpeechInstallFailure = typeof SpeechInstallFailure.Type;
 
 /** A model's install, from idle through the download to its outcome. */
 export const SpeechInstallState = Schema.Union([
-  /** Nothing under way; a cancelled or interrupted download resumes from `resumableBytes`. */
   Schema.Struct({
     state: Schema.Literal("idle"),
     resumableBytes: Schema.optionalKey(Schema.Number),
@@ -224,9 +216,7 @@ export const SpeechInstallState = Schema.Union([
     receivedBytes: Schema.Number,
     totalBytes: Schema.Number,
   }),
-  /** Downloaded and hashed; now unpacking and checking every file. */
   Schema.Struct({ state: Schema.Literal("verifying") }),
-  /** The install stopped; whatever was installed before is untouched. */
   Schema.Struct({
     state: Schema.Literal("failed"),
     reason: SpeechInstallFailure,
@@ -250,14 +240,7 @@ export const SpeechStatus = Schema.Struct({
 export type SpeechStatus = typeof SpeechStatus.Type;
 
 /** Why the store wouldn't act on a model. */
-export const SpeechRefusal = Schema.Literals([
-  /** This app version pins no model by that id. */
-  "unknown-model",
-  /** An install of it is under way. */
-  "busy",
-  /** No shell keeps models here: a browser, or a shell without the model store. */
-  "unavailable",
-]);
+export const SpeechRefusal = Schema.Literals(["unknown-model", "busy", "unavailable"]);
 export type SpeechRefusal = typeof SpeechRefusal.Type;
 
 export class SpeechRefused extends Schema.TaggedError<SpeechRefused>()("SpeechRefused", {

@@ -88,38 +88,24 @@ interface BindInput {
   readonly repo?: string;
   readonly number?: number;
   readonly monitor?: boolean;
-  /** Follow the PR beside the thread's main one instead of replacing it. */
   readonly add?: boolean;
 }
 
-/** The pull request a `set_auto_merge` call acts on, resolved before its card. */
 interface MergeTarget {
   readonly thread: Thread;
-  /** The call names another thread than the caller. */
   readonly other: boolean;
   readonly enabled: boolean;
   readonly method: "squash" | "merge" | "rebase";
   readonly number: number;
-  /** `owner/repo`, given to gh as `--repo`. */
   readonly repo: string;
-  /** From a badge already fetched; absent when none is this PR's. */
   readonly title?: string | undefined;
-  /** The head that badge showed, which a direct merge is pinned to. */
   readonly head?: string | undefined;
-  /** That badge's `mergeStateStatus`. */
   readonly mergeState?: string | undefined;
-  /** That badge's base branch; absent, a freeze anywhere on the repo holds it. */
   readonly base?: string | undefined;
 }
 
-/** GitHub refusing to arm auto-merge on a PR that can merge right now. */
 const CLEAN_STATUS = /is in clean status/i;
 
-/**
- * A merge `merge_when_ready` holds (`after` or `hold`) is refused to the thread itself by every other
- * way of merging or of dropping the intent, when its orchestrator set the hold: release order is the
- * orchestrator's to keep.
- */
 const refuseOverHold = (tool: string, caller: ThreadId, thread: Thread) => {
   const intent = thread.boundPr?.mergeWhenReady;
   return intent?.heldBy === "orchestrator" && caller === thread.id
@@ -127,30 +113,22 @@ const refuseOverHold = (tool: string, caller: ThreadId, thread: Thread) => {
     : Effect.void;
 };
 
-/** What the card says the approval covers. */
 const approvalScopeText = (scope: NonNullable<MergeIntent["approved"]>) =>
   scope.fork
     ? `from a fork${scope.headRepo === undefined ? "" : ` (${scope.headRepo})`}, its head ${scope.head.slice(0, 7)} exactly, into ${scope.baseRef}; a new push to the fork asks again`
     : `from a branch in the repository itself, at ${scope.head.slice(0, 7)} now, into ${scope.baseRef}`;
 
-/** Why a worker can't move past the merge its orchestrator holds. */
 const heldMessage = (intent: MergeIntent) =>
   `Your orchestrator holds this pull request's merge (${[
     ...(intent.after ?? []).map((pr) => `after ${pr.repo}#${pr.number}`),
     ...(intent.hold === undefined ? [] : [intent.hold]),
   ].join("; ")}); only it can lift the hold.`;
 
-/**
- * Why Gram won't merge a pull request Watch PR is actively watching: Watch PR follows the review and
- * hands the merge to the user, so it says so in plain words and how to let Gram merge instead. Only
- * an active watch holds the merge; a stopped or done one does not.
- */
 const watchingMergeRefusal = (thread: Thread): string => {
   const pr = thread.boundPr === undefined ? "this pull request" : prName(thread.boundPr);
   return `Watch PR is on for ${pr}: while it watches the review, the user merges. Turn Watch PR off to let Gram merge it, or ask the user to merge it.`;
 };
 
-/** Auto-merge is refused on a thread in babysit mode, where the user merges. */
 const refuseInBabysit = (thread: Thread) =>
   thread.babysit === undefined
     ? Effect.void
@@ -161,11 +139,6 @@ const refuseInBabysit = (thread: Thread) =>
         }),
       );
 
-/**
- * The git-backed app tools: PR binding and status over the batched `gh` state,
- * the CI monitor, and auto-merge. Registered from above the state publisher, which they read.
- */
-/** Why a binding of `pr` didn't take: another thread's launch of it is outstanding. */
 const reservedRefusal = (pr: { readonly repo: string; readonly number: number }) =>
   `${pr.repo}#${pr.number} is being merged by another thread right now, so it can't become this thread's pull request, and this thread's bindings were left as they were. Check it with pr_status once that merge settles, and bind it again if it is still open.`;
 
@@ -179,17 +152,11 @@ export const PrAppToolsLive = Layer.effectDiscard(
     const machineBranchPr = yield* MachineBranchPr;
     const publisher = yield* GitStatePublisher;
     const proc = yield* Proc;
-    // The joined machines' hosts, which read a worker's worktree there for its PR's ownership.
     const machines = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
-    // Absent in layers without orchestration, where no outward call is ever delegated.
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const mergeWhenReady = Option.getOrUndefined(yield* Effect.serviceOption(MergeWhenReady));
     const freezes = yield* MergeFreezes;
-    /**
-     * Refuses a merge, or GitHub's auto-merge, onto a frozen base: once armed, GitHub would merge
-     * under a freeze Gram can't hold back. Without a known base, a freeze anywhere on the repo.
-     */
     const refuseWhileFrozen = (
       tool: string,
       thread: Thread,
@@ -210,19 +177,10 @@ export const PrAppToolsLive = Layer.effectDiscard(
         ),
       );
 
-    /**
-     * The branch's PR. A thread on another machine has it as published, else as GitHub has it for
-     * the repository its worktree cloned (`MachineBranchPr`): its checkout isn't this machine's,
-     * and a folder at the same path here would be another repository.
-     */
     const currentPr = (thread: Thread) =>
       isLocalHost(thread.checkout)
         ? threadPr.badge(thread.checkout.path)
         : machineBranchPr.pr(thread);
-    /**
-     * The checkout's `origin` as `owner/repo`, read by git here only for a checkout here; for one
-     * on another machine, as published, else its clone's project's here.
-     */
     const originOf = (thread: Thread) =>
       isLocalHost(thread.checkout)
         ? originOwnerRepo(thread.checkout.path).pipe(Effect.provideService(Proc, proc))
@@ -285,7 +243,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
         if (refusal !== undefined) return yield* new AppToolError({ tool, message: refusal });
         if (input.add === true && thread.boundPr !== undefined) {
           const added = yield* applyPrEdit(runtimes.updateThread, threadId, (t) =>
-            // Without a main PR by the time this runs, there is nothing to follow it beside.
             t.boundPr === undefined
               ? { refused: "this thread has no main pull request any more; bind without add" }
               : addExtraPr(t, { repo, number }, input.monitor ?? false),
@@ -296,9 +253,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
           yield* refreshes.request(added.thread.checkout.path, true);
           return { repo, number, monitor: input.monitor ?? false } satisfies BoundPr;
         }
-        // The monitor default comes from the row being written, not from the read above. Binding
-        // the same PR again keeps what is on its binding, a merge intent included; one its
-        // orchestrator holds can't be bound away.
         let held: string | undefined;
         const updated = yield* runtimes.updateThread(threadId, (t) => {
           const same = t.boundPr !== undefined && samePr(t.boundPr, { repo, number });
@@ -314,8 +268,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
           });
         });
         if (held !== undefined) return yield* new AppToolError({ tool, message: held });
-        // The store keeps a PR another thread's launch has reserved off this thread's main binding,
-        // in the binding's own transaction, leaving its bindings as they were: the merge decided first.
         if (
           (updated.boundPr === undefined || !samePr(updated.boundPr, { repo, number })) &&
           (yield* reservedElsewhere({ repo, number }, threadId))
@@ -361,7 +313,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
       audience: OWN_PR_AUDIENCE,
       handle: (threadId, { repo, number }) =>
         Effect.gen(function* () {
-          // Half a reference must not fall through to the main PR: the caller meant an extra one.
           if ((repo === undefined) !== (number === undefined)) {
             return yield* new AppToolError({
               tool: "pr_unbind",
@@ -389,7 +340,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
           if (held !== undefined) {
             return yield* new AppToolError({ tool: "pr_unbind", message: held });
           }
-          // No longer this thread's: a freeze that took its auto-merge down lets it go.
           if (unbound !== undefined) yield* freezes.forget(unbound.repo, unbound.number);
           yield* refreshes.request(thread.checkout.path, true);
           return { unbound: true };
@@ -430,7 +380,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
                   checkSiteOf(thread.checkout, thread.checkout.path),
                   thread.projectId,
                 );
-          // Solo merges accept Gram's own check of the head merged onto the base in place of CI.
           const localCheck =
             reviewPolicy === "solo" &&
             badge?.state === "OPEN" &&
@@ -498,7 +447,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
             editMainPr((bound) => ({ ...bound, monitor: enabled })),
           );
           if (refused === undefined) return { monitor: enabled, bound: thread.boundPr };
-          // Nothing bound: watching binds the branch's PR, and not watching has nothing to do.
           if (!enabled) return { monitor: false };
           return { monitor: true, bound: yield* bind("pr_monitor", threadId, { monitor: true }) };
         }).pipe(Effect.mapError(failed("pr_monitor"))),
@@ -517,13 +465,9 @@ export const PrAppToolsLive = Layer.effectDiscard(
         number: Schema.optionalKey(Schema.Int),
         threadId: Schema.optionalKey(Schema.NonEmptyString),
       }),
-      // An orchestrator on its own worker's PR, or a worker on its own, at `full` (`mergeDelegated`),
-      // and in either case only on a PR `workerOwnsPr` finds is the worker's, whichever PR the call
-      // resolved to.
       delegatedAtFullAutonomy: (caller, { number }, target: MergeTarget) =>
         Effect.gen(function* () {
           const { thread } = target;
-          // A worker's exception is for its own PR alone, not any number it names.
           if (
             thread.id === caller &&
             (thread.boundPr === undefined ||
@@ -534,7 +478,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
           if (!(yield* mergeDelegated(caller, thread))) return false;
           return yield* workerOwnsPr(thread, target.repo, target.number);
         }).pipe(Effect.catchCause(() => Effect.succeed(false))),
-      // A clean pull request merges at once, so arming is the merge; turning it off is not one.
       decision: (_caller, target: MergeTarget) =>
         target.enabled
           ? {
@@ -570,23 +513,18 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const state = isLocalHost(thread.checkout)
             ? yield* publisher.stateFor(thread.checkout.path)
             : yield* publisher.stateForThread(thread);
-          // A number that isn't the bound PR's is in the checkout's own repo, which gh is then
-          // told by name, so the card's repo is the one merged in.
           const repo =
             bound?.number === target
               ? bound.repo
               : ((branch === undefined ? undefined : repoFromPrUrl(branch.url)) ??
-                // Another machine's published origin is never taken: its record says (`originOf`).
                 (isLocalHost(thread.checkout) ? state?.origin : undefined) ??
                 (yield* originOf(thread)));
-          // A card that can't name the repo would leave gh to pick one the user never saw.
           if (repo === undefined) {
             return yield* new AppToolError({
               tool,
               message: `Can't tell which repository #${target} is in; bind it with pr_bind repo and number.`,
             });
           }
-          // Only badges already fetched: naming the PR costs GitHub nothing.
           const known = [
             branch,
             yield* publisher.badgeFor(thread),
@@ -622,7 +560,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 }),
           } satisfies MergeTarget;
         }),
-      // Ended PRs are refused at every autonomy; at full, ownership doubts return repair guidance.
       refuseInsteadOfAsking: (caller, { thread, enabled, number, repo }) =>
         Effect.gen(function* () {
           const ended = yield* endedFromBadges(thread, { repo, number });
@@ -652,22 +589,13 @@ export const PrAppToolsLive = Layer.effectDiscard(
       ) =>
         Effect.gen(function* () {
           const tool = "set_auto_merge";
-          // `--repo` names the repository, so gh needs only a folder here to start in.
           const cwd = yield* ghFolderOf(thread.checkout);
-          /**
-           * The thread as it stands, under the lock `merge_when_ready` changes intents under: babysit
-           * may have started while the card waited, the orchestrator may have held the merge, and a
-           * waived card must still be waived for the very PR this merges.
-           */
           const stillAllowed = Effect.gen(function* () {
             const latest = yield* store.getThread(thread.id);
             yield* refuseInBabysit(latest);
             if (enabled) {
               yield* refuseOverHold(tool, caller, latest);
               yield* requireGitHubAutoPolicy(latest, repo);
-              // Inside the fence, which a freeze takes too: one set from here on waits for this
-              // call. With a freeze standing on the repo, the PR's base is read afresh, since the
-              // badge's may be from before a retarget.
               if ((yield* freezes.active(repo, undefined)) !== undefined) {
                 const fresh = yield* view("baseRefName");
                 yield* refuseWhileFrozen(tool, latest, repo, fresh || undefined, number);
@@ -691,7 +619,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
               });
             }
           });
-          // Made for this thread: a deployment's GitHub route acts for its person.
           const run = (args: ReadonlyArray<string>) =>
             gh(cwd, [...args, "--repo", repo], { env: ghThreadEnv(thread.id) }).pipe(
               Effect.provideService(Proc, proc),
@@ -713,7 +640,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
               if (!enabled) {
                 const out = yield* run(["pr", "merge", String(number), "--disable-auto"]);
                 if (out.status !== 0) return yield* fail(out);
-                // Turned off on purpose: a freeze that took it down doesn't arm it again.
                 yield* freezes.forget(repo, number);
               } else if (mergeState === "CLEAN" && head !== undefined) {
                 const out = yield* merge(head);
@@ -722,11 +648,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
               } else {
                 const armed = yield* run(["pr", "merge", String(number), "--auto", `--${method}`]);
                 if (armed.status === 0) {
-                  // gh merges at once when it reads the PR as mergeable, and says nothing either way.
                   merged = (yield* view("state")) === "MERGED";
                 } else if (CLEAN_STATUS.test(armed.stderr)) {
-                  // GitHub computes the merge state lazily, so gh can read BLOCKED or UNKNOWN from a
-                  // PR that is clean by the time it asks to arm auto-merge, which GitHub then refuses.
                   const pin = head ?? (yield* view("headRefOid"));
                   if (pin === "") return yield* fail(armed);
                   const out = yield* merge(pin);
@@ -742,8 +665,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const merged = yield* mergeWhenReady === undefined
             ? go
             : mergeWhenReady.mutate(thread.id, go);
-          // The badge is asked again now, not answered from before the call, and on every sweep
-          // while GitHub catches up.
           invalidatePrBadges();
           yield* refreshes.request(cwd, true, { expectChange: true });
           return {
@@ -756,7 +677,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
 
     const runMonitorTool = yield* makeRunMonitorTool;
 
-    /** Whether a launch of `pr` by a thread other than `threadId` is outstanding (a pending fence). */
     const reservedElsewhere = (
       pr: { readonly repo: string; readonly number: number },
       threadId: ThreadId,
@@ -772,10 +692,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
         ),
       );
 
-    /**
-     * Whether `caller` merging `thread`'s PR goes without a card: an orchestrator on its own worker,
-     * or a worker on the open PR its own branch opened, in a workspace at `full` autonomy.
-     */
     const mergeDelegated = (caller: ThreadId, thread: Thread) =>
       Effect.gen(function* () {
         if (orchestration === undefined) return false;
@@ -783,14 +699,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
         return yield* orchestration.workerMergesOwn(caller);
       }).pipe(Effect.catchCause(() => Effect.succeed(false)));
 
-    /**
-     * The refusal `caller` gets in place of a card on `thread`'s PR: for a merge call on a PR its
-     * badges already show merged or closed, at any autonomy and without asking GitHub; and at
-     * `full`, whenever ownership is unverified or the PR has ended (`ownershipRefusal`).
-     * `undefined` keeps the card.
-     */
-    /** `pr`'s state from the badges Gram already has for `thread`, when they say it has ended. */
-    /** Whether the thread's badges show `pr` merged or closed; a doubt is neither. */
     const endedState = (thread: Thread, pr: { readonly repo: string; readonly number: number }) =>
       Effect.gen(function* () {
         const badges = [
@@ -815,10 +723,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
         ),
       );
 
-    /**
-     * Completes once `pr` shows merged or closed on its thread's badges (Gram's cached gh state,
-     * read every `MERGE_CARD_ENDED_POLL`), with what the agent whose merge card waited is told.
-     */
     const mergeCardEnded = (
       threadId: ThreadId,
       pr: { readonly repo: string; readonly number: number },
@@ -861,18 +765,12 @@ export const PrAppToolsLive = Layer.effectDiscard(
       }).pipe(Effect.catchCause(() => Effect.succeed(undefined)));
 
     const MERGE = "merge_when_ready";
-    /**
-     * What a user's approval of a merge of `pr` would cover, read afresh from GitHub: its head, its
-     * base and whether the head is on a fork. A card names these, and the intent keeps them
-     * (`MergeIntent.approved`), so a push to a fork or a retarget asks again.
-     */
     const approvalScope = (
       thread: Thread,
       pr: { readonly repo: string; readonly number: number },
     ) =>
       Effect.gen(function* () {
         const cwd = yield* ghFolderOf(thread.checkout);
-        // Unreadable is unknown, never a scope: the caller refuses a user approval without one.
         const head = yield* prHead(cwd, pr.number, pr.repo).pipe(
           Effect.provideService(Proc, proc),
           Effect.catchCause(() => Effect.succeed(undefined)),
@@ -982,10 +880,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
             thread,
             pr: { repo, number },
             afterRefs: after.flatMap((entry) => (entry.ref === undefined ? [] : [entry.ref])),
-            // What an approval would cover, shown on the card and kept with the intent.
             scope:
               input.enabled === false ? undefined : yield* approvalScope(thread, { repo, number }),
-            // Capture this approval instance before the gate: a replacement cannot inherit its waiver.
             reuseApproval:
               input.enabled !== false &&
               input.after === undefined &&
@@ -1001,7 +897,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 : undefined,
           };
         }),
-      // Arming a merge is the merge as far as a decision goes; dropping the intent is not one.
       decision: (_caller, { enabled = true, pr, method, thread, scope }) =>
         enabled
           ? {
@@ -1011,7 +906,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 number: pr.number,
                 method,
                 threadId: thread.id,
-                // What the approval covers: the head and base it is pinned to, and whether a fork.
                 ...(scope === undefined
                   ? {}
                   : {
@@ -1023,11 +917,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
               },
             }
           : undefined,
-      // After `resolve`, which the target's type is inferred from.
       delegatedAtFullAutonomy: (caller, _input, { thread, pr, reuseApproval, enabled = true }) =>
         Effect.gen(function* () {
-          // Dropping an intent moves nothing off the machine, at any autonomy, merged PR or not:
-          // a thread's own, or its orchestrator's on its worker. `resolve` refused it over a hold.
           if (!enabled)
             return (
               caller === thread.id ||
@@ -1067,17 +958,10 @@ export const PrAppToolsLive = Layer.effectDiscard(
               : "it is approved on its head, green and clean";
           return `Merge ${prName(pr)} (${method ?? thread.boundPr?.mergeWhenReady?.method ?? "squash"})${scope === undefined ? "" : ` ${approvalScopeText(scope)},`} once ${condition}${afterRefs.length === 0 ? "" : `, after ${afterRefs.map(prName).join(", ")}`}${clearHold ? ", no hold" : hold === undefined ? "" : `, held: ${hold}`}${thread.id === caller ? "" : `, on “${thread.title}”`}`;
         }),
-      // Ownership doubts refuse even over a hold. With ownership verified, the orchestrator's
-      // hold still asks its worker; an ended PR needs no card at any autonomy.
       refuseInsteadOfAsking: (caller, { thread, pr, enabled = true }) =>
         !enabled
           ? Effect.succeed(undefined)
           : refusalForAgent(caller, thread, pr, MERGE, "merges it once its checks pass", true),
-      // A merge card is one caller's decision: who calls decides who holds the merge (`heldBy`),
-      // whether a worker's call is `locked` under its orchestrator's hold, and whether the approval
-      // carries the orchestrator's `userAuthorization`. So only the same caller's identical call
-      // joins a waiting card; a worker's and its orchestrator's are asked apart. Every card goes
-      // when its PR merges or closes.
       sharedCard: (
         caller,
         {
@@ -1097,7 +981,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
           key: JSON.stringify([
             pr.repo.toLowerCase(),
             pr.number,
-            // A card covers one base, and on a fork one head: another is another decision.
             scope?.baseRef ?? null,
             scope?.fork === true ? scope.head : null,
             thread.id,
@@ -1130,16 +1013,12 @@ export const PrAppToolsLive = Layer.effectDiscard(
         call,
       ) =>
         Effect.gen(function* () {
-          // Watch PR may have started watching while the card waited, or the orchestrator held the
-          // merge. Only an active watch hands the merge to the user; a stopped or done one does not.
           const latest = yield* store.getThread(thread.id);
           if (latest.babysit?.phase === "watching") {
             return yield* new AppToolError({ tool: MERGE, message: watchingMergeRefusal(latest) });
           }
           if (!enabled) yield* refuseOverHold(MERGE, caller, latest);
           const byOrchestrator = thread.id !== caller;
-          // The gate's own verdict says whether a card stood behind the call. Waived, it must be
-          // waived for this very PR as things stand now, not for whatever was bound when it asked.
           const reusing = call.carded === false && reuseApproval !== undefined;
           const allowedBy = call.carded === false && !reusing ? "autonomy" : "user";
           const reuseWorkspace =
@@ -1159,8 +1038,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
               message: "The approved pull request identity changed during the call; call it again.",
             });
           }
-          // A user's approval covers what its card named. Read again after the card: a push to a
-          // fork or a retarget while it waited is not what the user approved.
           const approved =
             allowedBy !== "user" || !enabled
               ? undefined
@@ -1183,10 +1060,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 message: `${prName(pr)} changed while the user was asked (now ${approvalScopeText(approved)}), so the approval doesn't cover it; call it again.`,
               });
           }
-          // What the card named, which is what the user approved.
           const approvedScope = allowedBy === "user" && enabled ? scope : undefined;
-          // The scope the ownership check reads, taken before it: the arming write commits only
-          // while the workspace's projects are still these (a doubt widens nothing).
           const scopeProjects =
             allowedBy === "autonomy" && enabled && latest.workspaceId !== undefined
               ? JSON.stringify(
@@ -1203,7 +1077,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
                   withMachines(machines),
                 )
               : undefined;
-          // Binding follows arming; the fresh ownership check covers stacked and unbound PRs too.
           const stillWaived =
             !enabled ||
             allowedBy !== "autonomy" ||
@@ -1243,17 +1116,11 @@ export const PrAppToolsLive = Layer.effectDiscard(
                   "This thread is parked or watching its PR; call it again after that changes.";
                 return t;
               }
-              // A sibling's pr_bind that committed between the ownership check above and this write
-              // is seen here, in the write's own transaction (`claimScan`): an autonomous arm never
-              // lands on a PR another thread took meanwhile. The launch rechecks the same way.
               if (allowedBy === "autonomy" && context?.prClaimedByOther === true) {
                 refused =
                   "Another thread bound this pull request between the check and this write, so it is that thread's to merge now; call again if it should still be yours.";
                 return t;
               }
-              // Full auto's waiver is decided again on what this transaction reads: a downgrade of
-              // the autonomy, a pause, a lost delegation, or a changed scope or checkout that
-              // committed after the check above refuses the arm rather than riding its old verdict.
               if (
                 allowedBy === "autonomy" &&
                 enabled &&
@@ -1283,13 +1150,11 @@ export const PrAppToolsLive = Layer.effectDiscard(
                   ? t.boundPr
                   : { repo: pr.repo, number: pr.number, monitor: false };
               const { mergeWhenReady: current, mergeWaiting: _, ...rest } = bound;
-              // Read again in the write: a hold committed since the check above stands.
               if (!enabled && current?.heldBy === "orchestrator" && !byOrchestrator) {
                 refused = heldMessage(current);
                 return t;
               }
               if (!enabled) return current === undefined ? t : bindMainPr(t, rest);
-              // What the orchestrator set stands against its worker's call; its own call replaces it.
               const locked = !byOrchestrator && current?.heldBy === "orchestrator";
               if (locked && (release === true || clearHold)) {
                 refused = "Your orchestrator holds this merge; only it can lift the hold.";
@@ -1311,7 +1176,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
               const nextHold = locked
                 ? (current?.hold ?? hold)
                 : (hold ?? (release === true || clearHold ? undefined : current?.hold));
-              // Who a hold waits on goes with it: a new hold says so afresh, a kept one keeps it.
               const nextHoldOn =
                 nextHold === undefined
                   ? undefined
@@ -1358,28 +1222,20 @@ export const PrAppToolsLive = Layer.effectDiscard(
                     : {}),
                 setAt: now,
               };
-              // The gate is read-only; remember its reverified branch atomically with arming so a
-              // switch before the next publisher sample cannot drop this intent.
               const owned =
                 typeof ownership === "object" ? withOwnedBranch(t, ownership, ownership.branch) : t;
               return bindMainPr(owned, { ...rest, mergeWhenReady: intent });
             },
-            // The autonomy arm reads the caller's own authority in the write's transaction too.
             reusing || (call.carded === true && byOrchestrator) || allowedBy === "autonomy"
               ? caller
               : undefined,
-            // The autonomy arm asks the write to scan competing bindings in its own transaction, so
-            // a sibling's pr_bind can't slip in between the ownership check and this arm.
             allowedBy === "autonomy" && enabled ? { pr } : undefined,
           );
-          // With no attempt of the old intent between its last look and its launch meanwhile.
           const updated = yield* mergeWhenReady === undefined
             ? write
             : mergeWhenReady.mutate(thread.id, write);
           if (refused !== undefined)
             return yield* new AppToolError({ tool: MERGE, message: refused });
-          // The store keeps a PR another thread's launch has reserved off this thread's main
-          // binding, leaving its bindings as they were, so an arm on it didn't take.
           if (
             enabled &&
             (updated.boundPr === undefined || !samePr(updated.boundPr, pr)) &&
@@ -1388,7 +1244,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
             return yield* new AppToolError({ tool: MERGE, message: reservedRefusal(pr) });
           yield* refreshes.request(updated.checkout.path, true);
           const intent = updated.boundPr?.mergeWhenReady;
-          // Held on purpose: a freeze that took its auto-merge down doesn't arm it again.
           if (intent?.hold !== undefined) yield* freezes.forget(pr.repo, pr.number);
           if (intent === undefined) return { pr: prName(pr), mergeWhenReady: false };
           const configuration =
@@ -1405,7 +1260,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
               ? { status: "off", reason: configuration.reason }
               : undefined;
           const badge = yield* publisher.badgeFor(updated);
-          // No local check and CI that hasn't run or is red: the merge can't fire, so say so now.
           const gateWarning =
             localGate === undefined || badge === undefined || !isBadgeOf(badge, pr)
               ? undefined
@@ -1461,7 +1315,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
       },
       input: Schema.Struct({ rerun: Schema.optionalKey(Schema.Boolean) }),
       audience: OWN_PR_AUDIENCE,
-      // Only a worker on its own PR, in a workspace whose orchestration delegates it its merges.
       delegatedAtFullAutonomy: (caller) =>
         Effect.gen(function* () {
           const thread = yield* store.getThread(caller);

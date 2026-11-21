@@ -143,8 +143,6 @@ function LimitCard({
       ? undefined
       : limitForecast({ ...limit, at: limit.at, samples: limit.samples }, now);
   const reach = forecast === undefined ? percent : Math.round(forecast.target * 100);
-  // The provider's colour, unless the window is near its limit: then the warning colour says so,
-  // and red once it is spent with no credits.
   const colour = spent ? "var(--danger)" : warns ? "var(--warning)" : PROVIDER_COLOR[provider];
   return (
     <div
@@ -182,7 +180,6 @@ function LimitCard({
           style={{ width: `${percent}%`, background: colour }}
         />
         {reach > percent && (
-          // Where the pace gets to before the reset: hatched, so it never reads as used.
           <span
             data-testid="usage-limit-reach"
             className="absolute inset-y-0 bg-[repeating-linear-gradient(135deg,currentColor_0_2px,transparent_2px_5px)] opacity-60"
@@ -241,10 +238,6 @@ function CardTitle({ provider, window }: { provider: LimitProvider; window: Limi
 const SPARK_W = 200,
   SPARK_H = 24;
 
-/**
- * A window's share used over its span, as local snapshots recorded it: a thin line that drops at
- * each reset, with the warning mark (90%) beneath. Drawn once, never animated.
- */
 function LimitSpark({
   observations,
   now,

@@ -1,5 +1,3 @@
-// When a session restarts on its own: an MCP config change it reads, once it is at rest.
-
 import { recentTurnsOf } from "./session-lifecycle.ts";
 import { renderFreshOn } from "./switch-handoff.ts";
 import {
@@ -89,7 +87,6 @@ export const restartReady = (rt: RestartReadiness) =>
   !rt.subagentsRunning &&
   rt.openRequests === 0;
 
-/** Parts Gram writes between turns on its own, which no agent message stands behind. */
 const MARKER_PARTS: ReadonlySet<string> = new Set(["data-session-restart", "data-turn-undo"]);
 
 /**
@@ -138,7 +135,6 @@ export const makeSessionRestarts = ({
   failUnavailable,
   openSession,
 }: SessionRestartsDeps) => {
-  /** Has the agent's host drop what it keeps across sessions for `profileId`: `AgentHost.reloadConfig`. */
   const reloadHostConfig = (agent: AgentKind, profileId: ProfileId | undefined) =>
     hosts.get(agent).pipe(
       Effect.option,
@@ -149,7 +145,6 @@ export const makeSessionRestarts = ({
       ),
     );
 
-  /** Called with the runtime lock held. */
   const setPendingRestart = (rt: Runtime, reason: SessionRestartReason | undefined) =>
     Effect.suspend(() => {
       if (rt.pendingRestart === reason) return Effect.void;
@@ -161,10 +156,6 @@ export const makeSessionRestarts = ({
       });
     });
 
-  /**
-   * Called with the runtime lock held, wherever the thread may have come to rest: restarts a
-   * session `mcpConfigChanged` marked once `restartReady` holds, by `restartSession`'s path.
-   */
   const restartIfPending = (rt: Runtime): Effect.Effect<void> =>
     Effect.gen(function* () {
       const reason = rt.pendingRestart;
@@ -188,15 +179,10 @@ export const makeSessionRestarts = ({
       ) {
         return;
       }
-      // A policy change during an open may still need a restart on the child acquired after the
-      // initial invalidation. Retire that current child before closing this session's hold;
-      // held siblings keep it alive, and this restart waits for its owning exit.
       if (rt.session?.configCurrent !== undefined && (yield* rt.session.configCurrent)) {
         const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
         const owner = rt.session.configOwner;
         yield* reloadHostConfig(thread.model.agent, thread.model.profileId);
-        // Some siblings may already have consumed the pending edit on this fresh child. Mark
-        // only its exact holders again, outside our lock, so they release it once safely idle.
         if (owner !== undefined) {
           for (const sibling of runtimes.values()) {
             if (sibling === rt || sibling.session?.configOwner !== owner) continue;
@@ -225,10 +211,6 @@ export const makeSessionRestarts = ({
       yield* reopenNow(rt);
     });
 
-  /**
-   * Called with the runtime lock held. Reopens the session so it picks up a new checkout or granted
-   * folders, resuming the conversation; mid-turn it waits for the next idle.
-   */
   const reopenWhenIdle = (rt: Runtime): Effect.Effect<void> =>
     Effect.gen(function* () {
       if (rt.session === undefined) {
@@ -242,15 +224,10 @@ export const makeSessionRestarts = ({
       yield* reopenNow(rt);
     });
 
-  /**
-   * Called with the runtime lock held, on a live session with no turn open. Closes the session and
-   * opens it again on the same conversation, reading the thread as it is then.
-   */
   const reopenNow = (rt: Runtime): Effect.Effect<void> =>
     Effect.gen(function* () {
       rt.reopenOnIdle = false;
       rt.reopening = true;
-      // Sends queue while `starting`, and go out once the reopened session is idle.
       yield* setStatus(rt, "starting");
       const stopped = rt.session;
       yield* FiberMap.run(
@@ -261,10 +238,7 @@ export const makeSessionRestarts = ({
           yield* locked(
             rt,
             Effect.gen(function* () {
-              // A close that began meanwhile has the session; it would outlive the thread.
               if (rt.closing) return;
-              // The session ended by itself before the stop reached it: the thread is cold, and
-              // reads its config afresh when it next opens.
               if (stopped !== undefined && rt.endedOnItsOwn === stopped) return;
               const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
               yield* openSession(rt, thread).pipe(
@@ -273,7 +247,6 @@ export const makeSessionRestarts = ({
             }),
           );
         }).pipe(
-          // Set back by the new session's install; this covers a reopen that never got that far.
           Effect.ensuring(
             Effect.sync(() => {
               if (rt.session === undefined) rt.reopening = false;
@@ -357,7 +330,6 @@ export const makeRestartMethods = ({
           )
             return "noSession" as const;
           if (rt.session === undefined) {
-            // An open in flight read its policy before this change: it reopens at its first idle.
             if (!rt.closing && (rt.status === "starting" || rt.reopening)) {
               rt.reopenOnIdle = true;
               return "reopening" as const;
@@ -374,7 +346,6 @@ export const makeRestartMethods = ({
       const rt = yield* getRuntime(threadId);
       const refuse = (message: string) =>
         new InvalidState({ message, threadId, status: rt.status });
-      /** Asked first and again under the lock, so a refusal leaves the host's cache alone. */
       const refusal = () =>
         rt.closing || rt.status === "ended"
           ? refuse("the thread is closed")
@@ -392,8 +363,6 @@ export const makeRestartMethods = ({
       if (!(yield* checkouts.present(before.checkout.path))) {
         return yield* refuse(missingThreadFolder(before.checkout.path));
       }
-      // Before the session stops, so the one that opens next is the first to find the host
-      // without what it kept: a shared server, the resolved executable.
       const next = yield* locked(
         rt,
         Effect.gen(function* () {
@@ -407,7 +376,6 @@ export const makeRestartMethods = ({
               "The orchestrator changed while this restart waited. Review its current session and try again.",
             );
           yield* reloadHostConfig(before.model.agent, before.model.profileId);
-          // This restart reads the config as it is now, which is all a pending one waits for.
           yield* setPendingRestart(rt, undefined);
           if (rt.session === undefined) {
             const thread = yield* store.getThread(threadId);
@@ -422,7 +390,6 @@ export const makeRestartMethods = ({
             return "restarting" as const;
           }
           rt.restartMarker = "asked";
-          // At rest after a failed turn the session is `error` with nothing open: as good as idle.
           if (rt.turn === undefined && (rt.status === "idle" || rt.status === "error")) {
             yield* reopenNow(rt);
             return "restarting" as const;
@@ -432,7 +399,6 @@ export const makeRestartMethods = ({
         }),
       );
       if (next !== "interrupt") return next;
-      // The turn ends as interrupted, and its end reopens the session (`becomeIdle`).
       yield* interrupt(threadId);
       return "restarting" as const;
     }),
@@ -442,7 +408,6 @@ export const makeRestartMethods = ({
       const refuse = (message: string) =>
         new InvalidState({ message, threadId, status: rt.status });
       const before = yield* store.getThread(threadId);
-      // Dreams read unvetted transcripts and run only as their pass opens them.
       if (before.role === "dream") return yield* refuse("a dream's session opens only for its run");
       if (before.awaitingMachine !== undefined) return yield* refuse(AWAITS_MACHINE);
       if (!(yield* checkouts.present(before.checkout.path))) {
@@ -456,7 +421,6 @@ export const makeRestartMethods = ({
             return "open" as const;
           }
           if (rt.reserved) return yield* refuse("its worktree is being worked on");
-          // The session's first idle would send it: a turn, which this open must never be.
           if (rt.queue.length > 0 || rt.launch !== undefined) {
             return yield* refuse("a message waits to be sent; sending it starts the session");
           }
@@ -473,7 +437,6 @@ export const makeRestartMethods = ({
     switchConfigLock.withPermits(1)(
       Effect.gen(function* () {
         if (change.always !== true && !restartOnMcpChangeOn(yield* store.getSettings)) return [];
-        // A host-wide invalidation also retires siblings, so don't touch either switch harness.
         const held = (yield* store.listThreads).find(
           (thread) =>
             thread.sessionSwitch !== undefined &&
@@ -491,9 +454,7 @@ export const makeRestartMethods = ({
           return [];
         }
         const reached: Array<{ readonly rt: Runtime; readonly thread: Thread }> = [];
-        // A copy: the loop yields, and a thread created meanwhile reads the new config anyway.
         for (const rt of Array.from(runtimes.values())) {
-          // A cold thread opens on the config as it is then; a starting one may have read the old.
           const live = rt.session !== undefined || rt.reopening || rt.status === "starting";
           if (!live || rt.closing || rt.status === "ended") continue;
           const thread = yield* store.getThread(rt.threadId).pipe(Effect.option);
@@ -503,10 +464,6 @@ export const makeRestartMethods = ({
           if (!mcpChangeReaches(change, { threadId: rt.threadId, agent, folder })) continue;
           reached.push({ rt, thread: thread.value });
         }
-        // Once, before any of them reopens: Codex's sessions share a server per
-        // profile, and each would otherwise retire the one the last restart started. Every server
-        // the host keeps goes, one only cold threads were on included, or the next to open would
-        // find the config it started with.
         const host = yield* hosts.get(change.agent).pipe(Effect.option);
         if (Option.isSome(host) && host.value.reloadAllConfig !== undefined) {
           yield* host.value.reloadAllConfig;
@@ -560,13 +517,10 @@ export const makeRestartMethods = ({
           if (thread.forkedFrom !== undefined) {
             return yield* refuse("a fork reopens from its source, so it can't start afresh");
           }
-          // As in `reopenWhenIdle`: sends queue while `starting`, so none reaches the session
-          // that is about to stop, and they go out once the new one is idle.
           yield* setStatus(rt, "starting");
           return thread;
         }),
       );
-      // What the new session reads ahead of its first input: the turns the old one had.
       const seed =
         options?.carryTurns === true
           ? yield* recentTurnsOf(store, rt).pipe(
@@ -578,24 +532,19 @@ export const makeRestartMethods = ({
               Effect.orElseSucceed(() => undefined),
             )
           : undefined;
-      // The rewind-to-the-first-message path, without the truncation: stop, forget the session,
-      // open. With no `agentSessionId` and no `forkedFrom`, `resumeOptions` resumes nothing.
       yield* stopSession(rt, "rewind");
       yield* locked(
         rt,
         Effect.gen(function* () {
-          // A close that began meanwhile has the session; it would outlive the thread.
           if (rt.closing) return;
           const thread = yield* store.updateThread(threadId, (t) => {
             const { agentSessionId, agentSessionUnused, codexHome, ...rest } = t;
             void agentSessionId;
             void agentSessionUnused;
             void codexHome;
-            // Onto another model: the new session opens on it, as a new thread on it would.
             return model === undefined ? rest : { ...rest, model };
           });
           yield* publishUpsert(thread);
-          // The context meter was the old session's; the first turn of the new one refills it.
           rt.usage = undefined;
           rt.lostSession = seed;
           yield* openSession(rt, thread).pipe(

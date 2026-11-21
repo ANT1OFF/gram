@@ -1,6 +1,3 @@
-// One machine-wide sweep of listening ports and processes, which the port chips attribute to
-// threads. A machine's host runs it, so another machine's host can run its own.
-
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { homedir } from "node:os";

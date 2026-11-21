@@ -1,13 +1,9 @@
-// The one scrubber for token-shaped text and secret-named fields: every server log, every copy,
-// and what the shells' speech process says, go through it.
-
 /** Object keys whose values are never logged or copied. */
 export const SECRET_KEY =
   /(?:token|secret|password|passphrase|api[-_]?key|authorization|cookie|credential|private[-_]?key)/i;
 
 export const CENSOR = "[redacted]";
 
-/** Token-shaped text: launch tokens in URLs, bearer credentials, provider keys, `key=value` secrets. */
 const TEXT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/([?&](?:boot|token|access_token|api[-_]?key|key)=)[^&\s"'#]+/gi, `$1${CENSOR}`],
   [/\b(Bearer|Basic)\s+[\w.~+/=-]{8,}/g, `$1 ${CENSOR}`],
@@ -42,13 +38,11 @@ export function redactSecrets(value: unknown): unknown {
 /** What stands in for a value `presentableUrl` takes out. */
 export const MASKED_VALUE = "••••";
 
-/** `url` up to its query or fragment; by index, since a backtracking pattern is quadratic here. */
 const beforeQuery = (url: string) => {
   const cut = url.search(/[?#]/);
   return cut === -1 ? url : url.slice(0, cut);
 };
 
-/** `url` without a `user:password@` after its `//`. */
 const withoutUserinfo = (url: string) => {
   const start = url.indexOf("//");
   if (start === -1) return url;

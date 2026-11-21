@@ -2,14 +2,11 @@ import { type Checkout, isLocalHost, type Thread } from "@gram/contracts";
 import { isInside, keepPathsHere, noteForeignPath, pathForms, tryRealPathSync } from "@gram/git";
 import { isAbsolute, resolve, win32 } from "node:path";
 
-/** A path as compared here: case folded where the volumes usually ignore case. */
 const folded = (path: string): string =>
   process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
 
-/** This server's own folders (`keepFoldersHere`), as given and by their real paths, folded. */
 const ownFolders = new Set<string>();
 
-/** Own folders that didn't exist when kept, whose real path is looked for again. */
 const ownPending = new Set<string>();
 
 /** Forgets every `keepFoldersHere`, for tests. */
@@ -57,7 +54,6 @@ export const hereForms = (paths: Iterable<string>): ReadonlyArray<string> => {
  * of `here` may: two machines can hold the same path, which then names both.
  */
 export const claimableByHost = (path: string, here: ReadonlyArray<string> = []): boolean => {
-  // A path from a machine of another platform can't hold one of this server's folders.
   if (!isAbsolute(path)) return win32.isAbsolute(path);
   for (const pending of ownPending) {
     if (tryRealPathSync(pending) === undefined) continue;
@@ -71,12 +67,9 @@ export const claimableByHost = (path: string, here: ReadonlyArray<string> = []):
   return true;
 };
 
-/** Marks one checkout on another machine, and its repository, as that machine's. */
 const noteForeign = (checkout: Checkout | undefined): void => {
   if (checkout === undefined) return;
   const paths = [checkout.path, ...(checkout.repoRoot === undefined ? [] : [checkout.repoRoot])];
-  // This machine's own checkouts are never another's, whatever a host records at, above or below
-  // them: their links are always followed here.
   if (isLocalHost(checkout)) keepPathsHere(paths.filter((path) => isAbsolute(path)));
   else for (const path of paths) noteForeignPath(path);
 };

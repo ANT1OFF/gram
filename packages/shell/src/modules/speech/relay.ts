@@ -2,8 +2,6 @@ import type { SPEECH_PORT_MESSAGE } from "@gram/contracts";
 
 import type { SpeechSessionKind } from "../../speech-process/protocol.ts";
 
-// The preload is bundled into a sandboxed renderer, so it takes only types from contracts; this
-// literal is checked against the contract's.
 const PORT_MESSAGE: typeof SPEECH_PORT_MESSAGE = "gram:speech-port";
 
 /** The page's window, as the relay posts to it. */
@@ -12,10 +10,6 @@ export interface RelayWindow {
   readonly location: { readonly origin: string };
 }
 
-/**
- * Whether `data` is the last message a session of `kind` sends: an `error`, a call's `ended`, or a
- * dictation's `final` for its stop.
- */
 const lastMessage = (_kind: SpeechSessionKind, data: unknown): boolean => {
   const type: unknown =
     typeof data === "object" && data !== null ? Reflect.get(data, "type") : undefined;
@@ -23,10 +17,6 @@ const lastMessage = (_kind: SpeechSessionKind, data: unknown): boolean => {
   return type === "final" && Reflect.get(data as object, "reason") === "stop";
 };
 
-/**
- * The error a session of `kind` gets when the speech process dies under it, in its own failure
- * codes: local dictation's `crashed`, the gateway sessions' `gateway`.
- */
 const crashOf = (_kind: SpeechSessionKind, message: string) => ({
   type: "error",
   code: "crashed",
@@ -73,9 +63,6 @@ export function createSpeechRelay(window: RelayWindow) {
             : undefined;
         if (type === "cancel") close();
       });
-      // Chromium fires `close` when the other end goes. The speech process always says why before
-      // it closes a session's port, so its end going without a word is the process dying, which
-      // this sees before main's crash notice arrives.
       upstream.addEventListener("close", () => {
         if (!open) return;
         // oxlint-disable-next-line unicorn/require-post-message-target-origin -- MessagePort

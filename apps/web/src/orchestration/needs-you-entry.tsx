@@ -7,23 +7,10 @@ import { asksAmong, isErrorPart } from "./needs-you-items";
 import { useNeedsYouPill } from "./use-needs-you";
 import { useHostAttention } from "@/embed/attention";
 
-// What needs you has one way in and one wording, an amber dot before it, wherever it shows: its
-// kinds, "1 question · 1 error", so a count never stands for more than the cards that show it. It
-// sits at the top of the column left of the chat: the open sidebar's pill, the same pill over
-// Settings' sections, the compact rail's count; with no column there, the title bar's
-// Inbox button says it on hover, its corner dot the only mark (`InboxButton`).
-// Quiet's strip draws it at its foot. The rail, with room for a number only, says the words to a
-// screen reader and on hover.
-
 /** "1 needs you", "2 need you", or "Nothing needs you". */
 export const needsYouWords = (count: number): string =>
   count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
 
-/**
- * How many kinds each form names before it says the count alone, its hover the kinds: the
- * sidebar's row, a column wide, two; a chip in Quiet's strip, three (the title bar says them on
- * its Inbox's hover).
- */
 const KINDS_SHOWN = { row: 2, chip: 3 } as const;
 
 /**
@@ -61,7 +48,6 @@ export function NeedsYouEntry({
   className?: string;
 } & Omit<ComponentProps<"button">, "children" | "className">) {
   const { count, parts, scope: where, label, hint, openAsks } = useNeedsYouPill();
-  // An app in front of Gram that counts what needs someone itself says its count here instead.
   const host = useHostAttention();
   if (host !== undefined) {
     if (host.count === 0) return null;
@@ -89,8 +75,6 @@ export function NeedsYouEntry({
   }
   if (variant === "chip" && count === 0) return null;
   const words = needsYouPillWords(count, parts, KINDS_SHOWN[variant]);
-  // One alarm per failure: an error's is its card and its thread's red dot, so only what asks
-  // tints. Errors alone leave the entry neutral; beside an ask, their words stay muted.
   const asks = asksAmong(count, parts);
   const byKind = count > 0 && words === parts.join(" · ") && parts.length > 0;
   return (
@@ -106,8 +90,6 @@ export function NeedsYouEntry({
         variant === "row"
           ? "h-8 w-full rounded-(--radius-md) px-1.5"
           : "h-7 rounded-full px-2.5 text-meta",
-        // Neutral everywhere: the sidebar's pill takes a plain outline while something asks, and
-        // only its dot and the count of what asks are amber (`status-needs`, AA on every palette).
         variant === "row" && asks
           ? "border-sidebar-block-border font-medium text-foreground hover:bg-sidebar-row-hover"
           : variant === "chip"

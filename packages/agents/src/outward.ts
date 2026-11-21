@@ -1,50 +1,18 @@
-/**
- * The outward gate's matcher: does a shell command line
- * push, or open, merge or close a PR, by one of the ordinary spellings?
- *
- * Invariant: this is an **accident gate over command spellings, not a boundary**. It reads the
- * command line the way a shell would split it, and recognises `git … push`, `git subtree push`,
- * `gh pr create|new|merge|close`, `gh release create|new`, `gh workflow run` and `gh repo delete`
- * wherever a command can start: after `&&`, `||`, `;`, `|`, `&` or a newline, in a subshell, in
- * `$(…)`, backticks or `<(…)`, behind env assignments, behind `command`, `exec`, `sudo`, `time`,
- * `nohup`, `env`, `nice`, `timeout` and `xargs`, by absolute path, in the script of `sh -c` and
- * `eval`, and in a heredoc fed to a shell. It cannot see `gh api`, `git send-pack`, a git or shell
- * alias, a variable that expands to the command, a script file, or a remote shell, and nothing
- * here should be read as claiming otherwise. It stops the agent that does the ordinary thing
- * unasked, not a prompt-injected one.
- *
- * The gate is levelled (`OutwardGate`), so the matcher also says which kind of outward a command is
- * (`outwardKind`): one that only adds to the remote, or one that can't be taken back.
- *
- * Quoting is honoured, so a word `push` inside a commit message is not a push. A heredoc body is
- * data: with a quoted delimiter it isn't read at all, with an unquoted one only its `$(…)` and
- * backticks are, which is what keeps `git commit -m "$(cat <<'EOF' … EOF)"` with "git push" in the
- * message from asking. Where the reading is in doubt the answer leans toward asking: a heredoc
- * whose terminator is missing is read as commands, a wrapper's unknown options are skipped rather
- * than parsed, `--dry-run` and `--help` still ask, and a line too strange to read at all asks.
- */
-
 import type { OutwardGate } from "./host.ts";
 
-/** Stands in for a substitution's output inside a word, so `$(which git)` never reads as `git`. */
 const MARK = "\uFFFC";
 
 interface Heredoc {
   readonly delimiter: string;
-  /** `<<-`: leading tabs are stripped from the body and the terminator. */
   readonly stripTabs: boolean;
-  /** A quoted delimiter: the shell expands nothing in the body. */
   readonly literal: boolean;
-  /** The words of the command the heredoc feeds, by reference: they may still be growing. */
   readonly owner: ReadonlyArray<string>;
 }
 
 interface Cursor {
   readonly text: string;
   pos: number;
-  /** Heredocs announced on the current line; their bodies start after its newline. */
   readonly heredocs: Array<Heredoc>;
-  /** Every simple command found so far, at any nesting depth, as its unquoted words. */
   readonly out: Array<ReadonlyArray<string>>;
 }
 
@@ -77,7 +45,6 @@ const readHeredoc = (c: Cursor, owner: ReadonlyArray<string>): void => {
   if (delimiter !== "") c.heredocs.push({ delimiter, stripTabs, literal, owner });
 };
 
-/** Reads the `$(…)` and backticks of text the shell expands but doesn't run: a heredoc body. */
 const collectExpansions = (text: string, out: Cursor["out"]): void => {
   const c: Cursor = { text, pos: 0, heredocs: [], out };
   while (c.pos < text.length) {
@@ -93,7 +60,6 @@ const collectExpansions = (text: string, out: Cursor["out"]): void => {
   }
 };
 
-/** Skips the bodies of the heredocs the line announced, reading out of them only what runs. */
 const skipHeredocs = (c: Cursor): void => {
   for (const heredoc of c.heredocs.splice(0)) {
     const start = c.pos;
@@ -109,7 +75,6 @@ const skipHeredocs = (c: Cursor): void => {
       else lines.push(line);
     }
     if (!terminated) {
-      // No terminator, so where the body ends is a guess: read the rest as commands.
       c.pos = start;
       return;
     }
@@ -146,15 +111,9 @@ const parseDoubleQuoted = (c: Cursor): string => {
   return value;
 };
 
-/**
- * Splits a command list into simple commands up to `close` (or the end of the text), recursing into
- * everything that runs a nested list. Not a shell grammar: control operators only separate, and
- * keywords are dropped later, which is enough to find where a command starts.
- */
 const parseList = (c: Cursor, close: ")" | "`" | undefined): void => {
   let words: Array<string> = [];
   let word: string | undefined;
-  /** The next word is a redirect's target, not an argument. */
   let skipWord = false;
   const endWord = () => {
     if (word === undefined) return;
@@ -215,7 +174,6 @@ const parseList = (c: Cursor, close: ")" | "`" | undefined): void => {
       c.pos += 2;
       nested(")");
     } else if (ch === "<" || ch === ">" || (ch === "&" && next === ">")) {
-      // A word of digits right before a redirect is its file descriptor, not an argument.
       if (word !== undefined && /^\d+$/.test(word)) word = undefined;
       endWord();
       if (ch === "<" && next === "<" && c.text.charAt(c.pos + 2) !== "<") {
@@ -244,7 +202,6 @@ const parseList = (c: Cursor, close: ")" | "`" | undefined): void => {
 const collectCommands = (text: string, out: Cursor["out"]): void =>
   parseList({ text, pos: 0, heredocs: [], out }, undefined);
 
-/** Shell words that can stand before a command without being one. */
 const KEYWORDS: ReadonlySet<string> = new Set([
   "{",
   "}",
@@ -262,11 +219,6 @@ const KEYWORDS: ReadonlySet<string> = new Set([
 
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
 
-/**
- * Commands that run the command named by their arguments, with the options of each that take a
- * separate value. Any other option is skipped as a flag, so an unknown value option hides the
- * command behind it; the list covers the ones in common use.
- */
 const WRAPPERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["command", new Set<string>()],
   ["builtin", new Set<string>()],
@@ -282,11 +234,9 @@ const WRAPPERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 
 const SHELLS: ReadonlySet<string> = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 
-/** `/usr/bin/git` and `git.exe` are `git`. */
 const binaryName = (word: string): string =>
   word.slice(word.lastIndexOf("/") + 1).replace(/\.exe$/i, "");
 
-/** The command's own words, without the keywords, env assignments and wrappers in front of it. */
 const unwrap = (raw: ReadonlyArray<string>): ReadonlyArray<string> => {
   let rest = raw;
   for (;;) {
@@ -301,7 +251,6 @@ const unwrap = (raw: ReadonlyArray<string>): ReadonlyArray<string> => {
     if (valueOptions === undefined) return rest;
     let i = 1;
     while (i < rest.length && rest[i]!.startsWith("-")) i += valueOptions.has(rest[i]!) ? 2 : 1;
-    // `timeout 60 git push`: the duration is positional.
     if (name === "timeout") i++;
     rest = rest.slice(i);
   }
@@ -312,7 +261,6 @@ const feedsShell = (words: ReadonlyArray<string>): boolean => {
   return head !== undefined && SHELLS.has(binaryName(head));
 };
 
-/** git's global options whose value is a separate word; every other one is `--name[=value]`. */
 const GIT_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   "-C",
   "-c",
@@ -334,10 +282,6 @@ const moreSevere = (
 ): OutwardKind | undefined =>
   a === "irreversible" || b === "irreversible" ? "irreversible" : (a ?? b);
 
-/**
- * `git push`'s long options that rewrite or delete what the remote holds. git accepts any unique
- * abbreviation of a long option, so `--del` is `--delete`.
- */
 const PUSH_REWRITES: ReadonlyArray<string> = [
   "force",
   "force-with-lease",
@@ -347,24 +291,14 @@ const PUSH_REWRITES: ReadonlyArray<string> = [
   "prune",
 ];
 
-/**
- * Whether a push's own arguments make it one the remote can't be put back from: a force, a delete,
- * a mirror or a prune, by option or by refspec (`+src:dst` forces, `:dst` deletes). Option values
- * aren't skipped, so one is read as a refspec: harmless, since only a leading `+` or `:` counts,
- * and a wrong reading asks. A refspec that comes out of a variable or a substitution can't be read
- * and counts as an ordinary push, as does a force configured in the remote (`remote.<name>.mirror`,
- * a `+` in `remote.<name>.push`).
- */
 const pushRewrites = (args: ReadonlyArray<string>): boolean => {
   let optionsOver = false;
   for (const arg of args) {
     if (!optionsOver && arg === "--") optionsOver = true;
     else if (!optionsOver && arg.startsWith("--")) {
       const name = arg.slice(2).split("=", 1)[0]!;
-      // An abbreviation git would reject as ambiguous (`--f`) asks too, which costs nothing.
       if (name !== "" && PUSH_REWRITES.some((option) => option.startsWith(name))) return true;
     } else if (!optionsOver && arg.startsWith("-") && arg.length > 1) {
-      // A cluster of short options: `-fu`. Whatever follows `-o` in it is that option's value.
       if (/[fd]/.test(arg.slice(1).split("o", 1)[0]!)) return true;
     } else if (arg.startsWith("+") || (arg.startsWith(":") && arg.length > 1)) return true;
   }
@@ -377,17 +311,10 @@ const gitKind = (args: ReadonlyArray<string>): OutwardKind | undefined => {
   const subcommand = args[i];
   const rest = args.slice(i + 1);
   if (subcommand === "push") return pushRewrites(rest) ? "irreversible" : "publish";
-  // `git subtree push` publishes too, and takes its options on either side of the verb. Its one
-  // way to force is a `+` on the ref it pushes to; its `-d` is `--debug`, not a delete.
   if (subcommand !== "subtree" || !rest.includes("push")) return undefined;
   return rest.some((arg) => arg.startsWith("+")) ? "irreversible" : "publish";
 };
 
-/**
- * gh's outward verbs by command group; `new` is gh's own alias for `create`. Opening a PR can be
- * undone by closing it. A merge, a close (which can take the branch with it), a release (which
- * tags, and notifies watchers), a workflow run and a repo delete can't be taken back.
- */
 const GH_OUTWARD: Readonly<Record<string, ReadonlyMap<string, OutwardKind>>> = {
   pr: new Map<string, OutwardKind>([
     ["create", "publish"],
@@ -449,7 +376,6 @@ export const outwardKind = (command: string): OutwardKind | undefined => {
     collectCommands(command, commands);
     return commands.map(kindOf).reduce(moreSevere, undefined);
   } catch {
-    // Nesting deep enough to exhaust the stack isn't a command anyone reads; ask at every level.
     return "irreversible";
   }
 };

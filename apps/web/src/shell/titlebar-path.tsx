@@ -17,14 +17,9 @@ import { useViewWorkspace } from "@/views/view-workspace";
 
 const NO_DRAG = "[-webkit-app-region:no-drag]";
 
-/**
- * One of a workspace's places, a segment on one track: the one the window is on sits on the
- * selected slab, as the Diff's scope does, so which is open reads at a glance. On a worker, none is.
- */
 const PLACE =
   "relative h-6 px-2 text-muted-foreground hover:bg-transparent hover:text-foreground aria-[current=page]:text-foreground aria-pressed:text-foreground";
 
-/** Whether `pathname` is a workspace's Memory, one of its three places. */
 const onMemory = (pathname: string) => pathname.startsWith("/w/") && pathname.endsWith("/memory");
 
 /**
@@ -52,8 +47,6 @@ export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean 
   const pathname = useLocation({ select: (location) => location.pathname });
   const fresh = isNewForm(pathname);
   const noun = useThreadsWorkspaceNoun();
-  // The workspace is the path's end on its Board and on its orchestrator's thread, which the
-  // buttons beside the path name: a step after it would lead nowhere.
   const workspace = useViewWorkspace();
   const board = useViewStore((s) => s.view === "board");
   const route = useParams({ strict: false }).threadId as ThreadId | undefined;
@@ -155,7 +148,6 @@ export function useWorkspacePlaces(solo: boolean): readonly WorkspacePlace[] | u
  */
 export function TitlebarPathViews({ solo }: { solo: boolean }) {
   const places = useWorkspacePlaces(solo);
-  // The slab under the place the window is on, gliding between them; one per bar on screen.
   const slab = useId();
   if (places === undefined) return null;
   return (
@@ -170,7 +162,6 @@ export function TitlebarPathViews({ solo }: { solo: boolean }) {
           key={place.key}
           variant="ghost"
           size="xs"
-          // Board is a view of the window, pressed; the others are pages, current.
           {...(place.key === "board"
             ? { "aria-pressed": place.current }
             : { "aria-current": place.current ? ("page" as const) : undefined })}

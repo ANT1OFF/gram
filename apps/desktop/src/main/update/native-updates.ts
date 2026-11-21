@@ -1,9 +1,3 @@
-// An install's updates through Electron's updater (electron-updater on Squirrel.Mac for a signed
-// Mac, electron-updater's download and Gram's own file replacement for the Linux AppImage): checks
-// on a timer once automatic checks are on, downloads when the user asks, and restarts into the
-// update only after Gram's stop fence has attested sessions, the database and owned agents. A
-// refused fence quits nothing. Electron itself stays behind `NativeUpdaterPort`, so every step and
-// refusal here runs against a synthetic port in the tests.
 import type { AppUpdateState, UpdateChannel, UpdateTeardown } from "@gram/contracts";
 import {
   backgroundCheckAllowed,
@@ -160,7 +154,6 @@ export interface NativeUpdates {
   dispose(): Promise<void>;
 }
 
-/** What a refused stop says, in one line; the full reason is in the log. */
 const FENCE_REASON: Readonly<
   Record<Extract<UpdateTeardown, { path: "refused" }>["reason"], string>
 > = {
@@ -201,7 +194,6 @@ export function plainNotes(notes: unknown): string | null {
       .replace(/<\/(p|li|h\d)>/gi, "\n")
       .replace(/<[^>]*>/g, "");
   } while (stripped !== previous);
-  // Decode only after stripping: entity-escaped examples remain literal text in the UI.
   const plain = stripped
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -213,7 +205,6 @@ export function plainNotes(notes: unknown): string | null {
   return plain ? plain.slice(0, 8_000) : null;
 }
 
-/** What a refusal or a wait says, by target. */
 const COPY = {
   mac: {
     notInstallable: "Gram can only update itself from Applications. Move it there, then try again.",
@@ -236,8 +227,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
   const cancelLater =
     options.clearTimeout ?? ((timer) => clearTimeout(timer as ReturnType<typeof setTimeout>));
 
-  // Only observations are raced. The actual stop fence and Squirrel staging are always joined.
-  // Late observations have no side effects on controller state or recovery authority.
   function detectionBudget() {
     let expired = false;
     let timer: unknown;
@@ -267,8 +256,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     };
   }
 
-  // A timed-out native disarm is still a mutation in flight. A retry may join it, but must never
-  // start a competing disarm or restore services until an actual clear result is observed.
   let disarming: Promise<boolean> | undefined;
   function disarmPending(): Promise<boolean> {
     disarming ??= Promise.resolve()
@@ -294,7 +281,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     canInstall: options.canInstall,
     target,
   });
-  // Closed only by this controller's one launch operation, never by an unresolved native probe.
   let launchSettled = false;
   let launch: Promise<void> | undefined;
   let disposed = false;
@@ -322,8 +308,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
       port.useFeed(channel);
       const found = await port.check();
       const version = found === null ? undefined : parseVersion(found.version);
-      // The feed offers only newer releases; an RC is also only ever offered on Pre-release,
-      // whatever the feed says.
       const offered =
         found !== null &&
         version !== null &&
@@ -348,7 +332,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     }
   }
 
-  /** The download a restart may install: its version and its verified snapshot. */
   let verified: { version: string; snapshot: CandidateSnapshot } | undefined;
   let releasing: Promise<void> = Promise.resolve();
   const forget = () => {
@@ -358,19 +341,12 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     return releasing;
   };
 
-  /**
-   * Set while macOS has an install pending that Gram couldn't remove: `fenced` once the stop fence
-   * has passed (quitting is the safe way out), `running` when it refused and everything came back
-   * (every quit then runs the fence first).
-   */
   let pendingHold: "fenced" | "running" | undefined;
   const PENDING =
     "macOS has an earlier update waiting to install, so Gram has stopped. Quitting is safe and lets it install; or try again to remove it.";
 
-  // Read through a function so the narrowing on `pendingHold` doesn't outlive the awaits.
   const quitsFreely = () => pendingHold === "fenced";
 
-  /** Stops as an update stops, before any exit an earlier pending install could ride on. */
   async function holdForPending(): Promise<void> {
     if (pendingHold === "fenced") return;
     apply({
@@ -396,7 +372,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
           : oneLine(error);
       log("warn", `update: couldn't stop for a pending macOS install: ${reason}`);
       let problem: string | undefined;
-      // Admission refusal belongs to another transaction: it grants no recovery authority.
       if (stopped) {
         options.disarmQuit();
         try {
@@ -414,7 +389,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     }
   }
 
-  /** Detection, disarm, fencing and recovery share one owner and one outcome. */
   let pendingFlight: Promise<"clear" | "held"> | undefined;
   function pendingOperation(
     work: (budget: ReturnType<typeof detectionBudget>) => Promise<"clear" | "held">,
@@ -429,7 +403,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     return pendingFlight;
   }
 
-  /** Whether nothing of an earlier attempt is pending in macOS any more; holds when unsure. */
   function settlePending(): Promise<"clear" | "held"> {
     return pendingOperation(async (budget) => {
       const pending = await budget.observe(() => port.pendingInstall());
@@ -440,7 +413,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     });
   }
 
-  /** "Try again" on a pending install: comes back to normal only once it's shown gone. */
   async function retryPending(): Promise<AppUpdateState> {
     await pendingOperation(async (budget) => {
       if ((await budget.observe(disarmPending))?.value !== true || disposed) return "held";
@@ -528,15 +500,11 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     const candidate = verified;
     if (candidate?.version !== version)
       return refuse("The download isn't verified. Download it again.", { step: "download" });
-    // The snapshot's private copy must still be its own file; what Squirrel.Mac is served is the
-    // snapshot's descriptor, digest-checked as it streams.
     if (!(await candidate.snapshot.intact())) {
       return refuse("The download changed since it was verified. Download it again.", {
         step: "download",
       });
     }
-    // Nothing of an earlier attempt may still be armed in macOS when this one starts; one that
-    // can't be removed holds Gram as an update would, rather than leaving an unfenced exit.
     if ((await settlePending()) === "held") return state;
 
     let invoked = false;
@@ -553,7 +521,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
           const live = () => {
             if (signal.aborted) throw new Error(CANCELLED);
           };
-          // A retry keeps them hidden: they come back once, when the restart is over.
           showWindows ??= options.hideWindows();
           stopped = true;
           await options.stopForUpdate(signal);
@@ -565,14 +532,11 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
             at: now(),
           });
           live();
-          // From this call on, Squirrel.Mac may arm an install at any moment: its outcome is
-          // joined, never raced, and a quit asked for meanwhile no longer cancels anything.
           invoked = true;
           staging = true;
           const stage = port
             .stage(candidate.snapshot, version)
             .then(async () => {
-              // Squirrel.Mac now owns its own copy. Release ours before the restart.
               await forget();
             })
             .finally(async () => {
@@ -587,7 +551,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
             () => cancelLater(waiting),
           );
           if (first === "slow") {
-            // The fence has stopped everything, so quitting is safe; bringing it back isn't yet.
             options.armQuit();
             apply({ type: "installHeld", message: copy.slowStage });
             show();
@@ -599,8 +562,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
         if (!staged) {
           log("warn", `update: restart refused: ${error instanceof Error ? error.message : error}`);
           if (invoked) {
-            // Squirrel.Mac refused, but it may already have written its installer's request. Nothing
-            // comes back, and the record stays, until macOS shows no install pending.
             if (!(await boundedDisarm())) {
               await forget();
               options.armQuit();
@@ -616,10 +577,7 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
             error instanceof UpdateTeardownRefused
               ? `Didn't restart: ${FENCE_REASON[error.teardown.reason]}. Nothing was installed.`
               : `Didn't restart: ${sentence(oneLine(error))} Nothing was installed.`;
-          // Nothing is pending (or Squirrel.Mac was never invoked): quits are ordinary again.
           options.disarmQuit();
-          // Only the fence's own refusal, before Squirrel.Mac was ever invoked, is tried again,
-          // and only once the stop it refused has come back whole.
           if (
             invoked ||
             !stopped ||
@@ -630,7 +588,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
             show();
             return result;
           }
-          // Said while the stopped server comes back, before the next stop reports its own.
           const why = FENCE_REASON[error.teardown.reason];
           options.progress?.(`${sentence(why[0]!.toUpperCase() + why.slice(1))} Trying once more…`);
           let problem: string | undefined;
@@ -652,9 +609,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
       }
       break;
     }
-    // Squirrel.Mac has verified and staged the update: an exit now installs it. Quit into it, and
-    // if the relaunch never comes, exit anyway so its installer runs; the next launch's record
-    // tells whether it applied.
     log("info", `update: restarting into ${version}`);
     options.armQuit();
     later(() => {
@@ -690,7 +644,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
       await options.record.remove().catch(() => {});
     }
     options.broadcast(state);
-    // An install macOS may still have pending from before this launch is settled first.
     await settlePending();
     launchSettled = true;
     if (!options.timersAllowed || disposed) return;
@@ -705,8 +658,6 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
 
   async function dispose(): Promise<void> {
     disposed = true;
-    // A native attempt still reading owns the snapshot until its actual outcome. Never revoke
-    // that descriptor under Squirrel.Mac; a crash/exit leftover is reclaimed by the startup sweep.
     if (!staging) await forget();
   }
 

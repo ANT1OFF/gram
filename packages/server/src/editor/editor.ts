@@ -20,7 +20,6 @@ const lineArgs = (flag: string) => (target: EditorTarget) =>
     ? [flag, `${target.path}:${target.line}`]
     : [target.path];
 
-/** Editors whose CLI can jump to a line, keyed by the command's base name. */
 const PRESETS: Readonly<
   Record<string, { readonly name: string; readonly args: (target: EditorTarget) => string[] }>
 > = {

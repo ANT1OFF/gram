@@ -62,11 +62,6 @@ const threadView = (thread: ReviewThread) => ({
   })),
 });
 
-/**
- * Whether a configured review bot started the thread: `ReviewThread.byBot`, which only an app
- * account GitHub reports as one can earn, and whose login the bots configured now still match. A
- * person whose login matches a pattern starts a person's thread, which the user is asked about.
- */
 const startedByReviewBot = (bots: ReadonlyArray<ReviewBot>, target: ReviewThread) => {
   const first = target.comments[0];
   return target.byBot && first !== undefined && isBotLogin(bots, first.author);
@@ -76,25 +71,14 @@ const sameRepo = (a: string | undefined, b: string) => a?.toLowerCase() === b.to
 
 const isWorker = (thread: Thread) => thread.role === undefined && thread.spawnedBy !== undefined;
 
-/** An orchestrator, a worker or a dream: the threads the gate asks on every call (`makeApprovalGate`). */
 const isMarked = (thread: Thread) => thread.role !== undefined || thread.spawnedBy !== undefined;
 
-/**
- * Babysit mode covers writes on the user's own open PR while it's watching. `auto` mode counts the
- * same: the agent could post the same comment with `gh` there, unasked and without the fix
- * bookkeeping these tools keep. Only a plain thread is covered, and a worker where `workerOwnPr`
- * holds: an orchestrator skipping the card here would never reach the gate that asks it every call.
- */
 const covered = (thread: Thread, review: PrReview, workerOwnPr: boolean) =>
   (!isMarked(thread) || workerOwnPr) &&
   (thread.babysit?.phase === "watching" || thread.mode === "auto") &&
   review.pr?.viewerDidAuthor === true &&
   review.pr.state === "OPEN";
 
-/**
- * The card for a reply or resolve: what it does and why this call asks. `undefined`, leaving the
- * tool's description, for a call the bot-thread claim spares a card.
- */
 const cardText = (
   action: string,
   found: PrTarget,
@@ -129,14 +113,8 @@ export const ReviewAppToolsLive = Layer.effectDiscard(
     const publisher = yield* GitStatePublisher;
     const proc = yield* Proc;
     const gate = makeApprovalGate(runtimes, store);
-    /**
-     * One `pr_request_rereview` at a time per thread, from the claim to the post. Without it a
-     * claiming call that fails could roll back over a carded call that posted meanwhile, and the
-     * head would get another uncarded request.
-     */
     const rereviewLocks = makeKeyedLock<ThreadId>();
 
-    /** Records `head` as requested, on the thread so a restart keeps it; `false` if it already was. */
     const claimRereview = (threadId: ThreadId, head: string) =>
       Effect.gen(function* () {
         let claim: { readonly previous: string | undefined } | undefined;
@@ -180,7 +158,6 @@ export const ReviewAppToolsLive = Layer.effectDiscard(
         return { ...found, bots, review };
       });
 
-    /** Whether a worker's workspace leaves its PR work to its mode (`workerOwnPrFollowsMode`). */
     const followsMode = (thread: Thread) =>
       Effect.gen(function* () {
         const state =
@@ -196,12 +173,6 @@ export const ReviewAppToolsLive = Layer.effectDiscard(
         });
       });
 
-    /**
-     * Whether a worker's write here is on its own PR at an autonomy that frees PR work
-     * (`workerOwnPrFollowsMode`). `pr_bind` lets a thread bind any PR, so the bound one counts only
-     * when it is the PR its own branch opened, in the same repo, and the user's and open; a doubt
-     * is a card. `false` for any thread that isn't a worker.
-     */
     const workerOwnPr = (found: PrTarget, review: PrReview) =>
       Effect.gen(function* () {
         const { thread, bound, badge } = found;
@@ -215,16 +186,6 @@ export const ReviewAppToolsLive = Layer.effectDiscard(
         return own && (yield* followsMode(thread));
       }).pipe(Effect.catchCause(() => Effect.succeed(false)));
 
-    /**
-     * Why a reply to or resolve of `target` isn't answering the review bot, or `undefined` when it
-     * is. Agents answer the bot many times a PR, and a card on each was noise that stalled
-     * unattended workers, so answering the bot never asks outside Ask mode, which the gate checks
-     * (decided 2026-09-25). `pr_bind` takes any PR, so the PR must be the thread's main one (its
-     * bound PR, else its branch's), in its checkout's repo, the user's and open; `reviewThread` has already held the thread to it.
-     * Unlike `workerOwnPr`, the branch needn't have opened it: a worker may open a follow-up PR
-     * from a second worktree and bind it. A worker at `supervised` is refused, as is an
-     * orchestrator or a dream, which are asked on every call. A doubt is a refusal.
-     */
     const botThreadRefusal = (
       found: PrTarget,
       review: PrReview,
@@ -422,14 +383,6 @@ export const ReviewAppToolsLive = Layer.effectDiscard(
           const ownPr = yield* workerOwnPr(found, review);
           const extra = note?.trim() ?? "";
           const body = extra === "" ? bot.rereviewCommand : `${bot.rereviewCommand}\n\n${extra}`;
-          // The head is recorded before the post, so a crash between the two costs a card rather
-          // than allowing a second uncarded request. Only a covered, quiet call may skip the card
-          // on the strength of it; every other call asks and records the head all the same.
-          //
-          // The claim is an acquire, which can't be interrupted, so its release is in place by the
-          // time anything can stop the call. It runs on every exit but success, an interrupted HTTP
-          // MCP request included: a request that never went out mustn't cost the head its uncarded
-          // one.
           yield* Effect.acquireUseRelease(
             head === undefined ? Effect.succeed(undefined) : claimRereview(threadId, head),
             (claim) =>

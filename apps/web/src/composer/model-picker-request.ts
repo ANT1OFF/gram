@@ -2,7 +2,6 @@ import type { ThreadId } from "@gram/contracts";
 import { create } from "zustand";
 
 interface ModelPickerRequests {
-  /** By thread, how many times its model picker was asked to open; each ask opens it once. */
   readonly asked: Readonly<Record<string, number>>;
 }
 

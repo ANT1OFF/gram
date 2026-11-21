@@ -52,30 +52,12 @@ interface PickerProps<V extends string> {
   value: V | undefined;
   options: readonly PickerOption<V>[];
   onChange: (value: V) => void;
-  /** Registers the opening shortcut only for the focused pane. */
   focused: boolean;
-  /**
-   * Tints the trigger with the warning colour (a caution on a setting, such as Bypass, not "needs
-   * you") and explains why in its tooltip.
-   */
   warning?: string | undefined;
-  /** A glyph before the value, such as the agent the model runs on. */
   icon?: ReactNode;
-  /** What `icon` stands for, in the tooltip and read after the label. */
   iconLabel?: string | undefined;
-  /**
-   * Shows the value beside the glyph, in short for effort and mode ("Extra high"), or with "short"
-   * in its compact form ("X-high"). Without it the glyph stands alone; either way its name and
-   * tooltip say the value ("Mode: Bypass"), and the open list spells out every option with the
-   * current one checked.
-   */
   labelled?: boolean | LabelSize;
-  /**
-   * A settings form's select rather than a toolbar control: named by its label alone, the value in
-   * full, and its shortcut in a native title.
-   */
   field?: boolean;
-  /** Called as the list opens, by click or shortcut. */
   onOpen?: (() => void) | undefined;
 }
 
@@ -115,8 +97,6 @@ export function Picker<V extends string>({
   );
 
   const chosen = options.find((option) => option.value === value);
-  // Effort and mode in a word or two, the same on the trigger as in its tooltip ("Effort: Extra
-  // high").
   const shown = chosen?.short ?? chosen?.label ?? "none";
   const named = field ? label : `${label}: ${shown}`;
   const tagged = withHint(named, hint);
@@ -155,7 +135,6 @@ export function Picker<V extends string>({
         data-warning={warning ? "true" : undefined}
         className={cn(GHOST_TRIGGER, warning && "text-warning hover:text-warning")}
       />
-      {/* Above the whole composer, so the list never covers the draft. */}
       <SelectContent side="top" anchor={() => aboveComposer(trigger.current)}>
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value} description={option.description}>

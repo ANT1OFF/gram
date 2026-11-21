@@ -4,11 +4,6 @@ import { useMemo, useSyncExternalStore } from "react";
 import { Dialog } from "./dialog-shell";
 import { readWidgetTheme, svgDataUrl, themedSvg } from "./widget-svg";
 
-/**
- * Theme sync mirrors every preference, the system's light/dark included, onto `<html>` as `data-*`
- * attributes, and an edited custom palette rewrites a `<style>` in the head. Watching both sees each
- * change after its values have landed.
- */
 const subscribeToTheme = (onChange: () => void) => {
   const observer = new MutationObserver(onChange);
   observer.observe(document.documentElement, { attributes: true });
@@ -16,7 +11,6 @@ const subscribeToTheme = (onChange: () => void) => {
   return () => observer.disconnect();
 };
 
-/** A stable string, so `useSyncExternalStore` only re-renders when a value actually changed. */
 const themeSnapshot = () => JSON.stringify(readWidgetTheme(document.documentElement));
 
 /**

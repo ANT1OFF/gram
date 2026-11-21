@@ -2,10 +2,6 @@ import type { HTMLAttributes, ReactNode } from "react";
 
 import { HelpTip, SettingDescription } from "./help-tip";
 
-// A labelled field as Settings draws one, without Settings' own machinery: the form fields of
-// fields.tsx add search and "Saved" around it, and the light kit (embed/kit-lite.ts) gives it to a
-// page drawn before Gram mounts as its `Field`, so the two are one source.
-
 /**
  * A setting's name, its ⓘ for what the description leaves out, what sits beside them, such as the
  * reset and "Saved", and the one line of description under them.

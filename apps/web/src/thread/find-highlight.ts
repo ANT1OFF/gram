@@ -5,7 +5,6 @@ import { useLatest } from "@/lib/effects";
 export const FIND_HIGHLIGHT = "gram-find";
 export const FIND_CURRENT = "gram-find-current";
 
-/** What find marks, by bar: two panes can each have one open. */
 const marked = new Map<symbol, { all: Range[]; current: Range | undefined }>();
 
 const supported = () =>
@@ -96,7 +95,6 @@ export function useFindHighlight(
     if (!scroller) return;
     const self = id.current;
     const needle = query.toLowerCase();
-    // The current match is brought into view once, then left where the user scrolls it.
     let shown = target === undefined;
     let asked = false;
     let opening = 8;
@@ -122,12 +120,10 @@ export function useFindHighlight(
         asked = true;
         return;
       }
-      // A match in a closed tool card: open it (and its group), then look again.
       if (target.toolCallId !== undefined && opening > 0 && !openToolCard(row, target.toolCallId)) {
         opening--;
         return;
       }
-      // Drawn, but its words aren't: folded into a closed turn. Revealing it opens the fold.
       if (current === undefined && target.toolCallId === undefined && !asked) {
         latest.current.onUndrawn(target.messageId);
         asked = true;
@@ -154,7 +150,6 @@ export function useFindHighlight(
       marked.delete(self);
       publish();
     };
-    // `target` by its key: a new search result with the same current match marks, but doesn't jump.
     // oxlint-disable-next-line react/exhaustive-deps -- `target` by its key, so the same current match doesn't jump again
   }, [query, target?.key]);
 }

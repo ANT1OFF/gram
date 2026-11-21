@@ -83,10 +83,6 @@ export const filePath = (url: string) => {
 
 type RehypePlugins = Extract<MessageResponseProps["rehypePlugins"], (...args: never) => unknown>;
 
-/**
- * Streamdown's plugins with thread links and file references marked before `harden`, which turns a
- * relative link such as `[a.ts](src/a.ts#L3)` into "[blocked]", and PR references after it.
- */
 const refRehypePlugins: RehypePlugins = (defaults) => [
   defaults["raw"]!,
   defaults["sanitize"]!,
@@ -102,7 +98,6 @@ const REF_COMPONENTS = {
   ...WORKER_REF_COMPONENTS,
 };
 
-/** The plugins of an orchestrator's messages: its workers' names become links too. */
 function useRefPlugins(): RehypePlugins {
   const workers = useOrchestratorStreamContext()?.workers;
   return useMemo(
@@ -114,14 +109,8 @@ function useRefPlugins(): RehypePlugins {
   );
 }
 
-/** The extensions the server previews; `.heic` and `.bmp` attach fine but stay chips. */
 const PREVIEWABLE = /\.(?:png|jpe?g|gif|webp|svg)$/i;
 
-/**
- * An attached file: a thumbnail that opens full size when the server can preview it, and the
- * paperclip chip otherwise — a text file, an image format with no preview, one too large to send
- * inline, and one whose file has since been deleted all keep the chip.
- */
 function MessageAttachment({
   threadId,
   url,
@@ -149,11 +138,6 @@ function MessageAttachment({
   );
 }
 
-/**
- * A file the agent sent with `send_file`: the same inline preview as an attachment when it's an
- * image the server can serve, and otherwise a card that opens the file in the Files panel, or
- * copies its path when the file is outside the thread's checkout.
- */
 function SentFile({ threadId, url }: { threadId: ThreadId; url: string }) {
   const path = filePath(url);
   const name = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
@@ -162,9 +146,6 @@ function SentFile({ threadId, url }: { threadId: ThreadId; url: string }) {
   const requestPanel = useLayoutStore((s) => s.requestPanel);
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const root = thread === undefined ? undefined : effectiveCheckout(thread).path;
-  // `send_file` takes a file from anywhere, a temp folder as readily as the checkout, but the Files
-  // panel only opens what is inside the checkout. A button it would silently refuse is worse than
-  // none, so a file out there gets its path to copy instead.
   const inCheckout = checkoutRelative(path, root) !== undefined;
   const [copied, setCopied] = useState(false);
   const card =
@@ -181,7 +162,6 @@ function SentFile({ threadId, url }: { threadId: ThreadId; url: string }) {
           type="button"
           aria-label={`Open ${name} in Files`}
           className={card}
-          // The click comes from this thread's own pane, so this is the thread being viewed.
           onClick={() => requestPanel({ threadId, panel: "files", target: path }, threadId)}
         >
           <FileText aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
@@ -246,24 +226,15 @@ export const MessageBlock = memo(function MessageBlock({
   fold,
   foldOpen = false,
 }: MessageBlockProps) {
-  // Subagent transcripts nest under a Task card and aren't rewind points.
   const topLevel = message.metadata?.parentToolUseId === undefined;
   const refPlugins = useRefPlugins();
   const toolImages = useMemo(
     () => ({ threadId, byCall: toolImagesOf(message.parts) }),
     [threadId, message.parts],
   );
-  // The action row shows when a message arrived; a message without one (a subagent's, or a reply
-  // still streaming) has it as a native hint instead. Native rather than a tooltip: it costs nothing
-  // per message, leaves selection alone, and a hint of the message's own (a path) replaces it.
   const createdAt = message.metadata?.createdAt;
   const sentAt = createdAt === undefined ? undefined : formatMessageTime(createdAt);
-  // In the orchestrator's chat a message's actions float over it rather than reserve a row under
-  // it, where it has room and the pointer hovers (`float-actions`), so the step from a reply to the
-  // update after it is the step from the update to the next reply.
   const floating = useOrchestratorStreamContext() !== undefined && topLevel;
-  // "Conversation only": the reply without its tool calls and reasoning, and no row for one that
-  // was nothing else.
   const conversationOnly = useConversationOnly((s) => s.on);
 
   if (message.role === "user") {
@@ -274,7 +245,6 @@ export const MessageBlock = memo(function MessageBlock({
     const idleCompact = message.parts.find((p) => p.type === "data-idle-compact");
     if (idleCompact) return <IdleCompactRequest notice={idleCompact.data} />;
     const origin = message.parts.find((p) => p.type === "data-thread-origin");
-    // What Gram told the agent with a message, and the waits it set, aren't the conversation.
     const waitNote = conversationOnly
       ? undefined
       : message.parts.find((p) => p.type === "data-wait-note");
@@ -294,7 +264,6 @@ export const MessageBlock = memo(function MessageBlock({
         ))}
       </ul>
     );
-    // Another thread's message isn't the user's: it sits on the agents' side, under its sender.
     if (origin && !notice && !humanReview && !digest) {
       return (
         <Message from="assistant" data-testid="message-from-thread">
@@ -316,14 +285,10 @@ export const MessageBlock = memo(function MessageBlock({
         </Message>
       );
     }
-    // A plain bubble's actions float beside it where the message has room and the pointer hovers
-    // (`float-actions`), in room kept at its start so the row never cuts them off; narrower or on
-    // touch they are the row under the bubble. A notice's card keeps them in a row under it.
     const besideBubble = floating && !notice && !humanReview && !digest;
     const boardRequest =
       notice || humanReview || digest ? undefined : boardRequestOf(messageText(message));
     const bubble = (
-      // Around the bubble or card alone, not the row's width beside it or the actions.
       <div
         data-testid="message-time"
         title={topLevel ? undefined : sentAt}
@@ -388,7 +353,6 @@ export const MessageBlock = memo(function MessageBlock({
   );
 
   const runs = toolRuns(message.parts, folded ? fold.apart : undefined);
-  // Summary and raw parts share one visual; each retains its own text and open lifecycle.
   const reasoningIndex = message.parts.findLastIndex((part) => part.type === "reasoning");
   const reasoningOpen =
     streaming &&
@@ -412,10 +376,6 @@ export const MessageBlock = memo(function MessageBlock({
           )}
         </div>
       )}
-      {/* A reply's parts (a tool row, its prose, a diff card) 12 px apart, a list's rhythm, so its
-          blocks read as separate steps by space rather than run together at 8 px. It clips 16 px
-          out, so a raised card's shadow (14 px at most, below) keeps the card's rounded shape
-          instead of being cut square at the reply's edges. */}
       <MessageContent
         data-testid="message-time"
         title={actions ? undefined : sentAt}
@@ -425,7 +385,6 @@ export const MessageBlock = memo(function MessageBlock({
           {message.parts.map((part, i) => {
             const key = `${message.id}:${i}`;
             if (conversationOnly && leavesOut(part)) {
-              // The call is left out; a screenshot or a picture it returned stays where it was.
               return isToolPart(part) ? (
                 <ToolImages
                   key={key}
@@ -554,11 +513,6 @@ export const MessageBlock = memo(function MessageBlock({
   );
 });
 
-/**
- * The cards under a message for what it left to look at: each page it published to claude.ai, and
- * each Markdown or HTML file it wrote that isn't one of those pages' sources, which their cards
- * already show.
- */
 function PublishedFileCards({
   threadId,
   parts,

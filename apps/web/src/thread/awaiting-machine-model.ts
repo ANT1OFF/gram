@@ -1,9 +1,5 @@
 import type { Thread } from "@gram/contracts";
 
-// A thread started before its machine (`Thread.awaitingMachine`): what its wait reads as, wherever
-// the thread is shown. It is stored and takes messages, which wait in its queue; no session opens
-// until whoever runs the machines names one for it. No React.
-
 /**
  * How the wait stands: a machine is starting, one is starting again after the first didn't, or
  * none came (`failed`).
@@ -32,11 +28,6 @@ export interface AskedAgain {
  */
 export const ASKED_LAPSE_MS = 60_000;
 
-/**
- * Gram's own sentence for a wait that ran out (the server's `NO_MACHINE_CAME`), which already says
- * the messages are kept; the line under the failure says that for every sentence, so the failure's
- * head keeps its first sentence alone.
- */
 const KEPT_TAIL = " What you sent is kept, and goes once one has.";
 
 /** The failure's sentence as its head says it: the platform's own, or Gram's without its tail. */
@@ -66,7 +57,6 @@ export const machineWait = (
       sentence: failureSentence(waiting.failed.message),
     };
   }
-  // A wait begun again counts from then; the first counts from the thread's own start.
   return { state: waiting.since > thread.createdAt ? "again" : "starting", since: waiting.since };
 };
 

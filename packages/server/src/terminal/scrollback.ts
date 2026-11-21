@@ -1,10 +1,8 @@
 /** Default scrollback kept per terminal and replayed on subscribe, in UTF-16 code units. */
 export const SCROLLBACK_LIMIT = 256 * 1024;
 
-/** The private modes that switch to the alternate screen, in the three spellings programs use. */
 const ALT_MODES = ["1049", "1047", "47"] as const;
 
-/** Where the first sequence setting (`h`) or resetting (`l`) an alternate-screen mode is, and its length. */
 const firstAltSwitch = (
   text: string,
   final: "h" | "l",

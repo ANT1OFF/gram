@@ -59,8 +59,6 @@ export const inputLengthProblem = (
     if (typeof node.$ref === "string" && node.$ref.startsWith("#/$defs/")) {
       return visit(document.definitions[node.$ref.slice(8)], value, path);
     }
-    // Nullable fields and other unions keep their constraints inside anyOf. Only matching
-    // JSON types participate, and one branch permitting the length is enough for an anyOf.
     if (Array.isArray(node.anyOf)) {
       const type = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
       const branches = node.anyOf.filter((branch: unknown) => {

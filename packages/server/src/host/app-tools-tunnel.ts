@@ -1,15 +1,3 @@
-// A host's sessions reaching their threads' app tools over the host's own connection
-// (`app-tools-tunnel`), for a host that can't reach the control plane's address: one a hosted
-// server started for a desktop's worker, whose connection that server relays
-// (`docs/design/desktop-worker-machines.md`).
-//
-// The host serves `/host/mcp` on its own loopback, at an address only processes on that machine
-// reach, and carries each call to the control plane as `host.appTools.requests`; the control plane
-// answers it (`host.appTools.answer`) and the host writes the answer back to the session. The host
-// checks nothing about the call: the control plane checks its token, and that its thread is placed
-// on this machine, as it does for a call over the tailnet. A call the control plane never answers
-// (its connection ended) gets a 503, so the session's tool says why rather than waiting for good.
-
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
@@ -39,7 +27,6 @@ export interface HostAppTools {
   readonly answer: (answer: HostAppToolsAnswer) => Effect.Effect<void, HostFailed>;
 }
 
-/** The headers a call carries to the control plane: what MCP over HTTP needs, and its token. */
 const CALL_HEADERS = [
   "authorization",
   "content-type",
@@ -48,10 +35,6 @@ const CALL_HEADERS = [
   "mcp-session-id",
   "last-event-id",
 ] as const;
-/**
- * Headers a proxy that passed a request on adds. Not `sec-fetch-*`: Node's own `fetch`, which an
- * agent's MCP client may use, sends those too; a page in a browser is refused by its `Origin`.
- */
 const FORWARDED = [
   "forwarded",
   "x-forwarded-for",
@@ -60,7 +43,6 @@ const FORWARDED = [
   "x-real-ip",
 ] as const;
 
-/** The headers an answer carries back. */
 const ANSWER_HEADERS = new Set(["content-type", "mcp-session-id"]);
 
 const plain = (res: ServerResponse, status: number, text: string) => {
@@ -69,7 +51,6 @@ const plain = (res: ServerResponse, status: number, text: string) => {
   res.end(text);
 };
 
-/** One call waiting on its answer. `delivered`: the control plane was handed it. */
 interface Waiting {
   readonly res: ServerResponse;
   delivered: boolean;
@@ -80,7 +61,6 @@ export const makeAppToolsTunnel: Effect.Effect<HostAppTools, never, Scope.Scope>
   function* () {
     const calls = yield* Queue.unbounded<HostAppToolsRequest>();
     const waiting = new Map<string, Waiting>();
-    /** Calls hung up on before they were handed over: never handed over. */
     const dropped = new Set<string>();
     let listening: Promise<string> | undefined;
     let server: Server | undefined;
@@ -88,12 +68,10 @@ export const makeAppToolsTunnel: Effect.Effect<HostAppTools, never, Scope.Scope>
     const take = (req: IncomingMessage, res: ServerResponse, host: string) => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
       const method = req.method ?? "GET";
-      // Only a process on this machine that names this address, never a page in a browser.
       if (url.pathname !== HOST_MCP_PATH) return plain(res, 404, "not found");
       if (
         req.headers["host"] !== host ||
         req.headers["origin"] !== undefined ||
-        // Nor one a proxy passed on.
         FORWARDED.some((name) => req.headers[name] !== undefined)
       )
         return plain(res, 403, "forbidden");
@@ -122,7 +100,6 @@ export const makeAppToolsTunnel: Effect.Effect<HostAppTools, never, Scope.Scope>
         res.once("close", () => {
           const each = waiting.get(id);
           waiting.delete(id);
-          // Hung up on before its answer: the control plane stops the call, or never starts it.
           if (each === undefined || res.writableFinished) return;
           if (each.delivered)
             Queue.offerUnsafe(calls, { id, method: "POST", headers: {}, body: "", cancel: true });
@@ -170,8 +147,6 @@ export const makeAppToolsTunnel: Effect.Effect<HostAppTools, never, Scope.Scope>
 
     return {
       open,
-      // The calls handed to this control plane and not answered when its stream ends (its
-      // connection went) are answered 503; those not handed yet wait for the next.
       requests: Stream.fromQueue(calls).pipe(
         Stream.filter((call) => call.cancel === true || !dropped.delete(call.id)),
         Stream.tap((call) =>

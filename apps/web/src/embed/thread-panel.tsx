@@ -7,10 +7,6 @@ import { useThreadsStore } from "@/stores/threads";
 
 import type { ShellThreadPanelComponent, ShellThreadPanelTab } from "./contract";
 
-// A thread's working panels for a page of the embedding app's: what the right panel shows on the
-// thread's own page, without the panel's other tabs, its toggle or its place in the layout. The
-// panels are the app's own, loaded when first shown, as the right panel loads them.
-
 const DiffPanel = lazy(() => import("@/panels/diff-panel").then((m) => ({ default: m.DiffPanel })));
 const PrPanel = lazy(() => import("@/panels/pr-panel").then((m) => ({ default: m.PrPanel })));
 const FilesPanel = lazy(() =>
@@ -31,7 +27,6 @@ export const ShellThreadPanel: ShellThreadPanelComponent = ({ threadId, tab, onT
   const [own, setOwn] = useState<ShellThreadPanelTab>("diff");
   const shown = tab ?? own;
   const id = threadId as ThreadId;
-  // A thread the server no longer has has no diff, files or terminal to show.
   const known = useThreadsStore((s) => !s.ready || s.byId[id] !== undefined);
   return (
     <Tabs

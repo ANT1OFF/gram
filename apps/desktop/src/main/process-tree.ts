@@ -1,10 +1,3 @@
-// Kills a process main started (the server) together with everything under it: agents, their MCP
-// servers, terminal shells and what runs in them. A server killed outright runs none of its
-// finalizers, and SIGKILL lets no agent end its own children, so the tree is read from the live
-// process table at the moment of the kill, by parent pid, never by name. Only what descends from
-// the pid main recorded for its own child is touched, and a subtree the server started for the user
-// to keep (an editor, a file manager: `launched`) is spared, since it may hold unsaved work.
-
 /**
  * What a bounded synchronous run of `ps`/PowerShell/`taskkill` gave back; undefined if it failed.
  * `pid` is the run's own process, which a process table it printed lists too.
@@ -22,13 +15,10 @@ export interface KillTreeDeps {
   readonly kill: (pid: number, signal: NodeJS.Signals) => void;
 }
 
-/** Long enough for `ps` on a loaded machine, short enough for a quit the user is forcing. */
 const PS_TIMEOUT_MS = 1_000;
-/** PowerShell's own start takes most of a second. */
 const POWERSHELL_TIMEOUT_MS = 3_000;
 const TASKKILL_TIMEOUT_MS = 3_000;
 
-/** Every process as `pid ppid` lines, from `ps` or, on Windows, CIM. */
 const TABLE_COMMAND: Readonly<Record<"posix" | "win32", readonly [string, string[], number]>> = {
   posix: ["ps", ["-A", "-o", "pid=,ppid="], PS_TIMEOUT_MS],
   win32: [
@@ -65,13 +55,8 @@ export function childrenByParent(table: string): ReadonlyMap<number, ReadonlyArr
   return children;
 }
 
-/** At most this many killed processes are named, so a runaway tree can't flood the log. */
 const MAX_NAMED = 16;
 
-/**
- * Each pid's executable name, from `pid name` lines: the file name only, never its folder or
- * arguments, so the log says what was still running (`git`, `codex`) and nothing it was given.
- */
 function namesByPid(table: string): ReadonlyMap<number, string> {
   const names = new Map<number, string>();
   for (const line of table.split("\n")) {
@@ -82,11 +67,6 @@ function namesByPid(table: string): ReadonlyMap<number, string> {
   return names;
 }
 
-/**
- * The names of `pids`, best effort and apart from the table the kill set comes from: a read that
- * fails or overflows names nothing, and never shrinks what is killed. Asked only for the few pids
- * logged, so its output stays small. Not on Windows, where another PowerShell start costs a second.
- */
 function readNames(pids: ReadonlyArray<number>, deps: KillTreeDeps): ReadonlyArray<string> {
   if (pids.length === 0 || deps.platform === "win32") return [];
   const read = deps.run("ps", ["-o", "pid=,comm=", "-p", pids.join(",")], PS_TIMEOUT_MS);
@@ -115,7 +95,6 @@ export function descendantsOf(
   const queue = [root];
   for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     for (const child of children.get(next) ?? []) {
-      // A table read mid-fork can show a cycle through a reused pid.
       if (seen.has(child) || spared.has(child)) continue;
       seen.add(child);
       found.push(child);
@@ -140,16 +119,12 @@ export function killTree(
   const kill = (pid: number) => {
     try {
       deps.kill(pid, "SIGKILL");
-    } catch {
-      // ESRCH: it exited since the table was read.
-    }
+    } catch (_esrchItExitedSinceTheTableWasRead) {}
   };
   const windows = deps.platform === "win32";
   const [file, args, timeoutMs] = TABLE_COMMAND[windows ? "win32" : "posix"];
   const table = deps.run(file, args, timeoutMs);
   if (table?.status !== 0) {
-    // `taskkill /T` can't leave anything out, so it is only for a tree with nothing to spare: an
-    // orphaned agent costs less than an editor's unsaved work.
     const tree =
       windows && spared.size === 0
         ? deps.run("taskkill", ["/pid", String(root), "/T", "/F"], TASKKILL_TIMEOUT_MS)
@@ -158,10 +133,7 @@ export function killTree(
     return { under: 0, names: [] };
   }
   const under = descendantsOf(childrenByParent(table.stdout.replaceAll("\r", "")), root, spared);
-  // The root first, so it can't start anything more; its children keep their parent pid in the
-  // table already read.
   kill(root);
-  // Named while they still run; `ps -p` exits nonzero when one has gone, with the rest named.
   const names = readNames(under.slice(0, MAX_NAMED), deps);
   for (const pid of under) kill(pid);
   return { under: under.length, names };

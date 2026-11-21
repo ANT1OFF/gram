@@ -8,11 +8,6 @@ import {
 
 import type { MemoryQuestion } from "./memory-model";
 
-// One question card for both kinds of question the user answers (docs/design/worker-questions.md):
-// the orchestrator's own (`ask_user`, an entry of questions.md) and a worker's (`ask_question`),
-// forwarded to the user. The card shows the asker's words exactly; a worker's adds who asked, the
-// orchestrator's line, and Dismiss. No React.
-
 export interface QuestionCard {
   /** Unique in its list. */
   readonly key: string;

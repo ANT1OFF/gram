@@ -13,10 +13,6 @@ import { mustReadDetails } from "@/thread/request-model";
 
 import { treeThreads, type WorkspaceTree } from "./tree-model";
 
-// The approvals inbox: every request waiting across a workspace's
-// threads, with the identical ones folded into one entry that a single answer goes out to. No
-// React.
-
 export interface InboxEntry {
   readonly threadId: ThreadId;
   readonly title: string;
@@ -63,12 +59,6 @@ export const inboxEntries = (
   projectName: (projectId: string) => string | undefined = () => undefined,
 ): InboxEntry[] => threadEntries(treeThreads(tree), projectName);
 
-/**
- * The same tool given the same input, whole, for the same feature. The card's subject is one field
- * of the input (`command`, `file_path`, `url`), so keying on it let a request whose other arguments
- * differed ride along under an "Allow all" that showed only the first one's. JSON escapes NUL, and
- * neither a feature slug nor a tool name holds one.
- */
 const approvalKey = (entry: InboxEntry): string | undefined =>
   entry.request.kind === "approval" &&
   entry.feature !== undefined &&

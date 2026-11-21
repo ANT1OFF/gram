@@ -15,7 +15,6 @@ export const gitRefreshHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
         const checkout = effectiveCheckout(thread);
-        // Another machine's checkout is read there, by the publisher; this disk has no say in it.
         const cwd = isLocalHost(checkout) ? yield* threadFolder(thread) : checkout.path;
         yield* refreshes.request(cwd, true);
       }),

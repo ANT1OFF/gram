@@ -18,8 +18,6 @@ export function ThemeRoot({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     const root = document.documentElement;
     const stop = startThemeSync(themeStore, systemSource, root);
-    // index.html boots with transitions off; keep them off until the synced theme has painted, so
-    // nothing animates from the boot attributes into it.
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => root.removeAttribute("data-theme-booting"));
     });

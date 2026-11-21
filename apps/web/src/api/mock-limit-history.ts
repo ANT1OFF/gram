@@ -18,23 +18,16 @@ import { MOCK_LIMITS_KEY, mockLimitSeeds } from "./mock-limits";
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
-/** A fixed pseudo-random share from 0 to 1 for `n`, so the invented history is the same each run. */
 const noise = (n: number): number => {
   const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
   return x - Math.floor(x);
 };
 
-/** Whether the app was open to read a limit at `at`: the waking hours, as a real day has. */
 const watched = (at: number): boolean => {
   const hour = new Date(at).getUTCHours();
   return hour >= 7 && hour < 22;
 };
 
-/**
- * One window's invented quarter hours over `days` before `now`, ending on the kept reading the
- * meter shows. Each past window, counted back from the current reset, fills toward a peak of its
- * own and drops at its reset; a 5-hour window often goes unused, and nothing is read overnight.
- */
 function windowPoints(
   window: string,
   current: { readonly utilization: number; readonly resetsAt?: number },
@@ -50,7 +43,6 @@ function windowPoints(
     const live = n === 0;
     const used = window === "five_hour" ? noise(start / HOUR) < 0.45 : true;
     if (!live && !used) continue;
-    // The current window ends on the kept reading; a past one at a peak of its own.
     const top = live
       ? current.utilization
       : window === "five_hour"
@@ -65,7 +57,6 @@ function windowPoints(
     ) {
       if (at < start || (!watched(at) && !(live && now - at < 2 * HOUR))) continue;
       const through = Math.min(1, (at - start) / (until - start || 1));
-      // Use rises in bursts: a gentle curve with a little wobble, never falling inside a window.
       const share = Math.min(
         1,
         top * (through ** 0.8 + (noise(at / LIMIT_HISTORY_BUCKET_MS) - 0.5) * 0.04),
@@ -77,10 +68,6 @@ function windowPoints(
   return points.toSorted((a, b) => a.at - b.at);
 }
 
-/**
- * Codex's invented credit balance over the period: spent a little through each working hour, with
- * one top-up three weeks ago, ending on the balance the kept reading names.
- */
 function creditPoints(balance: number, days: number, now: number): CreditHistoryPoint[] {
   const balances: { at: number; balance: number }[] = [];
   let left = balance;
@@ -89,7 +76,6 @@ function creditPoints(balance: number, days: number, now: number): CreditHistory
     if (Math.abs(at - (now - 21 * DAY)) < HOUR / 2) left -= 500;
     if (watched(at)) left += noise(at / HOUR) < 0.3 ? Math.round(noise(at / HOUR + 1) * 12) : 0;
   }
-  // Oldest first, each with what moved it from the balance before.
   return balances.toReversed().map((point, i, all) => {
     const change = i === 0 ? 0 : point.balance - all[i - 1]!.balance;
     return { ...point, spent: Math.max(0, -change), added: Math.max(0, change) };

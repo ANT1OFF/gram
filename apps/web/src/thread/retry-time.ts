@@ -18,7 +18,6 @@ export function retryTimeOf(
   now: number,
 ): number | undefined {
   if (error.kind !== "rateLimit" || model === undefined || model.profileId !== undefined) return;
-  // OpenCode and Antigravity report no subscription windows.
   if (model.agent === "opencode" || model.agent === "antigravity") return undefined;
   const windows = limits[model.agent];
   if (windows === undefined) return undefined;
@@ -42,19 +41,12 @@ export const AFTER_RESET_MS = 30_000;
 /** How long "Retry automatically" waits before it sends a rate-limited turn again. */
 export const AUTO_RETRY_MS = 30_000;
 
-/** The longest `setTimeout` takes; a later time is waited for in steps. */
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
 interface RetrySchedule {
-  /** By `retryKey`, when the retry is due, epoch ms. */
   readonly due: Readonly<Record<string, number>>;
-  /**
-   * Runs `run` once `at` and `margin` after it have passed (by default `AFTER_RESET_MS`, as `at` is
-   * a provider's reset), while Gram stays open: an app that quits forgets it, and the card says so.
-   * Replaces an earlier schedule for the same key.
-   */
   schedule(key: string, at: number, run: () => void, margin?: number): void;
   cancel(key: string): void;
 }

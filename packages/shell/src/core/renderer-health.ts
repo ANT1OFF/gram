@@ -1,10 +1,3 @@
-// Watches each window's renderer for main: logs when it hangs, dies or fails to load, and when its
-// socket to the server drops and comes back, so a window that stops moving leaves a line saying
-// which of those it was. A renderer that died is reloaded, one that hangs is offered a reload, and
-// a page that failed to load is tried again, each within a budget. Nothing about the page itself
-// is logged: no URL (the boot URL carries the launch token), no title, no content. Electron stays
-// out of this module, so tests drive it with fakes.
-
 import type { ShellLog } from "./log.ts";
 
 /** How long a renderer may hang before the user is offered a reload. */
@@ -15,7 +8,6 @@ export const RELOAD_WINDOW_MS = 5 * 60_000;
 /** The wait before reloading a page that failed to load. */
 export const FAILED_LOAD_RETRY_MS = 2_000;
 
-/** Chromium's `ERR_ABORTED`: a navigation the next one superseded, not a failure. */
 const ERR_ABORTED = -3;
 
 /** The slice of Electron's `WebContents` events this needs. */
@@ -63,7 +55,6 @@ export function watchRenderer(contents: RendererEvents, options: RendererWatchOp
     ...extra,
   });
   let reloads: number[] = [];
-  /** Spends one of the window's automatic reloads; false once they are used up. */
   const spend = (): boolean => {
     const now = options.now();
     reloads = reloads.filter((at) => now - at < RELOAD_WINDOW_MS);
@@ -74,7 +65,6 @@ export function watchRenderer(contents: RendererEvents, options: RendererWatchOp
   let hungSince: number | undefined;
   let promptTimer: unknown;
   let prompting = false;
-  /** The user chose to reload a hung renderer; its death is then reloaded whatever the budget. */
   let reloadAsked = false;
 
   contents.on("unresponsive", () => {
@@ -116,8 +106,6 @@ export function watchRenderer(contents: RendererEvents, options: RendererWatchOp
     options.reload();
   });
   let loadRetry: unknown;
-  // Any load that starts after a failure supersedes its retry: the server's recovery reloads every
-  // window itself, and a second reload would throw away what was typed into the fresh page.
   contents.on("did-start-loading", () => {
     options.clearTimeout(loadRetry);
     loadRetry = undefined;

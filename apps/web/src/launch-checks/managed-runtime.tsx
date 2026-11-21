@@ -23,8 +23,6 @@ export function ManagedRuntimeControls({ runtime }: { runtime: AgentRuntime }) {
   const agent = runtime.agent;
   const name = agentLabel(agent);
   const { state } = useRuntimeInstall(agent, true);
-  // The persisted choice, not what resolved: after a lost store the row shows PATH or nothing, yet
-  // sessions still refuse to start until the user turns this off.
   const settings = useServerSettings((s) => s.settings);
   const managedOn =
     settings === undefined
@@ -72,7 +70,6 @@ export function ManagedRuntimeControls({ runtime }: { runtime: AgentRuntime }) {
         onChange={(next) =>
           void act(next ? "switch to it" : "switch back", async () => {
             await api.setRuntimeSource(agent, next ? "managed" : "path");
-            // The server keeps the choice in Settings; this window's copy follows.
             useServerSettings.setState({ settings: await api.getSettings() });
           })
         }

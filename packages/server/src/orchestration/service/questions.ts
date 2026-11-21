@@ -1,8 +1,3 @@
-// Worker questions: `ask_question` from a worker, its triage by the
-// orchestrator (`answer_worker` with a `questionId`, `forward_question`), the timer that forwards it
-// to the user, the user's own answer or dismissal, and delivering each answer to the worker that
-// asked. Also `answer_worker`, the orchestrator's answer to what a worker waits on.
-
 import {
   InvalidState,
   NotFound,
@@ -54,10 +49,8 @@ import { findUserMessages } from "../../persistence/thread-store.ts";
 import { toolError, pausedFeatureOf, clipped, type OrchestrationKit } from "./kit.ts";
 import { NOT_YOUR_MACHINE, recordActor } from "../../host/ownership.ts";
 
-/** A worker's own words for a question, trimmed and scrubbed like everything a worker writes. */
 const questionWords = (text: string): string => redactText(text.trim());
 
-/** What the worker is told of a closed question, from what was stored with the decision. */
 const closedQuestionText = (question: StoredWorkerQuestion) =>
   question.withdrawal !== undefined
     ? workerWithdrawnMessage(question, question.withdrawal.how, question.reason ?? "")
@@ -71,7 +64,6 @@ const closedQuestionText = (question: StoredWorkerQuestion) =>
             : { closedBy: "user", recordedBy: question.recordedBy },
         );
 
-/** Why each way a worker's thread leaves withdraws its open questions, as their history says. */
 const LEFT_REASON = {
   archived: "Its thread was archived.",
   deleted: "Its thread was deleted.",
@@ -79,7 +71,6 @@ const LEFT_REASON = {
   moved: "Its thread moved to another workspace.",
 } as const;
 
-/** A withdrawal's reason, scrubbed; or why it's refused. */
 const withdrawReason = (tool: string, reason: string | undefined) => {
   const words = redactText((reason ?? "").trim());
   if (words === "") {
@@ -93,7 +84,6 @@ const withdrawReason = (tool: string, reason: string | undefined) => {
   return Effect.succeed(words);
 };
 
-/** A worker question's timer key: its workspace and its id there, since ids restart at WQ1 in each. */
 const questionTimerKey = (workspaceId: WorkspaceId, questionId: string) =>
   `${workspaceId}\u0000${questionId}`;
 
@@ -108,7 +98,6 @@ export interface WorkerQuestionsDeps {
   ) => Effect.Effect<void>;
 }
 
-/** `moved` as made for `closedFor`, when it moved and was made for a caller. */
 const withClosedFor = (
   moved: StoredWorkerQuestion | QuestionRefusal,
   closedFor: StoredWorkerQuestion["closedFor"],
@@ -133,7 +122,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
   } = kit;
   const { recordReport, wake } = deps;
 
-  /** Who a decision made now is for (`closedFor`): kept with it, for its owed notice. */
   const decidedFor = recordActor;
 
   const answerWorker: OrchestrationShape["answerWorker"] = (callerId, input) =>
@@ -192,12 +180,9 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         );
       }
       const answer = clipped(redactText(input.answer.trim()), WORKER_ANSWER_MAX);
-      // A question card's answer is keyed by each question's own text (`QuestionAnswer`). The
-      // tool takes one text, so a request that asks several things gets it under each of them.
       const answers = Object.fromEntries(
         request.questions.map((each) => [each.question, [answer]]),
       );
-      // For the card read above (`shown`): one the worker asked again under its id refuses it.
       yield* runtimes
         .respond(target.id, request.id, { kind: "question", answers }, request.shown)
         .pipe(
@@ -229,11 +214,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       };
     });
 
-  // ---------------------------------------------------------------------------------------
-  // Workers' own questions (docs/design/worker-questions.md)
-  // ---------------------------------------------------------------------------------------
-
-  /** The worker's card for a question, replaced in place; a new one when that message is gone. */
   const showQuestionToWorker = (question: StoredWorkerQuestion) =>
     Effect.gen(function* () {
       const chunk = {
@@ -255,7 +235,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         .pipe(Effect.orElseSucceed(() => undefined));
     });
 
-  /** The card in the orchestrator's transcript, where it answered or forwarded the question. */
   const showQuestionToOrchestrator = (callerId: ThreadId, question: StoredWorkerQuestion) =>
     runtimes
       .emitChunk(callerId, {
@@ -265,7 +244,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       })
       .pipe(Effect.ignore);
 
-  /** Arms the move of a question still in triage to the user, at its `triageUntil`. */
   const armQuestionTimer = (
     workspaceId: WorkspaceId,
     question: StoredWorkerQuestion,
@@ -290,10 +268,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       }
     });
 
-  /**
-   * The worker was given an input: it no longer stands on its question, unless another of its
-   * questions is still open, which keeps it in `question`.
-   */
   const answeredInput = (workspaceId: WorkspaceId, question: StoredWorkerQuestion) =>
     Effect.gen(function* () {
       const outbox = yield* readOutbox(workspaceId);
@@ -308,10 +282,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       }));
     });
 
-  /**
-   * Moves a question under the outbox lock, or says why it can't be moved. `move` sees the stored
-   * question; the moved one is written and returned.
-   */
   const moveQuestion = (
     workspaceId: WorkspaceId,
     questionId: string,
@@ -335,7 +305,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       },
     );
 
-  /** Puts a question back as it was, after a delivery that failed; one moved since is left. */
   const restoreQuestion = (
     workspaceId: WorkspaceId,
     before: StoredWorkerQuestion,
@@ -348,14 +317,8 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         : [replaceQuestion(outbox, before), undefined];
     });
 
-  /**
-   * Sends the worker the answer or dismissal of a question the caller has already closed: steered
-   * into a running turn, queued behind it otherwise. Never counted as the user typing.
-   */
   const deliverToWorker = (question: StoredWorkerQuestion, text: string) =>
     runtimes
-      // Steered, as every notice is: the answer can change what the worker does now, and a steer
-      // cancels nothing, so it lands after the tool call under way.
       .sendNotice(question.threadId, `question:${question.id}`, { text })
       .pipe(
         Effect.map((sent): QuestionDelivery =>
@@ -363,7 +326,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         ),
       );
 
-  /** The owed notice settled: how it reached the worker, or `undefined` when it couldn't. */
   const settleDelivery = (
     workspaceId: WorkspaceId,
     closed: StoredWorkerQuestion,
@@ -376,13 +338,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       return [replaceQuestion(outbox, next), next];
     });
 
-  /**
-   * A closed question's owed notice, as durable work: `deliveryOwed` is written with the decision,
-   * the notice is sent, then the delivery is settled. A worker that is gone, archived or moved to
-   * another workspace is never woken: the delivery is settled without it, and the decision stands. A
-   * failed send leaves it owed, for the next retry or restart. On a retry, a notice a send before an
-   * interruption or restart already queued or recorded is not sent again.
-   */
   const owedNotices = makeDurableWork<
     { readonly workspaceId: WorkspaceId; readonly questionId: string },
     StoredWorkerQuestion,
@@ -392,7 +347,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     read: ({ workspaceId, questionId }) =>
       readOutbox(workspaceId).pipe(Effect.map((outbox) => findStoredQuestion(outbox, questionId))),
     owed: (question) => question.deliveryOwed === true,
-    // Delivered as the caller the decision was made in, a retry included (`durable-work.ts`).
     actor: (question) => Effect.succeed(question.closedFor),
     perform: (current, retry, { workspaceId }) =>
       Effect.gen(function* () {
@@ -411,7 +365,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         const recorded =
           retry &&
           !queued &&
-          // Only the user messages whose stored form holds the text are read and decoded.
           (yield* store.messagesWith(worker.id, [text], "user")).some((message) =>
             message.parts.some((part) => part.type === "text" && part.text === text),
           );
@@ -420,7 +373,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
           : recorded
             ? "sent"
             : yield* deliverToWorker(current, text).pipe(
-                // Made for someone this worker isn't theirs to change: settled, never sent.
                 Effect.catchIf(
                   (error) => error._tag === "InvalidState" && error.message === NOT_YOUR_MACHINE,
                   () => Effect.succeed("refused" as const),
@@ -439,11 +391,9 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       settleDelivery(workspaceId, current, delivered),
   });
 
-  /** Hands the worker a closed question's owed notice, once; the question as stored after. */
   const deliverOwed = (workspaceId: WorkspaceId, questionId: string, retry: boolean) =>
     owedNotices.attempt({ workspaceId, questionId }, retry);
 
-  /** After a restart: each decision whose notice was cut off or failed goes to its worker now. */
   const deliverOwedQuestions = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       const owed = questionsOf(yield* readOutbox(workspaceId)).filter(
@@ -455,7 +405,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       );
     });
 
-  /** After a question is closed and its delivery tried: its timer gone, the cards and ledger told. */
   const afterClose = (workspaceId: WorkspaceId, final: StoredWorkerQuestion) =>
     Effect.gen(function* () {
       yield* FiberMap.remove(questionTimers, questionTimerKey(workspaceId, final.id));
@@ -480,7 +429,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         ...(option.description === undefined || option.description.trim() === ""
           ? {}
           : { description: questionWords(option.description) }),
-        // Confined to the worker's folders and made absolute by the tool.
         ...(option.image === undefined || option.image.trim() === ""
           ? {}
           : { image: option.image.trim() }),
@@ -491,7 +439,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       const mock = input.mock?.trim() ?? "";
       const context = input.context === undefined ? "" : questionWords(input.context);
       const recommended = input.recommended === undefined ? "" : questionWords(input.recommended);
-      // Nobody triages in a paused workspace or feature: the question is the user's at once.
       const paused = state.paused !== undefined || pausedFeatureOf(state, worker) !== undefined;
       const asked = yield* updateOutbox(workspaceId, (outbox) =>
         addQuestion(outbox, {
@@ -525,7 +472,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
               return [replaceQuestion(outbox, next), next];
             });
       if (question.stage === "triage") yield* armQuestionTimer(workspaceId, question, now);
-      // The worker stands on a question, as a `question` report says, and its orchestrator wakes.
       yield* recordReport(workerId, {
         state: "question",
         summary: clipped(`Asked ${question.id}: ${question.question}`, WORKER_REPORT_SUMMARY_MAX),
@@ -650,7 +596,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       return publicQuestion(final);
     });
 
-  /** The user's answer or dismissal, from any surface: to the worker now, the copy to the next digest. */
   const closeAsUser = (
     workspaceId: WorkspaceId,
     questionId: string,
@@ -670,8 +615,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
             };
       let newlyClosed = false;
       const claimed = yield* moveQuestion(workspaceId, questionId, (question) => {
-        // Retries and concurrent user replies preserve the first committed decision.
-        // Unless the caller must know its answer is the one taken (`onlyIfOpen`).
         if (!onlyIfOpen && !isOpenQuestion(question) && question.closedBy === "user")
           return question;
         const moved = withClosedFor(closedByUser(question, scrubbed, at), closedFor);
@@ -683,11 +626,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
           ? new NotFound({ entity: "question", id: questionId, message: claimed.refused })
           : new InvalidState({ message: claimed.refused });
       }
-      // A retry of a decision already written sends only what is still owed of its notice.
       if (!newlyClosed && claimed.deliveryOwed !== true) return publicQuestion(claimed);
-      // Resolution is durable even if an archived, unavailable or missing worker cannot receive
-      // a notice: it was written with the decision, and a failed send stays owed. Never reopen
-      // a user's decision because notification failed; no worker is unarchived here.
       const final = yield* afterClose(
         workspaceId,
         (yield* deliverOwed(workspaceId, claimed.id, !newlyClosed)) ?? claimed,
@@ -716,13 +655,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       ...(input.reason === undefined ? {} : { reason: input.reason }),
     });
 
-  /**
-   * `record_user_answer`: the user answered an open question in a message to the caller, the worker
-   * that asked it or its orchestrator, rather than on its card. The caller only judges that the
-   * message answers it; the answer is the user's latest message in the caller's thread, copied word
-   * for word. The worker is told what its orchestrator recorded; the orchestrator gets a copy of
-   * what its worker recorded.
-   */
   const recordUserAnswer: OrchestrationShape["recordUserAnswer"] = (callerId, input) =>
     Effect.gen(function* () {
       const tool = "record_user_answer";
@@ -792,10 +724,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       return publicQuestion(final);
     });
 
-  /**
-   * A worker's thread left (archived, deleted, detached or moved): its open questions are withdrawn
-   * in its name, since nobody would act on an answer, and leave the user's board. Nobody is woken.
-   */
   const withdrawQuestionsOf: OrchestrationShape["withdrawQuestionsOf"] = (
     workspaceId,
     threadId,
@@ -826,12 +754,10 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       ),
     );
 
-  /** Repair questions left open by an older version or a missed lifecycle signal. */
   const reconcileQuestions = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       const open = questionsOf(yield* readOutbox(workspaceId)).filter(isOpenQuestion);
       if (open.length === 0) return;
-      // Use the store's authoritative list: a failed lookup must never count as a deletion.
       const threads = new Map((yield* store.listThreads).map((thread) => [thread.id, thread]));
       for (const threadId of new Set(open.map((question) => question.threadId))) {
         const thread = threads.get(threadId);
@@ -849,16 +775,10 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       }
     });
 
-  /**
-   * `ask_question` with `withdraw`: the worker closes its own open question, in triage or with the
-   * user, because it no longer needs an answer or a newer one of its own (`supersededBy`) replaces
-   * it. Off the user's board at once; nobody is sent a notice.
-   */
   const withdrawQuestion: OrchestrationShape["withdrawQuestion"] = (workerId, input) =>
     Effect.gen(function* () {
       const tool = "ask_question";
       const reason = yield* withdrawReason(tool, input.reason);
-      // Its own questions stay its own to withdraw, with its orchestrator listening or not.
       const workspaceId = (yield* findThread(workerId))?.workspaceId;
       if (workspaceId === undefined) {
         return yield* toolError(tool, `You have no question ${input.questionId} to withdraw.`);
@@ -885,10 +805,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       return publicQuestion(yield* afterClose(workspaceId, moved));
     });
 
-  /**
-   * `close_question` on a `WQ` id: the orchestrator closes one of its workers' open questions, in
-   * triage or forwarded, without answering it. Off the user's board at once; the worker is told.
-   */
   const closeWorkerQuestion: OrchestrationShape["closeWorkerQuestion"] = (callerId, input) =>
     Effect.gen(function* () {
       const tool = "close_question";
@@ -936,7 +852,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         withdrawn(question, { by: "orchestrator", how: input.how }, reason, at),
       );
       if (isRefusal(claimed)) return yield* toolError(tool, refusal(claimed.code, claimed.refused));
-      // Written with the decision, the notice is owed until the worker has it, as a user's is.
       const final = yield* afterClose(
         workspaceId,
         (yield* deliverOwed(workspaceId, claimed.id, false)) ?? claimed,
@@ -983,7 +898,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       return answers;
     });
 
-  /** A question's triage time is up: to the user, with no context line. */
   const onQuestionDue = (workspaceId: WorkspaceId, questionId: string) =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;

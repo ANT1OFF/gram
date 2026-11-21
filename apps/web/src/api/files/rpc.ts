@@ -3,11 +3,6 @@ import { serverUrl } from "../server-base";
 import type { FilesApi } from "./types";
 import { withOriginKey } from "../origin-key";
 
-/**
- * A joined machine's folders, over the local-only `/machines/*` routes rather than the RPC socket a
- * paired phone shares: a phone never lists or checks another machine's folders. A refusal comes
- * back as the contract's error (`_tag`, `message`), as `folderProblem` reads it.
- */
 const machineFolders = async <A>(path: string, body: object): Promise<A> => {
   const response = await fetch(
     serverUrl(path),

@@ -1,7 +1,3 @@
-// Copy gitignored-but-needed files (.env etc.) into a new worktree, honouring the repo's
-// `.worktreeinclude` (gitignore syntax). Claude Code's native copy only fires when Claude itself
-// creates the worktree.
-
 import * as nodePath from "node:path";
 import * as Effect from "effect/Effect";
 import { copyInside, readInside, realRoot } from "./contained.ts";
@@ -9,7 +5,6 @@ import { git } from "./exec.ts";
 import type { Proc } from "./proc.ts";
 import { isUntrustedWorktree } from "./worktree-trust.ts";
 
-/** Ignored-file listings include `node_modules`; far past the view cap on a real repo. */
 const LS_FILES_MAX_BYTES = 256 * 1024 * 1024;
 
 /**
@@ -66,9 +61,7 @@ export const copyWorktreeIncludes = (
       try {
         copyInside(from, to, rel);
         copied += 1;
-      } catch {
-        // Skip the file; the worktree is still usable without it.
-      }
+      } catch (_skipTheFileTheWorktreeIsStillUsableWithout) {}
     }
     return copied;
   }).pipe(Effect.orElseSucceed(() => 0));

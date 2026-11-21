@@ -28,7 +28,6 @@ import { useWorkerPause } from "./worker-pause";
 const LINK =
   "shrink-0 rounded-sm px-1 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 const ACTION = `${LINK} text-foreground/80`;
-/** An icon link in the header: a 28 px square, its background on hover and focus. */
 const HEADER_LINK =
   "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -41,7 +40,6 @@ export const goToThread = (threadId: ThreadId, event?: { preventDefault: () => v
 /** A worker's end states. */
 export const FINISHED_WORKER: ReadonlySet<string> = new Set(["merged", "delivered", "archived"]);
 
-/** A banner line under a header: a glyph, its lead in words, the sentence, and any action. */
 const BANNER =
   "flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-meta text-foreground";
 
@@ -99,7 +97,6 @@ export function WorkerBanner({
         </div>
       )}
       {routine !== undefined && (
-        // Where it came from, quietly: a routine's run started it, not a message from anyone.
         <p
           data-testid="worker-banner-routine"
           className="flex min-w-0 items-center gap-2 border-b border-edge px-3 py-1 text-meta text-muted-foreground"
@@ -109,7 +106,6 @@ export function WorkerBanner({
             From routine <span className="text-foreground/80">{routine.name}</span>
           </span>
           {workspace !== undefined && (
-            // Routines' own page, opened on this workspace's group.
             <Link
               to="/settings/routines"
               search={{ highlight: workspace.workspace.name }}
@@ -142,7 +138,6 @@ export function WorkerBanner({
   );
 }
 
-/** The workspace an orchestrator runs, while workspaces are on. */
 function useOrchestratorWorkspace(thread: Thread) {
   const workspaces = useWorkspaces();
   const state =
@@ -172,7 +167,6 @@ export function OrchestratorChips({
   const { state, workspaceId } = useOrchestratorWorkspace(thread);
   const handoff = useHandoff(state);
   const openBoard = useOpenBoard();
-  // The bar is a path where an embedding app asked for one (`threadsPage.bar`).
   const pathBar = useEmbedShell((s) => s.threadsPage.bar === "path");
   if (workspaceId === undefined) return null;
   return (
@@ -199,10 +193,6 @@ export function OrchestratorChips({
           <Columns3 aria-hidden className="size-icon-row" />
         </Hint>
       )}
-      {/* Memory is the orchestrator's own, so it stays a glyph beside its title in the title bar
-          too, there one of the bar's icon buttons (its size, stroke, muted colour and hover fill);
-          the bar's "…" lists it as well, in words. Where the bar is a path, Memory is named
-          beside the workspace's other places instead, so no glyph stands alone after the path. */}
       {!(inTitlebar && pathBar) && (
         <Hint
           label="Memory"
@@ -215,10 +205,7 @@ export function OrchestratorChips({
               data-testid="orchestrator-memory"
               className={
                 inTitlebar
-                  ? // Drawn as the bar's icon buttons are. `cn` merges the variants' classes as
-                    // `Button` does: cva alone keeps the base's 16 px glyph rule beside `icon-sm`'s
-                    // 18 px one, and the base's wins.
-                    cn(
+                  ? cn(
                       buttonVariants({ variant: "ghost", size: "icon-sm" }),
                       "text-muted-foreground",
                     )
@@ -230,7 +217,6 @@ export function OrchestratorChips({
           <Brain aria-hidden className={inTitlebar ? undefined : "size-icon-row"} />
         </Hint>
       )}
-      {/* In the title bar, the workspace's settings are the bar's "…". */}
       {!inTitlebar && (
         <>
           <Hint
@@ -266,7 +252,6 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
     workspaceId === undefined ? 0 : midTurnWorkers(s.byId, workspaceId),
   );
   if (state === undefined || workspaceId === undefined) return null;
-  // A parked orchestrator says so itself, and unparking resumes it.
   const paused = state.paused?.reason === "parked" ? undefined : state.paused;
 
   return (

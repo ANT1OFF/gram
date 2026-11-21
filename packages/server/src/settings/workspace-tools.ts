@@ -1,8 +1,3 @@
-// Workspaces by chat (docs/design/settings-by-chat.md#workspaces): `workspace_list`,
-// `workspace_create` and `workspace_update`. A workspace's repos, home, autonomy and worker mode
-// decide what its agents reach and may do without asking, so every create or update is shown whole
-// on one card and applied only when the user approves it, at every autonomy and in every mode.
-
 import {
   applyCharterWrites,
   InvalidState,
@@ -62,20 +57,14 @@ const WORKER_REFUSAL =
 
 const NOT_HERE = "Workspaces can't be created or changed here.";
 
-/**
- * A repository a card names: a project Gram knows, or a top folder it would register. A card
- * takes in only canonical folders (`canonicalRepoFolder`): what the user approves is the folder.
- */
 interface Repo {
   readonly root: string;
   readonly name: string;
   readonly project?: Project | undefined;
 }
 
-/** Whether two roots name one folder, as the store compares them. */
 const sameRoot = (a: string, b: string) => projectRootKey(a) === projectRootKey(b);
 
-/** `named` among `projects`: by project id, or by path. */
 const matchProject = <P extends Repo>(projects: ReadonlyArray<P>, named: string): P | undefined => {
   const wanted = named.trim();
   return (
@@ -87,11 +76,9 @@ const matchProject = <P extends Repo>(projects: ReadonlyArray<P>, named: string)
 const listText = (projects: ReadonlyArray<Repo>) =>
   projects.map((each) => `${each.name} (${each.root})`).join(", ") || "none";
 
-/** The charter's changes as audit rows: each stored field, before and after, `null` for absent. */
 const auditChanges = (writes: ReadonlyArray<SettingsWrite>) =>
   writes.map(({ key, before, after }) => ({ key, before: before ?? null, after: after ?? null }));
 
-/** A card's project list as audit rows, beside its other rows. */
 const projectRows = (projects: ReadonlyArray<WorkspaceProposalProject>): Array<SettingsDiffRow> =>
   projects.map((each) => ({
     key: "workspace.projectIds",
@@ -103,7 +90,6 @@ const projectRows = (projects: ReadonlyArray<WorkspaceProposalProject>): Array<S
         : `${each.name}${each.home === true ? " · home" : ""}${each.unregistered === true ? " · new to Gram" : ""}`,
   }));
 
-/** A change by chat's audit row, from the card the user approved. */
 const auditOf = (
   caller: ThreadId,
   role: string,
@@ -137,17 +123,13 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
       const registry = yield* AppToolRegistry;
       const runtimes = yield* ThreadRuntimes;
       const store = yield* ThreadStore;
-      // Absent in runtime-only layers, which have no workspaces to change.
       const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
       const hosts = Option.getOrUndefined(yield* Effect.serviceOption(AgentHosts));
       const proc = yield* Proc;
       const ttl = Duration.fromInputUnsafe(options.proposalTtl ?? SETTINGS_PROPOSAL_TTL_MS);
 
-      /** The caller as it is now, refused unless it is a thread the user chats with or directs. */
       const proposer = (tool: string, caller: ThreadId) =>
         Effect.gen(function* () {
-          // Who the caller is now, not which binding it was given: a Claude session keeps its
-          // tools through a turn in which its role can change.
           const role = yield* runtimes.audienceOf(caller);
           if (role === "worker") return yield* fail(tool, WORKER_REFUSAL);
           if (role !== "orchestrator" && role !== "plain") {
@@ -162,19 +144,12 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           .getThread(caller)
           .pipe(Effect.mapError((e) => fail(tool, `Couldn't read this thread: ${e.message}`)));
 
-      /** `root` as a folder a card may grant, or why not. */
       const grantable = (tool: string, root: string) =>
         canonicalRepoFolder(root).pipe(
           Effect.provideService(Proc, proc),
           Effect.mapError((e) => fail(tool, `Nothing was proposed: ${e.message}`)),
         );
 
-      /**
-       * A path as a project root, refused unless it is already the canonical path of a git
-       * repository's top folder: links are refused, never followed, so the folder the card shows is
-       * the folder Gram registers and grants. A known project is used only when its own stored root
-       * is that same canonical folder.
-       */
       const repoAt = (tool: string, path: string, known: ReadonlyArray<Project>) =>
         Effect.gen(function* () {
           const given = path.trim();
@@ -199,11 +174,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           } satisfies Repo;
         });
 
-      /**
-       * Refuses a project root the workspace may not grant: one that isn't its own real folder, or
-       * isn't a git repository's top folder. Checked for every project of the result before the
-       * card, and again under the commit's locks just before its transaction.
-       */
       const grantFolder = (root: string) =>
         canonicalRepoFolder(root).pipe(
           Effect.provideService(Proc, proc),
@@ -219,7 +189,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           }),
         );
 
-      /** Each path as a repository, the same one named twice kept once. */
       const reposAt = (tool: string, paths: ReadonlyArray<string>) =>
         Effect.gen(function* () {
           const known = yield* store.listProjects;
@@ -231,7 +200,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           return repos;
         });
 
-      /** The name, refused when another workspace has it, ignoring case and spacing. */
       const freeName = (tool: string, name: string, own?: string) =>
         Effect.gen(function* () {
           const wanted = name.trim();
@@ -249,7 +217,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           return wanted;
         });
 
-      /** The charter after `changes`, which must be workspace keys, planned as settings_propose does. */
       const planCharter = (
         tool: string,
         world: SettingsWorld,
@@ -299,7 +266,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             const settings = yield* store.getSettings;
             const projects = yield* store.listProjects;
             const wanted = workspaceId?.trim().toLowerCase();
-            // Never a workspace this thread's reader may not see, by id, name or listing.
             const states = (yield* readableWorkspacesOnly(
               yield* store.listWorkspaces,
               (state) => state.workspace,
@@ -329,7 +295,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
       const workspaceCreate = defineAppTool({
         descriptor: {
           name: WORKSPACE_CREATE_TOOL,
-          // It raises its own card on every call, whatever the binding, mode or autonomy.
           class: "outwardGated",
           description:
             "Propose a new Gram workspace. Gram checks it, then shows the user one card with the whole workspace: its name, each project path (marking repositories Gram doesn't know yet), the home project, autonomy, worker mode and charter settings. It is created only when they approve; this call waits for that answer and says whether it was created, declined or expired (after 15 minutes). `projects` are absolute paths of git repositories' top folders, each of which must exist; a repository Gram doesn't know yet is registered as a project on approval. `home` is the project the orchestrator runs in, by path; the first project when absent. `autonomy` is supervised (asks before anything leaves the machine), publish (pushes and opens PRs, asks before merging) or full (asks about nothing); absent, a new workspace's default. `workerMode` is auto, acceptEdits, default (workers ask before each edit and command) or bypassPermissions. `settings` takes settings_propose's changes on workspace.* keys: worker models with useFor, max concurrent workers, merge review policy, the orchestrator's model and effort and the rest settings_read lists. `openOrchestrator: true` opens the new workspace's orchestrator once it exists, so you can message it with send_message. Say why in `reason`, which the card shows.",
@@ -354,7 +319,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               ...subscriptionTaskCharter(settings.agents, input.autonomy),
               ...(input.workerMode === undefined ? {} : { workerMode: input.workerMode }),
             };
-            // What a new workspace would be, so the settings plan against it as they do any other.
             const draft = (charter: OrchestratorCharter): WorkspaceState => ({
               workspace: {
                 id: "new" as WorkspaceState["workspace"]["id"],
@@ -426,7 +390,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               { action: "create" },
             );
 
-            // The approval is for this card, by this caller as it was when it asked.
             if ((yield* runtimes.audienceOf(caller)) !== role) {
               return yield* fail(
                 tool,
@@ -520,7 +483,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
       const workspaceUpdate = defineAppTool({
         descriptor: {
           name: WORKSPACE_UPDATE_TOOL,
-          // It raises its own card on every call, whatever the binding, mode or autonomy.
           class: "outwardGated",
           description:
             "Propose a change to a Gram workspace: rename it (`name`), add projects by absolute path (`addProjects`, git repositories' top folders; one Gram doesn't know yet is registered on approval), remove projects by path or project id (`removeProjects`), choose the home project (`home`, by path or id), set `autonomy` or `workerMode` (null follows the default), and change charter settings (`settings`, settings_propose's changes on workspace.* keys). Gram checks it and shows the user one card with the whole change, before → after, and the project list; nothing changes until they approve, and this call waits for that answer and says whether it was applied, declined or expired (after 15 minutes). `workspaceId` names the workspace by id or name; an orchestrator may change only its own, which is the default there. The home project can't move while the workspace's orchestrator is open. workspace_list shows each workspace as it stands. Say why in `reason`, which the card shows.",
@@ -532,7 +494,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             const tool = WORKSPACE_UPDATE_TOOL;
             const { role, service } = yield* proposer(tool, caller);
             const thread = yield* threadOf(tool, caller);
-            // Only workspaces this thread's reader may act on are found, or named in a refusal.
             const reader = yield* currentReader;
             const states = (yield* store.listWorkspaces).filter((each) =>
               readerMayWorkspace(reader, each.workspace, "act"),
@@ -557,16 +518,12 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                     }.`,
               );
             }
-            // The workspace's own orchestrator may propose changes to it, on the user's card; never
-            // to another's.
             if (role === "orchestrator" && state.workspace.id !== thread.workspaceId) {
               return yield* fail(
                 tool,
                 "You can only propose changes to your own workspace. The user changes another workspace in Settings, or from a thread of their own.",
               );
             }
-            // The target is fixed now, by id: a rename, or another workspace taking this one's
-            // name, never moves the approval elsewhere.
             const pinned = state.workspace.id;
             const { workspace, charter } = state;
 
@@ -598,7 +555,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 `Nothing was proposed: ${both.root} is named both to add and to remove.`,
               );
             }
-            // One the workspace already has is no change.
             const fresh = toAdd.filter(
               (repo) => !current.some((each) => sameRoot(each.root, repo.root)),
             );
@@ -610,8 +566,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 "Nothing was proposed: a workspace keeps at least one project.",
               );
             }
-            // Every folder of the result is granted by this card, kept ones included, so each must
-            // be one a card may grant, as an added one must.
             const removedIds = new Set(removed.map((each) => each.project!.id));
             if (
               workspace.projectIds.some(
@@ -714,7 +668,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               });
             }
             rows.push(...(planned?.plan.rows ?? []));
-            // The charter the card shows, made once from the workspace as it was read now.
             const nextCharter = applyCharterWrites(charter, writes) ?? charter;
             const projects: Array<WorkspaceProposalProject> = [
               ...current.map((each) => ({
@@ -767,8 +720,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               { action: "update", workspaceId: pinned },
             );
 
-            // The approval is for this card's writes, on this card's workspace, by this caller as
-            // it was when it asked: nothing is planned or resolved again.
             const roleNow = yield* runtimes.audienceOf(caller);
             const threadNow = yield* store
               .getThread(caller)
@@ -784,13 +735,11 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               );
             }
             const appliedAt = yield* Clock.currentTimeMillis;
-            // All of it in one transaction, over the workspace as the card read it, or nothing.
             const saved = yield* service
               .commitWorkspace({
                 expected: state,
                 name,
                 projects: [
-                  // A project Gram no longer lists stays as it is: the card can't show it.
                   ...workspace.projectIds
                     .filter((id) => !removedIds.has(id))
                     .map((projectId) => ({ projectId })),

@@ -17,16 +17,8 @@ export function terminalClipboardKey(
   return undefined;
 }
 
-/**
- * Whether the app rather than the shell answers `keys` while a terminal has focus. On macOS that is
- * every ⌘ chord, plus Ctrl chords with Shift, Alt or Tab. Off macOS `mod` is Ctrl, which shells use
- * for line editing and signals (Ctrl+B, Ctrl+K, Ctrl+W, Ctrl+\…), so a plain Ctrl chord only reaches
- * the app for digits, zoom keys, `,`, Tab and the terminal's own shortcuts; Ctrl+Shift and Ctrl+Alt
- * chords always do.
- */
 const answeredByApp = (shortcut: Shortcut, keys: string, mac: boolean): boolean => {
   const chord = parseKeys(keys);
-  // Linux's pane moves have no Ctrl (`paneMoveKeys`), and still have to get out of a terminal.
   if (chord.alt && chord.shift && shortcut.id.startsWith("pane.move-")) return true;
   if (mac) return chord.mod || (chord.ctrl && (chord.shift || chord.alt || chord.key === "tab"));
   if (!chord.mod && !chord.ctrl) return false;

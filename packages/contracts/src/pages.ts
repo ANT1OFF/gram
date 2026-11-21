@@ -1,12 +1,3 @@
-// A workspace's pinned pages: HTML an agent drafted in its folder and the user pinned from the
-// Preview tab. Pinning copies the page's folder into Gram's own state
-// (`<dataDir>/pages/<workspaceId>/<id>/`), so nothing done in a worktree afterwards changes what was
-// pinned. An agent may offer a new version (`offer_page_version`), copied the same way; the page
-// keeps showing the version the user has until they choose to show the new one. Only the user pins,
-// shows an offer or unpins: no agent tool does.
-//
-// A pinned version is a bundle: its folder, and at its root a `manifest.json` naming the entry file
-// and the data the page declares it reads. Pages read nothing yet, so `reads` is always empty.
 import * as Schema from "effect/Schema";
 import { ThreadId, WorkspaceId } from "./ids.ts";
 
@@ -33,7 +24,6 @@ export const PAGES_PER_WORKSPACE_MAX = 50;
 export const PAGE_VERSION_MAX = 1_000_000_000;
 /** The longest thread or workspace id a page records. */
 export const PAGE_REF_MAX = 128;
-/** The latest time a `Date` can hold, in epoch ms. */
 const PAGE_TIME_MAX = 8_640_000_000_000_000;
 
 const bounded = (max: number) => Schema.String.check(Schema.isMaxLength(max));

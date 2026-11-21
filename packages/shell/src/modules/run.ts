@@ -1,7 +1,3 @@
-// The one way a shell module runs a command to its end: `Proc` from `@gram/git/proc`, which
-// bounds the run, kills an overrun and reaps it. Effect stays inside this
-// wrapper; a module sees a Promise.
-
 import { homedir } from "node:os";
 
 import { Proc, ProcLive } from "@gram/git/proc";

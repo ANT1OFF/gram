@@ -1,6 +1,3 @@
-// The preview's element picking, for the user's next message: on loopback pages only, never a web
-// page with the user's sign-ins, whose content no agent reads.
-
 import type { WebContents } from "electron";
 
 import { Channels } from "../../channels.ts";
@@ -30,7 +27,6 @@ export function installPickHandlers(ipc: ShellIpc, previewFor: PreviewLookup): v
         [{ code: PICK_SCRIPT }],
         true,
       );
-      // A page that moved on while picking says nothing of the one the user saw.
       if (contents.isDestroyed() || contents.getURL() !== url) return null;
       return parsePicked(picked, url);
     } catch {

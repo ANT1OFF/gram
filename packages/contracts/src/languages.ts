@@ -1,5 +1,3 @@
-// Syntax-highlighting languages by file name, shared by the Files panel and transcript diffs.
-
 const LANGUAGE_BY_NAME: Readonly<Record<string, string>> = {
   dockerfile: "dockerfile",
   makefile: "makefile",

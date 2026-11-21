@@ -109,7 +109,6 @@ export const toolFor = (
   }
 };
 
-/** The longest output kept from a call that gave no text content. */
 const OUTPUT_MAX = 20_000;
 
 /** What a finished call said: its text content, else the text its raw output carries. */

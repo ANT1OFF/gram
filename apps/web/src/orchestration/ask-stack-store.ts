@@ -1,21 +1,13 @@
 import { create } from "zustand";
 
-// Answers from the Inbox wait `UNDO_MS` before they go out, so one key can be taken back. Kept
-// outside React: moving to another thread doesn't cancel an answer, and coming back finds it. What
-// an answer hides is its requests' ids (or a question's), never an ask's key: a group that gains or
-// loses a member meanwhile keeps the answered ones out.
-
 /** How long an answer can be taken back. */
 export const UNDO_MS = 4_000;
 /** How long a sent answer's requests stay hidden while the server's word that they're gone arrives. */
 export const SENT_GRACE_MS = 10_000;
 
 interface HeldAnswer {
-  /** The ask's key when it was answered. */
   readonly key: string;
-  /** The requests (or question) it answers. */
   readonly ids: readonly string[];
-  /** What the undo line says: "Allowed 3". */
   readonly done: string;
 }
 
@@ -26,17 +18,11 @@ export interface SendResult {
 }
 
 interface AskStackState {
-  /** Answers not sent yet, oldest first: the only ones Undo can take back. */
   readonly held: readonly HeldAnswer[];
-  /** Ids being sent or sent a moment ago, hidden until the server says they're gone. */
   readonly sent: Readonly<Record<string, true>>;
-  /** What went wrong with an id's last answer. */
   readonly problems: Readonly<Record<string, string>>;
-  /** A free-form reply typed and not sent, by its ask's first id. */
   readonly replies: Readonly<Record<string, string>>;
-  /** Holds `send` for `UNDO_MS`, then runs it. */
   readonly hold: (answer: HeldAnswer, send: () => Promise<SendResult>) => void;
-  /** Takes back `key`'s held answer, or the newest; `undefined` when none is held any more. */
   readonly undo: (key?: string) => HeldAnswer | undefined;
   readonly setReply: (id: string, text: string) => void;
 }
@@ -61,7 +47,6 @@ export const useAskStackStore = create<AskStackState>()((set, get) => ({
       answer.key,
       setTimeout(() => {
         timers.delete(answer.key);
-        // In flight from here: off the undo line, and still hidden.
         set((s) => ({
           held: s.held.filter((h) => h.key !== answer.key),
           sent: { ...s.sent, ...Object.fromEntries(answer.ids.map((id) => [id, true as const])) },

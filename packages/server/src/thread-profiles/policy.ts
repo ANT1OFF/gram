@@ -1,5 +1,3 @@
-// What a thread's profile adds to every session it opens: its charter, its outward gate and its
-// MCP servers. Laid over whatever the thread's role gives, so it holds whoever else has a say.
 import type { OutwardGate } from "@gram/agents";
 import {
   connectorListed,
@@ -9,11 +7,9 @@ import {
 } from "@gram/contracts";
 import type { SessionPolicy } from "../runtime/session-policy.ts";
 
-/** The outward gate a profile's level opens a session with, as a workspace's autonomy does. */
 const gateOf = (autonomy: ProfileAutonomy): OutwardGate | undefined =>
   autonomy === "supervised" ? "all" : autonomy === "publish" ? "irreversible" : undefined;
 
-/** The stricter of two gates: `all` over `irreversible` over none. */
 const stricter = (a: OutwardGate | undefined, b: OutwardGate | undefined) =>
   a === "all" || b === "all" ? "all" : (a ?? b);
 
@@ -42,7 +38,6 @@ export const withProfile = (
     connectorListed(policy.mcpDenylist ?? [], profile.server)
       ? undefined
       : profile.server;
-  // A profile's thread holds to its one server and its charter: never the user's browser.
   const { mcpServer: _, browser: _browser, ...rest } = policy;
   return {
     ...rest,

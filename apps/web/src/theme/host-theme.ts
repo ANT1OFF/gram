@@ -14,10 +14,6 @@ import {
 
 import type { HostTheme } from "@/embed/contract";
 
-// The look an app that mounts Gram gives it (`MountOptions.theme`, typed in the embed contract):
-// its own palette in place of Gram's default one, and its fonts, radii and chart colours. A
-// person's own choices still win: another palette picked in Settings, and the fonts setting. With
-// no theme, nothing here applies.
 export type { HostTheme };
 
 /** The ids the host's palettes take. They stand in for Gram's default pair while a theme is set. */
@@ -74,7 +70,6 @@ export function hostThemeCss(theme: HostTheme | undefined): string {
     const sidebar = sidebarColorVariables(theme.sidebar, palette.mode);
     parts.push(
       cssBlock([selector], { ...paletteVariables(derivePalette(palette)), ...over, ...chart }),
-      // More contrast keeps the derived colours: the host's own are tuned for standard contrast.
       cssBlock([`${selector}[data-contrast="more"]`], {
         ...paletteVariables(derivePalette(palette, "more")),
         ...chart,
@@ -82,7 +77,6 @@ export function hostThemeCss(theme: HostTheme | undefined): string {
     );
     if (Object.keys(sidebar).length) parts.push(cssBlock([`html${selector}`], sidebar));
   }
-  // Charts follow the mode on Gram's own palettes too, when the host names no palette of its own.
   if (!theme.palettes) {
     for (const mode of ["dark", "light"] as const) {
       const vars = {
@@ -104,7 +98,6 @@ export function hostThemeCss(theme: HostTheme | undefined): string {
     look["--shadow-overlay"] = "0 0 0 var(--hairline) var(--border-subtle)";
   }
   Object.assign(look, sidebarShapeVariables(theme.sidebar));
-  // Over the look's own block (`[data-look]`); the fonts setting is inline on `<html>` and wins.
   if (Object.keys(look).length) parts.push(cssBlock(["html[data-look]"], look));
   return parts.join("\n");
 }

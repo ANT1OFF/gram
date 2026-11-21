@@ -28,10 +28,6 @@ import {
 
 const NONE = "none";
 
-/**
- * The workspace's colour, the user's own mark on it: one of a few hues, or none. One submenu, so
- * the menu stays short.
- */
 function ColourMenuItems({ workspaceId }: { workspaceId: WorkspaceState["workspace"]["id"] }) {
   const accent = useWorkspaceAccent(workspaceId);
   return (
@@ -83,7 +79,6 @@ export function WorkspaceMenuItems({ state }: { state: WorkspaceState }) {
   const queryClient = useQueryClient();
   const { workspace, paused } = state;
   const pause = paused === undefined;
-  // Only where the desktop app can move one and a server is signed in to: never in a browser.
   const movable = useMoveTargets().targets.length > 0;
   const setPaused = () =>
     void setWorkspacePaused(api, queryClient, workspace, pause).catch((error: unknown) =>

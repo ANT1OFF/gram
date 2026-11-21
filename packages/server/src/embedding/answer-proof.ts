@@ -1,5 +1,3 @@
-// What an answer to a card carries when it came as its own signed request (`ask-answer.ts`).
-
 import * as Context from "effect/Context";
 
 /** Where a person answers a card while fronted sign-in is on. */

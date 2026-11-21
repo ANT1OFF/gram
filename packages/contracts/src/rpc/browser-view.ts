@@ -54,7 +54,6 @@ export const BrowserViewPage = Schema.Struct({
 export type BrowserViewPage = typeof BrowserViewPage.Type;
 
 export const BrowserViewEvent = Schema.Union([
-  /** The thread's page now, first and on each change; `null` while it has none, and then why. */
   Schema.Struct({
     type: Schema.Literal("page"),
     page: Schema.NullOr(BrowserViewPage),
@@ -65,7 +64,6 @@ export const BrowserViewEvent = Schema.Union([
       ]),
     ),
   }),
-  /** One frame: a base64 JPEG, and the page's size in its own CSS pixels. */
   Schema.Struct({
     type: Schema.Literal("frame"),
     jpeg: Schema.String,
@@ -87,7 +85,6 @@ export const BrowserViewRpcs = RpcGroup.make(
     error: errors(ThreadNotFound, InvalidState),
     stream: true,
   }),
-  /** Pointer and key input. A click, a key or a scroll takes the page over from its agent. */
   Rpc.make("browserView.input", {
     payload: {
       ...threadRef,

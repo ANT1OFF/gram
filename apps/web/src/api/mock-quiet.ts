@@ -13,9 +13,6 @@ import type {
   MockWaitingOnSimulation,
 } from "./mock-orchestration";
 
-// Quiet's scenarios: a workspace whose workers are all busy somewhere, and two more workspaces at
-// rest beside the board's for the sidebar's realistic load.
-
 /**
  * `casefiles`, a workspace with nothing to ask whose six workers are all somewhere: two running a
  * turn, three waiting on automation (CI under a monitor, the review bot, a dependency PR), and

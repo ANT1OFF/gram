@@ -27,11 +27,6 @@ import { OVER_STATES, workerShown } from "./worker-shown";
 import { workerActivity, workerWait, type WorkerActivity, type WorkerBusy } from "./wait-model";
 import { workerWaitingOn, type ThreadName, type WaitClock, type WaitingOn } from "./waiting-on";
 
-// The ⌘J Workers list: every worker of a workspace in Now and Done, grouped by feature (and in
-// Done, by the day it finished), each with a "now" line of four words or fewer. Pure and
-// deterministic (no helper model), so it is tested without a browser and two windows always say
-// the same thing.
-
 export type WorkersTab = "now" | "done";
 
 export const WORKERS_TABS: readonly { readonly id: WorkersTab; readonly label: string }[] = [
@@ -126,7 +121,6 @@ export const startOfDay = (now: number): number => daysBefore(now, 0);
 /** The days Done heads one by one, today and the six before it; older work goes by month. */
 export const DONE_DAYS = 7;
 
-/** Where finished work with no time to go by is listed: after every day and month. */
 const UNDATED: DoneDay = { start: 0, label: "Earlier" };
 
 /** Local midnight of the first of the month `at` falls in. */
@@ -168,11 +162,8 @@ export const clockTime = (at: number): string => {
 export const finishedWhen = (at: number, now: number): string =>
   at >= startOfDay(now) ? clockTime(at) : formatDay(at, now);
 
-// The now line's words are the feature cards' (contracts `feature-cards.ts`), so a worker reads the
-// same in the Workers list and on its card.
 export { activityGist, capWords, reportGist, requestGist };
 
-/** The first live request's shell command, when the thread holds it and it is one. */
 const requestCommand = (summary: ThreadSummary | undefined): string | undefined => {
   const command = summary?.pendingRequests[0];
   if (command?.kind !== "approval") return undefined;
@@ -180,7 +171,6 @@ const requestCommand = (summary: ThreadSummary | undefined): string | undefined 
   return typeof value === "string" ? value : undefined;
 };
 
-/** A live worker's glyph by its tone: one look per tone, as every view's dot has it. */
 const TONE_GLYPH: Readonly<Record<RailTone, WorkerGlyph>> = {
   needs: "needsYou",
   attention: "needsYou",
@@ -198,18 +188,12 @@ const FINISHED_GLYPH: Partial<Record<WorkerState, WorkerGlyph>> = {
   done: "delivered",
 };
 
-/** When a finished worker's work ended, as near as the facts say. */
 const finishedAt = (
   entry: WorkerLedgerEntry,
   summary: ThreadSummary | undefined,
 ): number | undefined =>
   summary?.thread.completedAt ?? entry.lastReport?.at ?? summary?.thread.lastActivityAt;
 
-/**
- * What a worker does, by the ledger (`workerActivity`) with its thread's live facts laid over: a
- * thread at rest with work still running under it (a background shell, a subagent) is working, as
- * every "N working" count has it (`threadWorking`), rather than idle or waiting.
- */
 const liveActivity = (
   live: WorkerLedgerEntry,
   summary: ThreadSummary | undefined,
@@ -223,10 +207,6 @@ const liveActivity = (
     : busy;
 };
 
-/**
- * What a worker waits on (`workerWaitingOn`), by its live activity and tone: only while its tone is
- * calm (`calmTone`), so a wait is never said of a worker at work, asking or failed.
- */
 const liveWaiting = (
   live: WorkerLedgerEntry,
   busy: WorkerBusy,
@@ -323,8 +303,6 @@ export const workerTones = (
   const facts = { running: busy, asking, over: ledgerWorkersOver(ledger, byId) };
   for (const entry of all) {
     if (!workerShown(entry, facts)) continue;
-    // One at rest whose state is over (shown for an open PR, say) keeps its ledger facts; one at
-    // work again has only its live ones, as its row is working.
     const settled = OVER_STATES.has(entry.state) && busy.has(entry.threadId);
     entries.set(entry.threadId, settled ? undefined : entry);
   }
@@ -369,7 +347,6 @@ export const workerRow = (
     answered: answered?.has(worker.threadId),
     ownedCi,
   });
-  // Another thread a condition wake waits on is named by its title, as its row names it.
   const name: ThreadName = (id) => {
     const other = byId[id];
     return other === undefined ? undefined : threadDisplayTitle(other.thread);
@@ -378,8 +355,6 @@ export const workerRow = (
   const running = live.status === "running" || live.status === "starting";
   const activity = running ? (statusDetail[worker.threadId] ?? live.activity) : undefined;
   const report = live.lastReport;
-  // Spawned and not begun, or its session opening with nothing to say yet: starting, the word the
-  // sidebar, the panel and the header say alike.
   const starting =
     !done &&
     tone === "working" &&
@@ -406,7 +381,6 @@ export const workerRow = (
     ...(waiting === undefined || starting ? {} : { waiting }),
     ...(starting ? { starting: true as const } : {}),
   };
-  // The glyph is the tone's, as every other view's dot is; a finished worker's says how it ended.
   const row = (finished: WorkerGlyph | undefined, line: string): WorkerRow => ({
     ...base,
     glyph: finished ?? TONE_GLYPH[tone],
@@ -418,14 +392,12 @@ export const workerRow = (
     return row(undefined, ANSWERED);
   }
   if (request !== undefined) return row(undefined, requestGist(request, requestCommand(summary)));
-  // A lost machine says so, and what came back of the work: longer than a now line, so not capped.
   const lost = summary?.thread.lastError;
   if (live.state === "error" && lost?.machineLost !== undefined)
     return { ...row(undefined, ""), now: machineLostLine(lost, summary?.thread.savedWork, now) };
   if (live.state === "error") return row(undefined, "stopped on an error");
   if (done) {
     const when = at === undefined ? "" : ` ${finishedWhen(at, now)}`;
-    // Archived once merged, as the orchestrator does after a merge, it still reads merged.
     if (
       live.state === "merged" ||
       (live.state === "archived" && live.stateBase?.state === "merged")
@@ -440,7 +412,6 @@ export const workerRow = (
     return row(undefined, "asked a question");
   }
   if (live.state === "blocked" || live.reportStands === true) return row(undefined, "blocked");
-  // What it waits on, in the words the sidebar and the Board use: short already, so not capped.
   if (waiting !== undefined) return { ...row(undefined, ""), now: waiting.label };
   if (live.userIntervened) return row(undefined, "you hold it");
   if (wait.bucket === "person") return row(undefined, wait.tag ?? "waits on a person");
@@ -456,7 +427,6 @@ export const workerRow = (
   return row(undefined, "idle");
 };
 
-/** The repo a finished worker's first PR is in, by its short name, as live rows name theirs. */
 const finishedRepo = (worker: FinishedWorker): string => worker.prs[0]?.repo.split("/").pop() ?? "";
 
 /**
@@ -557,7 +527,6 @@ export const workersByTab = (
       if (own.length > 0) add(id, feature.feature, own);
     }
   }
-  // A worker reopened since is live again, and the ledger's row is the one that counts.
   const live = new Set(ledger?.features.flatMap((f) => f.workers.map((w) => w.threadId)));
   for (const worker of finished) {
     if (live.has(worker.threadId)) continue;

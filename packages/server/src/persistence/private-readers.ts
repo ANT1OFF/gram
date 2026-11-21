@@ -3,10 +3,6 @@ import * as Effect from "effect/Effect";
 import { notePrivacy, noteReaders } from "../embedding/readable-by.ts";
 import type { SqlClient } from "../platform/unstable.ts";
 
-/**
- * What `private_readers` keeps of a stored thread's JSON: who may read it and where it worked,
- * as `notePrivacy` reads them; undefined for a thread anyone may read.
- */
 const privateFieldsOf = (data: string): string | undefined => {
   let stored: unknown;
   try {
@@ -84,7 +80,6 @@ export const notePrivateThreads = (sql: SqlClient.SqlClient) =>
     }
   });
 
-/** The fields of a thread that say which machines it ran on, as `mayReachThread` reads them. */
 const MACHINE_FIELDS = [
   "checkout",
   "currentCheckout",

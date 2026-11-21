@@ -1,7 +1,3 @@
-// The tray module's main half, behind "Keep running in the tray" (`core/tray-mode.ts`), which on
-// macOS is the menu bar item: its icon and menu of asks and workspaces (`core/tray-menu.ts`), the
-// file that keeps the setting, the one-time notice, and the `keepInTray` and tray menu IPC.
-
 import { readFileSync, writeFileSync } from "node:fs";
 
 import {
@@ -34,7 +30,6 @@ import { appWindows } from "../../electron/decision-windows.ts";
 
 const isMac = process.platform === "darwin";
 
-/** The menu bar glyph as a template image, which macOS tints for light, dark and highlighted. */
 const menuBarIcon = (): NativeImage => {
   const image = nativeImage.createFromBitmap(trayGlyphBitmap(32), {
     width: 32,
@@ -62,22 +57,17 @@ export function createTrayMode(options: {
   let prefs = DEFAULT_PREFS;
   let tray: Tray | undefined;
   let icon: NativeImage | undefined;
-  /** Held so the notice isn't garbage-collected while it shows. */
   let notice: Notification | undefined;
-  /** Each window's last menu; the newest from a live window is the one shown. */
   const menus = new Map<number, { contents: WebContents; menu: TrayMenu; at: number }>();
   let sent = 0;
   try {
     prefs = parseTrayPrefs(readFileSync(options.path, "utf8"));
-  } catch {
-    // No file before the setting is first changed.
-  }
+  } catch (_noFileBeforeTheSettingIsFirstChanged) {}
 
   const save = () => {
     try {
       writeFileSync(options.path, JSON.stringify(prefs));
     } catch (error) {
-      // The setting lasts until the app quits, and the notice may show once more.
       process.stderr.write(`tray: couldn't save ${options.path}: ${String(error)}\n`);
     }
   };
@@ -91,12 +81,6 @@ export function createTrayMode(options: {
     return best;
   };
 
-  /**
-   * What the user picked goes back to `owner`, the window whose menu it was, captured when the menu
-   * was built: never to a window that sent a menu since, which may not know its tokens. An answer
-   * or Pause all goes without bringing the window forward; opening something does. With the owner
-   * gone, an answer or Pause all is dropped and anything else brings a window back.
-   */
   const pick = (owner: WebContents | undefined, action: TrayAction) => {
     const inPlace = action.kind === "answer" || action.kind === "pauseAll";
     if (owner === undefined || owner.isDestroyed()) {
@@ -140,8 +124,6 @@ export function createTrayMode(options: {
 
   const showTray = async () => {
     if (tray !== undefined || !prefs.keepInTray) return;
-    // On macOS a template glyph for the menu bar; elsewhere the app's icon, or the executable's
-    // own, which carries `icon.ico` on Windows.
     icon ??= isMac
       ? menuBarIcon()
       : (options.icon?.() ??
@@ -150,7 +132,6 @@ export function createTrayMode(options: {
           .catch(() => nativeImage.createEmpty())));
     if (tray !== undefined || !prefs.keepInTray) return;
     tray = new Tray(icon);
-    // macOS opens a menu bar item's menu on click; elsewhere a click brings the window back.
     if (!isMac) tray.on("click", options.show);
     rebuild();
   };
@@ -178,7 +159,6 @@ export function createTrayMode(options: {
       const known = menus.has(contents.id);
       menus.set(contents.id, { contents, menu: parseTrayMenu(input), at: ++sent });
       if (!known) {
-        // A window that closes takes its menu with it: nothing is left that could answer.
         contents.once("destroyed", () => {
           menus.delete(contents.id);
           rebuild();

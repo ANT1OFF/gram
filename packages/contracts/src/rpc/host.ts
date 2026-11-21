@@ -86,40 +86,12 @@ export const HostCapability = Schema.Literals([
   "terminals",
   "sessions",
   "repos",
-  /**
-   * Takes a session's send or steer once per delivery id, answering a repeat with the first one's
-   * outcome, so a control plane unsure whether one arrived can ask again.
-   */
   "deliveries",
-  /**
-   * Scoping and reading a thread's files on the host for previews, file links, `send_file` and
-   * dictation's vocabulary (`host.files.scope` and the rest). Optional: a host without it still
-   * runs its workers, and its files are refused here rather than read on this machine.
-   */
   "file-reads",
-  /** Holding the files a user attaches to a session on the host (`host.attachments.*`). Optional. */
   "attachments",
-  /**
-   * Runs a project's check of a head merged onto its base in the host's own repository, once per
-   * check id, answering a repeat with the run already under way or its result.
-   */
   "checks",
-  /**
-   * Says what a worker's worktree is now (`host.repos.identify`): its origin's identity, whether
-   * it is a worktree of the clone it was made from, and its branch. Optional: without it, the
-   * control plane can't confirm a worker there owns a pull request, and asks the user.
-   */
   "repo-identity",
-  /**
-   * Updates itself to a Gram release the control plane names (`host.update.start`), from that
-   * release's own download, and says how its last update went (`host.update.check`).
-   */
   "update",
-  /**
-   * Lists and checks folders anywhere on the machine for a one-off thread the user places there
-   * (`host.folders.*`), refusing credential folders and the host's own. Optional: without it, a
-   * thread on the machine runs only in a new worktree of its clone.
-   */
   "folders",
 ]);
 export type HostCapability = typeof HostCapability.Type;
@@ -142,130 +114,25 @@ export const HOST_REQUIRED_CAPABILITIES: ReadonlyArray<HostCapability> = [
  * doesn't know yet, and ignores it.
  */
 export const HostFeature = Schema.Literals([
-  /**
-   * Makes a folder of the host's own for a thread started from a profile, and lays a profile's
-   * files there or in a worktree of the host's clones (`host.threadPlaces.*`). A host without it
-   * takes no such thread.
-   */
   "thread-places",
-  /**
-   * Holds a session to the browser it was opened with (`HostSessionOpen.browser`): on only when
-   * it says `true`, and off (Claude Code's `--no-chrome`) otherwise, a request that doesn't say
-   * included. A host without it drops the field and leaves the CLI's own default, which may turn
-   * Claude in Chrome on, so a control plane opens no session there that it can't hold off.
-   */
   "browser-policy",
-  /**
-   * Points a session's app tools at another of the control plane's MCP endpoints
-   * (`host.sessions.retarget`): this machine's host kept running after Gram quit, whose sessions a
-   * Gram opened again reaches at its new address, with its new token.
-   */
   "session-retarget",
-  /**
-   * Reads a file a thread produced a part at a time (`host.files.part`), checked on the host as a
-   * preview is, so a control plane that keeps threads' outputs in an object store can copy one
-   * that is on this machine. A host without it keeps such a file to itself.
-   */
   "file-parts",
-  /**
-   * Puts a thread's work in progress back where a stop kept it from (`host.stop.restore`): on a
-   * machine whose disk no longer has the thread's folder, the repository is cloned again, the
-   * hidden ref fetched, and the branch and the uncommitted files put back at the same path. And
-   * deletes the ref of a thread that is closed (`host.stop.drop`). A host without it leaves such
-   * a folder missing, as before.
-   */
   "wip-restore",
-  /**
-   * Puts a thread's work back from another machine's ref of it (`host.stop.restore`'s `ref`), as
-   * when the thread moved here from another Gram: the ref must be one of that thread
-   * (`isWipRefOf`) and name exactly the commit asked for. A host without it is never asked to.
-   */
   "wip-restore-ref",
-  /**
-   * Checks a folder that is there before taking it for put back, when asked (`host.stop.restore`'s
-   * `pending`): a resume before set out to put it back and may have stopped part way. An empty
-   * folder is made again; a worktree of the thread's clone gets the kept work put into it, as a
-   * clone that is there does; anything else is refused. A control plane doesn't take a host
-   * without it at its word for such a folder.
-   */
   "wip-restore-pending",
-  /**
-   * Holds a folder made from its branch to the commit its stop kept (`host.stop.restore`'s
-   * `commit`): when the ref is gone from the remote and the branch doesn't hold that commit,
-   * nothing is put back unless `fromBranch` says to. A control plane holds a host without it to
-   * that itself, refusing a folder such a host made from the branch.
-   */
   "wip-restore-kept",
-  /**
-   * Keeps a thread's work in progress off the machine while it works (`host.stop.keep`): the same
-   * hidden ref a stop writes, without readying the machine to stop. A control plane asks it after a
-   * turn and during a long one, so a machine that is lost costs minutes of work, not the turn's.
-   */
   "wip-keep",
-  /**
-   * Knows OpenCode as an agent kind (`opencode`): opens its sessions, or says it can't. A control
-   * plane opens no OpenCode session on a host without it, reloads no OpenCode config there, and
-   * leaves an OpenCode worker's agent out of what it sends that host.
-   */
   "agent-opencode",
-  /**
-   * Runs Codex sessions on the machine's own Codex app-server and sign-in
-   * (`HostSessionOpen.codexHome`, `HostStatus.codex`). A control plane opens no Codex session on a
-   * host without it, which would refuse it anyway.
-   */
   "agent-codex",
-  /**
-   * Runs OpenCode sessions on the machine's own `opencode` and its config (`HostStatus.opencode`).
-   * `agent-opencode` alone only knows the kind; a control plane opens no OpenCode session on a
-   * host without this one, which would refuse it anyway.
-   */
   "agent-opencode-sessions",
-  /**
-   * Runs Grok Build sessions on the machine's own `grok` and its sign-in, or the token command its
-   * environment names (`HostStatus.grok`). A control plane opens no Grok Build session on a host
-   * without it, and leaves a Grok worker's agent out of what it sends that host.
-   */
   "agent-grok",
-  /**
-   * Runs Antigravity sessions on the machine's own `agy` and its sign-in, or the Gemini API key its
-   * environment holds (`HostStatus.antigravity`). A control plane opens no Antigravity session on a
-   * host without it, and leaves an Antigravity worker's agent out of what it sends that host.
-   */
   "agent-antigravity",
-  /** Fresh non-credential subscription identity before a cold worker's limit preflight. */
   "account-scope",
-  /**
-   * Keeps a mirror of a workspace's shared folder on the machine (`host.shared.*`), for the control
-   * plane to keep in step with its own. A host without it runs its threads with no shared folder.
-   */
   "shared-folders",
-  /**
-   * Opens a memory update's session (`HostSessionOpen.dreamFilesOnly`): with no native tool and no
-   * settings of its own, its files reached only through the control plane's app tools, in an
-   * empty folder the host makes for it whatever `cwd` says. A control plane sends no memory
-   * update to a host without it, which would drop the field and open an ordinary session.
-   */
   "dream-sessions",
-  /**
-   * Says when it is about to be taken away (`host.stop.going`): a provisioned host sent SIGTERM,
-   * as a node drain or a reclaimed spot node sends it, holds its exit while a control plane that
-   * listens readies it to stop, keeping its threads' work as a stop does. A control plane doesn't
-   * ask a host without it.
-   */
   "stop-going",
-  /**
-   * Carries its sessions' app-tool calls to the control plane over its own connection
-   * (`host.appTools.*`): it serves them on an address of its own loopback, and the control plane
-   * answers each. For a host that can't reach the control plane's address, such as one a hosted
-   * server started for a desktop's worker, whose connection that server relays.
-   */
   "app-tools-tunnel",
-  /**
-   * Opens a TCP connection to one of the machine's own loopback ports for the control plane
-   * (`host.loopback.*`), so the browser a thread's tools drive on the control plane reaches a dev
-   * server the thread started on this machine. Loopback ports from 1024 up only. A control plane
-   * points no thread's page at a host without it.
-   */
   "loopback-tunnels",
 ]);
 export type HostFeature = typeof HostFeature.Type;
@@ -452,7 +319,6 @@ export const LoopbackTunnelId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-
 /** What a loopback tunnel carries from the host: `connected` once, then the port's bytes. */
 export const LoopbackEvent = Schema.Union([
   Schema.Struct({ type: Schema.Literal("connected") }),
-  /** Base64, at most `LOOPBACK_CHUNK_BYTES` bytes before encoding. */
   Schema.Struct({ type: Schema.Literal("data"), data: Schema.String }),
 ]);
 export type LoopbackEvent = typeof LoopbackEvent.Type;
@@ -717,7 +583,6 @@ const openCheckouts = Schema.Array(Schema.String);
 
 const listErrors = Schema.Union([NotFound, InvalidState, HostFailed]);
 
-/** A file read for a preview: where, scoped to which roots, and whether outside them is allowed. */
 const fileRead = {
   path: Schema.String,
   roots: Schema.Array(Schema.String),
@@ -762,15 +627,12 @@ export type HostFilePart = typeof HostFilePart.Type;
  * host's own parent over a private pipe: a host reached over a network checks paths itself.
  */
 export const HostRpcs = RpcGroup.make(
-  /** The first call on a connection: the host's version, id and capabilities. */
   Rpc.make("host.hello", { success: HostHello }),
-  /** A folder's entries for the Files panel. */
   Rpc.make("host.files.list", {
     payload: { path: Schema.String, showHidden: Schema.Boolean, limit: PositiveInt },
     success: FsListing,
     error: listErrors,
   }),
-  /** Lines matching `query` under `root`. */
   Rpc.make("host.files.search", {
     payload: {
       root: Schema.String,
@@ -783,43 +645,26 @@ export const HostRpcs = RpcGroup.make(
     success: FsSearchResult,
     error: readErrors,
   }),
-  /** Every file name under `root`, capped. */
   Rpc.make("host.files.names", {
     payload: { root: Schema.String },
     success: FsFilesResult,
     error: readErrors,
   }),
-  /**
-   * `path` scoped to `roots` on the host, as `resolveScopedIn` does it: a relative path against
-   * the first root, an absolute one against the root that really holds it, and nothing that leaves
-   * its root lexically or through a link. What `host.files.list` and the rest then read.
-   */
   Rpc.make("host.files.scope", {
     payload: { path: Schema.String, roots: Schema.Array(Schema.String) },
     success: Schema.String,
     error: listErrors,
   }),
-  /**
-   * A file preview on the host, scoped as `host.files.scope` scopes it. A path outside every root
-   * is read only when `outside` allows it, and never a credential file; what refused it reads
-   * `outside.refusal`. The control plane decides `outside` from the thread's transcript.
-   */
   Rpc.make("host.files.file", {
     payload: { ...fileRead, maxBytes: PositiveInt },
     success: FsFile,
     error: listErrors,
   }),
-  /** An image preview on the host, scoped and gated as `host.files.file` is. */
   Rpc.make("host.files.image", {
     payload: { ...fileRead, maxBytes: PositiveInt },
     success: FileImage,
     error: listErrors,
   }),
-  /**
-   * Which of `paths` name one file in `roots` on the host, as `resolveFileRefs` decides it. An
-   * absolute path in no root is checked only when it is in `outside`; the rest of those come back
-   * in `unchecked`, for the control plane to ask the thread's transcript about.
-   */
   Rpc.make("host.files.resolve", {
     payload: {
       paths: Schema.Array(Schema.String),
@@ -832,26 +677,16 @@ export const HostRpcs = RpcGroup.make(
     }),
     error: readErrors,
   }),
-  /** What dictation's project vocabulary reads from a checkout on the host. */
   Rpc.make("host.files.vocabulary", {
     payload: { root: Schema.String },
     success: HostVocabulary,
     error: readErrors,
   }),
-  /**
-   * A file's bytes for `send_file`: `path` resolved against `cwd` on the host, a regular file of
-   * at most `maxBytes`, never a credential file.
-   */
   Rpc.make("host.files.fetch", {
     payload: { path: Schema.String, cwd: Schema.String, maxBytes: PositiveInt },
     success: HostFetchedFile,
     error: listErrors,
   }),
-  /**
-   * Up to `length` bytes of a file from `offset`, for copying a thread's output off the host:
-   * `path` scoped to `roots` as a preview's is, outside them only where `outside` allows, a
-   * regular file and never a credential file. Served by a host that names `file-parts`.
-   */
   Rpc.make("host.files.part", {
     payload: {
       ...fileRead,
@@ -861,51 +696,32 @@ export const HostRpcs = RpcGroup.make(
     success: HostFilePart,
     error: listErrors,
   }),
-  /**
-   * Folders for a one-off thread's picker, as `fs.browse` lists them, on the host: `~` is the
-   * host's home, and a credential folder or the host's own is never listed, nor listed into.
-   */
   Rpc.make("host.folders.browse", {
     payload: { input: Schema.String, limit: PositiveInt },
     success: FolderListing,
     error: listErrors,
   }),
-  /**
-   * Whether a one-off thread may run in `path` on the host: an existing folder, its links
-   * resolved, that is neither a credential folder nor the host's own, with its branch if it is on one.
-   */
   Rpc.make("host.folders.check", {
     payload: { path: Schema.String },
     success: HostFolderChecked,
     error: listErrors,
   }),
-  /**
-   * Stores a file the user attached for `threadId`'s session in the host's own attachments folder,
-   * and answers where, for the agent to read it there.
-   */
   Rpc.make("host.attachments.put", {
     payload: { threadId: ThreadId, name: Schema.String, data: Schema.String },
     success: Schema.Struct({ path: Schema.String }),
     error: readErrors,
   }),
-  /** Deletes what the host holds of `threadId`'s attachments: the thread is gone. */
   Rpc.make("host.attachments.remove", { payload: { threadId: ThreadId } }),
-  /**
-   * Makes the host's mirror of a workspace's shared folder, when it isn't there yet, and answers
-   * where it is, for the workspace's sessions on this machine to be given.
-   */
   Rpc.make("host.shared.open", {
     payload: { workspaceId: WorkspaceId },
     success: Schema.Struct({ path: Schema.String }),
     error: readErrors,
   }),
-  /** The files in the host's mirror of a workspace's shared folder, each with its hash. */
   Rpc.make("host.shared.list", {
     payload: { workspaceId: WorkspaceId },
     success: SharedListing,
     error: readErrors,
   }),
-  /** A part of one file in the host's mirror. */
   Rpc.make("host.shared.read", {
     payload: {
       workspaceId: WorkspaceId,
@@ -916,12 +732,6 @@ export const HostRpcs = RpcGroup.make(
     success: SharedPart,
     error: readErrors,
   }),
-  /**
-   * A part of one file for the host's mirror, written beside it. The last part (`offset` plus the
-   * part reaching `size`) puts the file in place, but only when what is there still has the hash
-   * `ifMatch` (`absent` for no file) and the whole has the hash `sha256`; otherwise it is refused
-   * and nothing changes. Answers whether the file is in place.
-   */
   Rpc.make("host.shared.write", {
     payload: {
       workspaceId: WorkspaceId,
@@ -936,84 +746,42 @@ export const HostRpcs = RpcGroup.make(
     success: Schema.Struct({ placed: Schema.Boolean }),
     error: readErrors,
   }),
-  /** Deletes one file from the host's mirror, only while it still has the hash `ifMatch`. */
   Rpc.make("host.shared.remove", {
     payload: { workspaceId: WorkspaceId, path: Schema.String, ifMatch: Schema.String },
     success: Schema.Struct({ removed: Schema.Boolean }),
     error: readErrors,
   }),
-  /**
-   * Makes `threadId`'s own folder under the host's thread folders, new and empty, lays `files` in
-   * it and answers where it is. The host checks each path itself, and refuses an id it already
-   * has a folder for.
-   */
   Rpc.make("host.threadPlaces.make", {
     payload: { threadId: ThreadId, files: Schema.Array(ProfileFile) },
     success: Schema.Struct({ path: Schema.String }),
     error: readErrors,
   }),
-  /**
-   * Lays `files` in `checkout`, a worktree of the host's clones: never over a file already there
-   * nor through a link, and named in an exclude file of that worktree alone. Answers which it wrote.
-   */
   Rpc.make("host.threadPlaces.lay", {
     payload: { checkout: Schema.String, files: Schema.Array(ProfileFile) },
     success: Schema.Struct({ laid: Schema.Array(Schema.String) }),
     error: readErrors,
   }),
-  /** Deletes `threadId`'s own folder, made by `host.threadPlaces.make`: the thread never started. */
   Rpc.make("host.threadPlaces.remove", { payload: { threadId: ThreadId } }),
-  /** One sweep of the host's listening ports and processes. */
   Rpc.make("host.ports.scan", { success: HostPortScan, error: HostFailed }),
-  /**
-   * Served with `loopback-tunnels`: a TCP connection to `host`:`port` on the machine itself, named
-   * `tunnelId`. `connected` once it is made, then what the port sends; the stream ends when the
-   * port closes its side, and ending the stream closes the connection. A port nothing listens on
-   * fails with `HostFailed`.
-   */
   Rpc.make("host.loopback.open", {
     payload: { tunnelId: LoopbackTunnelId, host: LoopbackHost, port: LoopbackPort },
     success: LoopbackEvent,
     error: HostFailed,
     stream: true,
   }),
-  /** Writes base64 `data` to an open tunnel; `HostFailed` for one that isn't open. */
   Rpc.make("host.loopback.send", {
     payload: { tunnelId: LoopbackTunnelId, data: Schema.String },
     error: HostFailed,
   }),
-  /** Ends this side of an open tunnel, as a TCP half-close; the port's side still arrives. */
   Rpc.make("host.loopback.end", { payload: { tunnelId: LoopbackTunnelId } }),
-  /**
-   * What this machine can run: whether its own Claude Code is signed in to a subscription (its
-   * `claude auth status`, the classification only, never the output or a credential) and whether
-   * `claude` and `git` are installed there. An older host answers with an unknown-request defect,
-   * which the control plane reads as unknown.
-   */
   Rpc.make("host.status", { success: HostStatus }),
-  /** Served with `update`: whether it could update now, and how its last update went. */
   Rpc.make("host.update.check", { success: HostUpdateCheck }),
-  /**
-   * Served with `update`: downloads `release` from Gram's own GitHub releases, checks it against
-   * that release's `SHA256SUMS.txt`, unpacks and tests it beside the app it runs, then hands its
-   * service to it. The host restarts once the stream ends; it rolls back to the app it runs now
-   * unless the new one dials in and is asked `host.update.check` within two minutes.
-   */
   Rpc.make("host.update.start", {
     payload: { release: Schema.String.check(Schema.isMaxLength(64)) },
     success: HostUpdateProgress,
     error: HostUpdateRefused,
     stream: true,
   }),
-  /**
-   * Readies the host to be stopped with its disk kept. It stops taking new work, and when nothing
-   * runs on it (the test an update waits on: no turn, busy terminal, clone or check), or `force`
-   * says to go on regardless (a machine about to be taken away), it commits each listed folder's
-   * working tree on top of its HEAD under the folder's own ref (`refs/gram/wip/<thread>--<folder>`,
-   * `<folder>` a hash of `cwd`) and pushes that ref to `remote` (`origin` when left out). The
-   * branch, the index and the files stay as they are. A host built before this answers with an
-   * unknown-request defect.
-   */
   Rpc.make("host.stop.prepare", {
     payload: {
       checkouts: Schema.Array(HostStopCheckout).check(Schema.isMaxLength(512)),
@@ -1023,11 +791,6 @@ export const HostRpcs = RpcGroup.make(
     success: HostStopPrepared,
     error: HostFailed,
   }),
-  /**
-   * Keeps the listed folders' work in progress as `host.stop.prepare` does (each folder's hidden
-   * ref, pushed to `remote`), while the host goes on working: nothing is held
-   * and nothing waits for work to end. Served by a host that names `wip-keep`.
-   */
   Rpc.make("host.stop.keep", {
     payload: {
       checkouts: Schema.Array(HostStopCheckout).check(Schema.isMaxLength(64)),
@@ -1036,35 +799,11 @@ export const HostRpcs = RpcGroup.make(
     success: Schema.Struct({ kept: Schema.Array(HostStopKept) }),
     error: HostFailed,
   }),
-  /** Takes new work again after a `host.stop.prepare` that no stop followed. */
   Rpc.make("host.stop.cancel", {}),
-  /**
-   * Says once, when the host is about to be taken away, how long it waits (`withinMs`), and nothing
-   * before. The host holds its exit while any caller still listens, up to then: a caller listens
-   * on until it has readied the host to stop (`host.stop.prepare`, forced), so its work is kept
-   * first. A caller that isn't going to stops listening. Served by a host that names `stop-going`.
-   */
   Rpc.make("host.stop.going", {
     success: Schema.Struct({ withinMs: Schema.Int }),
     stream: true,
   }),
-  /**
-   * Puts back what a stop kept of a thread whose folder `cwd` is not on this disk: the host's
-   * clone of the repository at `url` is made or fetched, the ref a stop kept of `cwd` is fetched
-   * from `remote` (`origin` when absent), and `cwd` is made again as it was, a worktree of that clone
-   * or the clone itself, on `branch` at the tip the work was on, with the uncommitted files
-   * uncommitted. A folder that is there with work of its own is never written over, and a branch
-   * that is there with commits the kept work doesn't hold is never moved. Served by a host that
-   * names `wip-restore`.
-   *
-   * `commit` is the commit the stop said it kept: the ref must name exactly it, or nothing is put
-   * back. A folder with no ref of its own at the remote is read from the thread's one ref an older
-   * host kept, `refs/gram/wip/<thread>`, only given `commit`. `caughtUp` says the stop kept no ref
-   * because the branch at the remote held everything: the folder is made from `branch` there. So
-   * is one whose ref the remote doesn't have, but only when that branch holds `commit`: otherwise
-   * the work the stop kept is gone from the remote, and nothing is put back unless `fromBranch`
-   * says to make it without that work.
-   */
   Rpc.make("host.stop.restore", {
     payload: {
       threadId: ThreadId,
@@ -1095,12 +834,6 @@ export const HostRpcs = RpcGroup.make(
     success: HostStopRestored,
     error: HostFailed,
   }),
-  /**
-   * Deletes the thread's ref of `cwd`, and its one ref an older host kept, at `remote` and in the
-   * repository at `cwd`, whatever they name, when that repository has them; otherwise nothing is asked of any remote. For a
-   * thread that is gone for good: closing one doesn't ask it, since a closed thread can be
-   * reopened. Served by a host that names `wip-restore`.
-   */
   Rpc.make("host.stop.drop", {
     payload: {
       threadId: ThreadId,
@@ -1110,31 +843,21 @@ export const HostRpcs = RpcGroup.make(
     success: Schema.Struct({ dropped: Schema.Boolean }),
     error: HostFailed,
   }),
-  /**
-   * The host's own clone of the repository at `url`, in the folder it keeps clones in: cloned when
-   * it has none, fetched when it has. What a worker placed on this machine makes its worktree from.
-   */
   Rpc.make("host.repos.ensure", {
     payload: { url: Schema.String },
     success: Schema.Struct({ path: Schema.String }),
     error: worktreeErrors,
   }),
-  /**
-   * What the worktree at `path` is now, beside the clone at `repoRoot` it was made from, on a host
-   * that serves `repo-identity`. Read-only: nothing is fetched or cloned.
-   */
   Rpc.make("host.repos.identify", {
     payload: { repoRoot: Schema.String, path: Schema.String },
     success: HostRepoIdentity,
     error: HostFailed,
   }),
-  /** A repo's worktrees, those open in a thread marked. */
   Rpc.make("host.worktrees.list", {
     payload: { repoPath: Schema.String, openCheckouts },
     success: WorktreeList,
     error: worktreeErrors,
   }),
-  /** The branches a new worktree can start from, and the one an empty picker uses. */
   Rpc.make("host.worktrees.baseBranches", {
     payload: { repoPath: Schema.String },
     success: Schema.Struct({
@@ -1143,7 +866,6 @@ export const HostRpcs = RpcGroup.make(
     }),
     error: worktreeErrors,
   }),
-  /** A new worktree on `branch`, or the one already on it. */
   Rpc.make("host.worktrees.create", {
     payload: {
       repoPath: Schema.String,
@@ -1155,7 +877,6 @@ export const HostRpcs = RpcGroup.make(
     success: HostCreatedWorktree,
     error: worktreeErrors,
   }),
-  /** Removes a worktree, then unions `mergeRules` back into the main checkout's settings. */
   Rpc.make("host.worktrees.remove", {
     payload: {
       repoPath: Schema.String,
@@ -1166,7 +887,6 @@ export const HostRpcs = RpcGroup.make(
     },
     error: worktreeErrors,
   }),
-  /** Recreates a worktree that was deleted, at its old folder on its branch. */
   Rpc.make("host.worktrees.restore", {
     payload: {
       repoPath: Schema.String,
@@ -1179,17 +899,11 @@ export const HostRpcs = RpcGroup.make(
     success: HostRestoredWorktree,
     error: worktreeErrors,
   }),
-  /** Permission rules approved in a worktree that its main checkout lacks. */
   Rpc.make("host.worktrees.pendingPermissions", {
     payload: { repoPath: Schema.String, worktreeDir: Schema.String },
     success: Schema.Array(Schema.String),
     error: worktreeErrors,
   }),
-  /**
-   * Checks `head` merged onto `base`, from the repository of the checkout at `path` (or the clone
-   * at `repoRoot`), with the project's command, on a host that serves `checks`. Taken once per `id`:
-   * a repeat joins the run under way, or answers with how it ended.
-   */
   Rpc.make("host.checks.run", {
     payload: {
       id: Schema.String,
@@ -1204,15 +918,12 @@ export const HostRpcs = RpcGroup.make(
     success: HostCheckResult,
     error: HostFailed,
   }),
-  /** A checkout's local git state: branch, changes, HEAD. */
   Rpc.make("host.git.local", {
     payload: { cwd: Schema.String },
     success: GitState,
     error: commandErrors,
   }),
-  /** Whether a checkout's folder is there; false only when it is definitely gone. */
   Rpc.make("host.git.present", { payload: { cwd: Schema.String }, success: Schema.Boolean }),
-  /** Each checkout's git state as it changes, until the caller stops listening. */
   Rpc.make("host.git.watch", {
     payload: {
       paths: Schema.Array(Schema.String),
@@ -1223,10 +934,6 @@ export const HostRpcs = RpcGroup.make(
     success: HostGitChange,
     stream: true,
   }),
-  /**
-   * A shell in `cwd`, already chosen by the control plane, with the settings it read. Without
-   * `path`, as for another machine, the shell is the host's own default on its own PATH.
-   */
   Rpc.make("host.terminals.open", {
     payload: {
       threadId: Schema.optionalKey(ThreadId),
@@ -1250,7 +957,6 @@ export const HostRpcs = RpcGroup.make(
     payload: { terminalId: TerminalId, cols: PositiveInt, rows: PositiveInt },
     error: terminalErrors,
   }),
-  /** Kills the shell and waits for it to exit. */
   Rpc.make("host.terminals.close", {
     payload: { terminalId: TerminalId },
     error: Schema.Union([NotFound, HostFailed]),
@@ -1259,7 +965,6 @@ export const HostRpcs = RpcGroup.make(
     payload: { threadId: Schema.optionalKey(ThreadId) },
     success: Schema.Array(TerminalInfo),
   }),
-  /** The scrollback as one `replay`, then live output, ending after `exit`. */
   Rpc.make("host.terminals.subscribe", {
     payload: { terminalId: TerminalId },
     success: TerminalEvent,
@@ -1270,30 +975,19 @@ export const HostRpcs = RpcGroup.make(
     payload: { threadId: ThreadId },
     success: Schema.Array(HostTerminalSnapshot),
   }),
-  /** Threads' shells as they start and end, until the caller stops listening. */
   Rpc.make("host.terminals.roots", { success: HostTerminalRoot, stream: true }),
-  /**
-   * Opens an agent session on the host under the control plane's `handle`. A close for the handle
-   * that comes first, or while it opens, leaves the session closed.
-   */
   Rpc.make("host.sessions.open", {
     payload: HostSessionOpen,
     success: HostSessionOpened,
     error: sessionErrors,
   }),
-  /**
-   * The session's events after `afterSeq`: those the host still keeps, then each as it comes. Ends
-   * once the session's events have ended and every one was sent.
-   */
   Rpc.make("host.sessions.events", {
     payload: { ...session, afterSeq: Schema.Int },
     success: HostSessionEvent,
     error: NotFound,
     stream: true,
   }),
-  /** Confirms every event up to `seq`, which the host then lets go. */
   Rpc.make("host.sessions.ack", { payload: { ...session, seq: Schema.Int } }),
-  /** The last report of the session's MCP servers, then each new one. */
   Rpc.make("host.sessions.connectorsSeen", {
     payload: session,
     success: HostConnectorsSeen,
@@ -1348,26 +1042,19 @@ export const HostRpcs = RpcGroup.make(
     success: Schema.Boolean,
     error: HostFailed,
   }),
-  /**
-   * Starts serving app-tool calls on the host's loopback, once (`app-tools-tunnel`): the address
-   * its sessions are given, `http://127.0.0.1:<port>`, under which `/host/mcp` takes them.
-   */
   Rpc.make("host.appTools.open", {
     success: Schema.Struct({ url: Schema.String.check(Schema.isMaxLength(64)) }),
     error: HostFailed,
   }),
-  /** Each app-tool call a session there made, for the control plane to answer by id. */
   Rpc.make("host.appTools.requests", {
     success: HostAppToolsRequest,
     error: HostFailed,
     stream: true,
   }),
-  /** The control plane's answer to one call: the host writes it back to the session. */
   Rpc.make("host.appTools.answer", {
     payload: HostAppToolsAnswer,
     error: HostFailed,
   }),
-  /** Points the session's app tools at `mcp` from now on (`session-retarget`). */
   Rpc.make("host.sessions.retarget", {
     payload: {
       ...session,
@@ -1402,28 +1089,18 @@ export const HostRpcs = RpcGroup.make(
     success: HostSignInStart,
     error: sessionErrors,
   }),
-  /** Ends the session and waits for its agent to stop. Unknown handles are already closed. */
   Rpc.make("host.sessions.close", { payload: session }),
-  /** Drops what the host's agents keep across sessions (`AgentHost.reloadConfig` and kin). */
   Rpc.make("host.sessions.reload", {
     payload: { agent: AgentKind, reload: HostAgentReload },
   }),
-  /** Read-only CLI metadata, negotiated by `account-scope`; starts no session or inference turn. */
   Rpc.make("host.sessions.accountScope", {
     payload: { agent: AgentKind },
     success: Schema.Struct({ scope: Schema.optionalKey(Schema.String) }),
     error: sessionErrors,
   }),
-  /**
-   * Keeps a token the user ran `claude setup-token` for on the main machine, and consented to send
-   * to this one, owner-only in the host's folder: its new Claude sessions sign in with it. The
-   * payload is `Redacted`, so a log or error that prints it shows `<redacted>`. A host built before
-   * this answers with an unknown-request defect.
-   */
   Rpc.make("host.claude.setToken", {
     payload: { token: Schema.RedactedFromValue(Schema.String) },
     error: HostFailed,
   }),
-  /** Deletes the kept token; true when there was one. */
   Rpc.make("host.claude.forgetToken", { success: Schema.Boolean, error: HostFailed }),
 );

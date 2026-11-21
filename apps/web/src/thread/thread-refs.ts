@@ -1,14 +1,5 @@
-// Links to other Gram threads in an agent's text, written `[title](#<threadId>)` as the app tools
-// that return thread ids ask. Like PR and file references (`pr-refs.ts`, `file-refs.ts`), this
-// module only finds what could be one; the component decides at render, against the threads store,
-// whether it is. A heading anchor such as `#setup` must stay an anchor, so a fragment becomes a
-// thread link only when the store knows a thread by it, or when it has the UUID shape every thread
-// Gram makes has (a thread since closed or deleted, shown muted).
-
-/** The shape of the ids Gram gives threads (`randomUUID`, and `workerThreadId`'s UUID-shaped hash). */
 const THREAD_UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
-/** What a fragment may hold to be read as an id at all: no spaces, slashes or further `#`. */
 const FRAGMENT_ID = /^[A-Za-z\d][\w-]{0,127}$/;
 
 /** The id `href` names when it is a bare fragment that could be a thread's, else nothing. */
@@ -21,9 +12,7 @@ export function threadLinkId(href: string): string | undefined {
 /** What a possible thread link renders as. */
 export type ThreadRefTarget =
   | { readonly kind: "thread"; readonly title: string }
-  /** UUID-shaped but not a thread the app knows: closed, deleted, or never one. */
   | { readonly kind: "gone" }
-  /** Not a thread link: left as the link it was written as. */
   | { readonly kind: "none" };
 
 /**
@@ -46,7 +35,6 @@ export type ThreadTextSegment =
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "link"; readonly id: string; readonly label: string; readonly raw: string };
 
-/** `[label](#id)` in plain text: a one-line label, and an id as `threadLinkId` reads one. */
 const TEXT_LINK = /\[([^\]\n]{1,200})\]\(#([A-Za-z\d][\w-]{0,127})\)/g;
 
 /**
@@ -83,7 +71,6 @@ interface HastElement {
 
 type HastNode = HastText | HastElement | { type: string; children?: HastNode[] };
 
-/** Whose links are never read: code. */
 const OPAQUE = new Set(["code", "pre", "kbd", "samp"]);
 
 const textOf = (node: HastNode): string =>
@@ -100,7 +87,6 @@ const visit = (node: HastNode): void => {
       const href = element.properties?.["href"];
       const id = typeof href === "string" ? threadLinkId(href) : undefined;
       if (id === undefined) return element;
-      // The link stays inside, so one that turns out not to be a thread renders as it was written.
       return {
         type: "element",
         tagName: THREAD_REF_TAG,

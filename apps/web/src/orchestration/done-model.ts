@@ -5,10 +5,6 @@ import type { DoneGrouping } from "@/stores/layout";
 
 import { doneDay } from "./workers-model";
 
-// Done, as the overview and ⌘J both list it: every finished chat, workers and solo threads alike,
-// latest first, grouped by date or by orchestrator, a page at a time. Pure, so the two lists group
-// and page alike and are tested without a browser.
-
 export type { DoneGrouping };
 
 /** Each grouping, and how its control names it. */
@@ -105,9 +101,7 @@ export const doneWindow = <T extends DoneEntry>(
     (best, each) => (best === undefined || each[1] > best[1] ? each : best),
     undefined,
   );
-  // A workspace with more to load and nothing loaded yet: where its group goes isn't known.
   const unplaced = [...horizons.keys()].find((id) => !rows.some((row) => row.workspaceId === id));
-  // The workspace still loading that could list something before `row`, if any.
   const waitsOn = (row: T): WorkspaceId | undefined => {
     const at = row.finishedAt ?? -Infinity;
     if (by === "date") return latest !== undefined && at < latest[1] ? latest[0] : undefined;
@@ -125,7 +119,6 @@ export const doneWindow = <T extends DoneEntry>(
       if (blocker !== undefined) break scan;
       settled += 1;
     }
-    // By orchestrator, a workspace's older workers go at the end of its group, before the next.
     const own = group.rows[0]?.workspaceId;
     if (by === "orchestrator" && own !== undefined && horizons.has(own)) {
       blocker = own;
@@ -133,7 +126,6 @@ export const doneWindow = <T extends DoneEntry>(
     }
   }
   const visible = ordered.slice(0, Math.min(limit, settled));
-  // Short of a page: load what the next row waits on, else whatever may still have more.
   const load = visible.length < limit ? (blocker ?? unplaced ?? latest?.[0]) : undefined;
   return {
     groups: groupDone(visible, by, now),

@@ -50,7 +50,6 @@ const discovery = (server: CodexServer) =>
     const { account, requiresOpenaiAuth } = yield* server.rpc.request("account/read", {
       refreshToken: false,
     });
-    // Subscription-only: a saved API-key/custom-provider login cannot silently replace it.
     if (!requiresOpenaiAuth || account?.type !== "chatgpt") return yield* failed("auth");
     const models: Array<AgentModel> = [];
     const seen = new Set<string>();
@@ -193,7 +192,6 @@ export const makeCodexHelper = (
               config: {
                 model_provider: "openai",
                 openai_base_url: CODEX_HELPER_SUBSCRIPTION_BASE_URL,
-                // Unset means the model's default: Codex refuses a null `model_reasoning_effort`.
                 ...(call.effort === undefined ? {} : { model_reasoning_effort: call.effort }),
                 service_tier: "default",
                 web_search: "disabled",
@@ -254,7 +252,6 @@ export const makeCodexHelper = (
                 Deferred.doneUnsafe(done, Effect.fail(failed("unavailable")));
               },
             });
-            // Client refusal applies only to requests we receive, not already executed upstream tools.
             yield* Effect.forkScoped(
               Stream.runForEach(Stream.fromQueue(messages), (message) =>
                 Effect.gen(function* () {
@@ -331,7 +328,6 @@ export const makeCodexHelper = (
             );
             yield* call.authorize(() => {
               delivered = true;
-              // RPC registers the request and writes stdio synchronously before returning to authorize.
               turn = Effect.runSync(
                 Effect.forkIn(
                   server.rpc.request("turn/start", {

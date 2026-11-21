@@ -21,7 +21,6 @@ import { useHome, useIsGitRepo, type FolderStatus } from "./use-folder";
 interface ProjectPickerProps {
   value: string;
   onChange: (value: string) => void;
-  /** From `useFolderStatus(value)`; the draft gates Create on it. */
   status: FolderStatus;
   debounceMs?: number;
 }

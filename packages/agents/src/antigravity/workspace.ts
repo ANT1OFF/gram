@@ -1,13 +1,9 @@
-// The repository's own Antigravity customizations: hooks, MCP servers and plugins that `agy acp`
-// loads from a work folder with no trust prompt, whatever `--gemini-dir` says.
-
 import { lstatSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 /** The folder Antigravity reads a workspace's own customizations from. */
 export const CUSTOMIZATIONS_FOLDER = ".agents";
 
-/** What in that folder runs code: hooks, MCP servers and plugins. */
 const RUNNABLE = ["hooks.json", "mcp_config.json", "plugins"].map((name) =>
   join(CUSTOMIZATIONS_FOLDER, name),
 );
@@ -25,7 +21,6 @@ const present = (path: string): boolean => {
   }
 };
 
-/** `dir` and each parent up to its repository's root (the nearest holding `.git`), else `dir` alone. */
 const upToRepoRoot = (dir: string): ReadonlyArray<string> => {
   const chain: Array<string> = [];
   let at = dir;
@@ -38,7 +33,6 @@ const upToRepoRoot = (dir: string): ReadonlyArray<string> => {
   }
 };
 
-/** `dir` as given and with every link followed, as agy may read either. */
 const bothPaths = (dir: string): ReadonlyArray<string> => {
   const given = resolve(dir);
   try {

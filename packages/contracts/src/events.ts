@@ -68,7 +68,6 @@ export const ServerEvent = Schema.Union([
     threadId: ThreadId,
     requestId: RequestId,
   }),
-  /** The full queue after any change: send, drain, edit, reorder or remove. */
   Schema.Struct({
     type: Schema.Literal("thread.queue"),
     threadId: ThreadId,
@@ -85,7 +84,6 @@ export const ServerEvent = Schema.Union([
      */
     capabilities: Schema.optionalKey(AgentCapabilities),
   }),
-  /** Same shape as `ThreadSummary.usage`; pushed after each turn's usage report. */
   Schema.Struct({
     type: Schema.Literal("thread.usage"),
     threadId: ThreadId,
@@ -93,20 +91,12 @@ export const ServerEvent = Schema.Union([
     /** The turn the reading is of, where one is open. */
     turnId: Schema.optionalKey(TurnId),
   }),
-  /**
-   * The agent's todo list (`items`) and the thread's plan after either changes, both in full:
-   * without `plan` the thread has none.
-   */
   Schema.Struct({
     type: Schema.Literal("thread.plan"),
     threadId: ThreadId,
     items: Schema.Array(PlanItem),
     plan: Schema.optionalKey(ThreadPlan),
   }),
-  /**
-   * The thread's open Waiting on you items after any change, in full, oldest first, with what the
-   * helper resolved lately as `ThreadSummary.helperResolved` has it.
-   */
   Schema.Struct({
     type: Schema.Literal("thread.waits"),
     threadId: ThreadId,
@@ -114,33 +104,24 @@ export const ServerEvent = Schema.Union([
     helperResolved: Schema.optionalKey(Schema.Array(WaitItem)),
   }),
   Schema.Struct({ type: Schema.Literal("git.state"), threadId: ThreadId, state: GitState }),
-  /** A bot review round completed on the thread's PR; published once per round. */
   Schema.Struct({ type: Schema.Literal("pr.reviewRound"), threadId: ThreadId, round: ReviewRound }),
   ThreadPortsEvent,
   ThreadTerminalProcessesEvent,
-  /** The agent's background tasks after any change; an empty list says none is left. */
   Schema.Struct({
     type: Schema.Literal("thread.background"),
     threadId: ThreadId,
     tasks: Schema.Array(BackgroundTask),
   }),
-  /**
-   * A running background shell's output tail after it changed, at most its last 8 KiB. Not stored:
-   * `ThreadSummary.backgroundOutput` has the latest of each task still running, and a task's
-   * output goes with it.
-   */
   Schema.Struct({
     type: Schema.Literal("thread.backgroundOutput"),
     threadId: ThreadId,
     ...BackgroundOutput.fields,
   }),
-  /** `ThreadSummary.pendingRestart` after it changes; without `reason` none is pending. */
   Schema.Struct({
     type: Schema.Literal("thread.pendingRestart"),
     threadId: ThreadId,
     reason: Schema.optionalKey(SessionRestartReason),
   }),
-  /** `ThreadSummary.lapsedConnectors` after any change; an empty list says none is left. */
   Schema.Struct({
     type: Schema.Literal("thread.lapsedConnectors"),
     threadId: ThreadId,
@@ -157,20 +138,8 @@ export const ServerEvent = Schema.Union([
     body: Schema.optionalKey(Schema.String),
     threadId: Schema.optionalKey(ThreadId),
   }),
-  /**
-   * Suggested replies for the focused thread's turn that just ended. Not stored: `thread.suggestions`
-   * gives the latest again.
-   */
   Schema.Struct({ type: Schema.Literal("thread.suggestions"), ...ThreadSuggestions.fields }),
-  /**
-   * A usage limit worth telling the user about, reported by `threadId`'s agent. Sent once per
-   * window, reset and threshold across every thread, not on each report.
-   */
   Schema.Struct({ type: Schema.Literal("rateLimit"), threadId: ThreadId, ...rateLimitFields }),
-  /**
-   * Every usage-limit reading from `threadId`'s agent, shown or not: the title bar's usage meter.
-   * `gateway` marks a session on a gateway profile, whose limits aren't the subscription's.
-   */
   Schema.Struct({
     type: Schema.Literal("usageLimit"),
     threadId: ThreadId,
@@ -181,58 +150,28 @@ export const ServerEvent = Schema.Union([
     profileId: Schema.optionalKey(Schema.String),
     ...rateLimitFields,
   }),
-  /**
-   * The latest reading of every limit window still current, sent first to each client that
-   * connects: the server keeps them across restarts, so the meter needn't wait for a new report.
-   */
   Schema.Struct({
     type: Schema.Literal("usageLimits.snapshot"),
     limits: Schema.Array(LimitRecord),
   }),
-  /**
-   * The confirmed machines threads can run on, each with whether it is dialled in now: sent first
-   * to each client that connects, then whenever one joins, leaves, connects or drops. A thread on
-   * another machine names it from this (`Checkout.hostId`), so nothing polls for it.
-   */
   Schema.Struct({
     type: Schema.Literal("machines.snapshot"),
     machines: Schema.Array(MachineState),
   }),
   Schema.Struct({ type: Schema.Literal("ui.showPanel"), ...ShowPanelFields }),
-  /** `keybindings.json` changed on disk (or through `keybindings.set`). */
   Schema.Struct({ type: Schema.Literal("keybindings.changed"), keybindings: KeybindingsState }),
-  /**
-   * The app's settings changed behind the windows' backs (an approved `settings_propose`), or a
-   * signed-in person changed one of their own (`PERSONAL_SETTINGS`), which only their connections
-   * are sent; each window pulls them again.
-   */
   Schema.Struct({ type: Schema.Literal("settings.changed") }),
-  /** Gateway profiles, or which ones have keys, changed; clients refetch profiles and models. */
   Schema.Struct({ type: Schema.Literal("profiles.changed") }),
-  /** The review requests list changed; clients refetch `reviewRequests.list`. */
   Schema.Struct({ type: Schema.Literal("reviewRequests.changed") }),
-  /** The user's open PRs changed; clients refetch `openPrs.list`. */
   Schema.Struct({ type: Schema.Literal("openPrs.changed") }),
-  /** A plain thread's pending wakes changed; clients refetch `threads.wakes`. */
   Schema.Struct({ type: Schema.Literal("threadWakes.changed") }),
-  /** A workspace was saved or removed, or its slot changed hands; clients refetch `workspace.list`. */
   Schema.Struct({ type: Schema.Literal("workspaces.changed") }),
-  /** A workspace's ledger, charter or pause changed; clients refetch what they show of it. */
   Schema.Struct({ type: Schema.Literal("orchestration.changed"), workspaceId: WorkspaceId }),
-  /**
-   * The workspace's orchestrator wrote to its memory, `questions.md` included (`ask_user`,
-   * `close_question`); clients refetch what they read of it.
-   */
   Schema.Struct({ type: Schema.Literal("memory.changed"), workspaceId: WorkspaceId }),
-  /** A routine of the workspace was saved, removed or ran; clients refetch `routine.list`. */
   Schema.Struct({ type: Schema.Literal("routines.changed"), workspaceId: WorkspaceId }),
-  /** A dream of the workspace started, ended, was adopted or went; clients refetch `dream.list`. */
   Schema.Struct({ type: Schema.Literal("dreams.changed"), workspaceId: WorkspaceId }),
-  /** A thread of the workspace produced a file (`outputs.ts`); clients refetch `workspace.outputs`. */
   Schema.Struct({ type: Schema.Literal("outputs.changed"), workspaceId: WorkspaceId }),
-  /** A doc of the workspace was published, updated or edited (`docs.ts`); clients refetch `docs.*`. */
   Schema.Struct({ type: Schema.Literal("docs.changed"), workspaceId: WorkspaceId }),
-  /** A page of the workspace was pinned, offered, shown or unpinned (`pages.ts`); refetch `pages.*`. */
   Schema.Struct({ type: Schema.Literal("pages.changed"), workspaceId: WorkspaceId }),
 ]);
 export type ServerEvent = typeof ServerEvent.Type;
@@ -251,40 +190,18 @@ export type FeedRev = typeof FeedRev.Type;
  * `caughtUp`, then live `message`s and `chunk`s.
  */
 export const ThreadFeedEvent = Schema.Union([
-  /**
-   * The thread's stored history from its `FEED_WINDOW_TURNS`th-last user message on, `earlier`
-   * when there is more before it, which `thread.history` pages in. Not only sent on subscribe: it
-   * may be re-sent at any time (e.g. after a rewind) as a full replacement, followed by the same
-   * replay and `caughtUp`. Clients reset their message state and buffer live chunks until
-   * `caughtUp`.
-   */
   Schema.Struct({
     type: Schema.Literal("messages"),
     messages: Schema.Array(UIMessageSchema),
     earlier: Schema.optionalKey(Schema.Boolean),
   }),
-  /**
-   * In place of `messages` when the subscription's `afterRev` could be resumed from: the stored
-   * messages written since that revision, from its `from` on, in thread order, each to replace the
-   * one with its id or go at the end. Nothing was removed since, or the server would have sent
-   * `messages`.
-   */
   Schema.Struct({ type: Schema.Literal("resumed"), messages: Schema.Array(UIMessageSchema) }),
-  /**
-   * A user message or a full-message upsert; replaces any message with the same id. `rev` is the
-   * thread's revision once it's stored.
-   */
   Schema.Struct({ type: Schema.Literal("message"), message: UIMessageSchema, rev: FeedRev }),
   Schema.Struct({
     type: Schema.Literal("chunk"),
     messageId: MessageId,
     chunk: UIMessageChunkSchema,
   }),
-  /**
-   * The history before it is complete as of `rev`, which a later subscription can pass as
-   * `afterRev`. The in-flight messages replayed before it don't count: their stored rows can be
-   * older than `rev`.
-   */
   Schema.Struct({ type: Schema.Literal("caughtUp"), rev: FeedRev }),
 ]);
 export type ThreadFeedEvent = typeof ThreadFeedEvent.Type;

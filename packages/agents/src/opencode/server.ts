@@ -7,7 +7,6 @@ import { spawnServe, stopChild } from "../child-process.ts";
 import { isTokenChildStripped } from "../claude/env.ts";
 import { makeOpenCodeClient, type OpenCodeClient } from "./client.ts";
 
-/** How long `opencode serve` gets to say where it listens. */
 const START_TIMEOUT_MS = 30_000;
 
 /**
@@ -43,7 +42,6 @@ export const listeningUrl = (line: string): string | undefined =>
   /server listening on (http:\/\/127\.0\.0\.1:\d+)/.exec(line)?.[1];
 
 const STRIPPED_PREFIXES = ["ANTHROPIC_", "CLAUDE_CODE_OAUTH_TOKEN", "GIT_TRACE"];
-/** Shell and CLI tracing the tools would inherit, and a user name the client's auth doesn't send. */
 const STRIPPED_EXACT = new Set([
   "SHELLOPTS",
   "GH_DEBUG",
@@ -106,10 +104,8 @@ export const withShell = (config: string | undefined, shell: string): string | u
   return JSON.stringify({ ...(value as Record<string, unknown>), shell });
 };
 
-/** The shell the wrapper starts: bash where it is, else the system's `sh`. */
 const systemShell = (): string => (existsSync("/bin/bash") ? "/bin/bash" : "/bin/sh");
 
-/** Writes the wrapper in a folder only this user can open; Windows runs OpenCode's own shell. */
 const writeWrapper = (): { readonly path: string; readonly remove: () => void } | undefined => {
   if (process.platform === "win32") return undefined;
   const dir = mkdtempSync(join(tmpdir(), "gram-opencode-"));
@@ -195,7 +191,6 @@ export const startOpenCodeServer = ({
       fail(error);
     });
     child.once("exit", (code) => {
-      // The last lines, never the environment: they say why it didn't start.
       const tail = output.trim().split("\n").slice(-3).join(" ").slice(0, 400);
       fail(
         new Error(

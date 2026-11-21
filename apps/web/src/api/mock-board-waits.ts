@@ -8,8 +8,6 @@ import {
 
 import type { MockBoardSimulation, MockWaitsSimulation, MockScenes } from "./mock-orchestration";
 
-// `casefile-cleanup` beside the board scenario: workers waiting on everything a worker can wait on.
-
 /**
  * `casefile-cleanup`, a group whose workers wait on everything a worker can wait on: one running,
  * PRs on CI, on the review bot and on a merge Gram makes, and PRs on people, a code-owner

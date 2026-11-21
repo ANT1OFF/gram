@@ -53,7 +53,6 @@ export const codexSmokeTest = (
   );
 };
 
-/** Starts `codex app-server`, waits for its answer to `initialize`, and stops it. */
 const handshake = (binary: string, env: Record<string, string>, timeoutMs: number) =>
   Effect.callback<void, CodexSmokeFailed>((resume) => {
     const child = spawnServe(binary, ["app-server"], env, { stdin: "pipe" });
@@ -83,7 +82,6 @@ const handshake = (binary: string, env: Record<string, string>, timeoutMs: numbe
         if (message.result !== undefined) return finish(Effect.void);
         return fail(`initialize failed: ${String(message.error?.message ?? "no result")}`);
       }
-      // A server that floods stdout without answering is as broken as a silent one.
       if (buffer.length > 1024 * 1024) fail("app-server wrote a megabyte without a newline");
     });
     child.stderr?.on("data", (data: Buffer) => {

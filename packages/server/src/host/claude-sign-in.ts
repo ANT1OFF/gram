@@ -45,7 +45,6 @@ export const claudeSignInOf = (claude: AgentHost): Effect.Effect<ClaudeSignIn> =
         Effect.catch((error) => Effect.succeed(signInOfUnavailable(error))),
       );
 
-/** How long one tool's lookup gets in the login shell. */
 const PROBE_TIMEOUT_MS = 10_000;
 
 /** Runs `script` in a non-interactive login shell: its exit code and what it printed. */
@@ -76,14 +75,12 @@ export const probeTool = (tool: HostTool["tool"], run: ShellRun = loginShell): P
   run(`command -v ${tool} >/dev/null 2>&1 && ${tool} --version`).then(
     ({ code, stdout }) => {
       if (code !== 0) return { tool, found: false };
-      // Within what the wire takes: one odd `--version` mustn't lose the whole status.
       const version = parseToolVersion(stdout)?.slice(0, 64);
       return { tool, found: true, ...(version === undefined ? {} : { version }) };
     },
     () => ({ tool, found: false }),
   );
 
-/** How many listed models a status carries, and how long each string may be, as the wire takes. */
 const MODELS_SENT = 64;
 const MODEL_TEXT = 128;
 
@@ -110,13 +107,9 @@ export const hostStatusOf = (
   signIn: Effect.Effect<ClaudeSignIn>,
   run: ShellRun = loginShell,
   models: Effect.Effect<ReadonlyArray<AgentModel> | undefined> = Effect.succeed(undefined),
-  /** Its Codex, on a host that runs Codex sessions (`codex-on-host.ts`). */
   codex: Effect.Effect<HostCodexStatus | undefined> = Effect.succeed(undefined),
-  /** Its OpenCode, on a host that runs OpenCode sessions (`opencode-on-host.ts`). */
   opencode: Effect.Effect<HostOpenCodeStatus | undefined> = Effect.succeed(undefined),
-  /** Its Grok Build, on a host that runs Grok Build sessions (`grok-on-host.ts`). */
   grok: Effect.Effect<HostGrokStatus | undefined> = Effect.succeed(undefined),
-  /** Its Antigravity, on a host that runs Antigravity sessions (`grok-on-host.ts`). */
   antigravity: Effect.Effect<HostAntigravityStatus | undefined> = Effect.succeed(undefined),
 ): Effect.Effect<HostStatus> =>
   Effect.gen(function* () {
@@ -146,7 +139,6 @@ export const hostStatusOf = (
     return {
       claudeSignIn,
       tools: [claudeTool, git],
-      // An empty list is a fact (nothing runs here); only a listing that failed sends no key.
       ...(listed === undefined ? {} : { models: listed.slice(0, MODELS_SENT).map(hostModelOf) }),
       ...(codexStatus === undefined ? {} : { codex: codexStatus }),
       ...(openCodeStatus === undefined ? {} : { opencode: openCodeStatus }),
@@ -164,7 +156,6 @@ export const CLAUDE_SIGN_IN_COMMAND = "claude /login";
  */
 export const machineSignInTerminal = (hostId: HostId) => ({
   hostId,
-  // Expanded by the machine's own host, to its own home.
   cwd: "~",
   typed: CLAUDE_SIGN_IN_COMMAND,
 });
@@ -204,7 +195,6 @@ export const openSignInTerminal = (
       Effect.mapError(
         (error) =>
           new InvalidState({
-            // Another person's machine says so (`ownership.ts`), whether or not it is online.
             message:
               (error as { readonly message?: unknown } | undefined)?.message === NOT_YOUR_MACHINE
                 ? NOT_YOUR_MACHINE
@@ -215,8 +205,6 @@ export const openSignInTerminal = (
     if (host.id !== hostId || host.id === LOCAL_HOST_ID) return yield* refused;
     const { typed, ...where } = machineSignInTerminal(hostId);
     const opened = yield* terminals.open({ ...where, cols: request.cols, rows: request.rows });
-    // Typed, not run: the user reads the line and runs it with Return. The pty holds it until
-    // the shell reads its first line.
     yield* terminals.input(opened.terminalId, typed).pipe(Effect.ignore);
     return opened;
   });

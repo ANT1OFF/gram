@@ -98,7 +98,6 @@ import {
 
 type CheckoutKind = CheckoutRequest["kind"];
 
-/** How long a pick's words stay beside the chip, as long as a thread composer's note. */
 const PICKED_MS = 2500;
 
 /**
@@ -135,14 +134,6 @@ const SETUP_STAGES: Record<CheckoutKind, string[]> = {
 
 const labelCls = "text-meta font-medium text-muted-foreground";
 
-/**
- * The inline `/new` draft: where the thread runs, on what, and the first prompt. While workspaces
- * are on it is the one-off thread (⌘T), one pick of the target away from New task.
- */
-/**
- * The composer row's warning when the saved default follows a tier nothing here fills: a glyph,
- * its words on hover, naming why and what this chat uses instead.
- */
 function DefaultUnavailable({ why, choice }: { why: string; choice: AgentChoice }) {
   const words = `Your default model can't run here: ${why}. This chat uses ${agentLabel(choice.agent)} ${choice.model}.`;
   return (
@@ -182,8 +173,6 @@ function ConfiguredNewThreadDraft() {
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
   });
-  // This Mac's folders: a joined machine's one-off threads have a project of their own that is
-  // no folder here (`machineProjectRoot`), and its folders are its Folder chip's.
   const recents = projects
     .filter(isFolderProject)
     .toSorted(
@@ -194,22 +183,16 @@ function ConfiguredNewThreadDraft() {
 
   const [typedRoot, setTypedRoot] = useDraftProjectRoot();
   const defaultFolder = useServerSettings((s) => s.settings?.agents.defaultFolder);
-  // Unknown until settings load; see `Composer`.
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
   const formRef = useRef<HTMLFormElement>(null);
-  // A folder to start in: one typed or carried here, the default, or the one used last, which
-  // the Folder chip shows already. Then typing starts in the prompt.
   const startsWithProject = useRef(
     typedRoot !== undefined || defaultFolder !== undefined || recents.length > 0,
   );
 
-  // Arriving here (⌘T, New thread) leaves focus on the page it came from: go where typing starts.
   useEffect(() => {
     if (!focusLost()) return;
     focusIfConnected(
       formRef.current?.querySelector(
-        // Without a folder to start in, the Folder chip: focusing the path field, which sits below
-        // the prompt, would scroll the prompt and chips out of view.
         startsWithProject.current
           ? 'textarea[aria-label="First prompt"]'
           : '[data-testid="where-folder"]',
@@ -223,19 +206,14 @@ function ConfiguredNewThreadDraft() {
   const project = projects.find((p) => p.root === projectRoot);
   const isGitRepo = useIsGitRepo(folder);
   const repoPath = project?.repoRoot ?? (isGitRepo ? projectRoot : "");
-  // Other repositories it also uses, beside the one it works in: given to it as folders.
   const [alsoPicked, setAlso] = useState<readonly string[]>([]);
   const also = alsoPicked.filter((root) => root !== projectRoot);
-  // Without git there are no worktrees, so the thread runs in the folder itself.
   const notRepo = folder !== undefined && project?.repoRoot === undefined && isGitRepo === false;
 
   const [pickedCheckout, setCheckout] = useState<CheckoutKind>("newWorktree");
   const [worktree, setWorktree] = useState(initialWorktreeChoice);
-  // A joined machine runs the thread in a folder there, its home unless another is picked, or in
-  // a new worktree of its own clone of a repository of this Mac picked from its Folder menu.
   const joined = useJoinedMachines();
   const pickedMachine = joined?.find((m) => m.id === worktree.machine);
-  /** The folder on the picked machine; `undefined` while a repository of this Mac is picked. */
   const [machinePath, setMachinePath] = useState<string>();
   const onMachine = pickedMachine !== undefined && machinePath !== undefined;
   const machineStatus = useMachineFolderStatus(
@@ -243,7 +221,6 @@ function ConfiguredNewThreadDraft() {
     machinePath ?? "",
   );
   const checkedOnMachine = machineStatus.state === "valid" ? machineStatus.folder : undefined;
-  /** The machine a new worktree is made on, from a repository of this Mac. */
   const worktreeMachine = onMachine ? undefined : pickedMachine;
   const machine = onMachine ? pickedMachine : notRepo ? undefined : worktreeMachine;
   const checkout: CheckoutKind = onMachine
@@ -258,9 +235,6 @@ function ConfiguredNewThreadDraft() {
     setMachinePath(next === undefined ? undefined : "~");
   };
   const [existingPath, setExistingPath] = useState("");
-  // Capture Settings → Agents once, after settings load; later edits don't replace this draft.
-  // A default that follows a tier is resolved by the draft once both harnesses have listed.
-  // With the recommended setup on and nothing saved, Lead at low (`defaultSlotOf`).
   const savedDefaultModel = useServerSettings((s) =>
     s.settings === undefined ? undefined : defaultSlotOf(s.settings),
   );
@@ -273,11 +247,8 @@ function ConfiguredNewThreadDraft() {
   const [carried] = useState(carriedDraft);
   useEffect(dropCarriedDraft, []);
   const [prompt, setPrompt] = useState(carried?.text ?? "");
-  // Files attached before the thread exists are staged under this id; `createThread` adopts them.
   const [draftId] = useState(() => carried?.draftId ?? (crypto.randomUUID() as DraftId));
   const attachments = useAttachments({ draftId }, carried?.attachments);
-  // A chosen existing worktree is where the agent will run; a new one starts from the project.
-  // A folder on another machine offers no mentions: its files are listed there, for its threads.
   const mentionFolder = onMachine
     ? ""
     : (checkout === "existingWorktree" ? existingPath.trim() : "") || projectRoot;
@@ -355,8 +326,6 @@ function ConfiguredNewThreadDraft() {
     attachment.mediaType?.startsWith("image/"),
   );
 
-  // Who already uses the chosen checkout: the folder itself, an existing worktree, or the worktree a
-  // refusal named once the server turned a create down (the checkout was taken after the warning).
   const requestKey = `${projectRoot}\n${JSON.stringify(checkoutRequest())}`;
   const [refusal, setRefusal] = useState<{ key: string; path: string }>();
   const refusedPath = refusal?.key === requestKey ? refusal.path : undefined;
@@ -374,7 +343,6 @@ function ConfiguredNewThreadDraft() {
 
   const valid =
     (onMachine ? checkedOnMachine !== undefined : projectRoot !== "") &&
-    // A new worktree on a machine is made from a repository here.
     (worktreeMachine === undefined || !notRepo) &&
     ready &&
     !preflight.blocked &&
@@ -386,8 +354,6 @@ function ConfiguredNewThreadDraft() {
     !attachments.uploading;
 
   const create = async (anyway = false) => {
-    // A final still on its way would land after the draft is gone: stop, keeping what was heard,
-    // and leave sending to the user once it is in.
     if (dictation.active) return dictation.stop();
     if (!valid || stage === "creating") return;
     if (unacknowledged && !anyway) {
@@ -397,11 +363,8 @@ function ConfiguredNewThreadDraft() {
     setStage("creating");
     setError(undefined);
     try {
-      // With repositories it also uses, each gets a worktree on its branch (or its folder as it
-      // is), given before its first turn. Attachments staged for the draft go with the create.
       const extra = onMachine ? [] : also;
       const thread = await api.createThread({
-        // A folder on another machine: the server files it under that machine, never this disk.
         projectRoot: onMachine ? (checkedOnMachine?.path ?? "") : projectRoot,
         checkout: checkoutRequest(),
         model: choiceModel(choice),
@@ -418,7 +381,6 @@ function ConfiguredNewThreadDraft() {
         ...(extra.length > 0 ? { alsoIn: extra } : {}),
       });
       prefillDraftProject(undefined);
-      // The prompt box moves down into the new thread's composer.
       const box = slabRef.current?.getBoundingClientRect();
       if (box) useSlabHandoff.getState().hand(thread.id, { x: box.left, y: box.top });
       void navigate({ to: "/t/$threadId", params: { threadId: thread.id } });
@@ -434,8 +396,6 @@ function ConfiguredNewThreadDraft() {
     }
   };
 
-  // The orchestrator is the task draft; what was typed goes along, and so does the folder, as its
-  // workspace or as a repo to make one for.
   const pickWho = (who: Who) => {
     if (who === "me" || attachments.uploading) return;
     carryDraft({ text: prompt, draftId, attachments: attachments.ready });
@@ -444,16 +404,12 @@ function ConfiguredNewThreadDraft() {
     void navigate({ to: "/new-task" });
   };
 
-  // The folder's path field and the ways to resume are the form's rarely used half: the Folder
-  // chip above picks the folder. They stay folded until asked for, or until the folder needs
-  // fixing (none picked, or one that can't be used), which only the path field can do.
   const [optionsAsked, setOptionsAsked] = useState(false);
   const optionsId = useId();
   const folderNeedsFixing = onMachine
     ? machineStatus.state === "invalid" || machineStatus.state === "empty"
     : folderStatus.state === "invalid" || folderStatus.state === "empty";
   const optionsOpen = optionsAsked || folderNeedsFixing;
-  /** Opens the folded options, then puts focus in `selector` once it is drawn. */
   const focusOption = (selector: string) => {
     setOptionsAsked(true);
     setTimeout(() => focusIfConnected(formRef.current?.querySelector(selector)));
@@ -471,14 +427,11 @@ function ConfiguredNewThreadDraft() {
     run: () => void create(),
   });
 
-  // An embedding app with its own word for this kind of thread has a Chat of its own: the button
-  // then names what it starts without that word, as Start task does beside it.
   const createLabel =
     stage === "failed"
       ? "Retry"
       : (newForm?.solo?.start ?? (soloWord === undefined ? "Start chat" : "Start agent"));
   const modeChoice = modeSection({ value: mode, onChange: setMode });
-  // A pick is confirmed in words beside the chip for a moment, as in a thread's composer.
   const [picked, setPicked] = useState<string>();
   const pickedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(pickedTimer.current), []);
@@ -499,7 +452,6 @@ function ConfiguredNewThreadDraft() {
           void create();
         }}
       >
-        {/* The New form's header, and a prompt box shaped like the composer it becomes. */}
         <section className="flex flex-col gap-4">
           <NewFormHeader
             who="me"
@@ -507,7 +459,6 @@ function ConfiguredNewThreadDraft() {
             disabled={attachments.uploading}
             where={
               <>
-                {/* The machine first, once one is joined: the Folder chip lists its folders. */}
                 {(joined?.length ?? 0) > 0 && (
                   <WhereStop label="Machine">
                     <MachinePicker
@@ -520,7 +471,6 @@ function ConfiguredNewThreadDraft() {
                 <WhereStop label={repoPath === "" ? "Folder" : "Repository"}>
                   {pickedMachine === undefined ? (
                     <FolderPicker
-                      // While the folder is checked, the chip names it rather than reading unset.
                       folder={
                         projectRoot || (folderStatus.state === "checking" ? pathValue.trim() : "")
                       }
@@ -548,7 +498,6 @@ function ConfiguredNewThreadDraft() {
                   )}
                 </WhereStop>
                 <RunsOnStop />
-                {/* More repositories, beside the one it works in, on this machine's folders. */}
                 {!onMachine && repoPath !== "" && (
                   <WhereStop label="Also uses">
                     <AlsoRepositories
@@ -625,14 +574,11 @@ function ConfiguredNewThreadDraft() {
                       }
                       aria-autocomplete="list"
                       className={cn(SLAB_TEXTAREA, "relative")}
-                      // Cleared from the start of dictation, so the first words don't land on it.
                       placeholder={
                         dictation.active
                           ? ""
                           : phone
-                            ? // A phone has no files to drop, and four lines of grey before one is typed;
-                              // @ still reaches a file, and nothing else on the form says so.
-                              "Describe the task, with @ for a file. Or leave it empty and write in the thread."
+                            ? "Describe the task, with @ for a file. Or leave it empty and write in the thread."
                             : "Describe the task. Type @ to mention a file, or paste or drop files to attach them. Or leave it empty to start the agent now and write to it in the thread."
                       }
                       value={prompt}
@@ -657,7 +603,6 @@ function ConfiguredNewThreadDraft() {
                       }}
                       onKeyDown={(event) => {
                         if (mentions.onKeyDown(event)) return;
-                        // The same key that sends a message in a thread starts this one.
                         const { value, selectionStart } = event.currentTarget;
                         if (
                           (!inOpenFence(value.slice(0, selectionStart)) &&
@@ -738,8 +683,6 @@ function ConfiguredNewThreadDraft() {
               onRetry={imagePreflight.recheck}
             />
           )}
-          {/* Where it runs: the one control for the folder itself or a worktree, and its branch. A
-              folder on another machine runs as it is, as its line under the chips says. */}
           {!onMachine && (
             <fieldset className="flex flex-col gap-2">
               <legend className={labelCls}>Checkout</legend>
@@ -819,7 +762,6 @@ function ConfiguredNewThreadDraft() {
               ))}
             </ol>
           )}
-          {/* Where the deployment starts machines on demand, the person's own, in place of the error. */}
           {startMachine ? (
             <StartMachineCard />
           ) : (
@@ -840,7 +782,6 @@ function ConfiguredNewThreadDraft() {
             aria-expanded={optionsOpen}
             aria-controls={optionsId}
             data-testid="new-more-options"
-            // While the folder needs fixing it stays open: its field is the way to fix it.
             disabled={folderNeedsFixing}
             onClick={() => setOptionsAsked((open) => !open)}
             className="flex min-h-7 w-fit items-center gap-1 rounded-sm px-1 text-meta font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:hover:text-muted-foreground"
@@ -869,7 +810,6 @@ function ConfiguredNewThreadDraft() {
 
             {folder && !onMachine && (
               <div className="flex flex-col gap-2">
-                {/* Resumed sessions run on the agent fields' choice, effort included. */}
                 <div className="flex flex-wrap items-center gap-1">
                   <Button
                     type="button"
@@ -895,7 +835,6 @@ function ConfiguredNewThreadDraft() {
           </div>
         </section>
 
-        {/* Last, after everything it starts with. */}
         <div className="flex flex-wrap items-center gap-3">
           <PressScale>
             <Button
@@ -912,7 +851,6 @@ function ConfiguredNewThreadDraft() {
               <ShortcutKbd id="draft.create" cap />
             </Button>
           </PressScale>
-          {/* Beside Create: who acts and what the agent asks first, from the mode picked above. */}
           <span className="flex min-w-0 flex-1 basis-64">
             <ChatAuthorityLine mode={mode} />
           </span>

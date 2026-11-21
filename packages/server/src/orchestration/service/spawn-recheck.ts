@@ -1,5 +1,3 @@
-// What a spawn decided before the spawn lock, counted again under it: a burst of calls, or a card
-// answered after the count moved, never starts a worker the user didn't say yes to.
 import { refusal } from "../rules.ts";
 import type { SpawnWorkerInput } from "./shape.ts";
 
@@ -20,7 +18,6 @@ export const spawnRecheckRefusal = (
   found: SpawnRecount,
 ): string | undefined => {
   const live = `${found.liveWorkers} workers are live now and the charter allows ${found.maxConcurrentWorkers}`;
-  // A yes on the card was for one past the count it showed, or for something under the cap.
   if (input.carded !== undefined)
     return found.fits || found.liveWorkers <= input.carded
       ? undefined

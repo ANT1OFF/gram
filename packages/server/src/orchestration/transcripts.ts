@@ -1,11 +1,3 @@
-/**
- * Past conversations as the text files a dream reads. Pure: no filesystem, no clock.
- *
- * Invariant: nothing leaves this module unscrubbed. Every string that reaches the rendered file,
- * the title and the source line included, has been through `redactText`, and it is scrubbed
- * **before** it is cut: a token cut in half no longer matches a pattern, so truncating first would
- * let the first half of a key through.
- */
 import {
   fenceThreadMessage,
   type SessionTranscriptMessage,
@@ -18,17 +10,12 @@ import type { SeqMessage } from "../persistence/thread-store.ts";
 
 /** Cap on one rendered session. The start and the end of a longer one are kept, the middle cut. */
 export const TRANSCRIPT_MAX_CHARS = 200_000;
-/** Cap on one message's text inside a rendered session. */
 const TRANSCRIPT_MESSAGE_MAX_CHARS = 16_000;
-/** Cap on a tool call's input on its one line. */
 const TRANSCRIPT_TOOL_INPUT_MAX_CHARS = 300;
-/** Cap on a tool call's output on its one line. */
 const TRANSCRIPT_TOOL_OUTPUT_MAX_CHARS = 500;
 /** Cap on each side of a tool call taken from a stored message, before rendering cuts it further. */
 export const TRANSCRIPT_TOOL_STORED_MAX_CHARS = 4096;
-/** Share of `maxChars` given to the start of an over-long session; the rest goes to its end. */
 const HEAD_SHARE = 0.4;
-/** Set aside for the truncation marker, so a cut session still fits `maxChars`. */
 const MARKER_ROOM = 256;
 
 /** Cap on one message quoted for context ahead of a dream's new messages. */
@@ -94,21 +81,17 @@ const defaultCaps = (options: RenderTranscriptOptions = {}): Required<RenderTran
   toolOutputMaxChars: options.toolOutputMaxChars ?? TRANSCRIPT_TOOL_OUTPUT_MAX_CHARS,
 });
 
-/** Ids are UUIDs; anything else is left off the anchor rather than let into a comment. */
 const ANCHOR_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const ANCHOR = /^<!-- #(\d+) (user|assistant|system) ([A-Za-z0-9_-]{1,128}) -->$/gm;
 
 const anchorLine = (seq: number, role: SessionTranscriptRole, id: string): string =>
   ANCHOR_ID.test(id) ? `<!-- #${seq} ${role} ${id} -->` : `<!-- #${seq} ${role} - -->`;
 
-/** A message's text and tool lines, scrubbed and cut, without a heading; ends in a blank line. */
 const messageBody = (
   message: SessionTranscriptMessage,
   caps: Required<RenderTranscriptOptions>,
 ): string => {
   const lines: Array<string> = [];
-  // A line of the message's own that reads as an anchor would split it when its archive is read
-  // back, so it is indented out of the pattern.
   const text = cut(redactText(message.text).trim(), caps.messageMaxChars).replace(
     ANCHOR,
     (line) => ` ${line}`,
@@ -172,7 +155,6 @@ export const renderTranscript = (
   if (header.length + 1 + body.length <= caps.maxChars) return `${header}\n${body}`;
   const budget = Math.max(0, caps.maxChars - header.length - MARKER_ROOM);
 
-  // Whole messages from each end first, so the cut falls between messages where it can.
   const headBudget = Math.floor(budget * HEAD_SHARE);
   const tailBudget = budget - headBudget;
   const head: Array<string> = [];
@@ -191,7 +173,6 @@ export const renderTranscript = (
     tail.unshift(blocks[last]!);
     last--;
   }
-  // One message bigger than its whole share would otherwise leave that end empty.
   if (head.length === 0 && first <= last) head.push(blocks[first]!.slice(0, headBudget));
   if (tail.length === 0 && first <= last && tailBudget > 0) {
     tail.push(blocks[last]!.slice(-tailBudget));
@@ -214,14 +195,12 @@ const asText = (value: unknown): string | undefined => {
   try {
     return cut(redactText(JSON.stringify(scrubbed)), TRANSCRIPT_TOOL_STORED_MAX_CHARS);
   } catch {
-    // A stored part came through JSON, so it can't be cyclic; a hand-built one in a test can.
     return undefined;
   }
 };
 
 const field = (part: object, key: string): unknown => Reflect.get(part, key);
 
-/** A stored data part worth one line to a dream; every other data part is UI state. */
 const dataLine = (type: string, data: unknown): string | undefined => {
   if (typeof data !== "object" || data === null) return undefined;
   if (type === "data-worker-report") {
@@ -281,7 +260,6 @@ export const fromUiMessages = (
     }
     if (texts.length === 0 && tools.length === 0) return [];
     const at = message.metadata?.createdAt;
-    // Another thread's message is in a user's place: fenced as the agent read it, never the user's.
     const origin = message.parts.find((part) => part.type === "data-thread-origin")?.data;
     const text = texts.join("\n\n");
     return [

@@ -46,7 +46,6 @@ export interface AgentChoice {
   readonly speed?: SpeedMode;
 }
 
-/** `choice` with `variant`, or without one. */
 const withVariant = (choice: AgentChoice, variant: ReasoningVariant | undefined): AgentChoice => ({
   agent: choice.agent,
   model: choice.model,
@@ -65,7 +64,6 @@ export function useAvailableAgents(): readonly AgentKind[] {
   return OFFERED_AGENTS;
 }
 
-/** A profile choice meaning no gateway: the agent's own authentication. */
 const SUBSCRIPTION = "subscription";
 
 /** Local agents need no gateway; an explicit gateway choice must still exist and have a key. */
@@ -74,7 +72,6 @@ export function gatewayReady(choice: AgentChoice, profiles: readonly GatewayProf
   return profiles.some((profile) => profile.id === choice.profileId && profile.keyRef !== "");
 }
 
-/** Stands in for the model picker while a gateway agent has no key to run with. */
 function AddKeyNote({ agent }: { agent: AgentKind }) {
   return (
     <p className="flex h-8 items-center gap-1.5 text-meta text-muted-foreground">
@@ -90,7 +87,6 @@ function AddKeyNote({ agent }: { agent: AgentKind }) {
   );
 }
 
-/** `value` on `model`, keeping its effort and Fast only where the new model offers them. */
 const onModel = (
   value: AgentChoice,
   models: readonly AgentModel[] | undefined,
@@ -114,11 +110,6 @@ const onModel = (
 /** Under a following slot's effort menu, which ends at high. */
 export const FOLLOW_EFFORT_NOTE = "Ends at High while it follows";
 
-/**
- * The prompt box's choices: one chip and its popover, as in a thread's composer (`ComposerChoices`),
- * with every agent's models in its Model section, picking another agent's switching to it. The agent
- * picker before it carries the agent's mark.
- */
 function PromptBoxChoices({
   value,
   onChange,
@@ -160,8 +151,6 @@ function PromptBoxChoices({
             }),
         }),
   });
-  // With no key there is no model to run: the note beside says so, and only the mode is left.
-  // While the models load or fail, their status stands in the model's place, as it says why.
   const sections: ChoiceSection[] = needsKey
     ? mode === undefined
       ? []
@@ -188,8 +177,6 @@ function PromptBoxChoices({
   return (
     <>
       {!needsKey && model.status !== undefined && (
-        // It may be a sentence (an embedding app's words for nothing to pick): in a narrow prompt
-        // box it wraps within the box's width and is not cut at its edge.
         <div className="flex max-w-full min-w-0 items-center">{model.status}</div>
       )}
       {sections.length > 0 && (
@@ -254,14 +241,10 @@ export function AgentFields({
     queryFn: () => api.listProfiles(),
   });
   const effective = profiles.find((profile) => profile.id === value.profileId);
-  // Subscription is only worth a picker beside another way in: a gateway with a key, or the one
-  // already chosen, which the picker leaves by.
   const pickAuth = gateway || profiles.some((profile) => profile.keyRef !== "");
   const needsKey =
     gateway && profilesListed && (effective === undefined || effective.keyRef === "");
   const models = useModels(value.agent, value.profileId);
-  // Unlike the composer, don't offer every effort before the server has listed the models.
-  // The local CLI or explicitly chosen gateway supplies its own default. Never guess an account model.
   const listedDefault = defaultModelId(models);
   const shownModel = value.model || listedDefault || "";
   const listedEfforts = models && !needsKey ? effortOptions(models, shownModel) : [];
@@ -290,8 +273,6 @@ export function AgentFields({
           }}
         >
           {ghost ? (
-            // The prompt box's composer row is icons with their words on hover: the agent's mark,
-            // its name in the tooltip and read with the picker's value.
             <Hint
               label={`Agent: ${agentLabel(value.agent)}`}
               render={<SelectTrigger aria-label="Agent" {...trigger} />}
@@ -315,8 +296,6 @@ export function AgentFields({
           </SelectContent>
         </Select>
       ) : ghost ? (
-        // The one agent there is, as its mark alone; its name on hover and focus, so the keyboard
-        // reaches the words too, and as its name to a screen reader.
         <Hint
           label={agentLabel(agents[0] ?? value.agent)}
           render={

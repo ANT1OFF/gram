@@ -1,5 +1,3 @@
-// Shared by Actions and merge launch. Only ordinary, non-executable prose earns the short lane.
-// A policy/version change is itself outside this allowlist and must qualify through full CI.
 export const DOCUMENTATION_POLICY = "gram-prose-v2";
 export type CiKind = "docs" | "full";
 /**
@@ -10,26 +8,13 @@ export type CiKind = "docs" | "full";
 export type CiLane = "static" | "tests" | "macos" | "package" | "e2e";
 export const CI_LANES: ReadonlyArray<CiLane> = ["static", "tests", "macos", "package", "e2e"];
 
-/**
- * The workspaces whose behaviour can differ on macOS: processes, signals, the file system, the
- * desktop app. The web app, contracts and themes run the same everywhere (jsdom, plain data), so a
- * change that reaches only them, or a tool's own tests, runs the Vitest suite on Linux alone.
- * `main` runs every lane, macOS included.
- */
 const MACOS_SENSITIVE = /^(apps\/desktop|packages\/(agents|git|server|shell))\//;
 const MACOS_NEUTRAL = /^(apps\/web|packages\/(contracts|themes))\//;
 
-/** No `..` or `.` segment, empty segment, or character outside ordinary file names. */
 const ordinaryPath = (path: string) =>
   /^[\w@+.-]+(\/[\w@+.-]+)*$/.test(path) &&
   !path.split("/").some((segment) => segment === "." || segment === "..");
 
-/**
- * Prose-shaped paths that tests read, checked before the prose rule: the mock the e2e suite loads
- * (`mock-presentation`, `needs-you`), the mock tokens, and the whole mock-build skill, whose
- * templates `tools/mock-kit/mock-kit.test.mjs` lists by directory. Each is code, with the lanes
- * beyond `static` and `tests` that read it.
- */
 const READ_BY_TESTS: ReadonlyArray<readonly [RegExp, ReadonlyArray<CiLane>]> = [
   [/^docs\/design\/mocks\/needs-you-home\//, ["e2e"]],
   [/^docs\/design\/mocks\/tokens\.(config\.json|css)$/, []],
@@ -37,21 +22,9 @@ const READ_BY_TESTS: ReadonlyArray<readonly [RegExp, ReadonlyArray<CiLane>]> = [
   [/^\.agents\/skills\/mock-build\//, []],
 ];
 
-/**
- * Prose nothing builds, bundles or tests: Markdown outside the workspaces and tools, and the docs
- * tree. Markdown inside a workspace or `tools/` stays code (a fixture can be prose-shaped).
- */
 const prose = (path: string) =>
   path.startsWith("docs/") || (path.endsWith(".md") && !/^(apps|packages|tools)\//.test(path));
 
-/**
- * The lanes beyond `static` and `tests` one non-prose path can affect, by the workspace dependency
- * graph; `undefined` means every lane. Every non-prose path runs the static stages and Vitest, since
- * tests read sources as text (`catalog-coverage.test.ts` reads the e2e specs, for one). The e2e
- * suite reaches every workspace but `apps/desktop` (web uses contracts, themes and shell, shell
- * uses git, and the specs import agents and server sources), and the package bundles every
- * workspace. `tools/check/ci-lanes.test.mjs` keeps this table honest against the real graph.
- */
 const extraLanes = (path: string): ReadonlyArray<CiLane> | undefined => {
   for (const [pattern, lanes] of READ_BY_TESTS) if (pattern.test(path)) return lanes;
   if (/^(apps|packages)\/[\w-]+\/(src|scripts)\/.+\.test\.(ts|tsx|mjs)$/.test(path)) return [];
@@ -59,7 +32,6 @@ const extraLanes = (path: string): ReadonlyArray<CiLane> | undefined => {
   if (path.startsWith("apps/web/e2e/")) return ["e2e"];
   if (/^apps\/web\/(e2e-real|pr-shots)\//.test(path)) return [];
   if (path.startsWith("apps/desktop/")) return ["package"];
-  // Release and repository tools: not built into the app, run by their own tests and the static stages.
   if (
     /^tools\/(release-rc|release-stable|mock-kit|dead-code)\//.test(path) ||
     /^tools\/(check-docs|check-public-scaffold|scaffold-boundaries|check-release-please|test-release-please|check-dependency-pins)\.mjs$/.test(
@@ -70,7 +42,6 @@ const extraLanes = (path: string): ReadonlyArray<CiLane> | undefined => {
   return undefined;
 };
 
-/** `docs` for prose, else the lanes the path can affect; an unordinary name runs every lane. */
 const pathLanes = (path: string): "docs" | ReadonlyArray<CiLane> => {
   if (!ordinaryPath(path)) return CI_LANES;
   const extra = extraLanes(path);
@@ -106,7 +77,6 @@ export function ciLanes(raw: string): "docs" | ReadonlySet<CiLane> {
     );
     if (match === null) return all;
     const [, before, after, status] = match;
-    // Regular, non-executable files only: a symlink, submodule, mode or type change runs everything.
     if (
       (before !== "100644" && before !== "000000") ||
       (after !== "100644" && after !== "000000") ||
@@ -162,7 +132,6 @@ export function qualifiedCiResults(
   if (new Set(lanes).size !== lanes.length) return false;
   const selected = new Set(kind === "docs" ? ["docs"] : lanes);
   const known = new Set(["docs", ...CI_LANES]);
-  // Every lane classification selected must have a job; a job of an unknown lane never passes.
   if ([...selected].some((lane) => !jobs.some((job) => job.lane === lane))) return false;
   return jobs.every(
     (job) => known.has(job.lane) && job.result === (selected.has(job.lane) ? "success" : "skipped"),

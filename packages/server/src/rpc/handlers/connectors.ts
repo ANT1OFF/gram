@@ -62,11 +62,9 @@ import { AgentHosts } from "../../runtime/agent-hosts.ts";
 import { ThreadRuntimes, type McpConfigChange } from "../../runtime/thread-runtimes.ts";
 import { logDefects, type Handlers } from "./common.ts";
 
-/** One line of what went wrong, with the server's env and header values masked. */
 const detailOf = (text: string, secrets: ReadonlyArray<string>) =>
   redact(text.trim(), secrets).split("\n").slice(0, 3).join(" ");
 
-/** Where `target` keeps the server: the scope asked for, or the nearest that agent has. */
 const placement = (target: McpTarget, folder: string, scope: McpScope, name: string) => ({
   cwd: folder,
   scope: mcpScopeFor(target, scope),
@@ -75,11 +73,6 @@ const placement = (target: McpTarget, folder: string, scope: McpScope, name: str
 
 const TARGETS: ReadonlyArray<McpTarget> = ["claude", "codex"];
 
-/**
- * Whose sessions a write to `target`'s config at `scope` reaches: those in `folder` for a scope kept
- * per project, every one of the agent's otherwise. A remove with no scope may have taken the
- * server from any, so it reaches every one.
- */
 const changeOf = (
   target: McpTarget,
   folder: string,
@@ -89,15 +82,12 @@ const changeOf = (
     ? { agent: target }
     : { agent: target, folder };
 
-/** Where `claude mcp login` can't run: only a session that has the server can ask. */
 const CLAUDE_SIGN_IN =
   "Claude Code signs in through a Claude thread running where this server is configured: start one there, or run claude in a terminal and open /mcp.";
 
-/** How long a claude.ai connector's sign-in from Settings is watched for, and how often. */
 const CONNECTOR_SIGN_IN_WAIT_MS = 5 * 60_000;
 export const CONNECTOR_RECONNECT_EVERY_MS = 5_000;
 
-/** A claude.ai connector's row in Claude Code's column, with nothing a config file would add. */
 const hostedRow = (name: string): ConfiguredServer => ({
   name,
   transport: "other",
@@ -105,7 +95,6 @@ const hostedRow = (name: string): ConfiguredServer => ({
   carriesValues: false,
 });
 
-/** A connector as a running Claude thread reports it, with its address, tools and claude.ai's word. */
 const liveRow = ({ name, url, tools, claudeAi }: ConnectorStatus): ConfiguredServer => ({
   ...hostedRow(name),
   ...(url === undefined ? {} : { url }),
@@ -113,11 +102,6 @@ const liveRow = ({ name, url, tools, claudeAi }: ConnectorStatus): ConfiguredSer
   ...(claudeAi === undefined ? {} : { claudeAi }),
 });
 
-/**
- * A connector as a Claude thread last reported it: signed in or not as of `seenAt`. A state that
- * says nothing of the sign-in (`failed`, `pending`) is left unsaid, and so is `disabled`, which
- * Claude Code keeps per project.
- */
 const seenRow = ({ name, status, seenAt, url, id, tools }: SeenConnector): ConfiguredServer => ({
   ...hostedRow(name),
   ...(url === undefined ? {} : { url }),
@@ -131,36 +115,24 @@ const seenRow = ({ name, status, seenAt, url, id, tools }: SeenConnector): Confi
       : {}),
 });
 
-/** What became of a `claude mcp login` started here. */
 type LoginOutcome =
   | { readonly state: "waiting" | "signedIn" }
   | { readonly state: "failed"; readonly message: string };
 
-/**
- * The folder `claude mcp login` runs in for a row: a `user` server is the same from anywhere, so
- * the home folder, where no project's server of the same name can shadow it.
- */
 const loginFolder = (scope: string | undefined, folder: string | undefined) =>
   scope === undefined || scope === "user" || folder === undefined ? homedir() : folder;
 
-/**
- * A sign-in's outcome is for one server: its folder, name and address, so a different server added
- * later under the name doesn't inherit it.
- */
 const loginKey = (folder: string, name: string, url: string | undefined) =>
   [folder, name, url ?? ""].join("\u0000");
 
 const loginKeyName = (key: string) => key.split("\u0000")[1];
 
-/** One agent's servers as its list read them, and for Claude Code where its connectors are from. */
 interface AgentList {
   readonly servers: ReadonlyArray<ConfiguredServer>;
   readonly claudeAiFrom?: ClaudeAiSource;
-  /** Why the running Claude threads list none of the account's claude.ai connectors. */
   readonly claudeAiUnavailable?: string;
 }
 
-/** A running Claude thread's connectors, the folder it runs in, and what it reports. */
 interface LiveClaude {
   readonly threadId: ThreadId;
   readonly folder: string;
@@ -168,14 +140,8 @@ interface LiveClaude {
   readonly status: ReadonlyArray<ConnectorStatus>;
 }
 
-/** Claude Code scopes whose servers differ by folder. */
 const PER_FOLDER: ReadonlySet<string> = new Set<McpScope>(["local", "project"]);
 
-/**
- * The session whose server a Settings row is: it lists `name` under the row's `scope`, since a
- * `local` or `project` server shadows the user's of the same name, and for a per-folder scope
- * it runs in the row's folder. The first such, in `liveClaudes` order.
- */
 const sessionFor = (
   sessions: ReadonlyArray<LiveClaude>,
   name: string,
@@ -188,13 +154,11 @@ const sessionFor = (
       (scope === undefined || !PER_FOLDER.has(scope) || session.folder === folder),
   );
 
-/** A started sign-in as the UI gets it: the page to open, or nothing to do but wait. */
 const toSignIn = (started: ConnectorSignInStart): ConnectorSignIn =>
   started === "started"
     ? { kind: "started" }
     : { kind: "open", authorizationUrl: started.authorizationUrl };
 
-/** A flag whose value is a credential, as `--api-key` and `--token` are. */
 const SECRET_FLAG = /^--?[\w-]*(?:token|secret|password|passphrase|api[-_]?key|credential)[\w-]*$/i;
 
 /**
@@ -230,26 +194,13 @@ export const presentable = (server: ConfiguredServer): ConfiguredServer => {
 /** How long one running Claude thread gets to say how its MCP servers are. */
 export const LIVE_STATUS_TIMEOUT_MS = 2_000;
 
-/**
- * How long a running Claude thread gets to reconnect a server and list it again before it is left
- * to restart instead.
- */
 const LIVE_RELOAD_TIMEOUT_MS = 10_000;
 
-/**
- * Has each of `sessions` reload `name` in place, at once, mid-turn too, as a sign-in's reconnect
- * always has. Claude Code's reconnect reads the server's entry from disk again, so a server added
- * or edited since the session started comes up as it is now (SDK 0.3.292, probed with a temp
- * home). Returns the threads that list it after, whether or not it connected; one that didn't
- * answer in time isn't among them.
- */
 const reloadLive = (sessions: ReadonlyArray<LiveClaude>, name: string) =>
   Effect.forEach(
     sessions,
     ({ threadId, connectors }) =>
       connectors.reconnect(name).pipe(
-        // A server that can't connect is still the new entry: the session has what it would on
-        // a restart.
         Effect.ignore,
         Effect.andThen(connectors.status),
         Effect.timeoutOption(LIVE_RELOAD_TIMEOUT_MS),
@@ -282,46 +233,23 @@ export const makeConnectorConfigs = Effect.gen(function* () {
   const mcp = yield* McpCli;
   const catalogue = yield* McpCatalogue;
   const seenConnectors = yield* ClaudeAiSeen;
-  /**
-   * The last read of every agent's servers, by folder, so Settings and every panel get one answer
-   * at once rather than each waiting on the agents. A configure through
-   * Gram forgets it, and a newer read replaces it in the background.
-   */
   const configuredCache = new Map<
     string,
     { readonly agents: ReadonlyArray<AgentConfiguredServers>; readonly at: number }
   >();
   const configuredRefreshes = yield* FiberMap.make<string>();
-  /** One writer at a time per server name, across agents, scopes and folders. */
   const nameLock = makeKeyedLock<string>();
   const withName = <A, E, R>(name: string, effect: Effect.Effect<A, E, R>) =>
     nameLock.withLock(name.toLowerCase(), effect);
-  /**
-   * Bumped by each configure through Gram. A read started before it may have read the
-   * config before the write, so it never becomes the last read, and no read after joins it.
-   */
   let generation = 0;
   const logins = yield* FiberMap.make<string>();
-  /**
-   * Each agent's list in flight, by agent, folder and whether sign-ins were asked. One the page
-   * stopped waiting for runs on: interrupting Codex's mid-start left its app-server spawned but
-   * never kept, so each refresh started another. The next read joins it instead.
-   */
   const lists = yield* FiberMap.make<string, AgentList, string>();
-  /**
-   * The outcome of each sign-in started through `claude mcp login`, by `loginKey`, so a page with
-   * no Claude thread running can tell it finished. Only the servers the user signed in to from
-   * here; a new start replaces the old, and adding or removing a server of the name forgets it.
-   */
   const loginOutcomes = new Map<string, LoginOutcome>();
-  /** Stops the logins still running for `name` and forgets every outcome for it. */
   const forgetLogins = (name: string) =>
-    // Suspended, so the keys are those of when it runs: after the config command, not before.
     Effect.suspend(() =>
       Effect.forEach(
         [...loginOutcomes.keys()].filter((key) => loginKeyName(key) === name),
         (key) =>
-          // Stopped first, so a login finishing now can't record its outcome again.
           FiberMap.remove(logins, key).pipe(
             Effect.andThen(Effect.sync(() => loginOutcomes.delete(key))),
           ),
@@ -329,8 +257,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       ),
     );
 
-  // A sign-in from Settings that Codex finished reaches their running sessions only
-  // through a restart: the token is the agent's, kept for every folder and profile.
   for (const target of ["codex"] as const) {
     const signedIn = yield* hosts.get(target).pipe(
       Effect.map((host) => host.mcpConfig?.signedIn),
@@ -342,7 +268,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
     );
   }
 
-  /** The session's connectors, or why there are none: no live session, or an agent without them. */
   const liveConnectors = (threadId: ThreadId) =>
     runtimes.session(threadId).pipe(
       Effect.map((session): AgentConnectors | "unsupported" => session.connectors ?? "unsupported"),
@@ -370,12 +295,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       ),
     );
 
-  /**
-   * The folder a per-project scope means (the thread's checkout), and the agent a request without
-   * targets is for: the thread's own, since no other agent reads that one's config. Settings has
-   * neither thread nor folder, which is enough for the `user` scope: that one is the same from
-   * anywhere, so it is written from the home folder.
-   */
   const placeFor = (
     threadId: ThreadId | undefined,
     cwd: string | undefined,
@@ -424,12 +343,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       ),
     );
 
-  /**
-   * Writes each target in turn and stops at the first that fails, saying which already took the
-   * change, so a retry isn't a surprise. Then every live session that reads what changed loads
-   * it: a Claude thread live where it can (`reloadClaude`), any other once idle
-   * (`mcpConfigChanged`). With that turned off, the thread's own reopens to load it.
-   */
   const configure = (
     request: AddConnectorPayload | RemoveConnectorPayload,
     verb: "add" | "remove",
@@ -464,7 +377,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
         );
         done.push(target);
       }
-      // The last read no longer says what the configs hold, nor does any read still running.
       generation += 1;
       configuredCache.clear();
       const live: Array<ThreadId> = [];
@@ -488,12 +400,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       return { name, session } satisfies ConnectorConfigResult;
     });
 
-  /**
-   * Every running Claude thread's connectors with what they report, the ones in `folder` first:
-   * the only source for Claude Code's sign-ins and for the account's claude.ai connectors, neither
-   * of which is in a config file, and the only way to start a sign-in. A thread that doesn't
-   * answer is left out.
-   */
   const liveClaudes = (folder: string | undefined) =>
     Effect.gen(function* () {
       const live = (yield* runtimes.snapshot)
@@ -503,9 +409,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
             Number(effectiveCheckout(b.thread).path === folder) -
             Number(effectiveCheckout(a.thread).path === folder),
         );
-      // Asked all at once, each for at most `LIVE_STATUS_TIMEOUT_MS`: one at a time, a thread busy
-      // connecting its servers held every view of the list behind it. One that doesn't answer in
-      // time says nothing, so its servers' sign-ins stay unknown rather than the list waiting.
       const answers = yield* Effect.forEach(
         live,
         ({ thread }) =>
@@ -533,13 +436,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       return answers.filter((session) => session !== undefined);
     });
 
-  /**
-   * After `name` was added or edited in Claude Code's config: the running Claude threads `change`
-   * reaches reload it live, and those that needn't restart are returned. A session confined to
-   * other servers (`allowlist`) never takes it, so it needs neither. A removal never goes this way:
-   * a reconnect leaves a removed server listed, and switching it off instead sticks in Claude
-   * Code's config, so a server added back later would come up off.
-   */
   const reloadClaude = (name: string, change: McpConfigChange) =>
     Effect.gen(function* () {
       if (!restartOnMcpChangeOn(yield* store.getSettings)) return [];
@@ -557,11 +453,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       return [...confined.map((session) => session.threadId), ...reloaded];
     });
 
-  /**
-   * Runs `claude mcp login` until the user has finished in the browser, then reconnects the
-   * running Claude threads still waiting on that server, since Claude Code tells none of them.
-   * Returns once it has started; `loginOutcomes` says how it ended.
-   */
   const startLogin = (
     login: NonNullable<McpCliShape["login"]>,
     name: string,
@@ -569,7 +460,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
     url: string | undefined,
   ): Effect.Effect<ConnectorSignInStart> => {
     const key = loginKey(folder, name, url);
-    // One that didn't answer the reconnect restarts once idle, as after any change to its servers.
     const reconnectWaiting = liveClaudes(folder).pipe(
       Effect.flatMap((sessions) => {
         const waiting = sessions.filter(({ status }) =>
@@ -603,17 +493,11 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       }),
     );
     return Effect.sync(() => loginOutcomes.set(key, { state: "waiting" })).pipe(
-      // A second click starts over: the first login is stopped and its process reaped.
       Effect.andThen(FiberMap.run(logins, key, run)),
       Effect.as("started" as const),
     );
   };
 
-  /**
-   * Has the running Claude threads still waiting on claude.ai connector `name` reconnect now and
-   * then, until one has it or the wait is over: claude.ai tells nobody when the user finishes, and
-   * a thread that started before then would otherwise stay signed out.
-   */
   const watchConnector = (name: string) =>
     Effect.gen(function* () {
       const until = (yield* Clock.currentTimeMillis) + CONNECTOR_SIGN_IN_WAIT_MS;
@@ -621,11 +505,9 @@ export const makeConnectorConfigs = Effect.gen(function* () {
         yield* Effect.sleep(CONNECTOR_RECONNECT_EVERY_MS);
         const sessions = yield* liveClaudes(undefined);
         const listed = sessions.flatMap(({ status }) => status.filter((c) => c.name === name));
-        // Over once every copy reported is past its sign-in; a reconnect still running isn't yet.
         if (listed.length > 0 && listed.every((c) => !awaitsSignIn(c) && c.status !== "pending")) {
           return;
         }
-        // Not restarted when one doesn't answer: the user may not have finished yet.
         yield* reloadLive(
           sessions.filter(({ status }) => status.some((c) => c.name === name && awaitsSignIn(c))),
           name,
@@ -633,10 +515,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       }
     });
 
-  /**
-   * A claude.ai connector's sign-in with no Claude thread that has it: `claude mcp login` prints
-   * claude.ai's page for it, which the UI opens. The CLI retains authentication ownership.
-   */
   const connectorSignIn = (name: string): Effect.Effect<ConnectorSignIn, InvalidState> => {
     const { connectorLogin } = mcp;
     if (connectorLogin === undefined) {
@@ -653,7 +531,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
             )
           : Effect.succeed(page);
       }),
-      // A second click starts the watch over. Keyed apart from every `claude mcp login` that waits.
       Effect.tap(() => FiberMap.run(logins, `claudeai\u0000${name}`, watchConnector(name))),
       Effect.map((authorizationUrl) => ({ kind: "onClaudeAi" as const, authorizationUrl })),
     );
@@ -708,15 +585,9 @@ export const makeConnectorConfigs = Effect.gen(function* () {
         );
   };
 
-  /**
-   * The account's claude.ai connectors for Claude Code's column: from a running Claude thread that
-   * has them, else as Claude threads last reported them, else, before any did, the ones Claude
-   * Code has connected before. Asks no session anything a view of its servers wouldn't.
-   */
   const hostedRows = (sessions: ReadonlyArray<LiveClaude>) =>
     Effect.gen(function* () {
       const ever = new Set(yield* mcp.everConnected ?? Effect.succeed([]));
-      // A gateway or confined thread has none, which says nothing of the account's.
       const live = sessions.find(({ status }) => status.some((c) => c.scope === "claudeai"));
       const seen = live === undefined ? yield* seenConnectors.read : [];
       const [from, rows]: readonly [ClaudeAiSource, ReadonlyArray<ConfiguredServer>] =
@@ -734,10 +605,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
   const claudeConfigured = (folder: string | undefined): Effect.Effect<AgentList, InvalidState> =>
     Effect.gen(function* () {
       const [servers, sessions] = yield* Effect.all([mcp.configured(folder), liveClaudes(folder)]);
-      // Read from the session a sign-in would go to, so the two never disagree; with none, from
-      // the sign-in last started here.
-      // A connected session is the last word; a failed sign-in started here is reported beside a
-      // session that is still waiting, so the page stops waiting too.
       const signInOf = ({ name, scope, transport, url }: ConfiguredServer) => {
         if (transport === "stdio") return {};
         const session = sessionFor(sessions, name, scope, folder);
@@ -751,7 +618,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       const known = new Set(servers.map((server) => server.name));
       const hosted = yield* hostedRows(sessions);
       const rows = hosted.rows.filter((row) => !known.has(row.name));
-      // Said only when every running Claude thread is on a gateway key; none running says nothing.
       const unavailable = sessions.every((session) => session.connectors.claudeAiUnavailable)
         ? sessions[0]?.connectors.claudeAiUnavailable
         : undefined;
@@ -762,7 +628,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       };
     });
 
-  /** One agent's list. A config that can't be read is that agent's `error`, not the page's. */
   const configuredFor = (
     target: McpTarget,
     folder: string | undefined,
@@ -780,25 +645,19 @@ export const makeConnectorConfigs = Effect.gen(function* () {
                 : host.mcpConfig.list({ cwd: folder, checkSignIn }),
             ),
             Effect.map((servers) => ({ servers })),
-            // A parse error may quote the config, and here nobody knows its secrets to mask them.
             Effect.mapError((error) => redactText(detailOf(error.message, []))),
           );
     const threadless = target === "claude" ? { threadlessSignIn: mcp.login !== undefined } : {};
     return Effect.gen(function* () {
       const since = generation;
-      // A read from before a configure runs on unjoined; one after it reads the config afresh.
       const key = `${since}|${target}|${folder ?? ""}|${checkSignIn}`;
       const current = FiberMap.getUnsafe(lists, key);
-      // `onlyIfMissing` interrupts the new fiber, not the old, when another read got in between:
-      // that read's is the one to join.
       const running = Option.isSome(current)
         ? current.value
         : yield* FiberMap.run(lists, key, read, { onlyIfMissing: true }).pipe(
             Effect.map((fiber) => Option.getOrElse(FiberMap.getUnsafe(lists, key), () => fiber)),
           );
       const { servers, ...more } = yield* Fiber.join(running).pipe(
-        // Codex's list starts its app-server first, which has no bound of its own; the other
-        // agents' lists don't wait on it. Only the wait is cut short: the list goes on (`lists`).
         Effect.timeoutOrElse({
           duration: AGENT_LIST_TIMEOUT_MS,
           orElse: () =>
@@ -814,7 +673,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
     );
   };
 
-  /** Every agent's servers in `folder`, read now, and kept as the last read unless sign-ins were asked. */
   const readConfigured = (folder: string | undefined, checkSignIn: ReadonlyArray<McpTarget>) =>
     Effect.gen(function* () {
       const since = generation;
@@ -823,18 +681,12 @@ export const makeConnectorConfigs = Effect.gen(function* () {
         (target) => configuredFor(target, folder, checkSignIn.includes(target)),
         { concurrency: "unbounded" },
       );
-      // One that began before a configure may hold the config from before the write.
       if (checkSignIn.length === 0 && since === generation) {
         configuredCache.set(folder ?? "", { agents, at: yield* Clock.currentTimeMillis });
       }
       return agents;
     });
 
-  /**
-   * The last read of `folder`, at once, with a newer one started behind it once it is a few seconds
-   * old, and whether one is still running, so the reader asks again for it; the first read of a
-   * folder, and one the user asked for, is waited for.
-   */
   const configuredAgents = (folder: string | undefined, fresh: boolean) =>
     Effect.gen(function* () {
       const key = folder ?? "";
@@ -842,19 +694,16 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       if (fresh || cached === undefined) {
         return { agents: yield* readConfigured(folder, []), refreshing: false };
       }
-      // By generation too, so one from before a configure doesn't stand for one after it.
       const running = `${generation}|${key}`;
       if ((yield* Clock.currentTimeMillis) - cached.at > CONFIGURED_REFRESH_MS) {
         yield* FiberMap.run(configuredRefreshes, running, readConfigured(folder, []), {
           onlyIfMissing: true,
         });
       }
-      // A read that has landed already is the answer; one still running is said to be.
       const refreshing = yield* FiberMap.has(configuredRefreshes, running);
       return { agents: (configuredCache.get(key) ?? cached).agents, refreshing };
     });
 
-  /** `connectors.add`'s write, without its lock. */
   const addServer = (request: AddConnectorPayload) =>
     configure(request, "add", request.targets, (target, folder) =>
       target === "claude"
@@ -868,7 +717,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
           ),
     );
 
-  /** `connectors.remove`'s write, without its lock. */
   const removeServer = (request: RemoveConnectorPayload) =>
     configure(
       request,
@@ -885,8 +733,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
     );
 
   const handlers = {
-    // A view of the agents' own configs, never a registry: the last read is kept only so every view
-    // answers at once, and each agent's own config stays the truth.
     "connectors.configured": ({ cwd, checkSignIn, fresh }) =>
       Effect.gen(function* () {
         const folder = cwd === undefined || cwd.trim() === "" ? undefined : cwd;
@@ -899,10 +745,8 @@ export const makeConnectorConfigs = Effect.gen(function* () {
           ...(refreshing ? { refreshing } : {}),
         };
       }),
-    // Read afresh each time the user asks, from GitHub; none of the servers listed is contacted.
     "connectors.catalogue": () => catalogue.read,
     "connectors.signIn": threadlessSignIn,
-    // Live status belongs to the agent session.
     "connectors.list": ({ threadId }) =>
       liveConnectors(threadId).pipe(
         Effect.flatMap((connectors): Effect.Effect<ConnectorList, AgentUnavailable> =>
@@ -921,7 +765,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       ),
     "connectors.reconnect": ({ threadId, name }) =>
       control(threadId, (connectors) => connectors.reconnect(name)),
-    // An agent that can't toggle live applies it on reopen, through the runtime's reopen-when-idle.
     "connectors.setEnabled": ({ threadId, name, enabled }) =>
       Effect.gen(function* () {
         const applied = yield* control(threadId, (connectors) =>
@@ -930,7 +773,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
         if (applied === "applied") return { session: "applied" as const };
         return { session: yield* runtimes.reloadSession(threadId) };
       }),
-    // The agent runs the OAuth flow and keeps the token; only the page to open passes through here.
     "connectors.authenticate": ({ threadId, name }) =>
       control(threadId, (connectors) =>
         connectors.authenticate === undefined
@@ -947,10 +789,6 @@ export const makeConnectorConfigs = Effect.gen(function* () {
       withName(request.name, removeServer(request)),
   } satisfies Partial<Handlers>;
 
-  /**
-   * `target`'s server named `name` as seen from `folder`, read now from its own config and shown as
-   * the list shows it; `undefined` when it has none. Fails with why the config couldn't be read.
-   */
   const serverIn = (
     target: McpTarget,
     folder: string,

@@ -50,10 +50,8 @@ const TREE = dir({
 
 /** A joined machine's home in the mock, a Linux one's. */
 export const MOCK_MACHINE_HOME = "/home/dev";
-/** Its Gram Host's own folder, which a one-off thread never runs in. */
 const MOCK_MACHINE_HOST_HOME = `${MOCK_MACHINE_HOME}/.config/gram-host`;
 
-/** Every joined machine's disk in the mock: one synthetic Linux home. */
 const MACHINE_TREE = dir({
   home: dir({
     dev: dir({
@@ -67,7 +65,6 @@ const MACHINE_TREE = dir({
   srv: dir({ media: dir() }),
 });
 
-/** A folder tree and its home: this Mac's, or a joined machine's. */
 interface MockDisk {
   readonly tree: Node;
   readonly home: string;
@@ -180,7 +177,6 @@ export function browseMockFs(
   };
 }
 
-/** Why a joined machine's host hides `path` from its picker, as `hiddenFolder` does there. */
 const machineHidden = (path: string): string | undefined =>
   isCredentialFolder(path)
     ? `Gram doesn't run a chat in ${path}: it holds keys or credentials.`

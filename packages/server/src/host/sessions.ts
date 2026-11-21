@@ -86,13 +86,11 @@ export interface HostSessionsService {
   readonly busy: () => number;
 }
 
-/** What a session's events last said about its work, for `busy`. */
 interface Activity {
   status: AgentStatus | undefined;
   background: number;
 }
 
-/** A session settled between turns: idle, failed, or started with no turn yet. */
 const AT_REST: ReadonlySet<AgentStatus | undefined> = new Set([
   undefined,
   "starting",
@@ -100,7 +98,6 @@ const AT_REST: ReadonlySet<AgentStatus | undefined> = new Set([
   "error",
 ]);
 
-/** Keeps `activity` in step with one event of the session. */
 const noteActivity = (activity: Activity, event: AgentEvent) => {
   if (event.type === "status") activity.status = event.status;
   else if (event.type === "turnEnd") activity.status = "idle";
@@ -127,17 +124,11 @@ type Entry =
         readonly changes: PubSub.PubSub<ConnectorsSeen>;
       };
       readonly closed: Deferred.Deferred<void>;
-      /** Its app tools, which a Gram opened again points at itself; absent without any. */
       readonly tools: MovableTools | undefined;
-      /** How far its events were read from the agent, and confirmed by the control plane. */
       readonly progress: { read: number; confirmed: number };
-      /** The thread it was opened for, when the request named one. */
       readonly threadId: string | undefined;
-      /** Event streams following it now: none once the control plane that opened it let go. */
       followers: number;
-      /** Epoch ms since when no stream has followed it; `undefined` while one does. */
       unfollowedSince: number | undefined;
-      /** Each delivery taken, or being taken, by its id, oldest first (`deliver`). */
       readonly deliveries: Map<string, Deferred.Deferred<void>>;
     };
 
@@ -147,24 +138,14 @@ type Entry =
  * so a session waiting out a redial is still there when it does.
  */
 export const UNFOLLOWED_GRACE_MS = 3 * 60_000;
-/** How often sessions are looked over for that. */
 const UNFOLLOWED_SWEEP_MS = 30_000;
 
-/** How many handles closed before their open arrived are remembered. */
 const CLOSED_EARLY_KEPT = 256;
 
-/**
- * How many of a session's deliveries are remembered. A repeat comes within the control plane's
- * reattach window, behind at most a few others, so this is far more than one will look back.
- */
 const DELIVERIES_KEPT = 256;
 
 const noSession = (handle: string) => new HostFailed({ message: `No agent session ${handle}.` });
 
-/**
- * The request as the agent's own options. Its app tools are the ones the server's MCP endpoint
- * lists, served to the agent in-process and called through the endpoint.
- */
 const optionsFor = (
   request: HostSessionOpen,
   remoteAppTools: RemoteAppTools | undefined,
@@ -173,7 +154,6 @@ const optionsFor = (
   const { handle: _handle, agent: _agent, mcp, waitForPrevious, ...rest } = request;
   return {
     ...rest,
-    // The previous session's app-server is this host's own, so the wait for it to exit is too.
     ...(waitForPrevious === true ? { waitForPreviousSession: { onWait: Effect.void } } : {}),
     ...(mcp === undefined ? {} : { mcp: { url: mcp.url, headers: mcp.headers } }),
     ...(remoteAppTools === undefined ? {} : { remoteAppTools }),
@@ -181,16 +161,10 @@ const optionsFor = (
   };
 };
 
-/**
- * The folder a session opens in: the one asked for, or for a memory update, an empty folder of the
- * host's own for that thread. A memory update's folder is the control plane's, which
- * it reaches through its app tools only, so nothing of this machine's is its working folder.
- */
 const sessionFolder = (request: HostSessionOpen): Effect.Effect<string, AgentUnavailable> =>
   request.dreamFilesOnly !== true
     ? Effect.succeed(request.cwd)
-    : // Only Claude Code's session holds its native tools off for one.
-      request.agent !== "claude"
+    : request.agent !== "claude"
       ? Effect.fail(
           new AgentUnavailable({
             agent: request.agent,
@@ -199,12 +173,9 @@ const sessionFolder = (request: HostSessionOpen): Effect.Effect<string, AgentUna
           }),
         )
       : Effect.tryPromise({
-          // One per thread, and kept: Claude Code keeps a session's conversation by its folder,
-          // so a reopen resumes it only from the same one. It stays empty.
           try: async () => {
             const folder = join(tmpdir(), `gram-dream-${request.threadId.replace(/[^\w-]/g, "_")}`);
             await mkdir(folder, { recursive: true, mode: 0o700 });
-            // A name another user of the machine could make first: only a folder of this user's.
             const made = await lstat(folder);
             if (
               !made.isDirectory() ||
@@ -226,16 +197,11 @@ export type AppToolsAt = (
   endpoint: McpEndpoint,
 ) => Effect.Effect<RemoteAppTools, Error, Scope.Scope>;
 
-/** App tools whose endpoint can move: each call goes to where they point when it starts. */
 interface MovableTools {
   readonly tools: RemoteAppTools;
   readonly moveTo: (endpoint: McpEndpoint) => Effect.Effect<void, Error>;
 }
 
-/**
- * `toolsAt(first)`, which `moveTo` points elsewhere. The agent keeps the tool list it opened with
- * (the thread's own), and each move's connection lives in `scope`, the session's.
- */
 const movableTools = (
   toolsAt: AppToolsAt,
   first: McpEndpoint,
@@ -305,12 +271,6 @@ export const sessionsOnHost = (
   Effect.gen(function* () {
     const root = yield* Effect.scope;
     const unfollowedMs = timing.unfollowedMs ?? UNFOLLOWED_GRACE_MS;
-    /**
-     * Kept running after Gram quits, the host reads each session's events as they come, whether
-     * anything follows them or not, so the agent's work is known (a turn that ended lets the host
-     * end when idle) and its events wait for the Gram that opens again, however long it takes.
-     * Otherwise they are read as a follower asks for them, as ever.
-     */
     const eagerly = (events: Stream.Stream<AgentEvent>) =>
       timing.graceFrom === undefined
         ? Effect.succeed(events)
@@ -319,7 +279,6 @@ export const sessionsOnHost = (
             yield* Stream.runIntoQueue(events, queue).pipe(Effect.forkScoped);
             return Stream.fromQueue(queue);
           });
-    /** Whether a session unfollowed since `since` has been given up on by now. */
     const givenUp = (since: number | undefined, now: number) => {
       if (since === undefined) return false;
       if (timing.graceFrom === undefined) return now - since >= unfollowedMs;
@@ -327,13 +286,9 @@ export const sessionsOnHost = (
       return from !== undefined && now - Math.max(since, from) >= unfollowedMs;
     };
     const entries = new Map<string, Entry>();
-    /** Each open session's work as its events say, by handle. */
     const activities = new Map<string, Activity>();
-    /** Handles closed before their open came in, so the open, when it does, is refused. */
     const closedEarly = new Set<string>();
 
-    // Every session still open ends with the host, all at once, so their agents stop within the
-    // host's own grace.
     yield* Effect.addFinalizer(() =>
       Effect.suspend(() =>
         Effect.forEach([...entries.keys()], (handle) => close(handle), {
@@ -366,7 +321,6 @@ export const sessionsOnHost = (
         });
       });
 
-    /** The open sessions of `threadId` that no event stream follows. */
     const leftBehind = (threadId: string | undefined): ReadonlyArray<string> =>
       threadId === undefined
         ? []
@@ -376,8 +330,6 @@ export const sessionsOnHost = (
               : [],
           );
 
-    // A session no stream has followed for the grace was given up on: the control plane that
-    // opened it restarted, or stopped waiting for this host to dial in again.
     yield* Effect.forkScoped(
       Effect.suspend(() => {
         const now = Date.now();
@@ -388,7 +340,6 @@ export const sessionsOnHost = (
           stale,
           (handle) =>
             Effect.suspend(() => {
-              // Asked again: an earlier close took time, and a stream may have followed it since.
               const entry = entries.get(handle);
               if (entry?.state !== "open" || !givenUp(entry.unfollowedSince, Date.now()))
                 return Effect.void;
@@ -426,9 +377,6 @@ export const sessionsOnHost = (
             }),
           );
         return Effect.gen(function* () {
-          // A session the same thread left behind, kept through a dropped connection but never
-          // followed again (the main Gram restarted and opened anew), ends before its successor
-          // starts: one thread's agent runs once.
           yield* Effect.forEach(
             leftBehind(request.threadId),
             (stale) =>
@@ -437,10 +385,8 @@ export const sessionsOnHost = (
               ),
             { discard: true },
           );
-          // Each its own, not the host's scope's child, so the host's end closes them all at once.
           const scope = yield* Scope.make();
           const entry: Entry = { state: "opening", scope };
-          // Taken before the first wait, so a close that comes in meanwhile finds it.
           entries.set(handle, entry);
           activities.set(handle, { status: undefined, background: 0 });
           const changes = yield* PubSub.unbounded<ConnectorsSeen>();
@@ -538,10 +484,7 @@ export const sessionsOnHost = (
             deliveries: new Map(),
           });
           return openedFrom(exit.value.session);
-        }).pipe(
-          // A caller that gave up on the open has no session to close: the host closes it.
-          Effect.onInterrupt(() => close(handle)),
-        );
+        }).pipe(Effect.onInterrupt(() => close(handle)));
       });
 
     return {
@@ -561,7 +504,6 @@ export const sessionsOnHost = (
               Effect.mapError(() => new NotFound({ entity: "session", id: handle })),
             ),
             (entry) =>
-              // Counted while it runs, so a session no one follows any more can be told apart.
               Stream.unwrap(
                 Effect.acquireRelease(
                   Effect.sync(() => {
@@ -612,7 +554,6 @@ export const sessionsOnHost = (
           Effect.gen(function* () {
             const entry = entries.get(handle);
             if (entry?.state !== "open") return Stream.empty;
-            // Subscribed before the last report is read, so none comes in unseen.
             const subscription = yield* PubSub.subscribe(entry.seen.changes);
             const last = entry.seen.last;
             return Stream.concat(
@@ -648,7 +589,6 @@ export const sessionsOnHost = (
                 Effect.forkIn(entry.scope),
               );
             }
-            // A session that closes meanwhile took nothing more.
             return yield* Effect.raceFirst(
               Deferred.await(taken),
               Deferred.await(entry.closed).pipe(Effect.andThen(Effect.fail(noSession(handle)))),

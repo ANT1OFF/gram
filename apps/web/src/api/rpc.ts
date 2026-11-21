@@ -49,8 +49,6 @@ import { originKeyProtocols } from "./origin-key";
  * it for the reconnect banner.
  */
 export async function createRpcApi(url: string, session?: GramServer["session"]): Promise<Api> {
-  // A dropped socket is a server that's down or a session it no longer accepts. Only an HTTP probe
-  // tells them apart, and only the second never recovers by retrying.
   const connection = withSessionProbe(createConnectionMonitor(), undefined, session);
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(
@@ -70,7 +68,6 @@ export async function createRpcApi(url: string, session?: GramServer["session"])
       Effect.provideService(Scope.Scope, scope),
     ),
   );
-  // The shell logs it, so a window that stops moving says whether its socket was the reason.
   const bridge = typeof window === "undefined" ? undefined : window.gram;
   if (bridge?.reportConnection !== undefined) {
     connection.subscribe(() => {
@@ -79,8 +76,6 @@ export async function createRpcApi(url: string, session?: GramServer["session"])
     });
   }
 
-  // The server may be older than this build (an embedding app ships the two apart): its handshake
-  // says what it serves, first on the socket, and nothing else goes out before it answers.
   const served = createServed();
   const ready = startHandshake(
     () => run(raw[HANDSHAKE_TAG](undefined)),
@@ -102,7 +97,6 @@ export async function createRpcApi(url: string, session?: GramServer["session"])
     kind: "rpc",
     connection,
     served,
-    // After the members above, so TypeScript reports one a domain also defines.
     ...agentRuntimeRpc(domain),
     ...agentSupportRpc(domain),
     ...appRpc(domain),

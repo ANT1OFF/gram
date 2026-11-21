@@ -1,5 +1,3 @@
-// The repository, project and layer Gram's local-check tests share.
-
 import { type ProjectId, type ProjectLocalCheck, type ThreadId } from "@gram/contracts";
 import { type Proc, ProcLive } from "@gram/git";
 import * as Deferred from "effect/Deferred";
@@ -26,7 +24,6 @@ export const fixture = (protectedBlob = false) => {
   const repo = makeRepo(dir);
   let protectedOid: string | undefined;
   if (protectedBlob) {
-    // The blob is written outside the checkout, so only the index entry below adds it.
     const blob = nodePath.join(dir, "protected-blob");
     write(blob, "synthetic protected fixture");
     protectedOid = run(repo, "hash-object", "-w", blob).trim();

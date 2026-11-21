@@ -24,6 +24,10 @@
     "react/react-in-jsx-scope": "off",
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
+    "no-unused-vars": [
+      "error",
+      { "varsIgnorePattern": "^_", "argsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+    ],
     "no-underscore-dangle": ["warn", { "allow": ["_tag", "__flicker", "__gutters"] }],
     "gram/disable-reason": "error",
     "gram/no-bare-fork": "error",

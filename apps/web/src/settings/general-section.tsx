@@ -58,7 +58,6 @@ const OPEN_AT_LAUNCH = [
   { value: "thread", label: "Last thread" },
 ] as const;
 
-/** The overview's optional sections, in the column's order, as Sidebar sections lists them. */
 const OVERVIEW_SECTION_LABELS: Readonly<Record<OverviewOptionalSection, string>> = {
   solo: "Solo threads",
   pullRequests: "Pull requests",
@@ -73,7 +72,6 @@ const OVERVIEW_SIDEBAR = [
   { value: "hidden", label: "Hidden" },
 ] as const;
 
-/** How long an idle solo thread stays in the sidebar before it settles into History. */
 const SETTLE_AFTER = [
   { value: "0", label: "Never" },
   { value: "3", label: "3 days" },
@@ -95,7 +93,6 @@ export function GeneralSection() {
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
   const [failed, setFailed] = useState<{ key: string; message: string }>();
-  // Synced through the layout store, so ⌘B and this row are one setting.
   const overview = useLayoutStore((s) => s.overviewSidebar);
   const setOverview = useLayoutStore((s) => s.setOverviewSidebar);
   const overviewHint = useShortcutHint("sidebar.toggle");
@@ -105,7 +102,6 @@ export function GeneralSection() {
 
   if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
 
-  /** Saves `patch`, and puts a failure under the row `key` names. */
   const applyTo = (key: keyof typeof GENERAL_DEFAULTS) => (patch: SettingsPatch) => {
     setFailed(undefined);
     save(patch).catch((e: unknown) => setFailed({ key, message: errorMessage(e) }));
@@ -148,7 +144,6 @@ export function GeneralSection() {
         anchor={GENERAL_ANCHORS.navigation}
         description="How the left sidebar looks, and where the side panel sits."
       >
-        {/* A phone opens the threads as a drawer from its header, so the column's modes don't apply. */}
         {!phone && (
           <SettingRow
             label="Overview sidebar"
@@ -461,7 +456,6 @@ export function KeepInTraySetting() {
   const [error, setError] = useState<string>();
   useEffect(() => {
     let live = true;
-    // Another window can change it too; a change seen first wins over a read still in flight.
     let changed = false;
     const unsubscribe = tray?.onChange((value) => {
       changed = true;
@@ -506,20 +500,11 @@ export function KeepInTraySetting() {
   );
 }
 
-/**
- * Why `folder` can't be saved as a folder setting, if it can't: the server resolves it on its own,
- * so a relative path would mean nothing it could show here. Empty clears the setting.
- */
 function folderProblem(folder: string): string | undefined {
   if (folder === "" || folder === "~" || /^(~[/\\]|\/|[A-Za-z]:[/\\]|\\\\)/.test(folder)) return;
   return "Use a full path, starting with ~/ or /.";
 }
 
-/**
- * A folder setting, saved on Enter or when the field loses focus; an empty field clears it, and
- * Escape puts the saved value back. While the draft differs from what is saved, the row says how to
- * save it; once saved it says "Saved", and a path it can't save says why under the row.
- */
 function FolderField({
   id,
   label,
@@ -542,8 +527,6 @@ function FolderField({
   const [draft, setDraft] = useState(value ?? "");
   const [invalid, setInvalid] = useState<string>();
   const [saved, setSaved] = useState(value);
-  // A saved value, from here or elsewhere, resets the draft. The row stays mounted, so the "Saved"
-  // its own save shows stays with it.
   if (value !== saved) {
     setSaved(value);
     setDraft(value ?? "");
@@ -602,7 +585,6 @@ function FolderField({
   );
 }
 
-/** The overview's optional sections as checkboxes, each on unless unchecked. */
 function SectionChecks({
   hidden,
   onChange,
@@ -617,8 +599,6 @@ function SectionChecks({
       data-testid="overview-sections-setting"
       className="flex flex-wrap justify-end gap-x-4 gap-y-2"
     >
-      {/* A list of small switches, so a step under a row's main control: body text, the box at a
-          row icon's size, the unchecked ones muted. */}
       {OVERVIEW_OPTIONAL_SECTIONS.map((section) => (
         <label
           key={section}

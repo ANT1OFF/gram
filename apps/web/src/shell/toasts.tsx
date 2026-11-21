@@ -22,7 +22,6 @@ import { useToastDock } from "./toast-dock";
 
 type Notify = Extract<ServerEvent, { type: "notify" }>;
 
-/** A key per notification that holds while toasts around it come and go, so none is remounted. */
 const toastKeys = new WeakMap<object, number>();
 let nextToastKey = 0;
 const toastKey = (notification: object): number => {
@@ -59,10 +58,8 @@ export function Toasts() {
       (prev) => new Set<object>(notifications.filter((item) => prev.has(item) || item === n)),
     );
   const listRef = useRef<HTMLOListElement>(null);
-  /** What had focus before keyboard focus entered the stack. */
   const entryFocus = useRef<Element | null>(null);
 
-  /** Dismisses a toast; focus inside it moves to the toast now in its place, else back out. */
   const dismissFocused = (n: object, item: HTMLElement, index: number) => {
     const hadFocus = item.contains(document.activeElement);
     dismiss(n);
@@ -141,12 +138,10 @@ export function Toasts() {
               data-testid="toast"
               onKeyDown={(event) => {
                 if (event.key !== "Escape") return;
-                // The toast's own Escape: never an app shortcut too, such as denying an approval.
                 event.preventDefault();
                 event.stopPropagation();
                 dismissFocused(n, event.currentTarget, index);
               }}
-              // The stack's gap is each toast's own margin, so a leaving toast folds its gap away too.
               className="pointer-events-auto mb-2 flex items-start gap-2 rounded-(--radius-lg) border border-edge bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised)"
             >
               <kind.icon aria-hidden className={cn("mt-0.5 size-icon-row shrink-0", kind.tone)} />
@@ -166,7 +161,6 @@ export function Toasts() {
                   className="shrink-0 rounded-sm font-medium text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => {
                     dismiss(n);
-                    // Diagnostics holds each agent CLI's row with its update.
                     void navigate({ to: "/settings/diagnostics" });
                   }}
                 >
@@ -198,7 +192,6 @@ export function Toasts() {
   return docked ? createPortal(list, dock) : list;
 }
 
-/** A change just made, with the way back while it shows. */
 function UndoItem({ toast }: { toast: UndoToast }) {
   const dismiss = () => useUndoToasts.getState().dismiss(toast);
   return (

@@ -27,7 +27,6 @@ import { abilityTone, checksLine, repositoryAccessRows } from "./repository-acce
  */
 export function RepositoryAccess({ projectIds }: { projectIds: readonly ProjectId[] }) {
   const access = useEmbedShell((s) => s.repositories?.access);
-  // A server older than `projects.origins` can't say which repositories these are.
   const served = useServes("projects.origins");
   if (access === undefined || projectIds.length === 0 || !served) return null;
   return <RepositoryAccessTable projectIds={projectIds} access={access} />;
@@ -60,11 +59,8 @@ function RepositoryAccessTable({
     retry: false,
   });
   const offGitHub = (origins.data?.origins ?? []).filter(({ github }) => github === undefined);
-  // Nothing on GitHub to say anything about, and nothing else to say.
   if (origins.isSuccess && names.length === 0) return null;
   const rows = answer.data === undefined ? [] : repositoryAccessRows(names, answer.data);
-  // A query that isn't asked yet is pending too: the answer waits on the origins, so a failed
-  // origins read must end the wait itself, or the card reads forever.
   const failed = origins.isError ? origins.error : answer.isError ? answer.error : undefined;
   const reading = failed === undefined && (origins.isPending || answer.isFetching);
   const retry = () => void (origins.isError ? origins.refetch() : answer.refetch());
@@ -92,8 +88,6 @@ function RepositoryAccessTable({
         </span>
       )}
       {rows.length > 0 && (
-        // A table where the sheet is wide enough for four columns; narrower, each repository is a
-        // block of its own with its three answers under it, each named.
         <div className="@container rounded-lg border border-border">
           <table className="w-full table-fixed text-meta @max-md:block">
             <colgroup>
@@ -129,7 +123,6 @@ function RepositoryAccessTable({
 /** How long the card waits for the embedding app before it says so and offers Retry. */
 export const ACCESS_TIMEOUT_MS = 20_000;
 
-/** `run` under the query's own signal and a deadline; past the deadline it fails, in words. */
 async function withinTime<T>(signal: AbortSignal, run: (signal: AbortSignal) => Promise<T>) {
   const deadline = AbortSignal.timeout(ACCESS_TIMEOUT_MS);
   const bounded = AbortSignal.any([signal, deadline]);
@@ -145,7 +138,6 @@ async function withinTime<T>(signal: AbortSignal, run: (signal: AbortSignal) => 
       { once: true },
     );
   });
-  // Raced, so an app that ignores the signal still lets the card stop waiting.
   return Promise.race([run(bounded), late]);
 }
 
@@ -170,18 +162,15 @@ function AccessRow({ row }: { row: ShellRepositoryAccess }) {
   );
 }
 
-/** One cell: a mark and the app's few words; its sentence on hover, focus and to a reader. */
 function AbilityCell({
   column,
   ability,
   person = false,
   fix,
 }: {
-  /** The column's name, shown above the answer where the table is a block per repository. */
   column: string;
   ability: ShellRepositoryAbility;
   person?: boolean;
-  /** Where to let the agents do more, under the answer it changes. */
   fix?: ShellRepositoryAccess["fix"];
 }) {
   const tone = abilityTone(ability, person);
@@ -238,7 +227,6 @@ function AbilityCell({
   );
 }
 
-/** Under the table: what holds everywhere, where to let the agents do more, and what isn't asked. */
 function AccessFoot({
   note,
   link,

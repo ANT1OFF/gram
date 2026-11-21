@@ -1,11 +1,3 @@
-// Keeping two copies of a shared folder in step: the control plane's own and one machine's mirror.
-//
-// A round lists both sides and compares each file with what the last round left them agreeing on
-// (the base). A file changed on one side only goes to the other; a file deleted on one side only is
-// deleted on the other. Changed on both: the later write wins, and an edit always beats a delete.
-// Every write and delete names the hash it expects to replace, so a file changed again since the
-// listing is left for the next round rather than overwritten.
-
 import {
   SHARED_ABSENT,
   SHARED_PART_BYTES,
@@ -76,7 +68,6 @@ export const planRound = (
     }
     const s = onServer.get(path);
     const h = onHost.get(path);
-    // A file a cut-off listing doesn't name may be there: it is neither deleted nor copied over.
     if ((s === undefined && !server.complete) || (h === undefined && !host.complete)) {
       if (was !== undefined) settled[path] = was;
       continue;
@@ -99,7 +90,6 @@ export const planRound = (
       else if (s !== undefined)
         steps.push({ kind: "delete", on: "server", path, ifMatch: s.sha256 });
     } else if (s !== undefined && h !== undefined) {
-      // Both changed: the later write wins, the control plane's on a tie.
       if (h.mtimeMs > s.mtimeMs) toServer(h);
       else toHost(s);
     } else if (s !== undefined) {
@@ -111,7 +101,6 @@ export const planRound = (
   return { steps, settled };
 };
 
-/** Copies one file from `source` to `target`; false when either side changed it meanwhile. */
 const copy = (
   source: SharedSide,
   target: SharedSide,

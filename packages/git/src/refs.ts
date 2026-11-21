@@ -1,5 +1,3 @@
-// Remote-tracking ref queries shared by worktree creation, the rebase signal and the diff fallback.
-
 import * as nodePath from "node:path";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -27,17 +25,11 @@ export const baseRef = (
 ): Effect.Effect<string | undefined, never, Proc> =>
   Effect.gen(function* () {
     if (fetch) {
-      // The preference stays master, then main. A repository that has never seen `origin/master`
-      // almost never grew one since, and asking the remote for a branch it does not have costs a
-      // whole connection to it before the fetch that works, so there main is asked for first.
       const [first, ...rest] = DEFAULT_BASES;
       const order = (yield* branchExists(cwd, `origin/${first}`))
         ? DEFAULT_BASES
         : [...rest, first];
       for (const branch of order) {
-        // A new worktree fetches its base with nobody at the keyboard: an orchestrator spawns
-        // workers unattended, and with expired credentials Git for Windows would otherwise raise
-        // the credential manager's window and hold the fetch until the network tier kills it.
         const out = yield* remoteGit(
           cwd,
           ["-c", "credential.interactive=false", "fetch", "--quiet", "origin", branch],
@@ -46,7 +38,6 @@ export const baseRef = (
         if (Option.isSome(out) && out.value.status === 0) return `origin/${branch}`;
       }
     } else {
-      // Kept while the ref's file is unchanged: every sweep asks it of every checkout.
       const head = yield* cachedOriginHead(cwd).pipe(Effect.option);
       if (Option.isSome(head) && head.value !== undefined) return head.value;
     }
@@ -93,7 +84,6 @@ export const originTips = (
   names: ReadonlyArray<string>,
 ): Effect.Effect<Map<string, string>, ProcError, Proc> => {
   if (names.length === 0) return Effect.succeed(new Map());
-  // Kept while the refs' files are unchanged: the sweep asks this of every checkout every pass.
   return cachedOriginTips(cwd, names, readOriginTips(cwd, names));
 };
 

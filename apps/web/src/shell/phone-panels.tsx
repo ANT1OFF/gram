@@ -10,11 +10,6 @@ import { useWorkspacePlaces } from "@/shell/titlebar-path";
 import { useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
-// A phone has no room for a thread's panels beside its chat, and nothing on the chat said they
-// were there: they opened from the pull request's row alone. So a thread on a phone has a row under
-// its title naming the conversation and the panels a thread is worked from, and an open panel has a
-// header of its own that names the panel and its thread, with a worded way back.
-
 /** The panels the row names, in the panel's own order; the rarer ones are in the open panel's strip. */
 export const PHONE_PANELS: readonly { readonly tab: RightPanelTab; readonly label: string }[] = [
   { tab: "diff", label: "Diff" },
@@ -115,7 +110,6 @@ export function PhonePanelHeader({ tab, centred }: { tab: string; centred: boole
           {title}
         </span>
       </div>
-      {/* The title stays centred between the button and its width again. */}
       {centred && <span aria-hidden className="size-11 shrink-0" />}
     </header>
   );

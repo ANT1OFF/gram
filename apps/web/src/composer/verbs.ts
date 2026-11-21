@@ -1,6 +1,3 @@
-// The orchestrator's "/" verbs in the Orchestrator layout: a word each for what the workspace's home
-// does most, and More… for everything else in ⌘K. No React here.
-
 /** What a verb does; each runs an action Gram already has elsewhere. */
 export type VerbId =
   | "task"

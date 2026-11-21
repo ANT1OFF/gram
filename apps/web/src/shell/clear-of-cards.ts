@@ -39,7 +39,6 @@ export function clearRightEdge({
   const top = trigger.bottom;
   const at = (right: number): Box => ({ left: right - width, right, top, bottom: viewportHeight });
   const clear = (right: number) => !cards.some((card) => overlaps(at(right), card));
-  // Under the trigger, kept on screen as the positioner keeps it.
   const own = Math.min(viewportWidth - margin, Math.max(trigger.right, width + margin));
   if (clear(own)) return undefined;
   return [viewportWidth - margin, width + margin].find(clear);

@@ -4,7 +4,6 @@ import { create } from "zustand";
 import { openExternalUrl } from "@/api/open-external";
 import type { Api } from "@/api/types";
 
-/** How long a sign-in the user started is watched for, and how often the list is read meanwhile. */
 const SIGN_IN_WAIT_MS = 5 * 60_000;
 export const SIGN_IN_POLL_MS = 2_000;
 
@@ -16,12 +15,6 @@ export interface PendingSignIn {
 
 type SignIns = Readonly<Record<string, PendingSignIn>>;
 
-/**
- * The connector sign-ins under way, per thread, whether the Connectors panel or the thread's
- * lapsed-connector notice started them, so either shows the other's and the list is read while one
- * lasts. Reading the list is what has Claude Code reconnect a claude.ai connector, whose sign-in
- * page calls nobody back.
- */
 const useConnectorSignIns = create<{ readonly byThread: Readonly<Record<string, SignIns>> }>(
   () => ({ byThread: {} }),
 );
@@ -32,7 +25,6 @@ const NONE: SignIns = {};
 export const useThreadSignIns = (threadId: ThreadId): SignIns =>
   useConnectorSignIns((s) => s.byThread[threadId] ?? NONE);
 
-/** Stops watching `names`' sign-ins in the thread. */
 const forgetSignIns = (threadId: ThreadId, names: ReadonlyArray<string>): void =>
   useConnectorSignIns.setState((s) => {
     const current = s.byThread[threadId] ?? NONE;
@@ -70,11 +62,6 @@ export const startConnectorSignIn = async (
   if (started.kind === "open") await openExternalUrl(api, started.authorizationUrl);
 };
 
-/**
- * Ends the thread's sign-ins that `listed` settles, and returns those that connected. A sign-in is
- * over once the server no longer waits on one (`awaitsSignIn`); still connecting isn't an outcome
- * yet, since the agent reconnects the server once it has the token.
- */
 const settleSignIns = (
   threadId: ThreadId,
   listed: ReadonlyArray<Connector>,

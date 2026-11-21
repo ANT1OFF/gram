@@ -8,28 +8,19 @@ import { ThreadVisibility } from "../../git/visibility.ts";
 import { currentReader } from "../../embedding/readable-by.ts";
 import type { Handlers } from "./common.ts";
 
-/**
- * Whose windows a caller's are: its signed-in person's, or the one key of a server everyone
- * shares as one (the desktop's, or callers with no person). A window is known by this and its id.
- */
 const ownerKey = Effect.map(currentReader, (reader) =>
   reader === undefined ? "server" : `person:${reader.subject ?? ""}`,
 );
 
-/** A window's key in the registry: its owner and its id. */
 const keyOf = (owner: string, windowId: string) => `${owner}\u0000${windowId}`;
 
 interface Registration {
   readonly placement: WindowPlacement;
-  /** Whose window it is (`ownerKey`): only that caller's stream shows it, or its reports change it. */
   readonly owner: string;
-  /** The watch that registered it, so a reconnect's newer watch isn't forgotten by the old one. */
   readonly token: object;
   readonly sidebarCollapsed?: boolean;
-  /** A renderer that reports neither is assumed to be on screen and in use. */
   readonly visible?: boolean;
   readonly focused?: boolean;
-  /** The thread in its focused pane; `null` for an empty pane. */
   readonly focusedThreadId?: ThreadId | null;
 }
 
@@ -44,7 +35,6 @@ export const makeWindowPlacements = Effect.gen(function* () {
   const changes = yield* PubSub.sliding<true>(1);
   const visibility = yield* Effect.serviceOption(ThreadVisibility);
   const activity = yield* Effect.serviceOption(AppActivity);
-  /** `owner`'s windows: no one else's window or thread ids are shown to them. */
   const snapshot = (owner: string): WindowPlacements => ({
     windows: [...windows.values()].filter((w) => w.owner === owner).map((w) => w.placement),
   });
@@ -105,7 +95,6 @@ export const makeWindowPlacements = Effect.gen(function* () {
   const report = (
     windowId: string,
     threadIds: ReadonlyArray<ThreadId>,
-    /** What the renderer said about itself; a field it left out keeps its last reported value. */
     state: Pick<Registration, "sidebarCollapsed" | "visible" | "focused" | "focusedThreadId"> = {},
   ) =>
     Effect.gen(function* () {

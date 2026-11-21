@@ -16,7 +16,6 @@ import { makeHistoryReader } from "./history-reader.ts";
 export const usageHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const poller = yield* Effect.serviceOption(UsageLimitPoller);
-  // Absent in runtime-only test layers, which keep no limit readings.
   const limits = yield* Effect.serviceOption(UsageLimitReadings);
   const roots = Option.getOrUndefined(yield* Effect.serviceOption(UsageHistoryRoots));
   const reader = makeHistoryReader(),
@@ -51,8 +50,6 @@ export const usageHandlers = Effect.gen(function* () {
                 }),
               ),
         ),
-        // The breakdown names no thread or workspace the caller may not see
-        // (`embedding/readable-by.ts`). Their tokens still count in the totals, which name none.
         Effect.flatMap((overview) =>
           overview.breakdown === undefined
             ? Effect.succeed(overview)

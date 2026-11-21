@@ -9,9 +9,6 @@ import { threadDisplayTitle } from "@/thread/thread-title";
 import { orchestratorWaitingOn, type WaitingOn } from "./waiting-on";
 import { workerWaitings } from "./workers-model";
 
-// What a workspace's workers and its orchestrator wait on, for the sidebar's rows and the Board's
-// chips; ⌘J's rows read the same `workerWaitings` through their own rows. Times tick by the minute.
-
 const NO_ASKS: ReadonlySet<ThreadId> = new Set();
 
 /** What each of the ledger's workers at rest waits on, by thread (`workerWaitings`). */
@@ -43,7 +40,6 @@ export function useOrchestratorWaiting(
   );
   const waits = (ledger?.wakes?.length ?? 0) > 0 || limitWait !== undefined;
   const now = useNow(waits, undefined, 60_000);
-  // The titles of the threads its condition wakes wait to finish, flat for a shallow compare.
   const named = useThreadsStore(
     useShallow((s) =>
       (ledger?.wakes ?? []).flatMap((wake) =>

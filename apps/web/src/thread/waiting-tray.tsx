@@ -71,7 +71,6 @@ const KIND: Record<WaitViewKind, { icon: LucideIcon; label: string }> = {
   plan: { icon: ListChecks, label: "A plan to review" },
 };
 
-/** How long a row marked done offers Undo. */
 const UNDO_MS = 10_000;
 
 const isEndOfDragSelectionIn = (element: Element): boolean => {
@@ -137,20 +136,13 @@ function Row({
   item: WaitItem;
   now: number;
   onDone: (item: WaitItem) => void;
-  /** Absent outside the thread's own tray, which alone lists a helper's suggestions. */
   onKeep?: ((item: WaitItem) => void) | undefined;
-  /** Listed outside its thread, in the Inbox: Jump to and Answer open the thread too. */
   elsewhere?: boolean;
-  /** Opens with its body, draft and link shown, as the Inbox's detail pane shows it. */
   defaultExpanded?: boolean;
 }) {
   const api = useApi();
   const openAt = useOpenWait();
   const [expanded, setExpanded] = useState(defaultExpanded);
-  /**
-   * `fallback` when the whole history is in and the reply to copy from isn't, so the item's own text
-   * went instead; `failed` when the reply couldn't be loaded, so nothing was copied.
-   */
   const [copied, setCopied] = useState<"copied" | "fallback" | "failed" | undefined>(undefined);
   const rowRef = useRef<HTMLLIElement>(null);
   const kind = KIND[view.kind];
@@ -325,7 +317,6 @@ function Row({
 /** An item's row, for the lists outside its thread. */
 export { Row as WaitingItemRow };
 
-/** Opens a thread from a list of what waits, scrolled to `messageId` when there is one. */
 function useOpenWait(): (threadId: ThreadId, messageId?: string | undefined) => void {
   const navigate = useNavigate();
   return (threadId, messageId) => {
@@ -335,11 +326,6 @@ function useOpenWait(): (threadId: ThreadId, messageId?: string | undefined) => 
   };
 }
 
-/**
- * The tray's last line: "Resolved (3)", the items resolved in the last day, unfolded to reopen one.
- * Read when the tray opens and again on each change to what is open; `hidden` are those whose Undo
- * still stands above it, the user's or the helper's.
- */
 function ResolvedLine({
   threadId,
   openKey,
@@ -348,7 +334,6 @@ function ResolvedLine({
   onReopen,
 }: {
   threadId: ThreadId;
-  /** Changes with the open items, which every resolve and reopen changes too. */
   openKey: string;
   hidden: ReadonlySet<WaitId>;
   now: number;
@@ -426,7 +411,6 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
   const [undoable, setUndoable] = useState<readonly WaitItem[]>([]);
   const [showResolved, setShowResolved] = useState(false);
   const now = useNow(open || (summary?.helperResolved?.length ?? 0) > 0, undefined, 60_000);
-  // An orchestrator's open questions are asks: its ask stack holds them, not the tray.
   const views = summary === undefined ? [] : trayViews(summary);
   const unfold = useTrayUnfold((s) => s.asked[threadId]);
   const [seenUnfold, setSeenUnfold] = useState<number | undefined>(undefined);
@@ -462,7 +446,6 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
   const undo = (item: WaitItem) => {
     setUndoable((rows) => rows.filter((row) => row.id !== item.id));
     void api.resolveWait(threadId, item.id, true).catch((error: unknown) => {
-      // Refused while the thread is full again: the item stays done, so its Undo comes back.
       setUndoable((rows) => [...rows, item]);
       report("undo")(error);
     });
@@ -516,7 +499,6 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         />
       </button>
       {open && (
-        // Items and questions alike capped to a share of the pane and scrolled, as the plan strip is.
         <div className="max-h-[calc(var(--pane-height,100vh)*0.4)] overflow-y-auto">
           <ul
             aria-label="Waiting on you"
@@ -630,7 +612,6 @@ export const useTrayUnfold = create<{
     }),
 }));
 
-/** How many times `count` has gone up, so the tray pulses for an item added and not one done. */
 function useAdditions(count: number): number {
   const [seen, setSeen] = useState({ count, additions: 0 });
   if (count === seen.count) return seen.additions;

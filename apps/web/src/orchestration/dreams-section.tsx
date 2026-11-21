@@ -76,11 +76,6 @@ const SECTION = "flex flex-col gap-2 rounded-(--radius-md) border border-edge bg
 const INPUT =
   "rounded-md border border-input bg-transparent px-2 text-reading outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
-/**
- * Both confirmations say what the server does: a dream's thread runs in the dream's own folder, so
- * a discard closes it before deleting that folder, and a closed thread whose folder is gone can't be
- * brought back with "Reopen closed thread".
- */
 const discardWarning = () =>
   keyLabel(
     "Discard this update? What it wrote and its report are deleted, and memory stays as it is. Its thread is closed too, with the folder it ran in, so ⌘⇧T brings back only its conversation to read.",
@@ -91,11 +86,6 @@ const dateRange = (oldest: number | undefined, newest: number | undefined): stri
     ? "—"
     : `${formatDay(oldest)} – ${formatDay(newest)}`;
 
-/**
- * What a dream or an import would read, and the choices that shape it, before anything is spent:
- * sessions found per repo and agent with their dates and a token
- * estimate, how many worktrees that covered, and the server's own caveats, shown as it wrote them.
- */
 function StartFlow({
   state,
   kind,
@@ -105,7 +95,6 @@ function StartFlow({
   kind: DreamKind;
   onClose: () => void;
 }) {
-  // Review or Auto, for this run alone: one of the run's choices, picked here with the others.
   const [mode, setMode] = useState<DreamMode>("review");
   const modeLabel = useId();
   const api = useApi();
@@ -139,7 +128,6 @@ function StartFlow({
   const perRepo = perRepoOf(perRepoText);
   const budget = budgetOf(budgetText);
   const importing = kind === "import";
-  // `undefined` while the options spell nothing to count: no repo ticked, or a limit out of range.
   const scope: DreamPreviewInput | undefined = !importing
     ? budget === undefined
       ? undefined
@@ -149,15 +137,12 @@ function StartFlow({
       : { projectIds, perRepo, ...(includeMemory ? { includeMemory } : {}) };
   const query = useQuery({
     queryKey: ["dreams", workspaceId, "preview", scope ?? null, selectedModel ?? null],
-    // The scope travels with its counts, so Start can send the one the user was shown.
     queryFn: async (): Promise<ScopedPreview> => {
       const counted = scope ?? {};
       return { scope: counted, preview: await api.previewDream(workspaceId, counted) };
     },
     enabled: scope !== undefined && selectedModel !== undefined && !preflight.blocked,
     retry: false,
-    // Options change as they are typed; the last preview stays up, marked stale, while the next
-    // one is counted.
     placeholderData: (previous) => previous,
   });
   const preview = query.data?.preview;
@@ -488,7 +473,6 @@ function StartFlow({
           When this update is ready
         </span>
         <ModeChoice mode={mode} labelledBy={modeLabel} onChange={setMode} />
-        {/* Always mounted, so a screen reader hears the note when Auto is picked. */}
         <p
           role="status"
           data-testid="dream-mode-note"
@@ -552,14 +536,12 @@ const DIFF_LINE = {
   del: { mark: "−", className: "bg-destructive/10 text-destructive" },
 } as const;
 
-/** Where a conflict's merge is, in a line under the choice: icon and colour carry the state. */
 function MergeStatus({
   merge,
   error,
   onMerge,
 }: {
   merge: DreamMerge | undefined;
-  /** Why the last request to start one was refused. */
   error: string | undefined;
   onMerge: () => void;
 }) {
@@ -611,7 +593,6 @@ function MergeStatus({
   );
 }
 
-/** One file of the review: its unified line diff, and for a conflict the choice of a side. */
 function FileDiff({
   file,
   side,
@@ -623,10 +604,8 @@ function FileDiff({
   file: DreamFileDiff;
   side: Resolutions[string] | undefined;
   onSide: (side: Resolutions[string]) => void;
-  /** Starts (or starts over) the model's merge of this file, and chooses it. */
   onMerge: () => void;
   mergeError: string | undefined;
-  /** Whether the dream can still be adopted, which is what a merge is for. */
   settleable: boolean;
 }) {
   const [against, setAgainst] = useState<"baseline" | "current">("baseline");
@@ -760,13 +739,6 @@ function FileDiff({
   );
 }
 
-/**
- * What the user reads before Adopt or Discard: the dream's report, each
- * file against the memory the dream started from, and a side to pick for every file the
- * orchestrator wrote since. Adopt passes back the memory version and output fingerprint this review
- * was computed from, so an adoption of anything the user didn't see is refused; on that refusal the
- * review is fetched again.
- */
 function Review({
   workspaceId,
   dreamId,
@@ -784,9 +756,7 @@ function Review({
     retry: false,
   });
   const [resolutions, setResolutions] = useState<Resolutions>({});
-  /** Why starting a merge was refused, by path; cleared by the next try. */
   const [mergeErrors, setMergeErrors] = useState<Readonly<Record<string, string>>>({});
-  /** Merges asked for that the review hasn't shown running yet. */
   const [asked, setAsked] = useState<ReadonlySet<string>>(() => new Set());
   const [selected, setSelected] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -794,11 +764,8 @@ function Review({
   const [refreshed, setRefreshed] = useState<string>();
   const [discarding, setDiscarding] = useState(false);
   const ref = useRef<HTMLElement>(null);
-  // Into view as it opens, and again as it loads or fails, since loaded it is much taller.
   const stage = review.data !== undefined ? "loaded" : review.error ? "failed" : "loading";
   useEffect(() => {
-    // Braces on purpose: `scrollIntoView` returns a promise in current Chromium, and an effect that
-    // returns one is taken for a clean-up.
     if (stage !== undefined) {
       ref.current?.scrollIntoView({ block: "nearest" });
     }
@@ -829,14 +796,12 @@ function Review({
   const failure = dreamFailureText(data.dream);
 
   const conflicts = files.filter((file) => file.status === "conflict");
-  /** Merging is for a dream that can still be adopted. */
   const settleable =
     data.dream.mode !== "auto" &&
     data.dream.status === "completed" &&
     data.dream.adoptedVersion === undefined;
   const toMerge = conflictsToMerge(files);
 
-  /** Starts a merge of each of `paths` and chooses it; the review hears of its end from the feed. */
   const startMerges = (paths: readonly string[]) => {
     setResolutions((now) => ({
       ...now,
@@ -878,7 +843,6 @@ function Review({
       .then(done)
       .catch(async (e: unknown) => {
         if ((e as { _tag?: unknown } | null)?._tag === "InvalidState") {
-          // Memory or the output moved since this review was computed: show the one that holds now.
           await review.refetch();
           setResolutions({});
           setRefreshed(errorMessage(e));
@@ -894,7 +858,6 @@ function Review({
       data-testid="dream-review"
       className={cn(
         SECTION,
-        // Clear of the Memory view's tab bar, which stays stuck above it.
         "max-h-[calc(100dvh_-_var(--titlebar-height)_-_4.5rem)] min-h-0 scroll-mt-12 flex-col border-border-strong",
       )}
     >
@@ -1078,11 +1041,6 @@ function Review({
   );
 }
 
-/**
- * One run as a card: its state and when, then what it read and what ran it on one line, and one
- * lead action (review it, watch it, or open its thread) as an outline button, the rest ghost: the
- * view's one filled button is its Draft memory update (DESIGN.md, Buttons).
- */
 function DreamRow({
   dream,
   now,
@@ -1094,7 +1052,6 @@ function DreamRow({
   now: number;
   reviewing: boolean;
   onReview: () => void;
-  /** Its review, open under it. */
   children?: ReactNode;
 }) {
   const api = useApi();
@@ -1106,7 +1063,6 @@ function DreamRow({
   const actions = dreamActions(dream);
   const failure = dreamFailureText(dream);
   const threadId = dream.threadId;
-  // Dollars only for a dream on a gateway's API key, with Show dollar cost on.
   const showCost = useCostShown(dream.model);
 
   const run = (what: () => Promise<unknown>) => {
@@ -1118,7 +1074,6 @@ function DreamRow({
       .finally(() => setBusy(false));
   };
 
-  // The one next action that leads: watch a run, review a finished one, else open its thread.
   const primary = actions.cancel
     ? threadId === undefined
       ? undefined
@@ -1145,8 +1100,6 @@ function DreamRow({
           {dream.endedAt !== undefined && ` · ended ${agoText(dream.endedAt, now)}`}
         </span>
       </div>
-      {/* What differs from run to run: what it read, what ran it, and an Auto run's own rule. Where
-          it lands, this workspace's memory, is said once above the list. */}
       <p data-testid="dream-facts" className="text-body text-description">
         {dreamKindLabel(dream)} · {agentLabel(dream.model.agent)} · {nameOf(dream.model)}
         {dream.mode === "auto" && " · saved if it checks out"}
@@ -1162,7 +1115,6 @@ function DreamRow({
           data-testid="dream-failure"
           className={cn(
             "text-body",
-            // Cancelling was the user's own doing, so it is said without alarm.
             dream.status === "failed" ? "text-destructive" : "text-description",
           )}
         >
@@ -1192,7 +1144,6 @@ function DreamRow({
             params={{ threadId }}
             data-testid="dream-thread"
             onClick={() => useLayoutStore.getState().openThread(threadId)}
-            // Merged as `Button` merges, so the small size's text wins over the base's.
             className={cn(
               buttonVariants({
                 size: "sm",
@@ -1249,17 +1200,12 @@ function DreamRow({
   );
 }
 
-/**
- * Whether the run's result waits for your review or is adopted once it validates: a choice for
- * that run alone, on one line in the start form beside its other choices (model, steering).
- */
 function ModeChoice({
   mode,
   labelledBy,
   onChange,
 }: {
   mode: DreamMode;
-  /** The start form's label for it, "When this update is ready". */
   labelledBy: string;
   onChange: (mode: DreamMode) => void;
 }) {
@@ -1297,7 +1243,6 @@ function ModeChoice({
   );
 }
 
-/** A heading and its runs, as cards, each with its review open under it when it is the one open. */
 function RunList({
   testId,
   title,
@@ -1396,8 +1341,6 @@ export function DreamsSection({
   );
 
   return (
-    // The reading column, as Memory's rendered files sit, so the review, the form and the runs share
-    // one centred measure on a wide pane; a review open widens it for its diffs.
     <section
       ref={ref}
       aria-label="Memory updates"
@@ -1407,7 +1350,6 @@ export function DreamsSection({
         reviewing !== undefined && "[--thread-max-width:var(--settings-column-wide)]",
       )}
     >
-      {/* What waits on you comes first: a finished draft to review, ahead of starting another. */}
       {ready.length > 0 && (
         <RunList
           testId="dream-ready"
@@ -1419,8 +1361,6 @@ export function DreamsSection({
           review={reviewOf}
         />
       )}
-      {/* How to start one, in a line and two buttons: how the next run is adopted, and how it runs,
-          are the start form's, where that run's other choices are. */}
       <div data-testid="dream-form" className="flex flex-col gap-2">
         <p className="max-w-(--description-measure) text-body text-pretty text-description">
           Rereads finished threads and drafts changes, each with its source. Memory changes only
@@ -1450,7 +1390,6 @@ export function DreamsSection({
             Draft from past sessions
           </Button>
         </div>
-        {/* Said in words too: a disabled button's hover reaches no keyboard or screen reader. */}
         {running && (
           <p data-testid="dream-busy" className="text-body text-description">
             A run is under way; the next can start once it ends or you cancel it below.
@@ -1494,7 +1433,6 @@ export function DreamsSection({
         </p>
       ) : (
         rest.length > 0 && (
-          // Running, failed and adopted runs: the history under what waits on you.
           <RunList
             testId="dream-history"
             title={ready.length > 0 ? "Other runs" : "Runs"}
@@ -1506,7 +1444,6 @@ export function DreamsSection({
           />
         )
       )}
-      {/* A review of a run the list doesn't hold (yet), such as one opened from its thread. */}
       {reviewing !== undefined && !(dreams.data ?? []).some((dream) => dream.id === reviewing) && (
         <Review
           key={reviewing}

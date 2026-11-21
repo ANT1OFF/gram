@@ -18,13 +18,11 @@ import { aboutFinishedWorker, startOrchestratorMessage } from "./ask-about";
 import { useWorkspaces } from "./use-orchestration";
 import { finishedRow } from "./workers-model";
 
-/** The changed files shown before "more". */
 const FILES_SHOWN = 6;
 
 const NO_STREAMING = new Set<string>();
 const NO_TURN_ENDS = new Map();
 
-/** The orchestrator to ask about a finished worker: the one it reported to, else the workspace's. */
 function useAskTarget(detail: FinishedWorkerDetail): ThreadId | undefined {
   const workspaces = useWorkspaces();
   const own = detail.worker.orchestratorThreadId;
@@ -184,7 +182,6 @@ export function FinishedFiles({
   );
 }
 
-/** The brief, PRs, last report and changed files, above the transcript and compact. */
 function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
   const { worker, files } = detail;
   const [allFiles, setAllFiles] = useState(false);

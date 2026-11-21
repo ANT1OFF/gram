@@ -1,13 +1,8 @@
-// What Squirrel.Mac downloads the update from: a loopback feed Gram owns for one staging attempt,
-// serving the verified snapshot's descriptor (`native-snapshot.ts`), never electron-updater's
-// shared cache path. The ZIP response completes only when the served bytes' SHA-256 is the
-// verified one.
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import type { CandidateSnapshot } from "./native-snapshot.ts";
 
-/** Squirrel.Mac asks for the feed, then the ZIP; a couple of retries at most. */
 const FEED_REQUESTS = 4;
 const ZIP_REQUESTS = 2;
 

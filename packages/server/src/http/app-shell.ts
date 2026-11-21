@@ -1,6 +1,3 @@
-// The web app's own files, the one thing a browser of this computer gets from Gram's port without
-// the key only Gram's own origin holds (`auth.ts`): the shell it loads before it can show anything.
-
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -17,6 +14,8 @@ import {
 } from "../platform/unstable.ts";
 import { compressedStatic } from "./compressed-static.ts";
 
+const reportedByTheResponsePipeline = (): void => {};
+
 /**
  * Gives a file response's stream an `'error'` listener as soon as it exists. Effect's Node
  * `fileResponse` opens a `ReadStream` that the response's `pipeline` only listens to once it is
@@ -29,9 +28,7 @@ export const guardFileBody = (
 ): HttpServerResponse.HttpServerResponse => {
   const body = response.body;
   if (body._tag === "Raw" && body.body instanceof Readable) {
-    body.body.on("error", () => {
-      // Reported by the response's pipeline, which reads the error the stream keeps.
-    });
+    body.body.on("error", reportedByTheResponsePipeline);
   }
   return response;
 };

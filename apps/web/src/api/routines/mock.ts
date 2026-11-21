@@ -62,7 +62,6 @@ export function createRoutinesMock(
           const { nextRunAt: _next, trigger: _trigger, ...rest } = kept;
           kept = rest;
         } else if (kept.nextRunAt === undefined || kept.scheduleKey !== scheduleKey) {
-          // An event routine looks every few minutes, the first look only seeing what is there.
           kept =
             routine.schedule === undefined
               ? {

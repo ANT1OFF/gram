@@ -1,7 +1,3 @@
-// Where a worker stands, and so where its feature and group stand: one rule for the server's
-// ledger, the board's live overlay and the web's mock ledger, so a card, its band and the ledger
-// can't disagree. Pure functions over plain data; nothing here is stored.
-
 import type { CompletedReason } from "../domain.ts";
 import type { PrFacts } from "../completion.ts";
 import type { TurnId } from "../ids.ts";
@@ -159,11 +155,6 @@ export const withLive = (base: WorkerStateBase, live: WorkerLive): WorkerState =
 export const workerState = (input: WorkerStateInput): WorkerState =>
   withLive(workerStateBase(input), input);
 
-/**
- * A base for a ledger row that carries none (an older server's, or a test's): the row's own
- * state, with what the status rules made of it undone as far as the row can tell. A row that
- * reads `needsUser` or `error` doesn't say where it stood beneath, so it is taken to be working.
- */
 const baseOfRow = (state: WorkerState): WorkerStateBase => {
   switch (state) {
     case "archived":
@@ -216,7 +207,6 @@ export const WORKER_STATE_ORDER: ReadonlyArray<WorkerState> = [
   "archived",
 ];
 
-/** A state this build doesn't know ranks first: nobody can say how far along it is. */
 const rank = (state: WorkerState): number => WORKER_STATE_ORDER.indexOf(state);
 
 /**

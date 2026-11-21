@@ -6,10 +6,6 @@ import { fileEditsOf } from "./file-edit.ts";
 import { WorkerReport } from "./orchestration.ts";
 import { UIMessageSchema, type GramUIMessage } from "./ui-message.ts";
 
-// Reaching workers that are finished or stalled: a worker whose worktree the sweep cleaned up stays
-// readable from what Gram already keeps of it, and one that hasn't moved in a while gets a "Why is it
-// stuck?" line with a nudge the user picks.
-
 /** A PR a finished worker followed, from its closed record. */
 export const FinishedWorkerPr = Schema.Struct({
   /** `owner/repo`. */

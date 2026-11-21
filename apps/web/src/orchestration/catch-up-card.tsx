@@ -11,10 +11,8 @@ import { repeatsReport } from "./catch-up-model";
 import { useOrchestratorLedger } from "./use-orchestration";
 import { workerEntryOf } from "./workers-model";
 
-/** The most of a report's own summary the card shows when the helper has nothing to say. */
 const REPORT_MAX = 220;
 
-/** What the worker had told you, and when you had last looked, as the view opened. */
 interface Opened {
   readonly threadId: ThreadId;
   readonly reportAt: number | undefined;
@@ -37,7 +35,6 @@ export function CatchUpCard({ thread }: { thread: Thread }) {
   const entry = workerEntryOf(ledger?.features, thread.id);
   const [opened, setOpened] = useState<Opened>();
   const [dismissed, setDismissed] = useState<ThreadId>();
-  // Taken the first render the ledger has the worker, and again only for another thread.
   if (worker && entry !== undefined && opened?.threadId !== thread.id) {
     const report = entry.lastReport;
     setOpened({
@@ -58,9 +55,6 @@ export function CatchUpCard({ thread }: { thread: Thread }) {
   const text =
     helper?.text ??
     (opened?.summary === undefined ? undefined : reportLine(opened.summary, REPORT_MAX));
-  // Its room is taken as the view opens, with a placeholder line while the helper drafts, so the
-  // transcript isn't pushed down under a reader it is following.
-  // Nothing it would say that the view's last report doesn't already (`repeatsReport`).
   const fresh = text !== undefined && !repeatsReport(text, opened?.summary);
   const show = due && dismissed !== thread.id && (isPending || fresh);
   return (

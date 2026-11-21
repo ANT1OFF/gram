@@ -37,10 +37,6 @@ import { toggleOverviewSidebar } from "@/views/shell-layout";
 import { ViewSwitcher } from "@/views/view-frame";
 import { useViewStore } from "@/views/view-store";
 
-/**
- * The room before each of the bar's clusters, which groups them; a narrow bar gives it to the title.
- * By the bar's width, not its fold, so the room it frees can't unfold what it folded.
- */
 const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
 
 /**
@@ -83,49 +79,35 @@ export function ShellTitlebar({
   /** `panel.side` puts the panel on the left. */
   panelLeft: boolean;
 }) {
-  // An embedding app may keep its switcher to the title bar, out of the navigation.
   const switcherInTitlebar = useEmbedShell((s) => s.sidebar.switcher === "titlebar");
   const togglePanel = useLayoutStore((s) => s.togglePanel);
   const beforeSetup = useBeforeSetup();
-  // One bar: a thread alone in Chat puts its header here, and Board its controls.
   const barThreadId = useTitlebarThread();
   const barThread = barThreadId !== undefined;
   const board = useViewStore((s) => s.view === "board");
   const carried = barThread || board;
-  // A solo thread's bar leaves out what acts on the workspace's orchestration.
   const soloRoute = useSoloRoute();
   const soloBar = barThread && soloRoute;
-  // The meter shows the usage of the agent the thread in view runs on.
   const agent = useRouteAgent();
   const setTitlebarSlot = useTitlebarSlot((s) => s.setSlot);
   const fold = useTitlebarSlot((s) => s.fold);
-  // Folded at all: the lesser buttons are in "…".
   const folded = fold > 0;
   const [titlebar, setTitlebar] = useState<HTMLDivElement | null>(null);
   useTitlebarFold(titlebar);
 
-  // With no panel to its right, the chat's titlebar runs under Windows' window controls.
   const titlebarAtEdge = panelLeft || !panelShown;
   const phone = usePhone();
   const embedTitle = useEmbedPageTitle();
   const roomy = useRoomySidebar();
   const host = useHostAttention();
   const pathBar = usePathBar();
-  // An app in front of Gram that leaves Usage out of Settings has its own idea of what is spent.
   const usageKept = useGramSettingKept("usage");
-  // Settings an app in front of Gram has made its own holds none of the window's panes either.
   const hostSettings = useEmbedShell(
     (s) => s.settings.gram !== undefined || (s.settings.pages?.length ?? 0) > 0,
   );
   const hostPage = useHostPage() || (settings && hostSettings);
 
-  // A phone's one bar: the drawer's menu, where you are, Needs you and "…" with the rest in words.
-  // The thread's header and Board's controls still mount in the slot, out of sight: what they
-  // carry is in "…", folded all the way at this width.
   if (phone && roomy) {
-    // The roomy look's phone header: round buttons either side of where you are, on the page's own
-    // ground with no rule under it. The Inbox is the menu's dot and its row, while the app in front
-    // counts what needs someone.
     return (
       <div
         ref={setTitlebar}
@@ -218,8 +200,6 @@ export function ShellTitlebar({
       className={cn(
         "@container/titlebar relative flex h-(--titlebar-height) shrink-0 items-center justify-end gap-1 border-b border-border px-2 [-webkit-app-region:drag]",
         titlebarAtEdge && "pr-[calc(var(--window-controls-inset)+--spacing(2))]",
-        // With no sidebar (or overview) to its left, the title bar starts under macOS's window
-        // buttons; beside the compact rail, narrower than them, it starts clear of them.
         !sidebarShown && "pl-[max(--spacing(2),var(--window-lights-inset))]",
         compactRail && "pl-[max(--spacing(2),calc(var(--window-lights-inset)-60px+--spacing(1)))]",
       )}
@@ -230,7 +210,6 @@ export function ShellTitlebar({
         </div>
       ) : (
         <div className={cn("mr-auto flex min-w-0 items-center gap-1", carried && "flex-1")}>
-          {/* Hidden, the overview comes back from here as from ⌘B; shown, its own button hides it. */}
           {!sidebarShown && navAway === undefined && (
             <ShellToggle
               icon={PanelLeftOpen}
@@ -240,20 +219,15 @@ export function ShellTitlebar({
               onClick={toggleOverviewSidebar}
             />
           )}
-          {/* Settings follows the toggle, as it does in the overview's header. */}
           {!sidebarShown && navAway === undefined && (
             <Foldable level={FOLD_ALL} gap={4}>
               <TopLeftNav className="mr-2" />
             </Foldable>
           )}
-          {/* An app in front of Gram's own switcher, while no sidebar is there to carry it. */}
           {(switcherInTitlebar || (!sidebarShown && navAway !== "sidebar")) && (
             <EmbedSwitcher placement="titlebar" />
           )}
-          {/* A page an app in front of Gram added says its own name here; it is in no workspace
-              and has no views to switch between. */}
           {embedTitle !== undefined && <EmbedPageTitle key={embedTitle} title={embedTitle} />}
-          {/* An app whose own pages say where they are as a path has the bar start as one. */}
           {embedTitle === undefined && pathBar && (
             <TitlebarPath solo={soloBar} narrow={carried && folded} />
           )}
@@ -266,7 +240,6 @@ export function ShellTitlebar({
               )}
             />
           )}
-          {/* Chat · Board are the workspace's views: a solo thread in Chat is no part of it. */}
           {embedTitle === undefined && !soloBar && !pathBar && (
             <>
               <Foldable level={FOLD_ALL} gap={4}>
@@ -275,8 +248,6 @@ export function ShellTitlebar({
               <FakeAgentBadge className="[-webkit-app-region:no-drag]" />
             </>
           )}
-          {/* The thread's header or Board's controls, title first: it truncates before
-              anything else gives way. */}
           <div
             ref={setTitlebarSlot}
             data-testid="titlebar-slot"
@@ -292,32 +263,15 @@ export function ShellTitlebar({
           className="mx-1 h-4 w-px shrink-0 bg-border"
         />
       )}
-      {/* Few controls, each with its words on hover: what wants your attention, then the one "…"
-          with everything else, labelled, and the panel. A paused workspace says so here, and a
-          click resumes it; pausing, Workers and Tidy up are the "…"'s. */}
       <div
         role="group"
         aria-label="Attention"
         data-testid="titlebar-attention"
         className="flex shrink-0 items-center gap-0.5"
       >
-        {/* What needs you is said in words in one place: the top of the column left of the chat,
-            the sidebar's pill, the compact rail's or Settings' own. With no column there (the
-            sidebar hidden), this group's first slot is the Inbox, an icon button like the rest of
-            the bar whatever is waiting (a dot on its corner while anything does, the pill's words
-            on hover), so it never widens or moves what follows it. Before setup the sidebar hides
-            its pill (the welcome is the one thing to look at), so the Inbox here is the way to
-            what arrived meanwhile, startup notices say. */}
         {(!needsYouPill || beforeSetup) && <InboxButton />}
-        {/* A setup problem seen once in its banner, folded here until dismissed: setup's glyph
-            with no number, which says what it is on hover. The thread's own state (an approval, a
-            question, an error) is the pill's to count and the card's to show, never a second
-            glyph or count here. */}
         <LaunchIssuesChip className="[-webkit-app-region:no-drag]" />
         {!soloBar && !settings && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
-        {/* Before any setup there is no work of Gram's to meter. Icon-only like the rest of the
-            bar: usage's glyph, with a dot on it once a limit is near or reached; the reading is its
-            hover's and its name's. */}
         {!beforeSetup && usageKept && (
           <Foldable level={FOLD_ICONS} gap={2}>
             <UsageMeter
@@ -334,8 +288,6 @@ export function ShellTitlebar({
         data-testid="titlebar-view"
         className={cn("flex shrink-0 items-center gap-0.5", CLUSTER_GAP)}
       >
-        {/* The thread's menu, the workspace's controls and the window's, and what a narrow bar
-            folds: Board's layout. */}
         <TitlebarOverflow
           orchestration={!soloBar}
           hostPage={hostPage}
@@ -347,8 +299,6 @@ export function ShellTitlebar({
           className="[-webkit-app-region:no-drag]"
         />
       </div>
-      {/* What goes in the right panel, together at the bar's end: a worker's Open beside, then the
-          panel's own toggle, each drawn apart, its words and key on hover. */}
       <div
         role="group"
         aria-label="Panels"

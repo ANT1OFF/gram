@@ -1,8 +1,6 @@
 import type { ThreadId, TurnId } from "../ids.ts";
 import type { GramUIMessage, GramUIMessageChunk } from "../ui-message.ts";
 
-// Long generated transcripts for performance checks: no model, deterministic text.
-
 export interface LongTranscriptOptions {
   /** Prefix for message and turn ids, unique per thread. */
   readonly threadId: ThreadId | string;
@@ -23,7 +21,6 @@ const WORDS =
 const sentence = (seed: number, words: number) =>
   Array.from({ length: words }, (_, i) => WORDS[(seed * 7 + i * 3) % WORDS.length]).join(" ");
 
-/** `bytes` of plausible test-runner output. */
 const logOutput = (seed: number, bytes: number) => {
   const lines: string[] = [];
   let size = 0;

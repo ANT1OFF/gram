@@ -77,7 +77,6 @@ export function FilePreview({
     retry: false,
   });
   const relative = path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
-  // Opened unscoped: `threadId` would hold the editor and the file manager to the checkouts.
   const scope = elsewhere ? {} : { threadId };
   const file = image ? undefined : query.data;
   const reveal = revealLabel();
@@ -88,7 +87,6 @@ export function FilePreview({
     scroller.current
       ?.querySelector(`[data-line="${line}"]`)
       ?.scrollIntoView({ block: "center", behavior: "auto" });
-    // `reveals` changes when the same line is opened again, which should scroll back to it.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `reveals` is a signal to scroll again, not an input
   }, [line, content, markdown, view, reveals]);
 

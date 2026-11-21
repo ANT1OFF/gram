@@ -1,7 +1,3 @@
-// Settings by chat (docs/design/settings-by-chat.md): what `settings_read` shows, what
-// `settings_propose` may change and at which tier, and the plan a change set makes, with the
-// before → after rows its approval card shows. Pure: the server reads and writes, this decides.
-
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { chimeOf } from "./chime.ts";
@@ -163,7 +159,6 @@ export const workerFallback = <T extends WorkerModel | RosterModel>(
       ) ?? allowed.find((each) => "model" in each && each.model === own.model))) ??
   allowed[0];
 
-/** A slot's concrete model, when it is pinned to one; a following slot has none until resolved. */
 const pinnedOf = (slot: ModelSlot | undefined): ModelRef | undefined =>
   slot === undefined || !isPinned(slot) ? undefined : slot;
 
@@ -172,11 +167,8 @@ interface Entry {
   readonly label: string;
   readonly tier: SettingsTier;
   readonly scope: SettingsScope;
-  /** A list of worker models, changed by `add`, `update` and `remove`. */
   readonly list?: true;
-  /** The effective value, as `settings_read` shows it and the card compares it. */
   readonly read: (world: SettingsWorld) => unknown;
-  /** What an absent value means, in words. */
   readonly unset?: string;
 }
 
@@ -239,7 +231,6 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
         ? "off — no local check configured; CI and GitHub rules apply"
         : "not set",
   })),
-  // Tier 1: the running workspace and its orchestrator.
   ws(
     "workspace.maxConcurrentWorkers",
     "Max concurrent workers",
@@ -298,7 +289,6 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
     charterOf(w) === undefined ? undefined : charterOf(w)?.watchDefaultBranch === true,
   ),
   ws("workspace.routines", "Routines", (w) => charterOf(w)?.routines, "none"),
-  // Tier 2: the user's own app preferences.
   pref("appearance.mode", "Colour mode"),
   pref("appearance.paletteId", "Palette"),
   pref("appearance.density", "Density"),
@@ -511,8 +501,6 @@ export const userOnlySetting = (key: string): UserOnlyKey | undefined => {
   });
 };
 
-// ─── How values read ──────────────────────────────────────────────────────────────────────────
-
 const isModelRef = (value: unknown): value is ModelRef =>
   typeof value === "object" &&
   value !== null &&
@@ -566,7 +554,6 @@ const isRoutine = (value: unknown): value is WorkspaceRoutine =>
   "brief" in value &&
   "name" in value;
 
-/** A routine whole, brief included: the card is where the user approves what it will run. */
 const routineText = (routine: WorkspaceRoutine): string =>
   [
     `"${routine.name}", ${routineWhenText(routine)}${routine.target === "orchestrator" ? ", to the orchestrator" : ""}${routine.off === true ? " (off)" : ""}`,
@@ -588,13 +575,10 @@ const valueText = (entry: Entry, value: unknown): string => {
   return JSON.stringify(value);
 };
 
-/** A worker model's identity in a list: `agent:model`, with `@profileId` when it has one. */
 const identity = (model: WorkerModel): string =>
   !isPinned(model)
     ? `tier:${model.tier}${model.agent === undefined ? "" : `:${model.agent}`}`
     : `${model.agent}:${model.model}${model.profileId === undefined ? "" : `@${model.profileId}`}`;
-
-// ─── settings_read ────────────────────────────────────────────────────────────────────────────
 
 export interface SettingsReadRow {
   readonly key: string;
@@ -629,8 +613,6 @@ export const readUserOnlyRows = (world: SettingsWorld) =>
       ...(each.via === undefined ? {} : { via: each.via }),
     };
   });
-
-// ─── settings_propose ─────────────────────────────────────────────────────────────────────────
 
 /**
  * One stored field a proposal writes, with its value as stored before (`undefined` when absent)
@@ -715,7 +697,6 @@ const WorkerModelUpdate = Schema.Struct({
 const NO_PROFILE =
   "a gateway profile can't be chosen by chat: which profile, and so which key, a model runs on is the user's, in Settings";
 
-/** The patch `{ group: { field: value } }`, or `{ key: value }` for a top-level key. */
 const patchFor = (key: string, value: unknown): Record<string, unknown> => {
   const [group, field] = key.split(".");
   return field === undefined ? { [group!]: value } : { [group!]: { [field]: value } };
@@ -735,10 +716,6 @@ const mergePatch = (into: Record<string, unknown>, add: Record<string, unknown>)
   }
 };
 
-/**
- * The entries `match` names in `list`: by `agent:model`, and by profile when it gives one; a
- * following entry by `tier:<tier>`, or `tier:<tier>:<agent>` when it keeps to one harness.
- */
 const matching = (list: ReadonlyArray<WorkerModel>, match: string): ReadonlyArray<number> => {
   const wanted = match.trim().toLowerCase();
   const [label, profile] = wanted.split("@");
@@ -759,7 +736,6 @@ const withoutDefault = (list: Array<WorkerModel>, keep: number) => {
   }
 };
 
-/** Rows for a worker-model list: one per entry added, removed or changed, in list order. */
 const listRows = (
   entry: Entry,
   before: ReadonlyArray<WorkerModel>,
@@ -961,7 +937,6 @@ export const planSettingsChanges = (
       continue;
     }
 
-    // Workspace scalar keys.
     const into = charter!;
     const field = key.slice("workspace.".length);
     switch (key) {
@@ -979,7 +954,6 @@ export const planSettingsChanges = (
         break;
       }
       case "workspace.idleAutoCompact": {
-        // `null` goes back to the default, which is on.
         if (value === null) delete into[field];
         else if (typeof value !== "boolean") errors.push(`${key}: expected true or false.`);
         else into[field] = value;
@@ -1089,8 +1063,6 @@ export const planSettingsChanges = (
         break;
       }
       case "workspace.orchestratorEffort": {
-        // Only on a model this workspace pins: an effort on the inherited default would pin that
-        // model as a side effect, and depend on an app setting the card can't hold still.
         const base = into["orchestratorModel"] as ModelSlot | undefined;
         if (base === undefined) {
           errors.push(
@@ -1247,14 +1219,11 @@ export const planSettingsChanges = (
   if (writes.length === 0 && options.allowUnchanged !== true) {
     return { ok: false, errors: ["This proposal changes nothing: every value is already so."] };
   }
-  // A field outside the catalogue never changes: the planner only writes what it was asked to.
   const stray = writes.find((write) => entryOf(write.key) === undefined);
   if (stray !== undefined) {
     return { ok: false, errors: [`${stray.key} would change, and it isn't settable by chat.`] };
   }
   const rows = writes.flatMap((write) => rowsFor(write, world, next));
-  // An orchestrator model that is or becomes inherited reads as the app's default: the write
-  // holds only while that default is still the one the card showed.
   const requires: Array<SettingsRequirement> = writes.some(
     (write) =>
       write.key === "workspace.orchestratorModel" &&
@@ -1286,7 +1255,6 @@ export const planSettingsChanges = (
   };
 };
 
-/** Rows for one write: a row per worker model it changes, or one row, never none. */
 const rowsFor = (
   write: SettingsWrite,
   world: SettingsWorld,
@@ -1298,11 +1266,8 @@ const rowsFor = (
     const after = (entry.read(next) as ReadonlyArray<WorkerModel> | undefined) ?? [];
     const was = before.map(identity);
     const now = after.map(identity);
-    // Entries are told apart by identity; a list holding one twice is shown whole instead.
     if (new Set(was).size === was.length && new Set(now).size === now.length) {
       const rows = listRows(entry, before, after);
-      // Where entries stand matters (the first one can be the fallback), so a move is shown even
-      // beside other rows: kept entries keep their order and new ones go last, unless this row says.
       const expected = [
         ...was.filter((id) => now.includes(id)),
         ...now.filter((id) => !was.includes(id)),
@@ -1332,7 +1297,6 @@ const rowsFor = (
     const after = storedText(entry, write.after, entry.read(next));
     if (before !== after) return [{ key: write.key, label: entry.label, before, after }];
   }
-  // Stored differently but read alike: still a change the user approves, so it is shown as stored.
   return [
     {
       key: write.key,
@@ -1356,7 +1320,6 @@ export const charterRows = (world: SettingsWorld): Array<SettingsDiffRow> => {
   return SETTINGS_CATALOGUE.filter(
     (entry) =>
       entry.scope === "workspace" &&
-      // The effort is shown on the orchestrator model it is stored with.
       entry.key !== "workspace.orchestratorEffort" &&
       stored[entry.key.slice("workspace.".length)] !== undefined,
   ).flatMap((entry): Array<SettingsDiffRow> => {
@@ -1382,9 +1345,7 @@ export const charterRows = (world: SettingsWorld): Array<SettingsDiffRow> => {
   });
 };
 
-/** The model a worker of this list gets with none named, for the orchestrator `world` holds. */
 const fallbackText = (entry: Entry, world: SettingsWorld): string => {
-  // A new workspace's orchestrator follows the default model, or the agent discovered at start.
   const own =
     entry.scope === "app"
       ? world.settings.agents.defaultModel
@@ -1401,14 +1362,12 @@ const fallbackText = (entry: Entry, world: SettingsWorld): string => {
   return fallback === undefined ? "none" : identity(fallback);
 };
 
-/** A stored value as the card shows it; an absent one reads as the default it falls back to. */
 const storedText = (entry: Entry, stored: unknown, effective: unknown): string => {
   if (stored !== undefined) return valueText(entry, stored);
   if (effective === undefined || effective === null) return entry.unset ?? "not set";
   return `${valueText(entry, effective)} (default)`;
 };
 
-/** The JSON of `value` with its objects' keys sorted, so two reads of one value compare equal. */
 const canonical = (value: unknown): string | undefined =>
   JSON.stringify(value, (_key, each: unknown) =>
     typeof each === "object" && each !== null && !Array.isArray(each)
@@ -1451,10 +1410,6 @@ const withAt = (
   return next;
 };
 
-/**
- * `writes` applied to `root`, only if every field still holds its `before`; `undefined` when one
- * has moved, so nothing is written. Fields the writes don't name are kept as they stand now.
- */
 const applyWrites = <A>(root: A, writes: ReadonlyArray<SettingsWrite>): A | undefined => {
   if (writes.some((write) => !sameValue(storedAt(root, write.path), write.before))) {
     return undefined;

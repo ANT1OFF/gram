@@ -1,7 +1,3 @@
-// Launch-only evidence beyond registered check contexts. Read the policy from the base branch's
-// tip, where the merge lands: a feature branch cannot erase its own merge conditions, and a PR's
-// recorded base can't keep it under ones the branch has since dropped or tightened. No local file or cached badge
-// is authority, and Actions jobs are read from the selected run attempt, not another head/run.
 import { currentBaseOf, type ChecksRollup, type PrStatus } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -22,7 +18,6 @@ const Policy = Schema.Struct({
       docsJobs: Schema.optionalKey(
         Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1), Schema.isMaxLength(100)),
       ),
-      // Each lane's jobs (see ci-policy.ts): a lane the diff can't affect needs none of them.
       laneJobs: Schema.optionalKey(
         Schema.Struct({
           static: Schema.optionalKey(Names),
@@ -32,7 +27,6 @@ const Policy = Schema.Struct({
           e2e: Schema.optionalKey(Names),
         }),
       ),
-      // Jobs a passing local check doesn't stand in for: verified on the exact head even then.
       alwaysJobs: Schema.optionalKey(
         Schema.Array(Schema.NonEmptyString).check(Schema.isMaxLength(100)),
       ),
@@ -48,7 +42,6 @@ const record = (value: unknown): Record<string, unknown> => {
 };
 const list = (body: Record<string, unknown>, key: string) => {
   const nodes = body[key];
-  // Bounded request: a truncated connection must never qualify a merge.
   if (!Array.isArray(nodes) || body["total_count"] !== nodes.length || nodes.length > 100)
     throw new Error("Incomplete GitHub CI response");
   return nodes.map(record);
@@ -75,7 +68,6 @@ const exact = (badge: PrStatus): badge is ExactBadge =>
   Number.isSafeInteger(badge.number) &&
   badge.number > 0;
 
-/** The base commit's declaration, or `undefined` when it has none. */
 const readPolicy = (cwd: string, repo: string, baseRefOid: string) =>
   Effect.gen(function* () {
     const slash = repo.indexOf("/");
@@ -95,7 +87,6 @@ const readPolicy = (cwd: string, repo: string, baseRefOid: string) =>
     const policyBody = json(policyOut.stdout);
     if (policyBody["errors"] !== undefined) throw new Error("Merge CI policy lookup failed");
     const object = record(record(policyBody["data"])["repository"])["object"];
-    // Only a real null from GitHub means no declaration. Errors/malformed/missing data refuse.
     return object === null
       ? undefined
       : Schema.decodeUnknownSync(Policy)(JSON.parse(String(record(object)["text"])));
@@ -127,7 +118,6 @@ export const runIsPrs = (run: Record<string, unknown>, repo: string, badge: PrSt
   return badge.baseRef === undefined || prBase["ref"] === badge.baseRef;
 };
 
-/** `owner/name` of a minimal repository object as a run's `pull_requests` carries it. */
 const repoOf = (repository: Record<string, unknown>): string | undefined => {
   const url = repository["url"];
   if (typeof url !== "string") return undefined;
@@ -135,7 +125,6 @@ const repoOf = (repository: Record<string, unknown>): string | undefined => {
   return match?.[1];
 };
 
-/** The latest run of each workflow and event on exactly `badge`'s head, among the PR's own runs. */
 const latestRuns = (cwd: string, repo: string, badge: ExactBadge) =>
   Effect.gen(function* () {
     const head = badge.headRefOid;
@@ -151,8 +140,6 @@ const latestRuns = (cwd: string, repo: string, badge: ExactBadge) =>
         (run["event"] === "push" || run["event"] === "pull_request") &&
         runIsPrs(run, repo, badge),
     );
-    // Keep the latest execution of each workflow/event. A rerun updates this same run's attempt;
-    // an old green run cannot hide a newer queued/red execution on the identical commit.
     const latest = new Map<string, Record<string, unknown>>();
     for (const run of runs) {
       if (
@@ -168,7 +155,6 @@ const latestRuns = (cwd: string, repo: string, badge: ExactBadge) =>
     return latest;
   });
 
-/** The jobs of `run`'s own attempt. */
 const runJobs = (cwd: string, repo: string, run: Record<string, unknown>) =>
   Effect.gen(function* () {
     const jobsOut = yield* ghApi(cwd, [
@@ -188,8 +174,6 @@ const verifyAgainst = (
 ) =>
   Effect.gen(function* () {
     if (policy === undefined && badge.requiredChecks !== undefined) return "passing" as const;
-    // Independently reproduce the classification. A workflow's skipped checks or reported output
-    // is never authority. Missing local commit objects/output limits conservatively require full.
     const lanes =
       policy?.documentationPolicy === DOCUMENTATION_POLICY
         ? yield* git(cwd, ciDiffArgs(badge.baseRefOid, badge.headRefOid)).pipe(
@@ -220,8 +204,6 @@ const verifyAgainst = (
       if (run["conclusion"] !== "success") return "failing" as const;
       if (workflow.jobs.length === 0) continue;
       const jobs = yield* runJobs(cwd, repo, run);
-      // Full application qualification is sufficient even when the classifier conservatively
-      // fell back to full for prose (e.g. missing objects). Validate its identities below as usual.
       const fullSucceeded = workflow.jobs.every((name) => {
         const matches = jobs.filter((job) => job["name"] === name);
         return (
@@ -229,10 +211,6 @@ const verifyAgainst = (
           matches.every((job) => job["status"] === "completed" && job["conclusion"] === "success")
         );
       });
-      // A lane the diff can't affect, by this reproduction, not by what the run chose, needs none
-      // of its jobs: skipped, or shown under a skipped matrix's unexpanded name. Its run still had
-      // to succeed above, which its own qualification job decides. A job some selected lane names
-      // is always needed, and a job named by two lanes makes the declaration malformed.
       const laneJobs = "laneJobs" in workflow ? workflow.laneJobs : undefined;
       const declared = CI_LANES.flatMap((lane) => laneJobs?.[lane] ?? []);
       if (new Set(declared).size !== declared.length)
@@ -249,8 +227,6 @@ const verifyAgainst = (
       );
       let requiredJobs: ReadonlyArray<string> = workflow.jobs.filter((name) => !unneeded.has(name));
       if (docs && !fullSucceeded && "docsJobs" in workflow && workflow.docsJobs !== undefined) {
-        // The success of this exact job/attempt must contain immutable event-source proof. Mutable
-        // run.pull_requests associations cannot establish what its checkout actually tested.
         const matches = jobs.filter((job) => job["name"] === "docs");
         const job = matches[0];
         if (
@@ -315,8 +291,6 @@ const verifyAgainst = (
       }
     }
     if (usedDocs && result === "passing") {
-      // Re-read at the launch boundary after proof/job lookups. --match-head-commit pins only the
-      // head; do not claim an atomic base lock across this read and GitHub's eventual merge.
       const freshOut = yield* ghApi(cwd, [`repos/${repo}/pulls/${badge.number}`]);
       if (freshOut.status !== 0 || freshOut.truncated)
         throw new Error("Merge CI docs PR freshness lookup failed");
@@ -385,10 +359,6 @@ export const verifyDeclaredMergeCi = (cwd: string, repo: string, badge: PrStatus
     return { declared: true, checks } as const;
   }).pipe(Effect.catchDefect((error) => Effect.fail(new Error(String(error)))));
 
-/**
- * The declared `alwaysJobs` on exactly `badge`'s head: `undefined` when the base declares none. A
- * skipped job counts only once its whole run succeeded, as a lane that rightly skips it does.
- */
 const verifyAlwaysJobs = (cwd: string, repo: string, badge: PrStatus) =>
   Effect.gen(function* () {
     if (!exact(badge)) throw new Error("Merge CI needs the exact base, head and branch");

@@ -34,12 +34,6 @@ const NONE: readonly RunningSubagent[] = [];
 const isTaskPart = (part: GramUIMessage["parts"][number]): part is TaskPart =>
   part.type === "tool-Task" || part.type === "tool-Agent";
 
-/**
- * Whether the run behind `part` can still be working: a foreground one while the message holding
- * its card streams, a background one while its own transcript does (the adapter opens it at
- * launch). A snapshot left at `running` by an interrupted turn or a closed session belongs to a
- * message that has finished, so it stays down when a later turn starts.
- */
 const live = (
   part: TaskPart,
   message: GramUIMessage,
@@ -200,14 +194,10 @@ export function stripRows(
   });
   for (const task of background) {
     if (shown.has(task.taskId)) continue;
-    // As the agent ran it, for Copy; only the label and tooltip are cut down.
     const command = task.command?.trim() ? task.command : undefined;
     const label = firstLine(command ?? task.description, LABEL_CHARS);
-    // Claude Code falls back to the command for a shell with no description of its own.
     const note = command === undefined ? undefined : firstLine(task.description, LABEL_CHARS);
     rows.push({
-      // Only a subagent's task shares its line with a card; a shell is told its tool call later, and
-      // a key that moved with that would swap its line out.
       key: (task.kind === "subagent" ? task.toolCallId : undefined) ?? task.taskId,
       kind: task.kind,
       label,
@@ -230,7 +220,6 @@ export function stripRows(
 
 const NO_ROWS: readonly StripRow[] = [];
 
-/** Longer than any line the strip has room for; CSS truncates the rest to fit. */
 const LABEL_CHARS = 200;
 
 /** What a line's tooltip holds: what the work is for, then where it is a command, how it starts. */

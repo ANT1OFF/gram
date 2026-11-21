@@ -5,7 +5,6 @@ import type { SqlClient } from "../platform/unstable.ts";
 
 const DEFAULT_SEARCH_LIMIT = 50;
 
-/** What `snippet()` wraps matches in: control characters that can't occur in indexed text. */
 const OPEN = "\u0001";
 const CLOSE = "\u0002";
 const SNIPPET_TOKENS = 16;
@@ -93,11 +92,6 @@ export const searchThreads = ({
       hidden.length === 0 ? "" : `AND ${column} NOT IN (SELECT value FROM json_each(?))`;
     const orderedRank = threadId === undefined;
 
-    // On the read worker when there is one: a global search over a long history takes hundreds of
-    // milliseconds, and the event loop would wait for it.
-    // Global searches can consume FTS rank order and stop at LIMIT, using the same weights.
-    // A small scope must filter first: thread_id is UNINDEXED, so global rank order does
-    // unnecessary work before reaching that thread's matches. Keep its filter-then-sort plan.
     const messageRows = yield* readOffLoop<HitRow>(
       `SELECT message_search.thread_id AS "threadId", message_search.message_id AS "messageId",
           CASE WHEN json_valid(threads.data) THEN json_extract(threads.data, '$.title') END
@@ -133,7 +127,6 @@ export const searchThreads = ({
     return { hits: hits.slice(0, limit), truncated: hits.length > limit };
   }).pipe(Effect.orDie);
 
-/** Cap on the words around a match that a transcript hit shows. */
 const TRANSCRIPT_SNIPPET_TOKENS = 32;
 
 /** One message of a workspace's conversations that matched, as `searchWorkspaceTranscripts` finds it. */
@@ -184,8 +177,6 @@ export const searchWorkspaceTranscripts = ({
   Effect.gen(function* () {
     const match = toMatchQuery(query);
     if (match === undefined) return { hits: [], truncated: false };
-    // A workspace is a small share of all threads: filter to it first, then rank, as a scoped
-    // `searchThreads` does, rather than walk global rank order past every other workspace's hits.
     const rows = yield* readOffLoop<{
       readonly threadId: string;
       readonly messageId: string;

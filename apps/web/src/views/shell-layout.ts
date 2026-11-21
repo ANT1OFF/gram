@@ -37,17 +37,9 @@ export const inOverview = (element: Element | null | undefined): boolean =>
 /** Whether the focus is in the overview: open, compact, or open over the page beside the strip. */
 export const focusInOverview = (): boolean => inOverview(document.activeElement);
 
-/**
- * Gives the focus the overview took with it to the focused pane's composer, or with no panes to the
- * title bar's Show sidebar. Just after a navigation the URL has changed before the new page has
- * replaced the panes, so for a few frames a target that leaves the page with the focus on it is
- * replaced. Once the focus is anywhere else (the target kept it, or the person moved it on), it
- * stays where it is.
- */
 function handFocusOn(frames = 10, given?: HTMLElement): void {
   requestAnimationFrame(() => {
     if (given?.isConnected) {
-      // Still on what it was handed: keep watching, in case the page takes that away. Moved on: done.
       if (document.activeElement === given && frames > 1) handFocusOn(frames - 1, given);
       return;
     }

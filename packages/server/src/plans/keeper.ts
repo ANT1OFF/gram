@@ -47,27 +47,13 @@ import {
 } from "./helper.ts";
 import { ThreadPlans, type ThreadPlansShape } from "./service.ts";
 
-/**
- * When the helper refreshes a thread's plan. A turn ending asks, 20 s later
- * so a queued follow-up merges into one call, at most every 2 minutes a thread unless the user wrote
- * since, and at most 30 times a thread a day, unless the agent's own todo list describes a thread
- * with no PR whose plan has a goal. A bound PR merging or closing asks 30 s later, and its
- * facts are applied to the plan at once, with no call. An agent's todo list changing asks nothing:
- * the headline reads it directly. An unchanged thread never costs a call, since the scheduler
- * answers an equal basis from its cache. Orchestrators and dreams have no helper plan, and a parked
- * thread is refreshed only for a PR merging or closing.
- */
-
 const TURN_DEBOUNCE = Duration.seconds(20);
 const PR_DEBOUNCE = Duration.seconds(30);
 const MIN_INTERVAL_MS = 2 * 60_000;
 const DAILY_REFRESHES = 30;
-/** Incremental refreshes between full rebuilds, which keep a long thread's plan from drifting. */
 const REBUILD_EVERY = 20;
-/** About 3k tokens of new conversation for an incremental refresh, 8k for a rebuild. */
 const DELTA_CHARS = 12_000;
 const REBUILD_CHARS = 32_000;
-/** More new messages than this, and a refresh reads the recent turns instead. */
 const DELTA_MESSAGES = 400;
 const REBUILD_TURNS = 8;
 
@@ -100,11 +86,9 @@ export class PlanKeeper extends Context.Service<PlanKeeper, PlanKeeperShape>()(
   "@gram/server/PlanKeeper",
 ) {}
 
-/** A thread's PR facts for comparing one `git.state` with the next. */
 const prKey = (prs: ReadonlyArray<PrFact>): string =>
   prs.map((pr) => `${pr.repo ?? ""}#${pr.number}:${pr.state}`).join(",");
 
-/** A PR in `now` that has merged or closed since `before`. */
 const prEnded = (before: ReadonlyArray<PrFact>, now: ReadonlyArray<PrFact>): boolean =>
   now.some(
     (pr) =>
@@ -119,7 +103,6 @@ const followedOf = (thread: Thread) => [
   ...(thread.extraPrs ?? []),
 ];
 
-/** What a refresh reads: the new messages since `basis`, or the thread's start and recent turns. */
 const materialFor = (
   store: ThreadStoreShape,
   threadId: ThreadId,
@@ -179,7 +162,6 @@ export const refreshPlan = (
       revision.resetRev > previous.rev;
     const { messages, full } = yield* materialFor(store, threadId, due ? undefined : previous);
     const locked = (record.plan?.steps ?? []).filter((step) => step.locked === true);
-    // A rebuild starts over from what the user and the agent wrote.
     const rebuilt = (plan: ThreadPlan | undefined) =>
       plan === undefined || !options.rebuild
         ? plan
@@ -209,10 +191,7 @@ export const refreshPlan = (
       ),
       output: HelperPlanOutput,
     });
-    // A cached answer was applied when it was new: applying it again would mint its new steps
-    // fresh ids and replace the ones it gave them.
     if (result._tag !== "Done" || result.cached) return record.plan;
-    // The call may have waited in the queue: a PR that merged meanwhile is a fact the answer can't undo.
     const landed = yield* store.getThread(threadId);
     const current: PlanFacts = planFacts(
       yield* gitOf(landed),
@@ -242,7 +221,6 @@ export const refreshPlan = (
     ),
   );
 
-/** The day a refresh is counted against, UTC. */
 const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
 export const PlanKeeperLive: Layer.Layer<
@@ -263,7 +241,6 @@ export const PlanKeeperLive: Layer.Layer<
       store,
       plans,
       scheduler,
-      // The thread's own state: it carries the bound and followed PRs the checkout's doesn't.
       gitOf: publisher.stateForThread,
       prContext: (thread, git) =>
         prContextsFor(
@@ -285,10 +262,6 @@ export const PlanKeeperLive: Layer.Layer<
     const counts = new Map<ThreadId, { day: string; n: number }>();
     const prFacts = new Map<ThreadId, ReadonlyArray<PrFact>>();
 
-    /**
-     * The agent's own todo list says it all: it keeps one, the thread has no PR, and the
-     * plan has its goal already. Then only a PR event asks the helper.
-     */
     const describedByTodos = (thread: Thread) =>
       Effect.gen(function* () {
         const record = yield* plans.record(thread.id);
@@ -315,7 +288,6 @@ export const PlanKeeperLive: Layer.Layer<
         yield* refreshPlan(deps, threadId, { lane: "background", rebuild: false, userSpoke });
       }).pipe(Effect.catchCause(() => Effect.void));
 
-    /** Waits `delay` and refreshes; a later ask for the same thread restarts the wait. */
     const ask = (threadId: ThreadId, why: "turn" | "pr", delay: Duration.Duration) =>
       FiberMap.run(
         timers,
@@ -337,7 +309,6 @@ export const PlanKeeperLive: Layer.Layer<
         }),
     });
 
-    /** A thread's git state, as published: facts first, and a PR that ended asks for a refresh. */
     const onState = (thread: Thread, state: GitState) =>
       Effect.gen(function* () {
         if (thread.role !== undefined) return;
@@ -345,15 +316,12 @@ export const PlanKeeperLive: Layer.Layer<
         const before = prFacts.get(thread.id);
         if (before !== undefined && prKey(before) === prKey(facts)) return;
         prFacts.set(thread.id, facts);
-        // Facts first: a merged PR's step is done now, whatever the helper would say.
         yield* plans.update(thread.id, (plan) => applyPrFacts(plan, facts));
         if (before !== undefined && prEnded(before, facts)) {
           yield* ask(thread.id, "pr", PR_DEBOUNCE);
         }
       }).pipe(Effect.catchCause(() => Effect.void));
 
-    // With replay: the publisher's start-up sync sends each thread's state before this exists, and
-    // an unchanged badge isn't sent again, so a PR that merged while the app was shut would be missed.
     yield* publisher.observe({ onState, onRound: () => Effect.void }, { replay: true });
 
     yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(

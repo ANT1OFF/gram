@@ -97,10 +97,8 @@ const sessionInfo = (value: unknown): OpenCodeSessionInfo | undefined => {
 
 const sessionPath = (sessionId: string) => `/api/session/${encodeURIComponent(sessionId)}`;
 
-/** `{ data }`, the envelope every `/api` answer comes in. */
 const dataOf = (body: unknown): unknown => (isRecord(body) ? body["data"] : undefined);
 
-/** `url` without its trailing slashes, in one pass: `/\/+$/` backtracks on a long run of them. */
 const withoutTrailingSlashes = (url: string): string => {
   let end = url.length;
   while (end > 0 && url[end - 1] === "/") end--;
@@ -138,9 +136,7 @@ export const makeOpenCodeClient = (options: OpenCodeClientOptions): OpenCodeClie
             (isRecord(answer["error"]) ? answer["error"]["message"] : undefined))
           : undefined;
         if (typeof message === "string") detail = `: ${message}`;
-      } catch {
-        // No JSON body: the status says enough.
-      }
+      } catch (_noJsonBodyTheStatusSaysEnough) {}
       throw new OpenCodeRequestError(
         response.status,
         `OpenCode answered ${response.status} to ${method} ${path}${detail}`,

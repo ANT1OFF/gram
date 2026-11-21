@@ -27,16 +27,9 @@ export const hostSettingRefusal = (path: ReadonlyArray<string>): string =>
 /** `settings.*`, `labels.*` and `palettes.*`; `profiles.*` live in `gateway.ts`. */
 export const settingsHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
-  // The path an approved `settings_propose` writes by too.
   const writer = yield* makeSettingsWriter;
-  // Absent in handler tests that build no hub.
   const hub = Option.getOrUndefined(yield* Effect.serviceOption(EventHub));
 
-  /**
-   * The shared part of `patch` by the one writer, and the caller's own view to their own rows.
-   * The connections of a signed-in person are told to read the settings again, and nobody else's
-   * are; with no sign-in through a proxy a window's save is announced to no one, as ever.
-   */
   const setFor = (patch: SettingsPatch) =>
     Effect.gen(function* () {
       const acting = yield* ActingPerson;
@@ -51,30 +44,23 @@ export const settingsHandlers = Effect.gen(function* () {
     });
 
   return {
-    // Each person reads the shared settings with their own view over them (`PERSONAL_SETTINGS`).
     "settings.get": () =>
       Effect.gen(function* () {
         return yield* store.getSettingsFor(personKey(yield* ActingPerson));
       }),
     "settings.set": (
       { patch },
-      /** The call's transport, which the RPC server always gives; absent in-process. */
       call?: { readonly headers?: Readonly<Record<string, string | undefined>> },
     ) =>
       Effect.gen(function* () {
         const localApp = isLocalApp(call?.headers);
-        // The hosted features change who this Gram answers to, so the switch is the local app's: the
-        // transport says which connection this is (`isLocalApp`), not anything the caller sent.
         if (patch.experimental?.embedding !== undefined && !localApp)
           return yield* new InvalidState({ message: EMBEDDING_LOCAL_ONLY });
-        // A person signed in through a proxy changes no program or folder the server acts on
-        // (`HOST_SETTINGS`): the whole patch is refused, so nothing of it is written.
         if (!localApp && (yield* ActingPerson) !== undefined) {
           const host = hostSettingChangedBy(yield* store.getSettings, patch);
           if (host !== undefined)
             return yield* new InvalidState({ message: hostSettingRefusal(host) });
         }
-        // What an embedding deployment supplies is read-only here (`settings/supplied.ts`).
         const supplied = yield* suppliedPathChangedBy(store, patch);
         if (supplied !== undefined)
           return yield* new InvalidState({ message: suppliedRefusal(supplied) });
@@ -82,7 +68,6 @@ export const settingsHandlers = Effect.gen(function* () {
       }),
 
     "palettes.list": () => store.listPalettes,
-    // `builtin` is server-owned: a client can't mark a palette built-in or clear the flag.
     "palettes.upsert": ({ palette }) =>
       Effect.gen(function* () {
         const existing = (yield* store.listPalettes).find((p) => p.id === palette.id);

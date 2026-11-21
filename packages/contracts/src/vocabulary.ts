@@ -3,13 +3,6 @@ import * as Schema from "effect/Schema";
 import { COMMON_WORDS as COMMON } from "./common-words.ts";
 import { ThreadId } from "./ids.ts";
 
-/**
- * Dictation vocabulary: the user's own word list and the names of the project a thread works in,
- * which dictation spells the way the project does ("use dictation" → `useDictation`). Everything
- * here stays on this computer; nothing logs a term, only counts.
- */
-
-/** A term or a spelling of one: one line, short. */
 const VocabularyText = Schema.String.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(80),
@@ -77,12 +70,10 @@ export const termParts = (term: string): TermPart[] => {
       for (const [word] of piece.matchAll(/\p{Lu}+(?!\p{Ll})|\p{Lu}?\p{Ll}+|\p{L}+/gu))
         parts.push({ word });
     }
-    // Anything else (spaces, `@`, `+`) leaves no piece, so it can't be spoken either way.
   }
   return parts;
 };
 
-/** The separators a speaker has to say ("dot", "slash"); the rest they may leave out. */
 const HARD = new Set([".", "/"]);
 
 /**

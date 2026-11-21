@@ -1,5 +1,3 @@
-// A leaf beside `ids.ts`: `agent.ts` puts a failure on the turn end, `domain.ts` keeps the last one
-// on the thread, and `orchestration.ts` carries it into the ledger, so nothing here may import them.
 import * as Schema from "effect/Schema";
 import { TurnId } from "./ids.ts";
 

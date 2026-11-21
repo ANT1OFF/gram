@@ -1,6 +1,3 @@
-// A thread's agent session: opening it, what its end means for the thread, the watchdog's
-// recovery of a stuck turn, and stopping a session whose folder is gone.
-
 import { isUntrustedWorktree } from "@gram/git";
 import type { DecisionHookShape } from "../embedding/decision-hook.ts";
 import { hookedSessionOptions } from "../embedding/hooked-requests.ts";
@@ -84,7 +81,6 @@ export const recentTurnsOf = (
     return turns.kept === 0 ? undefined : turns.text;
   });
 
-/** What the user calls each agent, in a notice. */
 const agentName = (agent: AgentKind): string => (agent === "codex" ? "Codex" : "Claude");
 import { dreamSupportFor, sequenceEvents, type AppToolRegistryPort } from "@gram/agents";
 import type { ResumeOptions, ResumePlans } from "./history-plans.ts";
@@ -108,12 +104,6 @@ import type { ServerApprovals } from "./server-approvals.ts";
 import type { UsageLimitReadingsShape } from "../usage/limit-readings.ts";
 import { sharedFolderNote } from "../shared/note.ts";
 
-/**
- * `Effect.scoped` for a session's lifetime, where a finalizer's defect joins the lifetime's failure
- * instead of replacing it. Since Effect 4.0.6 a scope that closes with a dying finalizer turns the
- * body's typed failures into defects, and the session's exit has to keep an `AgentUnavailable` for
- * `handleSessionExit` to report an agent that couldn't start in its own words.
- */
 const scopedKeepingFailure = <A, E, R>(self: Effect.Effect<A, E, R>) =>
   Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
@@ -127,7 +117,6 @@ const scopedKeepingFailure = <A, E, R>(self: Effect.Effect<A, E, R>) =>
     }),
   );
 
-/** What a session a Gram before this one left between turns starts with here. */
 const SETTLED: AgentEvent = { type: "status", status: "idle" };
 
 /** What opening and ending a session read and change beside a thread's `Runtime`. */
@@ -221,12 +210,6 @@ export const makeSessionLifecycle = ({
   currentAppTools,
   sharedFolder,
 }: SessionLifecycleDeps) => {
-  /**
-   * The thread's recent turns as a new session reads them when the agent's own conversation was
-   * lost (`renderLostSession`), or `undefined` when there are none to give or they can't be read.
-   * Input not yet sent to an agent (the queue, a launch, an input on its way) is left out: it
-   * follows as itself. Reads the last `LOST_SESSION_MESSAGES` messages and the first, never all.
-   */
   const lostSessionContext = (rt: Runtime, agent: AgentKind, movedFrom?: string) =>
     recentTurnsOf(store, rt).pipe(
       Effect.map((turns) =>
@@ -236,7 +219,6 @@ export const makeSessionLifecycle = ({
             ? renderLostSession(agent, turns)
             : renderMovedSession(agent, turns, movedFrom),
       ),
-      // The session opens either way: without the turns, as it did before there were any.
       Effect.catchCause((cause) =>
         Effect.logWarning("couldn't read a thread's recent turns for its new session").pipe(
           Effect.annotateLogs({ threadId: rt.threadId, cause: Cause.pretty(cause) }),
@@ -245,13 +227,8 @@ export const makeSessionLifecycle = ({
       ),
     );
 
-  /** When each thread's work was carried on after a machine restart, this run, oldest first. */
   const machineContinuations = new Map<ThreadId, ReadonlyArray<number>>();
 
-  /**
-   * Called with the lock held, as a session ends: what a restart of the joined machine it ran on
-   * leaves the thread to do (`afterMachineRestart`), or `undefined` for any other end.
-   */
   const machineRestartPlan = (
     rt: Runtime,
     stopping: Runtime["stopping"],
@@ -292,11 +269,6 @@ export const makeSessionLifecycle = ({
       return next;
     });
 
-  /**
-   * Opens the same conversation again on the machine that restarted, once the session that ended
-   * there is done, as `recover` does; the queue (the continuation note first, for a cut turn) goes
-   * once it is idle. Run in `recoveries`, so closing the thread cancels it.
-   */
   const resumeAfterRestart = (
     rt: Runtime,
     ended: Option.Option<Fiber.Fiber<unknown, unknown>>,
@@ -323,11 +295,8 @@ export const makeSessionLifecycle = ({
       );
     });
 
-  /** `stopInMissingFolder` for a runtime. Takes the lock, so never run it while holding it. */
   const stopInMissing = (rt: Runtime) =>
     Effect.gen(function* () {
-      // The live session's own folder, read under the lock: `moveCheckout` records the new
-      // checkout at once while the session runs on in the old one until its turn ends.
       const gone = yield* locked(
         rt,
         Effect.gen(function* () {
@@ -341,7 +310,6 @@ export const makeSessionLifecycle = ({
       );
       if (gone === undefined) return;
       const { path, midTurn } = gone;
-      // No path: it can name the user's folders.
       yield* Effect.logInfo("thread folder gone; session stopped").pipe(
         Effect.annotateLogs({ threadId: rt.threadId, midTurn }),
       );
@@ -356,7 +324,6 @@ export const makeSessionLifecycle = ({
       }
     });
 
-  /** Forks `stopInMissing`, so a session's own event or a send under the lock can ask for it. */
   const forkStopInMissing = (rt: Runtime) =>
     FiberMap.run(folderStops, rt.threadId, stopInMissing(rt), { onlyIfMissing: true }).pipe(
       Effect.asVoid,
@@ -374,8 +341,6 @@ export const makeSessionLifecycle = ({
               message: "The selected orchestrator failed to start. No fallback was started.",
             }),
           );
-        // A session whose events ran out ended by itself, even if a reopen asked to stop it while
-        // this waited for the lock: it is no reopen's stop, and the thread is left cold.
         const onItsOwn = Exit.isSuccess(exit) && rt.stopping === "recover";
         if (Exit.isSuccess(exit)) rt.endedOnItsOwn = rt.session;
         const stopping = onItsOwn ? undefined : rt.stopping;
@@ -385,12 +350,8 @@ export const makeSessionLifecycle = ({
         rt.agentRunning = false;
         if (stopping !== "recover") {
           rt.restartMarker = undefined;
-          // A cold thread reads the config afresh when it next opens.
           yield* setPendingRestart(rt, undefined);
         }
-        // The session the launch waited on is gone, so it waits in the queue as what it now is:
-        // unsent, and out of the feed, where a fork would take it for a message its source has.
-        // A recovery opens the next session at once, which takes the launch as this one would have.
         if (rt.launch !== undefined && stopping !== "recover") {
           const { id, input } = rt.launch;
           yield* withdrawMessage(rt, id);
@@ -398,11 +359,8 @@ export const makeSessionLifecycle = ({
           rt.launch = undefined;
           yield* syncQueue(rt);
         }
-        // A turn whose input never reached the agent wasn't cut short: that input just goes again.
         const turnCut =
           rt.turn !== undefined && (rt.inFlight === undefined || rt.inFlight.turnId !== rt.turn.id);
-        // Nor did one cut off on its way to the agent: it waits at the queue's head, as it was,
-        // for this session's successor too, which nothing else would hand it to.
         if (rt.inFlight !== undefined) {
           const { id, input } = rt.inFlight;
           yield* withdrawMessage(rt, id);
@@ -410,11 +368,9 @@ export const makeSessionLifecycle = ({
           rt.inFlight = undefined;
           yield* syncQueue(rt);
         }
-        // A joined machine that restarted under the session still has its conversation.
         const restart = yield* machineRestartPlan(rt, stopping, exit, turnCut);
         if (restart?.kind === "fail") rt.endedReason = restart.reason;
         const carriesOn = restart?.kind === "continue" || restart?.kind === "rest";
-        // A joined machine that went away and didn't come back: the turn fails, saying so.
         const lostMachine =
           restart === undefined && stopping === undefined ? rt.lostMachine : undefined;
         rt.lostMachine = undefined;
@@ -428,10 +384,7 @@ export const makeSessionLifecycle = ({
                     .map((id) => inFlight.accumulator.toolPart(id)?.["input"]),
                 ),
               );
-        // The session's end takes its background tasks with it, and its connectors.
         yield* setBackground(rt, []);
-        // Scope termination withdraws live process visibility, without claiming the process
-        // exited or releasing Codex provider ownership. Leave no indefinitely running card.
         yield* feedLocked(
           rt,
           Effect.gen(function* () {
@@ -444,9 +397,6 @@ export const makeSessionLifecycle = ({
                   errorText: "Session ended before the process exited",
                 });
               }
-              // A machine that restarted under the session took its running tools with it (a
-              // foreground shell's process died with the host); none of them is coming back, and
-              // the resumed session doesn't run them again. Said as what is known: no exit code.
               const cut =
                 restart === undefined && lostMachine === undefined
                   ? []
@@ -471,26 +421,19 @@ export const makeSessionLifecycle = ({
         );
         yield* setLapsedConnectors(rt, []);
         yield* setRetrying(rt, false);
-        // Mid-turn, the session's end is that turn's failure. Between turns (Codex ends a turn it
-        // flushes before its session does) the turn's own classified error stays.
         const turnId = rt.turn?.id;
         const endedMidTurn = stopping === undefined && turnId !== undefined;
         const kept = (yield* store.getThread(rt.threadId).pipe(Effect.option)).pipe(
           Option.flatMap((thread) => Option.fromUndefinedOr(thread.lastError)),
         );
         const exitDetail = Exit.isFailure(exit)
-          ? // A defect's cause is a stack, not something to keep on the thread.
-            "the agent session failed"
+          ? "the agent session failed"
           : `agent session ended: ${rt.endedReason ?? "unknown reason"}`;
         const replyId = replyOf(rt, turnId);
-        // An agent that couldn't start is `failUnavailable`'s to record, in its own words.
         const unavailable = Exit.isFailure(exit)
           ? Cause.findErrorOption(exit.cause)
           : Option.none();
-        // An interrupt is the server shutting down under the session, which says nothing of the turn.
         const interrupted = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause);
-        // A machine that took the session with it is the thread's incident whether a turn was
-        // open or not: an idle thread on a lost machine says so too, over any error it had.
         const exitError =
           stopping === undefined &&
           !carriesOn &&
@@ -511,8 +454,6 @@ export const makeSessionLifecycle = ({
                     },
               )
             : undefined;
-        // A shutdown keeps what streamed, a background subagent's transcript under an idle parent
-        // too, but leaves the turn itself open (`shutdown`).
         if (isShuttingDown()) {
           yield* closeOpenMessages(rt);
         } else {
@@ -524,7 +465,6 @@ export const makeSessionLifecycle = ({
             );
           }
           yield* closeLanes(rt);
-          // Its subagents went with it, so none keeps the activity line up.
           rt.activity.reset();
           yield* FiberMap.remove(activityTimers, rt.threadId);
         }
@@ -555,13 +495,11 @@ export const makeSessionLifecycle = ({
                   id,
                   input: { text: machineRestartText(restart.machine), author: "server" },
                 });
-                // Gram's, not the user's word: a hold holds it, across a restart too.
                 rt.noticeKeys.set(id, MACHINE_RESTART_KEY);
                 rt.actors.set(id, "server");
                 yield* syncQueue(rt);
               }
               rt.machineRestart = { machine: restart.machine, continued: restart.continued };
-              // As in `recover`: sends queue while `starting`, and go out once the session is idle.
               yield* setStatus(rt, "starting");
               const ended = FiberMap.getUnsafe(sessions, rt.threadId);
               yield* FiberMap.run(recoveries, rt.threadId, resumeAfterRestart(rt, ended));
@@ -579,11 +517,9 @@ export const makeSessionLifecycle = ({
       }),
     );
 
-  /** Called with the runtime lock held. */
   const openSession = (rt: Runtime, thread: Thread, resumeAt?: string, switchAttempt?: string) =>
     Effect.gen(function* () {
       if (isShuttingDown()) return;
-      // The one door every session opens through: none does before the thread's machine is named.
       if (thread.awaitingMachine !== undefined)
         return yield* new AgentUnavailable({
           agent: thread.model.agent,
@@ -607,9 +543,6 @@ export const makeSessionLifecycle = ({
             "An orchestrator switch is holding this session. Review its status before starting another session.",
         });
       const host = yield* hosts.get(thread.model.agent);
-      // The folder's own agent settings load only once the user trusts the folder, asked when it
-      // was added. A folder never asked about counts as trusted only while it brings nothing,
-      // which is read here only on this machine. A thread outside any project keeps the settings.
       const project = (yield* store.listProjects).find((p) => p.id === thread.projectId);
       const folderTrusted =
         project === undefined ||
@@ -622,7 +555,6 @@ export const makeSessionLifecycle = ({
       const resume = yield* resumeOptions(thread, resumeAt);
       const policy = yield* policyFor(thread);
       yield* opening(thread);
-      // Read as the session opens: turning the hook on or off takes a new session, like the gate.
       const hooked =
         decisions !== undefined && thread.role !== "dream" && (yield* decisions.enabled);
       rt.capabilities = host.capabilities;
@@ -646,8 +578,6 @@ export const makeSessionLifecycle = ({
       rt.agent = thread.model.agent;
       yield* setStatus(rt, "starting");
       const lifetime = Effect.gen(function* () {
-        // The bounded Dream bridge survives policy failure. The shared mode separately
-        // chooses strict native-tool denial or prompt-guided normal native permissions.
         const dreamSupport =
           thread.role === "dream"
             ? dreamSupportFor(thread.model.agent, { kind: "implementation" })
@@ -661,7 +591,6 @@ export const makeSessionLifecycle = ({
         const dreamMode = dreamSupport?.mode;
         const sessionAppTools = currentAppTools();
         const mcp = sessionAppTools === undefined ? Option.none() : yield* mcpEndpoint(rt.threadId);
-        // Given beside the folders the user granted, and named in the session's instructions.
         const shared = thread.role === "dream" ? undefined : yield* sharedFolder(thread);
         const directories =
           shared === undefined
@@ -681,8 +610,6 @@ export const makeSessionLifecycle = ({
             model: thread.model,
             permissionMode: thread.mode,
             ...options,
-            // Only Codex owns the shared app-server wait protocol. Other providers
-            // finish their scoped child teardown before this open.
             ...(rt.restartMarker === undefined || thread.model.agent !== "codex"
               ? {}
               : {
@@ -715,10 +642,6 @@ export const makeSessionLifecycle = ({
               : { outwardGate: policy.outwardGate }),
             ...(hooked ? hookedSessionOptions : {}),
             ...(policy.confineWrites === true ? { confineWrites: true } : {}),
-            // Someone else's code (a PR head from another repository), or a folder the user hasn't
-            // trusted: the folder's own agent settings don't load. The worktree's own mark counts
-            // too, so a checkout made or restored from such a branch never loads them, whatever the
-            // thread recorded.
             ...(thread.checkout.untrusted === true ||
             isUntrustedWorktree(thread.checkout.path) ||
             !folderTrusted
@@ -731,8 +654,6 @@ export const makeSessionLifecycle = ({
             ...(policy.mcpNoneWithoutToolSearch === true ? { mcpNoneWithoutToolSearch: true } : {}),
             ...(policy.noBlockingAsk === true ? { noBlockingAsk: true } : {}),
             ...(policy.peerMessaging === true ? { peerMessaging: true } : {}),
-            // Always said, so the agent's own default (Claude in Chrome "Enabled by default", the
-            // ChatGPT app's computer use) never reaches a thread that wasn't given the browser.
             browser: policy.browser === true && thread.role !== "dream",
             ...(policy.browserSurfaces === undefined
               ? {}
@@ -751,18 +672,12 @@ export const makeSessionLifecycle = ({
               resume.fork !== true &&
               resume.resumeId === thread.agentSessionId;
             if (error.reason !== "session-not-found" || !ownResume) return Effect.fail(error);
-            // A session opened and evicted before `agentSessionUnused` existed has an id but no
-            // transcript: mark it and open once more, fresh under the same id.
             return Effect.gen(function* () {
               const marked = yield* store
                 .updateThread(rt.threadId, (t) => ({ ...t, agentSessionUnused: true }))
                 .pipe(Effect.orDie);
               yield* publishUpsert(marked);
               const fresh = yield* open(yield* resumeOptions(marked, resumeAt));
-              // A thread with a conversation (a transcript the agent cleaned up, or one on a
-              // machine that is gone) continues without the agent's memory of it. The new session
-              // reads the thread's recent turns ahead of its first input, so it doesn't start
-              // empty, and the user is told.
               if (yield* store.hasMessages(rt.threadId)) {
                 lost = yield* lostSessionContext(rt, thread.model.agent);
                 yield* Effect.logWarning("an agent's conversation couldn't be resumed").pipe(
@@ -782,8 +697,6 @@ export const makeSessionLifecycle = ({
             });
           }),
         );
-        // A thread brought in from another Gram opens its first session here fresh: no agent's own
-        // session file travels. That session reads the recent turns, once.
         const moved = thread.transferredFrom;
         if (moved !== undefined && moved.seeded !== true && lost === undefined) {
           lost = yield* lostSessionContext(rt, thread.model.agent, moved.name);
@@ -803,10 +716,6 @@ export const makeSessionLifecycle = ({
             if (lost !== undefined) rt.lostSession = lost;
             rt.sessionBrowser = policy.browser === true && thread.role !== "dream";
             rt.reopening = false;
-            // An MCP edit can arrive while a restart waits for its former child to exit. The
-            // adapter acquires its held child after that wait, so it may already have read this
-            // newer config. Do not close it again onto its own writer fence. Changed workspace
-            // policy still needs a reopen, even when that child is current for the disk config.
             if (
               rt.pendingRestart === "mcpConfig" &&
               session.configCurrent !== undefined &&
@@ -838,8 +747,6 @@ export const makeSessionLifecycle = ({
                 data: reason === "asked" ? { at } : { at, reason },
               });
             }
-            // A switch made while the session was opening was only recorded. Apply it before the
-            // first idle drains the queue: live, or by reopening when the session can't run it.
             const latest = (yield* store.getThread(rt.threadId).pipe(Effect.orDie)).model;
             if (
               latest.model !== thread.model.model ||
@@ -851,10 +758,6 @@ export const makeSessionLifecycle = ({
             }
           }),
         );
-        // Numbered, and confirmed once handled, so a reader that resubscribes resumes after the
-        // last event it handled. Across machines this is the host's replay after a dropped link.
-        // A session a Gram before this one left running between turns says nothing until its next
-        // one: it starts here as idle, so what is queued goes to it. One mid-turn replays its turn.
         const settle = session.reattached === true && rt.turn === undefined;
         const log = yield* sequenceEvents(
           settle
@@ -896,7 +799,6 @@ export const makeSessionLifecycle = ({
         Effect.gen(function* () {
           if (rt.closing || rt.turn?.id !== turnId) return false;
           yield* finishTurn(rt, "interrupted", "recovered");
-          // As in `reopenWhenIdle`: sends queue while `starting`, and go out once the session is idle.
           yield* setStatus(rt, "starting");
           return true;
         }),
@@ -910,7 +812,6 @@ export const makeSessionLifecycle = ({
         rt,
         Effect.gen(function* () {
           if (rt.closing) return;
-          // This open reads the thread as it is now, which is all a reopen waiting on idle wants.
           rt.reopenOnIdle = false;
           const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
           yield* openSession(rt, thread).pipe(
@@ -920,14 +821,12 @@ export const makeSessionLifecycle = ({
       );
     });
 
-  /** Runs `recover` in `recoveries`, or waits for the one already running for the thread. */
   const recoverOwned = (rt: Runtime, turnId: TurnId) =>
     Effect.gen(function* () {
       yield* FiberMap.run(recoveries, rt.threadId, recover(rt, turnId), { onlyIfMissing: true });
       const running = FiberMap.getUnsafe(recoveries, rt.threadId);
       if (Option.isNone(running)) return;
       const exit = yield* Fiber.await(running.value);
-      // Closing the thread cancels its recovery, which is no failure of the interrupt.
       if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {
         return yield* Effect.failCause(exit.cause);
       }

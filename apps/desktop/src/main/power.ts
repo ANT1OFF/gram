@@ -1,7 +1,3 @@
-// The OS power state, forwarded to the server. The git sweep is a server-side fiber that outlives
-// every window, so without this it wakes with the laptop and fires a full round of GitHub calls
-// into a network that hasn't come back yet.
-
 export type PowerState = "awake" | "suspended";
 
 /** The slice of Electron's `powerMonitor` this needs. */

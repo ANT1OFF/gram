@@ -5,15 +5,7 @@ import { createStore, useStore, type StoreApi } from "zustand";
 import { useApprovalReceipts } from "./approval-receipt";
 import { useAwaitingTools } from "./awaiting-tools";
 
-// Where a thread's approval card sits: under the tool row that waits on it. The row leaves a slot,
-// by its call id, and the thread's request cards (request-cards.tsx) move the card's element into
-// it, so the card is drawn in the transcript right under the call it decides. The card itself stays
-// where it always was in the component tree, above the composer: its shortcuts, its "Always allow
-// this rule…" preview and an answer in flight survive the row scrolling out of the transcript's
-// window, and a card whose row isn't drawn is shown above the composer instead, as before.
-
 interface SlotsState {
-  /** The slot each drawn row left, by tool call id. */
   readonly slots: ReadonlyMap<string, HTMLElement>;
   register(toolCallId: string, element: HTMLElement): void;
   unregister(toolCallId: string, element: HTMLElement): void;
@@ -45,10 +37,6 @@ const createSlots = () =>
 
 const SlotsContext = createContext<Slots | undefined>(undefined);
 
-/**
- * Whether rows inside may leave a slot: not inside a closed run, whose line leaves the slot for
- * the call it hides.
- */
 const SlotsOpenContext = createContext(true);
 
 /**
@@ -127,7 +115,6 @@ export function ApprovalSlot({ toolCallId }: { toolCallId: string }) {
     [store, toolCallId],
   );
   if (store === undefined || !open || !needs) return null;
-  // Empty until the card or its receipt is moved in, and then not a gap.
   return (
     <div
       ref={ref}

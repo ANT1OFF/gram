@@ -52,12 +52,9 @@ import { PrWatch } from "./review/pr-watch";
 import { ReviewTab } from "./review/review-tab";
 import { Notice, useReviewAction } from "./review/review-thread-card";
 
-/** A review decision, or one review's state, in the PR vocabulary's words (`reviewMarkOf`). */
 const reviewWord = (decision: string): string | undefined =>
   reviewMarkOf({ reviewDecision: decision })?.word;
 
-/** The checks failing in `next` that `prev` knew and had in another state. */
-/** What a person acts on first: failing checks, then those still running, then the rest. */
 const CHECK_ORDER: Record<string, number> = { failing: 0, pending: 1 };
 export const checksInOrder = (runs: readonly CheckRun[]): CheckRun[] =>
   runs.toSorted((a, b) => (CHECK_ORDER[a.status] ?? 2) - (CHECK_ORDER[b.status] ?? 2));
@@ -69,12 +66,6 @@ export const newlyFailing = (prev: readonly CheckRun[], next: readonly CheckRun[
     .map((run) => run.name);
 };
 
-/**
- * How many times each check has turned failing while `visible`, to flash its row. Hidden, the panel
- * stays mounted: what changes then is taken as known and nothing stays flashed, since a row coming
- * back from `display: none` would replay its animation. A change of `scope` (another PR) starts
- * over too, so that PR's failures aren't news.
- */
 function useFailureFlashes(
   scope: string,
   runs: readonly CheckRun[],
@@ -97,7 +88,6 @@ function useFailureFlashes(
   return flashes;
 }
 
-/** Checks `git.prRerunChecks` can queue again: failed or cancelled GitHub Actions runs. */
 const rerunnable = (run: CheckRun) =>
   run.runId !== undefined && (run.status === "failing" || isCancelled(run));
 
@@ -107,7 +97,6 @@ export const commitUrl = (prUrl: string, oid: string): string | undefined => {
   return match ? `${match[1]}/commit/${oid}` : undefined;
 };
 
-/** How long a "no PR" answer is shown again on a remount without asking. */
 const NO_PR_FRESH_MS = 30_000;
 
 const isNoPr = (result: PrDetailResult | undefined) =>
@@ -124,7 +113,6 @@ export function PrPanel({ threadId }: { threadId: ThreadId }) {
   return <ThreadPrPanel threadId={threadId} />;
 }
 
-/** What the PR tab says on an orchestrator: its workers each carry their own PR. */
 function OrchestratorPrs({ workspaceId }: { workspaceId: WorkspaceId | undefined }) {
   const openBoard = useOpenBoard();
   return (
@@ -150,11 +138,7 @@ function ThreadPrPanel({ threadId }: { threadId: ThreadId }) {
   const boundPr = useThreadsStore((s) => s.byId[threadId]?.thread.boundPr);
   const query = useQuery({
     ...prDetailQuery(api, threadId, prStamp),
-    // A badge update refetches under a new key; keep the tabs mounted, and the Review tab open.
     placeholderData: keepSamePr(prTargetOf(git, boundPr), git?.origin),
-    // A badge or a binding gives the thread a PR under a new key, so a "no PR" answer can stand for a
-    // while on a switch back, sparing the server several `git` runs. Only a while: the server also
-    // finds a PR the badge missed, and gh unavailable isn't "no PR".
     staleTime: (q) => (prStamp === null && isNoPr(q.state.data) ? NO_PR_FRESH_MS : 0),
   });
   const refresh = (
@@ -220,7 +204,6 @@ function WithToolbar({ tools, children }: { tools: ReactNode; children: ReactNod
   );
 }
 
-/** A panel state without PR detail that still lets the user bind, unbind or watch a PR. */
 function WithBinding({ threadId, children }: { threadId: ThreadId; children: ReactNode }) {
   return (
     <div className="flex flex-col">
@@ -255,7 +238,6 @@ function PrTabs({
             Review
             {unresolved ? (
               <span
-                // The count is the bot's open findings, not what blocks the merge: say so on hover.
                 title={`${unresolved} open review finding${unresolved === 1 ? "" : "s"}`}
                 className="ml-1 text-muted-foreground tabular-nums"
               >
@@ -266,7 +248,6 @@ function PrTabs({
         </TabsList>
         {tools}
       </div>
-      {/* Follow-up commits after the PR opened; collapses while origin is up to date. */}
       <div data-testid="pr-panel-push" className="flex justify-end px-3 pt-2 empty:hidden">
         <PushButton threadId={threadId} size="sm" />
       </div>
@@ -283,14 +264,11 @@ function PrTabs({
 
 function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDetail }) {
   const api = useApi();
-  // Only the badge of the PR on screen: a same-numbered PR in another repository isn't this one.
   const badge = useThreadsStore((s) => {
     const git = s.byId[threadId]?.git;
     return ifTarget(identityOf(detail, git?.origin), git?.pr, git?.origin);
   });
   const { actions } = useDiffFileActions(threadId);
-  // A file asked for from elsewhere (the outcome of a finished thread): its section opens and the
-  // file expands and scrolls into view, once.
   const fileRequest = useLayoutStore((s) => s.panelTargets.pr);
   const consumePanelTarget = useLayoutStore((s) => s.consumePanelTarget);
   const fileTarget = fileRequest?.threadId === threadId ? fileRequest : undefined;
@@ -298,7 +276,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
     fileTarget !== undefined && detail.files.some((file) => file.path === fileTarget.target)
       ? { path: fileTarget.target, key: fileTarget.id }
       : undefined;
-  // After the rows' own effects, so the file has already expanded and scrolled.
   useEffect(() => {
     if (fileTarget !== undefined) consumePanelTarget("pr", fileTarget.id);
   }, [fileTarget, consumePanelTarget]);
@@ -308,7 +285,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
     setSeenFileTarget(fileFocus.key);
     setFilesRevealed((n) => n + 1);
   }
-  // The Diff tab's Wrap lines holds for the PR's files too.
   const wrapLines = useLayoutStore((s) => s.diffWrap);
   const panel = useRef<HTMLDivElement>(null);
   const now = useNow(
@@ -326,7 +302,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
   const setTab = useLayoutStore((s) => s.setPrPanelTab);
   const reveal = useReveal(panel);
   const bot = reviewStatusOf(badge?.review);
-  // The summary says what blocks the merge; the header line above it leaves out what it repeats.
   const blockers =
     detail.state === "OPEN" && !detail.isDraft
       ? mergeBlockersOf(detail, mergeState?.kind, bot)
@@ -339,7 +314,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
     blockers.length === 0 || (mergeState?.kind !== "blocked" && mergeState?.kind !== "conflicts");
   const [manageReveal, setManageReveal] = useState(0);
 
-  // The summary's next step: open the section it lives in, then bring its row into view.
   const onBlocker = (step: BlockerAction) => {
     switch (step.kind) {
       case "inspectCheck":
@@ -347,7 +321,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
           const row = [...root.querySelectorAll<HTMLElement>("[data-check]")].find(
             (el) => el.dataset["check"] === step.check,
           );
-          // The row's one disclosure is its job evidence; opened already, it stays open.
           const toggle = row?.querySelector<HTMLButtonElement>("button[aria-expanded]");
           if (toggle?.getAttribute("aria-expanded") === "false") toggle.click();
           return { row, focus: toggle ?? undefined };
@@ -369,7 +342,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         setTab("review");
         return;
       case "requestReview":
-        // Reviewers sit in the folded details: open them, then the form, once they've rendered.
         setManageReveal((n) => n + 1);
         setTimeout(
           () => panel.current?.querySelector<HTMLButtonElement>("[data-request-review]")?.click(),
@@ -457,7 +429,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
             </Button>
           </p>
         )}
-        {/* What blocks the merge and the next step lead; people, labels and watching follow. */}
         <PrActions
           threadId={threadId}
           detail={detail}
@@ -499,13 +470,11 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
           {checksInOrder(detail.checkRuns).map((run) => {
             const drawn = checkState(run);
             const duration = checkDuration(run, now);
-            // Still red or amber, so the user sees it, but dimmed: GitHub merges past it.
             const unrequired =
               run.required === false && (run.status === "failing" || run.status === "pending");
             const check = unrequired ? { ...drawn, tone: cn(drawn.tone, "opacity-50") } : drawn;
             return (
               <li
-                // Keyed on the flash count too, so a second failure replays the animation.
                 key={`${run.name}:${flashes[run.name] ?? 0}`}
                 data-testid="check-run"
                 data-check={run.name}
@@ -514,7 +483,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
                   flashes[run.name] !== undefined && "gram-flash",
                 )}
               >
-                {/* A check with a job to inspect offers it in its own row, before its time. */}
                 <CiCheckDetail
                   threadId={threadId}
                   prUrl={detail.url}
@@ -609,7 +577,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
             <li
               key={`${comment.author}-${comment.at}`}
               data-review-state={comment.kind === "review" ? comment.state : undefined}
-              // The summary's "Read requested changes" brings a review here and focuses it.
               tabIndex={comment.kind === "review" ? -1 : undefined}
               className="rounded-(--radius-md) border border-edge bg-card/40 p-2 outline-none focus-visible:focus-ring"
             >
@@ -646,13 +613,8 @@ type RevealTarget = (root: HTMLElement) => {
   focus: HTMLElement | undefined;
 };
 
-/**
- * Takes the user to a row of a section: `show` opens the section (each `count` change opens it),
- * then, once it has rendered, finds the row, scrolls it to the top of the panel and focuses it.
- */
 function useReveal(panel: RefObject<HTMLElement | null>) {
   const [counts, setCounts] = useState<Record<string, number>>({});
-  // A new object per request, so asking for the same row twice still brings it back into view.
   const [request, setRequest] = useState<{ readonly find: RevealTarget }>();
   const handled = useRef<typeof request>(undefined);
   const smooth = useMotionLevel() === "full";
@@ -686,14 +648,11 @@ function Section({
 }: {
   title: string;
   meta?: ReactNode;
-  /** Rendered below the heading, e.g. a button acting on the section's rows. */
   action?: ReactNode;
   empty: string;
   count: number;
   defaultOpen?: boolean;
-  /** Opens the section when it turns true, e.g. a check started failing. */
   attention?: boolean;
-  /** Opens the section each time it grows, e.g. the summary took the user to one of its rows. */
   reveal?: number;
   children: ReactNode;
 }) {
@@ -712,7 +671,6 @@ function Section({
     "flex w-full items-center gap-1.5 px-3 py-2 text-meta font-medium text-muted-foreground";
   const trailing = meta ?? (count === 0 ? undefined : count);
 
-  // Nothing to fold: the heading says it's empty, with any action (a rerun's outcome) below.
   if (count === 0) {
     return (
       <section aria-label={title} className="border-t border-border">
@@ -767,10 +725,6 @@ function Section({
   );
 }
 
-/**
- * The PR's description, folded to a two-line preview so the checks and files stay in view. It
- * stays open for the PR once opened; the panel keys it by PR, so another PR starts folded.
- */
 function PrDescription({ body }: { body: string }) {
   const [open, setOpen] = useState(false);
   return (
@@ -797,7 +751,6 @@ function PrDescription({ body }: { body: string }) {
           <MessageResponse>{body}</MessageResponse>
         </div>
       ) : (
-        // A mouse shortcut beside the heading's button, which keyboard users have.
         <p
           data-testid="pr-description-preview"
           onClick={() => setOpen(true)}
@@ -823,7 +776,6 @@ export const descriptionPreview = (body: string): string =>
     .trim()
     .slice(0, 400);
 
-/** A check's icon, which pops in when the check changes state rather than cutting over. */
 function CheckIcon({ check }: { check: ReturnType<typeof checkState> }) {
   const transition = usePresetTransition("snappy");
   return (
@@ -841,10 +793,6 @@ function CheckIcon({ check }: { check: ReturnType<typeof checkState> }) {
   );
 }
 
-/**
- * Reruns the failed jobs of the PR's failing Actions runs, then refetches the detail. `available`
- * hides the button without dropping the outcome notice once the rerun checks are queued.
- */
 function RerunFailedChecks({ threadId, available }: { threadId: ThreadId; available: boolean }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -860,7 +808,6 @@ function RerunFailedChecks({ threadId, available }: { threadId: ThreadId; availa
           disabled={action.pending}
           onClick={() =>
             void action.run(async () => {
-              // Refetch on failure too: some runs may have been queued before one failed.
               const { runIds, skipped } = await api
                 .prRerunChecks(threadId)
                 .finally(() =>

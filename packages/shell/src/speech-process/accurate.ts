@@ -1,19 +1,10 @@
-// What an utterance's audio goes through before the offline model hears it. Pure, so the choices
-// are tested without a native runtime; `service.ts` drives it and `sherpa.ts` supplies the models.
-
 const RATE = 16_000;
 
 /** Longest clip the offline model gets: decode time grows with it, about 1.5 s for 30 s of audio. */
 export const MAX_CLIP_SAMPLES = 30 * RATE;
 
-/**
- * Audio kept around the speech the detector found. It reports a word's onset late and its fade
- * early, and the transducer drops a word that starts on the clip's first sample. 250 ms took 3.74 %
- * WER back to the unpadded clips' 3.04 % on LibriSpeech with a second of quiet noise around it.
- */
 const SPEECH_PADDING_SAMPLES = Math.round(0.25 * RATE);
 
-/** How near the clip's end speech must reach for the speaker to count as still talking. */
 const STILL_TALKING_SAMPLES = Math.round(0.1 * RATE);
 
 /** A run of speech in a clip, as sample offsets; `end` is exclusive. */

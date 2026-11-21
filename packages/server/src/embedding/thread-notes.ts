@@ -1,22 +1,3 @@
-// `POST /embed/v1/thread-notes`: a note for one thread from the platform the server is embedded
-// in, which the thread's agent takes as a turn of its own once the thread is free, as it takes any
-// other server-authored input. It is how the platform wakes a thread at rest for something that
-// happened outside it, such as an answer given somewhere else to what the agent was waiting on.
-//
-//   { "threadId": "...", "key": "...", "text": "..." }
-//   →  200 { "delivered": true }                      the agent took it
-//      202 { "delivered": false, "queued": true }     it waits for the thread to be free
-//      404 / 409 { "error": "..." }                    no such thread, or one that can't take it
-//
-// `key` names the note to the caller. A note sent again with a key that is waiting replaces
-// nothing and is still waiting; one with a key already delivered by this process answers
-// `delivered` again, so a caller that retries until it hears `delivered` sends it once. Neither is
-// kept past the process: a note that was waiting when the server stopped is lost, and the caller,
-// which never heard `delivered`, sends it again to the server that starts.
-//
-// The note is shown to the agent as the platform's words, never as a person's: it grants nothing,
-// and an agent that is asked to do something by it decides as it would on any other input.
-
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -34,7 +15,6 @@ export const THREAD_NOTE_MAX = 4000;
 /** How long a call waits for the agent to take its note before it answers `queued`. */
 export const THREAD_NOTE_WAIT = Duration.seconds(20);
 
-/** How many delivered keys are remembered, so a retry isn't sent twice. */
 const REMEMBERED = 1000;
 
 const KEY = /^[A-Za-z0-9_.:@-]{1,200}$/;
@@ -53,9 +33,7 @@ export const ThreadNotesInboundLive = Layer.effectDiscard(
     const inbound = yield* EmbedInbound;
     const runtimes = yield* ThreadRuntimes;
     const store = yield* ThreadStore;
-    /** Keys waiting for the agent, each with the outcome a call may wait on. */
     const waiting = new Map<string, Deferred.Deferred<Outcome>>();
-    /** Keys delivered, oldest first. */
     const delivered = new Set<string>();
     const remember = (key: string) => {
       delivered.add(key);

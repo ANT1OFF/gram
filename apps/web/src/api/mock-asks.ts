@@ -13,9 +13,6 @@ import type { MockBoardSimulation } from "./mock-orchestration";
 import type { MockWorkersSimulation } from "./mock-workers";
 import type { CreateThreadInput, OpenOrchestratorTarget, SaveWorkspaceInput } from "./types";
 
-// The ask stack's scenario: the board's workspace with one ask of each shape, and one more ask in
-// a second workspace. Synthetic; nothing here reaches a provider.
-
 /** What `simulateAsks` made, for a spec to navigate by. */
 export interface MockAsksSimulation extends MockBoardSimulation {
   /** The three workers whose `git push` is one ask. */
@@ -81,8 +78,6 @@ const push = (id: string): PendingRequest => ({
 export async function seedAsks(host: MockAsksHost): Promise<MockAsksSimulation> {
   const board = await host.board();
   const [web, docs] = board.waiting;
-  // The board keeps the rate limit's push apart (another `timeout`); here it asks again with the
-  // same input, so all three are one ask.
   await host.respond(board.waitingApart, `r-push-${board.waitingApart}` as RequestId, {
     kind: "approval",
     decision: "deny",

@@ -23,8 +23,6 @@ export const usePageTrustedLinks = create<PageTrustState>()(
     {
       name: "gram.trustedLinks",
       version: 1,
-      // `window`, not `globalThis`: under Node, reading `globalThis.localStorage` warns that it has no
-      // backing file, while a missing `window` throws, which zustand takes as no storage.
       storage: createJSONStorage(() => window.localStorage),
       partialize: ({ hosts }) => ({ hosts }),
       merge: (persisted, current) => ({
@@ -35,7 +33,6 @@ export const usePageTrustedLinks = create<PageTrustState>()(
   ),
 );
 
-/** The shell's list, when the desktop app asks about links itself; `undefined` in a browser. */
 const shellTrust = () => (typeof window === "undefined" ? undefined : window.gram?.trustedLinks);
 
 /** Whether the desktop shell asks before a link opens, so the page mustn't ask as well. */

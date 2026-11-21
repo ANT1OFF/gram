@@ -1,5 +1,3 @@
-// Where a workspace can move, apart from the sheet that moves it: a workspace's menu asks this on
-// the first screen, and the sheet loads only when it opens.
 import { embeddingOn, type HostedDeviceView } from "@gram/contracts";
 import { useCallback, useMemo, useState } from "react";
 

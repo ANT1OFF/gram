@@ -20,7 +20,6 @@ import {
   wholeTokens,
 } from "./usage-model";
 
-/** Threads listed before "Show all": enough to read the top at a glance. */
 const THREADS_SHOWN = 8;
 
 const ROLE_LABEL: Readonly<Record<UsageThreadRole, string>> = {
@@ -172,7 +171,6 @@ function Amount({ totals, className }: { totals: UsageTotals; className?: string
   );
 }
 
-/** A row's share of the list's largest, split by family with a 2 px gap between parts. */
 function SplitBar({
   models,
   total,
@@ -184,7 +182,6 @@ function SplitBar({
 }) {
   const families = familiesOf(models);
   const listed = FAMILIES.reduce((n, f) => n + families[f], 0);
-  // Models past the listed few still count: give their share to Other.
   const rest = Math.max(0, total - listed);
   const parts = FAMILIES.map((f) => ({
     family: f,

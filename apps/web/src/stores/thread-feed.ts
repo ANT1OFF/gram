@@ -114,13 +114,10 @@ export function createThreadFeed(
 
   let working: GramUIMessage[] = [];
   const active = new Map<string, MessageFold>();
-  /** Folds whose message changed since the last flush, by the id they were opened under. */
   const dirty = new Set<string>();
   const parsing = new Set<Promise<void>>();
   let caughtUp = false;
-  /** Revived from cold: what it holds may be behind until the new subscription catches up. */
   let stale = false;
-  /** `find`s waiting for the subscription to catch up before they can tell what history holds. */
   let catchingUp: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
   const untilCaughtUp = () =>
     caughtUp
@@ -137,23 +134,19 @@ export function createThreadFeed(
   let flushPending = false;
   let cancelFlush: (() => void) | undefined;
   let disposed = false;
-  /** Bumped by each subscription, so a parse that outlives its subscription publishes nothing. */
   let generation = 0;
   const cursor = new FeedCursor();
   let earlier = false;
-  /** Bumped when the history is replaced whole, so a page read before then isn't prepended. */
   let replacements = 0;
   let paging: Promise<void> | undefined;
   let failed = false;
 
   const upsert = (message: GramUIMessage) => {
-    // The streaming message is almost always the last one, so search from the end.
     const index = working.findLastIndex((m) => m.id === message.id);
     if (index !== -1 && working[index] === message) return;
     working = index === -1 ? [...working, message] : working.with(index, message);
   };
 
-  /** Moves what the dirty folds have folded into `working`; once per flush, not per chunk. */
   const collect = (folds: ReadonlyMap<string, MessageFold>) => {
     for (const id of dirty) {
       const fold = folds.get(id);
@@ -164,7 +157,6 @@ export function createThreadFeed(
     dirty.clear();
   };
 
-  /** Fills in the input of tool calls still streaming it, then publishes again if any changed. */
   const parsePartialInputs = () => {
     const current = generation;
     for (const [id, fold] of active) {
@@ -186,8 +178,6 @@ export function createThreadFeed(
     cancelFlush = undefined;
     if (disposed) return;
     collect(active);
-    // The same ids keep their array, so a frame that only grew a message doesn't re-render what
-    // reads which messages stream.
     const held = store.getState().streamingMessageIds;
     const streaming =
       held.length === active.size && [...active.keys()].every((id, i) => held[i] === id)
@@ -206,7 +196,6 @@ export function createThreadFeed(
   const scheduleFlush = () => {
     if (!caughtUp || flushPending || disposed) return;
     flushPending = true;
-    // A synchronous scheduler flushes before returning; don't keep its stale cancel handle.
     const cancel = scheduler(flush);
     if (flushPending) cancelFlush = cancel;
   };
@@ -214,14 +203,12 @@ export function createThreadFeed(
   const close = (id: string) => {
     const fold = active.get(id);
     if (!fold) return;
-    // Its last chunks are folded but not collected yet; take them before the fold is forgotten.
     collect(active);
     active.delete(id);
     cursor.closed(id);
     scheduleFlush();
   };
 
-  /** Drops every in-flight fold without publishing; a new subscription replays them. */
   const reset = () => {
     generation++;
     active.clear();
@@ -255,7 +242,6 @@ export function createThreadFeed(
       try {
         result = await history(working[0]!.id);
       } catch (error) {
-        // A request from before a resubscription or a new history says nothing about now.
         if (disposed || current !== replacements || subscription !== generation) return;
         failed = true;
         store.setState({ earlierFailed: true });
@@ -278,7 +264,6 @@ export function createThreadFeed(
         case "subscribed":
           cursor.subscribed();
           reset();
-          // A new subscription is a connection back, worth asking for history again.
           failed = false;
           if (store.getState().phase === "gone") store.setState({ phase: "loading" });
           if (store.getState().earlierFailed) store.setState({ earlierFailed: false });
@@ -287,11 +272,9 @@ export function createThreadFeed(
           cursor.replaced();
           replacements++;
           earlier = event.earlier === true;
-          // A failed page belonged to the history this replaces.
           failed = false;
           if (store.getState().earlierFailed) store.setState({ earlierFailed: false });
           if (caughtUp) {
-            // A live replace-all (after a rewind): swap the history and publish without waiting.
             reset();
             caughtUp = true;
             working = [...event.messages];
@@ -305,7 +288,6 @@ export function createThreadFeed(
           for (const message of event.messages) upsert(message);
           return;
         case "message":
-          // Chunks folded before it must land first, or a later collect would undo the order.
           collect(active);
           upsert(event.message);
           cursor.message(event.rev);
@@ -329,7 +311,6 @@ export function createThreadFeed(
           return;
         }
         default:
-          // A new feed event must be handled here rather than silently dropped.
           event satisfies never;
       }
     },
@@ -344,7 +325,6 @@ export function createThreadFeed(
         failed = false;
         store.setState({ earlierFailed: false });
       }
-      // A plain call is answered by any page on its way; one with a target goes after it.
       if (paging !== undefined && until === undefined) return paging;
       const next = (paging ?? Promise.resolve())
         .catch(() => {})
@@ -360,14 +340,11 @@ export function createThreadFeed(
       return next;
     },
     async find(messageId) {
-      // A reply still streaming, or replayed unfinished, is in its fold until a frame collects it.
       const held = () => {
         collect(active);
         return working.find((m) => m.id === messageId);
       };
       if (!stale && held() !== undefined) return held();
-      // Before the first catch-up the feed holds nothing yet, which would read as all of history;
-      // revived from cold, it holds what may have moved on since.
       await untilCaughtUp();
       if (held() !== undefined) return held();
       await this.loadEarlier({ until: messageId, retry: true });
@@ -399,7 +376,6 @@ export function createThreadFeed(
       });
     },
     async whenSettled() {
-      // Folding is synchronous; only a streaming tool call's input is parsed after the fact.
       while (parsing.size > 0) await Promise.all(parsing);
     },
     dispose() {

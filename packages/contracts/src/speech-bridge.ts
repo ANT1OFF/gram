@@ -1,7 +1,3 @@
-// Local dictation: the renderer streams microphone audio to the desktop shell's speech process over
-// a MessagePort and gets text back on it. Desktop-only, like the rest of `DesktopBridge`, and so is
-// the model, which the shell's speech module downloads into `<dataDir>/speech`.
-
 import type { SpeechMode, SpeechRefusal, SpeechStatus } from "./speech.ts";
 
 /** Samples per second of every audio frame on a session's port. */
@@ -81,19 +77,12 @@ export interface SpeechOpenRequest {
 
 /** Why a session couldn't open, ended early, or why the speech process can't run here. */
 export type SpeechErrorCode =
-  /** The model isn't installed: no `verified.json`, or a file it names is missing or the wrong size. */
   | "model-missing"
-  /** The recogniser refused the model's files. */
   | "model-load-failed"
-  /** The native runtime didn't load on this computer (an unsupported platform, a broken install). */
   | "unavailable"
-  /** The speech process exited mid-session; the next session starts a fresh one. */
   | "crashed"
-  /** Another session, maybe in another window, opened and took over. */
   | "superseded"
-  /** The page sent something that isn't a `SpeechClientMessage`. */
   | "invalid-message"
-  /** Voice input was turned off, and `shutdown` stopped the speech process. */
   | "stopped";
 
 /** `open`'s answer. The port itself arrives as a window message, see `openSpeechSession`. */
@@ -106,27 +95,15 @@ export type SpeechOpenResult =
  * buffer reaches Electron's `MessagePortMain` as `null`.
  */
 export type SpeechClientMessage =
-  /** Mono samples in [-1, 1] at `SPEECH_SAMPLE_RATE`, normally `SPEECH_FRAME_SAMPLES` of them. */
   | { readonly type: "audio"; readonly samples: Float32Array }
-  /** Finish: what was heard so far comes back as one last `final`, then the port closes. */
   | { readonly type: "stop" }
-  /** Discard: nothing more comes back and the port closes. Closing the port does the same. */
   | { readonly type: "cancel" };
 
 /** Speech process → page, on the session's port. */
 export type SpeechServerMessage =
-  /** The model is loaded; frames sent before this were queued, not lost. */
   | { readonly type: "ready"; readonly loadMs: number }
-  /** The words of the current utterance so far, replacing the previous partial. */
   | { readonly type: "partial"; readonly text: string }
-  /**
-   * The utterance is committed and the next partial starts a new one: the speaker paused
-   * (`endpoint`), or the page sent `stop`, in which case this is the last message. `text` can be
-   * empty, and needn't be the last partial's words: it replaces them, and in `accurate` mode comes
-   * from another model some hundreds of milliseconds later.
-   */
   | { readonly type: "final"; readonly text: string; readonly reason: "endpoint" | "stop" }
-  /** The session is over and the port closes. */
   | { readonly type: "error"; readonly code: SpeechErrorCode; readonly message: string };
 
 /**
@@ -200,7 +177,6 @@ export interface DesktopSpeech {
   prewarm(
     modelId: string,
     performance?: SpeechPerformance,
-    /** `accurate` starts loading its models too, where they are installed. */
     mode?: SpeechMode,
   ): Promise<SpeechOpenResult>;
   /** The microphone permission now, without asking. */
@@ -281,9 +257,7 @@ export function openPortSession<Code extends string>(
       target.removeEventListener("message", listener);
       resolve({ ok: true, port });
     };
-    // Before `open`: the port can arrive ahead of its answer.
     target.addEventListener("message", listener);
-    // Through a Promise of its own, so an `open` that throws rather than rejects still cleans up.
     void new Promise<Awaited<ReturnType<typeof open>>>((answer) => answer(open())).then(
       (result) => {
         if (result.ok) return;

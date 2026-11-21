@@ -42,7 +42,6 @@ export class TurnActivity extends Context.Service<
     TurnActivity,
     Effect.gen(function* () {
       const settings = yield* (yield* ThreadStore).getSettings;
-      // No Electron imports: browser dev and headless servers simply have no parent port.
       const port = (process as { parentPort?: { postMessage(message: unknown): void } }).parentPort;
       return yield* Effect.acquireRelease(
         Effect.sync(() =>

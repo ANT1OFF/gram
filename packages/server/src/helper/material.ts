@@ -9,13 +9,8 @@ const oneLine = (text: string, max: number): string => {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 };
 
-/** The input field that says what a tool call was about: a command, a path, a pattern. */
 const TARGET_KEYS = ["command", "file_path", "path", "pattern", "url", "query", "description"];
 
-/**
- * A tool call as one line, `Tool: Bash `pnpm test` → failed`: its name, target and outcome, never
- * its output, which is where a whole file or log would ride along.
- */
 const toolLine = (part: object, type: string): string => {
   const named = field(part, "toolName");
   const name = typeof named === "string" ? named : type.slice("tool-".length);
@@ -30,7 +25,6 @@ const toolLine = (part: object, type: string): string => {
   return `Tool: ${name}${typeof target === "string" ? ` \`${oneLine(target, 120)}\`` : ""} → ${outcome}`;
 };
 
-/** Who a message is from to a helper: another thread's message in a user's place isn't the user's. */
 const speakerOf = (message: GramUIMessage): string => {
   if (message.role !== "user") return "Assistant";
   const origin = message.parts.find((part) => part.type === "data-thread-origin")?.data;
@@ -39,7 +33,6 @@ const speakerOf = (message: GramUIMessage): string => {
   return `${sender} “${oneLine(origin.title, 80)}” (not the user)`;
 };
 
-/** A message as the lines a helper reads: its text under a speaker, its tool calls one line each. */
 const messageBlock = (message: GramUIMessage): string | undefined => {
   if (message.metadata?.parentToolUseId !== undefined) return undefined;
   const lines: Array<string> = [];

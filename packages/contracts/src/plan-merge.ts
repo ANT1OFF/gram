@@ -35,7 +35,6 @@ export interface AgentPlanInput {
   readonly steps?: ReadonlyArray<AgentStepInput> | undefined;
 }
 
-/** A step the agent may not replace: the user's edit, or a step of an orchestrator's brief. */
 const userLocked = (step: PlanStep): boolean =>
   (step.source === "user" || step.source === "orchestrator") && step.locked === true;
 
@@ -44,7 +43,6 @@ const sameText = (a: string, b: string): boolean => a.toLowerCase() === b.toLowe
 const samePlanPr = (a: PlanStepPr | undefined, b: PlanStepPr | undefined): boolean =>
   a?.number === b?.number && a?.repo?.toLowerCase() === b?.repo?.toLowerCase();
 
-/** `plan`, or none at all when it says nothing; its `next` dropped when that step went. */
 const settle = (plan: ThreadPlan): ThreadPlan | undefined => {
   if (plan.goal === "" && plan.steps.length === 0) return undefined;
   if (plan.next === undefined || plan.steps.some((s) => s.id === plan.next)) return plan;
@@ -60,7 +58,6 @@ const empty = (by: PlanSource, now: number): ThreadPlan => ({
   updatedBy: by,
 });
 
-/** A PR the agent named, as a step's: with the repo of a followed PR of that number, if any. */
 const stepPr = (number: number, followed: ReadonlyArray<BoundPr>): PlanStepPr => {
   const match = followed.find((pr) => pr.number === number);
   return match === undefined ? { number } : { number, repo: match.repo };
@@ -90,7 +87,6 @@ export const applyAgentPlan = (
       const text = planText(step.text);
       const match = base.steps.find((old) => !used.has(old.id) && sameText(old.text, text));
       if (match !== undefined) used.add(match.id);
-      // The orchestrator's step keeps its wording, and the worker reports how it stands.
       if (match !== undefined && match.source === "orchestrator") {
         const { pr: _pr, evidence: _evidence, ...kept } = match;
         const pr = step.pr === undefined ? match.pr : stepPr(step.pr, followed);
@@ -106,11 +102,9 @@ export const applyAgentPlan = (
         ...(step.pr === undefined ? {} : { pr: stepPr(step.pr, followed) }),
       };
     });
-    // The user's steps the agent left out keep their place.
     base.steps.forEach((old, index) => {
       if (userLocked(old) && !used.has(old.id)) steps.splice(Math.min(index, steps.length), 0, old);
     });
-    // Over the cap, the agent's last steps give way: the user's are never dropped to make room.
     while (steps.length > MAX_PLAN_STEPS) {
       const last = steps.findLastIndex((step) => !userLocked(step));
       steps.splice(last === -1 ? steps.length - 1 : last, 1);
@@ -150,7 +144,6 @@ export const applyUserEdit = (
     if (untouched) {
       if (step.locked === undefined || step.locked === (old.locked === true)) return old;
       const { locked: _locked, ...unlocked } = old;
-      // Locking a step, or moving it, which locks it, makes it the user's.
       return step.locked ? { ...unlocked, source: "user", locked: true } : unlocked;
     }
     return {
@@ -218,7 +211,6 @@ export const seedOrchestratorPlan = (
   const seeded = texts.map((text): PlanStep => {
     const match = base.steps.find((s) => !used.has(s.id) && sameText(s.text, text));
     if (match !== undefined) used.add(match.id);
-    // The user's own step of that text stays the user's.
     if (match !== undefined && match.source === "user" && match.locked === true) return match;
     return {
       id: match?.id ?? newId(),
@@ -230,7 +222,6 @@ export const seedOrchestratorPlan = (
     };
   });
   let merged = [...seeded, ...base.steps.filter((s) => !used.has(s.id))];
-  // Over the cap, unlocked steps go first, then the brief's last items; the user's never do.
   const drop = (keep: (step: PlanStep) => boolean) => {
     while (merged.length > MAX_PLAN_STEPS) {
       const last = merged.findLastIndex((step) => !keep(step));

@@ -40,7 +40,6 @@ export type ShellResolution =
   | { readonly found: true; readonly file: string }
   | { readonly found: false; readonly message: string };
 
-/** What to tell the user when a profile's shell isn't installed where it's looked for. */
 const MISSING_SHELL_HINTS: Readonly<Record<string, string>> = {
   "pwsh.exe":
     "PowerShell 7 (pwsh.exe) isn't on PATH. Install PowerShell 7, or choose another terminal shell in Settings.",

@@ -1,9 +1,3 @@
-// What the orchestration service reads from git itself, off the hot path: the paths a worker has
-// changed (for the overlap check), the same for a worktree it holds in another repo,
-// and a before-and-after of a workspace root around an orchestrator's turn (drift). All go
-// through `git()`, so they are bounded at the `local` tier, and all answer "nothing" when git
-// fails: none is worth failing a digest over.
-
 import {
   dirtyContentHash,
   git,
@@ -33,26 +27,12 @@ const status = (cwd: string) =>
     Effect.map((out) => (out.status === 0 ? out.stdout : undefined)),
   );
 
-/**
- * Porcelain codes that change nothing another worktree can collide with: a file removed from the
- * working tree and not staged (` D`), and one git doesn't track (`??`). A shell alias that deletes
- * the same build output in every worktree made every live pair of workers overlap.
- */
 const UNSHARED = new Set([" D", "??"]);
 
-/** The most of a file `changedPaths` reads to tell two worktrees' copies of it apart. */
 const SIGNED_MAX = 1024 * 1024;
 
-// Opened without following a last-component symlink and without blocking on a FIFO, then checked
-// to be a regular file on the descriptor itself, and read no further than the cap: a committed link
-// to `/dev/zero` or a pipe must not hang the server, which reads these synchronously.
 const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
 
-/**
- * What a changed path holds in the checkout now: a hash of its content, of its target for a
- * symlink, `-` when it is gone, and `undefined` when it is too big or isn't a regular file, which
- * compares equal to nothing.
- */
 const signatureOf = (cwd: string, path: string): string | undefined => {
   const full = join(cwd, path);
   let fd: number | undefined;
@@ -66,7 +46,6 @@ const signatureOf = (cwd: string, path: string): string | undefined => {
     fd = openSync(full, OPEN_FLAGS);
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > SIGNED_MAX) return undefined;
-    // One byte over what it said, to tell a file still growing from one read whole.
     const buffer = Buffer.alloc(stat.size + 1);
     let read = 0;
     for (let got = -1; got !== 0 && read < buffer.length; read += got) {
@@ -75,7 +54,6 @@ const signatureOf = (cwd: string, path: string): string | undefined => {
     if (read > stat.size) return undefined;
     return createHash("sha1").update(buffer.subarray(0, read)).digest("base64url");
   } catch {
-    // A file replaced by a link or a directory between the checks, or gone since.
     return undefined;
   } finally {
     if (fd !== undefined) closeSync(fd);
@@ -98,13 +76,8 @@ export const sameChangedPaths = (a: ChangedPaths, b: ChangedPaths): boolean =>
     (file, index) => file === b.files[index] && a.signatures[file] === b.signatures[file],
   );
 
-/** The most paths whose index entries `changedPaths` asks for; past it nothing is signed. */
 const STAGED_MAX = 1000;
 
-/**
- * Each path's blob in the index, absent for one not in it; `undefined` when git can't say or
- * there are too many paths to ask about.
- */
 const indexBlobs = (
   cwd: string,
   files: ReadonlyArray<string>,
@@ -116,7 +89,6 @@ const indexBlobs = (
     if (out.status !== 0) return undefined;
     const blobs = new Map<string, string>();
     for (const entry of out.stdout.split("\0")) {
-      // `<mode> <blob> <stage>\t<path>`; a conflicted path has several entries, all kept.
       const tab = entry.indexOf("\t");
       if (tab < 0) continue;
       const [, blob, stage] = entry.slice(0, tab).split(" ");
@@ -155,8 +127,6 @@ export const changedPaths = (
     }
     const files = [...paths].toSorted();
     const signatures: Record<string, string> = {};
-    // What is staged commits whatever the working tree holds, so two copies match only when their
-    // index entries do too: different staged edits whose files were then deleted are no match.
     const staged = yield* indexBlobs(cwd, files);
     if (staged === undefined) return { files, signatures };
     yield* Effect.sync(() => {
@@ -198,7 +168,6 @@ export const checkedOut = (path: string): Effect.Effect<CheckedOut, never, Proc>
     Effect.orElseSucceed((): CheckedOut => ({ kind: "unknown" })),
   );
 
-/** The branch checked out at `path` now, read from git; `undefined` on a detached HEAD or no repo. */
 const checkedOutBranch = (path: string): Effect.Effect<string | undefined, never, Proc> =>
   git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]).pipe(
     Effect.map((head) => (head.status === 0 ? head.stdout.trim() || undefined : undefined)),
@@ -254,6 +223,5 @@ export const driftBetween = (
   const headMoved = before.head !== after.head;
   const touched = Math.max(appeared, cleared);
   if (touched === 0 && !headMoved && before.contentHash === after.contentHash) return undefined;
-  // Same entries under a new content hash: a dirty file was edited again. At least that one.
   return { files: touched === 0 && !headMoved ? 1 : touched, headMoved };
 };

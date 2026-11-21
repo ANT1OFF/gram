@@ -29,14 +29,7 @@ export interface LinkHost {
   readonly untrustable?: UntrustableReason | undefined;
 }
 
-/**
- * The authority's host as written: after any `user@`, before any port, path, query or fragment.
- * Sliced rather than matched, since the link is untrusted text and a backtracking pattern over it
- * can be made to run for ages.
- */
 function writtenHost(url: string): string | undefined {
-  // Only the slashes right after the scheme open an authority: `https:foo//bar` goes to `foo`,
-  // and with no slashes there the parsed host is all there is to show.
   const scheme = /^[a-z][a-z\d+.-]*:/i.exec(url)?.[0];
   if (scheme === undefined) return undefined;
   const slashes = url.slice(scheme.length, scheme.length + 2);

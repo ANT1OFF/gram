@@ -1,12 +1,3 @@
-// The login account's HOME, USER, LOGNAME, SHELL and TMPDIR, whoever launched the app. `open`
-// hands the app it starts the caller's environment, and a root LaunchDaemon that reopens Gram
-// through `sudo -u` (as a managed deployment's quit trigger did): zsh exports root's HOME and the stock sudoers keeps it, so
-// the app ran as the user with HOME=/var/root and no TMPDIR. Electron's own paths come from
-// the directory service and were right; Node's `os.homedir()` reads HOME first, so the data dir,
-// `~/.claude` and the PATH probe's rc files were all looked for under /var/root, and the probe
-// found no `claude`. It runs in main before anything reads the environment, and the server and
-// every agent inherit the result.
-
 import { userInfo } from "node:os";
 
 /** The account this process runs as, from the directory service (getpwuid), not the env. */

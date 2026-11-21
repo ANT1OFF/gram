@@ -52,7 +52,6 @@ export function PrLabels({ threadId, detail }: { threadId: ThreadId; detail: PrD
   const close = () => {
     setAdding(false);
     setFilter("");
-    // The form leaves with its focused field: back to "Add label…".
     setTimeout(() => {
       if (focusLost()) focusIfConnected(stripRef.current?.querySelector("[data-add-label]"));
     }, 0);

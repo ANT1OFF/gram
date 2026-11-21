@@ -35,11 +35,6 @@ import { splitForCompletion, tildify } from "./path";
 import { useRepoSuggestions } from "./repository-suggestions";
 import { useCompletions, useFolderStatus, useHome, type FolderStatus } from "./use-folder";
 
-/**
- * The field owns open state (focus, blur, Escape, Enter). A portaled popup also dismisses on
- * outside press; cancelling that keeps a click in the field, and Escape inside a dialog, as they
- * are today.
- */
 const keepSuggestionsOpen = (next: boolean, details: { cancel: () => void }) => {
   if (!next) details.cancel();
 };
@@ -98,9 +93,7 @@ interface Suggestion {
   readonly key: string;
   readonly label: string;
   readonly kind: "repo" | "folder" | "gitFolder";
-  /** The field's text once taken; a folder keeps the list open for the next level. */
   readonly value: string;
-  /** The owner a repository is listed under. */
   readonly group?: string;
 }
 
@@ -115,27 +108,19 @@ function CloneProgress({ id, label }: { id?: string; label: string }) {
   );
 }
 
-/**
- * Registering a repository by folder or by cloning it, with what is under way and what failed:
- * the part of "Add repository" that the project picker's clone offer shares.
- */
 function useRegisterRepository(onAdded: (project: Project) => void | Promise<void>) {
   const api = useApi();
   const queryClient = useQueryClient();
   const cloneFolder = useServerSettings((s) =>
     s.settings === undefined ? undefined : cloneFolderOf(s.settings),
   );
-  /** Set while a repository is registered; `cloning` names the clone under way. */
   const [pending, setPending] = useState<{ cloning?: string }>();
   const [failure, setFailure] = useState<{ message: string; help?: ErrorHelp }>();
   const error = failure?.message;
   const setError = (message: string | undefined) =>
     setFailure(message === undefined ? undefined : { message });
 
-  // A ref, not `pending`: a folder dialog opened before a clone began still answers after it did.
   const running = useRef(false);
-  // Closing what holds the control (Cancel on a dialog) stops a clone under way, and nothing it
-  // would have done follows: no workspace saved, no New thread opened.
   const unmounted = useRef(new AbortController());
   useEffect(() => {
     const controller = new AbortController();
@@ -154,8 +139,6 @@ function useRegisterRepository(onAdded: (project: Project) => void | Promise<voi
     const { signal } = unmounted.current;
     try {
       const project = await add(signal);
-      // Registration succeeded even if a background refresh fails. Make the returned project
-      // visible immediately, before selection, and refresh the discovery list independently.
       queryClient.setQueryData<Project[]>(["projects"], (projects = []) =>
         projects.some((each) => each.id === project.id)
           ? projects.map((each) => (each.id === project.id ? project : each))
@@ -181,20 +164,14 @@ function useRegisterRepository(onAdded: (project: Project) => void | Promise<voi
     }
   };
 
-  /** A folder that brings agent settings of its own, waiting on the user's answer. */
   const [asking, setAsking] = useState<{ path: string; settings: FolderSettings }>();
 
-  /**
-   * Adds the folder, asking first when it brings settings that would run as the user: false
-   * then, until the answer adds it. A folder already added keeps the answer it has.
-   */
   const addFolder = async (path: string): Promise<boolean> => {
     if (running.current) return false;
     setAsking(undefined);
     const known = queryClient
       .getQueryData<Project[]>(["projects"])
       ?.some((project) => project.root === path);
-    // A folder that can't be read is left to `projects.add`, which says why.
     const settings = known ? undefined : await api.folderSettings(path).catch(() => undefined);
     if (settings === undefined || settings.none) return register(() => api.addProject(path));
     setAsking({ path, settings });
@@ -224,7 +201,6 @@ function useRegisterRepository(onAdded: (project: Project) => void | Promise<voi
 
 type ErrorHelp = NonNullable<ReturnType<typeof errorHelp>>;
 
-/** Where a refused add says the person can put it right, after its reason. */
 function HelpLink({ help }: { help: ErrorHelp | undefined }) {
   if (help === undefined) return null;
   return (
@@ -371,7 +347,6 @@ export function AddRepository({
     if (input.kind === "empty") return;
     if (busy) return Promise.resolve(false);
     setOpen(false);
-    // Enter doesn't wait for the check: the server refuses the same folders, in the same words.
     if (input.kind === "folder" && typed?.kind === "refused") setError(typed.message);
     else if (input.kind === "folder") return addFolder(input.path);
     else if (input.kind === "clone") return clone(input);
@@ -403,7 +378,6 @@ export function AddRepository({
       }
       case "Enter": {
         if (event.metaKey || event.ctrlKey) return;
-        // Never the enclosing form's submit: Enter here adds the repository or takes a suggestion.
         event.preventDefault();
         const chosen = showList ? suggestions[active] : undefined;
         if (chosen) accept(chosen);
@@ -461,15 +435,12 @@ export function AddRepository({
                 side="bottom"
                 align="start"
                 sideOffset={4}
-                // Same avoidance as a select: flip above the field, and limit height instead of
-                // jumping to the side.
                 collisionAvoidance={{ fallbackAxisSide: "none" }}
                 className="isolate z-50"
               >
                 <Popover.Popup
                   initialFocus={false}
                   finalFocus={false}
-                  // The combobox list is the widget. The popup's default dialog role would nest one.
                   role="presentation"
                   className="w-(--anchor-width) max-w-(--available-width) outline-none"
                 >
@@ -480,7 +451,6 @@ export function AddRepository({
                       input.kind === "folder" ? "Folder suggestions" : "Repository suggestions"
                     }
                     onMouseDown={(event) => event.preventDefault()}
-                    // Near the end of what is listed, the next page is asked for.
                     onScroll={(event) => {
                       const list = event.currentTarget;
                       if (list.scrollTop + list.clientHeight >= list.scrollHeight - 32)

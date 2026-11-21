@@ -7,17 +7,12 @@ import { workingWorkerThreads } from "@/orchestration/tree-model";
 import { workersByTab, workerTones, type WorkerLiveFacts } from "@/orchestration/workers-model";
 import { threadStatusOf } from "@/sidebar/status";
 
-// What the palette says of each thread's status: the words the sidebar, the Board and ⌘J say of
-// it, from the same selectors, so an item never reads "Stopped" here and "Waiting · checks" there.
-// No React.
-
 /** A workspace as the palette lists its threads. */
 export interface PaletteWorkspace {
   readonly id: WorkspaceId;
   readonly paused: boolean;
 }
 
-/** Words for a sentence's start: "paused" as a line's first word. */
 const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /**

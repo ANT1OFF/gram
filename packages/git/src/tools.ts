@@ -1,6 +1,3 @@
-// Tool presence probes: whether `git`/`gh`/`claude` are installed and `gh` is logged in, with
-// asymmetric TTLs — trust success long, retry failure fast, so `gh auth login` after launch works.
-
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as nodePath from "node:path";
@@ -125,7 +122,6 @@ export const ToolsLive = Layer.effect(
       const ghAuthed = yield* ghReady;
       return {
         git: yield* present("git"),
-        // An authed gh is obviously installed; skip the lookup.
         gh: ghAuthed || (yield* present("gh")),
         claude: yield* present("claude"),
         ghAuthed,

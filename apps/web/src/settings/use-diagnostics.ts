@@ -26,7 +26,6 @@ export function useServerBrowser(): boolean {
 /** Local feature policy plus bridge availability, including plain-browser restrictions. */
 export function useFeature(id: RuntimeFeatureId, _options: { readonly settled?: boolean } = {}) {
   const where = {
-    // The mock API stands in for the shell members its own slices serve.
     shell: typeof window === "undefined" ? null : (window.gram ?? window.gramMock?.shell ?? null),
   };
   return featureAvailable(id, where);

@@ -44,7 +44,6 @@ const tooMany = () => new Error("InvalidState: too many items wait on the user")
  */
 export function createWaitsMock(world: MockWorld) {
   const items = new Map<ThreadId, WaitItem[]>();
-  /** Whether the agent last heard of an item as open or done; absent when it never heard of it. */
   const heard = new Map<WaitId, "open" | "done">();
 
   const publish = (threadId: ThreadId) => {

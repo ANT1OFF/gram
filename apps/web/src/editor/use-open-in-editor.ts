@@ -35,7 +35,6 @@ export function useOpenInEditor() {
   };
 }
 
-/** "Finder" on macOS, "Explorer" on Windows, else "file manager". */
 function fileManagerName(): string {
   const platform = window.gram?.platform;
   if (platform === undefined ? isMac() : platform === "darwin") return "Finder";

@@ -1,7 +1,3 @@
-// People's comments on a PR, over `gh`: what a comment the badge listed by id says, and whether its
-// author may write to the repository. Reads only, run in the thread's checkout so `gh` picks up its
-// host and the user's own login; no token of Gram's own.
-
 import * as Effect from "effect/Effect";
 import { ghApi } from "./exec.ts";
 import { makeTtlCache } from "./pr-cache.ts";
@@ -22,7 +18,6 @@ const at = (value: unknown, path: ReadonlyArray<string>): unknown => {
 
 /** The most comments one lookup reads: as many as a badge lists. */
 export const PERSON_COMMENTS_PER_LOOKUP = 30;
-/** The most inline comments read of one review. */
 const INLINE_PER_REVIEW = 20;
 
 /** One inline comment of a comment-only review. */
@@ -132,7 +127,6 @@ export const fetchPersonComments = (
       });
     }
     const data = at(body, ["data"]);
-    // A node id GitHub can't resolve is an error beside partial data, which still answers the rest.
     if (!isJson(data)) {
       const errors = at(body, ["errors"]);
       const first = Array.isArray(errors) && isJson(errors[0]) ? str(errors[0]["message"]) : "";
@@ -171,7 +165,6 @@ const uncachedPermission = ({
   readonly login: string;
 }): Effect.Effect<RepoPermission, ReviewActionError, Proc> =>
   Effect.gen(function* () {
-    // Nothing else is ever a login: a name outside GitHub's alphabet has no permission to ask about.
     if (!OWNER_REPO.test(repo) || !LOGIN.test(login)) return "none";
     const out = yield* ghApi(
       workTree,
@@ -183,7 +176,6 @@ const uncachedPermission = ({
       if (permission !== undefined) return permission;
       return yield* new ReviewActionError({ message: "GitHub named no permission" });
     }
-    // Not a user GitHub knows: no permission at all. Anything else is unknown, and fails.
     if (/HTTP 404/.test(out.stderr)) return "none";
     return yield* new ReviewActionError({
       message: out.stderr.trim() || `gh exited with code ${out.status}`,

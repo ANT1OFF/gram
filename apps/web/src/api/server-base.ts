@@ -1,8 +1,3 @@
-/**
- * Where the server answers: `/`, the page's own origin, unless an app in front of Gram mounted this
- * one against a server at another path (`setServerBase`). The socket and the few plain HTTP calls
- * all go through here, so one mount talks to one server.
- */
 let base = "/";
 
 /**

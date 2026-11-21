@@ -1,8 +1,3 @@
-// Moving a thread, a worker or the orchestrator to the other agent ("Continue in Codex…"): whether
-// it's offered, why it's greyed, what the sheet preselects, and what its lines say. The server makes
-// the same refusals (`agent-switch.ts`, and the orchestrator's `handoff.ts`) and has the last word;
-// these only keep the UI from offering what it would refuse.
-
 import {
   aboveHigh,
   clampEffort,
@@ -28,7 +23,6 @@ import { OLDER_SERVER } from "@/api/use-serves";
 import { isOlderVersion } from "@/launch-checks/issues";
 import { formatClockTime } from "@/lib/time";
 
-/** What the user calls each agent: "Continue in Claude Code". */
 const AGENT_NAMES = AGENT_LABEL;
 
 /** The agent as its own words name it in a sentence: "A note from Claude". */
@@ -83,7 +77,6 @@ export const installed = (checks: LaunchChecks | undefined, agent: AgentKind): b
 
 const RUNS_NOW: ReadonlySet<ThreadSummary["status"]> = new Set(["idle", "cold", "error"]);
 
-/** Why this thread's session can't carry over to `to` wherever it is, in the user's words. */
 const noCarryOver = (
   thread: ThreadSummary["thread"],
   to: AgentKind,
@@ -116,7 +109,6 @@ export const switchOffer = (input: {
 }): SwitchOffer => {
   const { summary, checks } = input;
   const { thread } = summary;
-  // An orchestrator's switch under way names where it is going, so its sheet shows how it stands.
   const to =
     thread.role === "orchestrator" && thread.sessionSwitch !== undefined
       ? thread.sessionSwitch.target.agent
@@ -142,15 +134,12 @@ const refusalOf = (
   summary: Pick<ThreadSummary, "thread" | "status" | "pendingRequests" | "background">,
   to: AgentKind,
   checks: LaunchChecks,
-  /** A fresh session: what only a carry-over asks of the session doesn't apply. */
   fresh: boolean,
 ): string | undefined => {
   const { thread } = summary;
   const from = AGENT_SHORT[thread.model.agent];
   const name = AGENT_NAMES[to];
   if (thread.role === "orchestrator") {
-    // Its switch waits for its work and questions to finish (the checkpoint), and one under way
-    // opens the sheet on how it stands, with Cancel or Retry.
     if (thread.sessionSwitch !== undefined) return undefined;
   } else {
     if (thread.sessionSwitch !== undefined || !RUNS_NOW.has(summary.status))
@@ -221,7 +210,6 @@ export const switchLimitOf = (
   return undefined;
 };
 
-/** 24-hour "15:00". */
 const clockTime = (at: number): string => formatClockTime(at);
 
 /** The sheet's limit-mode line, first among its lines. */
@@ -320,7 +308,6 @@ export const defaultTarget = (input: {
   readonly picked?: string | undefined;
 }): ModelRef | undefined => {
   const { current, to, models } = input;
-  // A family alias ("opus") follows the CLI's newest of that family, which is what the table lists.
   const family = current.agent === "claude" && /^[a-z]+$/.test(current.model) ? current.model : "";
   const runs = (id: string) => {
     if (id === current.model) return true;

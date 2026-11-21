@@ -24,7 +24,6 @@ export const searchTerms = (query: string): string[] =>
     .filter((term) => /[\p{L}\p{N}]/u.test(term))
     .map((term) => term.toLowerCase());
 
-/** Where each term first occurs in `text`; undefined unless every term does. */
 function matchRanges(text: string, terms: readonly string[]): Range[] | undefined {
   const lower = text.toLowerCase();
   const ranges: Range[] = [];

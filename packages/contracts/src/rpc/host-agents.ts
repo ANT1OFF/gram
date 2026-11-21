@@ -1,6 +1,3 @@
-// What a host reports of the agent CLIs on its machine: their models, and Codex's, OpenCode's and
-// Grok Build's and Antigravity's own status.
-
 import * as Schema from "effect/Schema";
 import { ReasoningVariant } from "../domain.ts";
 

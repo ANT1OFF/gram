@@ -1,8 +1,3 @@
-// What every part of the orchestration service shares: its services, the signal queue, the timers
-// and locks, the in-memory state more than one part reads, and the core every part calls: reading
-// and writing a workspace's outbox, finding a workspace or thread, and asking a caller's authority.
-// `service.ts` makes the kit once and hands it to each part.
-
 import type { OutwardGate } from "@gram/agents";
 import { gateHoldsInMode as codexGateHoldsInMode } from "@gram/agents/codex";
 import {
@@ -238,10 +233,6 @@ export const footerLine = (footer: string): string =>
     .map((line) => `  > ${line}`)
     .join("\n")}`;
 
-/**
- * The models the orchestrator may start a worker on with no roster: its own. A roster is read
- * through `rosterHere`, which resolves the entries that follow a tier on this machine.
- */
 const ownWorkerModel = (caller: Pick<Thread, "model">): ReadonlyArray<RosterModel> => [
   caller.model,
 ];
@@ -275,10 +266,6 @@ export const OTHER_WORKER_MODELS_SETTING =
  */
 export type OtherWorkerModel = { readonly model: ModelRef } | { readonly why: string } | undefined;
 
-/**
- * The effort a model off the roster runs at (`OtherWorkerModel`): high, else the highest it lists
- * below that, so it never falls back to a default that may be higher. None where it lists none.
- */
 const atHigh = (efforts: ReadonlyArray<string> | undefined) => {
   const variant = (["high", "medium", "low"] as const).find((each) => efforts?.includes(each));
   return variant === undefined ? {} : { variant };
@@ -308,7 +295,6 @@ export const workerModel = (
   caller: Pick<Thread, "model">,
   charter: OrchestratorCharter,
   named: string | undefined,
-  /** Absent with no roster, and `otherWorkerModels` off: the orchestrator's own model only. */
   here?: WorkerModelsHere,
   profileId?: string,
 ) =>
@@ -382,7 +368,6 @@ export type Signal =
   | { readonly type: "turnEnd"; readonly thread: Thread; readonly end: ObservedTurnEnd }
   | { readonly type: "quiet"; readonly thread: Thread; readonly active: boolean }
   | { readonly type: "userInput"; readonly thread: Thread }
-  /** A thread began or stopped waiting out a provider limit (`RuntimeObserver.onLimitWait`). */
   | {
       readonly type: "limitWait";
       readonly thread: Thread;
@@ -394,7 +379,6 @@ export type Signal =
   | { readonly type: "wakeDue"; readonly workspaceId: WorkspaceId }
   | { readonly type: "requestAged"; readonly threadId: ThreadId; readonly requestId: RequestId }
   | { readonly type: "holdDue"; readonly threadId: ThreadId }
-  /** A worker's question has been in triage `WORKER_QUESTION_TRIAGE_MS`. */
   | { readonly type: "questionDue"; readonly workspaceId: WorkspaceId; readonly questionId: string }
   | {
       readonly type: "wakeAlarm";
@@ -404,11 +388,8 @@ export type Signal =
       readonly fired?: PrWakeFired | undefined;
     }
   | { readonly type: "recoveryDue"; readonly workspaceId: WorkspaceId }
-  /** A window the user paused new workers for at its limit threshold has reset. */
   | { readonly type: "limitReset"; readonly workspaceId: WorkspaceId }
-  /** A limit reading came in: what a limit holds back may go ahead now. */
   | { readonly type: "limitHeadroom" }
-  /** A worker whose PR depends on another may now find that one dragging on. */
   | { readonly type: "dragCheck"; readonly threadId: ThreadId }
   | {
       readonly type: "handoffFailed";
@@ -416,13 +397,10 @@ export type Signal =
       readonly reason: SystemDeliveryFailure;
     }
   | { readonly type: "handoffRetry"; readonly workspaceId: WorkspaceId }
-  /** The orchestrator reported a context fill below the note's threshold. */
   | { readonly type: "contextLow"; readonly workspaceId: WorkspaceId }
-  /** A read found the workspace's outbox unreadable; `quarantineOutbox` sets it aside. */
   | { readonly type: "outboxUnreadable"; readonly workspaceId: WorkspaceId }
   | { readonly type: "boot" };
 
-/** How long a roster read waits for Claude Code to list its models before naming by id alone. */
 const CATALOGUE_WAIT = "3 seconds";
 
 const NO_AUTHORITY =
@@ -506,7 +484,6 @@ export const SIGNAL_COALESCING: Coalescing<Signal> = {
       ? signal.event.type
       : undefined;
   },
-  // Background tasks are stored as they are and a low reading only rearms, so neither has one.
   transitionOf: (signal) => {
     if (signal.type === "gitState") return gitTransition(signal.thread, signal.state);
     if (signal.type === "hub" && signal.event.type === "thread.upsert") {
@@ -516,10 +493,6 @@ export const SIGNAL_COALESCING: Coalescing<Signal> = {
   },
 };
 
-/**
- * What `onUpsert` and `followPark` act on a change of: the mode an `auto` open is checked against,
- * a park, a completion, and which workspace the thread holds or works for.
- */
 const upsertTransition = (thread: Thread) =>
   JSON.stringify([
     thread.mode,
@@ -533,10 +506,6 @@ const upsertTransition = (thread: Thread) =>
 const prTransition = (badge: PrStatus | undefined) =>
   badge === undefined ? null : { number: badge.number, url: badge.url, ...prMarkOf(badge) };
 
-/**
- * What `onGitState` compares with what it saw last: each PR's mark (`prMarks`), and the head,
- * changes and base its changed files and overlaps are sampled at.
- */
 const gitTransition = (thread: Thread, git: GitState) =>
   JSON.stringify([
     prTransition(git.pr),
@@ -567,7 +536,6 @@ export const startupKeysOf = (
   return projects.length === 1 ? [workspaceId, projectKey(projects[0]!)] : [workspaceId];
 };
 
-/** Whether `a` and `b` hold the same keys. */
 const sameKeys = <K>(a: ReadonlyArray<K>, b: ReadonlyArray<K>) => {
   const left = new Set(a);
   const right = new Set(b);
@@ -619,10 +587,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           Effect.catchCause(() => Effect.succeed(false)),
         )
       : Effect.succeed(false);
-  /**
-   * Whether a `kind` thread under `gate` opened in `auto` gets an Auto of its own (`hasAuto`):
-   * for Codex, only ungated, off a gateway profile, and when its CLI here has the automatic reviewer.
-   */
   const autoHere = (
     kind: AgentKind,
     gate: OutwardGate | undefined,
@@ -637,45 +601,23 @@ export const makeOrchestrationKit = Effect.gen(function* () {
         );
   const config = yield* ServerConfig;
   const app = appLabelOf(config);
-  // Absent in runtime-only test layers, where there is no git to read drift or changed files from.
   const proc = yield* Effect.serviceOption(Proc);
-  // Absent in layers that keep no limit readings: nothing is then near a limit.
   const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
-  // Absent where no machine can join: every worker is then this machine's.
   const remoteHosts = yield* Effect.serviceOption(RemoteHosts);
-  // A headless Gram's placement, absent anywhere else: where a worker goes when none is named.
   const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
-  // An embedding host's conversations, where the server keeps them: handed on by `spawn_worker`.
   const conversations = Option.getOrUndefined(yield* Effect.serviceOption(Conversations));
   const headless = workerHosts?.headless;
-  // Who each joined machine was started for, where one was (`host/ownership.ts`).
   const ownerOf: OwnerOf = workerHosts?.ownerOf ?? (() => undefined);
-  /** The confirmed joined machines a worker can be placed on, as the settings page lists them. */
   const joinedMachines = () =>
     Option.isSome(remoteHosts) ? remoteHosts.value.list().filter((m) => m.confirmed) : [];
-  // Absent headless and in test layers: the user then never counts as away.
   const appActivity = yield* Effect.serviceOption(AppActivity);
-  // Absent in layers that keep no limit readings, and there nothing is near a limit.
   const limitPoller = yield* Effect.serviceOption(UsageLimitPoller);
-  // Absent where Gram runs no local checks: no ledger row then shows one.
   const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
-  // Absent in layers that don't track the composers: unknown presence holds idle compaction.
   const composerPresence = Option.getOrUndefined(yield* Effect.serviceOption(ComposerPresence));
-  /** Present where an event sink is configured: told the feature cards as they change. */
   const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
   const creator = makeThreadCreator({ store, checkouts, runtimes });
-  /** Model listings a roster read stopped waiting for, left to finish and fill their cache. */
   const catalogueListings = yield* FiberSet.make();
 
-  /**
-   * The roster as it runs here: local entries stay on their own CLI, while explicit gateway
-   * entries require their selected profile/key. Setup never changes routing merely because a key
-   * was added. An entry that follows a tier is resolved against what this machine lists, never
-   * onto a gateway; one nothing here fills is unavailable, so the default stands in for it. With
-   * `hostId`, a joined machine a worker is placed on, a tier resolves against what that machine's
-   * Claude Code and Codex list, as its host reports them; never onto Codex on a host too old to
-   * run it. A host too old to report its models resolves against this machine's lists, as before.
-   */
   const rosterHere = (
     allowed: ReadonlyArray<WorkerModel>,
     charter: OrchestratorCharter,
@@ -687,16 +629,10 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       const own = new Map<AgentKind, ReadonlyArray<string> | undefined>();
       const catalogue = new Map<AgentKind, ReadonlyArray<CatalogueRow>>();
       const listings = new Map<AgentKind, ReadonlyArray<AgentModel>>();
-      /**
-       * `agent`'s own catalogue, as its picker lists it, once per call. Codex's is what an entry's
-       * availability is read from, as before; Claude's only names models (aliases, pinned ids,
-       * display names), so a slow listing gives up on that rather than hold a spawn or a digest.
-       */
       const catalogueOf = (agent: AgentKind) =>
         Effect.gen(function* () {
           if (own.has(agent)) return own.get(agent);
           const listing = (yield* hosts.get(agent)).listModels().pipe(Effect.option);
-          // Claude's listing runs on detached, so a wait given up on still fills its cache.
           const found =
             agent === "codex"
               ? yield* listing
@@ -715,7 +651,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           own.set(agent, ids);
           return ids;
         }).pipe(Effect.orElseSucceed(() => undefined));
-      /** Why `model` can't be spawned on here, as one line ending in its fix; `undefined` when it can. */
       const unavailableHere = (model: Pick<ModelRef, "agent" | "model" | "profileId">) =>
         Effect.gen(function* () {
           if (model.profileId === undefined) yield* catalogueOf(model.agent);
@@ -736,8 +671,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
               model.profileId !== undefined,
             ),
           );
-          // A mode the gate can't ask in is as unrunnable as a missing key, so a spawn on it falls
-          // back too rather than being refused by `workerModelVerdict`.
           const cantAsk =
             admittedForRole(model.agent, "worker") &&
             gateNeeds({
@@ -762,8 +695,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       const placed = placedMachine?.models;
       const placedCodex = placedMachine?.codex?.models;
       const placedOpenCode = placedMachine?.opencode?.models;
-      // A machine's own list only narrows which of the table's candidates may run there. Its
-      // Codex lists the way this machine's does, so its list stands as it is.
       const available = !following
         ? {}
         : placed !== undefined
@@ -781,7 +712,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           unavailable.set(index, missing);
           continue;
         }
-        // A pinned model the machine reports it lacks can't run there either.
         const machineList =
           entry.agent === "claude"
             ? placed
@@ -811,12 +741,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
         const why = yield* unavailableHere(entry);
         if (why !== undefined) unavailable.set(index, why);
       }
-      /**
-       * A model off the roster (`otherWorkerModels`): one a harness lists on the user's own login,
-       * else one a gateway profile lists that an entry of the same harness already runs on. Never a
-       * profile no entry uses, so a gateway stays opt-in. It runs at Standard speed and, where the
-       * model takes efforts, at high; `spawn_worker` keeps an effort asked of it at high or below.
-       */
       const other = (named: string, profileId?: string): Effect.Effect<OtherWorkerModel> =>
         Effect.gen(function* () {
           const wanted = named.trim();
@@ -865,8 +789,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           for (const model of found) {
             const why = yield* unavailableHere(model);
             if (why === undefined) {
-              // Its efforts as a spawn and `set_thread_effort` read them, every one for a model
-              // that takes efforts without listing them.
               const efforts = yield* selectableModels(
                 store,
                 hosts,
@@ -890,11 +812,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       };
     });
 
-  /**
-   * What `workerModel` picks from for `caller` in a workspace with `charter`: the roster as it runs
-   * here, with models off it when `otherWorkerModels` is on. With no roster it is the caller's own
-   * model; `undefined` then, with the switch off, as `workerModel` takes it.
-   */
   const workerModelsHere = (
     caller: Pick<Thread, "model">,
     charter: OrchestratorCharter,
@@ -908,7 +825,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
             Effect.map((here) => ({ ...here, roster: ownWorkerModel(caller) })),
           );
 
-  /** The roster `caller` picks workers from, as it runs here: the charter's, else its own model. */
   const rosterFor = (caller: Pick<Thread, "model">, charter: OrchestratorCharter) =>
     charter.workerModels === undefined
       ? Effect.succeed({
@@ -926,157 +842,60 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const requestTimers = yield* FiberMap.make<RequestId>();
   const handoffTimers = yield* FiberMap.make<WorkspaceId>();
   const switchJobs = yield* FiberMap.make<WorkspaceId>();
-  /** Per held worker, the check that lets the user's hold lapse (`USER_HOLD_IDLE_MS`). */
   const holdTimers = yield* FiberMap.make<ThreadId>();
-  /** Per `schedule_wake`, by its id, the timer that fires it. */
   const wakeAlarms = yield* FiberMap.make<string>();
-  /** What a scheduled wake waits on: a sleep, registered with an outside scheduler where one is. */
   const wakeClock = yield* Timers;
-  /**
-   * Per worker question in triage, by `questionTimerKey`, the timer that forwards it to the user.
-   * Ids are numbered per workspace, so every workspace has its own `WQ1`.
-   */
   const questionTimers = yield* FiberMap.make<string>();
-  /** Per workspace, the next reset of a window it paused new workers for. */
   const limitAlarms = yield* FiberMap.make<WorkspaceId>();
-  /** Per workspace: a pause's write and a merge's launch never interleave (`launchUnlessPaused`). */
   const pauseFence = makeKeyedLock<WorkspaceId>();
-  /** Per workspace, the timer letting go of the workers its resume holds back (`resuming`). */
   const pauseResumeTimers = yield* FiberMap.make<WorkspaceId>();
-  /** The background runs that spawn the held briefs whose limit has reset (`releaseDue`). */
   const heldReleases = yield* FiberSet.make();
-  // The locks below are per workspace (`makeKeyedLock`): what each guards is one workspace's
-  // outbox, workers, charter or session, so a slow workspace holds up only itself. The few that
-  // span workspaces say so where they are made.
-  /** One release run at a time per workspace, so a brief is looked at by one run only. */
   const heldLock = makeKeyedLock<string>();
-  /**
-   * One `armLimitResume` at a time per workspace, so an older read of its outbox never resets a
-   * newer alarm.
-   */
   const alarmLock = makeKeyedLock<WorkspaceId>();
-  /**
-   * Workspaces with a release run waiting for `heldLock`: that run reads the outbox once it has
-   * the lock, so whatever fell due meanwhile is its to release and no second one is forked.
-   */
   const heldPending = new Set<WorkspaceId>();
-  /** Optional in runtime-only test layers; a released held brief's plan is seeded through it. */
   const plans = yield* Effect.serviceOption(ThreadPlans);
-  /** Per workspace, agent and window, the limit ask on screen, which a parallel spawn waits on. */
   const limitAsks = new Map<string, Deferred.Deferred<LimitHold["decision"] | undefined>>();
-  /** Per workspace paused for `deliveryFailed`, the next look at whether it can resume (`RECOVERY_DELAYS`). */
   const recoveryTimers = yield* FiberMap.make<WorkspaceId>();
-  /**
-   * Workspaces whose `deliveryFailed` pause the user has been told of, by the looks taken since, so
-   * the pause a failed attempt brings back is said only once. Cleared by a digest that lands.
-   */
   const recovering = new Map<WorkspaceId, number>();
-  /** Workspaces the recovery resumed, whose next landed digest tells the user so. */
   const selfResumed = new Set<WorkspaceId>();
-  /**
-   * Serialises every read-modify-write of a workspace's outbox; never held across a
-   * `ThreadRuntimes` call.
-   */
   const outboxLock = makeKeyedLock<WorkspaceId>();
-  /**
-   * One spawn, join or adoption at a time per workspace, so a retried `clientRequestId` finds the
-   * worker the first call made and the workspace's repos and folders agree. Keyed by the caller's
-   * workspace (`underKeysOf`), or `callerKey` for a caller without one, which is refused inside.
-   * What a spawn shares with other workspaces has its own guard: `registryLock` and
-   * `claimedProjects` for the projects it registers, `checkoutLock` for the worktrees it makes.
-   */
   const spawnLock = makeKeyedLock<string>();
-  /**
-   * Spans workspaces: workspace names are unique across them, and a project a failed call
-   * registered is only forgotten while no workspace takes it in. Held by a workspace save and by
-   * that forgetting, never across a spawn.
-   */
   const registryLock = yield* Semaphore.make(1);
-  /**
-   * Projects an in-flight spawn or `add_worker_repo` resolved, by how many calls, across
-   * workspaces: another call's failure doesn't forget one this call is about to use.
-   */
   const claimedProjects = new Map<ProjectId, number>();
-  /**
-   * Projects a failed call registered and couldn't forget because another call held them: the
-   * last claim to go forgets them, unless a workspace took them in. Both under `registryLock`.
-   */
   const unjoinedRegistered = new Set<ProjectId>();
-  /**
-   * Per repository (`checkoutKey`), across workspaces: from git's check of a checkout to the thread
-   * holding it, so two workspaces sharing a repo never both make, or both move into, one worktree.
-   */
   const checkoutLock = makeKeyedLock<string>();
-  /**
-   * A wake's delivery and its cancellation, one at a time per workspace (`onWakeAlarm`,
-   * `cancel_wake`).
-   */
   const wakeLock = makeKeyedLock<string>();
-  /** The same for a `send_message` with a `clientRequestId`, from its check to its record. */
   const sendLock = makeKeyedLock<string>();
-  /**
-   * Charter commits cannot interleave with a validated user task startup in their workspace. A
-   * task for a project with no workspace yet is keyed by the project (`projectKey`).
-   */
   const taskStartupLock = makeKeyedLock<string>();
-  /** Per project: two first opens of one project must not make two workspaces for it. */
   const workspaceLock = makeKeyedLock<ProjectId>();
-  /** Held by a removal, and by whatever must not see its workspace go meanwhile. */
   const removalLock = makeKeyedLock<WorkspaceId>();
-  /**
-   * One fresh session at a time per workspace: the request's own fiber and the consumer can both
-   * get there.
-   */
   const handoffLock = makeKeyedLock<WorkspaceId>();
 
-  /** Why each workspace's pending digest is due. They decide when it goes, never what it says. */
   const reasons = new Map<WorkspaceId, Set<string>>();
-  /** Who and what each pending reason is about, for `coalesceReasons`. */
   const reasonsAbout = new Map<WorkspaceId, Map<string, PendingReason>>();
-  /** Epoch ms of the oldest reason no digest has taken yet, which bounds the window. */
   const firstReasonAt = new Map<WorkspaceId, number>();
-  /** Workspaces with a pending reason the ledger diff can't show, so the digest goes regardless. */
   const diffless = new Set<WorkspaceId>();
-  /** The reasons each in-flight digest carried, by the turn that carries it. */
   const carried = new Map<TurnId, ReadonlyArray<string>>();
   const orchestrators = new Map<ThreadId, WorkspaceId>();
   const workerWorkspaces = new Map<ThreadId, WorkspaceId>();
-  /** Last observed park, kept after the thread row disappears so removal can be classified. */
   const parkedWorkers = new Set<ThreadId>();
   const retrying = new Set<ThreadId>();
-  /** Threads this service started in `auto`, until their first turn ends: see `onUpsert`. */
   const openedInAuto = new Set<ThreadId>();
-  /** Workers their orchestrator stopped with `stop_thread`, until that turn's end is heard. */
   const stopsAsked = new Set<ThreadId>();
   const completedSeen = new Set<ThreadId>();
   const requestSeen = new Map<RequestId, { readonly threadId: ThreadId; readonly at: number }>();
-  /** By thread id for a worker's own PR, and by thread id and URL for each extra one. */
   const prMarks = new Map<string, PrMark | undefined>();
   const changedFiles = new Map<ThreadId, ChangedPaths & { readonly token: string }>();
-  /** Worktrees workers hold in other repos, as last sampled, by `samePathKey`. */
   const extraFacts = new Map<string, ExtraCheckoutFacts>();
-  /** Each worker's `extraPrs` badges as the publisher last sent them. */
   const extraBadges = new Map<ThreadId, ReadonlyArray<PrStatus>>();
-  /** Per worker whose PR depends on another, when its PR was first seen conflicting with its base. */
   const conflictedSince = new Map<ThreadId, number>();
-  /** The dependencies the orchestrator was woken over as dragging on, as `thread owner/repo#N`. */
   const dragsTold = new Set<string>();
-  /** Per conflicted worker, the look at whether its conflict has lasted long enough to drag. */
   const dragTimers = yield* FiberMap.make<ThreadId>();
-  /** Per checkout path, the look GitHub is asked for once another worker's PR in its repo merged. */
   const baseRechecks = yield* FiberMap.make<string>();
-  /** Workers whose worktree the orchestrator was woken over as missing, until it is back. */
   const worktreesGone = new Set<ThreadId>();
-  /** Workspaces whose next `boot` digest goes out even while paused: a handoff the user asked for. */
   const bootWhilePaused = new Set<WorkspaceId>();
-  /** Each workspace's overlapping pairs already told, as `overlapPairs` keys. */
   const knownOverlaps = new Map<WorkspaceId, ReadonlySet<string>>();
   const driftBefore = new Map<ThreadId, ReadonlyMap<string, RootMark>>();
-  /**
-   * Each orchestrator's delegated sends to each of its workers, epoch ms, for the rate limit. By
-   * pair, since the limit is a loop guard and a worker can't message back: counted per sender, it
-   * held a whole fleet to five messages a minute.
-   */
   const sends = new Map<string, ReadonlyArray<number>>();
 
   const workspacesChanged = hub.publish({ type: "workspaces.changed" });
@@ -1088,14 +907,9 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       ? Effect.succeed<WorkspaceState | undefined>(undefined)
       : store.getWorkspace(workspaceId).pipe(Effect.orElseSucceed(() => undefined));
 
-  /** `startupKeysOf` the workspace as stored now. */
   const workspaceStartupKeys = (workspaceId: WorkspaceId) =>
     findWorkspace(workspaceId).pipe(Effect.map((state) => startupKeysOf(workspaceId, state)));
 
-  /**
-   * The `checkoutLock` key of the repository `path` is a checkout of: its git common dir, which
-   * every worktree of one repository shares. A folder git doesn't know is keyed by itself.
-   */
   const checkoutKey = (path: string) =>
     provideProc(
       tryRepoRoots(path).pipe(
@@ -1114,16 +928,10 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       onSome: (service) => effect.pipe(Effect.provideService(Proc, service)),
     });
 
-  /**
-   * Reads each worktree the worker holds in another repo again; `true` when what one of them has
-   * changed moved. The thread's published git state follows its own checkout alone, so these are
-   * sampled when that state moves, when the worker ends a turn, and when one is made.
-   */
   const sampleExtras = (thread: Thread) =>
     Effect.gen(function* () {
       let moved = false;
       for (const extra of thread.extraCheckouts ?? []) {
-        // Read with git here: another machine's worktree isn't this disk's to read.
         if (!isLocalHost(extra)) continue;
         const key = samePathKey(extra.path);
         const before = extraFacts.get(key);
@@ -1133,7 +941,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
         );
         extraFacts.set(key, after);
         if (withOwnedBranch(thread, extra, after.branch) !== thread) {
-          // A worker removed during the sample has no ownership left to record.
           yield* runtimes
             .updateThread(thread.id, (latest) => withOwnedBranch(latest, extra, after.branch))
             .pipe(Effect.ignore);
@@ -1143,13 +950,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       return moved;
     });
 
-  /** Workspaces whose unreadable outbox has been signalled and not set aside yet. */
   const unreadableSignalled = new Set<WorkspaceId>();
 
-  /**
-   * Queues the setting aside of an outbox row that can't be read. Never done in place: a digest
-   * builder reads the outbox under its runtime's lock, which the pause that follows would wait on.
-   */
   const signalUnreadable = (workspaceId: WorkspaceId, stored: StoredOutbox) =>
     stored._tag !== "unreadable" || unreadableSignalled.has(workspaceId)
       ? Effect.void
@@ -1158,10 +960,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           return signals.offer({ type: "outboxUnreadable", workspaceId }).pipe(Effect.asVoid);
         });
 
-  /**
-   * Replaces an outbox row that can't be read with an empty outbox keeping its text in `setAside`,
-   * so what runs next writes for real, and logs where it failed. Runs under `outboxLock`.
-   */
   const setAside = (workspaceId: WorkspaceId, json: string | undefined) =>
     Effect.gen(function* () {
       const stored = readStoredOutbox(json);
@@ -1177,10 +975,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       return readStoredOutbox(encodeOutbox(emptyOutbox, json));
     });
 
-  /**
-   * Lets go of the row an outbox set aside once the user has ended its pause: by resuming, by a
-   * fresh session, or by opening another orchestrator. `true` when there was one.
-   */
   const releaseSetAside = (workspaceId: WorkspaceId) =>
     outboxLock.withLock(
       workspaceId,
@@ -1195,7 +989,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       }),
     );
 
-  /** The workspace's outbox, `emptyOutbox` in place of a row that can't be read. */
   const readOutbox = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       const stored = readStoredOutbox(yield* store.getOutbox(workspaceId));
@@ -1203,10 +996,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       return stored.state;
     });
 
-  /**
-   * Read-modify-write of one outbox. `f` may return the state it was given to write nothing. A
-   * row that can't be read is set aside first, so what `f` makes of the empty state is stored.
-   */
   const updateOutbox = <A>(
     workspaceId: WorkspaceId,
     f: (outbox: OutboxState) => readonly [OutboxState, A],
@@ -1255,10 +1044,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
         : undefined;
     });
 
-  /**
-   * The key of the workspace `threadId` holds authority in, for the locks keyed by the caller's
-   * workspace; `callerKey` for one with none, which the call refuses under it.
-   */
   const authorityKeys = (threadId: ThreadId) =>
     authorityOf(threadId).pipe(
       Effect.map((authority) => [authority?.state.workspace.id ?? callerKey(threadId)]),
@@ -1289,11 +1074,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       }),
     );
 
-  // Message-only authority: current workers can coordinate with their bound parent or siblings.
-  // Read persisted relationships on every gate and dispatch; no thread text establishes ownership.
-  // The user writing to a worker changes none of this: it stays its orchestrator's worker, and its
-  // messages go as before. An archived caller keeps its binding too (a message the user writes to
-  // it brings it back, `onUserInput`); only an archived sibling takes nothing.
   const workerMessageRoute = (callerId: ThreadId, targetId?: string) =>
     Effect.gen(function* () {
       const caller = yield* findThread(callerId);
@@ -1321,22 +1101,17 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           !admittedForRole(target.model.agent, "worker"))
       )
         return undefined;
-      // A sibling is a member only once the workspace has recorded it. The caller's own binding is
-      // its persisted `spawnedBy` and the workspace's orchestrator, which `authorityOf` read above.
       if (!parent) {
         const outbox = readStoredOutbox(yield* store.getOutbox(owner.state.workspace.id));
         if (outbox._tag !== "read" || outbox.state.workers[target.id] === undefined)
           return undefined;
       }
       const checked = checkWorkerSend({
-        // Worker sends also pass the ordinary per-sender rate, back-to-back and hop guard.
         recentSends: [],
         now: yield* Clock.currentTimeMillis,
         paused: owner.state.paused !== undefined,
-        // A sibling of a paused feature takes no message: it would start its turn again.
         pausedFeature: parent ? undefined : pausedFeatureOf(owner.state, target),
       });
-      // An archived orchestrator parks its workspace; until that pause is written, say the same.
       const verdict: typeof checked =
         checked.ok && owner.thread.parked
           ? {
@@ -1349,8 +1124,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       return { thread: caller, state: owner.state, verdict };
     });
 
-  // A worker's messages to its orchestrator and siblings are how a workspace works, at every level
-  // of autonomy: the level decides what leaves the machine, not who may talk to whom.
   const workerSendAuthority = (callerId: ThreadId, targetId: string) =>
     workerMessageRoute(callerId, targetId);
 
@@ -1378,7 +1151,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
 
   const isWorkerSend: OrchestrationShape["isWorkerSend"] = (callerId, targetId) =>
     workerSendAuthority(callerId, targetId).pipe(
-      // A pause refuses delivery instead of asking the user to approve around it.
       Effect.map((authority) => authority !== undefined),
     );
 
@@ -1409,28 +1181,14 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       );
     });
 
-  // ---------------------------------------------------------------------------------------
-  // Feature cards
-  // ---------------------------------------------------------------------------------------
-
-  /** One reconcile at a time per workspace, so two watchers never give one change two versions. */
   const cardsLock = makeKeyedLock<WorkspaceId>();
 
-  // ---------------------------------------------------------------------------------------
-  // Waking and delivery
-  // ---------------------------------------------------------------------------------------
-
-  /** A thread of the workspace's tree that is being rate limited, if any. */
   const retryingIn = (workspaceId: WorkspaceId) =>
     [...retrying].find(
       (threadId) =>
         orchestrators.get(threadId) === workspaceId ||
         workerWorkspaces.get(threadId) === workspaceId,
     );
-
-  // ---------------------------------------------------------------------------------------
-  // Workspaces and the orchestrator thread
-  // ---------------------------------------------------------------------------------------
 
   const projectsOf = (ids: ReadonlyArray<ProjectId>) =>
     Effect.gen(function* () {
@@ -1446,7 +1204,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
 
   const reload = (threadId: ThreadId) => runtimes.reloadSession(threadId).pipe(Effect.ignore);
 
-  /** `gateNeeds` with the facts only the store and the adapters have. */
   const needsUnderGate = (
     model: ModelRef,
     gate: OutwardGate | undefined,
@@ -1473,7 +1230,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       });
     });
 
-  /** The workspace a worker reports into, while its orchestrator still holds the slot. */
   const listeningWorkspace = (worker: Thread) =>
     Effect.gen(function* () {
       if (worker.spawnedBy === undefined) return undefined;

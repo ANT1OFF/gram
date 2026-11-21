@@ -52,7 +52,6 @@ export const REVIEW_CHAT_WIDTH = 800;
 export const REVIEW_STRIP_WIDTH = 300;
 /** The strip in a window too narrow for it beside a readable review: its way back and title only. */
 export const REVIEW_STRIP_RAIL = 48;
-/** The narrowest a review in focus is left beside the readable strip; narrower, the strip is a rail. */
 const REVIEW_FOCUS_MIN = 640;
 
 /** The strip a review in focus leaves the chat in a window this wide. */
@@ -166,36 +165,16 @@ export const panelBoundsFor = (
   sidebar: number,
 ): WidthBounds => panelBounds(state.windowWidth, sidebar, chatMinWidth(state, sidebar));
 
-/** What the shell knows of the window and route, kept beside the stored panels for the toggles. */
 interface ShellContext {
   windowWidth: number;
-  /** The route shows a thread, which the panel's thread tabs are about. */
   threadInView: boolean;
-  /**
-   * That thread has nothing to diff: no uncommitted change and nothing ahead of its base. Its
-   * stored panel then stays closed on the Diff tab, which would say only that, until opened here.
-   */
   threadQuiet?: boolean | undefined;
-  /**
-   * The app in front of Gram offers no right panel on this page (`ShellContributions.panel`): it
-   * stays hidden whatever is stored, and its toggle does nothing.
-   */
   panelBarred?: boolean | undefined;
-  /** Which page the route is, so `panelPeek` is cleared on leaving it; see `shellPage`. */
   page: string;
-  /**
-   * The chat's place holds a board, a grid or an orchestrator's chat, which need their room: a
-   * review beside them keeps the usual width.
-   */
   chatBusy?: boolean | undefined;
-  /**
-   * What macOS's window buttons cover at the window's left (`--window-lights-inset`), 0 elsewhere:
-   * see `chatBarStart`.
-   */
   lightsInset?: number | undefined;
 }
 
-/** The room the title bar's Show sidebar takes, with its gap, while the sidebar is hidden. */
 const SIDEBAR_TOGGLE_ROOM = 32;
 
 /**
@@ -269,8 +248,6 @@ export interface ShellFit {
 export function fitShell(input: ShellFitInput): ShellFit {
   const room = input.windowWidth - CHAT_MIN_WIDTH;
   const reviewsTab = input.panelTab === "reviews" && reviewsTabShown(input);
-  // A thread's page shows the stored panel; any other only the one opened there, or Reviews.
-  // A page the app in front of Gram offers no panel on shows none.
   const open =
     input.panelBarred !== true &&
     (input.threadInView
@@ -278,22 +255,15 @@ export function fitShell(input: ShellFitInput): ShellFit {
       : input.panelPeek || (reviewsTab && input.panelOpen));
   const sidebarRoom = SIDEBAR_WIDTH.min <= room;
 
-  // The sidebar is the overview: open, its compact rail, or hidden, with automatic open on wide
-  // windows and compact below. Short of room it steps aside, unless it was picked Open, which keeps
-  // it beside the chat at its narrowest.
   const shown = overviewShown(input.overviewSidebar, input.windowWidth);
   let sidebar: ShellFit["sidebar"] =
     input.focusMode || shown === "hidden" ? "none" : shown === "compact" ? "compact" : "full";
-  // Picked Open (or peeked), the overview stays at any width; picked Compact, while the rail fits.
   const keptOpen = input.sidebarPeek || input.overviewSidebar === "open";
   const keptCompact = input.overviewSidebar === "compact";
   const kept = keptOpen || keptCompact;
-  // An explicitly shown overview can be narrower than its usual resize minimum. Otherwise its
-  // 180 px floor steals the chat's reserved room (including the Glass pane's outer margins).
   const sidebarMin = kept ? Math.max(0, Math.min(SIDEBAR_WIDTH.min, room)) : SIDEBAR_WIDTH.min;
   const shrunkSidebar = (space: number) =>
     Math.max(sidebarMin, Math.min(input.sidebarWidth, space));
-  // The rail too, shown over its room, gives way before the chat does.
   const railWidth = kept ? Math.max(0, Math.min(OVERVIEW_RAIL_WIDTH, room)) : OVERVIEW_RAIL_WIDTH;
   const fits = keptOpen || (keptCompact ? OVERVIEW_RAIL_WIDTH <= room : sidebarRoom);
   if (sidebar !== "none" && !fits) sidebar = "none";
@@ -312,7 +282,6 @@ export function fitShell(input: ShellFitInput): ShellFit {
         : shrunkSidebar(panel === "side" ? room - PANEL_WIDTH.min : room);
   const beside = Math.max(0, input.windowWidth - sidebarWidth);
   const chatStart = chatBarStart(sidebarWidth, input.lightsInset);
-  // A review in focus takes the window but for the chat's strip, wherever the panel was.
   if (
     input.reviewFocus &&
     panel !== "none" &&
@@ -353,23 +322,16 @@ export function fitShell(input: ShellFitInput): ShellFit {
   };
 }
 
-/** The Diff tab of a thread with nothing to diff, where the stored panel stays closed. */
 const quietDiff = (state: Pick<ShellFitInput, "threadInView" | "threadQuiet" | "panelTab">) =>
   state.threadInView && state.threadQuiet === true && state.panelTab === "diff";
 
-/**
- * What shows a hidden panel in `state`: over the chat where it has no room beside it, and on a page
- * without a thread for that page alone, leaving the threads' stored `panelOpen` as it was.
- */
 const showPanelPatch = (state: ShellFitInput): Partial<LayoutState> => {
   const { panelRoom } = fitShell(state);
-  // On a thread with nothing to diff it shows for that thread alone, as on a page without one.
   return state.threadInView && !quietDiff(state)
     ? { focusMode: false, panelOpen: true, panelExpanded: !panelRoom }
     : { focusMode: false, panelPeek: true, panelExpanded: !panelRoom };
 };
 
-/** Leaves a review's focus once the panel shows another tab: only a review takes the window. */
 const reviewFocusFor = (
   state: Pick<LayoutState, "reviewFocus">,
   tab: RightPanelTab,
@@ -637,7 +599,6 @@ export const overviewSectionFolded = (view: OverviewFolds, section: OverviewSect
     ? !view.overviewUnfolded.includes(section)
     : view.overviewFolded.includes(section);
 
-/** The fold state with `section` folded (`fold`) or open. */
 const overviewFoldPatch = (
   view: OverviewFolds,
   section: OverviewSection,
@@ -658,7 +619,6 @@ const overviewFoldPatch = (
   };
 };
 
-/** The sections At rest took in: one left open opens At rest. */
 const LEGACY_REST_SECTIONS: readonly string[] = ["pullRequests", "doneToday"];
 
 /**
@@ -823,19 +783,15 @@ export function sanitizeDiffView(raw: unknown): Partial<DiffView> {
   };
 }
 
-/** An agent's `ui.showPanel` request. */
 interface PanelRequest {
   threadId: ThreadId;
   panel: PanelKind;
   target?: string;
-  /** A `preview` page the agent already opened in the pane. */
   driven?: boolean;
 }
 
-/** The tabs whose panel acts on a request's `target`. */
 type TargetedTab = "diff" | "files" | "pr";
 
-/** The PR panel's own two tabs, inside the right panel's `pr` tab. */
 type PrPanelTab = "overview" | "review";
 
 /** A request's `target` waiting for its panel to act on it; `id` tells repeated requests apart. */
@@ -851,44 +807,18 @@ interface PreviewSuggestion {
   url: string;
 }
 
-/**
- * The page a thread's Preview tab shows: the last one asked for, or where its page went since. A
- * new `id` is a new request, which loads `url` again even when it is the page already showing.
- */
 interface PreviewPage {
   id: number;
-  /** The page's address; empty for a `file` until the server says where it loads from. */
   url: string;
-  /** The thread's agent opened it in the pane (`browser_navigate`): shown as it is, never loaded. */
   driven?: boolean;
-  /**
-   * The user just typed its address (`openWebPreview`): its first load asks the shell for a web
-   * page, or tells it a loopback one was typed, once. The first report of the shell's page
-   * replaces it.
-   */
   typed?: boolean;
-  /**
-   * The shell's token for the user's web page shown now (`PreviewState.webView`), as the shell last
-   * reported it; absent once anything else, an agent's page above all, took its place. Re-opening
-   * names it, and the shell alone decides whether it still may.
-   */
   webView?: string | undefined;
-  /** A Markdown or HTML file the tab shows instead of a page on a port, by its path. */
   file?: string | undefined;
-  /**
-   * What follows an HTML file's served address: `?theme=dark` and `#board`, so a mock opens at a
-   * direction in a theme. Its own request, never sent to the server.
-   */
   at?: string | undefined;
 }
 
 let requestSeq = 0;
 
-/**
- * Where a request for a thread shown in a pane of its own goes instead of the right panel's tabs:
- * a worker open in the right pane takes its own Diff, PR, Files and Terminal there, as its tools.
- * True when it took the request.
- */
 let panelRequestsElsewhere: ((threadId: ThreadId, panel: PanelKind) => boolean) | undefined;
 
 /** Sets where `requestPanel` sends a request for a thread shown in a pane of its own. */
@@ -1088,8 +1018,6 @@ export const useLayoutStore = create<LayoutState>()(
         boardArchivedShown: [],
         diffLayout: "unified",
         diffTreeShown: true,
-        // Lines wrap until the user says otherwise: a review beside the chat is rarely as wide as
-        // its longest line, and a clipped line hides the change at its end.
         diffWrap: true,
         diffIgnoreWhitespace: false,
         reviewWidth: undefined,
@@ -1234,7 +1162,6 @@ export const useLayoutStore = create<LayoutState>()(
           set((s) => ({
             panelTab,
             ...reviewFocusFor(s, panelTab),
-            // A tab picked in an open panel keeps it open, Diff on a quiet thread included.
             ...(quietDiff({ ...s, panelTab }) && fitShell(s).panel !== "none"
               ? { panelPeek: true }
               : {}),
@@ -1283,8 +1210,6 @@ export const useLayoutStore = create<LayoutState>()(
                   page,
                   chatBusy,
                   lightsInset,
-                  // A panel opened on the page left goes with it, expanded or not.
-                  // So does a review's focus, which would otherwise come back with the panel.
                   ...(s.page === page
                     ? {}
                     : {
@@ -1301,7 +1226,6 @@ export const useLayoutStore = create<LayoutState>()(
               ...(tab === undefined ? {} : { panelTab: tab, ...reviewFocusFor(s, tab) }),
             };
             if (options?.thread) {
-              // The thread's own panel now, so leaving this page doesn't take it away again.
               const next = {
                 ...s,
                 ...patch,
@@ -1312,7 +1236,6 @@ export const useLayoutStore = create<LayoutState>()(
               return {
                 ...patch,
                 panelOpen: true,
-                // Asked for on a thread with nothing to diff, it shows there too.
                 panelPeek: quietDiff({ ...s, ...patch }),
                 panelExpanded: s.panelExpanded || !fitShell(next).panelRoom,
               };
@@ -1330,7 +1253,6 @@ export const useLayoutStore = create<LayoutState>()(
           ),
         toggleOverview: () =>
           set((s) => {
-            // Shown again, it is what it was before it was hidden.
             const shown = s.overviewSidebar === "hidden" ? s.overviewBeforeHide : s.overviewSidebar;
             const fit = fitShell({ ...s, focusMode: false });
             if (s.focusMode) {
@@ -1342,7 +1264,6 @@ export const useLayoutStore = create<LayoutState>()(
                 sidebarPeek: room.sidebar === "none",
               };
             }
-            // Open or compact, it hides.
             if (fit.sidebar !== "none") {
               return {
                 overviewSidebar: "hidden",
@@ -1350,7 +1271,6 @@ export const useLayoutStore = create<LayoutState>()(
                 sidebarPeek: false,
               };
             }
-            // Shown in a window too narrow for it beside the chat, it shows at its narrowest.
             const room = fitShell({ ...s, overviewSidebar: shown });
             return {
               overviewSidebar: shown,
@@ -1391,7 +1311,6 @@ export const useLayoutStore = create<LayoutState>()(
           if (threadId !== viewedThreadId) return;
           const id = ++requestSeq;
           if (panel === "preview" && driven === true) {
-            // Already in the pane, possibly on a public host the user allowed the agent.
             if (target === undefined) return;
             if (options?.previewPane !== true && options?.serverPage !== true) return;
             set((s) => ({
@@ -1414,10 +1333,8 @@ export const useLayoutStore = create<LayoutState>()(
             }
             set({ previewSuggestion: { id, threadId, url } });
           } else {
-            // A worker open in the pane opens its own tool there; the main view's tabs stay.
             const elsewhere = panelRequestsElsewhere?.(threadId, panel) === true;
             if (!elsewhere) get().setPanelTab(panel);
-            // A file of the PR is in its Overview's Files.
             if (panel === "pr" && target !== undefined) set({ prPanelTab: "overview" });
             if (panel === "diff" || panel === "files" || panel === "pr") {
               set((s) => {
@@ -1499,8 +1416,6 @@ export const useLayoutStore = create<LayoutState>()(
           set((s) => {
             const current = s.previewPages[threadId];
             if (current?.id !== page.id) return {};
-            // The shell's report is the whole truth of the page: where it is, and whose. A token
-            // the shell no longer reports, after an agent's page took the view's place, is gone.
             if (
               current.url === page.url &&
               current.webView === page.webView &&
@@ -1518,7 +1433,6 @@ export const useLayoutStore = create<LayoutState>()(
       };
     },
     {
-      // A first-paint cache only: the server's settings win at start.
       name: "gram.layout",
       version: 1,
       storage: createJSONStorage(() => window.localStorage),

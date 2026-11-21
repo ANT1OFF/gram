@@ -15,7 +15,6 @@ const RunsOnPanel = lazy(async () => ({
   default: (await import("./runs-on-panel")).RunsOnPanel,
 }));
 
-/** How many choices the chip names; the rest are in its popover. */
 const NAMED = 3;
 
 /**

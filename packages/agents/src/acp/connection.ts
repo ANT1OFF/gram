@@ -31,7 +31,6 @@ export interface AcpConnection {
   stop(): Promise<void>;
 }
 
-/** The longest line kept from the agent's stderr, for the reason it ended. */
 const STDERR_TAIL = 2_000;
 
 const record = (value: unknown): Readonly<Record<string, unknown>> =>

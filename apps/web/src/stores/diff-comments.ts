@@ -23,9 +23,7 @@ interface DiffCommentsState {
   add(threadId: ThreadId, comment: DiffComment): void;
   setNote(threadId: ThreadId, id: string, note: string): void;
   remove(threadId: ThreadId, id: string): void;
-  /** The thread's comments, cleared from the store for the message about to carry them. */
   take(threadId: ThreadId): readonly DiffComment[];
-  /** Puts taken comments back, ahead of any added since, when their message didn't go. */
   restore(threadId: ThreadId, comments: readonly DiffComment[]): void;
 }
 
@@ -63,7 +61,6 @@ export function commentLabel(comment: DiffComment): string {
   return `${comment.path}:${range}${comment.side === "old" ? " (removed)" : ""}`;
 }
 
-/** A code fence longer than any run of backticks in `text`, so the snippet can't close it early. */
 const fenceFor = (text: string) =>
   "`".repeat(Math.max(3, ...Array.from(text.matchAll(/`+/g), (m) => m[0].length + 1)));
 

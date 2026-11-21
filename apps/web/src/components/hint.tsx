@@ -30,8 +30,6 @@ export function Hint({
   onOpenChange?: ((open: boolean) => void) | undefined;
 }) {
   return (
-    // A tooltip is no layer of its own: Escape closes it and still reaches what is under it, a
-    // sheet or a dialog, as it did past a native title.
     <Tooltip
       disabled={disabled}
       onOpenChange={(open, details) => {

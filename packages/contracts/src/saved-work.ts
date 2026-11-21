@@ -1,13 +1,9 @@
-// What was last saved of a thread's work on a joined machine (`host.stop.keep`, a stop's keep):
-// when, and which files it held against the branch's base. A machine that is lost gives that back,
-// and nothing after it, so the thread, its card and its row say so in those terms.
 import * as Schema from "effect/Schema";
 import { DiffFile } from "./git.ts";
 
 /** The most files a saved record names; the rest are counted (`more`). */
 export const SAVED_FILES_MAX = 50;
 
-/** The longest path a saved record names. */
 const SAVED_PATH_MAX = 1024;
 
 /** The diff a host sends with each keep, at most: past it the largest files go without bodies. */

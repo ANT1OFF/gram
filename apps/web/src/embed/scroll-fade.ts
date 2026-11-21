@@ -1,6 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
 
-/** How far a list fades out at an edge with more of it past that edge, at most. */
 const FADE = 20;
 
 /**
@@ -15,7 +14,6 @@ export function useScrollFade(on: boolean): RefObject<HTMLDivElement | null> {
     if (!on || list === null) return;
     const read = () => {
       const below = list.scrollHeight - list.clientHeight - list.scrollTop;
-      // No longer than what is past the edge: the list's last row is whole at its end.
       list.style.setProperty("--fade-top", `${Math.min(FADE, Math.max(0, list.scrollTop))}px`);
       list.style.setProperty("--fade-bottom", `${Math.min(FADE, Math.max(0, below))}px`);
     };

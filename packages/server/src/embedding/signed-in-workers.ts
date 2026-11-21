@@ -1,21 +1,3 @@
-// Machines of a worker's own for a desktop Gram's orchestrators, from a hosted server the desktop
-// app is signed in to (`docs/design/desktop-worker-machines.md`).
-//
-// Embedded, a Gram asks its embedder's host provider for a worker's machine
-// (`worker-machines.ts`). A desktop Gram has no provider of its own and holds no token, but the
-// desktop app may be signed in to a hosted server that starts worker machines for a desktop. So
-// this server asks the app, over Electron's `parentPort`, and the app makes each call with the
-// person's sign-in: the hosted server takes the person from the token, and this server names no
-// owner.
-//
-// The machine can't dial this Gram: the desktop is usually behind NAT. Both sides dial the hosted
-// server instead, which pairs them: the host dials it as its origin, and the app dials its relay
-// for that machine. The app passes each relayed connection here as frames over the same port, and
-// this Gram takes it as any dial, by the host's own signature over the hosted server's origin, once.
-// This Gram registers the machine itself, from the key the server's status reports for the name it
-// asked for, as a worker host that came through that server (`PairedMachine.via`): taken only from
-// that server's relay, and the desktop's own, like a joined machine.
-
 import { randomUUID } from "node:crypto";
 
 import { HostId, hostServes, type WorkerMachineServer } from "@gram/contracts";
@@ -95,13 +77,9 @@ export * from "./signed-in-reclaim.ts";
 export * from "./signed-in-calls.ts";
 export * from "./worker-machine-stops.ts";
 
-// ---------------------------------------------------------------------------------------------
-// A provider of worker machines, as `spawn_worker`'s `sandbox` and the release pass use one.
-
 /** The most machines from hosted servers this Gram registers at once (and the app relays). */
 export const RELAYED_MOST = 32;
 
-/** How many times a machine given back is asked to stop, and the wait between. */
 const STOP_ATTEMPTS = 3;
 const STOP_RETRY_MS = 2_000;
 /** How long a wake that met only a passing error waits before it is tried again. */
@@ -111,7 +89,6 @@ export const WAKE_RETRY_MS = 5_000;
 export const ARRIVE_TIMEOUT_MS = 5 * 60_000;
 const ARRIVE_EVERY_MS = 2_000;
 
-/** What an orchestrator is told when the signed-in server's answer stops a machine joining. */
 const failedWords = (name: string, why: string) => `The machine ${name} didn't join: ${why}`;
 
 export interface SignedInDeps {
@@ -173,15 +150,9 @@ export const signedInSource = (
   const { port, hosts } = deps;
   const now = deps.now ?? Date.now;
   const origin = server.origin;
-  /**
-   * The sign-in this source asks under: every call carries it, and everything it makes. Its mark
-   * now (`markOf`): a renewal that gives the sign-in its organisation's moves what it made to
-   * that mark, and this source with it, even mid-spawn.
-   */
   const first = server.account;
   const accountNow = () =>
     first === undefined ? undefined : (deps.markOf?.(origin, first) ?? first);
-  /** The fields that carry the mark now, on an owing and on a registration. */
   const markField = (): { account?: string } => {
     const mark = accountNow();
     return mark === undefined ? {} : { account: mark };
@@ -190,9 +161,7 @@ export const signedInSource = (
     const mark = accountNow();
     return mark === undefined ? {} : { viaAccount: mark };
   };
-  /** Whether a mark is this source's sign-in's: the one it began under, or its mark now. */
   const ours = (mark: string | undefined) => mark === first || mark === accountNow();
-  /** Whether this sign-in owes a stop of `name` (`ownsOwing`), under either of its marks. */
   const owes = (name: string) =>
     deps.owed
       ?.list()
@@ -200,27 +169,18 @@ export const signedInSource = (
         (each) =>
           ownsOwing(each, origin, name, first) || ownsOwing(each, origin, name, accountNow()),
       ) === true;
-  /** Lets go of what this sign-in owes for `name`, under either of its marks. */
   const releaseOwed = (name: string) => {
     deps.owed?.release(origin, name, first);
     if (accountNow() !== first) deps.owed?.release(origin, name, accountNow());
   };
   const offered: OfferedByServer = deps.offered ?? new Map();
   const offeredKey = workerMachineIdentity(origin, first);
-  // One registered under another sign-in there is that sign-in's, never this one's to act on;
-  // one registered before sign-ins were kept is taken as this one's, but never forgotten on what
-  // another sign-in might say of it (`isLegacyRelayed`).
   const mine = (machine: ProvidedMachine) =>
     machine.onDemand === "worker" &&
     machine.via === origin &&
     machine.owner === undefined &&
     (machine.viaAccount === undefined || ours(machine.viaAccount));
   const named = (name: string) => hosts.list().find((each) => each.name === name && mine(each));
-  /**
-   * A machine of `name` there registered under another sign-in (the same person before they
-   * signed in again, say): frozen for this one. A start of its name would reach that machine's
-   * disk, and a stop of it delete it, so neither is ever sent under this sign-in.
-   */
   const frozen = (name: string) =>
     hosts
       .list()
@@ -232,12 +192,10 @@ export const signedInSource = (
           each.owner === undefined &&
           !mine(each),
       );
-  /** How long a stop of `name` sent there may still land (`StopHolds`): no start goes before. */
   const heldFor = (name: string) => {
     const until = deps.owed?.holds.until(origin, name, now());
     return until === undefined ? 0 : until - now();
   };
-  /** One `…/choices` call, kept a short while: the picks it offers and the models it runs. */
   const asked = Effect.gen(function* () {
     const kept = offered.get(offeredKey);
     if (kept !== undefined && now() - kept.at < CHOICES_TTL_MS) return kept;
@@ -253,19 +211,9 @@ export const signedInSource = (
     offered.set(offeredKey, fresh);
     return fresh;
   });
-  /**
-   * Stops a machine there, a few times if need be, and forgets it here once it is stopped (or the
-   * server knows it no more). One that couldn't be stopped stays registered here, so the release
-   * pass still tells the server its work is over, and the server reclaims it as it does an idle
-   * one. Whether it was stopped. Never cut short once begun: a stop sent may still reach the
-   * server after its caller gave up, so its attempts, its hold and what it owes all run to their
-   * end (each call has its own deadline), and no start of the name goes out meanwhile.
-   */
   const forget = (name: string, unsettled = false) =>
     Effect.uninterruptible(
       Effect.gen(function* () {
-        // Another sign-in's machine has the name: a stop of it might delete that machine's disk,
-        // so none is sent, and nothing is owed that one day could be.
         if (frozen(name) !== undefined) {
           deps.starting?.delete(name);
           yield* Effect.logWarning(
@@ -273,8 +221,6 @@ export const signedInSource = (
           ).pipe(Effect.annotateLogs({ machine: name }));
           return false;
         }
-        // A start of unknown outcome with no owing of its own here was never admitted, so nothing
-        // of it was sent: nothing to give back, and nothing to owe.
         if (unsettled && deps.owed !== undefined && named(name) === undefined && !owes(name)) {
           deps.starting?.delete(name);
           return true;
@@ -282,9 +228,6 @@ export const signedInSource = (
         deps.starting?.delete(name);
         let stopped = false;
         let last = "";
-        // The name is this give-back's through every attempt (`withName`): a start of it waits for
-        // the last, so a stop tried again never lands on the machine a retry has since made. One
-        // the app didn't answer may still reach the server late, so the name is kept a while more.
         yield* withName(
           deps.locks,
           name,
@@ -292,10 +235,8 @@ export const signedInSource = (
             let unanswered = false;
             for (let attempt = 0; attempt < STOP_ATTEMPTS && !stopped; attempt += 1) {
               if (attempt > 0) yield* Effect.sleep(deps.stopRetryMs ?? STOP_RETRY_MS);
-              // Held before it is sent, across a restart, until its own answer comes.
               const sentAt = now();
               const held = deps.owed?.holds.hold(origin, name, stopHoldUntil(sentAt));
-              // One whose hold couldn't be written down isn't sent: it is owed, and asked later.
               if (deps.owed !== undefined && held === undefined) {
                 last = "its hold couldn't be written down";
                 continue;
@@ -307,15 +248,10 @@ export const signedInSource = (
                 { sendBy: stopSendBy(sentAt), account: accountNow() },
               );
               if (stopSettled(answered) && held !== undefined) deps.owed?.holds.answered(held);
-              // "No such machine" ends nothing while a start of it may still be on its way, nor
-              // for one registered before sign-ins were kept, which another may be asking after.
               const outcome = stopOutcome(answered);
               const legacy = isLegacyRelayed(named(name));
               stopped = outcome === "stopped" || (outcome === "absent" && !unsettled && !legacy);
-              // A stop no one answered may still land late: a later attempt's answer is its own,
-              // not that one's, so the name is held after it whatever comes next.
               if (!stopSettled(answered)) unanswered = true;
-              // Only the status: what a server answers isn't written to the log.
               last = answered.ok ? `answered ${answered.status}` : "no answer";
             }
             if (unanswered) yield* Effect.sleep(deps.unansweredHoldMs ?? UNANSWERED_STOP_HOLD_MS);
@@ -325,8 +261,6 @@ export const signedInSource = (
           yield* Effect.logWarning("a worker machine given back could not be stopped").pipe(
             Effect.annotateLogs({ machine: name, reason: last }),
           );
-          // Registered here, the release pass tells the server; otherwise it is owed a stop, unless
-          // the server is owed one of the name already (the start's own, which stands for it).
           if (named(name) === undefined && !owes(name))
             deps.owed?.add({
               origin,
@@ -353,10 +287,6 @@ export const signedInSource = (
     identity: workerMachineIdentity(origin, first),
     unrelease: (name) =>
       Effect.gen(function* () {
-        // Answered `not_found` `RECLAIMED_AFTER_MISSES` times in a row, a little apart: this
-        // spawn doesn't wait for it. Fewer is no proof (a backend out of reach answers so too), and
-        // it is waited for as any reused machine. Either way it stays registered and relayed:
-        // only `forgetReclaimed` forgets one.
         for (let missed = 1; ; missed += 1) {
           const told = yield* tellSignedInRelease(
             port,
@@ -379,16 +309,12 @@ export const signedInSource = (
     abandon: (name, options) => Effect.asVoid(forget(name, options?.unsettled === true)),
     start: (ask) =>
       Effect.suspend(() => {
-        // A name another sign-in's machine has is left to it: nothing asked for, nothing owed.
         if (frozen(ask.name) !== undefined)
           return Effect.succeed<WorkerMachineStart>({
             kind: "refused",
             message: `The machine ${ask.name} for this request was asked for under another sign-in to ${server.server} (before you signed in again, say), so it was left as it is: this sign-in neither reuses nor stops it. Spawn again with another clientRequestId for a new machine, or remove the old one under Settings → Machines.`,
           });
-        // This start takes the name: no stop owed for an earlier one may end the machine it makes.
         deps.starting?.add(ask.name);
-        // Written before the start is sent, kept across a restart: a machine started there that
-        // this Gram never registers is given back by the stops owed, never left running.
         const owing = {
           origin,
           name: ask.name,
@@ -398,13 +324,10 @@ export const signedInSource = (
           ...markField(),
           attempt: randomUUID(),
         };
-        // Asked for again: it may come back, so it is relayed once more.
         deps.asleep?.delete(ask.name);
         let unavailable = false;
-        // Whether this start's owing was kept.
         let owned = false;
         let spent = false;
-        // A name the server doesn't take is never sent (it would answer `400 invalid_request`).
         if (!isHostedWorkerName(ask.name))
           return Effect.succeed<WorkerMachineStart>({
             kind: "refused",
@@ -422,16 +345,10 @@ export const signedInSource = (
               orchestrator: ask.orchestrator,
               choices: choicesOfAsk(ask),
             },
-            // Owed beside any before it, once the name is this start's: no stop settled meanwhile
-            // lets go of it, and none written later replaces it.
             {
               ...deps,
               heldFor,
-              // Asked under the sign-in this source is for, as its owing and its give-back are:
-              // signed in there as someone else meanwhile, the app sends none of it.
               account: accountNow(),
-              // Admitted, with room to owe it a stop, and owed it, in one step under the name: a
-              // start with no room is refused, never sent where nothing could give it back.
               onLocked: () => {
                 if (deps.owed === undefined) return undefined;
                 owned = deps.owed.admit(owing);
@@ -465,13 +382,10 @@ export const signedInSource = (
           Effect.map((started) =>
             started.kind === "started" || (started.kind === "over-total" && !unavailable)
               ? started
-              : // A 5xx on the way leaves its outcome unknown, whatever was answered after it.
-                unavailable
+              : unavailable
                 ? {
                     kind: "refused" as const,
                     message: `${server.server} can't start machines now. Spawn again in a few minutes with the same clientRequestId, or leave out sandbox to run the worker on your machine.`,
-                    // A 5xx may come back for a call that reached its machines all the same:
-                    // given back as a start whose outcome isn't known.
                     unknown: true as const,
                   }
                 : spent
@@ -484,14 +398,11 @@ export const signedInSource = (
           Effect.tap((started) =>
             Effect.sync(() => {
               offered.delete(offeredKey);
-              // A clear refusal made nothing; one with no answer is the spawn's to give back.
-              // A clear refusal made nothing: nothing to start, nothing owed.
               if (
                 (started.kind === "refused" && started.unknown !== true) ||
                 started.kind === "over-total"
               ) {
                 deps.starting?.delete(ask.name);
-                // Its own owing alone: any owed of the name before it is about a machine still there.
                 if (owned) deps.owed?.remove(ask.name, owing);
               }
             }),
@@ -508,7 +419,6 @@ export const signedInSource = (
         for (;;) {
           const machine = named(name);
           if (machine?.onlineSince !== undefined) {
-            // One whose gram-host can't carry app tools runs no session: refused now, not later.
             const connected =
               hosts.connection === undefined
                 ? undefined
@@ -520,7 +430,6 @@ export const signedInSource = (
               return { failed: noAppToolsTunnel(name) };
             return machine.id;
           }
-          // No later than the deadline, however long the app or the server takes to answer.
           const left = deadline - now();
           if (left <= 0) return { failed: "timeout" };
           const before = sentOf(deps.sent, name);
@@ -529,21 +438,13 @@ export const signedInSource = (
             .pipe(Effect.timeoutOption(left));
           if (read._tag === "None") return { failed: "timeout" };
           const answered = read.value;
-          // A call that went wrong on the way, or an answer asked for before a start of the name
-          // since, says nothing: asked again, until the deadline.
           const fresh = answered.ok && settledSince(deps.sent, name, before);
           const status = fresh ? parseMachineStatus(answered.body) : {};
           const why = status.message ?? `${server.server} says it isn't starting.`;
-          // A `404 not_found` says nothing alone, even of a machine just accepted: one not
-          // registered here fails only after `RECLAIMED_AFTER_MISSES` in a row, and is asked
-          // again meanwhile (`isNotFound`); any other answer starts the count afresh.
-          // Only answers in a row: no answer, a stale one, or any other, starts the count afresh.
           notFound = fresh && isNotFound(answered) ? notFound + 1 : 0;
           if (notFound >= RECLAIMED_AFTER_MISSES && machine === undefined)
             return { failed: failedWords(name, why) };
           if (fresh && answered.status < 300) {
-            // Failed on the start this spawn asked for, or again after it was started once more:
-            // nothing to wait for. One registered here isn't relayed while it is so.
             if (status.phase === "failed" && (woken || machine === undefined)) {
               if (machine !== undefined) {
                 deps.asleep?.add(name);
@@ -555,10 +456,7 @@ export const signedInSource = (
                   : failedWords(name, why),
               };
             }
-            // Stopped or failed there, which no dial wakes: started once more, under its name.
-            // Only a settled wake counts; a passing error leaves it to the next look.
             if ((status.phase === "stopped" || status.phase === "failed") && !woken) {
-              // Within what is left of this wait, however long the start or its retries take.
               const waking = yield* wakeSignedIn(
                 port,
                 { name, via: origin, account: accountNow() },
@@ -566,7 +464,6 @@ export const signedInSource = (
               ).pipe(Effect.timeoutOption(Math.max(0, deadline - now())));
               if (waking._tag === "None") return { failed: "timeout" };
               const woke = waking.value;
-              // `gone` is a 404, which says nothing alone: woken again at the next look.
               if (woke !== "retry" && woke !== "gone") woken = true;
               if (woke === "refused")
                 return {
@@ -574,13 +471,11 @@ export const signedInSource = (
                 };
             }
             if (machine === undefined && status.publicKey !== undefined) {
-              // So many relays at once is a leak, not work: refused, and this one given back.
               const held = hosts.list().filter((each) => each.via !== undefined).length;
               if (held >= RELAYED_MOST)
                 return {
                   failed: `This Gram already has ${held} machines from hosted servers. Remove ones no worker uses under Settings → Machines, then spawn again.`,
                 };
-              // Registered here by this Gram, for the name it asked for, from the server it asked.
               const result = hosts.machines.provision({
                 name,
                 publicKey: status.publicKey,
@@ -591,7 +486,6 @@ export const signedInSource = (
                 viaName: plainName(server.server),
               });
               if (result.kind === "refused") return { failed: failedWords(name, result.message) };
-              // Registered here: the release pass looks after it from now on.
               releaseOwed(name);
             }
           }
@@ -602,10 +496,7 @@ export const signedInSource = (
           if (now() >= deadline) return { failed: "timeout" };
           yield* Effect.sleep(deps.everyMs ?? ARRIVE_EVERY_MS);
         }
-      }).pipe(
-        // Registered by now, or given back next: no longer a start on its way either way.
-        Effect.ensuring(Effect.sync(() => deps.starting?.delete(name))),
-      ),
+      }).pipe(Effect.ensuring(Effect.sync(() => deps.starting?.delete(name)))),
     timedOut: (name) =>
       Effect.map(forget(name), (stopped) => {
         const within = `The machine ${name} didn't join within ${Math.round((deps.timeoutMs ?? ARRIVE_TIMEOUT_MS) / 60_000)} minutes`;
@@ -644,7 +535,6 @@ export const takeRelayedDial = (hosts: RemoteHostsShape, dial: RelayedDial) =>
       dial.end(4000 + decision.status, decision.message);
       return;
     }
-    // The relay for one machine carries that machine's dial alone, never another's it holds.
     if (decision.machine.id !== machine.id) {
       dial.end(4401, "unauthorized: another machine's dial");
       return;
@@ -664,18 +554,15 @@ export const SignedInWorkersLive = Layer.effect(
     const hosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     if (!app.available || hosts === undefined)
       return { port: app, source: Effect.succeed({ refused: NO_SIGNED_IN_SERVER } as const) };
-    // Every stop and release, this layer's and the release pass's, fenced to its run.
     const port = fencedCalls(app);
     const offered: OfferedByServer = new Map();
     const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
     const owed = config === undefined ? memoryOwedStops() : fileOwedStops(config.dataDir);
-    /** Names a start is on its way for: no stop owed for an earlier one may end what it makes. */
     const starting = new Set<string>();
     const locks: NameLocks = makeKeyedLock<string>();
     const asleep = new Set<string>();
     const sent: StartsSent = new Map();
     const claimed = claimedHere(hosts);
-    // Each relayed connection is served in this layer's scope, and ends with it.
     const dials = yield* Queue.unbounded<RelayedDial>();
     port.onDial((dial) => {
       Queue.offerUnsafe(dials, dial);
@@ -690,9 +577,6 @@ export const SignedInWorkersLive = Layer.effect(
       Effect.forever,
       Effect.forkScoped,
     );
-    // What the app carries is what is registered here: told whole at start (`fresh`, since a new
-    // server knows none of the connections carried for the last), on every change of the machines,
-    // and every minute besides, in case the app missed one.
     const relayed = () =>
       hosts
         .list()
@@ -700,7 +584,6 @@ export const SignedInWorkersLive = Layer.effect(
           (machine) =>
             machine.via !== undefined && machine.onDemand === "worker" && !asleep.has(machine.name),
         )
-        // Each carried under the sign-in it was asked for under alone: never another's.
         .map((machine) => ({
           origin: machine.via!,
           name: machine.name,
@@ -717,17 +600,13 @@ export const SignedInWorkersLive = Layer.effect(
     sync(true);
     const unwatch = hosts.watch(() => sync(false));
     yield* Effect.addFinalizer(() => Effect.sync(unwatch));
-    // Every sign-in's former marks moved to its mark, and its mark now for a source made before.
     const { adopt, adoptAll, markOf } = signInMarks(port, hosts, owed);
-    // At start, and whenever the app says its sign-ins changed.
     yield* Effect.forkScoped(adoptAll);
     const signIns = yield* Queue.sliding<void>(1);
     port.onSignIns(() => {
       Queue.offerUnsafe(signIns, undefined);
     });
     yield* Queue.take(signIns).pipe(Effect.andThen(adoptAll), Effect.forever, Effect.forkScoped);
-    // Each resync moves what every sign-in's former marks hold first, so the relays told are
-    // under each sign-in's mark now.
     yield* Effect.sleep(RELAYS_RESYNC).pipe(
       Effect.andThen(adoptAll),
       Effect.andThen(
@@ -739,13 +618,7 @@ export const SignedInWorkersLive = Layer.effect(
       Effect.forever,
       Effect.forkScoped,
     );
-    // A worker machine that work here wants (a session about to open on it waits for it, as a
-    // worker resumed or a message to one does: `stops.wanting`) and that is offline is woken
-    // there by a start of its name, once each time it comes to be wanted. Only a want does: never
-    // a dial, nor the relays. Whether it is still wanted is read again as the start would go, and
-    // a wake that met only a passing error is tried again a little later, while it is wanted.
     const wokenFor = new Map<string, number>();
-    /** How many wakes in a row, for each machine's want, were answered `not_found`. */
     const goneFor = new Map<string, number>();
     const wants = yield* Queue.unbounded<void>();
     const wakeWanted = Effect.suspend(() =>
@@ -783,13 +656,7 @@ export const SignedInWorkersLive = Layer.effect(
           ).pipe(
             Effect.flatMap((woke) =>
               Effect.gen(function* () {
-                // Woken, or awake there already: carried again.
                 sync(false);
-                // Settled for good: refused, no longer wanted, or `gone` (`not_found`)
-                // `RECLAIMED_AFTER_MISSES` times in a row for this want. Otherwise it is looked
-                // at again while it is wanted and still offline and registered here, since one up
-                // there now may be stopped while idle before its host dials, and only a start
-                // wakes it; and one `not_found` may be a backend out of reach for a while.
                 const missed = woke === "gone" ? (goneFor.get(machine.id) ?? 0) + 1 : 0;
                 if (missed === 0) goneFor.delete(machine.id);
                 else goneFor.set(machine.id, missed);
@@ -815,8 +682,6 @@ export const SignedInWorkersLive = Layer.effect(
     });
     yield* Effect.addFinalizer(() => Effect.sync(unwatchWants));
     yield* Queue.take(wants).pipe(Effect.andThen(wakeWanted), Effect.forever, Effect.forkScoped);
-    // A machine the server no longer knows (reclaimed after its release, or removed there) is
-    // forgotten here, so its relay stops and its name is free.
     const misses = new Map<string, number>();
     const stopMisses = new Map<string, number>();
     const heardFrom = (server: WorkerMachineServer) => {
@@ -826,7 +691,6 @@ export const SignedInWorkersLive = Layer.effect(
     yield* port.server().pipe(
       Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
       Effect.andThen(forgetReclaimed(port, hosts, misses, asleep, sent)),
-      // One the pass found stopped or failed is no longer among the relays told.
       Effect.tap(() => Effect.sync(() => sync(false))),
       Effect.andThen(
         settleOwedStops(
@@ -846,8 +710,6 @@ export const SignedInWorkersLive = Layer.effect(
     return {
       port,
       source: port.server().pipe(
-        // What this sign-in made under its former marks is moved to its mark first, in one step,
-        // before any source asks under it.
         Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
         Effect.map((answered) =>
           answered.ok

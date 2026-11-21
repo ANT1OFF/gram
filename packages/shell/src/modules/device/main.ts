@@ -1,7 +1,3 @@
-// The personal device's main half beside the controller: the ask window, the decisions the
-// person answers in dialogs the shell draws, and the bridge Settings reads it through. It imports
-// `electron`, so only the main process loads it.
-
 import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 
@@ -31,7 +27,6 @@ export { workToSendOf, workWaitOf, workMessageOf } from "./work-input.ts";
 export const serverWords = (text: string): { readonly text: string; readonly unusual: boolean } => {
   const display = displayCommand(text);
   return {
-    // Runs of spaces go too: wrapped in a dialog, they could start a line of their own.
     text: display.pieces
       .map((piece) => (piece.kind === "newline" ? " " : piece.text))
       .join("")
@@ -86,11 +81,6 @@ const workspaceLines = (origin: string, workspace: Workspace): Array<string> => 
   ];
 };
 
-/**
- * A folder path as a dialog shows it: drawn as a server's words are, since a name can hold
- * anything, and unusual too when spaces had to be merged or trimmed to draw it, since the path
- * shown is then not quite the path lent.
- */
 const pathWords = (path: string): { readonly text: string; readonly unusual: boolean } => {
   const words = serverWords(path);
   const spaced = displayCommand(path)
@@ -99,7 +89,6 @@ const pathWords = (path: string): { readonly text: string; readonly unusual: boo
   return { text: words.text, unusual: words.unusual || spaced !== words.text };
 };
 
-/** Folder paths, one a line. */
 const folderLines = (paths: ReadonlyArray<string>): Array<string> => {
   const drawn = paths.map(pathWords);
   return [
@@ -110,7 +99,6 @@ const folderLines = (paths: ReadonlyArray<string>): Array<string> => {
   ];
 };
 
-/** Whether resuming says reads only; when it does, the resume keeps it so. */
 const resumesReadOnly = (workspace: Workspace): boolean =>
   workspace.readOnly || workspace.policy === "read";
 
@@ -257,7 +245,6 @@ export const deviceDecisionsFor = (
         `Folders to lend to ${serverWords(workspace.name).text}`,
       );
       if (picked === undefined || picked.length === 0) return CANCELLED;
-      // Shown, and lent, as the folders really are: a link picked is the folder it leads to.
       let paths: Array<string>;
       let seen: Array<{ device: number; inode: number }>;
       try {
@@ -312,10 +299,8 @@ export const deviceDecisionsFor = (
   };
 };
 
-/** As many of the newest activity lines as Settings lists. */
 const ACTIVITY_MOST = 200;
 
-/** Not from a decision window: those draw what the shell owns, and never call the bridge. */
 const fromApp = (sender: WebContents) => {
   const win = BrowserWindow.fromWebContents(sender);
   return win === null || !isDecisionWindow(win);
@@ -326,7 +311,6 @@ const target = (arg: unknown) => ({
   workspace: field(arg, "workspace", 128),
 });
 
-/** A thread's id as a window names it: Gram's own ids, nothing a path could use. */
 const threadIdOf = (arg: unknown): string | undefined => {
   const id = field(arg, "threadId", 128);
   return id !== undefined && /^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : undefined;
@@ -386,8 +370,6 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
       return origin === undefined ? NONE : device.refresh(origin);
     }),
   );
-  // The person pressed Move in the app's own window; the bundle is the one the local server
-  // exported. The server there decides whether it comes in.
   serve(
     Channels.hostedDeviceMoveThread,
     withDevice((device, arg) => {
@@ -396,17 +378,15 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
         typeof arg === "object" && arg !== null && "bundle" in arg ? arg.bundle : undefined;
       return origin === undefined || workspace === undefined || bundle === undefined
         ? { ok: false, why: "Name the server, the workspace and the thread." }
-        : device.moveThread(origin, workspace, bundle).then(
-            // The server's words, as a dialog shows them: no hidden or reordering characters.
-            (moved) =>
+        : device
+            .moveThread(origin, workspace, bundle)
+            .then((moved) =>
               moved.ok
                 ? { ...moved, notes: moved.notes.map((note) => serverWords(note).text) }
                 : { ...moved, why: serverWords(moved.why).text },
-          );
+            );
     }),
   );
-  // The person pressed Bring back in the app's own window: the bundle goes to the local server,
-  // which reads and checks it, and the window settles the copy there once that took it.
   serve(
     Channels.hostedDeviceFetchThread,
     withDevice((device, arg) => {
@@ -441,8 +421,6 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
             );
     }),
   );
-  // Work the app sends to run there: the server decides whether it runs, and lets this machine
-  // follow, answer and stop only what it sent. Its words are shown as words, never as markup.
   serve(
     Channels.hostedDeviceSendWork,
     withDevice((device, arg) => {
@@ -557,12 +535,10 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
       intact: read.intact,
       setAside: read.setAside,
       more: read.more,
-      // Only what the list shows: the thread's id stays here.
       entries: read.entries.map(({ thread: _thread, ...shown }) => shown),
     };
   });
 
-  /** Tells the app's windows the device changed; they read its state again. */
   return {
     changed: () => {
       for (const win of appWindows())

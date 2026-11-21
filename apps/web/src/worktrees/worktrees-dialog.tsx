@@ -52,7 +52,6 @@ const removedStatus = (removed: readonly WorktreeEntry[], closed: number): strin
   return `Removed ${removed.length} worktree folders${threads}. Their branches and commits are kept.`;
 };
 
-/** What the worktrees at `paths` take on disk, in words; `undefined` while a count still runs. */
 function useSelectionSize(paths: readonly string[]): string | undefined {
   const api = useApi();
   const sizes = useQueries({
@@ -97,7 +96,6 @@ export function WorktreesDialog({ repoPath, onClose }: { repoPath: string; onClo
     (a, b) => Number(b.isMain) - Number(a.isMain),
   );
 
-  // Preserve the first owner in store order when more than one thread names a checkout.
   const owners = new Map<string, ThreadSummary>();
   for (const summary of Object.values(threads)) {
     const path = summary.thread.checkout.path;
@@ -106,7 +104,6 @@ export function WorktreesDialog({ repoPath, onClose }: { repoPath: string; onClo
   const rows = worktrees.map((entry) => {
     const user = owners.get(entry.path);
     const finished = entry.isMain ? undefined : finishedWorkerAt(user, details);
-    // The server's isOpen protects checkouts before the local thread list catches up.
     const removable =
       !entry.isMain &&
       ((!entry.isOpen && user?.thread.title === undefined) || finished !== undefined);
@@ -138,7 +135,6 @@ export function WorktreesDialog({ repoPath, onClose }: { repoPath: string; onClo
     setSelected(
       (current) => new Set([...current].filter((path) => !entries.some((e) => e.path === path))),
     );
-    // The removed row took focus with it; the status line says what happened.
     setTimeout(() => {
       if (focusLost()) focusIfConnected(statusRef.current);
     }, 0);
@@ -181,7 +177,6 @@ export function WorktreesDialog({ repoPath, onClose }: { repoPath: string; onClo
               </Button>
             </div>
           )}
-          {/* The dialog sits 20% down and doesn't scroll, so the two lists share what's left. */}
           <ul
             aria-label="Worktrees"
             className={cn(
@@ -226,7 +221,6 @@ export function WorktreesDialog({ repoPath, onClose }: { repoPath: string; onClo
             </Button>
           </div>
         ))}
-      {/* Close first, so it keeps the focus the dialog opens with; drawn on the right. */}
       <div className="flex flex-row-reverse justify-between gap-2">
         <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>
           Close
@@ -257,7 +251,6 @@ function WorktreeRow({
   entry: WorktreeEntry;
   user: ThreadSummary | undefined;
   finished: FinishedWorker | undefined;
-  /** Present only for a worktree no thread uses, or one a finished worker does. */
   selected?: boolean;
   onToggle?: () => void;
   onRemoved: () => void;
@@ -486,11 +479,6 @@ function RemoveConfirm({
   );
 }
 
-/**
- * Removes several worktrees in turn, each with its own permission checklist: unused ones directly,
- * and a finished worker's by closing the worker with it. Dirty ones are refused and shown; a second,
- * forced pass deletes only those. Branches are never deleted.
- */
 function BulkRemove({
   entries,
   closing,
@@ -499,12 +487,9 @@ function BulkRemove({
   onRemoved,
 }: {
   entries: readonly WorktreeEntry[];
-  /** The finished worker to close with each worktree it uses, by path. */
   closing: ReadonlyMap<string, ThreadId>;
-  /** What the entries take on disk, in words; `undefined` while still counting. */
   size: string | undefined;
   onCancel: () => void;
-  /** `closed` workers went with them; `done` once nothing was refused. */
   onRemoved: (removed: readonly WorktreeEntry[], closed: number, done: boolean) => void;
 }) {
   const api = useApi();
@@ -537,8 +522,6 @@ function BulkRemove({
       const picked = rules.filter((rule) => !skipped[entry.path]?.has(rule));
       const chosen = picked.length > 0 ? { permissionRules: picked } : {};
       const worker = closing.get(entry.path);
-      // The selection was taken before the loop's first await: a worker may have started since.
-      // It drops out of the selection by itself, and its row says a thread uses it.
       const now = useThreadsStore.getState();
       if (worker !== undefined && !finishedWorkerAt(now.byId[worker], now.statusDetail)) {
         continue;

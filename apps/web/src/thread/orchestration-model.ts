@@ -17,10 +17,6 @@ import type {
 import { prRefText } from "@/components/pr-marks-model";
 import { formatClockTime, formatStamp } from "@/lib/time";
 
-// Pure derivations for the orchestration UI: the role a thread plays, and the words and tones the
-// digest, worker report, memory write and handoff cards show. No React here, so it is all testable
-// without a browser.
-
 /** What a thread is to orchestration, from its durable fields. */
 export type ThreadRoleInfo =
   | { readonly kind: "orchestrator" }
@@ -81,7 +77,6 @@ export interface StatePresentation {
   readonly tone: StateTone;
 }
 
-/** A word this build doesn't know, shown as it came: neutral, and never a crash. */
 const unknownState = (word: string): StatePresentation => ({ label: word, tone: "muted" });
 
 const VARIANT_TITLE: Record<DigestVariant, string> = {
@@ -109,8 +104,6 @@ const WORKER_STATE: Record<WorkerState, StatePresentation> = {
   done: { label: "Done", tone: "success" },
   inReview: { label: "In review", tone: "working" },
   readyToMerge: { label: "Ready to merge", tone: "success" },
-  // Its own tone, so its own icon: finished, but nothing says it is in main, and a check mark beside
-  // "Merged" rows would say it was.
   delivered: { label: "Delivered", tone: "delivered" },
   merged: { label: "Merged", tone: "success" },
   error: { label: "Error", tone: "danger" },
@@ -220,7 +213,6 @@ export const pauseConfirmText = (working: number, orchestrator: boolean): string
   return `${what} Pausing doesn't cut anything off: each finishes the step it is on, then stops. Workers you hold keep going with you.`;
 };
 
-/** Statuses of a thread in a turn: starting it, running it, or stopped in it on an ask. */
 const IN_TURN: ReadonlySet<ThreadStatus> = new Set([
   "starting",
   "running",
@@ -304,7 +296,6 @@ export const safeLink = (url: string | undefined): string | undefined => {
   try {
     return new URL(url).protocol === "https:" ? url : undefined;
   } catch {
-    // Not a URL at all: shown as the text the worker wrote.
     return undefined;
   }
 };
@@ -338,7 +329,6 @@ export const lineDiff = (before: string | undefined, after: string | undefined):
   const a = linesOf(before);
   const b = linesOf(after);
   const width = b.length + 1;
-  // lcs[i * width + j] is the longest common subsequence of a[i..] and b[j..].
   const lcs = new Uint32Array((a.length + 1) * width);
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {

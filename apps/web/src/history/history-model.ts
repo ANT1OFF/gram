@@ -27,11 +27,6 @@ import {
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { autoSettled, soloDone, type SettleRule } from "@/views/solo-threads";
 
-// History: every past chat in one list. Finished workers (live ledgers and those closed with their
-// worktree), orchestrators and one-off threads marked done or archived, and the agents' own past
-// sessions Gram never ran, which open by resuming. Pure, so the list filters, groups and pages the
-// way Done did and is tested without a browser.
-
 /** What a row is: a workspace's worker, an orchestrator, a one-off thread or a CLI session. */
 export type HistoryKind = "worker" | "orchestrator" | "thread" | "imported";
 
@@ -115,10 +110,6 @@ export interface HistorySources {
 
 const lastSegment = (path: string): string => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
-/**
- * How a finished worker's row ended. Archived only when that is all it came to: an orchestrator
- * archives its merged workers as a matter of course, and those still read merged.
- */
 const workerOutcome = (
   row: WorkerRow,
   summary: ThreadSummary | undefined,
@@ -134,7 +125,6 @@ const workerOutcome = (
   return "delivered";
 };
 
-/** A workspace's finished workers, as ⌘J's Done listed them (`workersByTab`). */
 const workerEntries = (source: HistoryWorkspace, facts: WorkerLiveFacts): HistoryEntry[] => {
   const tabs = workersByTab(source.ledger, facts, source.finished ?? []);
   const finished = new Map(source.finished?.map((worker) => [worker.threadId, worker] as const));
@@ -162,10 +152,6 @@ const workerEntries = (source: HistoryWorkspace, facts: WorkerLiveFacts): Histor
   );
 };
 
-/**
- * How a thread outside the ledgers ended: merged, marked done, or stopped on an error; one archived
- * with none of those is just archived. Archived or not, the Archived chip goes by its flag.
- */
 const threadOutcome = (summary: ThreadSummary, settled: boolean): HistoryOutcome => {
   const { thread } = summary;
   if (thread.completedReason === "prMerged") return "merged";
@@ -177,10 +163,6 @@ const threadOutcome = (summary: ThreadSummary, settled: boolean): HistoryOutcome
   return "stopped";
 };
 
-/**
- * The threads no ledger row covers that are over: archived (parked) or marked done, workers among
- * them, orchestrators and one-off threads. Dreams are memory upkeep, not chats, and stay out.
- */
 const threadEntries = (
   sources: HistorySources,
   covered: ReadonlySet<string>,
@@ -196,7 +178,6 @@ const threadEntries = (
         : thread.spawnedBy !== undefined && thread.workspaceId !== undefined
           ? "worker"
           : "thread";
-    // Only a one-off thread settles on its own: a workspace's are its orchestrator's to finish.
     const settled = kind === "thread" && autoSettled(summary, sources.settle);
     if (!thread.parked && !soloDone(summary) && !settled) return [];
     const workspace = thread.workspaceId === undefined ? undefined : names.get(thread.workspaceId);
@@ -226,7 +207,6 @@ const threadEntries = (
   });
 };
 
-/** A past CLI session as a row: resumable, by its folder's name. */
 const sessionEntry = (
   session: HistorySession,
   projects: ReadonlyMap<string, string>,
@@ -251,7 +231,6 @@ const sessionEntry = (
 export const historyEntries = (sources: HistorySources): HistoryEntry[] => {
   const names = new Map(sources.workspaces.map((w) => [w.workspaceId as string, w.name] as const));
   const workers = sources.workspaces.flatMap((source) => workerEntries(source, sources.facts));
-  // A ledger's worker is its row's to list, finished or not: a live one is not history yet.
   const covered = new Set<string>([
     ...workers.map((entry) => entry.threadId),
     ...sources.workspaces.flatMap(

@@ -8,14 +8,9 @@ import type { Ask, AskAction } from "./ask-model";
 import { useAskStackStore, type SendResult } from "./ask-stack-store";
 import { answerGroup, failureText } from "./inbox-model";
 
-// The one way an ask is answered, wherever the answer comes from: the stack's keys and buttons, or
-// a desktop notification's Allow. It holds the answer for the undo window, hides the ask's ids from
-// every view meanwhile, then sends it.
-
 /** What an answer that is sent does; opening is the caller's. */
 export type SendAction = Extract<AskAction, { kind: "group" | "answer" | "memory" | "worker" }>;
 
-/** Sends an answer; what it reports is what the store brings back. */
 const sendAnswer = async (
   api: Api,
   ask: Ask,
@@ -23,7 +18,6 @@ const sendAnswer = async (
   onMemory: (workspaceId: WorkspaceId) => void,
 ): Promise<SendResult> => {
   if (ask.worker !== undefined) {
-    // A worker's question: its words go to the worker, whichever reply field they were typed in.
     const answer =
       action.kind === "worker" || action.kind === "memory"
         ? action.answer

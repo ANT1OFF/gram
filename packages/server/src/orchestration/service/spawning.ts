@@ -1,7 +1,3 @@
-// Spawning: `spawn_worker` and the user's start of a worker, from
-// the approval an outside repo or a gated mode needs, through the gates near a limit, to the thread,
-// its worktrees and its brief.
-
 import { pinRefusal } from "../../embedding/worker-machines.ts";
 import type { makeSpawnBreaker } from "../spawn-breaker.ts";
 import {
@@ -210,13 +206,11 @@ export const workerMachine = (
     return own === undefined ? { error: RUNS_ON_ITS_ORCHESTRATORS_MACHINE } : { hostId: own };
   }
   if (named.id === own) return { hostId: named.id };
-  // The person's own machine, or one their orchestrator started for its workers.
   const personsOwn =
     (named.onDemand === "personal" || named.onDemand === "worker") &&
     named.owner !== undefined &&
     named.owner === ownOwner;
   const unmarked = named.onDemand === undefined && named.owner === undefined;
-  // A worker host this Gram asked a hosted server for, with the desktop's sign-in: this Gram's own.
   const relayedWorker =
     named.onDemand === "worker" && named.via !== undefined && named.owner === undefined;
   if (personsOwn || ((unmarked || relayedWorker) && !headless)) return { hostId: named.id };
@@ -239,8 +233,6 @@ export interface SpawningDeps {
   readonly routePaused: HeldSpawns["routePaused"];
 }
 
-/** Spawning workers. */
-/** A model's every field, effort (`variant`) and speed included, for telling two apart. */
 const modelFields = (model: ModelRef) =>
   JSON.stringify([model.agent, model.model, model.profileId, model.variant, model.speed]);
 
@@ -276,10 +268,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     headless,
     ownerOf,
   } = kit;
-  /**
-   * The joined machine `named` (its name, any case, or its id), for `spawn_worker`'s `machine`;
-   * `undefined` for this one, named by one of `LOCAL_MACHINE_NAMES`. A blank name is refused.
-   */
   const machineNamed = (tool: string, named: string) =>
     Effect.gen(function* () {
       const wanted = named.trim().toLowerCase();
@@ -322,17 +310,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         ),
       );
     });
-  /**
-   * The machine a worker is placed on: the one `named`, else this one (`undefined`). A headless
-   * Gram, running no work itself, puts it on its orchestrator's machine, so an orchestration stays
-   * on one machine and never spreads to a machine started for other work; an orchestrator with
-   * none of its own takes the placement's machine. With none that can take it, the spawn is
-   * refused with why.
-   */
   const placedMachine = (tool: string, named: string | undefined, under: Thread) =>
     Effect.gen(function* () {
       const own = orchestratorsMachine(under);
-      // What was named, as a machine's record or this machine, before the rule decides.
       const resolved = named === undefined ? undefined : yield* machineNamed(tool, named);
       const record =
         resolved === undefined
@@ -340,7 +320,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             ? undefined
             : ("here" as const)
           : (joinedMachines().find((machine) => machine.id === resolved) ?? { id: resolved });
-      // An orchestrator on this machine of a headless Gram names nothing: placement decides.
       if (headless !== undefined && own === undefined && record === undefined) {
         return yield* headless.machine.pipe(
           Effect.mapError((error) => toolError(tool, refusal("unknown_machine", error.message))),
@@ -353,20 +332,12 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       });
       if ("error" in placed) return yield* toolError(tool, refusal("not_admitted", placed.error));
       const hostId = placed.hostId;
-      // A worker goes on a machine of its orchestrator's person's, or of no one's under no one's
-      // (`host/ownership.ts`): an orchestration never spans two people, so nothing that reaches
-      // its workers has to ask whose each one is.
       if (!sameOwner(ownerOf, effectiveCheckout(under), { hostId }))
         return yield* toolError(tool, refusal("not_admitted", OWNERS_DIFFER));
       return hostId;
     });
-  /** Whether a worker goes on a machine a hosted server started for this desktop (`via`). */
   const relayed = (hostId: HostId | undefined) =>
     hostId !== undefined && joinedMachines().find((m) => m.id === hostId)?.via !== undefined;
-  /**
-   * On such a machine a pin on one model's own id runs that model, as its host lists it: never
-   * another that an alias of the same name runs there.
-   */
   const relayedPinRefusal = (
     hostId: HostId | undefined,
     named: string | undefined,
@@ -409,7 +380,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             `${name}: Claude Code is not installed. Install it there, then use Settings → Machines → Sign in before spawning a worker.`,
           ),
         );
-      // A machine that reported its models runs only those: a pinned model it lacks is refused.
       if (machine?.models !== undefined && hostListing(machine.models, chosen.model) === undefined)
         return yield* toolError(
           tool,
@@ -427,14 +397,11 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           ),
         );
     });
-  // Tool resolution runs before any approval card. The handler repeats admission under its lock
-  // because a roster or machine may change while a card is awaiting its answer.
   const checkSpawnMachine: OrchestrationShape["checkSpawnMachine"] = (callerId, input) =>
     Effect.gen(function* () {
       const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
       const hostId = yield* placedMachine("spawn_worker", input.machine, thread);
       if (hostId === undefined) return;
-      // A tier resolves against what that machine lists, as the spawn itself will.
       const chosen = yield* workerModel(
         "spawn_worker",
         thread,
@@ -452,8 +419,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         return yield* toolError("spawn_worker", refusal("not_admitted", pinned));
       yield* admitMachineModel("spawn_worker", hostId, chosen.model);
     });
-  // The model a spawn would run on, as it resolves here before any machine is placed: what a
-  // machine started for the worker must run.
   const spawnModel: OrchestrationShape["spawnModel"] = (callerId, model) =>
     Effect.gen(function* () {
       const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
@@ -490,7 +455,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   const spawnNeedsApproval: OrchestrationShape["spawnNeedsApproval"] = (callerId, input) =>
     Effect.gen(function* () {
       const authority = yield* authorityOf(callerId);
-      // Without authority the handler refuses; a card first would only ask for nothing.
       if (authority === undefined) return false;
       const { state } = authority;
       const outside = yield* outsideWorkspace(
@@ -503,7 +467,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       return !budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok;
     }).pipe(Effect.catchCause(() => Effect.succeed(true)));
 
-  /** The live workers a spawn's card counted as it asked for one past the cap, by its input. */
   const cardCounts = new WeakMap<SpawnWorkerInput, number>();
 
   const describeSpawn: OrchestrationShape["describeSpawn"] = (callerId, input) =>
@@ -540,7 +503,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     Effect.gen(function* () {
       const tool = "set_thread_model";
       const { thread, state } = yield* requireAuthority(tool, callerId);
-      // By its full label: the target's agent kind is fixed, and a bare id may be another kind's.
       const picked = yield* workerModel(
         tool,
         thread,
@@ -549,7 +511,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         yield* workerModelsHere(thread, state.charter),
         model.profileId,
       );
-      // A switch is to the model named or not at all; the default stands in only for a spawn.
       if (picked.instead !== undefined) {
         return yield* toolError(
           tool,
@@ -559,7 +520,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           ),
         );
       }
-      // Off the roster, no faster or harder than such a model is allowed to run.
       if (picked.other) {
         const problem =
           model.speed === "fast"
@@ -572,20 +532,17 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       }
     });
 
-  /** The routines engine's admission, once it has started (`setRoutineAdmission`). */
   let routineAdmission: RoutineAdmission | undefined;
   const setRoutineAdmission = (admit: RoutineAdmission) =>
     Effect.sync(() => {
       routineAdmission = admit;
     });
 
-  /** `spawn_worker`, an orchestrator's own spawn or a routine's launch. */
   const spawnFor = (
     callerId: ThreadId,
     given: SpawnWorkerInput,
   ): Effect.Effect<SpawnedWorker, AppToolError> => {
     let recorded: { key: string; id: ThreadId; workspaceId: WorkspaceId } | undefined;
-    // A routine's run is admitted below, under the spawn lock, and spawned as admitted.
     let input = given;
     return underKeysOf(
       spawnLock,
@@ -604,8 +561,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ),
             );
           }
-          // Every launch of a routine's worker, whichever way it came, is admitted here with the spawn
-          // lock held: the routine as it is now, its values exactly, or no launch.
           if (input.routine !== undefined) {
             if (routineAdmission === undefined) {
               return yield* toolError(
@@ -620,14 +575,11 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             input = admitted;
           }
           const projects = new Map((yield* store.listProjects).map((p) => [p.id, p]));
-          // A retry, or a call the last run crashed in, finds the worker by the id its request
-          // gives it, and makes it under that id if the first attempt got no further.
           const requestedId =
             input.clientRequestId === undefined
               ? undefined
               : ((yield* readOutbox(workspaceId)).requests[input.clientRequestId] ??
                 workerThreadId(workspaceId, input.clientRequestId));
-          // Only the orchestrator's own spawn answers an ask; a routine's is its own.
           const askedBy =
             input.routine === undefined
               ? askedByOf(
@@ -658,9 +610,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 ),
               );
             }
-            // A spawn ends with its audit entry; without one, a crash cut short what comes after the
-            // thread row, and this finishes it as the first call would have. With one, the worker is
-            // left as it is now, a group the user moved it to since included.
             const finished = (yield* store.listOrchestrationEvents(
               workspaceId,
               existing.createdAt,
@@ -669,10 +618,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 event.kind === "spawn" &&
                 (event.data as { readonly threadId?: unknown } | null)?.threadId === existing.id,
             );
-            // The worker found again is held to the same rule as a new one (`workerMachine`), on the
-            // machines it really works on, before anything reaches it: a brief is never delivered to
-            // a worker that sits on a machine its orchestrator may not use. A half-made one there is
-            // closed, and the next call with a new id places a fresh one.
             const misplaced = recoveredMachineProblem(existing, {
               own: orchestratorsMachine(caller),
               ownerOf,
@@ -683,8 +628,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               if (!finished) yield* runtimes.close(existing.id).pipe(Effect.ignore);
               return yield* toolError(tool, refusal("not_admitted", misplaced));
             }
-            // A routine's half-made worker is finished only as it was made: in the project it was made
-            // in. One whose routine moved since is closed instead, and the next run admits a fresh one.
             if (!finished && input.routine !== undefined && existing.projectId !== input.project) {
               yield* runtimes.close(existing.id).pipe(Effect.ignore);
               return yield* toolError(
@@ -695,9 +638,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 ),
               );
             }
-            // Finished as admitted: the routine's model and name now, as a fresh run would have. A
-            // model it can't switch to (another agent kind, one the session refuses) is the same as
-            // a project moved: closed, and the next run starts a fresh one.
             if (!finished && input.routine !== undefined) {
               const picked = yield* workerModel(
                 tool,
@@ -706,7 +646,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 input.model,
                 yield* workerModelsHere(caller, state.charter),
               );
-              // Every field of the model as admitted, effort (`variant`) and speed included.
               const sameModel = modelFields(existing.model) === modelFields(picked.model);
               if (!sameModel) {
                 const switched = yield* runtimes.setModel(existing.id, picked.model).pipe(
@@ -734,8 +673,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             if (existing.parked) parkedWorkers.add(existing.id);
             if (!finished) {
               const now = yield* Clock.currentTimeMillis;
-              // The memo may already exist, made by the brief's turn start before the crash, so
-              // the call's scope is filled in rather than the memo written whole.
               const scope =
                 input.scope === undefined || input.scope.length === 0 ? undefined : input.scope;
               yield* updateOutbox(workspaceId, (outbox) => {
@@ -836,8 +773,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             );
           }
           if (input.carded !== undefined || input.unattended === true || input.uncarded === true) {
-            // Under the spawn lock, so a spawn racing this one is counted: what would need the
-            // user's card is refused here, never asked, and never let through on a stale count.
             const outside =
               input.carded === undefined
                 ? yield* outsideWorkspace(tool, [input.project, ...(input.alsoIn ?? [])], state)
@@ -867,8 +802,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             }
             others.push(other);
           }
-          // In the folder of a workspace a profile made: a folder of the worker's own, with the
-          // profile's files, skills, server and level (`thread-profiles/home.ts`).
           const scratch =
             state.workspace.fromProfile === true && project.id === state.workspace.homeProjectId
               ? yield* readHomeProfile(project.root).pipe(
@@ -902,13 +835,8 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             }
           }
           const found = yield* survey(state, true);
-          // At the concurrency cap, or outside the workspace: the approval gate asked the user
-          // before this handler ran (`spawnNeedsApproval`), and they said yes to this one. Nothing
-          // else about a spawn is rationed.
           const settings = yield* store.getSettings;
-          // Where it runs, first: a tier resolves against what that machine lists.
           const hostId = yield* placedMachine(tool, input.machine, caller);
-          // Without a roster the one model is the orchestrator's own, which it runs on.
           const picked = yield* workerModel(
             tool,
             caller,
@@ -917,8 +845,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             yield* workerModelsHere(caller, state.charter, hostId),
           );
           const chosen = picked.model;
-          // On a machine of its own (`sandbox`), a worker runs the model it was given or none: the
-          // machine runs what its provider offers, so another model would be a silent swap.
           if (relayed(hostId) && picked.instead !== undefined)
             return yield* toolError(
               tool,
@@ -948,8 +874,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             gateHoldsInMode: gateHoldsIn(chosen.agent, mode),
           });
           if (!verdict.ok) return yield* toolError(tool, refusal(verdict.code, verdict.reason));
-          // The efforts of the machine it runs on: a joined machine's own report where it gave
-          // one, else this machine's list.
           const machineRecord =
             hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId);
           const placedModels = placedModelsOf(machineRecord, chosen.agent);
@@ -968,9 +892,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               `${picked.instead.of} is unavailable here (${picked.instead.why}), so this worker runs on ${workerModelLabel(chosen)}. Tell the user.`,
             );
           }
-          // An entry that follows a tier keeps the recommendation's ceiling: an effort asked above
-          // high runs at high, as it does on a model off the roster. A pinned entry takes any effort
-          // its model lists.
           const ceiling = picked.follows || picked.other === true;
           const asked =
             ceiling && input.effort !== undefined && aboveHigh(input.effort)
@@ -987,8 +908,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           if (asked !== undefined && effort === undefined) {
             warnings.push(`${chosen.model} doesn't take effort ${asked}; it was left out.`);
           }
-          // A charter entry comes whole, its effort included. Without a list the model is the
-          // orchestrator's own, whose effort was chosen for orchestrating and isn't handed on.
           const { variant: _variant, ...bare } = chosen;
           const model: ModelRef =
             effort !== undefined
@@ -996,7 +915,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               : state.charter.workerModels === undefined && picked.other !== true
                 ? bare
                 : chosen;
-          // The browser only where each consent it needs is on; otherwise it runs without.
           const browserProblem =
             input.browser !== true
               ? undefined
@@ -1027,7 +945,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 ),
               );
             }
-            // A folder on another machine isn't there to read.
             if (hostOf(effectiveCheckout(sibling)) !== (hostId ?? LOCAL_HOST_ID)) {
               return yield* toolError(
                 tool,
@@ -1095,9 +1012,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             ...(askedBy === undefined ? {} : { askedBy }),
             ...(input.placement === undefined ? {} : { placement: input.placement }),
           };
-          // A worker in a profile's workspace: its own new folder on the machine it was placed on,
-          // with no branch, held to the profile's server and level. A start that fails takes the
-          // folder back.
           const inFolder = (home: HomeWorker) =>
             Effect.gen(function* () {
               const id = requestedId ?? makeThreadId();
@@ -1126,8 +1040,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   Effect.tapError(() => folder.remove),
                 );
             });
-          // From git's check to the thread holding them, beside a spawn in another workspace that
-          // shares these repos.
           const worker = yield* scratch !== undefined
             ? inFolder(scratch)
             : checkoutLock.withLocks(
@@ -1136,7 +1048,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   const checkout = yield* prepareIn(project);
                   const extraCheckouts: Array<Checkout> = [];
                   for (const other of others) {
-                    // No half-made worker: a repo that refuses takes the worktrees made so far with it.
                     const made = yield* prepareIn(other).pipe(
                       Effect.catch((e) =>
                         Effect.forEach([checkout, ...extraCheckouts], checkouts.discard, {
@@ -1178,8 +1089,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           workerWorkspaces.set(worker.id, workspaceId);
           if (mode === "auto") openedInAuto.add(worker.id);
           if (handed.length > 0 && conversations !== undefined) {
-            // The worker exists: a conversation that couldn't move stays the orchestrator's, and
-            // it is told so rather than losing the worker.
             yield* conversations.hand(caller.id, worker.id, handed).pipe(
               Effect.catch((e) =>
                 Effect.sync(() => {
@@ -1190,8 +1099,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           }
           const now = yield* Clock.currentTimeMillis;
           yield* updateOutbox(workspaceId, (outbox) => {
-            // The thread was live, its brief sent, before this records it: a message the user typed
-            // into it meanwhile marked it (`onUserInput`), and that stands.
             const taken = outbox.workers[worker.id];
             return [
               withNotes(
@@ -1237,9 +1144,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             },
           });
           yield* orchestrationChanged(workspaceId);
-          // A repo registered by this call isn't in the list read before it.
           for (const known of [project, ...others]) projects.set(known.id, known);
-          // Spawned on a login at its limit: the brief waits in the worker's queue for the reset.
           const limitWait = (yield* findThread(worker.id))?.limitWait;
           return {
             ...spawnedResult(worker, projects),
@@ -1248,8 +1153,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           };
         }),
       ).pipe(
-        // A spawn that failed before its thread existed leaves no request to find it by, so a
-        // branch it gave up can go to another worker without stranding a retry of this one.
         Effect.onError(() => (recorded === undefined ? Effect.void : forgetRequest(recorded))),
       ),
     );
@@ -1265,7 +1168,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       });
     });
 
-  /** Puts a feature in a group, making the group if need be; a no-op when it is there already. */
   const joinGroup = (workspaceId: WorkspaceId, feature: string, group: string) =>
     store
       .updateWorkspace(workspaceId, (current) => {
@@ -1282,8 +1184,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         : carded === true
           ? { ...given, carded: cardCounts.get(given) ?? -1 }
           : given;
-    // The machine is checked first, and a held brief keeps its id: a name that is wrong now is
-    // refused now, not when the brief is released hours later.
     return (
       named.machine === undefined
         ? Effect.succeed(named)

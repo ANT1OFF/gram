@@ -16,14 +16,12 @@ export const EFFORT_LEVEL: Readonly<Record<ReasoningVariant, number>> = {
   max: 1,
 };
 
-// The dial: lucide's Gauge geometry, a 240° arc of radius 10 round (12, 14), open at the bottom.
 const CX = 12;
 const CY = 14;
 const R = 10;
 const NEEDLE = 6;
 const SWEEP = 240;
 
-/** The point `radius` out from the centre at `degrees` clockwise from straight up. */
 const point = (degrees: number, radius: number) => {
   const radians = (degrees * Math.PI) / 180;
   return [CX + radius * Math.sin(radians), CY - radius * Math.cos(radians)] as const;
@@ -31,7 +29,6 @@ const point = (degrees: number, radius: number) => {
 
 const fmt = (n: number) => Number(n.toFixed(2));
 
-/** The arc from the dial's start round to `degrees`, as a path. */
 const arcTo = (degrees: number) => {
   const [x0, y0] = point(-SWEEP / 2, R);
   const [x1, y1] = point(degrees, R);
@@ -64,10 +61,8 @@ export function EffortGauge({
       strokeLinejoin="round"
       data-testid="effort-gauge"
       data-level={variant ?? "default"}
-      // `lucide` takes the theme's icon stroke, as every other toolbar glyph does.
       className={cn("lucide size-3.5", className)}
     >
-      {/* The track: the whole dial, faint once a level fills part of it. */}
       <path d={arcTo(SWEEP / 2)} opacity={level === undefined ? 1 : 0.35} />
       {level !== undefined && level > 0 && <path d={arcTo(angle)} />}
       <path d={`M${CX} ${CY}L${fmt(nx)} ${fmt(ny)}`} />

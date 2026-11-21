@@ -1,6 +1,3 @@
-// A thread's transcript as it streams: the messages still open, what is stored of them, and the
-// live feed subscribers hear. Every function is called with the runtime lock held.
-
 import * as Effect from "effect/Effect";
 import * as Clock from "effect/Clock";
 import * as FiberMap from "effect/FiberMap";
@@ -36,7 +33,6 @@ import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { NotifyObservers } from "./runtime-observer.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
-/** The id prefix of a message an app's data part opened on its own (`appendDataPart`). */
 const DATA_MESSAGE_PREFIX = "app-";
 
 /** How stale a streaming message's search index row may get. */
@@ -45,7 +41,6 @@ export const SEARCH_REFRESH_MS = 5_000;
 /** The waits between a timed refresh's tries while another connection holds the write lock. */
 export const SEARCH_REFRESH_RETRY_MS = [100, 200, 400, 800, 1_600, 3_200] as const;
 
-/** Elapsed time, which a change of the wall clock doesn't move. */
 const monotonicMs = Effect.map(Clock.monotonicTimeNanos, (nanos) => Number(nanos / 1_000_000n));
 
 /** What the feed writer reads: the stored transcript, the live feed and the runtime's observers. */
@@ -92,8 +87,6 @@ export const unsettledIn =
     return streaming;
   };
 
-/** The transcript writer `ThreadRuntimes` streams every thread's messages through. */
-/** A reply let go of in its turn, never to go on again. */
 const closeIn = (rt: Runtime, messageId: MessageId) => {
   if (rt.turn === undefined) return;
   (rt.turn.closed ??= new Set()).add(messageId);
@@ -111,20 +104,9 @@ export const makeFeedWriter = ({
       return hub.publishFeed(item).pipe(Effect.as(item));
     });
 
-  /**
-   * Tells the server's own consumers that a stored message is whole: written, and not streaming.
-   * A message written whole is at once; a streamed one when it has finished and no tool output
-   * of its is still to be replaced, or when its turn ends (`persist`). Every later write of it
-   * tells again.
-   */
   const settled = (rt: Runtime, messageId: string) =>
     hub.publishOwn({ type: "message.settled", threadId: rt.threadId, messageId });
 
-  /** Stores a whole message and pushes it to live subscribers. */
-  /**
-   * `after`, an open message the feed already shows above this one, is stored first if it wasn't
-   * yet, so the stored transcript keeps the order the live one shows.
-   */
   const publishMessage = (
     rt: Runtime,
     message: GramUIMessage,
@@ -146,17 +128,14 @@ export const makeFeedWriter = ({
       ),
     );
 
-  /** Called with the feed lock held. Sends live subscribers the stored feed in place of theirs. */
   const replaceFeed = (rt: Runtime) =>
     Effect.gen(function* () {
       const { messages, earlier } = yield* store.recentMessages(rt.threadId, FEED_WINDOW_TURNS);
       const rev = (yield* store.feedRevision(rt.threadId))?.rev ?? 0;
-      // A live replacement follows the subscribe shape: history, (no in-flight replay), caughtUp.
       yield* publishFeed(rt, { type: "messages", messages, ...(earlier ? { earlier } : {}) });
       yield* publishFeed(rt, { type: "caughtUp", rev });
     });
 
-  /** Takes a message no agent got out of the feed. */
   const withdrawMessage = (rt: Runtime, messageId: string) =>
     feedLocked(
       rt,
@@ -165,18 +144,10 @@ export const makeFeedWriter = ({
       }),
     );
 
-  /** When each open message's search index row was last refreshed (`monotonicMs`). */
   const searchIndexedAt = new WeakMap<InFlight, number>();
 
-  /**
-   * Refreshes the message's index row at the monotonic deadline `at`, when `SEARCH_REFRESH_MS` has
-   * passed since the last one. Outside the feed lock, so a refresh waiting out another connection's
-   * write lock holds up no save; one that finds the lock held is tried again after each of
-   * `SEARCH_REFRESH_RETRY_MS`.
-   */
   const refreshLater = (rt: Runtime, inFlight: InFlight, at: number) =>
     Effect.gen(function* () {
-      // A slow save or a delayed fiber start already spent part of the interval.
       const delayMs = Math.max(0, at - (yield* monotonicMs));
       for (const waitMs of [delayMs, ...SEARCH_REFRESH_RETRY_MS]) {
         yield* Effect.sleep(waitMs);
@@ -187,7 +158,6 @@ export const makeFeedWriter = ({
       }
       yield* Effect.logWarning("search: the write lock stayed held; a streaming message waits");
     }).pipe(
-      // Left behind, the row is the next save's, the settle's or the startup sweep's to refresh.
       Effect.catchCause((cause) =>
         Effect.logWarning("search: couldn't refresh a streaming message").pipe(
           Effect.annotateLogs({ threadId: rt.threadId, cause: String(cause) }),
@@ -195,16 +165,6 @@ export const makeFeedWriter = ({
       ),
     );
 
-  /**
-   * Re-indexing a long reply for search is most of a save's cost, so a streaming message's index
-   * row is refreshed on its first save, then at most every `SEARCH_REFRESH_MS`, and always once it
-   * settles: finished, with no tool output still to replace. A save that skips it sets a timer for
-   * the rest of that interval, so a reply that pauses mid-stream (a stall, a long tool call) is
-   * still indexed by then: search lags what is stored by `SEARCH_REFRESH_MS` at most.
-   *
-   * `turnOver` is the save a turn's end or a session's makes: a finished message is then told as
-   * settled whatever tool output it still waits on, since that may never come.
-   */
   const persist = (rt: Runtime, inFlight: InFlight, turnOver = false) =>
     Effect.gen(function* () {
       const whole = inFlight.finished && inFlight.accumulator.preliminaryTools().length === 0;
@@ -239,7 +199,6 @@ export const makeFeedWriter = ({
       return rev;
     });
 
-  /** Tells observers of a file `chunk` says the thread produced, if it says so. */
   const noteOutput = (
     rt: Runtime,
     chunk: GramUIMessageChunk,
@@ -253,12 +212,6 @@ export const makeFeedWriter = ({
         );
   };
 
-  /** Called with the feed lock held. */
-  /**
-   * Whether a stored message no reply has open may go on: only the current turn's latest top-level
-   * reply, unfinished and not let go of. Every other (a person's message, a notice, an app's data
-   * message, an earlier reply, a subagent's lane, another turn's) is left as it is.
-   */
   const goesOn = (rt: Runtime, messageId: MessageId, stored: GramUIMessage) =>
     Effect.gen(function* () {
       const turn = rt.turn;
@@ -284,10 +237,6 @@ export const makeFeedWriter = ({
       let chunk = incoming;
       let inFlight = rt.open.get(messageId);
       if (inFlight === undefined) {
-        // A reply opens or goes on only as a reply still under way: never over a person's message,
-        // Gram's notice or an app's data message, whose ids an agent was handed, nor over any other
-        // reply. The one stored reply that goes on is the current turn's latest, unfinished, as a
-        // session a host kept across a restart continues it under the turn it adopted.
         const stored = yield* store.getMessage(rt.threadId, messageId);
         if (stored !== undefined && !(yield* goesOn(rt, messageId, stored))) {
           yield* Effect.logWarning("a reply named a message that isn't one under way").pipe(
@@ -295,8 +244,6 @@ export const makeFeedWriter = ({
           );
           return;
         }
-        // No agent dates its replies, so the transcript's hover time for one is when it began
-        // streaming, stamped on the chunk that opens it so live subscribers see it too.
         if (chunk.type === "start" && chunk.messageMetadata?.createdAt === undefined) {
           chunk = {
             ...chunk,
@@ -330,9 +277,6 @@ export const makeFeedWriter = ({
       if (chunk.type === "finish" || chunk.type === "abort") inFlight.finished = true;
       const folded = inFlight.accumulator;
       yield* noteOutput(rt, chunk, (id) => folded.toolPart(id));
-      // Stored before anyone hears of it, or else held in `rt.open`: a client asks
-      // `attachment.read` for a file or tool image the moment its part arrives, and that is
-      // authorized against the stored messages and `liveMessages`.
       if (completed && (inFlight.finished || performance.now() >= inFlight.nextPersistAt)) {
         const started = performance.now();
         yield* persist(rt, inFlight);
@@ -351,8 +295,6 @@ export const makeFeedWriter = ({
           chunk.type === "tool-output-error" ||
           chunk.type === "tool-output-denied")
       ) {
-        // Each snapshot replaces the same tool's output. Replaying superseded snapshots costs
-        // quadratic space in the output length; keep only the newest at its original sequence.
         for (let i = inFlight.items.length - 1; i >= 0; i--) {
           const previous = inFlight.items[i]!;
           const event = previous.event;
@@ -364,8 +306,6 @@ export const makeFeedWriter = ({
           )
             inFlight.items.splice(i, 1);
           else if (event.type === "chunk" && event.chunk.type === "finish") {
-            // Reconnect can interleave between this output and its follow-up finish. Keep the
-            // previous finish's metadata without closing a fold before the newest output.
             const metadata = event.chunk.messageMetadata;
             if (metadata === undefined) inFlight.items.splice(i, 1);
             else
@@ -382,8 +322,6 @@ export const makeFeedWriter = ({
       }
       let replayChunk = chunk;
       if (inFlight.retainedToolOutput && chunk.type === "finish") {
-        // One finish closes the replay. Carry accumulated metadata onto it so removing an older
-        // finish loses no metadata and never reopens an empty fold halfway through reconnect.
         for (let i = inFlight.items.length - 1; i >= 0; i--) {
           const event = inFlight.items[i]!.event;
           if (
@@ -401,8 +339,6 @@ export const makeFeedWriter = ({
       const published = yield* publishFeed(rt, { type: "chunk", messageId, chunk });
       const merged = mergedDelta(inFlight.items.at(-1), replayChunk);
       if (merged !== undefined) {
-        // One replay item per run of a part's deltas, not one per delta: a long reply's replay
-        // grows with its text, not with how finely the agent streamed it.
         inFlight.items[inFlight.items.length - 1] = {
           ...published,
           event: { type: "chunk", messageId, chunk: merged },
@@ -425,10 +361,6 @@ export const makeFeedWriter = ({
       }
     });
 
-  /**
-   * Stores every open message holding a completed part it skipped. A background subagent's
-   * transcript outlives its turn, so a session that ends between turns ends no turn that would.
-   */
   const flushUnsaved = (rt: Runtime) =>
     feedLocked(
       rt,
@@ -461,32 +393,22 @@ export const makeFeedWriter = ({
       return messageId;
     });
 
-  /** Finishes and stores every message still streaming, as a turn's end does. */
   const closeOpenMessages = (rt: Runtime) =>
     feedLocked(
       rt,
       Effect.gen(function* () {
         for (const inFlight of rt.open.values()) {
-          // Close a reply the adapter never finished, so clients stop showing it as streaming. A
-          // subagent transcript stays open: a background subagent streams on after the turn.
           if (!inFlight.finished && !inFlight.nested) {
             yield* appendChunkLocked(rt, inFlight.messageId, { type: "finish" });
           }
           yield* persist(rt, inFlight, true);
           inFlight.unsaved = false;
-          // Codex unified exec can exit after its parent reply finishes. Keep that accumulator
-          // until its authoritative output arrives, so it updates the original stored card.
           if (inFlight.finished && inFlight.accumulator.preliminaryTools().length === 0)
             rt.open.delete(inFlight.messageId);
         }
       }),
     );
 
-  /**
-   * Stamps how a turn ended on its reply, and the tokens the turn used (`usage`, its reply's share:
-   * see `replyUsage`). A whole-message write: the stored row keeps its place, and unlike a chunk it
-   * doesn't read as the reply streaming again. Only the transcript hears of it.
-   */
   const stampTurnEnd = (
     rt: Runtime,
     messageId: MessageId,
@@ -499,9 +421,7 @@ export const makeFeedWriter = ({
         const stamp = { turnEnd, ...(usage === undefined ? {} : { usage }) };
         const held = rt.open.get(messageId);
         if (held !== undefined) {
-          // A reply held for a tool's late output is saved from here again, so that keeps it too.
           held.accumulator.apply({ type: "message-metadata", messageMetadata: stamp });
-          // And a replay draws it from these rather than the store, closing it on this finish.
           const index = held.items.findLastIndex(
             ({ event }) => event.type === "chunk" && event.chunk.type === "finish",
           );
@@ -522,11 +442,6 @@ export const makeFeedWriter = ({
       }),
     );
 
-  /**
-   * Finishes and stores every subagent transcript still streaming, for a session that is gone and
-   * took its background subagents with it: left open, the next session's replay would show each
-   * stopped subagent running for good.
-   */
   const closeLanes = (rt: Runtime) =>
     feedLocked(
       rt,
@@ -630,13 +545,9 @@ export const makeFeedMethods = ({
   replay: (threadId, afterRev, from) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
-      // Not `locked`: a thread opened as its turn starts or ends would wait out the turn's git
-      // checkpoint, which took seconds with the sweep running.
       return yield* feedLocked(
         rt,
         Effect.gen(function* () {
-          // Every write to the thread's messages holds the feed lock, so the revision and the
-          // rows read under it agree.
           const revision = yield* store.feedRevision(threadId);
           const since =
             afterRev !== undefined &&

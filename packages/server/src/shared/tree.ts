@@ -1,11 +1,3 @@
-// One copy of a workspace's shared folder on one machine: the control plane's own under Gram's data
-// folder, or a host's mirror. Both sides of a sync are this, the host's reached over its connection.
-//
-// The folder is the agents' to write, so nothing here follows a link: a listing passes links by, and
-// a read, a write or a delete refuses a path with a link anywhere between the folder and the file.
-// Writes land beside the folder's files, under `.gram-incoming`, and are renamed into place whole,
-// so an agent never reads half a file the sync is still writing.
-
 import {
   InvalidState,
   isSharedPath,
@@ -26,11 +18,8 @@ import { lstat, mkdir, open, readdir, rename, rm, rmdir, unlink, utimes } from "
 import { dirname, join, resolve } from "node:path";
 import { isStrictlyInside } from "@gram/git";
 
-/** Where writes wait to be put in place, inside the folder so the rename stays on one disk. */
 const INCOMING = `${SHARED_RESERVED_PREFIX}incoming`;
-/** How deep a listing goes; a deeper file is held, not carried. */
 const MAX_DEPTH = 32;
-/** The most held paths a listing names. */
 const MAX_HELD = 1_000;
 
 export interface SharedWrite {
@@ -95,10 +84,6 @@ interface Known {
   readonly sha256: string;
 }
 
-/**
- * The bytes the plain files under `folder` take, at any depth, links passed by: what a sync has
- * put there, what is on its way in, and what an agent wrote there itself.
- */
 const bytesUnder = async (folder: string): Promise<number> => {
   let total = 0;
   const walk = async (at: string, depth: number): Promise<void> => {
@@ -122,13 +107,8 @@ export const sharedTree = (
   maxBytes: number = SHARED_FOLDER_MAX_BYTES,
 ): SharedTree => {
   const base = resolve(root);
-  /** Each file's hash as last read, kept while its size and time stay the same. */
   const known = new Map<string, Known>();
 
-  /**
-   * `path` inside the folder, every folder on the way checked not to be a link. Answers the file's
-   * absolute path; a missing folder on the way is fine, one that is a link or a file is refused.
-   */
   const resolveIn = async (path: string): Promise<string> => {
     if (!isSharedPath(path)) throw invalid(`Not a path in a shared folder: ${path}`);
     const parts = path.split("/");
@@ -145,7 +125,6 @@ export const sharedTree = (
     return join(base, ...parts);
   };
 
-  /** The file's hash now, or `absent`; a link or anything but a plain file is refused. */
   const hashOf = async (absolute: string, path: string): Promise<string> => {
     const info = await lstat(absolute).catch((error: unknown) => {
       if (codeOf(error) === "ENOENT") return undefined;
@@ -192,7 +171,6 @@ export const sharedTree = (
           else await walk(absolute, path, depth + 1);
           continue;
         }
-        // Links, sockets and devices are the machine's own: never carried, never deleted.
         if (!entry.isFile()) continue;
         if (!isSharedPath(path)) {
           hold(path);
@@ -248,7 +226,6 @@ export const sharedTree = (
       `${createHash("sha256").update(path).digest("hex").slice(0, 16)}-${sha256.slice(0, 16)}`,
     );
 
-  /** Makes the folders on the way to `absolute`, refusing a link or a file among them. */
   const makeParents = async (absolute: string, path: string) => {
     const parts = path.split("/").slice(0, -1);
     let at = base;
@@ -272,8 +249,6 @@ export const sharedTree = (
       const bytes = Buffer.from(request.data, "base64");
       if (bytes.length > SHARED_PART_BYTES || offset + bytes.length > size)
         throw invalid(`A part of ${path} that doesn't fit it`);
-      // A file is let in only while the folder has room for all of it: the machine on the other
-      // end, or an agent there, can't fill this machine's disk through the sync.
       if (offset === 0) {
         const replaced = (await lstat(absolute).catch(() => undefined))?.size ?? 0;
         if ((await bytesUnder(base)) - replaced + size > maxBytes)
@@ -326,7 +301,6 @@ export const sharedTree = (
       if (now !== ifMatch) return { removed: false };
       await unlink(absolute);
       known.delete(path);
-      // Folders left empty go too, up to the shared folder itself.
       let folder = dirname(absolute);
       while (isStrictlyInside(base, folder)) {
         const gone = await rmdir(folder).then(

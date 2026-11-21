@@ -92,7 +92,6 @@ export function SwitchOrchestratorAction({
     saved !== undefined && current.sessionSwitch === undefined && savedDiffers(saved, current.model)
       ? saved
       : undefined;
-  // Continue in… carries this session over only to the other agent, on the CLI's own sign-in.
   const carries =
     pending !== undefined &&
     offer.offered &&
@@ -114,8 +113,6 @@ export function SwitchOrchestratorAction({
     </Button>
   );
   return (
-    // A row of the card like the settings under it: a frame of its own inside the card read as a
-    // different kind of thing, in smaller type than the names below.
     <div
       className="flex flex-wrap items-center justify-between gap-2"
       data-testid="orchestrator-switch-action"
@@ -125,7 +122,6 @@ export function SwitchOrchestratorAction({
         <p data-testid="orchestrator-current" className="text-meta text-description">
           {switchCurrentText(current, identity?.model)}
         </p>
-        {/* A saved model the running session isn't on: saving doesn't move it, so say what does. */}
         {pending !== undefined && (
           <p data-testid="orchestrator-saved" className="text-meta text-description">
             Saved: {name(pending)}. The running session stays on {current.model.model}
@@ -146,7 +142,6 @@ export function SwitchOrchestratorAction({
         (offer.refusal === undefined ? (
           button(undefined)
         ) : (
-          // Greyed, it says why on hover, in the words the server would refuse with.
           <Hint label={offer.refusal} side="bottom" render={<span tabIndex={0} />}>
             {button(offer.refusal)}
           </Hint>
@@ -156,11 +151,6 @@ export function SwitchOrchestratorAction({
   );
 }
 
-/**
- * Start fresh on the saved model, where the running session can't carry over to it: a button that
- * opens in place what happens (why not a carry-over, what the new session gets, what stays and what
- * is lost), Save to memory first, and the one action that starts it.
- */
 function StartFreshOn({
   state,
   running,
@@ -171,7 +161,6 @@ function StartFreshOn({
   state: WorkspaceState;
   running: Thread;
   onto: ModelRef;
-  /** The server's words for why this session can't move there, where it said. */
   why: string | undefined;
   disabled: boolean;
 }) {

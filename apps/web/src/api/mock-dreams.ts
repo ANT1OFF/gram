@@ -28,10 +28,6 @@ import {
 import { MockInvalidState } from "./mock-fs";
 import type { AdoptDreamInput, ApiServerEvent, DreamPreviewInput, StartDreamInput } from "./types";
 
-// A workspace's memory and its dreams for MockApi: versions of Markdown files held in maps, and
-// dreams whose reviews are written by hand. Nothing here runs an agent. `seed` gives the board
-// scenario a memory worth looking at, a completed dream with a conflict and one still running.
-
 export interface MockDreamsHost {
   /** The workspace, or `undefined` for one that doesn't exist. */
   workspace(workspaceId: WorkspaceId): WorkspaceState | undefined;
@@ -74,23 +70,17 @@ interface MockMemory {
   current: string;
 }
 
-/** What a finished mock dream would change, which the real server reads off the dream's folder. */
 interface MockOutput {
   readonly files: readonly DreamFileDiff[];
   readonly report: string;
   readonly digest: string;
 }
 
-/** One thread's messages past the mock memory's watermark. */
 interface MockUnread {
   readonly tokens: number;
   readonly messages: number;
 }
 
-/**
- * What a workspace's threads hold that its memory hasn't consolidated, in reading order: 236k
- * tokens, so the default budget of 200k leaves one thread for the next dream.
- */
 const MOCK_UNREAD: readonly MockUnread[] = [
   { tokens: 48_000, messages: 60 },
   { tokens: 31_000, messages: 40 },
@@ -108,7 +98,6 @@ const notFound = (entity: string, id: string) =>
 const fsError = (path: string, message: string) =>
   Object.assign(new Error(message), { _tag: "FsError", path, message });
 
-/** The server's lexical path rule, cut down: a relative POSIX path to a `.md` file. */
 const pathProblem = (path: string): string | undefined => {
   if (path === "") return "Name a memory file, e.g. decisions.md";
   if (path.startsWith("/") || path.split("/").some((part) => part === "" || part === "..")) {
@@ -199,7 +188,6 @@ const seedFiles = (now: number): Map<string, MockFile> => {
   ]);
 };
 
-/** How long a mock merge "runs", so the panel shows it working. */
 const MERGE_MS = 2000;
 
 const sidesOf = (file: DreamFileDiff): string =>
@@ -207,11 +195,6 @@ const sidesOf = (file: DreamFileDiff): string =>
 
 const linesOf = (text: string | undefined) => (text ?? "").replace(/\n$/, "").split("\n");
 
-/**
- * What the mock's model makes of a conflict: the dream's text, with every line the orchestrator
- * added since the baseline that the dream doesn't carry, placed after the line it followed or at the
- * end. Enough for the panel to show a believable merge; the real one is a model's.
- */
 const mockMerge = (file: Pick<DreamFileDiff, "before" | "after" | "current">): string => {
   const base = new Set(linesOf(file.before));
   const merged = linesOf(file.after);
@@ -234,9 +217,7 @@ export function createMockDreams(host: MockDreamsHost) {
   let dreams: Dream[] = [];
   const outputs = new Map<DreamId, MockOutput>();
   const unread = new Map<WorkspaceId, readonly MockUnread[]>();
-  /** Which of its workspace's unread threads each dream read, by index: what adopting it consolidates. */
   const readBy = new Map<DreamId, readonly number[]>();
-  /** The merges asked for, by dream and path, with the sides each read, as the server keeps them. */
   const merges = new Map<DreamId, Map<string, { sides: string; state: DreamMerge }>>();
 
   const requireWorkspace = (workspaceId: WorkspaceId): WorkspaceState => {
@@ -283,7 +264,6 @@ export function createMockDreams(host: MockDreamsHost) {
     parts,
   });
 
-  /** The server's fill, simplified: whole threads in order while they fit, the rest the backlog. */
   const planOf = (workspaceId: WorkspaceId, budgetTokens: number) => {
     const items = unread.get(workspaceId) ?? MOCK_UNREAD;
     const taken: number[] = [];
@@ -345,7 +325,6 @@ export function createMockDreams(host: MockDreamsHost) {
     const found: Record<string, number> = { claude: 46, codex: 9 };
     const sources = projects.flatMap((project, index) =>
       (["claude", "codex"] as const).flatMap((agent) => {
-        // Only the first repo has Codex history, so a thin source shows beside a rich one.
         if (agent === "codex" && index > 0) return [];
         const sessions = Math.min(perRepo, Math.max(3, found[agent]! - index * 17));
         return [
@@ -543,8 +522,6 @@ export function createMockDreams(host: MockDreamsHost) {
         dream,
         memoryVersion: memory.current,
         ...(output === undefined ? {} : { outputDigest: output.digest, report: output.report }),
-        // A file the orchestrator wrote since the dream copied it is a conflict, and says what
-        // memory holds now; once memory and the baseline agree again it is an ordinary change.
         files: (output?.files ?? []).map((file) => {
           const current = live.get(file.path)?.content;
           if (file.status !== "conflict") return file;
@@ -682,7 +659,6 @@ export function createMockDreams(host: MockDreamsHost) {
       if (dream.status === "running" || dream.status === "pending") {
         throw new MockInvalidState("The memory update is still running: cancel it first.");
       }
-      // As the server does: the thread ran in the folder a discard deletes, so it is closed first.
       if (dream.threadId !== undefined) await host.closeThread(dream.threadId);
       dreams = dreams.filter((candidate) => candidate.id !== id);
       outputs.delete(id);

@@ -1,6 +1,3 @@
-// macOS exec authorization can hold even asynchronous spawn inside its synchronous native call.
-// Keep commands on a persistent worker so the server can still answer sockets during that wait.
-
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import * as Effect from "effect/Effect";
@@ -33,7 +30,6 @@ export type CommandResponse =
 
 /** A scoped worker running the same bounded, capped and reaped commands as the direct platform. */
 export const makeCommandWorker = (
-  // Vitest defines __dirname even for TypeScript source. Select source before the CJS bundle path.
   file: string | URL = import.meta.url.endsWith(".ts")
     ? new URL("./proc-worker.ts", import.meta.url)
     : typeof __dirname === "string"
@@ -118,8 +114,6 @@ export const makeCommandWorker = (
             );
           },
         });
-        // Functions don't cross to the worker: output comes back as messages, and the omitted env is
-        // applied here, leaving the worker plain data.
         const { onOutput: _onOutput, omitEnv, ...serializable } = options;
         const request = {
           type: "run",
@@ -136,8 +130,6 @@ export const makeCommandWorker = (
         } satisfies CommandRequest;
         // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node worker_threads has no origin argument.
         worker.postMessage(request);
-        // Interruption must wait for runCommand's scope to kill and reap the child. A worker held in
-        // native spawn processes this cancellation as soon as exec authorization returns.
         return Effect.promise(async () => {
           if (!pending.has(id)) return;
           // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node worker_threads has no origin argument.

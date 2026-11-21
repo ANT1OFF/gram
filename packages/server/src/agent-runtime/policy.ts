@@ -37,7 +37,6 @@ export const NPM_PACKAGES: Readonly<Record<RuntimeAgent, string>> = {
   codex: "@openai/codex",
 };
 
-/** Claude Code may run this many patches ahead of the SDK's matched CLI, as its session check allows. */
 const CLAUDE_NEWER_PATCHES = 10;
 
 interface Semver {
@@ -124,7 +123,6 @@ export const judgeAgainstBaseline = (agent: RuntimeAgent, version: string): Judg
   };
 };
 
-/** Forward slashes and lower case, so one set of patterns reads macOS and Windows paths alike. */
 const normal = (path: string) => path.replaceAll("\\", "/").toLowerCase();
 
 /**
@@ -141,7 +139,6 @@ export const installerOf = (
   npmPackageBeside: boolean,
 ): Installer => {
   const both = `${normal(path)}\n${normal(resolved)}`;
-  // Immutable/bundled destinations win even when the launcher looks like a mutable install.
   if (/(?:^|\n)\/nix\/store\//.test(both)) return "nix";
   if (/\.app\/contents\//.test(both) || both.includes("/.codex/packages/app-server-daemon/"))
     return "bundled";
@@ -179,7 +176,6 @@ export const installationNote = (
   return undefined;
 };
 
-/** A step Gram can run: its command is exactly `argv`, so the user sees what runs. */
 const runnable = (
   installer: Installer,
   argv: ReadonlyArray<string>,
@@ -215,12 +211,10 @@ export const installSteps = (
   latest: boolean,
 ): ReadonlyArray<InstallStep> => {
   if (installer === "nix" || installer === "bundled") return [];
-  // A standalone Codex is not npm-owned. Its latest-only updater cannot install a baseline pin.
   if (installer === "native" && agent === "codex")
     return latest ? [runnable("native", ["codex", "update"], undefined)] : [];
   const pkg = NPM_PACKAGES[agent];
   const npm = runnable("npm", ["npm", "i", "-g", `${pkg}@${version}`], version);
-  // Claude Code's installer takes the version to install as its argument.
   const claudeInstaller = (): InstallStep => ({
     installer: "native",
     command:
@@ -255,14 +249,12 @@ export const installSteps = (
             : claudeInstaller()
           : undefined;
       case undefined:
-        // Not installed: Claude Code's own installer is the vendor's recommended way in.
         return agent === "claude" ? claudeInstaller() : undefined;
       default:
         return undefined;
     }
   })();
   if (own?.installer === "npm") return [own];
-  // Nothing installed, so npm's install is the only one there will be.
   if (installer === undefined) return own === undefined ? [npm] : [own, npm];
   const { run: _second, ...copyOnly } = npm;
   return own === undefined ? [copyOnly] : [own, copyOnly];

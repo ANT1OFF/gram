@@ -46,7 +46,6 @@ const bytes = (size: number): string =>
 /** Most of what the server says that is drawn: the rest is cut, so the command stays in view. */
 export const ASK_SAYS_MOST = 160;
 
-/** The server's word, cut short, each line break drawn as a mark on the one line. */
 const saying = (text: string): CommandDisplay => {
   const characters = Array.from(text);
   return displayCommand(

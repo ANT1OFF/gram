@@ -21,7 +21,6 @@ import { useThreadsStore } from "@/stores/threads";
 import type { PrRowCard, PrRowPlace } from "./pr-strip-model";
 
 const FOCUS = "focus-visible:ring-3 focus-visible:ring-ring/50";
-/** One clickable word of a row: it lights up on its own, so the row reads as three links, not one. */
 const LINK = cn(
   "rounded-sm px-1 py-0.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground",
   FOCUS,
@@ -156,14 +155,12 @@ function LinkMenu({
 
 const Separator = () => <Menu.Separator className="-mx-1 my-1 h-px bg-border" />;
 
-/** Where the thread runs now: the checkout it followed the agent into, else the one it launched in. */
 const useThreadFolder = (threadId: ThreadId): string | undefined =>
   useThreadsStore((s) => {
     const thread = s.byId[threadId]?.thread;
     return thread?.currentCheckout?.path ?? thread?.checkout.path;
   });
 
-/** Opens the terminal panel on a shell started in `folder`, not on whichever one the thread had. */
 function OpenTerminalItem({ threadId, folder }: { threadId: ThreadId; folder: string }) {
   const api = useApi();
   return (

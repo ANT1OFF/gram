@@ -129,7 +129,6 @@ export const waitLinkOf = (
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n {0,3}\1[ \t]*$/gmu;
 
-/** The quoted blocks of `text`: each run of lines starting with `>`, without the markers. */
 const quotedBlocks = (text: string): string[] => {
   const blocks: string[] = [];
   let run: string[] = [];
@@ -189,7 +188,6 @@ export const noteShown = (note: string): string =>
 
 const oneLine = (text: string): string => text.replace(/\s+/gu, " ").trim();
 
-/** An open question's row: it lives with the orchestrator, and is answered on its own form. */
 const questionView = (
   orchestratorId: ThreadId,
   workspaceId: WorkspaceId,
@@ -208,7 +206,6 @@ const questionView = (
   };
 };
 
-/** What a pending request asks, on one line. */
 const requestTitle = (request: PendingRequest): string => {
   switch (request.kind) {
     case "approval":
@@ -222,10 +219,6 @@ const requestTitle = (request: PendingRequest): string => {
   }
 };
 
-/**
- * A pending request's row, named for its thread; its card is where it is answered. A request
- * carries no time of its own, so `at` stands in: the thread's last activity, when it asked.
- */
 const requestView = (
   entry: Pick<InboxEntry, "threadId" | "title" | "request">,
   at: number,

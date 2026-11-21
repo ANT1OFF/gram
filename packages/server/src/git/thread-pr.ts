@@ -68,7 +68,6 @@ export const ThreadPrLookup = Effect.gen(function* () {
   const publisher = yield* GitStatePublisher;
   const pr = yield* Pr;
 
-  /** The branch's badge: the publisher's cached state, else a fresh lookup; `undefined` without a PR. */
   const badge = (cwd: string) =>
     Effect.gen(function* () {
       const cached = (yield* publisher.stateFor(cwd))?.pr;
@@ -76,11 +75,6 @@ export const ThreadPrLookup = Effect.gen(function* () {
       return yield* pr.status(cwd).pipe(Effect.orElseSucceed(() => undefined));
     });
 
-  /**
-   * The bound PR, else the branch's badge; `undefined` without one, and for an orchestrator. A
-   * thread on another machine has its branch's badge only as published: no branch is looked up
-   * from `cwd` here, which isn't its checkout.
-   */
   const target = (thread: Thread, cwd: string) =>
     thread.role === "orchestrator"
       ? Effect.succeed(undefined)

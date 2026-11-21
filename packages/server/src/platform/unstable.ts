@@ -1,9 +1,3 @@
-/**
- * The only module that imports Effect's `@stability unstable` modules,
- * `effect/{http,rpc,socket,sql}`. They left `effect/unstable/*` in rc.118 but are no
- * more stable for it. When an unstable API moves, the change lands here rather than across the
- * server.
- */
 export * as FindMyWay from "effect/http/FindMyWay";
 export * as Headers from "effect/http/Headers";
 export * as HttpPlatform from "effect/http/HttpPlatform";

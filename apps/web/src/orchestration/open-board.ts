@@ -10,9 +10,6 @@ import { useViewStore } from "@/views/view-store";
 
 import { useWorkspaces } from "./use-orchestration";
 
-// Where every "Open board" goes: the Board view over the workspace's orchestrator, which is what
-// the window's workspace follows.
-
 /**
  * Opens a workspace's Board: its orchestrator's thread under it, the view kept through that
  * navigation, and nothing else changed when the window is there already.

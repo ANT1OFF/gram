@@ -1,7 +1,3 @@
-// One worker machine's calls to a hosted server (`signed-in-workers.ts`): its status as read, a
-// start of its name (a release taken back, a `503` asked again a few times), a wake of one that is
-// stopped or failed there, and a release told.
-
 import * as Effect from "effect/Effect";
 import { fenceRefusalOf, RELEASE_ACTS_WITHIN_MS } from "./signed-in-fences.ts";
 import type { MachineRun, Refused, WorkerMachinePortShape } from "./signed-in-port.ts";
@@ -43,7 +39,6 @@ export const parseMachineStatus = (
   };
 };
 
-/** A worker machine's name as a hosted server takes it: `worker-` and ten hex digits. */
 const HOSTED_WORKER_NAME = /^worker-[0-9a-f]{10}$/;
 export const isHostedWorkerName = (name: string) => HOSTED_WORKER_NAME.test(name);
 
@@ -115,8 +110,6 @@ export const sendSignedInStart = (
       };
       const send = Effect.gen(function* () {
         for (;;) {
-          // A stop sent of the name, here or before a restart, that may still land: waited out,
-          // so it never deletes what this start makes.
           for (
             let wait = options.heldFor?.(name) ?? 0;
             wait > 0;
@@ -130,10 +123,6 @@ export const sendSignedInStart = (
           const answered = yield* port
             .call(origin, "start", body, { account: options.account })
             .pipe(Effect.ensuring(bump));
-          // Busy (503) or throttled (429) there: asked again after a wait. Any 5xx may have reached
-          // its machines (a 502 comes from a start that failed after its machine was written), so
-          // the start's outcome stays unknown, whatever is answered after it, and asked again or
-          // not: its owing is kept, and it is given back.
           const busy = answered.ok && (answered.status === 503 || answered.status === 429);
           if (answered.ok && answered.status >= 500) unavailable = true;
           if (!busy || asks >= START_ATTEMPTS) return answered;
@@ -149,14 +138,12 @@ export const sendSignedInStart = (
         { name, via: origin, account: options.account },
         false,
       ).pipe(Effect.option);
-      // What came before stays: a 503 first leaves the start's outcome unknown all the same.
       if (told._tag === "Some" && told.value === "missing")
         return {
           answered: { ok: true as const, status: 409, body: { code: "name_in_use" } },
           unavailable,
           missing: true as const,
         };
-      // Asked once more, within what is left of the asks.
       if (asks >= START_ATTEMPTS) asks = START_ATTEMPTS - 1;
       const second = yield* send;
       if (second === undefined) return skipped;
@@ -204,13 +191,9 @@ export const wakeSignedIn = (
       { name: machine.name },
       { account: machine.account },
     );
-    // Passing errors settle nothing: asked again while it is still wanted.
     if (!read.ok || read.status >= 500 || read.status === 429) return "retry" as const;
-    // A start of it was on its way, or went, while this was asked: the answer is older than it,
-    // and says nothing, so the wake is left to be tried again rather than spent.
     if (!settledSince(options.sent, machine.name, before)) return "retry" as const;
     if (isNotFound(read)) return "gone" as const;
-    // Any other 404 (a route or a backend not there for now) says nothing of the machine.
     if (read.status === 404) return "retry" as const;
     if (read.status >= 300) return "refused" as const;
     const phase = parseMachineStatus(read.body).phase;
@@ -231,9 +214,6 @@ export const wakeSignedIn = (
       options.asleep?.delete(machine.name);
       return "started" as const;
     }
-    // Passing, as the status read's are: no answer, busy or throttled, and a 404 (the server says
-    // so while its backend is out of reach), the start's own or its take-back's. Woken later, while
-    // it is still wanted; only the three-pass rule forgets it.
     if (
       !answered.ok ||
       answered.status >= 500 ||
@@ -242,7 +222,6 @@ export const wakeSignedIn = (
       sent.missing === true
     )
       return "retry" as const;
-    // Only the status: what a server answers isn't written to the log.
     yield* Effect.logWarning("a worker machine work wants could not be woken").pipe(
       Effect.annotateLogs({
         machine: machine.name,
@@ -281,14 +260,12 @@ export const tellSignedInRelease = (
 ): Effect.Effect<"applied" | "missing", Error> =>
   Effect.gen(function* () {
     const attempts = options.attempts ?? RELEASE_ATTEMPTS;
-    // Taken once, never again at a retry: a run started since is never this release's.
     const run =
       options.run !== undefined
         ? options.run
         : port.knownRun?.(machine.via, machine.name, machine.account);
     let last = "no answer";
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-      // A server too busy, or no answer: asked again after a wait that doubles.
       if (attempt > 0)
         yield* Effect.sleep((options.retryMs ?? RELEASE_RETRY_MS) * 2 ** (attempt - 1));
       const answered = yield* port.call(
@@ -298,7 +275,6 @@ export const tellSignedInRelease = (
           name: machine.name,
           released,
           reason: released ? "finished" : "working",
-          // Reached later, it does nothing, and is told again: never on a newer start of the name.
           notAfter: Date.now() + RELEASE_ACTS_WITHIN_MS,
         },
         { account: machine.account, ...(run === undefined ? {} : { run }) },
@@ -316,15 +292,11 @@ export const tellSignedInRelease = (
         return yield* Effect.fail(new ReleaseRefused("the server refused it as malformed"));
       if (answered.status >= 300)
         return yield* Effect.fail(new Error(`the server answered ${answered.status}`));
-      // A 2xx that says it knows no such machine changed nothing there: told again next pass.
       const known =
         typeof answered.body === "object" && answered.body !== null
           ? (answered.body as { known?: unknown }).known
           : undefined;
       if (known === false) return yield* Effect.fail(new Error("the server knows no such machine"));
-      // Its fence held it back, so nothing changed there. Late: asked again now, in time. The
-      // name another run now: its status read again, and told again next pass, decided afresh,
-      // for the run it is then.
       const fenced = fenceRefusalOf(answered);
       if (fenced === "expired") {
         last = "it came after its time";
@@ -345,7 +317,6 @@ export const tellSignedInRelease = (
       }
       return "applied" as const;
     }
-    // Only what went wrong, in a few words: what a server answers isn't written to the log.
     return yield* Effect.fail(new Error(last));
   });
 

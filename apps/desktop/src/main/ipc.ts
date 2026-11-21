@@ -42,7 +42,6 @@ import type { ShellIpc } from "@gram/shell/modules/ipc";
 import type { UpdateService } from "@gram/shell/modules/update";
 import type { NativeUpdates } from "./update/native-updates.ts";
 
-/** A diagnostics report is a few hundred KB at most. */
 const MAX_CLIPBOARD_CHARS = 5_000_000;
 
 /** The window operations the bridge exposes; the sender's window is found from its web contents. */
@@ -191,7 +190,6 @@ export function registerIpc({
     updates.check(channel === "prerelease" ? "prerelease" : "stable"),
   );
   handle(Channels.updatesInstall, (input) => {
-    // A signed install has one way in: Electron's updater, behind the same stop fence.
     if (native)
       return {
         updating: false,
@@ -206,7 +204,6 @@ export function registerIpc({
     typeof autoUpdateCheck === "function" ? autoUpdateCheck() : autoUpdateCheck,
   );
   handle(Channels.updatesSource, () => updateSource);
-  // Null everywhere but a Developer ID signed macOS install; the renderer then shows the other.
   handle(Channels.updatesNativeState, () => native?.state() ?? null);
   handle(Channels.updatesNativeCheck, (channel) =>
     native ? native.check(channel === "prerelease" ? "prerelease" : "stable", true) : null,

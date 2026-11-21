@@ -1,6 +1,3 @@
-// A folder of a thread's own for a thread that works in no repository: one started from a profile
-// whose workplace is none or scratch, and a worker spawned in a workspace a profile made. On a
-// joined machine its host makes it; anywhere else it is made here, under the data folder.
 import {
   type Checkout,
   type HostId,

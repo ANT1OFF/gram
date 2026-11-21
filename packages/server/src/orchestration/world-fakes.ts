@@ -1,5 +1,3 @@
-// The outside world's services as a test's `World` has them: GitHub's branches, CI and
-// auto-merges, the machine, releases, event looks, installed versions and verify records.
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";

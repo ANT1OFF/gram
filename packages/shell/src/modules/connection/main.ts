@@ -1,8 +1,3 @@
-// The connection module's main half: what each window says of its socket to the server, written to
-// the shell's log, so a hung window can be told from a lost server (`createConnectionLog`). A
-// window whose session the server refused is loaded onto the boot address again
-// (`createSessionRenewal`).
-
 import type { WebContents } from "electron";
 
 import { Channels } from "../../channels.ts";

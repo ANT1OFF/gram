@@ -8,13 +8,8 @@ import {
 
 import { railRows, type RailFacts, type RailRow, type RailWorker } from "./rail-model";
 
-// A feature opened from the Board or the stream: how
-// many workers stand on each station, its PRs and its workers. Drawn from the card's Board line
-// (`railRows`), so the sheet and the line never disagree. No React.
-
 interface LinePr {
   readonly pr: FeatureCardPr;
-  /** The title of the worker that opened it. */
   readonly by: string;
 }
 
@@ -33,11 +28,9 @@ const prKey = (pr: FeatureCardPr) => `${pr.repo}#${pr.number}`;
 
 const settled = (pr: FeatureCardPr) => pr.state === "merged" || pr.state === "closed";
 
-/** A line's workers in station order, its chips. */
 const lineWorkers = (row: RailRow): readonly RailWorker[] =>
   FEATURE_STATIONS.flatMap((station) => row.cells[station]);
 
-/** Each PR of the line's workers once, with who opened it: open ones first, settled ones last. */
 const linePrs = (row: RailRow): readonly LinePr[] => {
   const live = new Set<ThreadId>(lineWorkers(row).map((worker) => worker.threadId));
   const seen = new Set<string>();
@@ -55,7 +48,6 @@ const linePrs = (row: RailRow): readonly LinePr[] => {
 
 /** The sheet for `card`, or `undefined` once every worker of it is archived. */
 export const featureSheet = (card: FeatureCard, facts: RailFacts): FeatureSheet | undefined => {
-  // The sheet lists all of the feature's work, finished workers too; only the archived leave it.
   const [row] = railRows([card], facts, "unarchived");
   if (row === undefined) return undefined;
   const workers = lineWorkers(row);

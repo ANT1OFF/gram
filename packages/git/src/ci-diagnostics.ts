@@ -1,4 +1,3 @@
-// Read-only, on-demand Actions evidence. Deliberately independent of badge/check caches and merge CI.
 import {
   actionsJobSelection,
   GitError,
@@ -20,7 +19,6 @@ const fail = (message: string) => new GitError({ message });
 export function sanitizeCiText(value: string, limit = 600): string {
   return redactText(
     value
-      // Terminal control patterns are intentional: scrub evidence before display.
       // eslint-disable-next-line no-control-regex -- strips terminal escape sequences
       .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
       .replace(
@@ -32,12 +30,7 @@ export function sanitizeCiText(value: string, limit = 600): string {
         /-----BEGIN[^\n]*PRIVATE KEY-----[\s\S]*?(?:-----END[^\n]*PRIVATE KEY-----|$)/gi,
         "[redacted private key]",
       )
-      // Userinfo ends at the last @ in the authority, not at presentation whitespace/punctuation.
-      // Scrub it first, including line breaks; /, ? and # are URL authority boundaries.
-      // Run before field redaction can erase a URL prefix while leaving multiline userinfo behind.
       .replace(/(?:\b[a-z][a-z\d+.-]*:)?\/\/[^/?#]*@/gi, "//[redacted userinfo]@")
-      // Without a trustworthy token end, conservatively omit the remainder of the URL-bearing line.
-      // This also suppresses malformed same-line URLs and adjacent text rather than guessing.
       .replace(/(?:\b[a-z][a-z\d+.-]*:)?\/\/[^\r\n]*/gi, "[redacted URL]")
       .replace(
         /(?:authorization|cookie|set-cookie|credential|password|passphrase|secret|token|api[-_]?key)[^\n]*[:=][^\n]*/gi,
@@ -50,7 +43,6 @@ export function sanitizeCiText(value: string, limit = 600): string {
 
 /** Only diagnostic lines, never command/env dumps or neighbouring context. */
 export function ciLogEvidence(raw: string, truncated = false): string[] {
-  // A transport cap can bisect a credential; never show that final incomplete line.
   if (truncated) raw = raw.slice(0, Math.max(0, raw.lastIndexOf("\n")));
   const clean = sanitizeCiText(raw, 128 * 1024);
   let groupDepth = 0;
@@ -293,7 +285,6 @@ export const readCiDiagnostic = (
             "Log excerpt unavailable. Logs may have expired or require additional repository access.";
       }
     }
-    // A rerun or force-push during evidence collection must not return stale evidence as current.
     const latest = object(yield* api(runPath));
     if (
       latest["head_sha"] !== selection.headOid ||

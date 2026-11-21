@@ -36,13 +36,11 @@ export function useLeaveThread() {
   };
 }
 
-/** Once the closed thread's pane is gone, the pane that took focus gets the caret. */
 const focusRemainingPane = (): undefined => {
   focusPaneComposer(useLayoutStore.getState().grid.focused, { always: true });
   return undefined;
 };
 
-/** Says what became of the local branch, when deleting it was asked for. */
 function reportBranch(result: WorktreeRemoval) {
   const branch = result.branch;
   if (branch === undefined) return;
@@ -77,7 +75,6 @@ export function CloseThreadDialog({
   const leave = useLeaveThread();
   const live = useThreadsStore((s) => s.byId[threadId]);
   const byId = useThreadsStore((s) => s.byId);
-  // Ticked when the tree is clean and pushed, so closing tidies up unless the user unticks it.
   const [removeWorktree, setRemoveWorktree] = useState(
     () =>
       preset?.removeWorktree ??
@@ -95,8 +92,6 @@ export function CloseThreadDialog({
   const [pending, setPending] = useState(false);
   const [last, setLast] = useState(live);
   if (live !== undefined && live !== last) setLast(live);
-  // Its own close drops the thread before the dialog has closed and handed the caret on; one
-  // closed elsewhere while the dialog stands takes it away.
   const summary = live ?? (pending ? last : undefined);
   const [error, setError] = useState<string | undefined>();
 

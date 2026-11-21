@@ -1,5 +1,3 @@
-// Publishing or pushing the current branch to origin. Never forces, never prompts for credentials.
-
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -16,7 +14,6 @@ export interface Pushed {
   readonly published: boolean;
 }
 
-/** Pushes can carry many objects over a slow link; the network tier's default is for fetches. */
 const PUSH_TIMEOUT_MS = 120_000;
 
 const counts = (stdout: string) => {

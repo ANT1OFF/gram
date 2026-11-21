@@ -15,7 +15,6 @@ import { logDefects, type Handlers } from "./common.ts";
 export const pageHandlers = Effect.gen(function* () {
   const pages = yield* Pages;
   const store = yield* ThreadStore;
-  // Absent in handler-only test layers, which serve no page.
   const files = Option.getOrUndefined(yield* Effect.serviceOption(PageFiles));
   const threadOf = (threadId: ThreadId) =>
     store

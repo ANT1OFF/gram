@@ -39,11 +39,8 @@ import { claimableByHost, hereForms, noteForeignCheckouts } from "./foreign-path
 import { type HeadlessPlacement, placeRequest } from "./headless.ts";
 import type { WorkerHost, WorkerHostsShape } from "./worker-host.ts";
 
-/** How often an offline machine's watch looks for it again. */
 const REDIAL_CHECK = "5 seconds";
-/** How often a session waiting for its thread's machine looks whether the thread was moved. */
 const MOVE_LOOK = "500 millis";
-/** How many times a session about to open follows its thread to another machine. */
 const MOVE_FOLLOWS = 3;
 
 const commandOffline = (message: string) => new ProcSpawnError({ bin: "gram-host", message });
@@ -54,19 +51,12 @@ const gitOffline = (message: string) => new GitError({ message });
 const terminalOffline = (terminalId: TerminalId) => () =>
   new NotFound({ entity: "terminal", id: terminalId });
 
-/** Every checkout a thread holds, followed ones included. */
 const checkoutsOf = (thread: Thread): ReadonlyArray<Checkout> => [
   thread.checkout,
   ...(thread.currentCheckout === undefined ? [] : [thread.currentCheckout]),
   ...(thread.extraCheckouts ?? []),
 ];
 
-/**
- * Which machines each folder a thread holds is on, by `samePathKey`: its checkouts and their
- * repositories, this machine's among them. Two machines can hold the same path (the same user and
- * default folders on both), so a path can name more than one. Read from the threads as they are,
- * so a worker placed a moment ago is found.
- */
 const machinePaths = (threads: ReadonlyArray<Thread>) => {
   const paths = new Map<string, Set<HostId>>();
   const claim = (path: string, host: HostId) => {
@@ -76,7 +66,6 @@ const machinePaths = (threads: ReadonlyArray<Thread>) => {
     paths.set(key, hosts);
   };
   let remote = false;
-  // This machine's own folders: a machine's checkout above one of them claims none of it.
   const here = hereForms(
     threads.flatMap((thread) =>
       checkoutsOf(thread)
@@ -88,7 +77,6 @@ const machinePaths = (threads: ReadonlyArray<Thread>) => {
     ),
   );
   for (const thread of threads) {
-    // Before the keys below, so they are taken as written rather than looked up on this disk.
     noteForeignCheckouts(thread);
     for (const checkout of checkoutsOf(thread)) {
       const host = hostOf(checkout);
@@ -98,13 +86,10 @@ const machinePaths = (threads: ReadonlyArray<Thread>) => {
         ...(checkout.repoRoot === undefined ? [] : [checkout.repoRoot]),
       ]) {
         claim(path, host);
-        // One it may not take is named as this machine's too, so it is refused as more than one
-        // machine's: never this machine's alone, where a host's folder would reach this disk.
         if (host !== LOCAL_HOST_ID && !claimableByHost(path, here)) claim(path, LOCAL_HOST_ID);
       }
     }
   }
-  // With no other machine's folder, every path is this machine's.
   return remote ? paths : new Map<string, Set<HostId>>();
 };
 
@@ -148,27 +133,17 @@ export const placedHost = (
     ) => Effect.Effect<WorkerHost, HostUnavailable>;
   },
   store: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
-  /** Whether any machine is joined: with none, every call is this machine's, looked up for free. */
   anyMachines: () => boolean = () => true,
-  /**
-   * Given by a headless Gram, which runs no work itself: where a request that names no machine
-   * goes. Its `local` already refuses whatever would start something here (`headlessLocal`).
-   */
   headless?: HeadlessPlacement,
 ): WorkerHost & {
   readonly machine: (id: HostId) => MachineParts;
   readonly placeOf: (path: string) => Effect.Effect<HostId | undefined>;
 } => {
   const local = hosts.local;
-  /** Set once a checkout is made on a machine here, which then stays routed after it is removed. */
   let placedNow = false;
   const routing = () => placedNow || anyMachines();
   const maps = new WeakMap<ReadonlyArray<Thread>, Map<string, Set<HostId>>>();
   const threads = store.listThreads;
-  /**
-   * The machine `path` is on: the one its own folder, or the nearest folder above it, is on.
-   * `undefined` when more than one machine holds that folder: a path alone can't say which.
-   */
   const hostIdOfPath = (path: string): Effect.Effect<HostId | undefined> =>
     routing()
       ? Effect.map(threads, (all) => {
@@ -185,25 +160,15 @@ export const placedHost = (
           }
         })
       : Effect.succeed(LOCAL_HOST_ID);
-  // Always read: one call per session open or terminal, and a thread reopened from a machine
-  // since removed is still that machine's (and unavailable), never this one's.
   const hostIdOfThread = (threadId: ThreadId) =>
     store.getThread(threadId).pipe(
-      // A memory update on a server that runs nothing itself has its session on a machine and
-      // its folder here (`Thread.dreamHost`); it has no terminal, so this is its session's.
       Effect.map((thread) => sessionHostOf(thread)),
-      // A thread that isn't stored (a dream, a helper) is this machine's.
       Effect.orElseSucceed(() => LOCAL_HOST_ID),
     );
-  /** The host `id` names, or the reason it can't be reached as `onOffline` words it. */
   const hostFor = <E>(id: HostId, onOffline: (message: string) => E) =>
     id === LOCAL_HOST_ID
       ? Effect.succeed(local)
       : hosts.get(id).pipe(Effect.mapError((error) => onOffline(error.message)));
-  /**
-   * The machine parts where `placeOf` says each path is: `undefined` for a path more than one
-   * machine holds, which is refused rather than guessed, and counts as there.
-   */
   const partsWhere = (
     placeOf: (path: string) => Effect.Effect<HostId | undefined>,
   ): MachineParts => {
@@ -217,8 +182,6 @@ export const placedHost = (
           ? Effect.fail(onOffline(ambiguousPath(path)))
           : Effect.flatMap(hostFor(id, onOffline), run),
       );
-    // An offline machine's folder is there as far as anyone here can tell, and so is one that a
-    // path alone can't place.
     const presentOn = (cwd: string, here: (cwd: string) => Effect.Effect<boolean>) =>
       Effect.flatMap(placeOf(cwd), (id) =>
         id === undefined
@@ -250,10 +213,6 @@ export const placedHost = (
               }
               byHost.set(id, [...(byHost.get(id) ?? []), path]);
             }
-            /**
-             * A machine's watch for as long as it is wanted: while the machine is offline, or once
-             * its connection ends, it waits for the machine to dial in again and watches anew.
-             */
             const onMachine = (
               id: HostId,
               list: ReadonlyArray<string>,
@@ -264,7 +223,6 @@ export const placedHost = (
                     Effect.match({
                       onFailure: (): Stream.Stream<GitStateChange> =>
                         Stream.drain(Stream.fromEffect(Effect.sleep(REDIAL_CHECK))),
-                      // Paced too, so a watch that ends at once can't spin.
                       onSuccess: (host) =>
                         Stream.concat(
                           host.git.watch(list, options),
@@ -309,7 +267,6 @@ export const placedHost = (
       names: (root) => onPath(root, invalid, (host) => host.files.names(root)),
     };
 
-    /** The machine's own folders, never this one's: `~` there is its home. */
     const onFolders = <A>(
       path: string,
       run: (folders: HostFolders) => Effect.Effect<A, NotFound | InvalidState>,
@@ -337,10 +294,8 @@ export const placedHost = (
     };
   };
 
-  /** Each path where the threads say it is. */
   const placedParts = partsWhere(hostIdOfPath);
   const { git, worktrees, files } = placedParts;
-  /** One machine's parts, whatever else holds the same paths: for a caller that knows the machine. */
   const partsOf = new Map<HostId, MachineParts>();
   const machine = (id: HostId): MachineParts => {
     let parts = partsOf.get(id);
@@ -360,9 +315,6 @@ export const placedHost = (
     ...(headless === undefined
       ? {}
       : { place: (request: CheckoutRequest) => placeRequest(headless, request) }),
-    // Placed where the request says; a request that names no machine is this machine's, which a
-    // headless Gram's refuses. A machine's own clone as it is (`current` there) is only a headless
-    // Gram's to ask for: anywhere else a thread on a machine works in a worktree of its own.
     prepare: (request, openCheckouts, projectRoot) =>
       request.kind === "current" && request.hostId !== undefined && headless === undefined
         ? Effect.fail(invalid("A thread on a joined machine works in a new worktree there."))
@@ -375,8 +327,6 @@ export const placedHost = (
               ),
             ),
           ),
-    // A close that removes nothing needs no machine: a thread on one that is offline, or was
-    // removed, still closes. One that would remove its worktree there is refused while it's away.
     checkRelease: (thread, options) =>
       isLocalHost(thread.checkout)
         ? local.checkouts.checkRelease(thread, options)
@@ -417,13 +367,7 @@ export const placedHost = (
       onThreadOf(thread, invalid, (host) => host.checkouts.restore(thread, fromPr)),
   };
 
-  /** Which machine each terminal opened through here is on. */
   const terminalHosts = new Map<TerminalId, HostId>();
-  /**
-   * The machine `terminalId` is on. One this Gram didn't open (a joined machine kept it through a
-   * restart of this Gram) is looked for among the machines threads are placed on, by what each
-   * one's host lists, so its input and close reach it there rather than this machine.
-   */
   const terminalHostOf = (terminalId: TerminalId): Effect.Effect<HostId> =>
     Effect.suspend(() => {
       const known = terminalHosts.get(terminalId);
@@ -505,13 +449,6 @@ export const placedHost = (
       ),
   };
 
-  /**
-   * The host a session of `threadId` opens on, and the machine it is: the thread's machine, waited
-   * for as `forSession` waits for a stopped machine, unless the thread is moved off it meanwhile
-   * (`thread-profiles/start.ts`, `moveOne`). Whichever comes first, the thread's machine is read
-   * again, and a host that is no longer the thread's is never answered: the look starts over on
-   * the machine the thread is on now, a few times at most.
-   */
   const sessionHost = (
     threadId: ThreadId,
     first: HostId,
@@ -543,7 +480,6 @@ export const placedHost = (
       });
     });
 
-  /** One wrapper per agent, so the runtime always holds the same object for it. */
   const wrapped = new WeakMap<object, unknown>();
   const sessions = AgentHosts.of({
     get: (kind) =>
@@ -568,8 +504,6 @@ export const placedHost = (
                     Effect.flatMap(({ id: on, host }) =>
                       host.sessions.get(kind).pipe(
                         Effect.flatMap((onMachine) => onMachine.open(options)),
-                        // Moved while it opened: the session goes with its scope, never kept on
-                        // a machine the thread has left.
                         Effect.tap(() =>
                           Effect.flatMap(hostIdOfThread(options.threadId), (now) =>
                             now === on

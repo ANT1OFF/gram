@@ -126,10 +126,6 @@ export function burnText(burn: CreditBurn): string {
   return `${creditCount(burn.spent)} spent over ${spanText(burn.to - burn.from)}${perDay}`;
 }
 
-/**
- * "7 days", "6 hours", "10 minutes": how long the readings span, never "today", which a span
- * across midnight isn't.
- */
 function spanText(span: number): string {
   const [size, unit] =
     span >= DAY
@@ -193,7 +189,6 @@ export function stepWords(step: number): string {
   return size === 1 ? unit : `${size} ${unit}s`;
 }
 
-/** A point's peak is worth naming beside its last reading from this far above it. */
 const PEAK_NOTE_FROM = 0.01;
 
 /**

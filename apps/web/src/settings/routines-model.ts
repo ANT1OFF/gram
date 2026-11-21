@@ -139,7 +139,6 @@ export const formOfRoutine = (routine: WorkspaceRoutine): RoutineForm => {
 
 const decodeTrigger = Schema.decodeUnknownOption(RoutineTrigger);
 
-/** The form's event as the routine keeps it, or what is wrong with it. */
 const triggerOfForm = (
   form: RoutineForm,
 ): { readonly on: RoutineTrigger } | { readonly error: string } => {

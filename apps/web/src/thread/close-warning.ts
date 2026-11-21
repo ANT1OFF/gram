@@ -11,7 +11,6 @@ export function closeWarning(git: GitState | undefined): string | undefined {
   if (!git?.repo) return undefined;
   const parts: string[] = [];
   if (git.changedFiles > 0) parts.push(plural(git.changedFiles, "uncommitted change"));
-  // After a squash-merged PR the branch stays "ahead" of base forever; don't nag about it.
   const merged = git.pr?.state === "MERGED" && !git.pr.aheadOfPr;
   if (git.aheadBase > 0 && !merged) {
     const base = git.base ? git.base.replace(/^origin\//, "") : "the base branch";
@@ -22,7 +21,6 @@ export function closeWarning(git: GitState | undefined): string | undefined {
   return `This worktree has ${parts.join(" and ")}.${conflict}`;
 }
 
-/** How many titles the warning names before it counts the rest. */
 const NAMED = 3;
 
 /**

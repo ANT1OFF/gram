@@ -12,7 +12,6 @@ export interface PrWatch extends PrRef {
 
 const keyOf = (ref: PrRef) => `${ref.repo.toLowerCase()}#${ref.number}`;
 
-/** One lookup per PR, with reviews if any of its owners wants them. */
 const combine = (watches: Iterable<PrWatch>): Map<string, PrWatch> => {
   const combined = new Map<string, PrWatch>();
   for (const watch of watches) {

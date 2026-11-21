@@ -34,7 +34,6 @@ export interface PushToTalk {
 }
 
 export function createPushToTalk(deps: PushToTalkDeps): PushToTalk {
-  /** The press under way, and whether it started dictation (a press that stopped it can't hold). */
   let down: { readonly at: number; readonly started: boolean } | undefined;
 
   const end = (heldLongEnough: (at: number) => boolean) => {
@@ -47,8 +46,6 @@ export function createPushToTalk(deps: PushToTalkDeps): PushToTalk {
   return {
     press: (repeat) => {
       if (repeat) return;
-      // A press with one already down lost its key-up (macOS sends none for a key released while ⌘
-      // is down): it starts afresh.
       down = { at: deps.now(), started: !deps.active() };
       deps.toggle();
     },
@@ -61,7 +58,6 @@ export function createPushToTalk(deps: PushToTalkDeps): PushToTalk {
   };
 }
 
-/** The chord modifier a key is: off macOS, Control is `mod` and `ctrl` alike, and ⌘ is neither. */
 const modifierOf = (key: string, mac: boolean): "mod" | "ctrl" | "shift" | "alt" | undefined => {
   switch (key) {
     case "Meta":
@@ -86,9 +82,7 @@ export const releasesChord = (keys: string, event: KeyboardEvent, mac = isMac())
   const chord = parseKeys(keys);
   const modifier = modifierOf(event.key, mac);
   if (modifier === undefined) {
-    // `=` means its shifted `+` too, as `matches` has it, and `+` has no keys string of its own.
     if (chord.key === "=") return event.key === "=" || event.key === "+";
-    // The key alone, as though nothing else were held: Ctrl and Alt together read as AltGr.
     const bare = { key: event.key, code: event.code, ctrlKey: false, metaKey: false };
     const key = keysFromEvent({ ...bare, altKey: false, shiftKey: false } as KeyboardEvent, mac);
     return key === chord.key;
@@ -141,14 +135,11 @@ export interface ModifierHold {
 export function createModifierHold(deps: ModifierHoldDeps): ModifierHold {
   type State =
     | { readonly kind: "idle" }
-    /** Held: `second` when it came soon after a tap, so a tap of it locks. */
     | { readonly kind: "holding"; readonly at: number; readonly second: boolean }
-    /** Held, but this press stopped dictation or was part of a shortcut: its key-up does nothing. */
     | { readonly kind: "spent" }
     | { readonly kind: "locked" };
   let state: State = { kind: "idle" };
   let lastTap: number | undefined;
-  /** Confirms a hold as soon as it's long enough, so its sound plays while the key is still down. */
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
 
   const settle = (next: State) => {

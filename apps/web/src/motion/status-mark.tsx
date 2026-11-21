@@ -22,10 +22,6 @@ const MARK_PHASES: ReadonlySet<string> = new Set<MarkPhase>([
 /** Whether `phase` is one a `StatusMark` draws; anything else is another glyph. */
 export const isMarkPhase = (phase: string): phase is MarkPhase => MARK_PHASES.has(phase);
 
-/**
- * Turns the ring while running, and leaves it where it stopped: the arc then closes into a whole
- * ring in place, rather than jumping back to twelve o'clock first.
- */
 const turnRing = onClock({
   step: (element, now) => {
     element.style.rotate = `${spinAngle(now)}deg`;

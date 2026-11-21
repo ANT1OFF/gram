@@ -4,7 +4,6 @@
  */
 export const CODEX_CLI_VERSION = "0.170.0";
 
-// Semver identifiers reject leading zeroes on numeric components, including prereleases.
 const numeric = "(?:0|[1-9][0-9]*)";
 const identifier = `(?:${numeric}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)`;
 const semver = new RegExp(

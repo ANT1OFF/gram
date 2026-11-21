@@ -8,7 +8,6 @@ import { join } from "node:path";
 
 const NAMES_TIMEOUT_MS = 10_000;
 const NAMES_MAX_BYTES = 16 * 1024 * 1024;
-/** Never listed, even when git doesn't ignore them. */
 const SKIPPED = new Set([".git", "node_modules"]);
 
 const skipped = (path: string) => path.split("/").some((segment) => SKIPPED.has(segment));
@@ -30,7 +29,6 @@ export const namesResult = (files: ReadonlyArray<string>, limit: number): FsFile
   return { entries, truncated: listed.length > limit };
 };
 
-/** Every file below `root` outside `.git` and `node_modules`, for a folder that isn't a repo. */
 const walk = (root: string, limit: number) =>
   Effect.tryPromise({
     try: async () => {
@@ -77,7 +75,6 @@ export const listFileNames = (
     const { status, stdout, truncated } = out.success;
     if (status !== 0) return yield* new InvalidState({ message: "Couldn't list the files" });
     const records = stdout.split("\0");
-    // Output cut at the byte cap loses its partial last record.
     if (truncated) records.pop();
     const result = namesResult(records, limit);
     return truncated ? { ...result, truncated: true } : result;

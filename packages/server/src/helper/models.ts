@@ -14,23 +14,10 @@ export interface HelperRoute {
   readonly effort?: ReasoningVariant | undefined;
 }
 
-/**
- * The default model's effort per kind, as the recommendation's Cheap tier sets it for local helpers:
- * a title at `medium`, the rest at `low`, which they run often enough to need.
- */
 const KIND_EFFORT = (kind: HelperKind): ReasoningVariant => helperKindEffort(kind);
 
-/**
- * Azure answers `none` on these with a 400, and on chat completions LiteLLM drops it instead, so
- * the model thinks at its default and bills for thinking that was turned off.
- */
 const REJECTS_NONE = /^(gpt-6\.1-sol|gpt-6-astra|gpt-latest|gpt-chat-latest)/i;
 
-/**
- * `effort` as the model will take it: `none` raised to `low` where it's rejected, and one the model
- * doesn't list over chat completions (`gatewayEfforts`, as Settings → AI helpers offers them) lowered
- * to `low`, or dropped for a model with no effort setting. A model nothing is said about takes any.
- */
 const clampEffort = (
   profile: GatewayProfile,
   model: string,
@@ -66,13 +53,10 @@ export const helperRoutes = (
     routes.push({ model: id, effort: clampEffort(profile, id, effort) });
   };
   if (primary !== undefined) {
-    // Only the built-in default carries an effort without the user having picked one.
     const byDefault = profile.helperModel === undefined && primary.effort !== undefined;
     add(primary.model, byDefault ? (options.effort ?? KIND_EFFORT(options.kind)) : primary.effort);
   }
   if (fallback !== undefined) {
-    // The automatic fallback (Luna, when the profile picks none) runs at the kind's effort too; a
-    // fallback the user configured keeps the effort they set, exactly.
     const automatic = profile.helperFallback === undefined && fallback.effort !== undefined;
     add(
       fallback.model,
@@ -82,7 +66,6 @@ export const helperRoutes = (
   return routes;
 };
 
-/** US dollars per million tokens. Reasoning is billed as output. */
 interface Price {
   readonly input: number;
   readonly output: number;
@@ -91,7 +74,6 @@ interface Price {
 const HAIKU_4_5: Price = { input: 1, output: 5 };
 const BEDROCK_HAIKU_5_5: Price = { input: 0.11, output: 0.55 };
 
-/** Historical token estimates, not the configured provider's prices or a billing guarantee. */
 const PRICES: Readonly<Record<string, Price>> = {
   "claude-haiku-5.5-eu": BEDROCK_HAIKU_5_5,
   "claude-haiku-5.5": BEDROCK_HAIKU_5_5,
@@ -170,7 +152,6 @@ export const classifyFailure = (error: unknown): ClassifiedFailure => {
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
   });
   if (status === 429) {
-    // A real cooldown names the deployment that is cooling down; the router's filter names none.
     return /No deployments available/i.test(body) && /cooldown_list=\[\s*\]/.test(body)
       ? of("filtered")
       : of("rateLimited");

@@ -10,23 +10,10 @@ import type {
 
 const RATE = 16_000;
 const MAX_FRAME = RATE;
-/**
- * A transducer drops a first word that starts on sample zero (19.8 % WER without this, 9.5 % with
- * it, in the study); real speech after a key press has silence in front of it, and this makes sure.
- */
 const LEAD_SILENCE = new Float32Array(Math.round(RATE * 0.3));
-/**
- * Silence fed on `stop` to flush the last words through the encoder: a whole chunk and a little,
- * or the last words go unheard (1120 ms chunks lost 12 % of words to a 600 ms tail).
- */
 const tailSilence = (chunkMs: number) =>
   new Float32Array(Math.round((RATE * Math.max(600, chunkMs + 100)) / 1000));
 
-/**
- * How long a finished utterance may wait for the offline model, loading it included, before the
- * stream's own text commits instead: short of the page's 5 s wait for the last `final`, so a slow
- * pass costs accuracy once rather than the words.
- */
 const ACCURATE_BUDGET_MS = 4_000;
 
 /** One utterance stream on a loaded model. */
@@ -93,7 +80,6 @@ const keyOf = (model: SpeechModelPaths, threads: number) => `${model.encoder}\0$
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** What `work` resolves to, or undefined if it fails or takes longer than `ms`. */
 const within = <T>(work: Promise<T>, ms: number): Promise<T | undefined> =>
   new Promise((resolve) => {
     const timer = setTimeout(() => resolve(undefined), ms);
@@ -112,11 +98,9 @@ const within = <T>(work: Promise<T>, ms: number): Promise<T | undefined> =>
 export function createSpeechService(options: SpeechServiceOptions) {
   let runtime: SpeechRuntime | { readonly error: string } | undefined;
   let loaded: { readonly key: string; readonly recogniser: Recogniser } | undefined;
-  /** Loaded on the first `accurate` session and kept for the next, until the process goes idle. */
   let accurate:
     | { readonly key: string; readonly pass: Promise<AccuratePass | undefined> }
     | undefined;
-  /** The offline model's latest clip: one at a time, which a pass given up on can still be. */
   let transcribing: Promise<unknown> = Promise.resolve();
   let active: { readonly end: (code: SpeechErrorCode, message: string) => void } | null = null;
 
@@ -132,7 +116,6 @@ export function createSpeechService(options: SpeechServiceOptions) {
     return runtime;
   };
 
-  /** The recogniser for `model`, loading it (about a second) unless it is the one loaded. */
   const recogniserFor = (
     model: SpeechModelPaths,
     threads: number,
@@ -141,7 +124,6 @@ export function createSpeechService(options: SpeechServiceOptions) {
     if (loaded?.key === key) return loaded.recogniser;
     const native = getRuntime();
     if ("error" in native) return failure("unavailable", native.error);
-    // Drop the old model before loading the next, so two never sit in memory together.
     loaded = undefined;
     const startedAt = options.now();
     try {
@@ -155,7 +137,6 @@ export function createSpeechService(options: SpeechServiceOptions) {
     }
   };
 
-  /** The accurate pass, starting its load if it isn't loaded; undefined once it failed to. */
   const accuratePass = (paths: SpeechAccuratePaths): Promise<AccuratePass | undefined> => {
     if (accurate?.key === paths.encoder) return accurate.pass;
     const native = getRuntime();
@@ -168,7 +149,6 @@ export function createSpeechService(options: SpeechServiceOptions) {
         return loadedPass;
       },
       () => {
-        // The next session tries again rather than staying on the stream's text for good.
         if (accurate?.key === key) accurate = undefined;
         options.log("accurate pass load failed");
         return undefined;
@@ -223,12 +203,6 @@ export function createSpeechService(options: SpeechServiceOptions) {
       return text;
     };
 
-    /**
-     * The text to commit for the utterance just ended: the offline model's, over the clip with its
-     * silence trimmed. Nothing when the detector heard nobody, whatever the stream made of it, and
-     * the stream's `streamed` when the pass couldn't answer in time. With `more` to come, starts the
-     * next utterance too, on any words the clip was cut off in.
-     */
     const accurateText = async (
       running: Promise<AccuratePass | undefined>,
       streamed: string,
@@ -278,7 +252,6 @@ export function createSpeechService(options: SpeechServiceOptions) {
       return undefined;
     };
 
-    /** The session's last `final`, unless it ended while that was on its way. */
     const finish = (committed: string) => {
       if (!live) return;
       port.postMessage({ type: "final", text: committed, reason: "stop" });
@@ -293,12 +266,10 @@ export function createSpeechService(options: SpeechServiceOptions) {
         finish(text);
         return undefined;
       }
-      // The tail the stream got too: a stop can land right on the last word.
       utterance.push(LEAD_SILENCE);
       return accurateText(pass, text, false).then(finish);
     };
 
-    /** One message off the queue; a promise holds the next until the utterance has committed. */
     const handle = (data: unknown): Promise<void> | undefined => {
       const type: unknown =
         typeof data === "object" && data !== null ? Reflect.get(data, "type") : undefined;
@@ -312,13 +283,10 @@ export function createSpeechService(options: SpeechServiceOptions) {
       return undefined;
     };
 
-    // Frames wait while an utterance commits, or the next utterance's partials would reach the page
-    // ahead of this one's `final`.
     const queue: unknown[] = [];
     let busy = false;
     const pump = () => {
       while (!busy && queue.length > 0) {
-        // `handle` can end the session.
         if (!live) return;
         const pending = handle(queue.shift());
         if (pending === undefined) continue;
@@ -360,12 +328,9 @@ export function createSpeechService(options: SpeechServiceOptions) {
         options.exit();
       } else if (message.type === "release") {
         active?.end("stopped", "voice input was turned off");
-        // sherpa frees a recogniser only once it is collected, so drop the last reference to it.
         loaded = undefined;
         accurate = undefined;
       } else if (message.type === "prewarm") {
-        // An open session's stream holds its recogniser, and sherpa frees one only when it is
-        // collected, so loading another now would put two models in memory together.
         if (active !== null && loaded?.key !== keyOf(message.model, message.threads)) {
           options.send({
             type: "prewarmed",
@@ -375,7 +340,6 @@ export function createSpeechService(options: SpeechServiceOptions) {
           return;
         }
         const recogniser = recogniserFor(message.model, message.threads);
-        // Answered without it: dictation can start while it loads, on the stream's text.
         if (!("ok" in recogniser) && message.accurate !== undefined)
           void accuratePass(message.accurate);
         options.send({

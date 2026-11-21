@@ -1,6 +1,3 @@
-// What other services can hold back: a limit wait's resume, an idle thread's queue, and a turn the
-// agent opens by itself.
-
 import type { Thread } from "@gram/contracts";
 import type * as Effect from "effect/Effect";
 

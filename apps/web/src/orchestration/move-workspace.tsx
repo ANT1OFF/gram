@@ -79,7 +79,6 @@ export function MoveWorkspaceDialog({
       ).length,
   );
 
-  // What the server says of this workspace there, asked again for each place picked.
   useEffect(() => {
     if (mover === undefined || target === undefined || key === undefined) return undefined;
     let current = true;
@@ -105,7 +104,6 @@ export function MoveWorkspaceDialog({
     const answer = await mover
       .start(target.origin, target.workspace, workspaceId)
       .catch((): HostedMoveDone => ({ ok: false, why: "The move stopped unexpectedly." }));
-    // The export paused it here, whichever way the move ended.
     void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     if (answer.ok) {
       setDone(answer);
@@ -163,7 +161,6 @@ export function MoveWorkspaceDialog({
       <DialogShell
         testId="move-workspace-dialog"
         title={`Moving ${name} to ${target.name}`}
-        // Closing would hide a move that carries on: Cancel the move is the way out.
         onClose={ignore}
       >
         <ol data-testid="move-workspace-steps" className="flex flex-col gap-2 text-reading">

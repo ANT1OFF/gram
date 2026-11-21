@@ -4,7 +4,6 @@ import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 type Rpcs = RpcGroup.Rpcs<typeof GramRpcs>;
 
-/** An RPC's tag, e.g. `"terminal.open"`. */
 type RpcTag = Rpcs["_tag"];
 
 /**

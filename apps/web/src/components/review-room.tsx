@@ -3,7 +3,6 @@ import { create } from "zustand";
 
 import { fitShell, useLayoutStore, type LayoutState } from "@/stores/layout";
 
-/** How long the reading place is held while the panel's width animates into focus and back. */
 const HOLD_MS = 600;
 
 /** A place in a scroller: the element at its top edge and how far below that edge it starts. */
@@ -29,7 +28,6 @@ export const readingScroller = (root: HTMLElement): HTMLElement | undefined => {
 export const placeShift = (place: ReadingPlace, scrollerTop: number): number =>
   place.element.getBoundingClientRect().top - scrollerTop - place.offset;
 
-/** The element at the scroller's top edge, a few pixels in, and its offset from that edge. */
 const placeIn = (scroller: HTMLElement): ReadingPlace | undefined => {
   const box = scroller.getBoundingClientRect();
   const element = document.elementFromPoint?.(box.left + box.width / 2, box.top + 4);
@@ -83,7 +81,6 @@ export const useReviewRoom = create<{ declined: boolean }>()(() => ({
   declined: false,
 }));
 
-/** How long the layout holds still before a cramped review takes focus: a drag or resize ends first. */
 const SETTLE_MS = 400;
 
 /**
@@ -99,7 +96,6 @@ export function useAutoReviewFocus() {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let pressed = false;
-    // Set when the review runs short by a change, not on arrival: what the timer may act on.
     let armed = false;
     const due = () => {
       const fit = fitShell(useLayoutStore.getState());
@@ -107,7 +103,6 @@ export function useAutoReviewFocus() {
     };
     const take = () => {
       timer = undefined;
-      // Still dragging: once the pointer lets go.
       if (pressed || !due()) return;
       armed = false;
       useLayoutStore.getState().setReviewFocus(true);
@@ -125,7 +120,6 @@ export function useAutoReviewFocus() {
       }
       const room = useReviewRoom.getState();
       if (before.reviewFocus) {
-        // Left focus: side by side is the user's choice while the room stays short.
         if (fit.reviewCramped && !room.declined) useReviewRoom.setState({ declined: true });
         return;
       }
@@ -133,8 +127,6 @@ export function useAutoReviewFocus() {
         armed = false;
         if (room.declined) useReviewRoom.setState({ declined: false });
       } else if (!before.reviewCramped) {
-        // Coming to a thread is an arrival too, at launch or from another page: its conversation
-        // is what shows, with Focus review offered. Only a change made on the thread arms it.
         armed =
           s.threadInView === prev.threadInView &&
           s.threadQuiet === prev.threadQuiet &&

@@ -10,7 +10,6 @@ export interface CopyOptions {
 const str = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value : undefined;
 
-/** The one detail that says what a tool call was about: its file, command, pattern or target. */
 const toolSubject = (part: AnyToolPart): string | undefined => {
   const input = typeof part.input === "object" && part.input !== null ? part.input : {};
   const field = (key: string) => str((input as Record<string, unknown>)[key]);
@@ -23,11 +22,9 @@ const toolSubject = (part: AnyToolPart): string | undefined => {
     field("query") ??
     field("description") ??
     field("path");
-  // One line: a multi-line command keeps its first line.
   return subject?.split("\n")[0]?.trim();
 };
 
-/** A tool call as one line, e.g. `[Read src/x.ts]`. */
 const toolLine = (part: AnyToolPart): string => {
   const subject = toolSubject(part);
   return subject === undefined ? `[${toolNameOf(part)}]` : `[${toolNameOf(part)} ${subject}]`;

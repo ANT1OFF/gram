@@ -12,9 +12,6 @@ import { informationCached, statusCached, type PrInformation } from "./pr-list-m
 import { cn } from "@/lib/utils";
 import type { ReviewRequestsPlacement } from "@/stores/layout";
 
-// Review-request and own-PR rows and their hover cards in the PR vocabulary (`pr-marks-model.ts`),
-// from what a list row knows of its open PR (`prFactsOfListPr`), as the overview's rows have it.
-
 /** Where either list can show, as its menu and Settings → Notifications offer it. */
 export const PLACEMENT_OPTIONS = [
   { value: "sidebar", label: "Sidebar" },

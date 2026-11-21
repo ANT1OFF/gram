@@ -1,5 +1,3 @@
-// The self-update of `self-update.ts` on this machine's own service, filesystem and network.
-
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

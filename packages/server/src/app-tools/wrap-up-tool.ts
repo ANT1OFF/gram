@@ -55,7 +55,6 @@ export type WrapUpInput = typeof WrapUpInput.Type;
 
 const refuse = (message: string) => Effect.fail(new AppToolError({ tool: TOOL, message }));
 
-/** One line of plain prose of at most `max` characters, or why not. */
 const proseProblem = (name: string, text: string, max: number): string | undefined => {
   if (text === "") return `${name} is empty.`;
   if (text.length > max) return `${name} is ${text.length} characters; keep it to ${max}.`;
@@ -63,10 +62,6 @@ const proseProblem = (name: string, text: string, max: number): string | undefin
   return undefined;
 };
 
-/**
- * The box as the user will see it, or why the call is refused. An app action is checked against
- * what the thread's git state offers now, so a button never stands for a control with nothing to do.
- */
 const wrapUpButtons = (
   input: WrapUpInput,
   git: GitState | undefined,
@@ -168,14 +163,11 @@ export const wrapUpTool = (
           return yield* refuse("wrap_up closes a turn; call it before the turn ends.");
         }
         const thread = yield* store.getThread(threadId).pipe(Effect.mapError(failed(TOOL)));
-        // The agent has often just committed: an app action is checked against the checkout as it
-        // is now, not the last state the publisher happened to read.
         if (input.actions?.some((item) => item.action !== undefined) === true) {
           yield* git.refresh(effectiveCheckout(thread).path, { remote: false, rebase: false });
         }
         const box = wrapUpButtons(input, yield* git.stateForThread(thread));
         if (typeof box === "string") return yield* refuse(box);
-        // One box per turn: a second call replaces the first.
         const id = `wrap-up:${turn.id}`;
         const data: WrapUpData = {
           id,

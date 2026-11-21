@@ -50,7 +50,6 @@ export function createServed(): ServedRecord {
     answered: (handshake) => {
       known = new Set(handshake.rpcs);
       version = handshake.version;
-      // A server answered on a reconnect may be a newer one, which serves what an older refused.
       refused.clear();
       changed();
     },
@@ -75,7 +74,6 @@ export function servedAllBut(lacking: readonly string[] = []): ServedRpcs {
 
 export const HANDSHAKE_TAG = "app.handshake" satisfies GramRpcTag;
 
-/** What Effect RPC's server answers a request whose tag it has no RPC for: a defect, at once. */
 const unknownTag = (cause: Cause.Cause<unknown>, tag: string): boolean =>
   Cause.squash(cause) === `Unknown request tag: ${tag}`;
 
@@ -159,8 +157,6 @@ export function startHandshake(
   const once = () =>
     ask().then(
       (handshake) => served.answered(handshake),
-      // A server older than the handshake refuses it as unknown: every call goes out, and the tags
-      // it refuses are struck off one by one. Anything else (a dropped socket) is asked again.
       () => undefined,
     );
   const wait = Promise.race([once(), sleep(waitMs)]).then(() => {

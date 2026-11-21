@@ -43,7 +43,6 @@ const ICONS: Record<VerbId, LucideIcon> = {
   more: Ellipsis,
 };
 
-/** Says why a verb that calls the server failed, as the palette's commands do. */
 const fail = (what: string) => (error: unknown) =>
   useThreadDialogs.getState().fail(`Couldn't ${what}: ${errorMessage(error)}`);
 
@@ -95,7 +94,6 @@ export function useOrchestratorVerbs(threadId: ThreadId): OrchestratorVerbs | un
       case "fresh":
         return useHandoffStore.getState().confirm(workspaceId);
       case "more":
-        // After the key that picked it is done with the composer, so the palette's field keeps focus.
         return void setTimeout(() =>
           useLayoutStore.getState().openPalette("", { kind: "workspace", workspaceId }),
         );
@@ -139,7 +137,6 @@ export function VerbMenu({
             role="option"
             aria-selected={index === activeIndex}
             data-verb={verb.id}
-            // Keep focus in the textarea.
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onChoose(verb)}
             className={cn(

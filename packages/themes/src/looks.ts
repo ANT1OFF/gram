@@ -112,11 +112,6 @@ const glass: Look = {
     label: '"Inter Variable", ui-sans-serif, system-ui, sans-serif',
   },
   type: {
-    // Each step clearly apart from the next, every line height on the 4 px grid. Caption is only
-    // for what is never read for meaning (a key cap, a count badge, an overline); metadata,
-    // timestamps and chips are meta, a step under the UI text and a step above caption.
-    // Headings separate from body by size, weight and tracking at once: a title is 600 and drawn
-    // tighter, a page's heading a full step larger again, so neither reads as bold body text.
     caption: { size: 11, lineHeight: 16, tracking: 0.01 },
     meta: { size: 13, lineHeight: 20 },
     body: { size: 14, lineHeight: 20 },

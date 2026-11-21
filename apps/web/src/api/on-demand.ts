@@ -1,11 +1,6 @@
 import { serverUrl } from "./server-base";
 import { withOriginKey } from "./origin-key";
 
-// A person's own machine, where the server's deployment starts one on demand (the server's
-// `embedding/on-demand.ts`). Each call is its own HTTP request, so the fronting proxy can sign it
-// as this person's: the start is the deployment's proof that they asked. The paths answer 404 on a
-// server whose deployment starts none, and the feature is then simply not offered.
-
 export const ON_DEMAND_START_PATH = "/machines/on-demand/start";
 export const ON_DEMAND_STOP_PATH = "/machines/on-demand/stop";
 export const ON_DEMAND_STATUS_PATH = "/machines/on-demand/status";
@@ -106,7 +101,6 @@ export const parseStatus = (value: unknown): OnDemandStatus | undefined => {
 
 const text = (value: unknown) => (typeof value === "string" ? value : undefined);
 
-/** The server already read the provider's choices field by field; this keeps the shape honest. */
 const parseChoices = (value: unknown): OnDemandStatus["choices"] => {
   const body = record(value);
   if (body === undefined || !Array.isArray(body["choices"])) return undefined;
@@ -167,7 +161,6 @@ const parseChoices = (value: unknown): OnDemandStatus["choices"] => {
 
 /** Their status, or undefined where the server's deployment starts no machines. */
 export const fetchOnDemandStatus = async (
-  /** A workspace's own machine, in place of the person's. */
   workspace?: string,
 ): Promise<OnDemandStatus | undefined> => {
   const query = workspace === undefined ? "" : `?workspace=${encodeURIComponent(workspace)}`;

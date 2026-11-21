@@ -10,7 +10,6 @@ import { prDetailQuery, prDetailStamp } from "./pr-detail-query";
 /** How long the pointer or focus rests on a PR panel opener before it counts as intent. */
 export const PREWARM_DWELL_MS = 150;
 
-/** As long as the server's own detail cache, so resting on an opener again within it asks nothing. */
 const PREWARM_FRESH_MS = 30_000;
 
 /** Spread onto an element that opens the PR panel. */
@@ -38,7 +37,6 @@ export function usePrDetailPrewarm(threadId: ThreadId): PrDetailPrewarmHandlers 
     const cancel = () => clearTimeout(timer.current);
     const arm = () => {
       cancel();
-      // The dwell is what keeps a pointer crossing the sidebar from asking GitHub about every row.
       timer.current = setTimeout(() => {
         const summary = useThreadsStore.getState().byId[threadId];
         const stamp = prDetailStamp(summary?.git, summary?.thread.boundPr);

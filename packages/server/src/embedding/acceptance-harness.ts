@@ -1,5 +1,3 @@
-// The server the embedding acceptance tests run: the decision hook and event sink on loopback
-// endpoints, a fake agent, and the steps those tests share.
 import {
   applySettingsPatch,
   type GramUIMessage,
@@ -26,8 +24,6 @@ import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { DecisionHook } from "./decision-hook.ts";
 import { EventSink } from "./event-sink.ts";
 
-/** A JSON endpoint on loopback that answers each POST with what `answer` makes of its body. */
-/** An answer an endpoint gives, now or once it has made up its mind. */
 type Answer = { status?: number; json: unknown };
 
 export const endpoint = <Body>(answer: (body: Body) => Answer | Promise<Answer>) =>
@@ -88,7 +84,6 @@ export const serverLayer = (
   decisionUrl: string | undefined,
   sinkUrl?: string,
   sinkMessages = false,
-  /** A data folder for a server that is started again; absent, nothing outlives the layer. */
   dir?: string,
   toolStepDelay: Duration.Input = "20 millis",
 ) =>

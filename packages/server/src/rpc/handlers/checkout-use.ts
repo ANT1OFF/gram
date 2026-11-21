@@ -13,7 +13,6 @@ export const checkoutUseHandlers = Effect.gen(function* () {
   return {
     "threads.usingCheckout": ({ path }) =>
       Effect.gen(function* () {
-        // A folder that doesn't resolve holds no open thread, but compare its spelling anyway.
         const folder = yield* resolveFolder(path).pipe(Effect.orElseSucceed(() => path));
         const users = (yield* readableOnly(yield* store.listThreads, (thread) => thread)).filter(
           (thread) =>

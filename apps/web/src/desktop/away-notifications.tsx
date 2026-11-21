@@ -32,29 +32,19 @@ import { buildNotice, buildSummary, SUMMARY_ID, type AwayNotice } from "./away-n
 import { scheduleChime } from "./chime";
 import { interrupts } from "./interrupt-policy";
 
-// Asks as desktop notifications while the window isn't in front. The first raises its own; one answered anywhere is taken back; Allow and
-// Merge answer through the stack's own path, and only the very ask that was shown. A second that
-// arrives while the first still waits joins it in one notification that lists them all (Settings →
-// Notifications → Gather waiting asks), which opens the Inbox and answers nothing.
-
-/** Asks already open as the window loads are the stack's, not news. */
 const STARTUP_GRACE_MS = 5_000;
-/** How long a helper title may take before the template's goes out instead. */
 const TITLE_TIMEOUT_MS = 4_000;
-/** Request ids remembered as seen, so an ask that comes back (undo, a failed send) stays quiet. */
 const SEEN_LIMIT = 5_000;
 
 const toast = (title: string, body: string) =>
   useThreadsStore.getState().applyEvent({ type: "notify", kind: "info", title, body });
 
-/** Whether `workspaceId`'s asks may notify at all. */
 const notifies = (settings: Settings | undefined, workspaceId: WorkspaceId): settings is Settings =>
   settings !== undefined &&
   settings.notifications.native !== false &&
   !workspaceMuted(settings, workspaceId) &&
   interrupts("ask");
 
-/** The helper's title for `ask`, or `undefined` for the template's: off, slow or none. */
 const helperTitle = async (api: Api, ask: Ask, settings: Settings) => {
   const entry = ask.group?.entries[0];
   if (entry === undefined || !helperOn(settings, "notice")) return undefined;
@@ -89,11 +79,8 @@ export function AwayNotifications({
   const queryClient = useQueryClient();
   const latest = useRef(all);
   const mountedAt = useRef<number | undefined>(undefined);
-  /** Request (or question) ids already seen. */
   const seen = useRef(new Set<string>());
-  /** Notifications on screen or in Notification Center, by id. */
   const live = useRef(new Map<string, AwayNotice>());
-  /** The asks the one shared notification stands for, by their own notice's id; empty when it isn't up. */
   const gathered = useRef(new Map<string, AwayNotice>());
 
   useMountEffect(() => {
@@ -104,13 +91,11 @@ export function AwayNotifications({
     latest.current = all;
     const bridge = window.gram;
     if (!bridge) return;
-    // Answered anywhere, held for undo, or changed: gone from the notification too.
     for (const [id, notice] of live.current) {
       if (findShownAsk(all, notice) !== undefined) continue;
       live.current.delete(id);
       bridge.withdrawNotification?.(id);
     }
-    // The shared one stands until the last ask it lists is gone; it isn't raised again as they go.
     if (gathered.current.size > 0) {
       for (const [id, notice] of gathered.current) {
         if (findShownAsk(all, notice) === undefined) gathered.current.delete(id);
@@ -146,8 +131,6 @@ export function AwayNotifications({
         fingerprint: askFingerprint(ask),
       };
       const title = await helperTitle(api, ask, before);
-      // The very ask the title was asked for, unchanged, with settings as they stand now. Gone or
-      // changed meanwhile, even to another request that took the same id, it shows nothing.
       const now = findShownAsk(latest.current, shown);
       const prefs = useServerSettings.getState().settings;
       if (now === undefined || document.hasFocus() || !notifies(prefs, workspace.workspaceId))
@@ -162,7 +145,6 @@ export function AwayNotifications({
       });
       if (live.current.has(notice.id) || gathered.current.has(notice.id)) return;
       if (gatherAsksOn(prefs) && live.current.size + gathered.current.size > 0) {
-        // Something already waits: this one joins it, and those up singly give way to the one.
         const first = gathered.current.size === 0;
         for (const [id, single] of live.current) {
           gathered.current.set(id, single);
@@ -179,7 +161,6 @@ export function AwayNotifications({
           body: summary.body,
           ...(summary.openThreadId === undefined ? {} : { threadId: summary.openThreadId }),
         });
-        // One chime as it forms; the asks that join it later arrive quietly.
         if (first) scheduleChime(chimeOf(prefs.notifications));
         return;
       }
@@ -199,7 +180,6 @@ export function AwayNotifications({
   useEffect(() => {
     const bridge = window.gram;
     if (!bridge?.onNotificationAction) return;
-    // The thread it came from, with the Inbox over it on that ask while it still waits.
     const open = (notice: AwayNotice) => {
       const threadId = notice.openThreadId;
       if (threadId !== undefined) {
@@ -210,7 +190,6 @@ export function AwayNotifications({
     };
     return bridge.onNotificationAction(({ id, action }) => {
       if (id === SUMMARY_ID) {
-        // Open only: the oldest ask it lists that still waits, in the Inbox with the rest.
         const waiting = [...gathered.current.values()].find(
           (each) => findShownAsk(latest.current, each) !== undefined,
         );
@@ -222,8 +201,6 @@ export function AwayNotifications({
       if (notice === undefined) return;
       live.current.delete(id);
       if (action === "open") return open(notice);
-      // Only the very ask that was shown, still waiting, with actions still on: anything else
-      // sends nothing.
       const checked = action === 0 ? checkAwayAction(latest.current, notice) : undefined;
       const prefs = useServerSettings.getState().settings;
       if (

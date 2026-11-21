@@ -1,5 +1,3 @@
-// What a session is told about its workspace's shared folder (`shared-folders.ts`).
-
 /** What a session is told about its shared folder, beside the folder itself. */
 export const sharedFolderNote = (path: string): string =>
   [

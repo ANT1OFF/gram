@@ -48,8 +48,6 @@ export function beginScrollGesture(
     clientHeight: viewport.clientHeight,
     clientWidth: viewport.clientWidth,
     revision,
-    // Native key/touch/drag movement may span frames. A wheel token is consumed by its first
-    // outer scroll; the deadline also retires input which caused no displacement.
     expiresAt: now + (kind === "wheel" ? 300 : 600),
   };
 }

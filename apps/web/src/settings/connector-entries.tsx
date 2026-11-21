@@ -50,13 +50,11 @@ export function ConnectorEntries({
   const listId = useId();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
-  // Each edit replaces the whole list, so none starts from a list whose save hasn't landed yet.
   const [saving, setSaving] = useState(false);
   const entry = draft.trim();
   const busy = saving || disabled;
   const offered = suggestions.filter((suggestion) => !entries.includes(suggestion.entry));
 
-  /** Saves `next`; `added` is the draft it adds, cleared once saved unless it was typed over. */
   const save = (next: string[], added?: string) => {
     setError(undefined);
     setSaving(true);

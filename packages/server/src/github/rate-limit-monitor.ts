@@ -1,9 +1,3 @@
-// Noticing that GitHub rate-limited us, wherever it happened. Every `git` and `gh` invocation goes
-// through `Proc`, and the failures that matter here are swallowed deep inside the git package (a
-// failed PR lookup becomes a stale badge), so a polling loop can't see them from its own call sites.
-// Decorating `Proc` catches all of them, primary and secondary, with whatever `Retry-After` GitHub
-// sent.
-
 import {
   detectRateLimit,
   detectRateLimitOutput,
@@ -124,11 +118,6 @@ export const resourceOf = (bin: string, args: ReadonlyArray<string>): string | u
 
 const clock = (ms: number): string => new Date(ms).toTimeString().slice(0, 5);
 
-/**
- * What a run that was never started reports. An exhausted allowance reads as the rate limit it is, so
- * every caller's existing handling applies; a reserved one must not, or pollers would back off from
- * a limit nobody hit.
- */
 const heldOutput = (admission: Admission & { readonly allowed: false }): ProcOutput => ({
   status: 1,
   stdout: "",
@@ -139,7 +128,6 @@ const heldOutput = (admission: Admission & { readonly allowed: false }): ProcOut
   truncated: false,
 });
 
-/** How long a primary limit seen without headers is held: until a run with headers says how long. */
 const UNDATED_HOLD_SECONDS = 60;
 
 /**

@@ -26,14 +26,6 @@ import { goToThread } from "./worker-banner";
 import { showWorkersTab } from "./workers-tab";
 import { workerEntryOf, workerRow } from "./workers-model";
 
-/**
- * Esc on a worker goes back to its orchestrator, one level up, as the workspace crumb does. Only
- * while nothing else has Esc: the registry already keeps a plain key from a field being typed in
- * (an empty composer too) and from a dialog, and an open menu closes on its own Esc first. An
- * approval's Deny is 3, not Esc, so a waiting approval stays waiting; only where Deny is rebound
- * to Esc does a worker with one waiting keep Esc for it.
- */
-/** Whether Deny is bound to Esc, however the binding spells it ("esc", "Escape", "escape"). */
 const denyTakesEsc = (): boolean => {
   const keys = effectiveKeys("approval.deny", catalogKeys("approval.deny") ?? "");
   return keys !== undefined && keys !== "" && normaliseKeys(keys) === normaliseKeys("escape");
@@ -64,13 +56,11 @@ export function useBackToOrchestrator(threadId: ThreadId, focused: boolean): voi
   );
 }
 
-/** A crumb above the worker: muted, capped, and the first to give way. */
 const PARENT = "max-w-40 shrink-[6] font-normal text-muted-foreground";
 
 const CRUMB =
   "min-w-0 truncate rounded-sm px-0.5 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-/** A worker's ledger row and its live now line, while workspaces are on and the ledger is in. */
 function useWorkerFacts(thread: Thread | undefined) {
   const { data: ledger } = useOrchestratorLedger(thread?.workspaceId);
   const byId = useThreadsStore((s) => s.byId);
@@ -83,7 +73,6 @@ function useWorkerFacts(thread: Thread | undefined) {
   };
 }
 
-/** The › between crumbs, dropped with the crumb before it. */
 const crumbSeparator = (drop?: string) => (
   <ChevronRight aria-hidden className={cn("size-icon-chip shrink-0 text-subtle", drop)} />
 );
@@ -114,17 +103,13 @@ export function WorkerCrumbs({
   const workspaceName =
     workspace?.workspace.name ??
     (orchestrator === undefined ? "Orchestrator" : orchestratorRowTitle(orchestrator.title));
-  // In the title bar the switcher beside it names the workspace, and Esc goes back up to its
-  // orchestrator. A crumb cut to a letter or two says nothing, so narrow the feature drops whole.
   const dropWorkspace = inTitlebar ? "hidden" : undefined;
-  // Wider, it stays whole up to its cap and the worker's own name truncates instead.
   const dropFeature = inTitlebar ? "shrink-0 @max-md:hidden" : undefined;
 
   return (
     <h1
       aria-label={`Worker: ${thread.title}`}
       data-testid="worker-crumbs"
-      // In the title bar it never shrinks past the worker's few letters.
       className={cn(
         "flex items-center gap-1 font-heading font-medium",
         inTitlebar ? "min-w-18" : "min-w-0",
@@ -173,9 +158,7 @@ export function WorkerCrumbs({
             <button
               type="button"
               data-testid="worker-crumb-worker"
-              // The title the title bar folds its lesser buttons for.
               data-titlebar-title=""
-              // In the title bar the worker's name keeps a few letters, however short of room.
               className={cn(CRUMB, "text-foreground", inTitlebar && "min-w-12")}
               onClick={showWorkersTab}
             />
@@ -237,7 +220,6 @@ export function WorkerNowChip({
         title={row.waiting?.hint}
         className="inline-flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground"
       >
-        {/* Short of room, the PR's wait stays: the turn's end is the transcript's last line too. */}
         <span data-testid="worker-turn-state" className="@max-md:hidden">
           Turn: <span className="text-foreground">finished</span>
           <span aria-hidden className="ml-1.5">
@@ -260,21 +242,14 @@ export function WorkerNowChip({
   );
 }
 
-/** A worker's worded actions are the app's outline secondary button (DESIGN.md, Buttons). */
 const HEADER_BUTTON = buttonVariants({ variant: "outline", size: "xs" });
 
-/**
- * In the title bar a worker's Open beside keeps its other controls' shape: an icon button of the
- * chrome's size (28 px) in the panels' group.
- */
 const TITLEBAR_ICON =
   "inline-flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-/** What a worker's own actions can do now: dock beside its orchestrator. */
 function useWorkerActions(thread: Thread) {
   const open = useOpenThread();
   const docked = useBesideStore((s) => s.worker === thread.id);
-  // A touch screen shows one thing at a time, so it offers no Open beside.
   const touch = useTouch();
   const orchestrator = useThreadsStore((s) =>
     thread.spawnedBy === undefined ? undefined : s.byId[thread.spawnedBy.threadId],

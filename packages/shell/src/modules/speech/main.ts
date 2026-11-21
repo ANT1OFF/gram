@@ -1,6 +1,3 @@
-// Local NVIDIA dictation: supervises the isolated speech process, verifies model downloads,
-// and answers microphone permission requests. Audio and transcripts never leave the computer.
-
 import type { WebContents } from "electron";
 
 import { Channels } from "../../channels.ts";
@@ -37,7 +34,6 @@ const watchIdOf = (input: unknown): string | undefined => {
 const modelOf = (input: unknown): unknown =>
   typeof input === "object" && input !== null ? Reflect.get(input, "model") : undefined;
 
-/** Serves `models`: the store's calls, and each page's watches until it unwatches or goes away. */
 type ModelAccess = Promise<SpeechModelStore> | (() => Promise<SpeechModelStore>);
 const currentModels = (models: ModelAccess) => (typeof models === "function" ? models() : models);
 function installModels(ipc: ShellIpc, models: ModelAccess): void {
@@ -54,7 +50,6 @@ function installModels(ipc: ShellIpc, models: ModelAccess): void {
     (await currentModels(models)).remove(modelOf(input)),
   );
 
-  /** Open watches by page, then by the preload's id for them. */
   const watches = new Map<number, Map<string, AbortController>>();
   ipc.on(Channels.speechModelWatch, (event, input) => {
     const watchId = watchIdOf(input);
@@ -65,8 +60,6 @@ function installModels(ipc: ShellIpc, models: ModelAccess): void {
       const opened = new Map<string, AbortController>();
       watches.set(contents.id, opened);
       page = opened;
-      // A reload or a closed window ends its watches, which never unwatch themselves then.
-      // `did-navigate` is a new document only; the router's in-page moves fire another event.
       const end = () => {
         contents.off("destroyed", end);
         contents.off("did-navigate", end);

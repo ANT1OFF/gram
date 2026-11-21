@@ -1,8 +1,3 @@
-// A provisioned host sent SIGTERM (a node drained, a spot node reclaimed) has its grace period to
-// live. It spends part of it on its threads' work: it says it is going (`HostStop.goAway`), and the
-// control plane readies it to stop, keeping that work as any stop does, before the process ends.
-// Without this the runtime interrupts the host at the signal, and its connection with it.
-
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -48,7 +43,6 @@ export const holdingTerm = <A, E, R>(
         const off = signals((signal) => {
           Deferred.doneUnsafe(signalled, Exit.succeed(signal));
         });
-        // Ended with this scope as well, whichever way this ends.
         const fiber = yield* Effect.forkScoped(restore(program));
         const first = yield* Effect.raceFirst(
           Fiber.await(fiber).pipe(Effect.map((exit) => ({ exit }) as const)),

@@ -1,6 +1,4 @@
-/** Below this, fetching code nobody asked for yet competes with what the person is waiting for. */
 const SLOW_BITS_PER_SECOND = 1_000_000;
-/** Smaller downloads say more about latency than about the link's rate. */
 const MEASURABLE_BYTES = 100_000;
 
 interface Download {

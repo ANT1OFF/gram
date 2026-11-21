@@ -132,7 +132,6 @@ export interface CodexServersShape {
   readonly acquire: (
     profileId: ProfileId | undefined,
     home: CodexHome,
-    /** A server-owned worker or orchestrator's stable Gram identity isolates its child lifetime. */
     sessionPartitionId?: ThreadId,
     switchStartup?: string,
   ) => Effect.Effect<CodexServer, AgentUnavailable>;
@@ -271,13 +270,11 @@ export interface CodexServersConfig {
 const unavailable = (message: string) =>
   new AgentUnavailable({ agent: "codex", reason: "startup-failed", message });
 
-/** A managed runtime's app-server didn't start; `retry` when the store has rolled back since. */
 class ManagedStartFailed extends Data.TaggedError("ManagedStartFailed")<{
   readonly error: AgentUnavailable;
   readonly retry: boolean;
 }> {}
 
-/** A child per home/profile: metadata shares one; server-owned workers and orchestrators have stable partitions. */
 const cacheKey = (
   profileId: ProfileId | undefined,
   home: CodexHome,
@@ -287,14 +284,12 @@ const cacheKey = (
 /** `CodexServer.subscribe`'s key for the notifications about no thread. */
 export const SERVER_WIDE = "";
 
-/** The thread a server message is about; notifications without one (rate limits, remote control) are dropped. */
 const threadOf = (message: ServerMessage): string | undefined => {
   const params = (message as { params?: { threadId?: unknown; thread?: { id?: unknown } } }).params;
   if (typeof params?.threadId === "string") return params.threadId;
   return typeof params?.thread?.id === "string" ? params.thread.id : undefined;
 };
 
-/** Canonical physical home, including an as-yet-uncreated home below an existing path alias. */
 const homeIdentity = (env: Readonly<Record<string, string | undefined>>): string => {
   const path = resolve(
     env["CODEX_HOME"] ?? join(env["HOME"] ?? env["USERPROFILE"] ?? homedir(), ".codex"),
@@ -302,7 +297,6 @@ const homeIdentity = (env: Readonly<Record<string, string | undefined>>): string
   return canonicalSessionHome(path);
 };
 
-/** The app-server's stdio as newline-delimited JSON; listeners attach at spawn so nothing is lost. */
 const childIo = (child: ChildProcess) =>
   Effect.gen(function* () {
     const lines = yield* Queue.unbounded<string, CodexRpcError | Cause.Done>();
@@ -314,8 +308,6 @@ const childIo = (child: ChildProcess) =>
     child.stderr?.on("data", (data: Buffer) => {
       stderr = (stderr + data.toString()).slice(-2_000);
     });
-    // Keep asynchronous pipe errors from becoming uncaught exceptions; each write's callback
-    // also reports them to its caller, so an approval is never acknowledged before delivery.
     child.stdin?.on("error", () => {});
     child.once("error", (error) =>
       Queue.failCauseUnsafe(
@@ -343,7 +335,6 @@ const childIo = (child: ChildProcess) =>
 
 export const CodexServersLive = (
   config: CodexServersConfig = {},
-  /** Helper-only process policy; each caller builds this layer in its own scope. */
   helperCwd?: string,
 ): Layer.Layer<CodexServers, never, GatewayKeyProvider> =>
   Layer.effect(CodexServers)(
@@ -355,7 +346,6 @@ export const CodexServersLive = (
         Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
       );
 
-      /** The login-shell environment, and the `codex` it finds, read once until a retire. */
       const probe = yield* resettableOnSuccess(
         Effect.gen(function* () {
           const warnings: Array<string> = [];
@@ -408,10 +398,6 @@ export const CodexServersLive = (
         }),
       );
 
-      /**
-       * The executable the next app-server starts from: the managed runtime, holding its version
-       * until `release`, or the discovered one. The managed one still takes the login-shell env.
-       */
       const executable = Effect.gen(function* () {
         const managed = config.runtime === undefined ? undefined : yield* config.runtime.resolve;
         if (managed === undefined) {
@@ -429,10 +415,6 @@ export const CodexServersLive = (
         };
       });
 
-      /**
-       * Codex's own catalog, which a gateway catalog has to carry whole; read once, as it only
-       * changes with the binary. Run on the gateway home, so the dump never touches `~/.codex`.
-       */
       const bundled = new Map<string, Effect.Effect<CodexCatalog | undefined>>();
       const bundledCatalog = (
         home: string,
@@ -471,7 +453,6 @@ export const CodexServersLive = (
           return yield* cached;
         });
 
-      /** The catalog file for `profile`'s models on the gateway home, when Codex lacks any of them. */
       const catalogFor = (
         home: string,
         profile: GatewayProfile,
@@ -487,7 +468,6 @@ export const CodexServersLive = (
                   ? Effect.succeed(undefined)
                   : writeCatalog(home, profile.id, merged);
               }),
-              // Without the file Codex runs these models on fallback metadata, which still works.
               Effect.catch((error) =>
                 Effect.logWarning(
                   `couldn't write the gateway model catalog: ${error.message}`,
@@ -501,19 +481,11 @@ export const CodexServersLive = (
         CodexServer,
         { profileId: ProfileId | undefined; home: CodexHome }
       >();
-      /** Marks a server retired, stopping it now if no session holds it. */
       const retirers = new WeakMap<CodexServer, Effect.Effect<void>>();
-      /** Writes a running server's `generated` files again when they are gone. */
       const restorers = new WeakMap<CodexServer, Effect.Effect<void>>();
       const lock = yield* Semaphore.make(1);
-      // Preparing and releasing the gateway home take turns, so a release can't undo a start's prep.
       const homeLock = yield* Semaphore.make(1);
-      // Thread opens on the gateway home take turns; see `CodexServersShape.opening`.
       const openLock = yield* Semaphore.make(1);
-      /**
-       * Gives a gateway app-server the user's skill folders; a warning for the thread when it won't
-       * take them (a Codex without the method), since its threads then run without those skills.
-       */
       const addSkillRoots = (
         rpc: CodexRpc,
         userEnv: Readonly<Record<string, string>>,
@@ -543,8 +515,6 @@ export const CodexServersLive = (
         });
 
       let gatewayChildren = 0;
-      // The home is shared with any other Gram on the data dir, whose servers this count
-      // doesn't see, so a run that never prepared it leaves it alone.
       let homePrepared = false;
       const releaseIfUnused = homeLock.withPermits(1)(
         Effect.suspend(() => {
@@ -559,8 +529,6 @@ export const CodexServersLive = (
         prepareHome: NonNullable<CodexServersConfig["gatewayHome"]>,
         userEnv: Readonly<Record<string, string>>,
       ) =>
-        // Preparing the home clears a gate rules file a crash left behind, so it waits out an open
-        // that has just put one there.
         openLock
           .withPermits(1)(prepareHome(userEnv))
           .pipe(
@@ -573,7 +541,6 @@ export const CodexServersLive = (
 
       yield* Effect.addFinalizer(() =>
         Effect.promise(() => Promise.all([...children].map((child) => stopChild(child)))).pipe(
-          // Exit callbacks may be interrupted by shutdown; the owner still releases the home.
           Effect.andThen(releaseIfUnused),
         ),
       );
@@ -592,7 +559,6 @@ export const CodexServersLive = (
         },
       );
 
-      /** A server for `profileId` on `home`; a `cached` one is shared through `servers`. */
       const start = (
         profileId: ProfileId | undefined,
         home: CodexHome,
@@ -603,8 +569,7 @@ export const CodexServersLive = (
         startFrom(profileId, home, cached, sessionPartitionId, switchStartup).pipe(
           Effect.catchTag("ManagedStartFailed", (failure) =>
             failure.retry && !switchStartup
-              ? // The store went back to the version before; one more start runs from that.
-                startFrom(profileId, home, cached, sessionPartitionId, switchStartup).pipe(
+              ? startFrom(profileId, home, cached, sessionPartitionId, switchStartup).pipe(
                   Effect.catchTag("ManagedStartFailed", (again) => Effect.fail(again.error)),
                 )
               : Effect.fail(failure.error),
@@ -618,7 +583,6 @@ export const CodexServersLive = (
         sessionPartitionId?: ThreadId,
         switchStartup?: string,
       ): Effect.Effect<CodexServer, AgentUnavailable | ManagedStartFailed> => {
-        // Until the child exists to release it on exit, a failure here releases the managed hold.
         let managedHold: ManagedCodex | undefined;
         let startingChild: ChildProcess | undefined;
         return Effect.gen(function* () {
@@ -672,8 +636,6 @@ export const CodexServersLive = (
             ...(serverHome === undefined ? {} : { CODEX_HOME: serverHome }),
           };
           if (helperCwd !== undefined || home === "owned") {
-            // A machine's own provider keeps exactly the variables it names for its credentials;
-            // every other key goes, as on the ChatGPT home.
             const kept = new Set(own?.env ?? []);
             for (const name of Object.keys(env))
               if (
@@ -714,18 +676,15 @@ export const CodexServersLive = (
           const key = cacheKey(profileId, home, sessionPartitionId);
           children.add(child);
           if (managed !== undefined) {
-            // A spawn that fails outright emits only `error`; `release` runs once either way.
             child.once("exit", managed.release);
             child.once("error", managed.release);
           }
           const listeners = new Map<string, Set<CodexListener>>();
-          // Set once built; a child that exits during `initialize` never was.
           let self: CodexServer | undefined;
           let threadOwner: ReturnType<typeof ownership.owner> | undefined;
           child.once("exit", () => {
             threadOwner?.exit();
             children.delete(child);
-            // A retired server's key may already belong to its replacement.
             if (self !== undefined && servers.get(key) === self) servers.delete(key);
             for (const set of listeners.values()) for (const listener of set) listener.exit();
             if (home === "gateway" && serverHome !== undefined) {
@@ -756,11 +715,7 @@ export const CodexServersLive = (
             ),
             Effect.provideService(Scope.Scope, layerScope),
           );
-          // Resolve path aliases without reading any credential/config file.
           threadOwner = ownership.owner(homeIdentity(env), rpc, () => {
-            // A last thread-scope close makes this child unsuitable for cached reopen: its
-            // recorder can still own the writer after unsubscribe/closed. Retire this exact
-            // child, never its replacement; held siblings keep it until their own scopes end.
             retired = true;
             if (self !== undefined && servers.get(key) === self) servers.delete(key);
             if (users === 0) run(stopIfUnused);
@@ -775,7 +730,6 @@ export const CodexServersLive = (
                 const set = route === undefined ? undefined : listeners.get(route);
                 if (set !== undefined) for (const listener of set) listener.message(message);
                 else if (isServerRequest(message)) {
-                  // Nobody can answer it: decline rather than leave the agent waiting.
                   run(
                     rpc
                       .respond(message.id, { decision: "cancel" })
@@ -869,7 +823,6 @@ export const CodexServersLive = (
                   message:
                     "The previous Codex child still has another session or cannot stop gracefully on this platform. No replacement was started.",
                 });
-              // Retire only this exact child. Actual EXIT still owns the writer fence.
               retired = true;
               if (servers.get(key) === server) servers.delete(key);
               const exited = yield* Effect.promise(() => stopChildForSwitch(child));
@@ -909,7 +862,6 @@ export const CodexServersLive = (
                     if (set?.size === 0) listeners.delete(threadId);
                   }),
               ),
-            // Checking `retired` and counting the user in one step leaves no gap for `invalidate`.
             retain: Effect.acquireRelease(
               Effect.sync(() => {
                 if (retired) return false;
@@ -926,8 +878,6 @@ export const CodexServersLive = (
             ),
             generated,
           };
-          // Codex reads `config.toml` and `model_catalog_json` again on every thread open, and a
-          // catalog that is gone fails it with only "No such file or directory".
           restorers.set(
             server,
             Effect.gen(function* () {
@@ -978,8 +928,6 @@ export const CodexServersLive = (
           ),
           Effect.onError(() =>
             Effect.suspend(() => {
-              // Before publication there is no cached server to retire. Cancellation must join
-              // this child's teardown too, not only typed initialization failures.
               if (startingChild !== undefined)
                 return Effect.promise(() => stopChild(startingChild!));
               managedHold?.release();
@@ -1054,7 +1002,6 @@ export const CodexServersLive = (
           );
         };
 
-      /** Retires the profile's servers on both homes. Holds no lock: the caller takes it. */
       const retireProfile = (profileId: ProfileId | undefined) =>
         Effect.suspend(() =>
           Effect.forEach(
@@ -1107,7 +1054,6 @@ export const CodexServersLive = (
           const managed = config.runtime === undefined ? undefined : yield* config.runtime.resolve;
           if (managed === undefined)
             return codexAutoReviewSupported((yield* prepare.get).cliVersion);
-          // Only its version was wanted: nothing starts from this hold.
           managed.release();
           return codexAutoReviewSupported(managed.version);
         }).pipe(Effect.catchCause(() => Effect.succeed(false))),
@@ -1115,8 +1061,6 @@ export const CodexServersLive = (
           Effect.suspend(() => {
             const retiring = [...servers.values()];
             servers.clear();
-            // The next server resolves the executable again, and reads its own catalog: an update
-            // can move the realpath (Homebrew) or replace the binary at the same one (npm).
             bundled.clear();
             return Effect.all([probe.reset, prepare.reset]).pipe(
               Effect.andThen(
@@ -1131,7 +1075,6 @@ export const CodexServersLive = (
         retire: (profileId) =>
           lock.withPermits(1)(
             Effect.suspend(() => {
-              // As for `retireAll`, for the one profile.
               bundled.clear();
               return Effect.all([probe.reset, prepare.reset]).pipe(
                 Effect.andThen(retireProfile(profileId)),
@@ -1152,8 +1095,7 @@ export const CodexServersLive = (
         history: (home) =>
           home === "user"
             ? acquireHeld(acquire(undefined, "user"))
-            : // Not cached, and unused once released, so retiring it stops it at once.
-              Effect.acquireRelease(
+            : Effect.acquireRelease(
                 start(undefined, home, false),
                 (server) => retirers.get(server) ?? Effect.void,
               ),

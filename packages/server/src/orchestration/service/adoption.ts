@@ -1,6 +1,3 @@
-// Membership: threads joining a workspace (`join_workspace`),
-// the orchestrator adopting one (`adopt_thread`) with its pinned repos, detaching and removing a
-// worker, and reopening a stored thread, with the admission check its role must pass.
 import { READERS_DIFFER, sameReaders } from "../../embedding/readable-by.ts";
 import {
   effectiveCheckout,
@@ -61,13 +58,8 @@ import { type JoinInput, type AdoptPin, type OrchestrationShape } from "./shape.
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Projects } from "./projects.ts";
 
-/** A path with its symlinks resolved, else as given: a project keeps the spelling it was opened by. */
 const realPath = (path: string) => Effect.promise(() => realPathOrOwned(path));
 
-/**
- * The project a checkout belongs to, by the resolved path of its repo: a worktree's `repoRoot` is
- * git's resolved main checkout, which a project opened through a symlink spells another way.
- */
 const resolvedProjectOf = (projects: ReadonlyArray<Project>, checkout: Checkout) =>
   Effect.gen(function* () {
     const lexical = projectOfCheckout(projects, checkout);
@@ -80,7 +72,6 @@ const resolvedProjectOf = (projects: ReadonlyArray<Project>, checkout: Checkout)
     return undefined;
   });
 
-/** The projects a thread holds checkouts in: its own, then each extra worktree's, once each. */
 const heldProjectsOf = (
   projects: ReadonlyArray<Project>,
   own: Project,
@@ -95,7 +86,6 @@ const heldProjectsOf = (
     return held;
   });
 
-/** Whether `now` is what `pinned` named: the same folder on the same branch, adding no other repo. */
 const samePin = (now: AdoptPin, pinned: AdoptPin) =>
   now.project === pinned.project &&
   samePath(now.worktree, pinned.worktree) &&
@@ -103,13 +93,11 @@ const samePin = (now: AdoptPin, pinned: AdoptPin) =>
   now.branch === pinned.branch &&
   Object.entries(now.outside).every(([id, identity]) => pinned.outside[id] === identity);
 
-/** Which folder is at `path` (device and inode), so one swapped in at the same path is told apart. */
 const folderIdentity = (path: string): string | undefined => {
   try {
     const stat = statSync(path, { bigint: true, throwIfNoEntry: false });
     return stat?.isDirectory() === true ? `${stat.dev}:${stat.ino}` : undefined;
   } catch {
-    // Unreadable is no identity; the pin compares, and a mismatch refuses.
     return undefined;
   }
 };
@@ -210,7 +198,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       });
     });
 
-  /** Records parked housekeeping or a live loss owed delivery, never an acknowledgment. */
   const workerRemoved = (
     workspaceId: WorkspaceId,
     threadId: ThreadId,
@@ -235,7 +222,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         },
         undefined,
       ]);
-      // A thread that left answers nothing: its open questions are withdrawn, not left waiting.
       yield* withdrawQuestionsOf(workspaceId, threadId, action === "closed" ? "deleted" : action);
       yield* forgetWorker(workspaceId, threadId);
       yield* orchestrationChanged(workspaceId);
@@ -259,17 +245,10 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       if (workspaceId !== undefined) {
         yield* workerRemoved(workspaceId, threadId, thread.parked, "detached");
       }
-      // Its open session still has the worker's prompt and `report`.
       yield* reopenForRole(detached);
       return detached;
     });
 
-  /**
-   * Reopens a thread whose part changed (it joined, moved or left a workspace) once it is idle,
-   * so it opens with that part's prompt, tools, gate and connectors. A Codex app-server that still
-   * has the thread loaded ignores `thread/resume`'s instructions and config, so a Codex thread
-   * goes through the MCP-change restart onto a fresh server, as a changed connector set does.
-   */
   const reopenForRole = (thread: Thread) =>
     thread.model.agent === "codex"
       ? runtimes
@@ -277,15 +256,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           .pipe(Effect.asVoid)
       : reload(thread.id);
 
-  // ---------------------------------------------------------------------------------------
-  // Joining a workspace
-  // ---------------------------------------------------------------------------------------
-
-  /**
-   * Everything a join decides before it changes anything, read the same way by the card and by the
-   * join: the orchestrator it joins, the workspace it leaves, its feature, the worktree it moves
-   * into, and the repos outside the workspace. A refusal is its reason, in words for either caller.
-   */
   const planJoin = (thread: Thread, state: WorkspaceState, input: JoinInput) =>
     Effect.gen(function* () {
       const workspaceId = state.workspace.id;
@@ -325,17 +295,12 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         project = owner;
         relocate = found;
       }
-      // A thread joins an orchestrator only on machines of the same person's, or of no one's
-      // (`host/ownership.ts`): an orchestration never spans two people. Who may ask is the thread's
-      // and the orchestrator's own (the RPC guard, the tool's caller), so that is all there is.
       if (
         ![effectiveCheckout(thread), checkout].every((at) =>
           sameOwner(ownerOf, at, effectiveCheckout(holder)),
         )
       )
         return yield* Effect.fail(OWNERS_DIFFER);
-      // Nor does it span two readers: a workspace is all one person's to see, or everyone's
-      // (`embedding/readable-by.ts`).
       if (!sameReaders(thread, holder)) return yield* Effect.fail(READERS_DIFFER);
       const refused = joinRefusal({
         thread: { ...thread, checkout },
@@ -352,10 +317,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       const held = yield* heldProjectsOf(projects, project, thread.extraCheckouts ?? []);
       const outside = held.filter((each) => !state.workspace.projectIds.includes(each.id));
       const threads = yield* store.listThreads;
-      // What git has checked out now: a shell may have switched since the publisher last looked,
-      // and `checkout.branch` is only what it was when the thread was made. A detached HEAD is no
-      // branch; only when git can't be asked do the publisher and the record stand in, and
-      // `verified` says so, which `adopt_thread`'s pin won't accept.
       const head = yield* provideProc(checkedOut(checkout.path), { kind: "unknown" } as const);
       const branch =
         head.kind === "branch"
@@ -385,8 +346,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           `"${input.group}" isn't a usable group name. Use a short slug such as release-0-4.`,
         );
       }
-      // The workspace's gate is the one its sessions will open under, so a thread that couldn't
-      // hold it would join only to be dead at its next open.
       const gate = outwardGateFor({
         thread: { ...thread, workspaceId, spawnedBy: { threadId: holderId, feature } },
         workspace: state.workspace,
@@ -419,14 +378,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       };
     });
 
-  /**
-   * Makes `thread` a worker of the workspace's orchestrator as `plan` says. Leaving another
-   * workspace is that one's loss of a worker, told as one; what the thread carries is its memo
-   * there (a hold, a scope, background work, but not the messages counted against that
-   * orchestrator), its pending wakes, and everything on the thread itself: its PR bindings and
-   * monitors, a merge intent and its hold. The session reloads once idle to take a worker's
-   * prompt and tools.
-   */
   const applyJoin = (
     thread: Thread,
     state: WorkspaceState,
@@ -507,8 +458,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       yield* joinWorkspace(state, plan.holder.id, plan.outside);
       if (plan.group !== undefined) yield* joinGroup(workspaceId, plan.feature, plan.group);
       yield* sampleExtras(joined);
-      // Its PR and changed files are read from the git state the publisher already has, as for
-      // a worker whose state just moved, so the ledger and the overlap check start with it.
       const git = yield* publisher.stateFor(plan.checkout.path);
       if (git !== undefined) yield* signals.offer({ type: "gitState", thread: joined, state: git });
       yield* store.appendOrchestrationEvent(workspaceId, {
@@ -537,11 +486,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       return joined;
     });
 
-  /**
-   * Runs a join under the spawn lock of the workspace it joins (`into`) and of the one the thread
-   * leaves, then the checkout lock of the worktree it moves into, so neither workspace spawns or
-   * joins meanwhile and no other workspace moves a thread into that worktree.
-   */
   const joining = <A, E, R>(
     threadId: string,
     into: Effect.Effect<ReadonlyArray<string>>,
@@ -555,8 +499,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           thread?.workspaceId === undefined ? keys : [...keys, thread.workspaceId],
         ),
       ),
-      // By the repository the worktree belongs to, as a spawn there keys it, read again once
-      // held: a worktree made meanwhile then waits for the spawn that made it.
       worktree === undefined
         ? effect
         : underKeysOf(checkoutLock, checkoutKey(worktree).pipe(Effect.map((key) => [key])), effect),
@@ -595,7 +537,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         const holding = holder === undefined ? undefined : yield* findThread(holder);
         if (holding === undefined) continue;
         if (thread.spawnedBy !== undefined && thread.workspaceId === state.workspace.id) continue;
-        // Only a workspace of the thread's own reader, which is all a join admits.
         if (!sameReaders(thread, holding)) continue;
         targets.push({
           workspaceId: state.workspace.id,
@@ -633,7 +574,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         .join(", ");
     }).pipe(Effect.catchCause(() => Effect.succeed(`Take ${input.threadId} on as a worker`)));
 
-  /** The pin of a plan, as `pinAdopt` hands it to the card and `adoptThread` holds it to. */
   const pinOf = (plan: Effect.Success<ReturnType<typeof planJoin>>) =>
     Effect.gen(function* () {
       const outside: Record<string, string> = {};
@@ -692,11 +632,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           return yield* toolError(tool, `No thread has the id ${input.threadId}.`);
         }
         const refuse = (message: string) => toolError(tool, refusal("not_joinable", message));
-        // The card was raised on this same plan; one read again now that the user has said yes
-        // is what runs, so a thread that changed meanwhile is held to what it is now.
         const plan = yield* planJoin(thread, state, input).pipe(Effect.mapError(refuse));
-        // A shell can swap the worktree named, or the thread move, while the card waits: what
-        // runs must be what the user said yes to, or a repo they never saw would join.
         const now = yield* pinOf(plan);
         if (input.pinned === undefined || !plan.verified || !samePin(now, input.pinned)) {
           return yield* refuse(
@@ -725,12 +661,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       yield* checkAdmitted(thread, model);
     });
 
-  /**
-   * Whether `thread`, on `model`, may still be what its role or `spawnedBy` makes it.
-   * `asHolder` asks it of an orchestrator as the holder of its workspace's slot, which a reopen
-   * is about to claim: the slot is empty until then, and the gate an empty slot gives is the
-   * strictest one.
-   */
   const checkAdmitted = (thread: Thread, model: ModelRef, asHolder = false) =>
     Effect.gen(function* () {
       const threadId = thread.id;
@@ -749,9 +679,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           threadId,
         });
       }
-      // The same rule `spawn_worker` holds a new worker to, asked of the gate this thread's
-      // sessions would open under on the new model: a change that passed here and then couldn't
-      // open would leave a worker, or the orchestrator, dead until someone noticed.
       if (thread.role === "dream" || (thread.role === undefined && thread.spawnedBy === undefined))
         return;
       const state = yield* findWorkspace(thread.workspaceId);
@@ -777,7 +704,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       }
     });
 
-  /** `checkAdmitted` as a yes or no, for a reopen that falls back rather than refusing. */
   const admits = (thread: Thread, asHolder = false) =>
     checkAdmitted(thread, thread.model, asHolder).pipe(
       Effect.match({ onFailure: () => false, onSuccess: () => true }),
@@ -785,7 +711,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
 
   const reopen: OrchestrationShape["reopen"] = (stored, workers, create) =>
     Effect.gen(function* () {
-      // A dream's thread is made by its dream and is read, never run again as one.
       if (stored.workspaceId === undefined || stored.role === "dream") {
         return { thread: yield* create({}) };
       }
@@ -802,10 +727,8 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           return { thread: yield* create(inWorkspace), membership: "slotTaken" };
         }
         if (!admitted) return { thread: yield* create(inWorkspace), membership: "notAdmitted" };
-        // Its session policy asks for the slot, which can only be claimed once the row exists.
         const made = yield* create({ ...inWorkspace, role: "orchestrator", deferOpen: true });
         if (!(yield* store.claimOrchestratorSlot(workspaceId, made.id))) {
-          // An `open` won the slot meanwhile: a role outside its slot is inert, so it goes.
           const plain = yield* runtimes
             .updateThread(made.id, ({ role: _role, ...rest }) => rest)
             .pipe(Effect.orElseSucceed(() => made));
@@ -815,7 +738,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         const relinked: Array<Thread> = [];
         for (const { threadId, feature } of workers) {
           const worker = yield* findThread(threadId);
-          // Detached by the user since, or another orchestrator's now: not this one's to take.
           if (
             worker === undefined ||
             worker.workspaceId !== workspaceId ||
@@ -824,11 +746,8 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           ) {
             continue;
           }
-          // Linked again only on a machine of the reopened orchestrator's owner (`sameOwner`): an
-          // orchestration never spans two people, however it comes back.
           if (!sameOwner(ownerOf, effectiveCheckout(worker), effectiveCheckout(made))) continue;
           if (!sameReaders(worker, made)) continue;
-          // A plain thread meanwhile, its model may have moved where no worker is admitted.
           const spawnedBy = { threadId: made.id, feature };
           if (!(yield* admits({ ...worker, spawnedBy }))) continue;
           const linked = yield* runtimes
@@ -839,7 +758,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           if (linked.value.parked) parkedWorkers.add(threadId);
           if (linked.value.completedAt !== undefined) completedSeen.add(threadId);
           relinked.push(linked.value);
-          // Its open session was given a plain thread's tools when the close detached it.
           yield* reload(threadId);
         }
         if (relinked.length > 0) {
@@ -864,8 +782,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       if (holder === undefined || holder.id !== spawnedBy.threadId) {
         return { thread: yield* create(inWorkspace), membership: "orchestratorGone" };
       }
-      // Its orchestrator's again only on a machine of that owner's (`sameOwner`): asked of where
-      // it was, which it comes back to, before anything is made.
       if (
         !admitted ||
         !sameOwner(ownerOf, effectiveCheckout(stored), effectiveCheckout(holder)) ||
@@ -873,8 +789,6 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       )
         return { thread: yield* create(inWorkspace), membership: "notAdmitted" };
       const made = yield* create({ ...inWorkspace, spawnedBy });
-      // Its orchestrator closed while the row was being made, and the close cut links only from
-      // the rows there were: cut this one too, as that close would have.
       const after = yield* findWorkspace(workspaceId);
       if (after?.workspace.orchestratorThreadId !== spawnedBy.threadId) {
         const detached = yield* runtimes

@@ -12,18 +12,14 @@ export const ReviewRequestBot = Schema.Struct({
 });
 export type ReviewRequestBot = typeof ReviewRequestBot.Type;
 
-/** Optional presentation data from the existing batched details read. Old payloads omit it. */
 const PrInformation = {
   isBot: Schema.optionalKey(Schema.Boolean),
   labels: Schema.optionalKey(Schema.Array(Schema.String)),
-  /** Total labels, including any beyond the bounded read. */
   labelsCount: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   additions: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   deletions: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  /** GitHub updatedAt seen by the supplementary read; badges do not refresh this. */
   informationAt: Schema.optionalKey(Schema.String),
   informationStale: Schema.optionalKey(Schema.Boolean),
-  /** A failed lookup carried these statuses; a successful search is not a details refresh. */
   detailsStale: Schema.optionalKey(Schema.Boolean),
 };
 

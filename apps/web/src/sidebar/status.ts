@@ -92,7 +92,6 @@ export const STATUS_DISPLAY: Record<
   needsApproval: { icon: CircleAlert, label: "Needs approval", tone: "text-status-needs" },
   needsInput: { icon: CircleAlert, label: "Needs input", tone: "text-status-needs" },
   error: { icon: CircleAlert, label: STATUS_WORDS.error, tone: "text-destructive" },
-  // An ended thread has stopped for good: the same word as any other at rest.
   ended: { icon: CircleCheck, label: STATUS_WORDS.idle, tone: "text-muted-foreground" },
 };
 
@@ -102,7 +101,6 @@ const COMPLETED_REASON: Record<CompletedReason, string> = {
   prMerged: "PR merged",
 };
 
-/** The PR badge's own marks for a red build and a change request, so the row and the badge agree. */
 const ATTENTION_ICON: Record<AttentionReason, LucideIcon> = {
   ciFailed: CircleX,
   changesRequested: MessageSquareWarning,
@@ -129,7 +127,6 @@ export const activityLine = (
 export const backgroundWorking = (status: ThreadStatus, activity: string | undefined): boolean =>
   status === "idle" && activity !== undefined;
 
-/** Tooltip for a completed thread's row, e.g. "Completed: PR merged". */
 const completedTitle = (thread: Thread): string | undefined =>
   thread.completedAt === undefined
     ? undefined
@@ -159,7 +156,6 @@ export const statusHint = (display: RowStatus, activity: string | undefined): st
     ? `${display.title}: ${activity}`
     : display.title;
 
-/** A stacked glyph's tooltip lists this many items, then how many more there are. */
 const TITLE_WORK = 6;
 
 /**
@@ -184,7 +180,6 @@ export const rowStatus = (
   compaction?: CompactionActivity | undefined,
   waits = 0,
 ): RowStatus => {
-  // Started before its machine: nothing of its own runs yet, so its wait is its whole status.
   if (thread.awaitingMachine !== undefined) {
     return thread.awaitingMachine.failed === undefined
       ? {
@@ -202,7 +197,6 @@ export const rowStatus = (
           working: false,
         };
   }
-  // Its machine went away under it: said as that, with what of its work comes back.
   if (status === "error" && thread.lastError?.machineLost !== undefined) {
     const line = machineLostLine(thread.lastError, thread.savedWork);
     return {
@@ -240,7 +234,6 @@ export const rowStatus = (
       running: work.length,
     };
   }
-  // An agent that reports no background tasks still says what its subagent does.
   if (backgroundWorking(status, activity)) {
     const { label } = STATUS_DISPLAY.running;
     return { ...STATUS_DISPLAY.running, title: label, working: true };
@@ -256,8 +249,6 @@ export const rowStatus = (
     };
   }
   const resting = status === "idle" || status === "cold" || status === "ended";
-  // A merge completes a thread like anything else: its headline says "Done · #198 merged", and a
-  // merge glyph of its own said "merged" on threads that had gone on working after it.
   if (resting && thread.completedAt !== undefined) {
     const label = STATUS_WORDS.done;
     return {

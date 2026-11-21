@@ -32,7 +32,6 @@ export const sqliteProbe = () => {
   StatementSync.prototype.all = function (...bindings) {
     const start = performance.now();
     try {
-      // Forward both native overloads (named and positional bindings) without choosing one.
       return Reflect.apply(original, this, bindings);
     } finally {
       calls?.push({

@@ -1,7 +1,3 @@
-// The ledger: one row per worker, grouped by feature, built on
-// demand and never stored. Everything here is a function over facts the service gathered, so the
-// shape of a row, the worker cap's meter and the day's spend can be tested without a server.
-
 import {
   combinePrFacts,
   DEPENDENCY_DRAG_CONFLICT_MIN,
@@ -133,16 +129,10 @@ export interface WorkerFacts {
   readonly localCheck?: WorkerPr["localCheck"] | undefined;
 }
 
-/** The workspace's PRs by `owner/repo#N`, lower-cased, with the worker whose each is. */
 type WorkspacePrs = ReadonlyMap<string, { readonly threadId: ThreadId; readonly badge: PrStatus }>;
 
 const prKey = (pr: Pick<BoundPr, "repo" | "number">) => `${pr.repo.toLowerCase()}#${pr.number}`;
 
-/**
- * The dependencies of a worker's bound PR as its row shows them: each with its badge's words, the
- * worker it belongs to when one in the workspace has it, and whether it drags on. A worker's own
- * badge of it is fresher than the watch's, so it is read first.
- */
 const dependencyRows = (
   facts: Pick<WorkerFacts, "thread" | "dependencyBadges" | "conflictedSince" | "now">,
   workspacePrs: WorkspacePrs,
@@ -192,7 +182,6 @@ export const waitingOnAutomation = (
     (pr) => pr?.monitor === true || pr?.reviewMonitor === true || pr?.mergeWhenReady !== undefined,
   );
 
-/** An unfinished worker's unreported stop, or its live silent tool, excluding deliberate waits. */
 const quietOfWorker = (facts: WorkerFacts, state: WorkerState): WorkerQuiet | undefined => {
   const report = facts.lastReport;
   const awaitingReply =
@@ -228,7 +217,6 @@ const quietOfWorker = (facts: WorkerFacts, state: WorkerState): WorkerQuiet | un
   return quiet;
 };
 
-/** The worker's plan progress for its row: none until it keeps a plan or a todo list with steps. */
 const planOfWorker = (facts: WorkerFacts): WorkerLedgerEntry["plan"] => {
   const headline = planHeadline({
     thread: facts.thread,
@@ -274,13 +262,11 @@ export const finishedWorkers = (
       .map((worker) => worker.threadId),
   );
 
-/** The required checks, and the rest where they differ, so a red check nobody requires reads as such. */
 const checksText = (badge: PrStatus): string => {
   const required = requiredChecksOf(badge);
   return required === badge.checks ? required : `${required} (not required: ${badge.checks})`;
 };
 
-/** Where the bot is with the head, as `WorkerPr.botOnHead` says it. */
 const botOnHead = (review: PrStatus["review"]): WorkerPr["botOnHead"] =>
   review?.roundInFlight === true
     ? "reviewing"
@@ -288,7 +274,6 @@ const botOnHead = (review: PrStatus["review"]): WorkerPr["botOnHead"] =>
       ? "reviewed"
       : undefined;
 
-/** The ledger distinguishes disabled checks from qualification, even before a PR is bound. */
 const localGateOf = (project: Project | undefined) =>
   project?.localCheckUnavailable !== undefined
     ? { localGate: project.localCheckUnavailable }
@@ -376,7 +361,6 @@ const prOf = (
   );
 };
 
-/** The bound PR's row with the PRs it depends on, and how long it has conflicted meanwhile. */
 const boundRow = (facts: WorkerFacts, row: WorkerPr, workspacePrs: WorkspacePrs): WorkerPr => {
   if ((facts.thread.boundPr?.dependsOn ?? []).length === 0) return row;
   const conflictedMin =
@@ -390,7 +374,6 @@ const boundRow = (facts: WorkerFacts, row: WorkerPr, workspacePrs: WorkspacePrs)
   };
 };
 
-/** The cached badge of one of the thread's `extraPrs`, which `GitState.extraPrs` matches by URL. */
 const extraBadge = (
   badges: ReadonlyArray<PrStatus>,
   bound: Pick<BoundPr, "repo" | "number">,
@@ -403,7 +386,6 @@ const extraBadge = (
 const sameRepo = (a: string | undefined, b: string | undefined): boolean =>
   a !== undefined && b !== undefined && a.toLowerCase() === b.toLowerCase();
 
-/** One of the thread's `extraPrs` as a ledger row: the badge's words, or repo and number until then. */
 const extraRow = (facts: WorkerFacts, bound: BoundPr): WorkerPr => {
   const badge = extraBadge(facts.extraBadges, bound);
   return badge === undefined
@@ -411,12 +393,6 @@ const extraRow = (facts: WorkerFacts, bound: BoundPr): WorkerPr => {
     : prRow(bound.repo, badge, bound.mergeWhenReady, bound.monitor || bound.reviewMonitor === true);
 };
 
-/**
- * One `alsoIn` row per extra worktree whose project is still known. Its PRs are the thread's bound
- * PRs in that worktree's repo (`extraPrs`, then `boundPr`, for a worker whose first PR happened to be
- * opened there), the first as `pr` and the rest as `morePrs`, with the badge's words when the
- * publisher has one and the repo and number alone until then.
- */
 const alsoInOf = (facts: WorkerFacts, workspacePrs: WorkspacePrs): ReadonlyArray<WorkerRepo> =>
   facts.extras.flatMap((extra): ReadonlyArray<WorkerRepo> => {
     if (extra.project === undefined) return [];
@@ -454,10 +430,6 @@ const alsoInOf = (facts: WorkerFacts, workspacePrs: WorkspacePrs): ReadonlyArray
     ];
   });
 
-/**
- * The badge of the PR the worker acts on. A bound PR not looked up yet, or still showing the
- * previous binding's badge (which may share its number from another repo), has none.
- */
 const primaryBadge = (facts: Pick<WorkerFacts, "thread" | "badge">): PrStatus | undefined => {
   const bound = facts.thread.boundPr;
   return bound !== undefined && !isBoundBadge(facts.badge, bound) ? undefined : facts.badge;
@@ -505,7 +477,6 @@ const stateInputOf = (facts: WorkerFacts): WorkerStateInput => {
     completedReason: facts.completedReason,
     ...(report === undefined ? {} : { lastReport: { state: report.state, at: report.at } }),
     lastInputAt: memo?.lastInputAt,
-    // A worker sent to a server started there when it was sent: it is never waiting to begin here.
     hasStartedTurn:
       memo?.started === true || facts.usage !== undefined || thread.sentTo !== undefined,
     pendingRequestCount: facts.pendingRequests.length,
@@ -527,7 +498,6 @@ const stateInputOf = (facts: WorkerFacts): WorkerStateInput => {
 
 const stateOf = (facts: WorkerFacts): WorkerState => workerState(stateInputOf(facts));
 
-/** How many shared paths a ledger row keeps. */
 const OVERLAP_FILES_KEPT = 10;
 
 /** A thread's `lastError` as the ledger and the `workerError` wake carry it. */
@@ -553,7 +523,6 @@ const entryOf = (
   const report = facts.lastReport;
   const checkout = effectiveCheckout(thread);
   const branch = facts.git?.branch ?? checkout.branch;
-  // A first PR opened in one of the other repos is that repo's row, not this one's.
   const elsewhere = facts.extras.some(
     (extra) =>
       sameRepo(extra.repo, thread.boundPr?.repo) && !sameRepo(facts.git?.origin, extra.repo),
@@ -610,7 +579,6 @@ const entryOf = (
     ...(alsoIn.length === 0 ? {} : { alsoIn }),
     overlapsWith: overlapping,
     ...(overlapFiles.length === 0 ? {} : { overlapFiles }),
-    // Dollars only where they are a bill: a gateway profile's own key. A subscription's are limits.
     ...(facts.usage?.costUsd === undefined || thread.model.profileId === undefined
       ? {}
       : { costUsd: facts.usage.costUsd }),
@@ -620,7 +588,6 @@ const entryOf = (
     messagesFromOrchestrator: memo?.messages ?? 0,
     ...(facts.wakes === undefined || facts.wakes.length === 0 ? {} : { wakes: facts.wakes }),
     ...(thread.runWatches?.length ? { runWatches: thread.runWatches } : {}),
-    // Its checks failing on an open PR, while it isn't finished: the next step up, as advice.
     ...(!FINISHED_STATES.has(state) &&
     pr !== undefined &&
     pr.state === "open" &&
@@ -641,8 +608,6 @@ export const featuresOf = (
   staged: Partial<Pick<WorkspaceState, "stages" | "groups" | "pausedFeatures" | "charter">> = {},
 ): ReadonlyArray<FeatureLedgerEntry> => {
   const states = new Map(workers.map((facts) => [facts.thread.id, stateOf(facts)]));
-  // Overlap is advice on sequencing work under way. A delivered worker's files differ from the base
-  // for as long as nothing merges its branch, which would flag every later worker against it.
   const pairs = overlapPairs(
     workers
       .filter((facts) => !FINISHED_STATES.has(states.get(facts.thread.id)!))
@@ -653,7 +618,6 @@ export const featuresOf = (
           files: facts.files,
           signatures: facts.signatures,
         },
-        // Each of its other repos under that repo's own project, since overlap is per repo.
         ...facts.extras.flatMap((extra) =>
           extra.project === undefined
             ? []
@@ -750,7 +714,6 @@ export const accrueCost = (
   timeZone: string,
 ): CostBucket => {
   const { date, start: day } = localDayOf(now, timeZone);
-  // A bucket kept before it recorded its date has only its start to go by.
   const sameDay = bucket.date === undefined ? bucket.day === day : bucket.date === date;
   let usd = sameDay ? bucket.usd : 0;
   const seen: Record<string, number> = { ...bucket.seen };
@@ -867,7 +830,6 @@ export const filterWorkers = (
     .filter((feature) => feature.workers.length > 0);
 };
 
-/** How much of a last report's summary a compact row quotes. */
 const COMPACT_SUMMARY_MAX = 200;
 
 const clipped = (text: string, max: number): string =>
@@ -945,7 +907,6 @@ export const compactWorkerRow = (worker: WorkerLedgerEntry): CompactWorkerRow =>
     ...(worker.costUsd === undefined ? {} : { costUsd: worker.costUsd }),
     ...(worker.userIntervened ? { userIntervened: true } : {}),
     ...(worker.plan === undefined ? {} : { plan: worker.plan }),
-    // A pending wake is something to act on: archiving its worker silences it.
     ...(worker.wakes === undefined || worker.wakes.length === 0 ? {} : { wakes: worker.wakes }),
     ...(worker.runWatches?.length ? { runWatches: worker.runWatches } : {}),
   };

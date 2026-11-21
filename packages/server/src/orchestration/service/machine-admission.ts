@@ -1,6 +1,3 @@
-// Admission of a direct Codex, OpenCode, Grok Build or Antigravity worker on a joined machine, from
-// what the machine reports of that CLI.
-
 import { type AgentKind, hostListing, type ModelRef } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { refusal } from "../rules.ts";
@@ -19,7 +16,6 @@ export const admitMachineCodex = (
   chosen: ModelRef,
 ) =>
   Effect.gen(function* () {
-    // A status without Codex comes from a host that doesn't run Codex sessions.
     if (machine?.tools !== undefined && machine.codex === undefined)
       return yield* toolError(
         tool,
@@ -82,7 +78,6 @@ export const admitMachineAcp = (
     if (chosen.agent !== "grok" && chosen.agent !== "antigravity") return;
     const cli = chosen.agent === "grok" ? "Grok Build" : "Antigravity";
     const status = chosen.agent === "grok" ? machine?.grok : machine?.antigravity;
-    // A status without the CLI comes from a host that doesn't run its sessions.
     if (machine?.tools !== undefined && status === undefined)
       return yield* toolError(
         tool,
@@ -121,7 +116,6 @@ export const admitMachineOpenCode = (
   chosen: ModelRef,
 ) =>
   Effect.gen(function* () {
-    // A status without OpenCode comes from a host that doesn't run OpenCode sessions.
     if (machine?.tools !== undefined && machine.opencode === undefined)
       return yield* toolError(
         tool,

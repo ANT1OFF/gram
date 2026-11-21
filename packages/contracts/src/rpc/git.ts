@@ -58,46 +58,36 @@ export const GitRpcs = RpcGroup.make(
     success: WorktreeRemoval,
     error: errors(WorktreeDirty, GitError, InvalidState),
   }),
-  /** The worktree's local git state (changes, unmerged commits), for the Worktrees list. */
   Rpc.make("worktree.status", {
     payload: WorktreePathFields,
     success: GitState,
     error: errors(GitError),
   }),
-  /** Bytes a linked worktree takes on disk; `InvalidState` for the main checkout or a stranger. */
   Rpc.make("worktree.size", {
     payload: WorktreePathFields,
     success: WorktreeSize,
     error: errors(GitError, InvalidState),
   }),
-  /** Every known repo's linked worktrees, grouped for Settings › Storage, and the free disk space. */
   Rpc.make("worktree.storage", {
     payload: {},
     success: StorageReport,
     error: errors(GitError),
   }),
-  /** What "Clean up inactive" would remove and free; nothing is removed. */
   Rpc.make("worktree.cleanupPlan", {
     payload: CleanupPlanFields,
     success: CleanupPlan,
     error: errors(GitError),
   }),
-  /**
-   * Removes the worktrees at `paths`, keeping their branches. One an open thread uses is kept, and so
-   * is one with uncommitted or unpushed work unless `confirmed` names it.
-   */
   Rpc.make("worktree.cleanUp", {
     payload: CleanUpFields,
     success: CleanUpResult,
     error: errors(GitError),
   }),
-  /** Like `worktree.pendingPermissions`, by folder, for a worktree no thread has open. */
   Rpc.make("worktree.pendingPermissionsAt", {
     payload: WorktreePathFields,
     success: Schema.Array(Schema.String),
     error: errors(GitError),
   }),
-  /** Permission rules approved in the thread's worktree that the main checkout lacks; none for other checkouts. */
   Rpc.make("worktree.pendingPermissions", {
     payload: threadRef,
     success: Schema.Array(Schema.String),
@@ -113,10 +103,6 @@ export const GitRpcs = RpcGroup.make(
     success: Diff,
     error: errors(ThreadNotFound, GitError, NotFound),
   }),
-  /**
-   * One file of `git.diff`'s diff in a bounded chunk of hunks, from `cursor`, or its summary: for a
-   * file too large to send whole. Reads only. `NotFound` when the file isn't in that diff.
-   */
   Rpc.make("git.diffChunk", {
     payload: { ...threadRef, ...DiffChunkFields },
     success: DiffChunk,
@@ -127,19 +113,11 @@ export const GitRpcs = RpcGroup.make(
     success: PrDetailResult,
     error: errors(ThreadNotFound, GitError),
   }),
-  /**
-   * The thread's verify recipe and how Gram recorded each driver on its committed head, read from
-   * the repository's own clone. Gram's record alone: nothing the agent wrote counts here.
-   */
   Rpc.make("git.verifyState", {
     payload: threadRef,
     success: VerifyState,
     error: errors(ThreadNotFound),
   }),
-  /**
-   * One picture a verify driver left in its evidence folder on the thread's head, as `fs.image`
-   * serves one: by the name `git.verifyState` listed, up to 5 MiB. Anything else is `NotFound`.
-   */
   Rpc.make("git.verifyEvidence", {
     payload: {
       ...threadRef,
@@ -149,7 +127,6 @@ export const GitRpcs = RpcGroup.make(
     success: FileImage,
     error: errors(ThreadNotFound, NotFound),
   }),
-  /** The PR's checks alone: one small request, for whoever doesn't need `git.prDetail`'s PR and diff. */
   Rpc.make("git.prChecks", {
     payload: threadRef,
     success: PrChecksResult,
@@ -160,7 +137,6 @@ export const GitRpcs = RpcGroup.make(
     success: CiJobDiagnostic,
     error: errors(ThreadNotFound, GitError, InvalidState),
   }),
-  /** Reruns the failed jobs of the PR's failing GitHub Actions runs; `InvalidState` without any. */
   Rpc.make("git.prRerunChecks", {
     payload: threadRef,
     success: PrRerunChecksResult,
@@ -183,7 +159,6 @@ export const GitRpcs = RpcGroup.make(
     payload: threadRef,
     error: errors(ThreadNotFound, GitError, InvalidState),
   }),
-  /** Merges the base into the PR's head on GitHub, for an out-of-date or conflicting PR. */
   Rpc.make("pr.updateBranch", {
     payload: threadRef,
     error: errors(ThreadNotFound, GitError, InvalidState),
@@ -193,11 +168,6 @@ export const GitRpcs = RpcGroup.make(
     error: errors(ThreadNotFound, GitError, InvalidState),
   }),
   Rpc.make("git.refresh", { payload: GitRefreshPayload, error: errors(ThreadNotFound, GitError) }),
-  /**
-   * Pushes the thread's branch, publishing it with `-u origin <branch>` when it has no upstream.
-   * `InvalidState` for a detached HEAD, no origin remote, or a branch behind or diverged from its
-   * upstream; it never forces. Only ever on a click.
-   */
   Rpc.make("git.push", {
     payload: threadRef,
     success: PushResult,
@@ -208,34 +178,26 @@ export const GitRpcs = RpcGroup.make(
     success: BranchList,
     error: errors(GitError),
   }),
-  /** When `base`'s remote was last fetched, for the `/new` behind-origin note. No network. */
   Rpc.make("git.baseStatus", {
     payload: BaseRefFields,
     success: BaseRefStatus,
     error: errors(GitError),
   }),
-  /** Fetches `base` from origin, on the user's click; reports the commits that arrived. */
   Rpc.make("git.fetchBase", {
     payload: BaseRefFields,
     success: FetchBaseResult,
     error: errors(GitError),
   }),
-  /** The current checkout's `origin/` upstream and when it was last fetched. No network. */
   Rpc.make("git.upstreamStatus", {
     payload: UpstreamStatusFields,
     success: UpstreamRefStatus,
     error: errors(GitError),
   }),
-  /** The current branch against its `origin/` upstream: ahead, behind, and why it can't fast-forward. No network. */
   Rpc.make("git.upstreamSync", {
     payload: UpstreamSyncFields,
     success: UpstreamSync,
     error: errors(GitError),
   }),
-  /**
-   * Fast-forwards the current branch onto its upstream (`merge --ff-only`). `InvalidState` for a
-   * dirty or diverged checkout, or nothing to take. Only ever on a click.
-   */
   Rpc.make("git.fastForward", {
     payload: UpstreamSyncFields,
     success: FastForwardResult,
@@ -252,13 +214,11 @@ export const GitRpcs = RpcGroup.make(
     /** `InvalidState` for an orchestrator, which follows no PR of its own. */
     error: errors(ThreadNotFound, GitError, InvalidState),
   }),
-  /** A title and body for a new PR from the branch's commits since `base`. Local data only. */
   Rpc.make("pr.draft", {
     payload: PrDraftFields,
     success: PrDraft,
     error: errors(ThreadNotFound, GitError),
   }),
-  /** `gh pr create` for the thread's branch, then binds the new PR and refreshes the badge. */
   Rpc.make("pr.create", {
     payload: PrCreateFields,
     success: CreatedPr,
@@ -274,10 +234,6 @@ export const GitRpcs = RpcGroup.make(
     payload: { ...threadRef, monitor: Schema.Boolean },
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /**
-   * Follows another PR beside the thread's own (`Thread.extraPrs`). `InvalidState` when it is already
-   * followed, is the thread's `boundPr`, or the thread is at `MAX_EXTRA_PRS`.
-   */
   Rpc.make("pr.bindExtra", {
     payload: {
       ...threadRef,
@@ -296,32 +252,21 @@ export const GitRpcs = RpcGroup.make(
     payload: { ...threadRef, repo: Schema.String, number: Schema.Int, monitor: Schema.Boolean },
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /**
-   * Takes a PR's row out of the PR strip (`Thread.hiddenPrs`), replacing an earlier entry for it. The
-   * binding, its monitors and babysit mode are untouched.
-   */
   Rpc.make("pr.hide", {
     payload: { ...threadRef, pr: HiddenPr },
     error: errors(ThreadNotFound, GitError),
   }),
-  /** Puts every hidden PR's row back in the strip. */
   Rpc.make("pr.showHidden", { payload: threadRef, error: errors(ThreadNotFound) }),
-  /**
-   * Makes an extra PR the thread's `boundPr`, so the PR panel and its actions follow it; the PR it
-   * replaces becomes an extra. Refused in babysit mode, which is tied to the PR it started on.
-   */
   Rpc.make("pr.promote", {
     payload: { ...threadRef, repo: Schema.String, number: Schema.Int },
     success: BoundPr,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  // Review bots; every write goes through `gh api` in the thread's checkout
   Rpc.make("git.prReview", {
     payload: threadRef,
     success: PrReview,
     error: errors(ThreadNotFound, GitError),
   }),
-  /** Patches the suggestion into the working tree; nothing is committed. */
   Rpc.make("git.prApplySuggestion", {
     payload: { ...threadRef, commentId: Schema.String },
     success: ApplySuggestionResult,
@@ -336,25 +281,21 @@ export const GitRpcs = RpcGroup.make(
     payload: { ...threadRef, reviewThreadId: Schema.String },
     error: errors(ThreadNotFound, GitError),
   }),
-  /** Posts the bot's configured re-review command as a PR comment. */
   Rpc.make("git.prRequestRereview", {
     payload: threadRef,
     success: Schema.Struct({ command: Schema.String }),
     error: errors(ThreadNotFound, GitError, InvalidState),
   }),
-  /** Asks users (logins) or teams (`org/slug`) to review the thread's PR. */
   Rpc.make("pr.requestReview", {
     payload: { ...threadRef, reviewers: Schema.Array(Schema.String) },
     success: PrRequestReviewResult,
     error: errors(ThreadNotFound, GitError, InvalidState),
   }),
-  /** Best effort: an empty list when `gh` can't read the repo's reviewers or collaborators. */
   Rpc.make("pr.reviewerSuggestions", {
     payload: threadRef,
     success: PrReviewerSuggestions,
     error: errors(ThreadNotFound, GitError, InvalidState),
   }),
-  // GitHub labels on the thread's PR; thread labels are `labels.*`
   Rpc.make("pr.labels.list", {
     payload: threadRef,
     success: PrLabelList,
@@ -368,7 +309,6 @@ export const GitRpcs = RpcGroup.make(
     payload: { ...threadRef, labels: Schema.Array(Schema.String) },
     error: errors(ThreadNotFound, GitError, InvalidState),
   }),
-  /** A new worktree on the PR's head branch, a thread in it, and the PR bound to that thread. */
   Rpc.make("pr.checkout", {
     payload: {
       projectRoot: Schema.String,
@@ -386,19 +326,10 @@ export const GitRpcs = RpcGroup.make(
       ThreadNotFound,
     ),
   }),
-  /** Open PRs requesting the user's review, as last polled through `gh search prs`. Read-only. */
   Rpc.make("reviewRequests.list", { success: ReviewRequests, error: errors() }),
-  /**
-   * Polls again now, for review requests and open PRs both: at most once a minute (the window
-   * regained focus), or at once with `force` (the setting changed).
-   */
   Rpc.make("reviewRequests.refresh", {
     payload: { force: Schema.optionalKey(Schema.Boolean) },
     error: errors(),
   }),
-  /**
-   * The user's own open PRs, drafts included, found by the same poll; `reviewRequests.refresh`
-   * polls both. Read-only.
-   */
   Rpc.make("openPrs.list", { success: OwnPrs, error: errors() }),
 );

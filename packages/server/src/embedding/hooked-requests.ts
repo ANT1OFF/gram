@@ -1,11 +1,3 @@
-// Which of an agent session's approval requests the decision hook is asked about, and with what.
-//
-// A session under the hook opens with the outward gate at `all` and its connectors gated
-// (`hookedSessionOptions`), so every push, pull request command and connector call reaches the
-// server as an approval request whatever the thread's mode. Those go to the hook before any
-// card: allowed ones are answered for the agent, refused ones are denied with the reason, and
-// only the ones it says to ask about become a card.
-
 import { outwardActions, type OpenSessionOptions } from "@gram/agents";
 import type { ApprovalRequest, DecisionAction, RequestId, ThreadId } from "@gram/contracts";
 import type { DecisionQuestion } from "./decision-hook.ts";
@@ -13,10 +5,8 @@ import type { DecisionQuestion } from "./decision-hook.ts";
 /** One thing a request does that the hook is asked about. */
 export type RequestAction = Pick<DecisionQuestion, "action" | "detail">;
 
-/** Tools that run a command line, across the agents' names for them. */
 const SHELL_TOOL = /^(?:bash|shell|exec_command|local_shell|command)$/i;
 
-/** Gram's own MCP server, whose tools have their own gate (`app-tools/registry.ts`). */
 const APP_TOOLS_SERVER = "gram";
 
 /**
@@ -31,7 +21,6 @@ export const requestActions = (
     const at = rest.indexOf("__");
     if (at <= 0) return [];
     const [server, tool] = [rest.slice(0, at), rest.slice(at + 2)];
-    // Gram's own tools never have `__` in their names; a connector named `gram__x` is not one.
     if (server === APP_TOOLS_SERVER && !tool.includes("__")) return [];
     return [
       {
