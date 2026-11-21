@@ -15,7 +15,6 @@ import {
   byThread,
   copyTextOf,
   keptWaits,
-  linkHost,
   noteShown,
   primaryAction,
   recentlyResolved,
@@ -27,6 +26,7 @@ import {
   waitBreakdown,
   waitCount,
   waitingViews,
+  waitLinkOf,
 } from "./waiting-model";
 
 const item = (id: string, kind: WaitItem["kind"], title: string, extra: Partial<WaitItem> = {}) =>
@@ -110,11 +110,21 @@ describe("the tray's rows", () => {
 
   it("offers Copy, Open or Answer by kind", () => {
     expect(primaryAction("draft")).toBe("copy");
-    expect(primaryAction("review")).toBe("open");
+    expect(primaryAction("review")).toBeUndefined();
     expect(primaryAction("decision")).toBe("answer");
     expect(primaryAction("action")).toBeUndefined();
-    expect(linkHost("https://github.com/example/api/pull/431")).toBe("github.com");
-    expect(linkHost("nope")).toBeUndefined();
+  });
+
+  it("opens an item's http(s) link only", () => {
+    expect(waitLinkOf({ link: "https://github.com/example/api/pull/431" })).toEqual({
+      url: "https://github.com/example/api/pull/431",
+      host: "github.com",
+    });
+    expect(waitLinkOf({ link: "http://localhost:3000/x" })?.host).toBe("localhost:3000");
+    expect(waitLinkOf({ link: "javascript:alert(1)" })).toBeUndefined();
+    expect(waitLinkOf({ link: "file:///etc/passwd" })).toBeUndefined();
+    expect(waitLinkOf({ link: "nope" })).toBeUndefined();
+    expect(waitLinkOf({})).toBeUndefined();
   });
 });
 

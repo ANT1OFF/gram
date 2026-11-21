@@ -50,7 +50,6 @@ import { useThreadsStore } from "@/stores/threads";
 
 import {
   copyTextOf,
-  linkHost,
   noteShown,
   primaryAction,
   recentlyResolved,
@@ -59,6 +58,7 @@ import {
   trayViews,
   undoableHelperResolves,
   waitCount,
+  waitLinkOf,
 } from "./waiting-model";
 
 const KIND: Record<WaitViewKind, { icon: LucideIcon; label: string }> = {
@@ -73,6 +73,16 @@ const KIND: Record<WaitViewKind, { icon: LucideIcon; label: string }> = {
 
 /** How long a row marked done offers Undo. */
 const UNDO_MS = 10_000;
+
+const isEndOfDragSelectionIn = (element: Element): boolean => {
+  const selection = window.getSelection();
+  return (
+    selection !== null &&
+    !selection.isCollapsed &&
+    selection.anchorNode !== null &&
+    element.contains(selection.anchorNode)
+  );
+};
 
 const report = (what: string) => (error: unknown) =>
   console.error(`waiting on you: ${what}`, error);
@@ -148,7 +158,8 @@ function Row({
   const primary = suggested ? undefined : primaryAction(view.kind);
   const KindIcon = suggested ? Sparkles : kind.icon;
   const kindLabel = suggested ? `Suggested by the helper: ${kind.label}` : kind.label;
-  const host = item.link === undefined ? undefined : linkHost(item.link);
+  const link = waitLinkOf(item);
+  const host = link?.host;
   const messageId = item.messageId;
 
   const copy = async () => {
@@ -192,43 +203,59 @@ function Row({
         <KindIcon aria-hidden className="size-icon-row text-status-needs-mark" />
         <span className="sr-only">{kindLabel}</span>
       </Hint>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded(!expanded)}
-        className="min-w-0 flex-1 text-left"
-      >
-        <span className="flex items-center gap-2">
-          <span className="truncate text-body font-medium text-foreground">{view.title}</span>
-          {suggested && (
-            <span className="shrink-0 rounded-sm border border-dashed border-border px-1 text-meta text-muted-foreground">
-              suggested
+      <div className="min-w-0 flex-1 select-text">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={expanded}
+          data-testid="waiting-item-toggle"
+          onClick={(event) => {
+            if (!isEndOfDragSelectionIn(event.currentTarget)) setExpanded(!expanded);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            setExpanded(!expanded);
+          }}
+          className="cursor-pointer rounded-sm text-left"
+        >
+          <span className="flex items-center gap-2">
+            <span
+              className={cn(
+                "min-w-0 text-body font-medium text-foreground",
+                expanded ? "break-words" : "truncate",
+              )}
+            >
+              {view.title}
             </span>
-          )}
-          <span className="ml-auto shrink-0 text-meta text-muted-foreground tabular-nums">
-            {formatRelative(view.createdAt, now)}
-          </span>
-        </span>
-        {expanded ? (
-          <span data-testid="waiting-item-detail" className="mt-0.5 flex flex-col gap-1 text-meta">
-            {item.body !== undefined && (
-              <span className="whitespace-pre-wrap text-muted-foreground">{item.body}</span>
-            )}
-            {item.copy !== undefined && (
-              <span className="max-h-40 overflow-y-auto rounded-sm border border-border bg-background/60 px-2 py-1 font-mono text-meta whitespace-pre-wrap text-foreground">
-                {item.copy}
+            {suggested && (
+              <span className="shrink-0 rounded-sm border border-dashed border-border px-1 text-meta text-muted-foreground">
+                suggested
               </span>
             )}
-            {host !== undefined && <span className="text-muted-foreground">Opens {host}</span>}
+            <span className="ml-auto shrink-0 self-start text-meta text-muted-foreground tabular-nums">
+              {formatRelative(view.createdAt, now)}
+            </span>
           </span>
-        ) : (
-          (view.preview ?? host) !== undefined && (
+          {!expanded && (view.preview ?? host) !== undefined && (
             <span className="block truncate text-meta text-muted-foreground">
               {view.preview ?? host}
             </span>
-          )
+          )}
+        </div>
+        {expanded && (
+          <div data-testid="waiting-item-detail" className="mt-0.5 flex flex-col gap-1 text-meta">
+            {item.body !== undefined && (
+              <p className="whitespace-pre-wrap text-muted-foreground">{item.body}</p>
+            )}
+            {item.copy !== undefined && (
+              <p className="max-h-40 overflow-y-auto rounded-sm border border-border bg-background/60 px-2 py-1 font-mono text-meta whitespace-pre-wrap text-foreground">
+                {item.copy}
+              </p>
+            )}
+          </div>
         )}
-      </button>
+      </div>
       <span className="flex shrink-0 items-center">
         {primary === "copy" && (
           <Action
@@ -246,11 +273,11 @@ function Row({
             testId="waiting-copy"
           />
         )}
-        {primary === "open" && item.link !== undefined && (
+        {link !== undefined && (
           <Action
             icon={ExternalLink}
-            label={host === undefined ? "Open the link" : `Open ${host}`}
-            onClick={() => void openContentUrl(api, item.link!).catch(report("open"))}
+            label={`Open ${link.host}`}
+            onClick={() => void openContentUrl(api, link.url).catch(report("open"))}
             testId="waiting-open"
           />
         )}
