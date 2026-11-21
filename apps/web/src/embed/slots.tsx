@@ -6,6 +6,7 @@ import { Hint } from "@/components/hint";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
+import { useShowingNotFound } from "@/shell/not-found";
 
 import { Glide } from "./glide";
 import { useStripOpen } from "./strip-open";
@@ -557,10 +558,12 @@ export function EmbedRailNavigation({
  */
 export function useEmbedPageTitle(): string | undefined {
   const titles = useEmbedShell((s) => s.titles);
+  const missing = useShowingNotFound();
   // Gram's own page that names itself in the title bar as an added page does: in no workspace.
   const threads = useThreadsTitle();
   // The deepest match is the page; its `fullPath` is the path the page was added under.
   const path = useMatches({ select: (matches) => matches.at(-1)?.fullPath as string | undefined });
+  if (missing && Object.keys(titles).length > 0) return "Not found";
   return path === undefined
     ? undefined
     : (titles[path] ?? (path === "/threads" ? threads : undefined));
