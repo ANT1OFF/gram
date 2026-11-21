@@ -56,9 +56,10 @@ export const hostOriginGuard =
             `${top}'s origin names another repository than the one this machine cloned it for, so nothing of Gram's reaches it. Set it back, or remove the clone and let Gram clone it again.`,
           );
       }
-      yield* effectiveOriginsReach(
+      const urls = yield* effectiveOriginsReach(
         { name: basename(top), originIdentity: identity },
         dir,
         mismatch,
       );
+      return ours ? urls : undefined;
     });

@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
-import { devNull } from "node:os";
 import { join } from "node:path";
-import { git, type Proc } from "@gram/git";
+import { git, type OriginUrls, type Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { redactUrlCredentials } from "./remote-url.ts";
@@ -19,8 +18,6 @@ export interface OriginRecord {
   /** `cloneIdentityOf`'s; absent when none is recorded. */
   readonly originIdentity?: string | undefined;
 }
-
-const REPOSITORY_CONFIG_ONLY = { GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1" };
 
 const EFFECTIVE_ORIGINS = [
   ["remote", "get-url", "--all", "origin"],
@@ -52,22 +49,24 @@ const reachChecked = <E>(
 
 /**
  * Where git in `dir` fetches `origin` from and pushes it to, after the repository's own
- * `url.*.insteadOf`, `url.*.pushInsteadOf` and `remote.origin.pushurl` (the user's own config is
- * left out, as theirs to set), and where LFS sends origin's large files (the repository's
+ * `url.*.insteadOf`, `url.*.pushInsteadOf` and `remote.origin.pushurl`, read with the same
+ * config (the user's own included) as the git that then reaches it, and where LFS sends origin's large files (the repository's
  * `lfs.url`, `remote.origin.lfsurl` and their push forms, and the folder's committed
  * `.lfsconfig`), each checked against `record` (`reachChecked`): an agent that leaves the stored
  * URL alone but sends git elsewhere goes to `refuse` too. So does a folder git can't answer for (a
  * timeout, an error), since nothing then says where it goes; a folder with no origin, where none is
- * recorded, has nothing to check.
+ * recorded, has nothing to check. Gives the first URL each way, for that git to be given in place
+ * of `origin` (`remoteGit`), so the URL checked is the URL used.
  */
 export const effectiveOriginsReach = <E>(
   record: OriginRecord,
   dir: string,
   refuse: (message: string) => Effect.Effect<void, E>,
-): Effect.Effect<void, E, Proc> =>
+): Effect.Effect<OriginUrls | undefined, E, Proc> =>
   Effect.gen(function* () {
     const read = (args: ReadonlyArray<string>) =>
-      git(dir, args, { timeoutMs: 2_000, env: REPOSITORY_CONFIG_ONLY }).pipe(Effect.option);
+      git(dir, args, { timeoutMs: 2_000 }).pipe(Effect.option);
+    const first: Array<string | undefined> = [];
     for (const args of EFFECTIVE_ORIGINS) {
       const out = yield* read(args);
       if (
@@ -82,10 +81,12 @@ export const effectiveOriginsReach = <E>(
         );
         continue;
       }
-      for (const line of out.value.stdout.split("\n")) {
-        const url = line.trim();
-        if (url !== "") yield* reachChecked(record, url, refuse);
-      }
+      const urls = out.value.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((url) => url !== "");
+      for (const url of urls) yield* reachChecked(record, url, refuse);
+      first.push(urls[0]);
     }
     const lfsconfig = join(dir, ".lfsconfig");
     for (const args of [
@@ -106,4 +107,6 @@ export const effectiveOriginsReach = <E>(
         if (url !== "") yield* reachChecked(record, lfsRepository(url), refuse);
       }
     }
+    const [fetch, push] = first;
+    return fetch === undefined || push === undefined ? undefined : { fetch, push };
   });

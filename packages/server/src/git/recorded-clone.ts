@@ -3,7 +3,7 @@
 // git config is anyone's to rewrite who works there (`git remote set-url`).
 
 import { InvalidState, type Project } from "@gram/contracts";
-import { type Proc, samePath } from "@gram/git";
+import { type OriginUrls, type Proc, samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { githubRelayed } from "../embedding/github-relay.ts";
 import { effectiveOriginsReach, sameRepo } from "../host/origin-reach.ts";
@@ -55,13 +55,14 @@ export const recordedCloneIdentity = (
 /**
  * Where git in `dir` fetches `origin` from and pushes it to, and where LFS sends origin's large
  * files, each checked against `project`'s recorded origin (`effectiveOriginsReach`): behind a
- * route a refusal, elsewhere only logged. No project has nothing to check against.
+ * route a refusal, elsewhere only logged. No project has nothing to check against. Gives the URLs
+ * checked, for git to be given in place of `origin`.
  */
 export const effectiveOriginsChecked = (
   project: Project | undefined,
   dir: string,
-): Effect.Effect<void, InvalidState, Proc> =>
-  project === undefined ? Effect.void : effectiveOriginsReach(project, dir, refused);
+): Effect.Effect<OriginUrls | undefined, InvalidState, Proc> =>
+  project === undefined ? Effect.succeed(undefined) : effectiveOriginsReach(project, dir, refused);
 
 /** `effectiveOriginsChecked` for the project at `repoRoot`. */
 export const effectiveOriginsAt = (
