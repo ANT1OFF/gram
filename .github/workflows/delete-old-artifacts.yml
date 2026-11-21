@@ -1,0 +1,62 @@
+name: Delete old artifacts
+
+# Artifacts count against the account's storage, shared by every repository it owns, and once it
+# is full every upload fails. Release files and package tarballs are read within their own run
+# (retention-days: 1) and test reports keep three days, so this deletes those older than
+# `max_age_hours`, oldest first, once a day, for the ones uploaded before those limits. Run it by
+# hand with `limit: 1` to try it on one. GitHub recounts the storage every few hours, so space a
+# delete frees shows up later.
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      max_age_hours:
+        description: Delete artifacts older than this many hours
+        default: "72"
+      limit:
+        description: Delete at most this many (0 for all)
+        default: "0"
+permissions:
+  contents: read
+concurrency:
+  group: delete-old-artifacts
+  cancel-in-progress: false
+jobs:
+  delete:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      actions: write
+    steps:
+      # No checkout.
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAX_AGE_HOURS: ${{ inputs.max_age_hours || '72' }}
+          LIMIT: ${{ inputs.limit || '0' }}
+        run: |
+          api() {
+            curl --silent --show-error --fail-with-body --header "authorization: Bearer $GITHUB_TOKEN" \
+              --header "accept: application/vnd.github+json" "$@"
+          }
+          case "$MAX_AGE_HOURS$LIMIT" in *[!0-9]*) echo "max_age_hours and limit are whole numbers"; exit 1 ;; esac
+          cutoff=$(date -u -d "-$MAX_AGE_HOURS hours" +%Y-%m-%dT%H:%M:%SZ)
+          artifacts="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts"
+          page=1
+          : > "$RUNNER_TEMP/old"
+          while :; do
+            body=$(api --get "$artifacts" --data per_page=100 --data "page=$page")
+            echo "$body" | jq -r --arg cutoff "$cutoff" \
+              '.artifacts[] | select(.expired | not) | select(.created_at < $cutoff) | "\(.created_at) \(.id) \(.size_in_bytes) \(.name)"' >> "$RUNNER_TEMP/old"
+            [ "$(echo "$body" | jq '.artifacts | length')" -lt 100 ] && break
+            page=$((page + 1))
+          done
+          sort "$RUNNER_TEMP/old" | { [ "$LIMIT" = 0 ] && cat || head -n "$LIMIT"; } > "$RUNNER_TEMP/delete"
+          deleted=0 bytes=0
+          while read -r created id size name; do
+            if api --request DELETE "$artifacts/$id" >/dev/null; then
+              deleted=$((deleted + 1)) bytes=$((bytes + size))
+              echo "deleted $name ($id, $size bytes, $created)"
+            fi
+          done < "$RUNNER_TEMP/delete"
+          echo "Deleted $deleted artifacts older than $cutoff, $((bytes / 1048576)) MiB." | tee -a "$GITHUB_STEP_SUMMARY"
