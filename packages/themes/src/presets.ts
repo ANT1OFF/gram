@@ -45,8 +45,8 @@ export const PRESET_PALETTES = [
     mode: "light",
     pairId: "tokyo-night",
     seeds: {
-      bg: "#d5d6db",
-      surface: "#e1e2e7",
+      bg: "#e6e7eb",
+      surface: "#d9dae0",
       text: "#343b58",
       muted: "#8990b3",
       accent: "#34548a",
@@ -115,7 +115,7 @@ export const PRESET_PALETTES = [
     pairId: "catppuccin-mocha",
     seeds: {
       bg: "#eff1f5",
-      surface: "#ccd0da",
+      surface: "#dce0e8",
       text: "#4c4f69",
       muted: "#7c7f93",
       accent: "#8839ef",
@@ -443,7 +443,7 @@ export const PRESET_PALETTES = [
     pairId: "petrol-dark",
     seeds: {
       bg: "#f3f1ec",
-      surface: "#ffffff",
+      surface: "#ebe8e1",
       text: "#27272a",
       muted: "#71717b",
       accent: "#1d5563",

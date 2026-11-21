@@ -143,9 +143,10 @@ describe("terminalTheme", () => {
     // when the Minimal light palettes' chrome stepped further off the page and their ANSI black
     // darkened with it (#d3d3d4 to #cdced0) to hold its contrast there; and again when the light
     // presets' pages moved a step under white for their cards, the Minimal terminals' background,
-    // selection and black following the page (Latte's at more contrast holding against the card).
+    // selection and black following the page (Latte's at more contrast holding against the card);
+    // and when Tokyo Light's page lifted and Latte's chrome lightened, theirs followed.
     expect(createHash("sha256").update(JSON.stringify(matrix)).digest("hex")).toBe(
-      "9a69c42dbb5ec012926faa1b91378e20bc39b9931c19af06dda821612b551feb",
+      "8a44136dbbc9be90857b7536c2fe7ff4f12e1092242ba68ea2e9e380a904f575",
     );
   });
 
@@ -154,6 +155,6 @@ describe("terminalTheme", () => {
     const dark = terminalTheme(prefs, [], DEFAULT_SYSTEM_PREFS);
     expect(dark).toMatchObject({ background: "#1a1b26", red: "#f7768e", brightBlack: "#565f89" });
     const light = terminalTheme(prefs, [], { ...DEFAULT_SYSTEM_PREFS, prefersDark: false });
-    expect(light.background).toBe("#d5d6db");
+    expect(light.background).toBe("#e6e7eb");
   });
 });
