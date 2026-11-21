@@ -49,24 +49,25 @@ describe("a new checkout's clone identity", () => {
   );
 });
 
-describe.skipIf(!hasGit)("where a project folder's git fetches and pushes origin", () => {
-  const folder = (...config: Array<[string, string]>) =>
-    Effect.acquireRelease(
-      Effect.sync(() => {
-        const tmp = tempDir();
-        const repo = makeRepo(tmp);
-        run(repo, "remote", "add", "origin", "https://github.com/acme/web.git");
-        for (const [key, value] of config) run(repo, "config", "--add", key, value);
-        return { tmp, repo };
-      }),
-      ({ tmp }) => Effect.sync(() => removeDirStrict(tmp)),
-    );
-  const checked = (repo: string) =>
-    effectiveOriginsChecked({ ...project, root: repo } as Project, repo).pipe(
-      Effect.provide(ProcLive),
-      Effect.result,
-    );
+/** A repository whose stored origin is acme/web, with `config` added to its own config. */
+const folder = (...config: Array<[string, string]>) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      const tmp = tempDir();
+      const repo = makeRepo(tmp);
+      run(repo, "remote", "add", "origin", "https://github.com/acme/web.git");
+      for (const [key, value] of config) run(repo, "config", "--add", key, value);
+      return { tmp, repo };
+    }),
+    ({ tmp }) => Effect.sync(() => removeDirStrict(tmp)),
+  );
+const checked = (repo: string) =>
+  effectiveOriginsChecked({ ...project, root: repo } as Project, repo).pipe(
+    Effect.provide(ProcLive),
+    Effect.result,
+  );
 
+describe.skipIf(!hasGit)("where a project folder's git fetches and pushes origin", () => {
   it.effect("is refused behind a GitHub route when a pushurl or insteadOf sends it elsewhere", () =>
     Effect.gen(function* () {
       relay.on = true;

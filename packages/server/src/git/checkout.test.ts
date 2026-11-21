@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
@@ -5,11 +6,19 @@ import type { Checkout, ProjectId, Thread, ThreadId } from "@gram/contracts";
 import { Checkpoints, readPermissionRules, settingsPath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { vi } from "vitest";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { CheckoutService, type ReleaseCheckoutOptions } from "../runtime/hooks.ts";
 import { GitCheckoutLive } from "./checkout.ts";
 import { gitPlatformTest } from "./platform.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
+
+// Off unless a test turns it on: behind a GitHub route, a checkout's origin decides its reach.
+const relay = vi.hoisted(() => ({ on: false }));
+vi.mock("../embedding/github-relay.ts", async (actual) => ({
+  ...(await actual<Record<string, unknown>>()),
+  githubRelayed: () => relay.on,
+}));
 
 const TestLayer = GitCheckoutLive.pipe(
   Layer.provideMerge(gitPlatformTest()),
@@ -49,6 +58,43 @@ describe.skipIf(!hasGit)("GitCheckoutLive", () => {
   afterEach(() => {
     for (const dir of dirs.splice(0)) removeDir(dir);
   });
+
+  it.live("refuses a new worktree whose origin git pushes elsewhere before fetching anything", () =>
+    Effect.gen(function* () {
+      relay.on = true;
+      yield* Effect.addFinalizer(() => Effect.sync(() => void (relay.on = false)));
+      const root = repo();
+      // origin's branch `feat/y` lives in a local repository the project's URL is rewritten to.
+      const upstream = nodePath.join(nodePath.dirname(root), "upstream");
+      run(nodePath.dirname(root), "clone", "-q", "--bare", root, upstream);
+      const work = nodePath.join(nodePath.dirname(root), "work");
+      run(nodePath.dirname(root), "clone", "-q", upstream, work);
+      run(work, "checkout", "-q", "-b", "feat/y");
+      write(nodePath.join(work, "y.txt"), "y\n");
+      run(work, "-c", "user.email=t@t", "-c", "user.name=t", "add", "y.txt");
+      run(work, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "y");
+      run(work, "push", "-q", "origin", "feat/y");
+      const tip = run(work, "rev-parse", "HEAD").trim();
+      run(root, "remote", "add", "origin", "https://github.com/acme/web.git");
+      const store = yield* ThreadStore;
+      yield* store.registerProject({ root, name: "web" });
+      run(root, "config", `url.${upstream}.insteadOf`, "https://github.com/acme/");
+      run(
+        root,
+        "config",
+        "url.https://github.com/someone/.pushInsteadOf",
+        "https://github.com/acme/",
+      );
+
+      const checkouts = yield* CheckoutService;
+      const refused = yield* checkouts
+        .prepare({ kind: "newWorktree", branch: "feat/y" }, [], root)
+        .pipe(Effect.flip);
+      expect(refused).toMatchObject({ _tag: "InvalidState" });
+      expect(fs.existsSync(nodePath.join(root, ".worktrees", "feat-y"))).toBe(false);
+      expect(spawnSync("git", ["cat-file", "-e", tip], { cwd: root }).status).not.toBe(0);
+    }).pipe(Effect.provide(TestLayer), Effect.scoped),
+  );
 
   it.live("fails with NotFound for a missing folder before running git, for every kind", () =>
     Effect.gen(function* () {

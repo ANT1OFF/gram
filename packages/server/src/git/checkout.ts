@@ -88,26 +88,34 @@ export const GitCheckoutLive = Layer.effect(
       });
 
     /**
+     * The identity of `repoRoot`'s origin, as a new checkout of it records it: it must still be the
+     * one its project recorded when it was added (`recordedCloneIdentity`), and so must where git
+     * fetches and pushes it (`effectiveOriginsAt`). Asked before a new worktree fetches anything, so
+     * a refused one fetches nothing into the shared repository and leaves no worktree behind.
+     */
+    const checkedOrigin = (repoRoot: string) =>
+      provide(originIdentityAt(repoRoot)).pipe(
+        Effect.flatMap((live) =>
+          Effect.flatMap(store.listProjects, (projects) =>
+            recordedCloneIdentity(projects, repoRoot, live).pipe(
+              Effect.tap(() => provide(effectiveOriginsAt(projects, repoRoot))),
+            ),
+          ),
+        ),
+      );
+
+    /**
      * `checkout` with the identity of its repository's origin recorded as Gram makes it, before the
-     * thread's agent runs there: what the worker's ownership of a PR is later checked against,
-     * never the origin the agent can rewrite since. That origin must still be the one its project
-     * recorded when it was added (`recordedCloneIdentity`), and so must where git fetches and pushes
-     * it (`effectiveOriginsAt`): one rewritten before is refused. Only a
-     * worktree on this machine; another machine's records its own as it is made there.
+     * thread's agent runs there (`checkedOrigin`): what the worker's ownership of a PR is later
+     * checked against, never the origin the agent can rewrite since. Only a worktree on this
+     * machine; another machine's records its own as it is made there.
      */
     const withOrigin = (checkout: Checkout, repoRoot: string) =>
       checkout.kind !== "worktree" ||
       (checkout.hostId !== undefined && checkout.hostId !== LOCAL_HOST_ID) ||
       checkout.cloneIdentity !== undefined
         ? Effect.succeed(checkout)
-        : provide(originIdentityAt(repoRoot)).pipe(
-            Effect.flatMap((live) =>
-              Effect.flatMap(store.listProjects, (projects) =>
-                recordedCloneIdentity(projects, repoRoot, live).pipe(
-                  Effect.tap(() => provide(effectiveOriginsAt(projects, repoRoot))),
-                ),
-              ),
-            ),
+        : checkedOrigin(repoRoot).pipe(
             Effect.map((cloneIdentity): Checkout =>
               cloneIdentity === undefined ? checkout : { ...checkout, cloneIdentity },
             ),
@@ -127,6 +135,8 @@ export const GitCheckoutLive = Layer.effect(
             } satisfies Checkout;
           }
           case "newWorktree": {
+            // Before `create` fetches the branch or a PR's head from origin.
+            yield* checkedOrigin(root);
             const created = yield* worktrees
               .create({
                 repoPath: root,
