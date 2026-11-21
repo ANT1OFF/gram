@@ -119,8 +119,6 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
         return {
           audience,
           outwardGate,
-          // Like its orchestrator, it asks through `ask_question`, which returns at once, never
-          // through a tool that holds its turn until the user answers.
           noBlockingAsk: true,
           ...browserGrant(thread, audience, settings, state?.charter),
           ...mcpListsFor({ audience, orchestrated: undefined, charter: state?.charter }),

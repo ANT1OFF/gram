@@ -84,8 +84,8 @@ const ORCHESTRATOR_TOOLS = [
 
 /**
  * The harness's own ask tool, which holds the turn until the user answers, when it has one an
- * orchestrator can use. Claude's `AskUserQuestion` is taken away from an orchestrator's and a
- * worker's session (`noBlockingAsk`): one held an orchestrator for five hours overnight. Codex offers
+ * orchestrator can use. Claude's `AskUserQuestion` is taken away from an orchestrator's session
+ * (`noBlockingAsk`): one held an orchestrator for five hours overnight. Codex offers
  * `request_user_input` only in its plan collaboration mode, which an orchestrator never runs in.
  */
 const BLOCKING_ASK: Partial<Record<AgentKind, string>> = {};
