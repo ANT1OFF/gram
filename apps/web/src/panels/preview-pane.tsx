@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Globe,
   Pin,
+  Radio,
   RotateCw,
   ScanSearch,
   SquareMousePointer,
@@ -393,6 +394,23 @@ function ShellPreview({
             onClick={() => void pick()}
           >
             <SquareMousePointer />
+          </ToolButton>
+        )}
+        {bridge?.setWebRtc !== undefined && current !== null && current.webView === undefined && (
+          <ToolButton
+            label={
+              current.driver === "agent"
+                ? "WebRTC stays off while an agent drives the page"
+                : current.webRtc === true
+                  ? "Turn WebRTC off for this page"
+                  : "Let this page use WebRTC (it reloads)"
+            }
+            disabled={current.driver === "agent"}
+            pressed={current.webRtc === true}
+            testId="preview-webrtc"
+            onClick={() => void bridge.setWebRtc?.(threadId, current.webRtc !== true)}
+          >
+            <Radio />
           </ToolButton>
         )}
         <ToolButton

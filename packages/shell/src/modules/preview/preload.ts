@@ -13,6 +13,7 @@ export const previewPreload = (ipc: PreloadIpc): Pick<DesktopBridge, "preview"> 
     back: (threadId) => ipc.send(Channels.previewBack, { threadId }),
     forward: (threadId) => ipc.send(Channels.previewForward, { threadId }),
     reload: (threadId) => ipc.send(Channels.previewReload, { threadId }),
+    setWebRtc: (threadId, allowed) => ipc.invoke(Channels.previewSetWebRtc, { threadId, allowed }),
     state: (threadId) => ipc.invoke(Channels.previewStateGet, { threadId }),
     inspect: (threadId, target) => ipc.invoke(Channels.previewInspect, { threadId, target }),
     viewport: (threadId, preset) => ipc.invoke(Channels.previewViewport, { threadId, preset }),

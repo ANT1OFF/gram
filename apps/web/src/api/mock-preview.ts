@@ -191,6 +191,15 @@ export class MockPreview implements DesktopPreview {
     this.drive(threadId, "user");
   }
 
+  /** As the shell's: the user's switch, refused while an agent drives the page. */
+  setWebRtc(threadId: string, allowed: boolean): Promise<boolean> {
+    const page = this.#pages.get(threadId);
+    if (page === undefined || page.state.driver === "agent") return Promise.resolve(false);
+    this.#emit(threadId, { webRtc: allowed ? true : undefined });
+    this.reload(threadId);
+    return Promise.resolve(true);
+  }
+
   readonly #picking = new Map<string, (picked: PickedElement | null) => void>();
 
   /** As the shell's: one pick per thread at a time, ended by `choose` or `cancelPick`. */

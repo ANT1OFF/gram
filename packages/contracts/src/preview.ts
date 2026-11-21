@@ -182,6 +182,11 @@ export interface PreviewState {
    * closed it for newer threads'.
    */
   readonly webView?: string | undefined;
+  /**
+   * The user let this thread's local page use WebRTC (`setWebRtc`): a page of their own that needs
+   * it. Absent while it has none, as every local page starts, and always for an agent's page.
+   */
+  readonly webRtc?: boolean | undefined;
 }
 
 /**
@@ -271,6 +276,13 @@ export interface DesktopPreview {
    */
   pick?(threadId: string): Promise<PickedElement | null>;
   cancelPick?(threadId: string): void;
+  /**
+   * Lets `threadId`'s local page use WebRTC, or takes it away again: the page is made again and
+   * re-opened at its address. Only the user's own switch calls it; an agent's page never has
+   * WebRTC, and an agent taking the pane turns it off. False for a web page, or no page. Absent
+   * from shells that predate it.
+   */
+  setWebRtc?(threadId: string, allowed: boolean): Promise<boolean>;
   /** Subscribes to `threadId`'s page changing; returns the unsubscribe function. */
   onState(threadId: string, callback: (state: PreviewState) => void): () => void;
 }

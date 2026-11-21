@@ -72,7 +72,7 @@ import {
 import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { focusedAppWindow } from "../../electron/decision-windows.ts";
-import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, PICK_WORLD, parsePicked } from "./pick.ts";
+import { installPickHandlers } from "./pick-handlers.ts";
 import { guardWebRtc } from "./webrtc-guard.ts";
 
 /**
@@ -231,6 +231,8 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
    * as anything else opens in the thread, an agent's page above all.
    */
   const reopenable = new Map<string, { readonly token: string; readonly url: string }>();
+  /** The threads whose local page the user let use WebRTC; an agent taking the pane ends it. */
+  const webRtcAllowed = new Set<string>();
 
   // Each web session's proxy credential, for Chromium only: asked for by that proxy's own realm and
   // port, for that session's pages.
@@ -459,6 +461,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       ...(action === undefined ? {} : { action }),
       ...(recording ? { recording } : {}),
       ...(preview.token === undefined ? {} : { webView: preview.token }),
+      ...(preview.kind === "local" && webRtcAllowed.has(preview.threadId) ? { webRtc: true } : {}),
     };
   };
 
@@ -554,7 +557,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       watchers: new Set(),
       error: undefined,
       guarded:
-        kind === "local"
+        kind === "local" && !webRtcAllowed.has(threadId)
           ? guardWebRtc(view.webContents, (fields, message) => options.log.warn(fields, message))
           : Promise.resolve(true),
     };
@@ -796,6 +799,22 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     preview.error = undefined;
     preview.view.webContents.reload();
   });
+  // The user's own switch: the page is made again, with WebRTC or without, at the same address.
+  ipc.handle(Channels.previewSetWebRtc, async (input, event) => {
+    const preview = previewFor(input, event.sender);
+    const allowed: unknown =
+      typeof input === "object" && input !== null ? Reflect.get(input, "allowed") : undefined;
+    if (preview?.kind !== "local" || typeof allowed !== "boolean") return false;
+    if (options.agent?.driverOf(preview.threadId) === "agent") return false;
+    if (webRtcAllowed.has(preview.threadId) === allowed) return true;
+    if (allowed) webRtcAllowed.add(preview.threadId);
+    else webRtcAllowed.delete(preview.threadId);
+    const url = preview.view.webContents.getURL();
+    const next = replace(preview, "local");
+    if (loopbackUrl(url) !== undefined) await openIn(next, "local", url);
+    report(next);
+    return true;
+  });
   ipc.on(Channels.previewHandBack, (event, input) => {
     const threadId = previewFor(input, event.sender)?.threadId;
     if (threadId !== undefined) options.agent?.handBack(threadId);
@@ -826,36 +845,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       }) ?? unavailable
     );
   });
-  // Picking an element for the user's next message: on loopback pages only, never a web page with
-  // the user's sign-ins, whose content no agent reads.
-  ipc.handle(Channels.previewPick, async (input, event) => {
-    const preview = previewFor(input, event.sender);
-    if (preview === undefined || preview.kind !== "local") return null;
-    const contents = preview.view.webContents;
-    if (contents.isDestroyed()) return null;
-    const url = contents.getURL();
-    contents.focus();
-    try {
-      const picked: unknown = await contents.executeJavaScriptInIsolatedWorld(
-        PICK_WORLD,
-        [{ code: PICK_SCRIPT }],
-        true,
-      );
-      // A page that moved on while picking says nothing of the one the user saw.
-      if (contents.isDestroyed() || contents.getURL() !== url) return null;
-      return parsePicked(picked, url);
-    } catch {
-      return null;
-    }
-  });
-  ipc.on(Channels.previewPickCancel, (event, input) => {
-    const preview = previewFor(input, event.sender);
-    const contents = preview?.view.webContents;
-    if (contents === undefined || contents.isDestroyed()) return;
-    void contents
-      .executeJavaScriptInIsolatedWorld(PICK_WORLD, [{ code: CANCEL_PICK_SCRIPT }])
-      .catch(() => undefined);
-  });
+  installPickHandlers(ipc, previewFor);
   ipc.handle(Channels.previewViewport, (input, event) => {
     const preview = previewFor(input, event.sender);
     const preset =
@@ -889,8 +879,11 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     contentsOf,
     contentsFor: async (threadId, make) => {
       const known = previews.get(threadId);
-      if (contentsOf(threadId) !== undefined && known !== undefined) return whenGuarded(known);
-      if (!make) return undefined;
+      // An agent's page never has WebRTC: one the user let have it is made again without.
+      const allowed = webRtcAllowed.delete(threadId);
+      if (!allowed && contentsOf(threadId) !== undefined && known !== undefined)
+        return whenGuarded(known);
+      if (!make && (!allowed || known === undefined)) return undefined;
       // A web page the user opened is never the agent's: it closes, unread, for a page of its own,
       // and can't be re-opened in its session after.
       reopenable.delete(threadId);

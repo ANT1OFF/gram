@@ -314,6 +314,24 @@ test("an element picked on the thread's page rides in the next message, as its p
   await expect(sent).toContainText("Make it smaller.");
 });
 
+// A local page has no WebRTC; only the user's own switch gives it back, never while an agent drives.
+test("the user lets a local page use WebRTC, and an agent driving it can't", async ({ page }) => {
+  await openThread(page, "t-deps");
+  await page.evaluate((p) => window.gramMock!.simulatePorts("t-deps" as never, [p]), port);
+  await page.getByTestId("pane-header").getByTestId(`port-chip-${port}`).click();
+  await expect(view(page, "t-deps")).toBeVisible();
+
+  const webRtc = page.getByTestId("preview-webrtc");
+  await expect(webRtc).toHaveAttribute("aria-pressed", "false");
+  await webRtc.click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "true");
+  await webRtc.click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "false");
+
+  await page.evaluate(() => window.gramMock!.shell.preview.drive("t-deps", "agent"));
+  await expect(webRtc).toBeDisabled();
+});
+
 test("a Markdown or HTML file the agent wrote gets a card that renders it in the Preview tab", async ({
   page,
 }) => {
