@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { terminalText } from "./terminal";
 import { openOrchestrator } from "./thread-row";
 
 // A worker open in the right pane beside its orchestrator, on the realistic morning: the keys go
@@ -195,6 +196,50 @@ test("a clicked tool tab takes the tool row's keys, and a click from the chat's 
   await pane(page).getByTestId("beside-tab-thread").click();
   await expect(composer).toBeFocused();
   await expect(composer).toHaveValue("half a thought");
+});
+
+test("the Terminal tab is a shell of your own in the worker's worktree, taken only by a click", async ({
+  page,
+}) => {
+  const made = await realistic(page);
+  const checkout = await page.evaluate(
+    (worker) => window.gramMock!.world.summary(worker as never).thread.checkout.path,
+    made.searchWorker,
+  );
+  const before = await page.evaluate(
+    (worker) => window.gramMock!.world.messages(worker as never).length,
+    made.searchWorker,
+  );
+  await page.keyboard.press("ControlOrMeta+KeyJ");
+  await row(page, made.searchWorker).click();
+
+  // Picked from the chat's composer, it opens the worker's shell and leaves the keys there.
+  const composer = page
+    .locator(`[data-thread-view="${made.orchestratorThreadId}"]`)
+    .getByRole("combobox", { name: "Message" });
+  await composer.click();
+  await pane(page).getByTestId("beside-tab-terminal").click();
+  const terminal = pane(page).getByTestId("terminal");
+  await expect(terminalText(terminal)).toContainText(`Gram mock shell in ${checkout}`);
+  await expect(composer).toBeFocused();
+  await expect(pane(page).getByTestId("beside-terminal")).toHaveCount(0);
+
+  // A click gives it the keys: what you type runs there, and Esc is the shell's, not Back.
+  await terminal.getByTestId("terminal-surface").click();
+  await page.keyboard.type("git status");
+  await page.keyboard.press("Enter");
+  await expect(terminalText(terminal)).toContainText("echo: git status");
+  await page.keyboard.press("Escape");
+  await expect(pane(page)).toHaveAttribute("data-thread-id", made.searchWorker);
+  await expect(terminal).toBeVisible();
+
+  // Your shell sends the worker nothing.
+  expect(
+    await page.evaluate(
+      (worker) => window.gramMock!.world.messages(worker as never).length,
+      made.searchWorker,
+    ),
+  ).toBe(before);
 });
 
 test("a worker's row, its head and its PR tab name the same PR, its chip before its status as in the sidebar", async ({

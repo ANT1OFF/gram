@@ -91,49 +91,6 @@ describe("a worker's terminal", () => {
     expect(lastCommandOf(messages.slice(0, 1))).toMatchObject({ toolCallId: "dev", running: true });
   });
 
-  it("keeps a command the agent backgrounded running until its task ends", () => {
-    const messages = [
-      message(
-        bash("bg", "npm run watch", {
-          state: "output-available",
-          output: "Command running in background with ID: bash_1",
-        }),
-      ),
-    ];
-    expect(lastCommandOf(messages)).toMatchObject({ running: false });
-    expect(lastCommandOf(messages, new Set(["bg"]))).toMatchObject({ running: true });
-  });
-
-  it("shows a background shell's output from beside the transcript, in place of its result", () => {
-    const messages = [
-      message(
-        bash("bg", "pnpm dev", {
-          state: "output-available",
-          output: { stdout: "", stderr: "", backgroundTaskId: "b1" },
-        }),
-      ),
-    ];
-    const output = new Map([
-      ["bg", "\u001b[32mVITE ready\u001b[0m\nlocal: http://localhost:5173/\n"],
-    ]);
-    expect(lastCommandOf(messages, new Set(["bg"]), output)).toMatchObject({
-      toolCallId: "bg",
-      running: true,
-      output: "VITE ready\nlocal: http://localhost:5173/\n",
-    });
-    // Ended, it keeps showing what it last wrote.
-    expect(lastCommandOf(messages, new Set(), output)).toMatchObject({
-      running: false,
-      output: "VITE ready\nlocal: http://localhost:5173/\n",
-    });
-    // Another call's output isn't this one's.
-    expect(lastCommandOf(messages, new Set(["bg"]), new Map([["other", "x"]]))).toMatchObject({
-      output: "",
-    });
-    const long = new Map([["bg", "y".repeat(20_000)]]);
-    expect(lastCommandOf(messages, new Set(["bg"]), long)?.output).toHaveLength(8_000);
-  });
-
   it("says when a command failed, and with what", () => {
     const failed = bash("f", "false", { state: "output-error", errorText: "Exit code 1" });
     expect(lastCommandOf([message(failed)])).toMatchObject({

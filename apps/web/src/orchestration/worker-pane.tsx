@@ -38,6 +38,7 @@ import { prDetailQuery, prDetailStamp } from "@/panels/pr-detail-query";
 import { prTargetOf } from "@/panels/pr-identity";
 import { PrPanel } from "@/panels/pr-panel";
 import { ProofPanel, useVerifyState } from "@/panels/proof-panel";
+import { TerminalPanel } from "@/panels/terminal/terminal-panel";
 import { focusWhenRendered } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { threadStatusOf } from "@/sidebar/status";
@@ -45,7 +46,6 @@ import { useThreadsStore } from "@/stores/threads";
 import { ReadOnlyTranscript } from "@/thread/read-only-transcript";
 import { ThreadView } from "@/thread/thread-view";
 
-import { LiveTerminal } from "./beside-dock";
 import {
   backToWorkers,
   closeBeside,
@@ -693,7 +693,11 @@ function ToolBody({
         />
       );
     case "terminal":
-      return <LiveTerminal threadId={worker} />;
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <TerminalPanel key={worker} threadId={worker} focusOnOpen={false} />
+        </div>
+      );
     case "changes":
       // A finished worker's, as its PR lists them: its branch is merged, its tree clean.
       if (finished && prFiles !== undefined) {
