@@ -68,6 +68,7 @@ export function TerminalView({
   onRestart,
   script,
   onExit,
+  takesKeys,
 }: {
   /** The thread it belongs to; none for a machine's Sign in terminal, whose paths aren't here. */
   threadId?: ThreadId | undefined;
@@ -80,6 +81,8 @@ export function TerminalView({
   script?: string | undefined;
   /** Called with how the process ended, once its feed says so. */
   onExit?: ((exit: { code?: number; signal?: string }) => void) | undefined;
+  /** Whether it takes the keys as it opens, asked then; always, when not given. */
+  takesKeys?: (() => boolean) | undefined;
 }) {
   const api = useApi();
   const openInEditor = useOpenInEditor();
@@ -123,6 +126,7 @@ export function TerminalView({
     openInEditor,
     local,
     onExit,
+    takesKeys,
   });
   useEffect(() => {
     latest.current = {
@@ -135,6 +139,7 @@ export function TerminalView({
       openInEditor,
       local,
       onExit,
+      takesKeys,
     };
   });
 
@@ -236,7 +241,7 @@ export function TerminalView({
         observer.observe(element);
       }
       term.setVisible(latest.current.active);
-      if (latest.current.active) term.focus();
+      if (latest.current.active && (latest.current.takesKeys?.() ?? true)) term.focus();
 
       try {
         for await (const event of api.terminalFeed(terminalId, abort.signal)) {
@@ -294,7 +299,7 @@ export function TerminalView({
     if (active) {
       // A hidden terminal may have loaded a font without notifying its PTY.
       resizeRef.current?.();
-      handleRef.current?.focus();
+      if (latest.current.takesKeys?.() ?? true) handleRef.current?.focus();
     }
   }, [active]);
 

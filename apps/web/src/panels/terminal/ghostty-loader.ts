@@ -112,6 +112,18 @@ const ghosttyModule = (): Promise<WebAssembly.Module> =>
       throw error;
     }));
 
+function openLeavingFocusWhereItIs(
+  terminal: { focus(): void; open(parent: HTMLElement): void },
+  parent: HTMLElement,
+) {
+  terminal.focus = () => {};
+  try {
+    terminal.open(parent);
+  } finally {
+    delete (terminal as { focus?: unknown }).focus;
+  }
+}
+
 /**
  * Loads ghostty-web on first use and opens a terminal in `element` (canvas renderer).
  *
@@ -177,7 +189,7 @@ export async function createTerminal(
     const host = document.createElement("div");
     host.style.cssText = "position:absolute;inset:0;padding:inherit;outline:none";
     element.prepend(host);
-    made.open(host);
+    openLeavingFocusWhereItIs(made, host);
 
     // Text that arrives with no key press (the emoji picker, dictation, a text replacement) comes
     // as a plain `insertText`, which ghostty-web cancels and drops. Typed keys never get this far,
