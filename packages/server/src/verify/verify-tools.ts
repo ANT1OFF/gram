@@ -41,8 +41,8 @@ import * as Schema from "effect/Schema";
 import { defineAppTool, OWN_PR_AUDIENCE, type AppToolDefinition } from "../app-tools/definition.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { GitStatePublisher, type GitStatePublisherShape } from "../git/publisher.ts";
+import { checkSiteOf } from "../git/check-site.ts";
 import {
-  checkSiteOf,
   LOCAL_CHECK_ISOLATION,
   LocalChecks,
   type LocalCheck,

@@ -11,11 +11,7 @@
 // that weakens `tools/check` or a test is the reviewer's to catch; and any process of this user
 // could rewrite Gram's database, the trust boundary every local result shares.
 import {
-  type Checkout,
-  hostOf,
   type HostCheckResult,
-  type HostId,
-  isLocalHost,
   localCheckConcurrencyOf,
   DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
   type Project,
@@ -79,6 +75,8 @@ import {
   type LocalCheckRun,
 } from "./check-process.ts";
 import { ServerConfig } from "../config.ts";
+import { type CheckSite, type MachineCheckSite } from "./check-site.ts";
+import { isProvisioned } from "../host/paired-machines.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
@@ -133,34 +131,6 @@ export interface MergedCheckSource {
  */
 export const LOCAL_CHECK_ISOLATION = "own-bare-repository/2";
 const SELECTED_CHECK_ISOLATION = "own-bare-repository/selected/1";
-
-/** A thread's checkout on a joined machine, where its check runs through that machine's host. */
-export interface MachineCheckSite {
-  readonly hostId: HostId;
-  /** The checkout's folder there. */
-  readonly path: string;
-  /** The machine's clone it was made from. */
-  readonly repoRoot?: string | undefined;
-}
-
-/** Where a check runs: a folder of this machine's repository, or a joined machine's checkout. */
-export type CheckSite = string | MachineCheckSite;
-
-/**
- * Where the check of `checkout`'s thread runs: `here`, a folder on this machine, for a checkout on
- * this machine; the checkout itself on the joined machine it is on.
- */
-export const checkSiteOf = (
-  checkout: Pick<Checkout, "path" | "repoRoot" | "hostId">,
-  here: string,
-): CheckSite =>
-  isLocalHost(checkout)
-    ? here
-    : {
-        hostId: hostOf(checkout),
-        path: checkout.path,
-        ...(checkout.repoRoot === undefined ? {} : { repoRoot: checkout.repoRoot }),
-      };
 
 /**
  * How long a joined machine's check waits for its host to dial in again after the connection went,
@@ -576,6 +546,11 @@ export interface LocalChecksShape {
     readonly project: string;
     readonly config: LocalCheckRun | undefined;
     readonly reason: string;
+    /**
+     * With the gate off for where the thread is rather than for the project: what can stand in
+     * for CI that never comes, where configuring a check wouldn't.
+     */
+    readonly standIn?: string | undefined;
   }>;
 
   /** The check of `head` merged onto `base`, in `repoDir`'s repository, if one ran or runs. */
@@ -1564,7 +1539,9 @@ export const LocalChecksLive = Layer.effect(
     /**
      * The project's check as a joined machine runs it: the project is the thread's own, since this
      * machine can't read the checkout there. A host too old to run checks has none, as a project
-     * without a command has none; a selected-source check doesn't run there yet.
+     * without a command has none; a selected-source check doesn't run there yet. A provisioned
+     * machine runs none either: it is sized for an agent's work, not the project's whole check
+     * beside it, so the solo gate there is green CI on the exact head, as with no check configured.
      */
     const machineConfiguration = (site: MachineCheckSite, projectId: ProjectId | undefined) =>
       Effect.gen(function* () {
@@ -1578,7 +1555,8 @@ export const LocalChecksLive = Layer.effect(
           config: undefined,
           reason: `${why}; local gate OFF — CI and GitHub rules apply`,
         });
-        if (remoteHosts?.machines.get(site.hostId) === undefined)
+        const joined = remoteHosts?.machines.get(site.hostId);
+        if (remoteHosts === undefined || joined === undefined)
           return off(`no local check on ${name}: it isn't joined to this Gram`);
         const config = localCheckRunFor(
           found?.localCheck,
@@ -1587,6 +1565,14 @@ export const LocalChecksLive = Layer.effect(
           found?.localCheckRevision,
         );
         if (config === undefined) return off(`no local check configured for ${project}`);
+        if (isProvisioned(joined))
+          return {
+            ...off(
+              `no local check on ${name}: it is a provisioned machine, where Gram doesn't run the project's full check`,
+            ),
+            standIn:
+              "a worker on one of the user's own machines can take the PR over, where Gram's check of the head stands in for the missing CI",
+          };
         // Offline, it can't say what it runs: the check waits for it rather than the gate opening.
         const online = yield* remoteHosts.connection(site.hostId).pipe(Effect.option);
         if (Option.isSome(online) && online.value.checks === undefined)

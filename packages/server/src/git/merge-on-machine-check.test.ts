@@ -1,5 +1,6 @@
 // A thread placed on a joined machine: Gram's own check of its PR runs on that machine, through its
-// host, and its result gates merge_when_ready as a check on this machine does.
+// host, and its result gates merge_when_ready as a check on this machine does. On a provisioned
+// machine none runs, and the solo gate is green CI on the exact head.
 import { describe, expect, it } from "@effect/vitest";
 import {
   DEFAULT_CHARTER,
@@ -29,8 +30,8 @@ import { ServerConfig } from "../config.ts";
 import { RuntimeTestLayer, TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { waitReal } from "../orchestration/test-harness.ts";
+import { checkSiteOf } from "./check-site.ts";
 import {
-  checkSiteOf,
   type LocalCheck,
   LocalCheckRunner,
   LocalChecks,
@@ -79,15 +80,29 @@ const passed = (request: HostCheckRequest): HostCheckResult => ({
   host: "cachyos",
 });
 
+/** The badge once CI has passed on the head. */
+const green: PrStatus = {
+  ...badge,
+  checks: "passing",
+  requiredChecks: "passing",
+  mergeChecks: "passing",
+  mergeState: "CLEAN",
+};
+
 /**
  * The joined machine `cachyos`, online while `online()` says so, its host answering each check
- * request as `answer` does. `checks: false` is a host from before it ran checks.
+ * request as `answer` does. `checks: false` is a host from before it ran checks; `provisioned` one
+ * a hosted server provisioned, which came through its relay.
  */
 const machine = (
   answer: (
     request: HostCheckRequest,
   ) => Effect.Effect<HostCheckResult, HostFailed | HostUnavailable>,
-  options: { readonly online?: () => boolean; readonly checks?: boolean } = {},
+  options: {
+    readonly online?: () => boolean;
+    readonly checks?: boolean;
+    readonly provisioned?: boolean;
+  } = {},
 ) => {
   const asked: Array<HostCheckRequest> = [];
   const connection = {
@@ -107,7 +122,16 @@ const machine = (
   const hosts = {
     machines: {
       get: (id: string) =>
-        id === MACHINE ? { id: MACHINE, name: "cachyos", platform: "linux" } : undefined,
+        id !== MACHINE
+          ? undefined
+          : {
+              id: MACHINE,
+              name: "cachyos",
+              platform: "linux",
+              ...(options.provisioned === true
+                ? { kind: "provisioned", onDemand: "worker", via: "https://hosted.invalid" }
+                : {}),
+            },
     },
     connection: (id: HostId) =>
       id === MACHINE && (options.online?.() ?? true)
@@ -117,8 +141,11 @@ const machine = (
   return { asked, layer: Layer.succeed(RemoteHosts, hosts) };
 };
 
-/** Arms the thread on `cachyos` to merge under solo, with a project check configured. */
-const armed = (hosts: Layer.Layer<RemoteHosts>) =>
+/**
+ * Arms the thread on `cachyos` to merge under solo, with a project check configured. GitHub shows
+ * the PR as `now()` does, CI pending unless it says otherwise.
+ */
+const armed = (hosts: Layer.Layer<RemoteHosts>, now: () => PrStatus = () => badge) =>
   Effect.gen(function* () {
     const dir = mkdtempSync(join(tmpdir(), "gram-machine-check-"));
     yield* Effect.addFinalizer(() =>
@@ -146,10 +173,10 @@ const armed = (hosts: Layer.Layer<RemoteHosts>) =>
         }),
     });
     const provider = Layer.succeed(Pr, {
-      status: () => Effect.succeed(badge),
+      status: () => Effect.sync(now),
     } as unknown as Pr["Service"]);
     const publisher = Layer.succeed(GitStatePublisher, {
-      badgeFor: () => Effect.succeed(badge),
+      badgeFor: () => Effect.sync(now),
       stateFor: () => Effect.succeed(undefined),
       extraBadgesFor: () => Effect.succeed([]),
       watchPrs: () => Effect.void,
@@ -448,6 +475,43 @@ describe("Gram's own check of a thread on a joined machine", () => {
           failure: { kind: "unstartable" },
         });
         expect(merged).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(layer));
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("a thread on a provisioned machine", () => {
+  it.live("runs no check there: CI pending holds the merge, green CI on its head merges it", () =>
+    Effect.gen(function* () {
+      const host = machine(() => Effect.die("a provisioned machine was asked to run the check"), {
+        provisioned: true,
+      });
+      let shown = badge;
+      const { dir, merged, layer } = yield* armed(host.layer, () => shown);
+      yield* Effect.gen(function* () {
+        const { thread, site } = yield* placed(dir);
+        const checks = yield* LocalChecks;
+        const found = yield* checks.configuration(site, thread.projectId);
+        expect(found.config).toBeUndefined();
+        expect(found.standIn).toBeDefined();
+        const gate = yield* MergeWhenReady;
+        // local_check refuses rather than loading the machine with the full check.
+        expect(yield* gate.runLocalCheck(thread.id as ThreadId)).toEqual({
+          refused: found.reason,
+        });
+        // While CI is pending the merge waits for it, and no check stands in for it.
+        yield* gate.check(thread.id as ThreadId);
+        yield* Effect.sleep("300 millis");
+        expect(merged).toEqual([]);
+        expect(yield* checks.lookup(site, HEAD, BASE, thread.projectId)).toBeUndefined();
+        shown = green;
+        yield* gate.check(thread.id as ThreadId);
+        yield* waitReal(
+          "the merge",
+          Effect.sync(() => merged.length > 0),
+        );
+        expect(merged).toEqual([MERGE_ARGS]);
+        expect(host.asked).toEqual([]);
       }).pipe(Effect.scoped, Effect.provide(layer));
     }).pipe(Effect.scoped),
   );
