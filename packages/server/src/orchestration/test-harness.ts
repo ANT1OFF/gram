@@ -436,9 +436,10 @@ const fakeGh = (world: World) => {
  */
 const gitActivity = { running: 0, started: 0 };
 
-/** Whether `args` read a repository's stored `origin` URL. */
+/** Whether `args` read a repository's `origin` URL: stored, or where git fetches and pushes it. */
 const readsOrigin = (args: ReadonlyArray<string>) =>
-  args.length === 3 && args.join(" ") === "config --get remote.origin.url";
+  (args.length === 3 && args.join(" ") === "config --get remote.origin.url") ||
+  ["remote get-url --all origin", "remote get-url --push --all origin"].includes(args.join(" "));
 
 // Every git process of the server, the service's and the worktrees' alike, counted while it runs.
 // A repository with no `origin` of its own (`world.repo`) has the one the PR tools see
