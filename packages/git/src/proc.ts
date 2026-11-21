@@ -32,6 +32,7 @@ import {
   submoduleGitDirs,
   leadingOptions,
   parseConfigList,
+  pinnedTransport,
   redirectedBy,
   withGuardArgs,
 } from "./repo-config-guard.ts";
@@ -65,8 +66,9 @@ export interface RunOptions {
   readonly onOutput?: ((text: string) => void) | undefined;
   /**
    * A git given this URL in place of a remote's name (`remoteGit`, once the URL was checked) is
-   * refused when the repository's own config would send it elsewhere (`redirectedBy`), so the URL
-   * checked is the URL git reaches.
+   * refused when the repository's own config would send it elsewhere (`redirectedBy`) or names
+   * its own TLS certificates, and reaches it over HTTP only as the user set up (`pinnedTransport`),
+   * so the URL checked is the URL git reaches, the way the user would.
    */
   readonly pinnedUrl?: string | undefined;
 }
@@ -596,12 +598,24 @@ const makeProc = Effect.gen(function* () {
               "The repository's own git config sends this remote elsewhere, so Gram doesn't reach it.",
           }),
         );
+      if (pinnedUrl !== undefined && guard.ownTls === true)
+        return yield* Effect.fail(
+          new ProcSpawnError({
+            bin: "git",
+            message:
+              "The repository's own git config names the certificates git trusts or presents, so Gram doesn't reach its remote.",
+          }),
+        );
+      const pairs =
+        pinnedUrl === undefined
+          ? guard.pairs
+          : [...guard.pairs, ...pinnedTransport(guard, pinnedUrl, env)];
       return yield* runner.run(
         exe,
         bin,
         withGuardArgs(args, guard),
         { ...rest, env: undefined },
-        appendGitConfig(env, guard.pairs),
+        appendGitConfig(env, pairs),
       );
     });
   return { run };

@@ -32,8 +32,10 @@ const toPushFailed = (e: { readonly message: string }) => new PushFailed({ messa
 /**
  * Pushes the current branch's commit to `origin` under the branch's own name, always to `origin`
  * by name, whatever `remote.pushDefault`, `branch.*.pushRemote` or `push.default` say, and records
- * `origin/<branch>` as its upstream when it had none there yet. A branch tracking something else (a worktree branched from `origin/main` tracks
- * `origin/main`) counts as unpublished, as `GitState.upstream` does. Refuses a detached HEAD, a repo
+ * `origin/<branch>` as its upstream (`branch.<branch>.remote` and `.merge`, which a single-branch
+ * clone takes too) when it had none there yet. A branch tracking something else (a worktree
+ * branched from `origin/main` tracks `origin/main`) counts as unpublished, as `GitState.upstream`
+ * does. Refuses a detached HEAD, a repo
  * without an `origin` remote, and a branch that is behind or has diverged from its upstream: that
  * needs a pull or rebase first, never a force.
  */
@@ -105,7 +107,11 @@ export const pushCurrentBranch = (cwd: string): Effect.Effect<Pushed, PushFailed
       return yield* new PushFailed({ message: gitFailMsg(out, "git push failed") });
     }
     yield* git(cwd, ["update-ref", `refs/remotes/origin/${branch}`, commit]).pipe(Effect.ignore);
-    if (!hasUpstream)
-      yield* git(cwd, ["branch", `--set-upstream-to=origin/${branch}`, branch]).pipe(Effect.ignore);
+    if (!hasUpstream) {
+      yield* git(cwd, ["config", `branch.${branch}.remote`, "origin"]).pipe(Effect.ignore);
+      yield* git(cwd, ["config", `branch.${branch}.merge`, `refs/heads/${branch}`]).pipe(
+        Effect.ignore,
+      );
+    }
     return { branch, published: !hasUpstream };
   });

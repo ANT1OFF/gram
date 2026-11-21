@@ -75,6 +75,24 @@ describe.skipIf(!hasGit)("pushCurrentBranch", () => {
     }).pipe(Effect.provide(ProcLive)),
   );
 
+  it.live("records origin as a new branch's upstream in a single-branch clone", () =>
+    Effect.gen(function* () {
+      const { root, origin } = withOrigin();
+      const narrow = nodePath.join(root, "narrow");
+      run(root, "clone", "-q", "--single-branch", "--branch", "main", origin, narrow);
+      run(narrow, "config", "user.email", "t@t");
+      run(narrow, "config", "user.name", "t");
+      run(narrow, "config", "commit.gpgsign", "false");
+      run(narrow, "checkout", "-q", "-b", "feat/narrow");
+      commit(narrow, "n.txt");
+      yield* pushCurrentBranch(narrow);
+      expect(run(narrow, "config", "branch.feat/narrow.remote").trim()).toBe("origin");
+      expect(run(narrow, "config", "branch.feat/narrow.merge").trim()).toBe(
+        "refs/heads/feat/narrow",
+      );
+    }).pipe(Effect.provide(ProcLive)),
+  );
+
   it.live(
     "publishes a branch that tracks its base, as a worktree branched from origin/main does",
     () =>

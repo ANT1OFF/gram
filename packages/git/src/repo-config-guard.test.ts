@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { git, STRICT_STATUS_ARGS } from "./exec.ts";
 import { Proc, ProcLive } from "./proc.ts";
-import { guardFor, parseConfigList, withGuardArgs } from "./repo-config-guard.ts";
+import { guardFor, parseConfigList, pinnedTransport, withGuardArgs } from "./repo-config-guard.ts";
 import { hasGit, removeDir, run, tempDir } from "./test-utils.ts";
 
 const dirs: Array<string> = [];
@@ -436,25 +436,44 @@ describe("guardFor", () => {
     );
   });
 
-  it.effect("gives git none of a repository's HTTP proxy, TLS, header or resolve settings", () =>
+  it.effect("keeps a repository's own HTTP settings for git given no checked URL", () =>
     Effect.gen(function* () {
       const { repo } = setup();
-      const planted: Array<[string, string]> = [
-        ["http.proxy", "http://127.0.0.1:9"],
-        ["remote.origin.proxy", "http://127.0.0.1:9"],
-        ["http.https://github.com/.sslVerify", "false"],
-        ["http.sslCAInfo", "/tmp/planted-ca.pem"],
-        ["http.extraHeader", "X-Planted: 1"],
-        ["http.curloptResolve", "github.com:443:127.0.0.1"],
-        ["http.cookieFile", "/tmp/planted-cookies"],
-      ];
-      for (const [key, value] of planted) run(repo, "config", key, value);
-      for (const [key] of planted) {
-        const out = yield* git(repo, ["config", "--get", key]).pipe(provide);
-        expect([key, out.stdout.trim()]).toEqual([key, key.endsWith("sslVerify") ? "true" : ""]);
-      }
+      run(repo, "config", "http.sslCAInfo", "/etc/own-ca.pem");
+      run(repo, "config", "http.proxy", "http://proxy.corp.test:3128");
+      const out = yield* git(repo, ["config", "--get", "http.proxy"]).pipe(provide);
+      expect(out.stdout.trim()).toBe("http://proxy.corp.test:3128");
     }),
   );
+
+  it("keeps the user's own proxy and headers for a checked URL, not the repository's", () => {
+    const url = "https://example.test/acme/app.git";
+    const guard = guardFor([
+      { scope: "global", key: "http.proxy", value: "http://corp.test:3128" },
+      {
+        scope: "global",
+        key: "http.https://example.test/.extraheader",
+        value: "Authorization: own",
+      },
+      {
+        scope: "global",
+        key: "http.https://other.test/.extraheader",
+        value: "Authorization: other",
+      },
+      { scope: "local", key: "http.proxy", value: "http://127.0.0.1:9" },
+    ]);
+    const pairs = pinnedTransport(guard, url, {});
+    expect(pairs).toEqual(
+      expect.arrayContaining([
+        [`http.${url}.proxy`, "http://corp.test:3128"],
+        [`remote.${url}.proxy`, "http://corp.test:3128"],
+      ]),
+    );
+    expect(pairs.filter(([key]) => key === `http.${url}.extraHeader`)).toEqual([
+      [`http.${url}.extraHeader`, ""],
+      [`http.${url}.extraHeader`, "Authorization: own"],
+    ]);
+  });
 
   it("rebuilds a credential helper list from the user's helpers alone", () => {
     const guard = guardFor([
@@ -484,4 +503,72 @@ describe("guardFor", () => {
     ]);
     expect(withGuardArgs(["status"], guard)).toEqual(["status"]);
   });
+});
+
+/** A `git` that writes `planted` into the repository's config as it starts, after Gram read it. */
+const lateWriter = (root: string, planted: ReadonlyArray<readonly [string, string]>) => {
+  const real = run(root, "--exec-path").trim();
+  const bin = nodePath.join(root, "bin");
+  fs.mkdirSync(bin);
+  const exe = nodePath.join(bin, "git");
+  const writes = planted
+    .map(([key, value]) => `"${real}/git" config --add '${key}' '${value}'`)
+    .join("\n");
+  fs.writeFileSync(
+    exe,
+    `#!/bin/sh\ncase "$*" in *--get-urlmatch*) ${writes} ;; esac\nexec "${real}/git" "$@"\n`,
+    { mode: 0o755 },
+  );
+  return exe;
+};
+
+describe.skipIf(!hasGit)("git given a checked URL", () => {
+  const URL = "https://example.test/acme/app.git";
+  const PROXY = "http://proxy.user.test:3128";
+  const ENV = { https_proxy: PROXY, HTTPS_PROXY: PROXY };
+
+  it.effect("reaches it over HTTP as the user set up, whatever the repository writes", () =>
+    Effect.gen(function* () {
+      const { repo, root } = setup();
+      const exe = lateWriter(root, [
+        [`http.${URL}.proxy`, "http://127.0.0.1:9"],
+        [`http.${URL}.sslVerify`, "false"],
+        [`http.${URL}.curloptResolve`, "example.test:443:127.0.0.1"],
+        [`http.${URL}.extraHeader`, "X-Planted: 1"],
+        [`http.${URL}.cookieFile`, "/tmp/planted-cookies"],
+      ]);
+      const proc = yield* Proc;
+      const out = yield* proc.run(exe, ["config", "--get-urlmatch", "http", URL], {
+        cwd: repo,
+        env: ENV,
+        pinnedUrl: URL,
+      });
+      expect(run(repo, "config", "--get", `http.${URL}.sslVerify`).trim()).toBe("false");
+      const seen = Object.fromEntries(
+        out.stdout
+          .trim()
+          .split("\n")
+          .map((line) => [line.split(" ")[0], line.slice(line.indexOf(" ") + 1)]),
+      );
+      expect(seen).toMatchObject({
+        "http.proxy": PROXY,
+        "http.sslverify": "true",
+        "http.curloptresolve": "",
+        "http.extraheader": "",
+        "http.cookiefile": "",
+      });
+    }).pipe(provide),
+  );
+
+  it.effect("refuses one whose repository names its own TLS certificates", () =>
+    Effect.gen(function* () {
+      const { repo } = setup();
+      run(repo, "config", "http.sslCAInfo", "/tmp/planted-ca.pem");
+      const proc = yield* Proc;
+      const out = yield* proc
+        .run("git", ["config", "--get-urlmatch", "http", URL], { cwd: repo, pinnedUrl: URL })
+        .pipe(Effect.result);
+      expect(out._tag).toBe("Failure");
+    }).pipe(provide),
+  );
 });

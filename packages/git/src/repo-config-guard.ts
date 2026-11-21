@@ -40,11 +40,8 @@ const BOOLEAN = /^(?:true|false|yes|no|on|off|1|0)?$/i;
 
 /**
  * What a key that names a program is set to when the repository set it and the user didn't: the
- * value git treats as "nothing to run" where one exists, else the stock program. The same for a
- * key that decides how git reaches a remote over HTTP (a proxy, what TLS trusts and presents, extra
- * headers, cookies, forced name resolution, redirects), through which a repository could send the
- * user's credentials to a listener of its own: git's default, where an empty value clears a list
- * or a path. `undefined` for any other key.
+ * value git treats as "nothing to run" where one exists, else the stock program. `undefined` for
+ * any other key.
  */
 export const neutralValue = (key: string, value: string | undefined): string | undefined => {
   const k = key.toLowerCase();
@@ -85,26 +82,83 @@ export const neutralValue = (key: string, value: string | undefined): string | u
   if (/^lfs\.extension\..+\.(?:clean|smudge)$/.test(k)) return "cat";
   if (/^submodule\..+\.update$/.test(k))
     return value !== undefined && value.startsWith("!") ? "checkout" : undefined;
-  return httpNeutral(k);
+  return undefined;
 };
 
-const HTTP_NEUTRAL: ReadonlyArray<readonly [RegExp, string]> = [
-  [
-    /^http\.(?:.+\.)?(?:proxy|sslcainfo|sslcapath|sslcert|sslkey|pinnedpubkey|cookiefile|curloptresolve|extraheader|proxysslcert|proxysslkey|proxysslcainfo)$/,
-    "",
-  ],
-  [/^http\.(?:.+\.)?sslverify$/, "true"],
-  [
-    /^http\.(?:.+\.)?(?:sslcertpasswordprotected|proxysslcertpasswordprotected|savecookies|emptyauth)$/,
-    "false",
-  ],
-  [/^http\.(?:.+\.)?followredirects$/, "initial"],
-  [/^http\.(?:.+\.)?delegation$/, "none"],
-  [/^remote\..+\.proxy$/, ""],
-];
+const OWN_TLS = /^http\.(?:.+\.)?(?:sslcainfo|sslcapath|sslcert|sslkey|pinnedpubkey)$/;
 
-const httpNeutral = (k: string): string | undefined =>
-  HTTP_NEUTRAL.find(([pattern]) => pattern.test(k))?.[1];
+const httpKey = (key: string): { readonly url?: string; readonly name: string } | undefined => {
+  const match = /^http\.(?:(.+)\.)?([^.]+)$/.exec(key);
+  if (match === null) return undefined;
+  return match[1] === undefined ? { name: match[2]! } : { url: match[1], name: match[2]! };
+};
+
+const urlSpecificity = (configUrl: string | undefined, url: string): number | undefined => {
+  if (configUrl === undefined) return 0;
+  const prefix = configUrl.replace(/\/+$/, "");
+  return url === prefix || (url.startsWith(prefix) && url[prefix.length] === "/")
+    ? prefix.length + 1
+    : undefined;
+};
+
+const userHttpValues = (
+  guard: Guard,
+  url: string,
+  name: string,
+): ReadonlyArray<{ readonly value: string; readonly specificity: number }> =>
+  (guard.userHttp ?? []).flatMap((entry) => {
+    const key = httpKey(entry.key);
+    if (key === undefined || key.name !== name) return [];
+    const specificity = urlSpecificity(key.url, url);
+    return specificity === undefined ? [] : [{ value: entry.value ?? "true", specificity }];
+  });
+
+const userHttpValue = (guard: Guard, url: string, name: string): string | undefined => {
+  let best: { readonly value: string; readonly specificity: number } | undefined;
+  for (const own of userHttpValues(guard, url, name))
+    if (best === undefined || own.specificity >= best.specificity) best = own;
+  return best?.value;
+};
+
+const envProxy = (env: Readonly<Record<string, string>>, url: string): string => {
+  const names = url.startsWith("https://")
+    ? ["https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"]
+    : ["http_proxy", "all_proxy", "ALL_PROXY"];
+  for (const name of names) {
+    const value = env[name];
+    if (value !== undefined && value !== "") return value;
+  }
+  return "";
+};
+
+/**
+ * `GIT_CONFIG_*` pairs for a git given `url` in place of a remote's name: how it reaches that URL
+ * over HTTP, set for that exact URL, which no key a repository writes, before or after Gram reads
+ * its config, can be more specific than, and which wins a tie by coming last. Each is the user's own
+ * value (their config, then their environment's proxy) or git's default. Nothing for a URL git
+ * doesn't reach over HTTP.
+ */
+export const pinnedTransport = (
+  guard: Guard,
+  url: string,
+  env: Readonly<Record<string, string>>,
+): ReadonlyArray<readonly [string, string]> => {
+  if (!/^https?:\/\//i.test(url)) return [];
+  const proxy = userHttpValue(guard, url, "proxy") ?? envProxy(env, url);
+  const pairs: Array<readonly [string, string]> = [
+    [`http.${url}.proxy`, proxy],
+    [`remote.${url}.proxy`, proxy],
+    [`http.${url}.sslVerify`, userHttpValue(guard, url, "sslverify") ?? "true"],
+    [`http.${url}.cookieFile`, userHttpValue(guard, url, "cookiefile") ?? ""],
+    [`http.${url}.followRedirects`, userHttpValue(guard, url, "followredirects") ?? "initial"],
+  ];
+  for (const name of ["extraHeader", "curloptResolve"]) {
+    pairs.push([`http.${url}.${name}`, ""]);
+    for (const own of userHttpValues(guard, url, name.toLowerCase()))
+      pairs.push([`http.${url}.${name}`, own.value]);
+  }
+  return pairs;
+};
 
 /** External diff commands can't be given a harmless value, so the call is told not to use them. */
 const isExternalDiff = (key: string): boolean => {
@@ -152,6 +206,13 @@ export interface Guard {
     readonly prefixes: ReadonlyArray<string>;
     readonly remotes: ReadonlyArray<string>;
   };
+  /**
+   * The repository names its own TLS trust or client certificate (`http.sslCAInfo`, `sslCAPath`,
+   * `sslCert`, `sslKey`, `pinnedPubkey`), which no value can neutralise: an empty one breaks TLS.
+   */
+  readonly ownTls?: boolean;
+  /** The user's own `http.*` entries (system, global, command), for `pinnedTransport`. */
+  readonly userHttp?: ReadonlyArray<ConfigEntry>;
 }
 
 /** Whether git given `url` would go elsewhere by the repository's own config (`Guard.redirects`). */
@@ -175,6 +236,7 @@ export const guardFor = (
   const handled = new Set<string>();
   const prefixes: Array<string> = [];
   const remotes: Array<string> = [];
+  let ownTls = false;
   // `core.fsmonitor` always, so a nested repository this listing can't see (a submodule's own
   // `.git` folder) runs no monitor of its own either: off, then the user's values, then the
   // repository's own built-in choice (a plain boolean, which runs nothing of its own).
@@ -193,6 +255,7 @@ export const guardFor = (
   for (const entry of [...entries, ...nested]) {
     if (!REPO_SCOPES.has(entry.scope)) continue;
     if (isInclude(entry.key)) includes = true;
+    if (OWN_TLS.test(entry.key.toLowerCase())) ownTls = true;
     if (/^url\..+\.(?:insteadof|pushinsteadof)$/.test(entry.key) && entry.value !== undefined)
       prefixes.push(entry.value);
     const remote = /^remote\.(.+)\.[^.]+$/.exec(entry.key)?.[1];
@@ -209,7 +272,10 @@ export const guardFor = (
         pairs.push([own.key, own.value ?? "true"]);
     }
   }
-  return { pairs, noExtDiff, includes, redirects: { prefixes, remotes } };
+  const userHttp = entries.filter(
+    (entry) => !REPO_SCOPES.has(entry.scope) && entry.key.toLowerCase().startsWith("http."),
+  );
+  return { pairs, noExtDiff, includes, redirects: { prefixes, remotes }, ownTls, userHttp };
 };
 
 /** `env` with `pairs` as the next `GIT_CONFIG_*` entries after any already set. */
