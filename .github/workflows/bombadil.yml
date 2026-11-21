@@ -85,7 +85,7 @@ jobs:
         with:
           name: bombadil-${{ matrix.profile.name }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: apps/web/bombadil-out
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
       - name: Result
         env:

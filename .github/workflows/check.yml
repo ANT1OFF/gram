@@ -232,7 +232,7 @@ jobs:
             apps/web/test-results
             apps/web/playwright-report-embed
             apps/web/test-results-embed
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
       - name: Upload per-spec timings (including successful shards)
         if: always()
@@ -240,7 +240,7 @@ jobs:
         with:
           name: e2e-timings-${{ github.run_attempt }}-shard-${{ env.SHARD }}
           path: apps/web/test-results/spec-timings.json
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: ignore
 
   e2e-2:

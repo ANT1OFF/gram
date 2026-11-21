@@ -206,7 +206,7 @@ jobs:
         with:
           name: gram-linux-release
           path: ${{ runner.temp }}/linux-release/
-          retention-days: 7
+          retention-days: 1
           if-no-files-found: error
 
   # The shipped sherpa-onnx files are committed (tools/sherpa-onnx/linux-x64) and the build's
