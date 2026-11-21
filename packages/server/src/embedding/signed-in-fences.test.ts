@@ -3,7 +3,9 @@
 
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import { memoryMachineStore } from "../host/paired-machines.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { ACCOUNT, type Call, fakeApp, NAME, ORIGIN } from "./signed-in-fixtures.ts";
@@ -19,6 +21,7 @@ import {
   tellSignedInRelease,
   WorkerMachinePort,
 } from "./signed-in-workers.ts";
+import { RELEASE_REFUSED_WAIT_MS, releaseTeller } from "./worker-machine-release.ts";
 
 /** The app over a server that answers each call in turn from `answers`, recording each. */
 const appAnswering = (answers: Record<string, Array<{ status: number; body: unknown }>>) => {
@@ -156,6 +159,101 @@ describe("a release the server's fence held back", () => {
       );
       // Told again next pass, decided afresh from what is at work then.
       expect(told._tag).toBe("Failure");
+    }),
+  );
+});
+
+describe("a release asked again", () => {
+  const machine = { name: NAME, via: ORIGIN, account: ACCOUNT };
+
+  it.live("carries the run it was decided for, and none once its name is a newer run", () =>
+    Effect.gen(function* () {
+      const busy = { status: 503, body: { code: "unavailable" } };
+      const newer = { status: 200, body: { phase: "running", sandboxId: "sbx_1", generation: 2 } };
+      const { app, port: bare } = appAnswering({
+        start: [{ status: 202, body: { name: NAME, sandboxId: "sbx_1", generation: 1 } }],
+        release: [busy, busy, busy],
+        status: [newer, newer],
+      });
+      const port = fencedCalls(bare);
+      yield* port.call(ORIGIN, "start", { name: NAME }, { account: ACCOUNT });
+      const telling = yield* tellSignedInRelease(port, machine, true, { retryMs: 200 }).pipe(
+        Effect.result,
+        Effect.forkScoped,
+      );
+      while (bodiesOf(app.calls, "release").length === 0) yield* Effect.sleep(1);
+      // While it waits to ask again, a status names a newer run of its name (a wake since).
+      yield* port.call(ORIGIN, "status", { name: NAME }, { account: ACCOUNT });
+      const told = yield* Fiber.join(telling);
+      // Not told: the next pass decides it afresh, for the run its name is now.
+      expect(told._tag).toBe("Failure");
+      expect(
+        bodiesOf(app.calls, "release").map((body) => [body["sandboxId"], body["generation"]]),
+      ).toEqual([["sbx_1", 1]]);
+      // Its status read again once it was held back.
+      expect(app.calls.map((each) => each.call)).toEqual(["start", "release", "status", "status"]);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("a release a server from before fences refuses as malformed", () => {
+  it.effect("is never sent without its fences, and told again after a longer wait each time", () =>
+    Effect.gen(function* () {
+      const malformed = { status: 400, body: { code: "invalid_request" } };
+      const { app, port } = appAnswering({
+        release: [malformed, malformed, { status: 200, body: { known: true, released: true } }],
+      });
+      let now = 0;
+      const tell = releaseTeller(undefined, fencedCalls(port), () => now)!;
+      const relayed = {
+        id: "m-1",
+        name: NAME,
+        onDemand: "worker",
+        via: ORIGIN,
+        viaAccount: ACCOUNT,
+      };
+      const told = () =>
+        tell(relayed, true).pipe(
+          Effect.result,
+          Effect.map((result) => result._tag),
+        );
+      const sent = () => bodiesOf(app.calls, "release").length;
+      expect(yield* told()).toBe("Failure");
+      expect(sent()).toBe(1);
+      // Not asked every pass: not told, so still to be told, but not sent until its wait is up.
+      now += RELEASE_REFUSED_WAIT_MS - 1;
+      expect(yield* told()).toBe("Failure");
+      expect(sent()).toBe(1);
+      now += 1;
+      expect(yield* told()).toBe("Failure");
+      expect(sent()).toBe(2);
+      // Refused again: twice the wait.
+      now += 2 * RELEASE_REFUSED_WAIT_MS - 1;
+      expect(yield* told()).toBe("Failure");
+      expect(sent()).toBe(2);
+      now += 1;
+      // The server since takes fences: told.
+      expect(yield* told()).toBe("Success");
+      for (const body of bodiesOf(app.calls, "release"))
+        expect(typeof body["notAfter"]).toBe("number");
+    }),
+  );
+});
+
+describe("a stop that came after its time there", () => {
+  it.effect("is logged, as a clock here behind the server's would have every one so", () =>
+    Effect.gen(function* () {
+      const lines: Array<string> = [];
+      const logger = Logger.make(({ message }) => {
+        lines.push(JSON.stringify(message));
+      });
+      const { port } = appAnswering({
+        stop: [{ status: 200, body: { stopped: false, code: "expired" } }],
+      });
+      yield* fencedCalls(port)
+        .call(ORIGIN, "stop", { name: NAME, notAfter: 1 }, { account: ACCOUNT })
+        .pipe(Effect.provide(Logger.layer([logger])));
+      expect(lines.some((line) => line.includes("clock may be behind"))).toBe(true);
     }),
   );
 });

@@ -31,6 +31,8 @@ import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand, type OnDemandHosts } from "./on-demand.ts";
 import {
+  type MachineRun,
+  ReleaseRefused,
   SignedInWorkers,
   tellSignedInRelease,
   type WorkerMachinePortShape,
@@ -205,32 +207,80 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
   );
 
 /**
+ * A hosted server's release not sent this pass: it refused it as malformed (`ReleaseRefused`)
+ * lately, so a server from before fences isn't asked every pass. Not told, all the same.
+ */
+export class ReleaseHeldOff extends Error {}
+
+/**
+ * How long after a hosted server first refuses a machine's release it is sent again; twice that
+ * after each refusal more, to `TOLD_FOR_MS`.
+ */
+export const RELEASE_REFUSED_WAIT_MS = 2 * Duration.toMillis(WORKER_RELEASE_EVERY);
+
+/**
  * How a machine's release is told: to the hosted server a desktop's worker host came through, or
  * to the embedder's provider. Undefined: there is no one to tell. A signed-in server's `404
  * not_found` is a release not applied, told again next pass, and forgets nothing here: a server
  * answers it for every machine while its backend is out of reach, and only `forgetReclaimed`, a few
- * passes in a row, forgets one.
+ * passes in a row, forgets one. `run`: a hosted machine's run as the release was decided
+ * (`knownRun`), the only one it is told for. One a hosted server refused as malformed (`400`, as
+ * one from before fences answers a release that carries them) is never sent without them: it
+ * stays to be told, and isn't sent again until `RELEASE_REFUSED_WAIT_MS` has passed, twice that
+ * after a second refusal, and so on to `TOLD_FOR_MS`.
  */
 export const releaseTeller = (
   hosts: OnDemandHosts | undefined,
   signedIn: WorkerMachinePortShape | undefined,
+  now: () => number = Date.now,
 ) => {
   if (hosts === undefined && signedIn === undefined) return undefined;
-  return (machine: ReleaseMachine, released: boolean): Effect.Effect<void, Error> =>
+  /** By `toldKey`: when a hosted machine refused may be told again, and the wait that was. */
+  const refused = new Map<string, { readonly until: number; readonly waitMs: number }>();
+  const tellSignedIn = (
+    port: WorkerMachinePortShape,
+    machine: ReleaseMachine & { readonly via: string },
+    released: boolean,
+    run: MachineRun | null | undefined,
+  ): Effect.Effect<void, Error> =>
+    Effect.suspend(() => {
+      const key = toldKey(machine);
+      const before = refused.get(key);
+      if (before !== undefined && now() < before.until)
+        return Effect.fail(new ReleaseHeldOff("the server refused it before; told again later"));
+      return tellSignedInRelease(
+        port,
+        { name: machine.name, via: machine.via, account: machine.viaAccount },
+        released,
+        run === undefined ? {} : { run },
+      ).pipe(
+        Effect.tapError((error) =>
+          Effect.sync(() => {
+            if (!(error instanceof ReleaseRefused)) return;
+            const waitMs =
+              before === undefined
+                ? RELEASE_REFUSED_WAIT_MS
+                : Math.min(before.waitMs * 2, TOLD_FOR_MS);
+            refused.set(key, { until: now() + waitMs, waitMs });
+          }),
+        ),
+        Effect.tap(() => Effect.sync(() => refused.delete(key))),
+        Effect.flatMap((told) =>
+          told === "missing"
+            ? Effect.fail(new Error("the server answered that it holds no such machine"))
+            : Effect.void,
+        ),
+      );
+    });
+  return (
+    machine: ReleaseMachine,
+    released: boolean,
+    run?: MachineRun | null,
+  ): Effect.Effect<void, Error> =>
     machine.via !== undefined
       ? signedIn === undefined
         ? Effect.fail(new Error("no desktop app to tell"))
-        : tellSignedInRelease(
-            signedIn,
-            { name: machine.name, via: machine.via, account: machine.viaAccount },
-            released,
-          ).pipe(
-            Effect.flatMap((told) =>
-              told === "missing"
-                ? Effect.fail(new Error("the server answered that it holds no such machine"))
-                : Effect.void,
-            ),
-          )
+        : tellSignedIn(signedIn, { ...machine, via: machine.via }, released, run)
       : hosts === undefined
         ? Effect.fail(new Error("no host provider to tell"))
         : tellRelease(hosts, machine, released);
@@ -261,18 +311,30 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         for (const id of releasableWorkers(ledger.value.features)) finished.add(id);
         for (const id of finishedWorkers(ledger.value.features)) embeddedFinished.add(id);
       }
-      for (const { machine, released } of releaseDecisions(
+      // A hosted machine's run is taken as its release is decided: the one it is told for.
+      const decided = releaseDecisions(
         machines,
         threads,
         finished,
         Date.now(),
         told,
         embeddedFinished,
-      )) {
-        const sent = yield* tell(machine, released).pipe(Effect.result);
+      ).map((decision) => ({
+        ...decision,
+        run:
+          decision.machine.via === undefined
+            ? undefined
+            : relayed?.knownRun?.(
+                decision.machine.via,
+                decision.machine.name,
+                decision.machine.viaAccount,
+              ),
+      }));
+      for (const { machine, released, run } of decided) {
+        const sent = yield* tell(machine, released, run).pipe(Effect.result);
         // Kept only once the provider took it: one it didn't apply is told again next pass.
         recordTold(told, machine, released, sent._tag === "Success", Date.now());
-        if (sent._tag === "Failure") {
+        if (sent._tag === "Failure" && !(sent.failure instanceof ReleaseHeldOff)) {
           yield* Effect.logWarning("a worker machine's release could not be told").pipe(
             Effect.annotateLogs({ machine: machine.name, reason: sent.failure.message }),
           );
