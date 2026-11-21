@@ -78,6 +78,7 @@ import {
   orchestratorQuestionHow,
 } from "./orchestrator-question-asks.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
+import { type OpenAsk, openAsksOf } from "./open-asks.ts";
 
 /** An event as server code records it: the sink adds when, and the outbox its number. */
 export type SinkRecord = Omit<SinkEventInput, "at" | "type"> & { readonly type: SinkEventType };
@@ -103,13 +104,21 @@ const ANSWER_NOTES_KEPT = 1000;
 export interface EventSinkShape {
   /** Records one event, if the sink is on. Never fails: a sink that can't write logs it. */
   record(event: SinkRecord): Effect.Effect<void>;
-  /** Kept for the `ask.opened` of the approval `requestId`, which is published after this. */
-  noteAsk(requestId: RequestId, note: AskNote): Effect.Effect<void>;
+  /**
+   * Kept for the `ask.opened` of the approval `requestId` of `threadId`, which is published after
+   * this. A card's note is its thread's: another thread's card of the same id never reads it.
+   */
+  noteAsk(requestId: RequestId, note: AskNote, threadId: ThreadId): Effect.Effect<void>;
   /**
    * A person is answering `requestId`: kept for its `ask.resolved`, which is published after
-   * this. `undefined` takes it back, for an answer that wasn't taken.
+   * this. `undefined` takes it back, for an answer that wasn't taken. A card's answer is noted
+   * under its `threadId`; a question's ask id (with no thread) is its own scope.
    */
-  noteAnswer(requestId: RequestId, note: AnswerNote | undefined): Effect.Effect<void>;
+  noteAnswer(
+    requestId: RequestId,
+    note: AnswerNote | undefined,
+    threadId?: ThreadId,
+  ): Effect.Effect<void>;
   /**
    * `person` started `threadId`: sent as `createdBy` on its `thread.upsert`s, the first of which
    * is published after this. Kept across restarts.
@@ -152,8 +161,8 @@ export interface EventSinkOptions {
   readonly on: Effect.Effect<boolean>;
   /** Every open thread, for `sink.started`. */
   readonly threads: Effect.Effect<ReadonlyArray<Thread>>;
-  /** The ids of the cards open now, for a `sink.started` that isn't the server's start. */
-  readonly openAsks?: Effect.Effect<ReadonlyArray<string>>;
+  /** The cards open now, for a `sink.started` that isn't the server's start. */
+  readonly openAsks?: Effect.Effect<ReadonlyArray<OpenAsk>>;
   /**
    * A workspace's worker questions, or every workspace's without one, for the asks of those that
    * wait on the user (`worker-question-asks.ts`). Absent, none is sent.
@@ -292,6 +301,10 @@ export const askContent = (
 const IDLE_STATUSES: ReadonlySet<string> = new Set(["idle", "cold"]);
 
 const decodeAck = Schema.decodeUnknownOption(SinkAck);
+
+/** A note's key: a card's id within its thread, a question's ask id as it is. */
+const noteKey = (id: string, threadId?: ThreadId) =>
+  threadId === undefined ? id : JSON.stringify([threadId, id]);
 
 /**
  * The sink over one endpoint and outbox file, sending for as long as the scope is open. Closing
@@ -576,8 +589,7 @@ export const makeEventSink = (
             ...first.data,
             openAsks: [
               ...first.data.openAsks,
-              ...openQuestions.keys(),
-              ...openOrchestratorAsks.keys(),
+              ...[...openQuestions.keys(), ...openOrchestratorAsks.keys()].map((id) => ({ id })),
             ],
           },
         },
@@ -710,7 +722,7 @@ export const makeEventSink = (
           ];
         case "thread.request": {
           const { request } = event;
-          const note = askNotes.get(request.id);
+          const note = askNotes.get(noteKey(request.id, event.threadId));
           return [
             {
               type: "ask.opened",
@@ -718,6 +730,7 @@ export const makeEventSink = (
               data: {
                 id: request.id,
                 kind: request.kind,
+                ...(request.shown === undefined ? {} : { shown: request.shown }),
                 title: note?.title ?? askTitle(request),
                 ...(request.kind === "approval" ? { toolName: request.toolName } : {}),
                 ...askContent(request),
@@ -728,9 +741,10 @@ export const makeEventSink = (
           ];
         }
         case "thread.requestResolved": {
-          askNotes.delete(event.requestId);
-          const answer = answerNotes.get(event.requestId);
-          answerNotes.delete(event.requestId);
+          const key = noteKey(event.requestId, event.threadId);
+          askNotes.delete(key);
+          const answer = answerNotes.get(key);
+          answerNotes.delete(key);
           return [
             {
               type: "ask.resolved",
@@ -1040,7 +1054,8 @@ export const makeEventSink = (
 
     return {
       record,
-      noteAsk: (requestId, note) => Effect.sync(() => void askNotes.set(requestId, note)),
+      noteAsk: (requestId, note, threadId) =>
+        Effect.sync(() => void askNotes.set(noteKey(requestId, threadId), note)),
       noteCreator: (threadId, person) =>
         Effect.sync(() => {
           creators.set(threadId, person);
@@ -1050,11 +1065,12 @@ export const makeEventSink = (
             // Known for this run of the server, and not after it.
           }
         }),
-      noteAnswer: (requestId, note) =>
+      noteAnswer: (requestId, note, threadId) =>
         Effect.sync(() => {
-          answerNotes.delete(requestId);
+          const key = noteKey(requestId, threadId);
+          answerNotes.delete(key);
           if (note === undefined) return;
-          answerNotes.set(requestId, note);
+          answerNotes.set(key, note);
           if (answerNotes.size > ANSWER_NOTES_KEPT) {
             answerNotes.delete(answerNotes.keys().next().value!);
           }
@@ -1137,12 +1153,7 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
           file: inMemory ? ":memory:" : eventSinkFile(config.dataDir),
           on: store.getSettings.pipe(Effect.map(embeddingOn)),
           threads: store.listThreads,
-          openAsks: store.listThreads.pipe(
-            Effect.flatMap(
-              Effect.forEach((thread) => store.listRequests(thread.id), { concurrency: 8 }),
-            ),
-            Effect.map((lists) => lists.flat().map((request) => request.id)),
-          ),
+          openAsks: openAsksOf(store),
           workerQuestions: (workspaceId) =>
             Effect.gen(function* () {
               const ids =

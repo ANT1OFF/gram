@@ -4,6 +4,7 @@
 // event, search, another thread's tools or a write, while Ada gets all of it. What it spawns keeps
 // its reader, nothing clears it, and a thread started for nobody in particular is everyone's.
 import { randomBytes } from "node:crypto";
+import { forgetForeignPathsForTest, noteForeignPath } from "@gram/git";
 import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -439,6 +440,29 @@ describe("threads readable by one person", () => {
         expect(yield* outcome(adaClient["worktree.status"]({ path: privateFolder }))).not.toContain(
           NOT_READABLE,
         );
+      }),
+    );
+
+    it.effect("keep their folders behind a link in a folder a machine once held", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const store = yield* ThreadStore;
+        const privateFolder = (yield* store.getThread(PRIVATE)).checkout.path;
+        const linkDir = folder();
+        const link = join(linkDir, "shortcut");
+        symlinkSync(privateFolder, link);
+        // A machine since removed recorded this folder: its mark stays, and the path is this
+        // machine's again, where a call follows the link.
+        noteForeignPath(linkDir);
+        try {
+          const moClient = yield* as(port, mo);
+          for (const path of [link, join(link, "AGENTS.md")])
+            expect(yield* outcome(moClient["worktree.status"]({ path })), path).toContain(
+              NOT_READABLE,
+            );
+        } finally {
+          forgetForeignPathsForTest();
+        }
       }),
     );
 

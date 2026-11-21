@@ -295,8 +295,29 @@ subscription token reaches a machine, with its own consent.
   included, goes out before. A stop whose hold can't be written down isn't sent; it is owed.
   Holds whose time is up are pruned before every write, and nothing is written past what a
   restart reads back; a file grown past that before is still read, its owings kept, and one that
-  can't be read at all is set aside beside it, never written over. Only the hosted server could
-  bound a stop it took more tightly (an expiry it honours, or the disk it means by name). The app, which sends every call,
+  can't be read at all is set aside beside it, never written over. A hold read back is never
+  further off than one stop's whole hold from now, so a clock stepped back since it was written
+  keeps no start of its name waiting longer. The hosted server bounds what a stop or a release
+  may still do itself (`signed-in-fences.ts`): each stop carries `notAfter`, 175 s after it was
+  asked (its send-by, its request and the server's own time to act), which leaves the hold's last
+  half-minute for the two clocks to differ, and each release a minute; and both carry the machine
+  and run their name was last known to be (`sandboxId`, `generation`, from a start's 202 or a
+  status's 200, kept in memory by server, name and sign-in), so one that comes late does nothing
+  to a newer start of its name. A fenced call the server held back changed nothing there: a stop
+  answered `expired` or `superseded` is neither stopped nor taken as no such machine, so a stop
+  owed stays owed, and one `superseded` is asked again with `notAfter` alone, held to the run
+  the name is now (under its name's lock no start of this Gram's can have made it). A release
+  answered `expired` is asked again at once; one `superseded`, or `applied: false`, is not taken
+  as told, its status is read again, and the next pass decides it afresh. A release carries the
+  run its name was known to be when it was decided, on every ask: once the name is known as
+  another run, nothing more of it is sent, its status is read again, and the next pass decides it
+  afresh. After a restart no run is known until a start or a status names one, and each call
+  carries `notAfter` alone. A server from before fences ignores them on a stop, and refuses a
+  release that carries them (`400`). Such a release is never sent without them, since one
+  without could land on a newer run of its name: it stays to be told, and is sent again only
+  after twenty minutes, twice that after a second refusal, and so on to an hour. A stop or a
+  release answered `expired` is logged, since a clock here behind the server's by more than the
+  margin would have every one answered so. The app, which sends every call,
   fences them by name where they leave it (`worker-machine-fence.ts`): a start it has received
   drops any stop of that name still waiting to go out (behind a token renewal, say); a start goes
   out only once no stop of the name is on its way, nor for half a minute after one that got no

@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import * as Effect from "effect/Effect";
 import type { ProcError } from "./errors.ts";
+import { GhCallEnv } from "./gh-caller.ts";
 import { canonicalizeOrOwned, fromGitPath } from "./paths.ts";
 import { Proc, type ProcOutput, type RunOptions } from "./proc.ts";
 import { splitGhInclude } from "./rate-limit-headers.ts";
@@ -59,7 +60,14 @@ export const gh = (
 ): Effect.Effect<ProcOutput, ProcError, Proc> =>
   Effect.gen(function* () {
     const proc = yield* Proc;
-    return yield* proc.run("gh", args, { timeoutMs: GH_TIMEOUT_MS, ...options, cwd });
+    const caller = yield* GhCallEnv;
+    const env = Object.keys(caller).length === 0 ? options.env : { ...caller, ...options.env };
+    return yield* proc.run("gh", args, {
+      timeoutMs: GH_TIMEOUT_MS,
+      ...options,
+      cwd,
+      ...(env === undefined ? {} : { env }),
+    });
   });
 
 /**

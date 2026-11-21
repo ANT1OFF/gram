@@ -184,7 +184,7 @@ describe("the event sink's orchestrator", () => {
         Effect.sync(() => to.held.length >= 2 && to.held),
       );
       // An entry with no id can't be answered by one: it stays in the thread.
-      expect(opened[0]!.data["openAsks"]).toEqual(["oq:ws-1:Q1"]);
+      expect(opened[0]!.data["openAsks"]).toEqual([{ id: "oq:ws-1:Q1" }]);
       expect(opened[1]).toMatchObject({
         type: "ask.opened",
         threadId,

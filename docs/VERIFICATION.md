@@ -473,6 +473,8 @@ proxy would be seen. It checks that a remote page loads in a session apart from 
 agents', gets no Gram cookie, bridge or Node, and reaches nothing on loopback or a private network
 by fetch, socket, script, redirect, rebound or failing lookup, or WebRTC STUN and TURN over TCP to
 loopback or a private address (with a control session showing the same probe does reach them),
+that a loopback page in the local session has no WebRTC at all, even where its request check let
+it reach the host,
 even with the user's private page open at that very address in another thread; that a private
 page loads in its own session, where its public frame doesn't load, its link to the internet opens
 in the shared session, and an opaque sandboxed child (`data:` and `srcdoc`) that runs has its fetch
@@ -489,6 +491,25 @@ rule it would meet.
 
 ```sh
 node apps/desktop/scripts/verify-web-preview.mjs /tmp/new-evidence-directory
+```
+
+### WebRTC guard
+
+`apps/desktop/scripts/verify-webrtc-guard.mjs` runs the installed pinned Electron in an owned
+temporary profile with the real preview module and no outside network. Every `.leak.test` name
+resolves to loopback, where a listener stands for a TURN server. It checks that a local page has no
+WebRTC in itself, in a child it makes by script at `about:blank` (which no preload reaches) or in an
+out-of-process frame, and reaches no TURN server it names; that after something else detaches the
+page's debugger, the guard is attached again and the same holds; that the user's WebRTC switch
+gives a page at an address they typed WebRTC, and that anything else opening in the thread, the
+page leaving that origin, or an agent taking the page makes it again without, while an agent's
+peek leaves it as it was and the switch is refused on a page the user didn't type and while an
+agent drives; and, as the control, that the same
+page in a session without the guard makes a peer connection in each frame and reaches the listener.
+On Linux it needs a display (`DISPLAY`), which is all of the environment it passes on.
+
+```sh
+node apps/desktop/scripts/verify-webrtc-guard.mjs /tmp/new-evidence-directory
 ```
 
 ### Pinned pages session

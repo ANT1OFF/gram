@@ -25,6 +25,7 @@ import { CheckoutService } from "../runtime/hooks.ts";
 import { ThreadRuntimes, type ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
 import { ThreadWaits } from "../waits/service.ts";
 import {
+  byToolName,
   defineAppTool,
   failed,
   type AppToolCall,
@@ -59,6 +60,7 @@ import { showPanelTool } from "./show-panel.ts";
 import { waitAppTools } from "./wait-tools.ts";
 import { showWidgetTool } from "./widget-tool.ts";
 import { moveToWorktreeTool } from "./worktree-tools.ts";
+import { forThread } from "../embedding/gh-thread.ts";
 
 export { defineAppTool, type AppToolDefinition } from "./definition.ts";
 
@@ -202,13 +204,6 @@ export const WRITES_STAY_PRIVATE =
 /** Schemas belong to definitions and are reused across thread/session bindings. */
 const inputDocuments = new WeakMap<Schema.Top, ReturnType<typeof Schema.toJsonSchemaDocument>>();
 
-/** Registration layers can finish in any order; every transport needs the same prefix. */
-const byToolName = (a: AppToolDefinition, b: AppToolDefinition): number => {
-  const left = a.descriptor.name;
-  const right = b.descriptor.name;
-  return left < right ? -1 : left > right ? 1 : 0;
-};
-
 /**
  * `call` as its thread's, whichever fiber carries it (`host/ownership.ts`): never the person whose
  * RPC began the turn, nor anyone the input names. Without a lineage, no one's.
@@ -262,6 +257,7 @@ export const bindAppTools = (
    */
   foldersOf?: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<string>>,
 ): ReadonlyArray<AppTool> =>
+  // Registration layers can finish in any order; every transport needs the same prefix.
   definitions.toSorted(byToolName).map((definition) => {
     const { descriptor } = definition;
     const input = definition.input as unknown as Schema.Codec<unknown, unknown>;
@@ -477,6 +473,7 @@ export const bindAppTools = (
                 ),
               ),
               Effect.catchCause(() => Effect.succeed(false)),
+              forThread(threadId),
             );
     return {
       descriptor,
@@ -577,7 +574,7 @@ export const bindAppTools = (
               );
             }
             const approved = yield* approve(decoded, target, (call) =>
-              definition.handle(threadId, target, call),
+              definition.handle(threadId, target, call).pipe(forThread(threadId)),
             );
             if (approved.kind === "joined")
               return askedElsewhere(descriptor.name, approved.askedIn);
@@ -589,7 +586,8 @@ export const bindAppTools = (
               Array.isArray(result)
               ? result
               : { ...result, approvalNeededBecause: why.agent };
-          }),
+            // Every GitHub read the call makes, its checks' too, is made for its thread.
+          }).pipe(forThread(threadId)),
         ),
     };
   });

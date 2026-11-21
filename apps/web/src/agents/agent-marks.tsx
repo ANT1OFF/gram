@@ -9,6 +9,7 @@
  *
  * - OpenCode: a plain frame-and-block glyph drawn here, standing in until a licensed mark is
  *   chosen; it copies no one's logo.
+ * - Antigravity: a plain rising chevron over a bar, drawn here on the same terms.
  *
  * The licences cover the drawings. The marks stay their owners' trademarks, used here only to say
  * which agent a thread runs on.
@@ -55,6 +56,14 @@ export function OpenCodeMark(props: AgentMarkProps) {
         fillRule="evenodd"
         d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm1 3v14h14V5H5Zm3 4h8v6H8V9Z"
       />
+    </Mark>
+  );
+}
+
+export function AntigravityMark(props: AgentMarkProps) {
+  return (
+    <Mark {...props}>
+      <path d="M12 3 21 17h-4.4L12 9.8 7.4 17H3l9-14Zm-8 16h16v2H4v-2Z" />
     </Mark>
   );
 }

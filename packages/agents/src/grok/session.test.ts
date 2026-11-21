@@ -8,7 +8,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type { AcpConnection, AcpHandlers, StartAcpAgent } from "./acp.ts";
+import {
+  AcpError,
+  type AcpConnection,
+  type AcpHandlers,
+  type StartAcpAgent,
+} from "../acp/connection.ts";
 import {
   autoAnswer,
   billingLimits,
@@ -20,7 +25,7 @@ import {
   promptOf,
   transcriptOf,
 } from "./extensions.ts";
-import { makeGrokHost, withHeadlessSignIn } from "./session.ts";
+import { makeGrokHost, SIGN_IN_MESSAGE, withHeadlessSignIn } from "./session.ts";
 
 const command = (text: string) => ({ kind: "execute", rawInput: { command: text } });
 const ROOTS = [tmpdir()];
@@ -211,7 +216,7 @@ describe("Grok Build session content", () => {
 });
 
 /** A stand-in Grok Build: records what Gram sends and answers like the CLI does. */
-const fakeAgent = () => {
+const fakeAgent = (options: { readonly promptFails?: AcpError } = {}) => {
   const started: Array<StartAcpAgent> = [];
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const notes: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -243,6 +248,7 @@ const fakeAgent = () => {
               },
             } as T;
           case "session/prompt": {
+            if (options.promptFails !== undefined) throw options.promptFails;
             const answer = (await handlers!.request("session/request_permission", {
               sessionId: params["sessionId"],
               toolCall: { toolCallId: "call-1", kind: "execute", rawInput: { command: "curl x" } },
@@ -276,7 +282,59 @@ const hostWith = (agent: ReturnType<typeof fakeAgent>) =>
     newMessageId: () => MessageId.make("m1"),
   });
 
+const failedTurn = async (error: AcpError) => {
+  const agent = fakeAgent({ promptFails: error });
+  let ended: AgentEvent | undefined;
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const host = yield* hostWith(agent);
+        const session = yield* host.open({
+          threadId: ThreadId.make("t"),
+          cwd: "/work",
+          permissionMode: "default",
+        });
+        const turnEnded = yield* Deferred.make<void>();
+        const fiber = yield* Stream.runForEach(session.events, (event) =>
+          event.type === "turnEnd"
+            ? Effect.andThen(
+                Effect.sync(() => (ended = event)),
+                Deferred.succeed(turnEnded, undefined),
+              )
+            : Effect.void,
+        ).pipe(Effect.forkScoped);
+        yield* session.send({ text: "go" });
+        yield* Deferred.await(turnEnded);
+        yield* Fiber.interrupt(fiber);
+      }),
+    ),
+  );
+  return ended;
+};
+
 describe("Grok Build host", () => {
+  it("says what the provider refused when a turn fails, not only the CLI's internal error", async () => {
+    const ended = await failedTurn(
+      new AcpError(-32603, "Internal error", {
+        message: "API error (status 400 Bad Request): Failed to parse the request body as JSON",
+        http_status: 400,
+      }),
+    );
+    expect(ended).toMatchObject({
+      type: "turnEnd",
+      reason: "error",
+      error:
+        "Internal error: API error (status 400 Bad Request): Failed to parse the request body as JSON",
+    });
+  });
+
+  it("still tells a CLI that isn't signed in to sign in", async () => {
+    const ended = await failedTurn(
+      new AcpError(-32000, "Authentication required", "no auth method id provided"),
+    );
+    expect(ended).toMatchObject({ type: "turnEnd", reason: "error", error: SIGN_IN_MESSAGE });
+  });
+
   it("starts in Gram's mode, never the user's own default, and asks before a command", async () => {
     const agent = fakeAgent();
     const events: Array<AgentEvent> = [];

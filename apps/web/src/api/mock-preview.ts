@@ -45,13 +45,23 @@ export class MockPreview implements DesktopPreview {
     }
   }
 
-  async open(threadId: string, url: string): Promise<boolean> {
+  async open(
+    threadId: string,
+    url: string,
+    options?: { readonly typed?: boolean },
+  ): Promise<boolean> {
     // As the shell: loopback only here; a web page only through `openWeb`.
     const target = loopbackUrl(url);
     if (target === undefined) return false;
     this.#reopenable.delete(threadId);
     const loaded = await this.#load(threadId, target);
-    this.#emit(threadId, { webView: undefined });
+    // As the shell: anything else opening in the thread makes its page again with no WebRTC, and
+    // the switch is offered only on an address the user typed.
+    this.#emit(threadId, {
+      webView: undefined,
+      webRtc: undefined,
+      webRtcOffered: options?.typed === true ? true : undefined,
+    });
     return loaded;
   }
 
@@ -84,7 +94,14 @@ export class MockPreview implements DesktopPreview {
    */
   agentTakes(threadId: string, url: string): void {
     this.#reopenable.delete(threadId);
-    this.#emit(threadId, { url, title: new URL(url).host, webView: undefined, driver: "agent" });
+    this.#emit(threadId, {
+      url,
+      title: new URL(url).host,
+      webView: undefined,
+      driver: "agent",
+      webRtc: undefined,
+      webRtcOffered: undefined,
+    });
   }
 
   /** E2e hook: the page went to `url` in the shell, as an agent driving it would send it. */
@@ -171,7 +188,11 @@ export class MockPreview implements DesktopPreview {
 
   /** Dev and e2e hook: who drives `threadId`'s page, as the shell reports it. */
   drive(threadId: string, driver: "agent" | "user"): void {
-    this.#emit(threadId, { driver });
+    // As the shell's `contentsFor`: an agent taking the page makes it again with no WebRTC.
+    this.#emit(
+      threadId,
+      driver === "agent" ? { driver, webRtc: undefined, webRtcOffered: undefined } : { driver },
+    );
   }
 
   /** Dev and e2e hook: the agent's latest labelled input, and whether it records the page. */
@@ -189,6 +210,17 @@ export class MockPreview implements DesktopPreview {
 
   takeOver(threadId: string): void {
     this.drive(threadId, "user");
+  }
+
+  /** As the shell's: the user's switch, only where it is offered; off again is a no-op when off. */
+  setWebRtc(threadId: string, allowed: boolean): Promise<boolean> {
+    const page = this.#pages.get(threadId);
+    if (page === undefined) return Promise.resolve(false);
+    if ((page.state.webRtc === true) === allowed) return Promise.resolve(true);
+    if (allowed && page.state.webRtcOffered !== true) return Promise.resolve(false);
+    this.#emit(threadId, { webRtc: allowed ? true : undefined });
+    this.reload(threadId);
+    return Promise.resolve(true);
   }
 
   readonly #picking = new Map<string, (picked: PickedElement | null) => void>();

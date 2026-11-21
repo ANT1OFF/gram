@@ -488,10 +488,19 @@ const refuseSparse = (top: string) =>
  * working tree that has changes.
  *
  * A `branch` that is here already is only ever moved forward: one behind the kept tip, or at it,
- * is set to it. One with commits the kept work doesn't hold is never moved. When it holds all of
- * the kept work (nothing was uncommitted) it is checked out as it is; otherwise nothing is put
- * back and nothing is changed, since no place for the kept files loses nothing.
+ * is set to it. One with commits the kept work doesn't hold is moved only when a remote's branch
+ * holds every one of them (a fresh clone whose default branch moved on since the work was kept):
+ * it is set back to the kept tip, and those commits stay on the remote. Otherwise it is never
+ * moved: when it holds all of the kept work (nothing was uncommitted) it is checked out as it is,
+ * and else nothing is put back and nothing is changed, since no place for the kept files loses
+ * nothing.
  */
+/** Whether every commit `tip` has that `base` doesn't is on a remote's branch here too. */
+const onlyRemoteCommits = (top: string, tip: string, base: string) =>
+  run(top, ["rev-list", "--count", tip, "--not", base, "--remotes"]).pipe(
+    Effect.map((out) => out.stdout.trim() === "0"),
+  );
+
 export const restoreWip = (
   repo: string,
   kept: WipKept,
@@ -598,7 +607,7 @@ export const restoreWip = (
         !(yield* isAncestor(top, here.oid, head))
       ) {
         ahead = !kept.uncommitted && (yield* isAncestor(top, head, here.oid));
-        if (!ahead)
+        if (!ahead && !(yield* onlyRemoteCommits(top, here.oid, head)))
           return yield* fail(
             `${branch} is here already with commits the kept work doesn't hold, so it was not moved and nothing was put back`,
           );

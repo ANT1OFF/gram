@@ -1,19 +1,21 @@
-import { chmod, lstat, mkdir, readlink, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, readlink, rename, rm, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { realPathOrOwned } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { stringify } from "smol-toml";
+import { envWithout, ownedConfigFolder, writePrivate } from "./owned-home.ts";
 
 const COMPAT_CELLS = ["skills", "rules", "agents", "mcps", "hooks"] as const;
 
 /**
  * Environment names that would put the person's own configuration back into Gram's Grok: config
- * overlays, the per-vendor compatibility switches, and Claude Code's relocated home.
+ * overlays, the per-vendor compatibility switches, Claude Code's relocated home, and the switch
+ * that turns folder trust off, which would run a repository's own hooks and MCP servers unasked.
  */
 export const isInheritedGrokConfig = (name: string): boolean =>
   name === "GROK_CONFIG" ||
   name === "GROK_CONFIG_PATH" ||
   name === "CLAUDE_CONFIG_DIR" ||
+  name === "GROK_FOLDER_TRUST" ||
   /^GROK_(CLAUDE|CURSOR|CODEX)_[A-Z_]+_ENABLED$/.test(name);
 
 /** The configuration Gram's Grok runs on, and nothing of the person's beside it. */
@@ -71,26 +73,18 @@ export const prepareOwnedGrokHome = (
       const source = resolve(env["GROK_HOME"] ?? join(realHome, ".grok"));
       const target = resolve(dataDir, "grok-owned-home");
       const grokHome = join(target, ".grok");
-      if ((await realPathOrOwned(source)) === (await realPathOrOwned(grokHome)))
-        throw new Error("Native and owned homes coincide");
-      await mkdir(grokHome, { recursive: true, mode: 0o700 });
-      await chmod(target, 0o700);
-      await chmod(grokHome, 0o700);
+      await ownedConfigFolder(target, grokHome, source);
       const auth = join(source, "auth.json");
       const link = join(grokHome, "auth.json");
       if ((await readlink(link).catch(() => undefined)) !== auth) {
         await keepRotatedLogin(link, auth);
         await symlink(auth, link, "file");
       }
-      const file = join(grokHome, "config.toml");
-      await writeFile(file, stringify(ownedGrokConfig(realHome, env["CLAUDE_CONFIG_DIR"])), {
-        mode: 0o600,
-      });
-      await chmod(file, 0o600);
-      const kept = Object.fromEntries(
-        Object.entries(env).filter(([name]) => !isInheritedGrokConfig(name)),
+      await writePrivate(
+        join(grokHome, "config.toml"),
+        stringify(ownedGrokConfig(realHome, env["CLAUDE_CONFIG_DIR"])),
       );
-      return { ...kept, HOME: target, GROK_HOME: grokHome };
+      return { ...envWithout(env, isInheritedGrokConfig), HOME: target, GROK_HOME: grokHome };
     } catch {
       throw new Error(
         "Gram could not prepare its Grok Build home. Check the Gram data directory and ~/.grok.",

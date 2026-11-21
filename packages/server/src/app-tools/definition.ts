@@ -158,3 +158,10 @@ export const failed =
   (tool: string) =>
   (e: { readonly message: string }): AppToolError =>
     new AppToolError({ tool, message: e.message });
+
+/** Definitions in the order every transport lists them: by tool name. */
+export const byToolName = (a: AppToolDefinition, b: AppToolDefinition): number => {
+  const left = a.descriptor.name;
+  const right = b.descriptor.name;
+  return left < right ? -1 : left > right ? 1 : 0;
+};

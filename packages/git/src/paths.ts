@@ -71,15 +71,113 @@ export const relativeInside = (
  */
 const foreignRoots = new Set<string>();
 
+/** Folders kept this machine's (`keepPathsHere`), as given and as the disk names them. */
+const keptRoots = new Set<string>();
+
+/** A path as compared with a kept one: case folded where the volumes usually ignore case. */
+const folded = (path: string): string =>
+  process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
+
+/** Kept folders that didn't exist when kept, whose real path is looked for again. */
+const keptPending = new Set<string>();
+
+/**
+ * Every spelling of `path` on this disk: as resolved, as the disk names it (`diskPath`, the real
+ * path of its deepest part that exists), and that real path as each linked folder above `path`
+ * spells it. On macOS `/var` is a link to `/private/var`, so a folder kept through a link in
+ * `/var/folders/x` is matched as `/private/var/folders/x/...` and as `/var/folders/x/...` alike.
+ * Only `path`'s own folders are asked of the disk: a path compared with these never is.
+ */
+export const pathForms = (path: string): ReadonlyArray<string> => {
+  const resolved = nodePath.resolve(path);
+  const real = diskPath(resolved);
+  const forms = new Set([resolved, real]);
+  for (
+    let at = nodePath.dirname(resolved);
+    nodePath.dirname(at) !== at;
+    at = nodePath.dirname(at)
+  ) {
+    const atReal = diskPath(at);
+    if (atReal === at) continue;
+    const rest = relativeInside(atReal, real);
+    if (rest !== undefined) forms.add(rest === "" ? at : nodePath.join(at, rest));
+  }
+  return [...forms];
+};
+
+/** Keeps every spelling of `resolved` (`pathForms`); whether any was new. */
+const keepForms = (resolved: string): boolean => {
+  let added = false;
+  for (const form of pathForms(resolved)) {
+    if (keptRoots.has(folded(form))) continue;
+    keptRoots.add(folded(form));
+    added = true;
+  }
+  return added;
+};
+
+/** Keeps the spellings of each kept folder that has come into existence since it was kept. */
+const settleKept = (): boolean => {
+  let added = false;
+  for (const resolved of keptPending) {
+    if (tryRealPathSync(resolved) === undefined) continue;
+    keptPending.delete(resolved);
+    if (keepForms(resolved)) added = true;
+  }
+  return added;
+};
+
+/** Whether `path` is, holds or lies under a kept folder. */
+const crossesKept = (path: string): boolean => {
+  if (settleKept()) dropCrossingMarks();
+  const at = folded(path);
+  for (const kept of keptRoots) if (isInside(at, kept) || isInside(kept, at)) return true;
+  return false;
+};
+
 /**
  * Marks `path` and everything below it as another machine's: `physicalPath`, `samePathKey` and
- * `samePath` compare it as written and never touch the filesystem for it. Only ever added to, since
- * a folder that was another machine's stays so for a key already handed out. Relative paths are
- * ignored: a host's paths are always absolute.
+ * `samePath` compare it as written and never touch the filesystem for it. A folder that was another
+ * machine's stays so for a key already handed out, unless it turns out to cross one of this
+ * machine's (`keepPathsHere`): that one is never another's. Relative paths are ignored: a host's
+ * paths are always absolute.
  */
 export const noteForeignPath = (path: string): void => {
   if (!nodePath.isAbsolute(path)) return;
-  foreignRoots.add(nodePath.resolve(path));
+  const at = nodePath.resolve(path);
+  if (!crossesKept(at)) foreignRoots.add(at);
+};
+
+/**
+ * Keeps `paths` this machine's, whatever another machine says: no `noteForeignPath` takes one of
+ * them, a folder above one or a folder below one, and a mark that did already goes. Each is kept by
+ * every spelling of it on this disk (`pathForms`): as resolved (a relative one against the working
+ * directory), by its real path, and through the links above it.
+ */
+export const keepPathsHere = (paths: Iterable<string>): void => {
+  let added = false;
+  for (const path of paths) {
+    const resolved = nodePath.resolve(path);
+    // Kept once with its spellings, which needn't be asked of the disk again.
+    if (keptRoots.has(folded(resolved)) && !keptPending.has(resolved)) continue;
+    // One that isn't there yet is spelled again once it is (`settleKept`): a link made there
+    // later leads somewhere else.
+    if (tryRealPathSync(resolved) === undefined) keptPending.add(resolved);
+    if (keepForms(resolved)) added = true;
+  }
+  if (added) dropCrossingMarks();
+};
+
+/** Takes back every `noteForeignPath` mark that crosses a kept folder. */
+const dropCrossingMarks = (): void => {
+  for (const root of foreignRoots) {
+    const at = folded(root);
+    for (const kept of keptRoots)
+      if (isInside(at, kept) || isInside(kept, at)) {
+        foreignRoots.delete(root);
+        break;
+      }
+  }
 };
 
 /** Whether `path` is at or below a folder `noteForeignPath` marked, by its lexical form. */
@@ -93,8 +191,12 @@ export const isForeignPath = (path: string): boolean => {
   }
 };
 
-/** Forgets every `noteForeignPath`, for tests. */
-export const forgetForeignPathsForTest = (): void => foreignRoots.clear();
+/** Forgets every `noteForeignPath` and `keepPathsHere`, for tests. */
+export const forgetForeignPathsForTest = (): void => {
+  foreignRoots.clear();
+  keptRoots.clear();
+  keptPending.clear();
+};
 
 /**
  * `path` as the filesystem names it: the real path of its deepest part that exists, with the rest
@@ -102,15 +204,22 @@ export const forgetForeignPathsForTest = (): void => foreignRoots.clear();
  * spelling of a folder comes out the same and on a case-sensitive one two folders stay two. A path
  * on another machine (`noteForeignPath`) is only resolved lexically.
  */
-export const physicalPath = (path: string): string => {
-  if (isForeignPath(path)) return nodePath.resolve(path);
+export const physicalPath = (path: string): string =>
+  isForeignPath(path) ? nodePath.resolve(path) : diskPath(path);
+
+/**
+ * `path` as this machine's own disk names it, whatever another machine holds there
+ * (`noteForeignPath`): for what reads this disk at a path, where a link is followed whoever's
+ * folder the path also names.
+ */
+export const diskPath = (path: string): string => {
   const real = tryRealPathSync(path);
   if (real !== undefined) return real;
   const resolved = nodePath.resolve(path);
   const parent = nodePath.dirname(resolved);
   return parent === resolved
     ? resolved
-    : nodePath.join(physicalPath(parent), nodePath.basename(resolved));
+    : nodePath.join(diskPath(parent), nodePath.basename(resolved));
 };
 
 /** `physicalPath`, asynchronously. */

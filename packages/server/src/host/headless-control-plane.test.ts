@@ -4,6 +4,8 @@
 // host parts over the fake agent. Nothing runs in the server; an orchestrator and a worker run on
 // the machine.
 
+import { ThreadStore } from "../persistence/thread-store.ts";
+import { KEYLESS_ANSWER } from "../rpc/handlers/respond.ts";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -774,13 +776,45 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
           },
           { type: "status", status: "awaitingApproval" },
         );
+        const shownOf = Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          return (yield* store.listRequests(thread.id)).find((each) => each.id === requestId)
+            ?.shown;
+        }).pipe(Effect.provideContext(server));
+        // An answer that names no card is refused for one that has a key; one that names it goes.
         yield* eventually(
-          "the answer taken",
+          "the card up with its key",
+          Effect.map(shownOf, (shown) => shown !== undefined),
+        );
+        const keyless = yield* Effect.flip(
           app["thread.respond"]({
             threadId: thread.id,
             requestId,
             answer: { kind: "approval", decision: "allow", scope: "once" },
-          }).pipe(
+          }),
+        );
+        expect(String((keyless as { message?: unknown }).message)).toContain(KEYLESS_ANSWER);
+        const [many] = yield* app["thread.respondMany"]({
+          answers: [
+            {
+              threadId: thread.id,
+              requestId,
+              answer: { kind: "approval", decision: "allow", scope: "once" },
+            },
+          ],
+        });
+        expect(many).toMatchObject({ ok: false, error: KEYLESS_ANSWER });
+        expect(first.responses.some((response) => response.requestId === requestId)).toBe(false);
+        yield* eventually(
+          "the answer taken",
+          Effect.flatMap(shownOf, (shown) =>
+            app["thread.respond"]({
+              threadId: thread.id,
+              requestId,
+              answer: { kind: "approval", decision: "allow", scope: "once" },
+              ...(shown === undefined ? {} : { shown }),
+            }),
+          ).pipe(
             Effect.as(true),
             Effect.orElseSucceed(() => false),
           ),

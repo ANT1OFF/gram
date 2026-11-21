@@ -20,7 +20,8 @@ import {
   type ThreadId,
   fenceNames,
 } from "@gram/contracts";
-import { ghApi, gitFailMsg, originOwnerRepo, Proc } from "@gram/git";
+import { ghApi, ghCallerKey, gitFailMsg, originOwnerRepo, Proc } from "@gram/git";
+import { forThread, threadCaller } from "../embedding/gh-thread.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -483,8 +484,10 @@ export const RunMonitorLive = Layer.effect(
           if ((candidates.get(threadId) ?? 0) <= readAt) candidates.delete(threadId);
           continue;
         }
+        // One look a run for each caller (`GhCallEnv`): the same for all but behind a relay.
+        const caller = ghCallerKey(threadCaller(thread.id));
         for (const watched of watches) {
-          const key = `${watched.repo}#${watched.runId}`;
+          const key = `${caller}\u0000${watched.repo}#${watched.runId}`;
           const watchers = runs.get(key);
           if (watchers === undefined) runs.set(key, [{ thread, watched }]);
           else watchers.push({ thread, watched });
@@ -495,7 +498,10 @@ export const RunMonitorLive = Layer.effect(
       if (!(yield* budget.admit("core", "background")).allowed) return;
       yield* Effect.forEach(
         runs.values(),
-        (watchers) => look(watchers[0]!.watched.repo, watchers[0]!.watched.runId, watchers),
+        (watchers) =>
+          look(watchers[0]!.watched.repo, watchers[0]!.watched.runId, watchers).pipe(
+            forThread(watchers[0]!.thread.id),
+          ),
         { concurrency: 2, discard: true },
       );
     });

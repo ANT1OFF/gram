@@ -4,6 +4,7 @@
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import { currentGhCaller } from "./gh-caller.ts";
 
 /**
  * How long a GitHub poll answer is reused. Deliberately under the badge sweep interval, so a
@@ -89,7 +90,8 @@ export const makeTtlCache = <I, A, E, R>(spec: TtlCacheSpec<I, A, E, R>): TtlCac
 
   const get = (input: I): Effect.Effect<A, E, R> =>
     Effect.gen(function* () {
-      const id = key(input);
+      // Per caller: what was read for one is never another's answer, nor a fetch it joins.
+      const id = `${yield* currentGhCaller}\u0000${key(input)}`;
       const claim = claimUnsafe(id, input, yield* Clock.currentTimeMillis);
       if (claim.kind === "hit") return claim.value;
       if (claim.kind === "await") return yield* Deferred.await(claim.deferred);

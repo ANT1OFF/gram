@@ -3,13 +3,14 @@
 import type { AgentKind } from "@gram/contracts";
 
 /** The agents a deployment may add to the orchestrator and worker roles (`GRAM_ROLE_AGENTS`). */
-const OPTIONAL_ROLE_AGENTS: ReadonlyArray<AgentKind> = ["grok"];
+const OPTIONAL_ROLE_AGENTS: ReadonlyArray<AgentKind> = ["grok", "antigravity"];
 
 /**
  * The agents `GRAM_ROLE_AGENTS` (a comma list) adds to the orchestrator and worker roles. Only
- * Grok Build may be named, and only a deployment whose sessions load no user config of their own
- * should: on a desktop, Grok reads the user's allow rules, which could let a push through
- * unasked. Its outward gate is the adapter's: under a gate the session asks about every call.
+ * Grok Build and Antigravity may be named, and only a deployment whose sessions load no user config
+ * of their own should: on a desktop, the CLI reads the user's own allow rules, which could let a
+ * push through unasked. Its outward gate is the adapter's: under a gate the session asks about
+ * every call.
  */
 export const roleAgentsFrom = (value: string | undefined): ReadonlyArray<AgentKind> =>
   OPTIONAL_ROLE_AGENTS.filter((agent) =>

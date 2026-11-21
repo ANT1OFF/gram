@@ -256,11 +256,12 @@ as starting in the default. A workspace with one of its own runs on a machine of
 your host provider starts in it ([EMBEDDING.md](EMBEDDING.md#a-workspaces-own-machine)); what an
 environment installs and may reach is your app's. Without the option the field is not shown. Read once, at mount.
 
-**More agents for the roles.** `roleAgents: ["grok"]` offers Grok Build beside Claude Code and
-Codex where a workspace's orchestrator and workers are picked. The server decides: it admits Grok
-to those roles only when it runs with `GRAM_ROLE_AGENTS=grok`, and refuses a pick otherwise. Grok
-runs in a home of Gram's own wherever it runs, so no allow rule of the person's clears its calls.
-Read once, at mount.
+**More agents for the roles.** `roleAgents: ["grok", "antigravity"]` offers Grok Build and
+Antigravity beside Claude Code and Codex where a workspace's orchestrator and workers are picked;
+list either or both. The server decides: it admits each to those roles only when it runs with it
+in `GRAM_ROLE_AGENTS` (`grok`, `antigravity`, or `grok,antigravity`), and refuses a pick otherwise.
+Both run in a config home of Gram's own wherever they run, so no allow rule of the person's clears
+their calls. Read once, at mount.
 
 **The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
 quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while

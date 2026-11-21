@@ -56,6 +56,7 @@ import {
   type PageTarget,
 } from "../../core/page-driver.ts";
 import { setTimeout as delay } from "node:timers/promises";
+import { releasePage } from "./release.ts";
 
 /** What the preview module gives this one: each thread's page, made when first asked for. */
 /**
@@ -64,6 +65,8 @@ import { setTimeout as delay } from "node:timers/promises";
  */
 export interface PaneContents {
   getURL(): string;
+  /** The page's own user agent, put back when the pane lets it go; absent from headless pages. */
+  getUserAgent?(): string;
   getTitle(): string;
   isDestroyed(): boolean;
   isLoading(): boolean;
@@ -76,12 +79,12 @@ export interface PaneContents {
     sendCommand(method: string, commandParams?: object): Promise<unknown>;
     on(
       event: "message",
-      listener: (event: unknown, method: string, params: unknown) => void,
+      listener: (event: unknown, method: string, params: unknown, sessionId?: string) => void,
     ): unknown;
     on(event: "detach", listener: () => void): unknown;
     off(
       event: "message",
-      listener: (event: unknown, method: string, params: unknown) => void,
+      listener: (event: unknown, method: string, params: unknown, sessionId?: string) => void,
     ): unknown;
   };
   on(
@@ -149,6 +152,8 @@ export interface AgentPanes {
   viewport(threadId: string, preset: BrowserViewportPreset): Promise<PaneResult>;
   /** Who drives the thread's page; `undefined` before its agent used it. */
   driverOf(threadId: string): PaneDriver | undefined;
+  /** Whether `url` is one of Gram's own pages (a file preview, an origin the server named). */
+  isAppPage(threadId: string, url: string): boolean;
   /** What the agent said its latest input on the thread's page does, and when. */
   actionOf(threadId: string): { readonly summary: string; readonly at: number } | undefined;
   /** Whether the agent is recording the thread's page. */
@@ -271,16 +276,18 @@ const fail = (
  */
 const cdpOf = (contents: PaneContents): Cdp => {
   const listeners = new Map<string, Set<(params: unknown) => void>>();
-  const handler = (_event: unknown, method: string, params: unknown) => {
-    for (const listener of Array.from(listeners.get(method) ?? [])) listener(params);
+  // An event of a frame's own session (the WebRTC guard's, `preview/webrtc-guard.ts`) isn't the
+  // page's.
+  const handler = (_event: unknown, method: string, params: unknown, sessionId?: string) => {
+    const own = sessionId === undefined || sessionId === "" ? listeners.get(method) : undefined;
+    for (const listener of Array.from(own ?? [])) listener(params);
   };
   return {
     send: (method, params) => contents.debugger.sendCommand(method, params),
     on: (event, listener) => {
       if (listeners.size === 0) contents.debugger.on("message", handler);
       const forEvent = listeners.get(event) ?? new Set();
-      forEvent.add(listener);
-      listeners.set(event, forEvent);
+      listeners.set(event, forEvent.add(listener));
       return () => {
         forEvent.delete(listener);
         if (forEvent.size === 0) listeners.delete(event);
@@ -1428,6 +1435,7 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     },
     viewport: (threadId, preset) => uiRead(threadId, { op: "viewport", preset }),
     driverOf: (threadId) => pages.get(threadId)?.driving,
+    isAppPage: (threadId, url) => isAppPage(url, contextOf(threadId)),
     actionOf: (threadId) => pages.get(threadId)?.lastAction,
     recordingOf: (threadId) => pages.get(threadId)?.recording !== undefined,
     closed: (threadId) => {
@@ -1436,13 +1444,10 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       const page = pages.get(threadId);
       if (page !== undefined) endRecording(page);
       pages.delete(threadId);
-      if (
-        page !== undefined &&
-        !page.contents.isDestroyed() &&
-        page.contents.debugger.isAttached()
-      ) {
-        page.contents.debugger.detach();
-      }
+      // Let go without detaching: the WebRTC guard shares the page's debugger.
+      if (page === undefined || page.contents.isDestroyed()) return;
+      page.driver.dispose();
+      void releasePage(cdpOf(page.contents).send, page.contents.getUserAgent?.());
     },
   };
 }
