@@ -139,7 +139,7 @@ tarballs the first job checked, each against its recorded hash.
 To run the same checks locally:
 
 ```sh
-bun run typecheck
+bun run build:packages
 bun run --filter @gram/web build:embed
 bun run packages:pack --canary --scope @<owner>
 bun run packages:verify

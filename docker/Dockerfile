@@ -15,7 +15,7 @@ ARG BUILD_IMAGE=node:26.13.1-bookworm
 ARG NODE_IMAGE=node:26.13.1-bookworm-slim
 
 FROM ${BUILD_IMAGE} AS build
-RUN npm install -g bun@1.4.4
+RUN npm install -g bun@1.4.5
 WORKDIR /opt/gram
 COPY . .
 RUN bun install --frozen-lockfile

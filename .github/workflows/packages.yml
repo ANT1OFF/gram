@@ -98,7 +98,7 @@ jobs:
           echo "publishing=$PUBLISHING" >>"$GITHUB_OUTPUT"
       - run: bun install --frozen-lockfile
       - name: Build the packages
-        run: bun run typecheck --singleThreaded
+        run: bun run build:packages --singleThreaded
         env:
           # Native TypeScript is Go: bound its heap so the build stays predictable.
           GOMEMLIMIT: 2GiB
