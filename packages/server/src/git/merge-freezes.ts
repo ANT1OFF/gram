@@ -657,7 +657,10 @@ export const MergeFreezesLive = Layer.effect(
                 threadId: caller.id,
                 title: caller.title,
                 ...(caller.workspaceId === undefined ? {} : { workspaceId: caller.workspaceId }),
-                ...(input.acrossWorkspaces === true ? { acrossWorkspaces: true as const } : {}),
+                // A renewal keeps the scope the user approved; widening it takes their yes again.
+                ...(input.acrossWorkspaces === true || held?.acrossWorkspaces === true
+                  ? { acrossWorkspaces: true as const }
+                  : {}),
                 // One line: it is shown inline in other threads' refusals and the ledger.
                 reason: oneLine(redactText(input.reason)).slice(0, MERGE_FREEZE_REASON_MAX),
                 ...(allow === undefined || allow.length === 0

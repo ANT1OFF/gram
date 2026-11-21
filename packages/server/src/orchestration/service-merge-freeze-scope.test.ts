@@ -86,6 +86,11 @@ describe.skipIf(!hasGit)("a merge freeze's reach", () => {
             expect(yield* freezes.holding("acme/app", "main", 12, "elsewhere")).toMatchObject({
               acrossWorkspaces: true,
             });
+            // Renewing without the option keeps the scope the user approved.
+            yield* freezeTool.run({ repo: "acme/app", reason: "the cut, longer", minutes: 30 });
+            expect(yield* freezes.holding("acme/app", "main", 12, "elsewhere")).toMatchObject({
+              acrossWorkspaces: true,
+            });
           }),
         );
       }),
