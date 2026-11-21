@@ -23,6 +23,13 @@ export {
 } from "@/components/avatar-row";
 export { EmptyState, type EmptyAction, type EmptyIcon } from "@/components/empty-state";
 export { Hint } from "@/components/hint";
+export {
+  DataTable,
+  type DataTableColumn,
+  type DataTableProps,
+  type DataTableSort,
+} from "@/components/data-table";
+export { TreeChart, type TreeChartProps } from "@/components/tree-chart";
 export { TreeList, type TreeListProps, type TreeNode } from "@/components/tree-list";
 export { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export {
