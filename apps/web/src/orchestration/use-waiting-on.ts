@@ -16,7 +16,7 @@ const NO_ASKS: ReadonlySet<ThreadId> = new Set();
 
 /** What each of the ledger's workers at rest waits on, by thread (`workerWaitings`). */
 export function useWorkerWaitings(
-  ledger: Pick<OrchestratorLedger, "features"> | undefined,
+  ledger: Pick<OrchestratorLedger, "features" | "questions"> | undefined,
   asking: ReadonlySet<ThreadId> = NO_ASKS,
 ): Readonly<Record<string, WaitingOn>> {
   const now = useNow(ledger !== undefined, undefined, 60_000);

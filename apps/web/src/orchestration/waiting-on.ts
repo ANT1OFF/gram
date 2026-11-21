@@ -29,12 +29,14 @@ import { openPrs, prWait, type WaitInput, type WorkerBusy } from "./wait-model";
 
 /**
  * Why it waits, one kind per wait. `frozen` is the base branch frozen for merges, which the merge
- * freeze will report; `condition` is a wake on a condition other than a time or a PR.
+ * freeze will report; `triage` is a question its orchestrator holds; `condition` is a wake on a
+ * condition other than a time or a PR.
  */
 export type WaitKind =
   | "limit"
   | "frozen"
   | "held"
+  | "triage"
   | "checks"
   | "review"
   | "merge"
@@ -47,6 +49,7 @@ export const WAIT_KINDS: readonly WaitKind[] = [
   "limit",
   "frozen",
   "held",
+  "triage",
   "checks",
   "review",
   "merge",
@@ -439,6 +442,31 @@ const prReasons = (pr: WorkerPr): WaitReason[] => {
     });
   }
   return reasons;
+};
+
+/** A worker's question its orchestrator holds (`triagedQuestions`): its id, and when it forwards. */
+export interface TriageHold {
+  readonly id: string;
+  /** Epoch ms. */
+  readonly until: number;
+}
+
+/**
+ * A worker's question in triage as a wait: with its orchestrator, which answers what the brief or
+ * memory settles, until it comes to the Inbox at `until`. Answered on the worker's own card meanwhile.
+ */
+export const triageReason = (hold: TriageHold, now: number, clock: WaitClock): WaitReason => {
+  const due = now < hold.until;
+  return {
+    kind: "triage",
+    short: due
+      ? `${hold.id} with the orchestrator until ${clock(hold.until)}`
+      : `${hold.id} on its way to your Inbox`,
+    detail: due
+      ? `It asked ${hold.id}. The orchestrator answers it if your brief or memory settles it; if not, it comes to your Inbox at ${clock(hold.until)}. Open the worker to answer it now.`
+      : `It asked ${hold.id}, which is on its way to your Inbox. Open the worker to answer it now.`,
+    at: hold.until,
+  };
 };
 
 /** What a worker's waits read: its ledger row's, with the live state and status laid over. */

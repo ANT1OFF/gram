@@ -132,6 +132,11 @@ export interface ToneFacts {
   readonly working?: boolean | undefined;
   /** What the ledger says it does (`workerActivities`). */
   readonly activity?: WorkerActivity | undefined;
+  /**
+   * Its question is with its orchestrator (`triagedQuestions`): it waits on that, not on you, until
+   * the question is forwarded.
+   */
+  readonly triage?: boolean | undefined;
 }
 
 /**
@@ -159,7 +164,9 @@ export const workerStarting = (
  * automation, needing attention, or idle.
  */
 export const workerTone = (facts: ToneFacts): RailTone => {
-  const { state, status, activity } = facts;
+  const { status, activity } = facts;
+  const triage = facts.triage === true && facts.state === "question";
+  const state = triage ? undefined : facts.state;
   if (facts.asking) return "needs";
   // Answered here: on its way back to work, whatever the server says it waits on until it hears.
   if (facts.answered === true) return "working";
@@ -168,6 +175,7 @@ export const workerTone = (facts: ToneFacts): RailTone => {
   if (state !== undefined && DONE.has(state)) return "merged";
   if (status === "needsApproval" || status === "needsInput") return "needs";
   if (status === "running" || status === "starting" || facts.working === true) return "working";
+  if (triage) return "waiting";
   // Spawned and not begun: starting, never stopped. One with a wait armed already says that wait.
   if (workerStarting(facts) && activity !== "automation") return "working";
   return activity === "working"

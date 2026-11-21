@@ -133,15 +133,15 @@ export const questionHolder = (
 ): string | undefined => {
   if (question.stage === "triage") {
     return question.triageUntil > now
-      ? `Your orchestrator answers it if your brief or memory settles it; if not, it comes to your Inbox at ${questionTime(question.triageUntil)}. Answer now to decide it yourself: it goes straight to the worker.`
-      : "It is on its way to your Inbox. Answer now to decide it: it goes straight to the worker.";
+      ? `The orchestrator may settle it from your brief or memory; if not, it comes to your Inbox at ${questionTime(question.triageUntil)}. You can answer now.`
+      : "It is on its way to your Inbox. You can answer now.";
   }
   if (question.stage === "forwarded") {
     const why =
       question.forwardedBy === "paused"
         ? "The workspace is paused, so it came straight to you"
         : "It waits on you";
-    return `${why}, here and in your Inbox. Your answer goes straight to the worker; the orchestrator gets a copy.`;
+    return `${why}, here and in your Inbox.`;
   }
   return undefined;
 };
