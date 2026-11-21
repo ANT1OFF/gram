@@ -256,6 +256,7 @@ const github = (
   runStatus = "completed",
   calls: string[][] = [],
   changed?: string,
+  runConclusion?: string,
 ) =>
   Layer.succeed(Proc, {
     run: (bin, args) => {
@@ -267,7 +268,15 @@ const github = (
         expect(args).toContain(`ref=${base}:.gram/merge-ci.json`);
         body = { data: { repository: { object: { text: JSON.stringify(declared) } } } };
       } else if (args[1]?.includes("actions/runs?"))
-        body = { total_count: 1, workflow_runs: [run(10, 1, runStatus)] };
+        body = {
+          total_count: 1,
+          workflow_runs: [
+            {
+              ...run(10, 1, runStatus),
+              ...(runConclusion === undefined ? {} : { conclusion: runConclusion }),
+            },
+          ],
+        };
       else body = { total_count: jobs.length, jobs };
       return Effect.succeed({
         status: 0,
@@ -622,14 +631,19 @@ describe("a merge that needs the CI its base declares", () => {
             };
           }),
       });
-      const result = yield* declaredOnly(undeclared, {
-        ...badge,
-        checks: "passing",
-        requiredChecks: "passing",
-      });
-      expect(result).toMatchObject({ mergeChecks: "pending", mergeCiDeclared: false });
-      // Neither the head's runs nor a local check of it stood in for the declaration.
-      expect(calls).toHaveLength(1);
+      // Required contexts green, optional ones only (a cancelled one rolls up as passing), none.
+      const shown: ReadonlyArray<Partial<PrStatus>> = [
+        { checks: "passing", requiredChecks: "passing" },
+        { checks: "passing" },
+        { checks: "none" },
+      ];
+      for (const checks of shown) {
+        const result = yield* declaredOnly(undeclared, { ...badge, ...checks });
+        expect(result).toMatchObject({ mergeChecks: "pending", mergeCiDeclared: false });
+      }
+      // Only the base's declaration was read each time: neither the head's runs nor a local check
+      // of it stood in for it.
+      expect(calls).toHaveLength(shown.length);
     }),
   );
 
@@ -660,6 +674,19 @@ describe("a merge that needs the CI its base declares", () => {
           github(
             policy,
             jobs.map((name, i) => job(name, i === 0 ? "cancelled" : "success")),
+          ),
+        ),
+      ).toMatchObject({ mergeChecks: "failing", mergeCiDeclared: true });
+      // A cancelled run fails, however its jobs read.
+      expect(
+        yield* declaredOnly(
+          github(
+            policy,
+            jobs.map((name) => job(name)),
+            "completed",
+            [],
+            undefined,
+            "cancelled",
           ),
         ),
       ).toMatchObject({ mergeChecks: "failing", mergeCiDeclared: true });
