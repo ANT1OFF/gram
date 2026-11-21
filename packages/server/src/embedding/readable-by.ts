@@ -27,7 +27,7 @@
 // store notes them on every write and on the host's change (`noteReaders`), never from a read.
 
 import { isAbsolute, resolve } from "node:path";
-import { isInside, physicalPath } from "@gram/git";
+import { diskPath, isInside, physicalPath } from "@gram/git";
 import type { Thread, ThreadId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -228,6 +228,7 @@ export const sharesRepoWithUnreadable = (
   reader: Reader | undefined,
   paths: ReadonlyArray<string>,
   level: Level = "act",
+  onDisk = false,
 ): boolean => {
   if (paths.length === 0 || !anyPrivate()) return false;
   const repos: Array<string> = [];
@@ -235,7 +236,7 @@ export const sharesRepoWithUnreadable = (
   if (repos.length === 0) return false;
   return paths.some((path) => {
     const written = resolve(path);
-    const real = realOf(written);
+    const real = realOf(written, onDisk);
     return repos.some((repo) => within(written, repo) || within(real, repo));
   });
 };
@@ -510,20 +511,29 @@ export const sameReaders = (
 // to anyone the thread is unreadable by (`rpc/actor-guard.ts`), and a listing of a folder above it
 // leaves the folder out (`withoutUnreadable`).
 
-/** `path` with every link resolved, as far as it exists; the rest as written (`physicalPath`). */
-export const realOf = (path: string): string => physicalPath(path);
+/**
+ * `path` with every link resolved, as far as it exists; the rest as written (`physicalPath`). With
+ * `onDisk`, for a call that reads this server's own disk at the path (`rpc/server-disk.ts`), by
+ * this disk whatever another machine holds there (`diskPath`): the call follows its links here.
+ */
+export const realOf = (path: string, onDisk = false): string =>
+  onDisk ? diskPath(path) : physicalPath(path);
 
 /** Whether `path` is `folder` or inside it, by whole components. */
 const within = (path: string, folder: string): boolean => isInside(folder, path);
 
 /** The folders, as written and with links resolved, of the threads `reader` may not see. */
-const unreadableFolders = (reader: Reader | undefined, level: Level): ReadonlyArray<string> => {
+const unreadableFolders = (
+  reader: Reader | undefined,
+  level: Level,
+  onDisk = false,
+): ReadonlyArray<string> => {
   const folders: Array<string> = [];
   for (const [id, paths] of foldersOf) {
     if (readerMay(reader, at(id, level))) continue;
     for (const path of paths) {
       folders.push(path);
-      const real = realOf(path);
+      const real = realOf(path, onDisk);
       if (real !== path) folders.push(real);
     }
   }
@@ -535,13 +545,14 @@ export const touchesUnreadable = (
   reader: Reader | undefined,
   paths: ReadonlyArray<string>,
   level: Level = "act",
+  onDisk = false,
 ): boolean => {
   if (paths.length === 0 || !anyPrivate()) return false;
-  const folders = unreadableFolders(reader, level);
+  const folders = unreadableFolders(reader, level, onDisk);
   if (folders.length === 0) return false;
   return paths.some((path) => {
     const written = resolve(path);
-    const real = realOf(written);
+    const real = realOf(written, onDisk);
     return folders.some((folder) => within(written, folder) || within(real, folder));
   });
 };
@@ -593,11 +604,12 @@ export const withoutUnreadable = (
   result: unknown,
   base: string | undefined,
   level: Level = "act",
+  onDisk = false,
 ): unknown => {
   if (!anyPrivate()) return result;
-  const folders = unreadableFolders(reader, level);
+  const folders = unreadableFolders(reader, level, onDisk);
   if (folders.length === 0) return result;
-  const bases = base === undefined ? [] : [resolve(base), realOf(base)];
+  const bases = base === undefined ? [] : [resolve(base), realOf(base, onDisk)];
   const hidden = (path: string): boolean => {
     const spellings = isAbsolute(path) ? [resolve(path)] : bases.map((each) => resolve(each, path));
     return spellings.some((spelling) => folders.some((folder) => within(spelling, folder)));

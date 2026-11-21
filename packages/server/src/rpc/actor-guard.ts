@@ -44,6 +44,7 @@ import {
   SERVER_DISK,
   SERVER_DISK_REFUSAL,
   SERVER_DISK_UNLESS_THREAD,
+  readsServerDisk,
 } from "./server-disk.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -697,6 +698,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
        */
       const pathsUnreadable = (
         reader: Reader,
+        action: string,
         payload: unknown,
         sharedToo = false,
         level: Level = "act",
@@ -715,9 +717,11 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           const paths = pathsMentioned(payload, bases);
           // Behind a proxy, nor a repository such a thread has a checkout of: another checkout
           // of it, a branch list, a worktree list share that thread's `.git` and its commits.
+          // A call that reads this disk follows a link here, whoever else holds its path.
+          const onDisk = readsServerDisk(action, payload);
           return (
-            touchesUnreadable(reader, paths, level) ||
-            (sharedToo && sharesRepoWithUnreadable(reader, paths, level))
+            touchesUnreadable(reader, paths, level, onDisk) ||
+            (sharedToo && sharesRepoWithUnreadable(reader, paths, level, onDisk))
           );
         });
       /** The folder a listing's relative entries are under: its own path, or its thread's. */
@@ -752,7 +756,14 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
               anyPrivate()
                 ? Effect.map(
                     listedUnder(payload),
-                    (base) => withoutUnreadable(reader, result, base, level) as A,
+                    (base) =>
+                      withoutUnreadable(
+                        reader,
+                        result,
+                        base,
+                        level,
+                        readsServerDisk(action, payload),
+                      ) as A,
                   )
                 : Effect.succeed(result),
             );
@@ -765,7 +776,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
             const nobody: Reader = { subject: undefined };
             if (
               (yield* namesUnreadable(nobody, payload)) ||
-              (yield* pathsUnreadable(nobody, payload))
+              (yield* pathsUnreadable(nobody, rpc._tag, payload))
             )
               return yield* Effect.die(new Error(NOT_READABLE));
             if (!VIEWER_RPCS.has(rpc._tag) && (yield* onAnothersMachine(undefined, payload)))
@@ -790,13 +801,13 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           const reads = VIEWER_RPCS.has(action) || setsOnlyOwnView(action, payload);
           if (
             (yield* namesUnreadable(reader, payload, "read")) ||
-            (yield* pathsUnreadable(reader, payload, true, "read"))
+            (yield* pathsUnreadable(reader, action, payload, true, "read"))
           )
             return yield* Effect.die(new Error(NOT_READABLE));
           if (
             !reads &&
             ((yield* namesUnreadable(reader, payload, "act")) ||
-              (yield* pathsUnreadable(reader, payload, true, "act")))
+              (yield* pathsUnreadable(reader, action, payload, true, "act")))
           )
             return yield* Effect.die(new Error(ONLY_READS));
           // The call runs as this person, for what asks who acted (`embedding/person.ts`).

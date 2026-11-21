@@ -35,7 +35,7 @@ import type { CheckoutServiceShape } from "../runtime/hooks.ts";
 import type { Terminals } from "../terminal/terminals.ts";
 import type { HostFiles } from "./files.ts";
 import { type HostFolders, olderHost } from "./folders.ts";
-import { noteForeignCheckouts } from "./foreign-paths.ts";
+import { claimableByHost, hereForms, noteForeignCheckouts } from "./foreign-paths.ts";
 import { type HeadlessPlacement, placeRequest } from "./headless.ts";
 import type { WorkerHost, WorkerHostsShape } from "./worker-host.ts";
 
@@ -76,14 +76,32 @@ const machinePaths = (threads: ReadonlyArray<Thread>) => {
     paths.set(key, hosts);
   };
   let remote = false;
+  // This machine's own folders: a machine's checkout above one of them claims none of it.
+  const here = hereForms(
+    threads.flatMap((thread) =>
+      checkoutsOf(thread)
+        .filter((checkout) => hostOf(checkout) === LOCAL_HOST_ID)
+        .flatMap((checkout) => [
+          checkout.path,
+          ...(checkout.repoRoot === undefined ? [] : [checkout.repoRoot]),
+        ]),
+    ),
+  );
   for (const thread of threads) {
     // Before the keys below, so they are taken as written rather than looked up on this disk.
     noteForeignCheckouts(thread);
     for (const checkout of checkoutsOf(thread)) {
       const host = hostOf(checkout);
       if (host !== LOCAL_HOST_ID) remote = true;
-      claim(checkout.path, host);
-      if (checkout.repoRoot !== undefined) claim(checkout.repoRoot, host);
+      for (const path of [
+        checkout.path,
+        ...(checkout.repoRoot === undefined ? [] : [checkout.repoRoot]),
+      ]) {
+        claim(path, host);
+        // One it may not take is named as this machine's too, so it is refused as more than one
+        // machine's: never this machine's alone, where a host's folder would reach this disk.
+        if (host !== LOCAL_HOST_ID && !claimableByHost(path, here)) claim(path, LOCAL_HOST_ID);
+      }
     }
   }
   // With no other machine's folder, every path is this machine's.
