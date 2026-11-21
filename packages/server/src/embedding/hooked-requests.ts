@@ -68,23 +68,29 @@ export type HookedKey = string & { readonly HookedKey: unique symbol };
 export const hookedKey = (threadId: ThreadId, requestId: RequestId): HookedKey =>
   `${threadId}\u0000${requestId}` as HookedKey;
 
+/** A request put to the hook, as it was asked: its answer is for this request alone. */
+export interface DecidingRequest {
+  readonly threadId: ThreadId;
+  readonly request: ApprovalRequest;
+}
+
 /** The requests the hook is deciding, and the ones it sent to a person, across all threads. */
 export interface HookedRequests {
-  /** Requests put to the hook and not yet answered or made a card, with their threads. */
-  readonly deciding: Map<HookedKey, ThreadId>;
+  /** Requests put to the hook and not yet answered or made a card. */
+  readonly deciding: Map<HookedKey, DecidingRequest>;
   readonly asked: Map<HookedKey, AskedRequest>;
   /** A thread's requests were withdrawn (its turn stopped, its session went): forget them. */
   readonly forget: (threadId: ThreadId) => void;
 }
 
 export const makeHookedRequests = (): HookedRequests => {
-  const deciding = new Map<HookedKey, ThreadId>();
+  const deciding = new Map<HookedKey, DecidingRequest>();
   const asked = new Map<HookedKey, AskedRequest>();
   return {
     deciding,
     asked,
     forget: (threadId) => {
-      for (const [id, of] of deciding) if (of === threadId) deciding.delete(id);
+      for (const [id, of] of deciding) if (of.threadId === threadId) deciding.delete(id);
       for (const [id, request] of asked) if (request.threadId === threadId) asked.delete(id);
     },
   };

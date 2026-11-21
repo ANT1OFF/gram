@@ -276,7 +276,7 @@ export const makeAgentEvents = ({
       yield* becomeIdle(rt);
     });
 
-  const { raiseCard, decideRequest } = makeHookedDecisions({
+  const { raiseCard, decideRequest, replaceAsked } = makeHookedDecisions({
     store,
     hub,
     hooked,
@@ -735,6 +735,8 @@ export const makeAgentEvents = ({
             );
             return;
           }
+          // A request under an id already in hand is another request (`replaceAsked`).
+          const key = yield* replaceAsked(rt, request.id);
           if (
             request.kind === "approval" &&
             decisions !== undefined &&
@@ -743,8 +745,9 @@ export const makeAgentEvents = ({
             const actions = requestActions(request);
             if (actions.length > 0) {
               // Asked off this loop: the card, if there is to be one, goes up when it answers.
-              hooked.deciding.set(hookedKey(rt.threadId, request.id), rt.threadId);
-              yield* forkDecision(decideRequest(rt, rt.session, decisions, request, actions));
+              const deciding = { threadId: rt.threadId, request };
+              hooked.deciding.set(key, deciding);
+              yield* forkDecision(decideRequest(rt, rt.session, decisions, deciding, actions));
               return;
             }
           }

@@ -36,6 +36,9 @@ import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { NotifyObservers } from "./runtime-observer.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
+/** The id prefix of a message an app's data part opened on its own (`appendDataPart`). */
+const DATA_MESSAGE_PREFIX = "app-";
+
 /** How stale a streaming message's search index row may get. */
 export const SEARCH_REFRESH_MS = 5_000;
 
@@ -76,6 +79,12 @@ export const mergedDelta = (
 };
 
 /** The transcript writer `ThreadRuntimes` streams every thread's messages through. */
+/** A reply let go of in its turn, never to go on again. */
+const closeIn = (rt: Runtime, messageId: MessageId) => {
+  if (rt.turn === undefined) return;
+  (rt.turn.closed ??= new Set()).add(messageId);
+};
+
 export const makeFeedWriter = ({
   store,
   hub,
@@ -226,16 +235,43 @@ export const makeFeedWriter = ({
   };
 
   /** Called with the feed lock held. */
+  /**
+   * Whether a stored message no reply has open may go on: only the current turn's latest top-level
+   * reply, unfinished and not let go of. Every other (a person's message, a notice, an app's data
+   * message, an earlier reply, a subagent's lane, another turn's) is left as it is.
+   */
+  const goesOn = (rt: Runtime, messageId: MessageId, stored: GramUIMessage) =>
+    Effect.gen(function* () {
+      const turn = rt.turn;
+      if (
+        turn === undefined ||
+        stored.role !== "assistant" ||
+        messageId.startsWith(DATA_MESSAGE_PREFIX) ||
+        stored.metadata?.turnEnd !== undefined ||
+        stored.metadata?.parentToolUseId !== undefined ||
+        turn.closed?.has(messageId) === true
+      )
+        return false;
+      const placed = yield* store.getMessageTurn(rt.threadId, messageId);
+      if (placed?.turnId !== turn.id) return false;
+      const latest = (yield* store.turnMessages(rt.threadId, turn.id))
+        .filter((each) => each.role === "assistant" && each.metadata?.parentToolUseId === undefined)
+        .at(-1);
+      return latest?.id === messageId;
+    });
+
   const appendChunkLocked = (rt: Runtime, messageId: MessageId, incoming: GramUIMessageChunk) =>
     Effect.gen(function* () {
       let chunk = incoming;
       let inFlight = rt.open.get(messageId);
       if (inFlight === undefined) {
-        // A reply opens or goes on only as a reply: never over a person's message, nor Gram's
-        // notice, whose id an agent was handed.
+        // A reply opens or goes on only as a reply still under way: never over a person's message,
+        // Gram's notice or an app's data message, whose ids an agent was handed, nor over any other
+        // reply. The one stored reply that goes on is the current turn's latest, unfinished, as a
+        // session a host kept across a restart continues it under the turn it adopted.
         const stored = yield* store.getMessage(rt.threadId, messageId);
-        if (stored !== undefined && stored.role !== "assistant") {
-          yield* Effect.logWarning("a reply named a message that isn't one").pipe(
+        if (stored !== undefined && !(yield* goesOn(rt, messageId, stored))) {
+          yield* Effect.logWarning("a reply named a message that isn't one under way").pipe(
             Effect.annotateLogs({ threadId: rt.threadId, messageId }),
           );
           return;
@@ -363,8 +399,10 @@ export const makeFeedWriter = ({
         !inFlight.nested &&
         (chunk.type === "finish" || chunk.type === "abort") &&
         inFlight.accumulator.preliminaryTools().length === 0
-      )
+      ) {
         rt.open.delete(messageId);
+        closeIn(rt, messageId);
+      }
     });
 
   /**
@@ -393,7 +431,7 @@ export const makeFeedWriter = ({
         yield* appendChunk(rt, reply.messageId, chunk);
         return reply.messageId;
       }
-      const messageId = `app-${randomUUID()}` as MessageId;
+      const messageId = `${DATA_MESSAGE_PREFIX}${randomUUID()}` as MessageId;
       const accumulator = new MessageAccumulator(messageId);
       const createdAt = yield* Clock.currentTimeMillis;
       accumulator.apply({ type: "start", messageId, messageMetadata: { createdAt } });

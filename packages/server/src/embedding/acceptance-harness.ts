@@ -25,7 +25,10 @@ import { DecisionHook } from "./decision-hook.ts";
 import { EventSink } from "./event-sink.ts";
 
 /** A JSON endpoint on loopback that answers each POST with what `answer` makes of its body. */
-export const endpoint = <Body>(answer: (body: Body) => { status?: number; json: unknown }) =>
+/** An answer an endpoint gives, now or once it has made up its mind. */
+type Answer = { status?: number; json: unknown };
+
+export const endpoint = <Body>(answer: (body: Body) => Answer | Promise<Answer>) =>
   Effect.acquireRelease(
     Effect.promise(
       () =>
@@ -37,11 +40,12 @@ export const endpoint = <Body>(answer: (body: Body) => { status?: number; json: 
               request.on("data", (chunk: Buffer) => chunks.push(chunk));
               request.on("end", () => {
                 tokens.push(request.headers.authorization);
-                const { status = 200, json } = answer(
-                  JSON.parse(Buffer.concat(chunks).toString("utf8")) as Body,
-                );
-                response.writeHead(status, { "content-type": "application/json" });
-                response.end(JSON.stringify(json));
+                void Promise.resolve(
+                  answer(JSON.parse(Buffer.concat(chunks).toString("utf8")) as Body),
+                ).then(({ status = 200, json }) => {
+                  response.writeHead(status, { "content-type": "application/json" });
+                  response.end(JSON.stringify(json));
+                });
               });
             });
             server.listen(0, "127.0.0.1", () =>

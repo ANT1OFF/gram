@@ -1,7 +1,7 @@
 // An agent's approval requests as the thread puts them up: a card in front of a person, or, while
 // the decision hook is on, the hook's answer first (`decideRequest`).
 import type { AgentSession } from "@gram/agents";
-import type { ApprovalRequest, PendingRequest } from "@gram/contracts";
+import type { PendingRequest, RequestId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -14,6 +14,7 @@ import {
 } from "../embedding/decision-hook.ts";
 import type { EventSinkShape } from "../embedding/event-sink.ts";
 import {
+  type DecidingRequest,
   hookedKey,
   type HookedRequests,
   type RequestAction,
@@ -61,10 +62,12 @@ export const makeHookedDecisions = ({
     /** The session that asked: a later one of the thread never made this request. */
     asking: AgentSession | undefined,
     hook: DecisionHookShape,
-    request: ApprovalRequest,
+    /** The entry in `hooked.deciding` this decision is for, and is void once another replaces. */
+    deciding: DecidingRequest,
     actions: ReadonlyArray<RequestAction>,
   ) =>
     Effect.gen(function* () {
+      const request = deciding.request;
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.option);
       let refused:
         | { readonly action: RequestAction["action"]; readonly decided: Decided }
@@ -91,7 +94,10 @@ export const makeHookedDecisions = ({
       yield* locked(
         rt,
         Effect.gen(function* () {
-          if (!hooked.deciding.delete(hookedKey(rt.threadId, request.id))) return;
+          // Withdrawn meanwhile, or asked again under its id: this answer is for neither.
+          const key = hookedKey(rt.threadId, request.id);
+          if (hooked.deciding.get(key) !== deciding) return;
+          hooked.deciding.delete(key);
           const session = rt.session;
           if (session === undefined || (asking !== undefined && session !== asking)) return;
           const refusal =
@@ -166,5 +172,28 @@ export const makeHookedDecisions = ({
       );
     });
 
-  return { raiseCard, decideRequest };
+  /**
+   * Makes way for a request an agent raised under `requestId`, which is another request whatever
+   * it was before: what the hook said, or is saying, of the earlier one is never taken for it, and
+   * its card comes down, since an answer given to that card is for the earlier one. Holds the
+   * lock. Gives the request's key in the hook's bookkeeping.
+   */
+  const replaceAsked = (rt: Runtime, requestId: RequestId) =>
+    Effect.gen(function* () {
+      const key = hookedKey(rt.threadId, requestId);
+      hooked.asked.delete(key);
+      const replaced = hooked.deciding.delete(key);
+      const takenDown = yield* store.removeRequest(rt.threadId, requestId);
+      if (takenDown) {
+        yield* hub.publish({ type: "thread.requestResolved", threadId: rt.threadId, requestId });
+      }
+      if (replaced || takenDown) {
+        yield* Effect.logWarning("an agent asked again under an id already in hand").pipe(
+          Effect.annotateLogs({ threadId: rt.threadId, requestId }),
+        );
+      }
+      return key;
+    });
+
+  return { raiseCard, decideRequest, replaceAsked };
 };
