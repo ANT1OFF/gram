@@ -10,9 +10,10 @@ import { join } from "node:path";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { makeAppToolsTunnel } from "./app-tools-tunnel.ts";
+import { hostOriginGuard } from "./origin-guard.ts";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
 import { AgentUnavailable, HOST_PROTOCOL_VERSION, LOCAL_HOST_ID } from "@gram/contracts";
-import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
+import { guardOrigins, Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -221,6 +222,11 @@ const hostService = (
     let clones = 0;
     const checks = yield* checksOn(proc, join(hostHome(), "checks"));
     const repos = reposOn(proc, hostRepos());
+    if (hostId !== LOCAL_HOST_ID)
+      yield* Effect.acquireRelease(
+        Effect.sync(() => guardOrigins(hostOriginGuard(hostRepos()))),
+        (release) => Effect.sync(release),
+      );
     const scan = liveScan.pipe(Effect.provideService(Proc, proc));
     /**
      * Sessions at work, terminals running a command (a thread's shell with a foreground job, or any

@@ -4,8 +4,10 @@
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import { branchExists, gh, git, gitFailMsg } from "./exec.ts";
+import { remoteGit } from "./remote-git.ts";
 import { parseOwnerRepo } from "./pr.ts";
-import type { Proc } from "./proc.ts";
+import type { ProcError } from "./errors.ts";
+import type { Proc, ProcOutput } from "./proc.ts";
 import { repoFromPrUrl } from "./review-actions.ts";
 import { isValidGitRefCharset } from "./worktrees.ts";
 
@@ -139,6 +141,16 @@ const remoteFor = (repoTop: string, repo: string) =>
     Effect.orElseSucceed(() => undefined),
   );
 
+const ran = (args: ReadonlyArray<string>, out: Effect.Effect<ProcOutput, ProcError, Proc>) =>
+  out.pipe(
+    Effect.mapError((e) => fail(e.message)),
+    Effect.flatMap((done) =>
+      done.status === 0
+        ? Effect.void
+        : Effect.fail(fail(gitFailMsg(done, `git ${args[0]} failed`))),
+    ),
+  );
+
 /**
  * Makes the PR's head a local branch and returns its name. An existing local branch is used as it
  * is, never moved. A same-repo head tracks `<remote>/<head>`; a fork's head, or a repository with no
@@ -151,20 +163,14 @@ export const fetchPrHead = (
   Effect.gen(function* () {
     const branch = localPrBranch(head);
     if (yield* branchExists(repoTop, `refs/heads/${branch}`)) return branch;
-    const run = (args: ReadonlyArray<string>, network: boolean) =>
-      git(repoTop, args, network ? { tier: "network" } : {}).pipe(
-        Effect.mapError((e) => fail(e.message)),
-        Effect.flatMap((out) =>
-          out.status === 0
-            ? Effect.void
-            : Effect.fail(fail(gitFailMsg(out, `git ${args[0]} failed`))),
-        ),
-      );
+    const run = (args: ReadonlyArray<string>) => ran(args, git(repoTop, args));
+    const fetch = (args: ReadonlyArray<string>) =>
+      ran(args, remoteGit(repoTop, ["fetch", ...args], { tier: "network" }));
     const remote = yield* remoteFor(repoTop, head.repo);
     if (!head.fork && remote !== undefined && branch === head.headRefName) {
       const tracking = `refs/remotes/${remote}/${head.headRefName}`;
-      yield* run(["fetch", "--quiet", remote, `+refs/heads/${head.headRefName}:${tracking}`], true);
-      yield* run(["branch", "--track", branch, `${remote}/${head.headRefName}`], false);
+      yield* fetch(["--quiet", remote, `+refs/heads/${head.headRefName}:${tracking}`]);
+      yield* run(["branch", "--track", branch, `${remote}/${head.headRefName}`]);
       return branch;
     }
     const source = remote ?? prCloneUrl(head.url);
@@ -172,7 +178,7 @@ export const fetchPrHead = (
     // fetch can overwrite between the fetch and the branch.
     const ref = `refs/gram/pr-checkout/pr-${head.number}-${process.pid}-${Date.now()}`;
     yield* Effect.gen(function* () {
-      yield* run(["fetch", "--quiet", source, `+refs/pull/${head.number}/head:${ref}`], true);
+      yield* fetch(["--quiet", source, `+refs/pull/${head.number}/head:${ref}`]);
       const resolved = yield* git(repoTop, [
         "rev-parse",
         "--verify",
@@ -188,7 +194,7 @@ export const fetchPrHead = (
           fail(`PR #${head.number}'s head moved while it was fetched; try again`),
         );
       }
-      yield* run(["branch", branch, oid], false);
+      yield* run(["branch", branch, oid]);
     }).pipe(Effect.ensuring(Effect.ignore(git(repoTop, ["update-ref", "-d", ref]))));
     return branch;
   });

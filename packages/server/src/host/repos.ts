@@ -1,7 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
-import { git, Proc, type ProcShape, realPathSync, tryRealPathSync, WorktreeError } from "@gram/git";
+import {
+  git,
+  Proc,
+  type ProcShape,
+  realPathSync,
+  remoteGit,
+  tryRealPathSync,
+  WorktreeError,
+} from "@gram/git";
 import type { HostRepoIdentity } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { redactUrlCredentials } from "./remote-url.ts";
@@ -245,7 +253,7 @@ export const reposOn = (
             }
             // A fetch that fails leaves the clone as it was: a worker can still start from it.
             yield* on(
-              git(
+              remoteGit(
                 dest,
                 ["-c", "credential.interactive=false", "fetch", "--quiet", "--prune", "origin"],
                 {
@@ -261,7 +269,7 @@ export const reposOn = (
           const partial = `${dest}.cloning-${randomBytes(4).toString("hex")}`;
           const clone = Effect.gen(function* () {
             const cloned = yield* on(
-              git(
+              remoteGit(
                 dirname(dest),
                 ["-c", "credential.interactive=false", "clone", "--quiet", "--", url, partial],
                 { timeoutMs: CLONE_TIMEOUT_MS, env },

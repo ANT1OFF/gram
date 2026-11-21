@@ -56,6 +56,7 @@ import { importOf, isFunction, isTestFile, propertyName, REPO, soleExpression } 
 import { noRawEffect } from "./no-raw-effect.mjs";
 import { noComment } from "./no-comment.mjs";
 import { noRawGit } from "./no-raw-git.mjs";
+import { remoteGitOnly } from "./remote-git-only.mjs";
 import { noTimer } from "./no-timer.mjs";
 import { settingsEntry } from "./settings-entry.mjs";
 
@@ -499,6 +500,7 @@ export default {
       },
     },
     "no-raw-git": noRawGit,
+    "remote-git-only": remoteGitOnly,
     "settings-entry": settingsEntry,
     "no-adhoc-lock": {
       meta: {

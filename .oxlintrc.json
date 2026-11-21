@@ -45,6 +45,7 @@
       "files": ["packages/server/src/**", "packages/git/src/**"],
       "rules": {
         "gram/no-raw-path": "error",
+        "gram/remote-git-only": "error",
         "gram/no-day-math": "error",
         "gram/no-adhoc-lock": "error"
       }

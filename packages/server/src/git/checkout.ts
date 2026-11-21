@@ -24,6 +24,7 @@ import { folderExists, resolveFolder } from "../fs/folders.ts";
 import { originIdentityAt } from "../host/repos.ts";
 import { effectiveOriginsAt, recordedCloneIdentity } from "./recorded-clone.ts";
 import { answerCheckoutRepos } from "./checkout-repos.ts";
+import { guardStoreOrigins } from "./origin-guard.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { heldCheckoutPaths, usedCheckoutPaths } from "../runtime/create-in-checkout.ts";
 import { CheckoutService, THIS_MACHINE_FOLDER } from "../runtime/hooks.ts";
@@ -58,6 +59,7 @@ export const GitCheckoutLive = Layer.effect(
     const store = yield* ThreadStore;
     // Its branch lookups name the repository each folder Gram made is, never its live origin.
     yield* answerCheckoutRepos(store);
+    yield* guardStoreOrigins(store);
     const provide = Effect.provideService(Proc, proc);
 
     const currentBranch = (path: string) =>

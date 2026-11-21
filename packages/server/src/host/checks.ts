@@ -9,7 +9,7 @@
 // no run of that id and starts it again from the start.
 
 import { type HostCheckResult, HostFailed } from "@gram/contracts";
-import { git, type ProcOutput, type ProcShape, Proc } from "@gram/git";
+import { git, type ProcOutput, type ProcShape, remoteGit } from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -21,8 +21,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import * as nodePath from "node:path";
 import { pathToFileURL } from "node:url";
+import { isolatedGitOptions, ranOn } from "../git/isolated-git.ts";
 import {
-  isGitControl,
   type LocalCheckOutcome,
   type LocalCheckRun,
   readTail,
@@ -104,19 +104,7 @@ const isolatedGit =
     args: ReadonlyArray<string>,
     env?: Record<string, string>,
   ): Effect.Effect<ProcOutput | undefined> =>
-    git(cwd, args, {
-      omitEnv: isGitControl,
-      env: {
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_NO_REPLACE_OBJECTS: "1",
-        GIT_GRAFT_FILE: "/dev/null",
-        ...env,
-      },
-    }).pipe(
-      Effect.provideService(Proc, proc),
-      Effect.option,
-      Effect.map((out) => (out._tag === "Some" ? out.value : undefined)),
-    );
+    ranOn(proc)(git(cwd, args, isolatedGitOptions(env)));
 
 /**
  * The host's checks, kept in `dir`: one at a time on this machine, whichever control plane asks,
@@ -191,22 +179,35 @@ export const checksOn = (
           yield* g(own, ["init", "--quiet", "--bare", "--template=", own]);
         }
         yield* g(own, ["worktree", "prune"]);
+        const net = ranOn(proc);
         const take = (sha: string) =>
-          g(own, [
-            "-c",
-            "protocol.file.allow=always",
-            "fetch",
-            "--no-tags",
-            "--quiet",
-            pathToFileURL(source).href,
-            sha,
-          ]);
+          net(
+            remoteGit(
+              own,
+              [
+                "-c",
+                "protocol.file.allow=always",
+                "fetch",
+                "--no-tags",
+                "--quiet",
+                pathToFileURL(source).href,
+                sha,
+              ],
+              isolatedGitOptions(),
+            ),
+          );
         for (const sha of [request.head, request.base]) {
           if (yield* hasCommit(own, sha)) continue;
           yield* take(sha);
           if (yield* hasCommit(own, sha)) continue;
           // The clone may not have it yet: the base moved on its remote since it last fetched.
-          yield* g(source, ["fetch", "--no-tags", "--quiet", "origin", sha]);
+          yield* net(
+            remoteGit(
+              source,
+              ["fetch", "--no-tags", "--quiet", "origin", sha],
+              isolatedGitOptions(),
+            ),
+          );
           yield* take(sha);
           if (!(yield* hasCommit(own, sha)))
             return result(

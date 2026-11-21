@@ -8,6 +8,7 @@ import type { ProcError } from "./errors.ts";
 import { branchExists, git, gitFailMsg } from "./exec.ts";
 import { fromGitPath, mtimeMs } from "./paths.ts";
 import type { Proc } from "./proc.ts";
+import { remoteGit } from "./remote-git.ts";
 import { cachedOriginHead, cachedOriginTips } from "./repo-facts.ts";
 
 /** Default-branch candidates, in preference order. */
@@ -37,7 +38,7 @@ export const baseRef = (
         // A new worktree fetches its base with nobody at the keyboard: an orchestrator spawns
         // workers unattended, and with expired credentials Git for Windows would otherwise raise
         // the credential manager's window and hold the fetch until the network tier kills it.
-        const out = yield* git(
+        const out = yield* remoteGit(
           cwd,
           ["-c", "credential.interactive=false", "fetch", "--quiet", "origin", branch],
           { tier: "network" },
@@ -171,9 +172,9 @@ export const fetchOriginBranch = (
     const name = ref.startsWith("origin/") ? ref.slice("origin/".length) : "";
     if (name === "") return yield* new FetchFailed({ message: `${ref} is not an origin branch` });
     const before = yield* tipOf(repoTop, ref);
-    const out = yield* git(repoTop, ["fetch", "--quiet", "origin", name], { tier: "network" }).pipe(
-      Effect.mapError((e) => new FetchFailed({ message: e.message })),
-    );
+    const out = yield* remoteGit(repoTop, ["fetch", "--quiet", "origin", name], {
+      tier: "network",
+    }).pipe(Effect.mapError((e) => new FetchFailed({ message: e.message })));
     if (out.status !== 0) {
       return yield* new FetchFailed({ message: gitFailMsg(out, "git fetch failed") });
     }

@@ -4,6 +4,7 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { git, gitFailMsg } from "./exec.ts";
+import { remoteGit } from "./remote-git.ts";
 import type { Proc } from "./proc.ts";
 
 /** Pushing was refused or failed. */
@@ -81,11 +82,13 @@ export const pushCurrentBranch = (cwd: string): Effect.Effect<Pushed, PushFailed
       }
     }
 
-    const args = hasUpstream ? ["push", "--quiet"] : ["push", "--quiet", "-u", "origin", branch];
-    const out = yield* git(cwd, ["-c", "credential.interactive=false", ...args], {
-      tier: "network",
-      timeoutMs: PUSH_TIMEOUT_MS,
-    }).pipe(Effect.mapError(toPushFailed));
+    const out = yield* remoteGit(
+      cwd,
+      hasUpstream
+        ? ["-c", "credential.interactive=false", "push", "--quiet"]
+        : ["-c", "credential.interactive=false", "push", "--quiet", "-u", "origin", branch],
+      { tier: "network", timeoutMs: PUSH_TIMEOUT_MS },
+    ).pipe(Effect.mapError(toPushFailed));
     if (out.status !== 0) {
       return yield* new PushFailed({ message: gitFailMsg(out, "git push failed") });
     }

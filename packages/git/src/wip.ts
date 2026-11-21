@@ -24,11 +24,13 @@ import { devNull } from "node:os";
 import * as Effect from "effect/Effect";
 import { headOid, readRef, repoTopOrFail, run } from "./checkpoint-git.ts";
 import { IDENTITY_ENV, isValidCheckpointId, writeWorktreeTree } from "./checkpoints.ts";
-import { CheckpointError } from "./errors.ts";
+import { CheckpointError, type ProcError } from "./errors.ts";
 import { git, gitFailMsg, STRICT_STATUS_ARGS } from "./exec.ts";
 import { samePath } from "./paths.ts";
 import { MAX_DIFF_READ_BYTES, parseGitDiffCapped, type DiffFile, withinViewCap } from "./diff.ts";
+import type { Proc } from "./proc.ts";
 import { localBaseRef } from "./refs.ts";
+import { remoteGit } from "./remote-git.ts";
 
 export const WIP_REF_PREFIX = "refs/gram/wip";
 
@@ -246,20 +248,22 @@ export const pushWip = (
     const top = yield* repoTopOrFail(repo);
     const push = (lease: string | undefined) =>
       networkGit(
-        top,
-        [
-          "push",
-          "--no-verify",
-          "--no-follow-tags",
-          "--no-signed",
-          "--recurse-submodules=no",
-          // Never `--force`, which would override the lease.
-          `--force-with-lease=${snapshot.ref}:${lease ?? ""}`,
-          "--",
-          remote,
-          `${snapshot.commit}:${snapshot.ref}`,
-        ],
-        protocols,
+        remoteGit(
+          top,
+          [
+            "push",
+            "--no-verify",
+            "--no-follow-tags",
+            "--no-signed",
+            "--recurse-submodules=no",
+            // Never `--force`, which would override the lease.
+            `--force-with-lease=${snapshot.ref}:${lease ?? ""}`,
+            "--",
+            remote,
+            `${snapshot.commit}:${snapshot.ref}`,
+          ],
+          network(protocols),
+        ),
       );
     let out = yield* push(snapshot.lease);
     if (out.status !== 0 && /\(stale info\)/.test(`${out.stdout}\n${out.stderr}`)) {
@@ -293,15 +297,15 @@ const network = (protocols: string) => ({
   env: { GIT_TERMINAL_PROMPT: "0", GIT_ALLOW_PROTOCOL: protocols },
 });
 
-const networkGit = (top: string, args: ReadonlyArray<string>, protocols: string) =>
-  git(top, args, network(protocols)).pipe(
-    Effect.mapError((e) => new CheckpointError({ message: e.message })),
-  );
+const networkGit = <A>(out: Effect.Effect<A, ProcError, Proc>) =>
+  out.pipe(Effect.mapError((e) => new CheckpointError({ message: e.message })));
 
 /** The commit `remote` has under `ref`, a full ref name; `undefined` when it has none. */
 const remoteRef = (top: string, remote: string, ref: string, protocols: string) =>
   Effect.gen(function* () {
-    const out = yield* networkGit(top, ["ls-remote", "--", remote, ref], protocols);
+    const out = yield* networkGit(
+      remoteGit(top, ["ls-remote", "--", remote, ref], network(protocols)),
+    );
     if (out.status !== 0) return yield* fail(gitFailMsg(out, "git ls-remote failed"));
     for (const line of out.stdout.split("\n")) {
       const [oid, name] = line.trim().split(/\s+/);
@@ -347,19 +351,21 @@ export const fetchWip = (
     const unexpected = `${ref} at the remote isn't the commit the stop kept, so nothing of it was put back`;
     if (expected !== undefined && theirs !== expected) return yield* fail(unexpected);
     const fetched = yield* networkGit(
-      top,
-      [
-        ...QUIET,
-        "fetch",
-        "--quiet",
-        "--no-tags",
-        "--recurse-submodules=no",
-        "--no-write-fetch-head",
-        "--",
-        remote,
-        `+${ref}:${ref}`,
-      ],
-      protocols,
+      remoteGit(
+        top,
+        [
+          ...QUIET,
+          "fetch",
+          "--quiet",
+          "--no-tags",
+          "--recurse-submodules=no",
+          "--no-write-fetch-head",
+          "--",
+          remote,
+          `+${ref}:${ref}`,
+        ],
+        network(protocols),
+      ),
     );
     if (fetched.status !== 0) return yield* fail(gitFailMsg(fetched, "git fetch failed"));
     const kept = yield* readRef(top, ref);
@@ -426,19 +432,21 @@ export const fetchBranchTip = (
     if (expected !== undefined && tip !== expected)
       return yield* fail(`${ref} at the remote is not the commit that was kept`);
     const fetched = yield* networkGit(
-      top,
-      [
-        ...QUIET,
-        "fetch",
-        "--quiet",
-        "--no-tags",
-        "--recurse-submodules=no",
-        "--no-write-fetch-head",
-        "--",
-        remote,
-        ref,
-      ],
-      protocols,
+      remoteGit(
+        top,
+        [
+          ...QUIET,
+          "fetch",
+          "--quiet",
+          "--no-tags",
+          "--recurse-submodules=no",
+          "--no-write-fetch-head",
+          "--",
+          remote,
+          ref,
+        ],
+        network(protocols),
+      ),
     );
     if (fetched.status !== 0) return yield* fail(gitFailMsg(fetched, "git fetch failed"));
     // The branch may have moved between the look and the fetch: the tip seen must have arrived.
@@ -831,20 +839,22 @@ export const dropWip = (
         (yield* isAncestor(top, theirs, held.by));
       if (safe) {
         const out = yield* networkGit(
-          top,
-          [
-            "push",
-            "--no-verify",
-            "--no-follow-tags",
-            "--no-signed",
-            "--recurse-submodules=no",
-            // Only the commit just looked at: one written since is somebody's work.
-            `--force-with-lease=${ref}:${theirs}`,
-            "--",
-            remote,
-            `:${ref}`,
-          ],
-          protocols,
+          remoteGit(
+            top,
+            [
+              "push",
+              "--no-verify",
+              "--no-follow-tags",
+              "--no-signed",
+              "--recurse-submodules=no",
+              // Only the commit just looked at: one written since is somebody's work.
+              `--force-with-lease=${ref}:${theirs}`,
+              "--",
+              remote,
+              `:${ref}`,
+            ],
+            network(protocols),
+          ),
         );
         if (out.status !== 0) return yield* fail(gitFailMsg(out, "git push failed"));
         dropped = "dropped";

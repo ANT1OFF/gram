@@ -12,7 +12,16 @@ import {
   type Project,
   type RepoRemote,
 } from "@gram/contracts";
-import { gh, ghApi, git, splitGhInclude, TIER_MILLIS, type Proc, type ProcOutput } from "@gram/git";
+import {
+  gh,
+  ghApi,
+  git,
+  remoteGit,
+  splitGhInclude,
+  TIER_MILLIS,
+  type Proc,
+  type ProcOutput,
+} from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -98,7 +107,7 @@ const cloneCommand = (remote: RepoRemote, into: string, cwd: string) =>
       gh(cwd, ["repo", "clone", `${remote.owner}/${remote.repo}`, into], {
         timeoutMs: TIER_MILLIS.slow,
       })
-    : git(cwd, ["clone", "--", remote.url, into], {
+    : remoteGit(cwd, ["clone", "--", remote.url, into], {
         tier: "slow",
         // The URL was parsed as https or ssh; this keeps git itself to those two for anything it
         // fetches on the way, so no `ext::` or `file://` transport can be reached through it.

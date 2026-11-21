@@ -10,12 +10,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import type { ProcError } from "./errors.ts";
-import { git } from "./exec.ts";
 import { carryRebaseTier, fetchRedundant, localGitState, withPr } from "./git-state.ts";
 import { originOwnerRepo, Pr, prLookupReason } from "./pr.ts";
 import { samePathKey } from "./paths.ts";
 import { Proc } from "./proc.ts";
 import { localBaseRef, originTips } from "./refs.ts";
+import { remoteGit } from "./remote-git.ts";
 import { cachedRepoRoots } from "./repo-facts.ts";
 import { watchGitState, type GitStateChange, type WatchOptions } from "./watch.ts";
 import { workElsewhere } from "./work-elsewhere.ts";
@@ -127,9 +127,13 @@ const maybeFetch = (
     if (!fetchDue(lastFetch, roots.common, Date.now(), FETCH_THROTTLE_MS)) return false;
     const base = pr?.baseRef ?? (yield* localBaseRef(cwd))?.replace(/^origin\//, "");
     const refs = base === undefined || base === branch ? [branch] : [branch, base];
-    yield* git(cwd, ["-c", "credential.interactive=false", "fetch", "--quiet", "origin", ...refs], {
-      tier: "network",
-    });
+    yield* remoteGit(
+      cwd,
+      ["-c", "credential.interactive=false", "fetch", "--quiet", "origin", ...refs],
+      {
+        tier: "network",
+      },
+    );
     return true;
   }).pipe(Effect.orElseSucceed(() => false));
 
