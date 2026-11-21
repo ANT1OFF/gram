@@ -79,6 +79,12 @@ export const mergedDelta = (
 };
 
 /** The transcript writer `ThreadRuntimes` streams every thread's messages through. */
+/** A reply let go of in its turn, never to go on again. */
+const closeIn = (rt: Runtime, messageId: MessageId) => {
+  if (rt.turn === undefined) return;
+  (rt.turn.closed ??= new Set()).add(messageId);
+};
+
 export const makeFeedWriter = ({
   store,
   hub,
@@ -229,12 +235,6 @@ export const makeFeedWriter = ({
   };
 
   /** Called with the feed lock held. */
-  /** A reply let go of in its turn, never to go on again. */
-  const closeIn = (rt: Runtime, messageId: MessageId) => {
-    if (rt.turn === undefined) return;
-    (rt.turn.closed ??= new Set()).add(messageId);
-  };
-
   /**
    * Whether a stored message no reply has open may go on: only the current turn's latest top-level
    * reply, unfinished and not let go of. Every other (a person's message, a notice, an app's data
