@@ -14,6 +14,7 @@ import { frontedIdentityFrom, type FrontedIdentityConfig } from "./http/fronted-
 import { remoteOrigin } from "./http/remote-access.ts";
 import { type ProvisionedHostsConfig, provisionedHostsFrom } from "./host/provisioned.ts";
 import { defaultDataDir } from "./logging/data-dir.ts";
+import { secretPathsFrom } from "./fs/secret-paths.ts";
 
 /** An endpoint outside the server that an embedding deployment points it at. */
 export interface EndpointConfig {
@@ -172,6 +173,11 @@ export interface ServerConfigShape {
    * (`GRAM_EVENT_SINK_MESSAGES=1`). Nothing without `eventSink`.
    */
   readonly eventSinkMessages?: boolean;
+  /**
+   * Where the deployment keeps its secrets (`fs/secret-paths.ts`): files and folders no preview or
+   * file read opens, whatever a thread's messages say. Absent, none beyond `isCredentialPath`.
+   */
+  readonly secretPaths?: ReadonlyArray<string>;
 }
 
 /**
@@ -223,6 +229,8 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     // Read once, here; no child process inherits them from the server's own environment.
     if (env === process.env) scrubEmbedSecrets(env);
     const provisionedHosts = provisionedHostsFrom(env);
+    const dataDir = defaultDataDir(env);
+    const secretPaths = secretPathsFrom(env, dataDir);
     // Throws on a partial or malformed configuration: such a server must not start.
     const frontedIdentity = frontedIdentityFrom(env);
     const decisionHook = endpointSetting(
@@ -244,7 +252,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     // inherit them, and an agent holding a hook's or a sink's token could answer or record as Gram.
     if (env === process.env) for (const name of ENDPOINT_TOKEN_VARIABLES) delete env[name];
     return {
-      dataDir: defaultDataDir(env),
+      dataDir,
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
         ? { remoteOrigin: remoteOrigin(env["GRAM_REMOTE_ORIGIN"])! }
         : {}),
@@ -277,6 +285,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       ...(githubRoute === undefined ? {} : { githubRoute }),
       ...(eventSink === undefined ? {} : { eventSink }),
       ...(env["GRAM_EVENT_SINK_MESSAGES"] === "1" ? { eventSinkMessages: true } : {}),
+      ...(secretPaths.length === 0 ? {} : { secretPaths }),
     };
   };
 }

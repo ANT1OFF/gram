@@ -75,6 +75,7 @@ import type { LedgerWatch } from "./ledger-watch.ts";
 import { admitMachineCodex, admitMachineGrok, admitMachineOpenCode } from "./machine-admission.ts";
 import type { Projects } from "./projects.ts";
 import type { HeldSpawns } from "./held-spawns.ts";
+import { spawnRecheckRefusal } from "./spawn-recheck.ts";
 import { type HomeWorker, readHomeProfile } from "../../thread-profiles/home.ts";
 import { makeOwnFolder } from "../../thread-profiles/own-folder.ts";
 import { makeThreadId } from "../../runtime/runtime-state.ts";
@@ -496,6 +497,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       return !budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok;
     }).pipe(Effect.catchCause(() => Effect.succeed(true)));
 
+  /** The live workers a spawn's card counted as it asked for one past the cap, by its input. */
+  const cardCounts = new WeakMap<SpawnWorkerInput, number>();
+
   const describeSpawn: OrchestrationShape["describeSpawn"] = (callerId, input) =>
     Effect.gen(function* () {
       const authority = yield* authorityOf(callerId);
@@ -516,9 +520,10 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         return `Add ${outside.map(repoLabel).join(" and ")} to the "${state.workspace.name}" workspace, and spawn a worker there for ${input.feature}: ${input.title}`;
       }
       const { budget } = yield* survey(state, false);
-      return !budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok
-        ? `${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}. Allow one more, in ${repos} for ${input.feature}: ${input.title}`
-        : plain;
+      if (budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok)
+        return plain;
+      cardCounts.set(input, budget.liveWorkers);
+      return `${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}. Allow one more, in ${repos} for ${input.feature}: ${input.title}`;
     }).pipe(
       Effect.catchCause(() =>
         Effect.succeed(`Spawn a worker in ${input.project} for ${input.feature}`),
@@ -824,33 +829,22 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ),
             );
           }
-          if (input.unattended === true) {
+          if (input.carded !== undefined || input.unattended === true || input.uncarded === true) {
             // Under the spawn lock, so a spawn racing this one is counted: what would need the
             // user's card is refused here, never asked, and never let through on a stale count.
-            const outside = yield* outsideWorkspace(
-              tool,
-              [input.project, ...(input.alsoIn ?? [])],
-              state,
-            );
-            if (outside.length > 0) {
-              return yield* toolError(
-                tool,
-                refusal(
-                  "unattended",
-                  `It needs your approval to add ${outside.map(repoLabel).join(" and ")} to the "${state.workspace.name}" workspace, so no worker started.`,
-                ),
-              );
-            }
+            const outside =
+              input.carded === undefined
+                ? yield* outsideWorkspace(tool, [input.project, ...(input.alsoIn ?? [])], state)
+                : [];
             const { budget } = yield* survey(state, false);
-            if (!budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok) {
-              return yield* toolError(
-                tool,
-                refusal(
-                  "unattended_cap",
-                  `It needs your approval: ${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}, so no worker started.`,
-                ),
-              );
-            }
+            const refused = spawnRecheckRefusal(input, {
+              liveWorkers: budget.liveWorkers,
+              maxConcurrentWorkers: budget.maxConcurrentWorkers,
+              fits: budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok,
+              outside: outside.map(repoLabel).join(" and "),
+              workspaceName: state.workspace.name,
+            });
+            if (refused !== undefined) return yield* toolError(tool, refused);
           }
           const project = yield* resolveProject(tool, input.project, state, call);
           const others: Array<Project> = [];
@@ -1282,18 +1276,26 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       })
       .pipe(Effect.ignore);
 
-  const spawnWorker: OrchestrationShape["spawnWorker"] = (callerId, named) =>
+  const spawnWorker: OrchestrationShape["spawnWorker"] = (callerId, given, carded) => {
+    const named: SpawnWorkerInput =
+      carded === false
+        ? { ...given, uncarded: true }
+        : carded === true
+          ? { ...given, carded: cardCounts.get(given) ?? -1 }
+          : given;
     // The machine is checked first, and a held brief keeps its id: a name that is wrong now is
     // refused now, not when the brief is released hours later.
-    (named.machine === undefined
-      ? Effect.succeed(named)
-      : machineNamed("spawn_worker", named.machine).pipe(
-          Effect.map((id) => {
-            const { machine: _machine, ...rest } = named;
-            return id === undefined ? rest : { ...rest, machine: id };
-          }),
-        )
+    return (
+      named.machine === undefined
+        ? Effect.succeed(named)
+        : machineNamed("spawn_worker", named.machine).pipe(
+            Effect.map((id) => {
+              const { machine: _machine, ...rest } = named;
+              return id === undefined ? rest : { ...rest, machine: id };
+            }),
+          )
     ).pipe(Effect.flatMap((input) => spawnGated(callerId, input)));
+  };
 
   const spawnGated: OrchestrationShape["spawnWorker"] = (callerId, input) =>
     pausedSpawnGate(callerId, input).pipe(
