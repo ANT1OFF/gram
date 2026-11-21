@@ -34,7 +34,14 @@ import { type CallerPrMemo, makePrMemo, type PrMemo, THREADS_MAX_AGE_MS } from "
 import { Proc } from "./proc.ts";
 import { detectRateLimit, type RateLimitSignal } from "./rate-limit.ts";
 import { originTips } from "./refs.ts";
-import { cachedCheckoutHead, cachedOriginUrl, type CheckoutHead } from "./repo-facts.ts";
+import {
+  CheckoutRepos,
+  originOwnerRepo,
+  parseOwnerRepo,
+  resolveRepoNwo,
+  withCheckoutRepos,
+} from "./checkout-repos.ts";
+import { cachedCheckoutHead, type CheckoutHead } from "./repo-facts.ts";
 import {
   buildReviewState,
   personCommentsFromOf,
@@ -1109,39 +1116,7 @@ const sharedPrResolver = (proc: Proc["Service"]): RequestResolver.RequestResolve
 // ---------------------------------------------------------------------------------------------
 // Inputs
 
-/** `owner/repo` from a remote URL (scp-style, https, ssh); `undefined` when not shaped like one. */
-export const parseOwnerRepo = (url: string): string | undefined => {
-  const match =
-    /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@/]+@)?[^/:]+[:/](?:\d+\/)?([^/]+)\/([^/]+?)(?:\.git)?\/?$/i.exec(
-      url.trim(),
-    );
-  return match ? `${match[1]}/${match[2]}` : undefined;
-};
-
-/** `owner/repo` of the checkout's `origin`, kept while the repo's config is unchanged. */
-export const originOwnerRepo = (cwd: string): Effect.Effect<string | undefined, never, Proc> =>
-  cachedOriginUrl(cwd).pipe(
-    Effect.map((url) => (url === undefined ? undefined : parseOwnerRepo(url))),
-    Effect.orElseSucceed(() => undefined),
-  );
-
-/**
- * The repo for `--repo`, preferring the local origin URL over `gh repo view`: instant, and right on a
- * fork, where gh's default repo can be the upstream.
- */
-const resolveRepoNwo = (workTree: string) =>
-  Effect.gen(function* () {
-    const origin = yield* originOwnerRepo(workTree);
-    if (origin !== undefined) return origin;
-    const out = yield* gh(
-      workTree,
-      ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-      { timeoutMs: 8_000 },
-    ).pipe(Effect.option);
-    return Option.isSome(out) && out.value.status === 0
-      ? out.value.stdout.trim() || undefined
-      : undefined;
-  });
+export { originOwnerRepo, parseOwnerRepo };
 
 /**
  * The checkout's toplevel, HEAD, upstream tip, branch and upstream name, as one `rev-parse` prints
@@ -1204,7 +1179,7 @@ export const resolvePrInputs = (
         : ((yield* originTips(workTree, [branch]).pipe(
             Effect.orElseSucceed(() => new Map<string, string>()),
           )).get(branch) ?? "");
-    const repo = yield* resolveRepoNwo(workTree);
+    const repo = yield* resolveRepoNwo(cwd, workTree);
     if (repo === undefined) return undefined;
     return { workTree, branch, localTip, remoteTip: tip, repo } satisfies PrInputs;
   }).pipe(Effect.mapError((e) => new PrLookupError({ message: e.message })));
@@ -1372,7 +1347,9 @@ export const PrLive = Layer.effect(
     const ttlMs = yield* PrBadgeTtlMs;
     const memo = makePrMemo();
     const resolver = makePrResolver(proc, reviewBots.get, memo);
-    const provide = Effect.provideService(Proc, proc);
+    const repos = yield* Effect.serviceOption(CheckoutRepos);
+    const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      withCheckoutRepos(repos, Effect.provideService(effect, Proc, proc));
 
     // Keyed on the tips the badge is anchored against, so a commit, push or fetch is a new entry
     // and can never be answered from the one before it.
@@ -1543,7 +1520,8 @@ export const PrLive = Layer.effect(
           }
           const workTree = yield* repoTop(cwd);
           const repo =
-            explicitRepo ?? (workTree === undefined ? undefined : yield* resolveRepoNwo(workTree));
+            explicitRepo ??
+            (workTree === undefined ? undefined : yield* resolveRepoNwo(cwd, workTree));
           if (workTree === undefined || repo === undefined)
             return { available: true } satisfies PrDetailResponse;
           const view = yield* attempt(
@@ -1615,7 +1593,9 @@ export const PrLive = Layer.effect(
           )) ?? cwd;
         const repo =
           explicitRepo ??
-          (yield* provide(resolveRepoNwo(workTree)).pipe(Effect.orElseSucceed(() => undefined)));
+          (yield* provide(resolveRepoNwo(cwd, workTree)).pipe(
+            Effect.orElseSucceed(() => undefined),
+          ));
         if (repo === undefined || !OWNER_REPO.test(repo)) {
           return yield* new PrLookupError({ message: "no GitHub repo for this checkout" });
         }

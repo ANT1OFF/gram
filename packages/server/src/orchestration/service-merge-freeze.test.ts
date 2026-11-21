@@ -294,6 +294,16 @@ describe.skipIf(!hasGit)("merge freezes", () => {
             expect(elsewhere.message).toContain(
               "someone/else isn't the repo of any of your workspace's projects",
             );
+            // Nor once the project's folder names it as its origin: the workspace's repos are the
+            // origins its projects were added with.
+            world.originRepos.set(world.repo, "someone/else");
+            const rewritten = yield* release.session
+              .callTool("merge_freeze", { repo: "someone/else", reason: "x" })
+              .pipe(Effect.flip);
+            expect(rewritten.message).toContain(
+              "someone/else isn't the repo of any of your workspace's projects",
+            );
+            world.originRepos.set(world.repo, "acme/app");
 
             // Frozen for the release PR, #12: Gram's own PR #13 has its auto-merge taken down,
             // #40 is left as it is.

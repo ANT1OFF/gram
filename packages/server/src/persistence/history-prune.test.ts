@@ -13,8 +13,8 @@ import {
   pruneHistory,
   SETTINGS_AUDIT_KEPT_MS,
   SETTINGS_AUDIT_KEPT_ROWS,
-  ThreadStore,
-} from "./thread-store.ts";
+} from "./history-prune.ts";
+import { ThreadStore } from "./thread-store.ts";
 
 const NOW = Date.UTC(2026, 9, 24, 12);
 

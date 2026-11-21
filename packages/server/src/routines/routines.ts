@@ -127,7 +127,7 @@ import { withBriefFooter } from "../orchestration/user-words.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import type { Handlers } from "../rpc/handlers/common.ts";
 import { localZone } from "../zone-time.ts";
-import { type EventLook, pollEveryOf, RoutineEventSources } from "./events.ts";
+import { type EventLook, lookContextOf, pollEveryOf, RoutineEventSources } from "./events.ts";
 import { nextRunAfter, runStamp } from "./schedule.ts";
 
 /** How long after the server starts a run it missed while Gram was closed runs. */
@@ -1111,14 +1111,8 @@ export const RoutinesLive = Layer.effect(
         ) {
           return undefined;
         }
-        const project = stored.project ?? state.workspace.homeProjectId;
-        const projectRoot = state.workspace.projectIds.includes(project)
-          ? (yield* store.listProjects).find((each) => each.id === project)?.root
-          : undefined;
-        const look = yield* sources.look(stored.on, {
-          projectRoot,
-          baseline: stored.trigger?.baseline,
-        });
+        const context = lookContextOf(state.workspace, stored, yield* store.listProjects);
+        const look = yield* sources.look(stored.on, context);
         return {
           whenKey: scheduleKeyOf(stored),
           generation: stored.charterGeneration,

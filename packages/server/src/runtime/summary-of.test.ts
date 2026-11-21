@@ -12,7 +12,9 @@ describe("ThreadRuntimes.summaryOf", () => {
         runtimes.create({ projectRoot: path, checkout: { kind: "main", path } });
       const warm = yield* open("/work/one");
       const other = yield* open("/work/two");
-      yield* waitFor("idle", runtimes.status(warm.id).pipe(Effect.map((s) => s === "idle")));
+      for (const id of [warm.id, other.id]) {
+        yield* waitFor("idle", runtimes.status(id).pipe(Effect.map((s) => s === "idle")));
+      }
 
       const snapshot = yield* runtimes.snapshot;
       for (const id of [warm.id, other.id]) {

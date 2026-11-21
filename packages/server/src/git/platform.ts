@@ -9,6 +9,7 @@ import {
   PR_POLL_TTL_MS,
   PrBadgeTtlMs,
   PrLive,
+  CheckoutRepos,
   ProcNonBlockingLive,
   ReviewBots,
   ToolsLive,
@@ -161,7 +162,8 @@ export type GitPlatform =
   | GhQuota
   | OpenPrs
   | PrReviews
-  | PrActions;
+  | PrActions
+  | CheckoutRepos;
 
 const platform = (
   pr: Layer.Layer<Pr, never, Proc | Tools | ReviewBots>,
@@ -187,9 +189,12 @@ const platform = (
     Layer.provideMerge(pr),
     Layer.provideMerge(tools),
     Layer.provideMerge(
-      Layer.mergeAll(monitoredProc(proc), PathProbeNonBlockingLive, ReviewBots.layer).pipe(
-        Layer.provideMerge(Layer.mergeAll(RateLimitMonitor.layer, GhBudget.layer)),
-      ),
+      Layer.mergeAll(
+        monitoredProc(proc),
+        PathProbeNonBlockingLive,
+        ReviewBots.layer,
+        CheckoutRepos.layer,
+      ).pipe(Layer.provideMerge(Layer.mergeAll(RateLimitMonitor.layer, GhBudget.layer))),
     ),
   );
 

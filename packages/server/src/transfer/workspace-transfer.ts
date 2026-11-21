@@ -46,7 +46,7 @@ import {
   type WorkspaceState,
   WORKSPACE_BUNDLE_FORMAT,
 } from "@gram/contracts";
-import { cachedOriginUrl, Proc, projectRootKey } from "@gram/git";
+import { Proc, projectRootKey } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -64,6 +64,7 @@ import { Orchestration } from "../orchestration/service.ts";
 import { refuseConnectorEntries } from "../orchestration/service/kit.ts";
 import { migrations } from "../persistence/migrations.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { recordedOriginUrl, shareableRemote } from "./recorded-remote.ts";
 import { makeClosedReopener } from "../rpc/handlers/closed-threads.ts";
 import type { CheckoutService } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -113,29 +114,7 @@ export const scrubbed = <A>(value: A, tools = false): A => {
   return value;
 };
 
-/**
- * A repository's `origin` as it may be said to another server: a network address, with no
- * password, no token standing in for a user, no query and no fragment; `undefined` for anything
- * else, such as a path on this machine.
- */
-export const shareableRemote = (url: string): string | undefined => {
-  const text = url.trim();
-  // `git@host:owner/repo.git`, which names an account and no secret. Any other user may be one.
-  if (/^git@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+$/.test(text)) return redactText(text);
-  let parsed: URL;
-  try {
-    parsed = new URL(text);
-  } catch {
-    return undefined;
-  }
-  if (!["https:", "http:", "ssh:", "git:"].includes(parsed.protocol)) return undefined;
-  // A user is a token as often as a name; only ssh's own `git` account is kept.
-  if (parsed.protocol !== "ssh:" || parsed.username !== "git") parsed.username = "";
-  parsed.password = "";
-  parsed.search = "";
-  parsed.hash = "";
-  return redactText(parsed.toString());
-};
+export { shareableRemote };
 
 /**
  * An orchestrator's record as it may leave one machine and be taken in by another: what names it
@@ -325,10 +304,11 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
         if (!embeddingOn(yield* store.getSettings)) return yield* refuse(TRANSFER_OFF);
       });
 
+      /** As a thread's move names it: by its project's recorded origin (`recordedOriginUrl`). */
       const remoteOf = (root: string) =>
         proc === undefined
           ? Effect.succeed(undefined)
-          : cachedOriginUrl(root).pipe(
+          : recordedOriginUrl(store, root).pipe(
               Effect.provideService(Proc, proc),
               Effect.map((url) => (url === undefined ? undefined : shareableRemote(url))),
               Effect.orElseSucceed(() => undefined),
