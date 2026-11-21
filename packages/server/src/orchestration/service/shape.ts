@@ -1,5 +1,6 @@
 // The orchestration service's public contract: `OrchestrationShape` and the inputs and results of its
 // tools. `service.ts` re-exports all of it, so importers keep importing from there.
+import { type MemoryQuestionsShape } from "./memory-questions.ts";
 import {
   type AppToolError,
   type InvalidState,
@@ -673,6 +674,8 @@ export interface OrchestrationShape {
    * workspace has no orchestrator open right now, or another thread holds the workspace.
    */
   memoryClosedReason(threadId: ThreadId): Effect.Effect<string>;
+  /** The orchestrator's questions, kept in the store and written out to `questions.md`. */
+  readonly memoryQuestions: MemoryQuestionsShape;
   /** The delegation rule for one call; reads only, since a gate may ask twice. */
   isDelegated(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /**

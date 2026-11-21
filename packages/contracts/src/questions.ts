@@ -1,9 +1,3 @@
-// An orchestrator's questions for the user: the entries of its
-// memory's `questions.md`, read out of whatever an agent, a dream or a person wrote there, and the
-// edits `ask_user`, `close_question` and an answer from the UI make to it. The file is the store:
-// the server writes it back in one canonical shape, which this module also reads, so the web app
-// and the server share one parser. A leaf: it imports only `ids.ts` and `mock-visuals.ts`.
-
 import * as Schema from "effect/Schema";
 import { WorkspaceId } from "./ids.ts";
 import {
@@ -973,10 +967,12 @@ export const findQuestion = (
   content: string | undefined,
   input: { readonly questionId?: string | undefined; readonly question: string },
 ): (MemoryQuestion & { readonly id: string }) | undefined => {
-  const file = parseFile(content ?? "");
-  const drafts = withIds(file.entries);
+  const drafts = withIds(parseFile(content ?? "").entries);
   return drafts[find(drafts, input.questionId, input.question)]?.question;
 };
+
+/** What the server's store of the questions is read and written with (`questions-doc.ts`). */
+export const questionsFileParts = { parse: parseFile, withIds, render, nextId };
 
 /** The answer as the file keeps it: on one line, clipped. */
 export const keptAnswer = (answer: string): string => clip(oneLine(answer), QUESTION_ANSWER_KEPT);

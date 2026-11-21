@@ -45,6 +45,7 @@ import {
   workerModel,
 } from "./service/kit.ts";
 import { makeWorkerQuestions } from "./service/questions.ts";
+import { makeMemoryQuestions } from "./service/memory-questions.ts";
 import { makeLedgerWatch } from "./service/ledger-watch.ts";
 import { makeHandoff } from "./service/handoff.ts";
 import { moveKindOf } from "../runtime/agent-switch.ts";
@@ -866,9 +867,7 @@ export const OrchestrationLive = Layer.effect(
       retrySwitch,
       checkModelChange,
       userChoseMode: (threadId) =>
-        Effect.sync(() => {
-          kit.openedInAuto.delete(threadId);
-        }),
+        Effect.asVoid(Effect.sync(() => kit.openedInAuto.delete(threadId))),
       reopen,
       orchestratorOpening: (charter) =>
         openModel(charter).pipe(
@@ -950,6 +949,7 @@ export const OrchestrationLive = Layer.effect(
       addNote,
       noteQuietly,
       withHeldReleases: (workspaceId, effect) => kit.heldLock.withLock(workspaceId, effect),
+      memoryQuestions: yield* makeMemoryQuestions(kit),
     });
   }),
 );
