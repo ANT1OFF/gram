@@ -37,7 +37,7 @@ const thread = (id: string, path: string, status: ThreadSummary["status"] = "idl
 afterEach(() => vi.unstubAllGlobals());
 
 const setUp = () => {
-  const setWebRtc = vi.fn(async () => true);
+  const setWebRtc = vi.fn(async (_threadId: string, _allowed: boolean) => true);
   vi.stubGlobal("window", { gram: { preview: { setWebRtc } } });
   const store = createStore<ThreadsState>()((set, get) => createThreadsSlice(set, get));
   const status = (threadId: string, next: ThreadSummary["status"]) =>

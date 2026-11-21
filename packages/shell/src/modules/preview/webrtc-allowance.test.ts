@@ -1,5 +1,8 @@
 import { EventEmitter } from "node:events";
+import type { IpcMainInvokeEvent } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { ShellIpc } from "../ipc.ts";
 
 // The preview module over fake Electron: pages are event emitters that record what they load, and
 // sessions record their partition and whether their storage was cleared.
@@ -38,8 +41,10 @@ class FakeContents extends EventEmitter {
   destroyed = false;
   readonly loads: string[] = [];
   readonly navigationHistory = { canGoBack: () => false, canGoForward: () => false };
-  constructor(readonly session: FakeSession) {
+  readonly session: FakeSession;
+  constructor(session: FakeSession) {
     super();
+    this.session = session;
   }
   isDestroyed = () => this.destroyed;
   getURL = () => this.url;
@@ -104,14 +109,14 @@ const APP = "http://127.0.0.1:4317";
 const FILES = "http://127.0.0.1:40123";
 
 const setUp = () => {
-  const handlers = new Map<string, (arg: unknown, event: unknown) => unknown>();
-  const ipc = {
+  const handlers = new Map<string, Parameters<ShellIpc["handle"]>[1]>();
+  const ipc: ShellIpc = {
     on: () => undefined,
-    handle: (channel: string, handler: (arg: unknown, event: unknown) => unknown) =>
-      void handlers.set(channel, handler),
+    handle: (channel, handler) => void handlers.set(channel, handler),
   };
   const sender = { send: () => {}, isDestroyed: () => false, getZoomFactor: () => 1 };
-  const invoke = (channel: string, arg: object) => handlers.get(channel)!(arg, { sender });
+  const invoke = (channel: string, arg: object) =>
+    handlers.get(channel)!(arg, { sender } as unknown as IpcMainInvokeEvent);
   const drivers = new Map<string, "agent" | "user">();
   const links: string[] = [];
   const host = installPreview(ipc, {
