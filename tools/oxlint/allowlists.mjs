@@ -500,7 +500,6 @@ export const MAX_LINES = {
     "packages/server/src/babysit/service.test.ts": 1874,
     "packages/server/src/babysit/service.ts": 986,
     "packages/server/src/browser/tools.ts": 978,
-    "packages/server/src/embedding/acceptance.test.ts": 1233,
     "packages/server/src/embedding/event-sink.ts": 1019,
     "packages/server/src/git/local-checks.test.ts": 1762,
     "packages/server/src/git/local-checks.ts": 1967,

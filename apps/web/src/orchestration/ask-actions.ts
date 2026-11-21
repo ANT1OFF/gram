@@ -5,6 +5,7 @@ import {
   noticePlain,
   revealHidden,
   type ApprovalRequest,
+  type PendingRequest,
   type WorkspaceId,
 } from "@gram/contracts";
 
@@ -26,25 +27,73 @@ import type { WorkspaceAsks } from "./ask-stack";
 /** The most equal asks one Allow answers from outside the window ("Allow 99"). */
 const MAX_AWAY_COUNT = 99;
 
-/** The ask's own requests and inputs, exactly: equal only for the very same ask. */
+/** A question's choices as they read: each label and what it says it means. */
+const choicesOf = (
+  choices: ReadonlyArray<{
+    readonly label: string;
+    readonly description?: string | undefined;
+  }> = [],
+) => choices.map((choice) => [choice.label, choice.description ?? null]);
+
+/** A request's own words and input, as its card reads. */
+const requestRead = (request: PendingRequest) => {
+  switch (request.kind) {
+    case "approval":
+      return [
+        request.toolName,
+        request.displayName,
+        request.title ?? null,
+        request.input,
+        request.description ?? null,
+      ];
+    case "question":
+      return request.questions.map((question) => [
+        question.question,
+        question.header,
+        choicesOf(question.options),
+        question.multiSelect,
+      ]);
+    case "plan":
+      return [request.plan];
+  }
+};
+
+/**
+ * The ask's own requests, inputs and words, exactly: equal only for the very same ask, so another
+ * request in its place, or a question reworded, reads as another ask.
+ */
 export const askFingerprint = (ask: Ask): string =>
   JSON.stringify([
     ask.key,
+    ask.lead,
+    ask.description ?? null,
     ask.command ?? null,
     ask.extras,
-    ask.options.map((option) => option.label),
+    choicesOf(ask.options),
     (ask.group?.entries ?? []).map((entry) => [
       entry.threadId,
       entry.request.id,
       entry.request.kind,
-      entry.request.kind === "approval"
-        ? [entry.request.toolName, entry.request.input, entry.request.description ?? null]
-        : null,
+      requestRead(entry.request),
     ]),
-    ask.memory === undefined ? null : [ask.memory.workspaceId, ask.memory.question.text],
+    ask.memory === undefined
+      ? null
+      : [
+          ask.memory.workspaceId,
+          ask.memory.question.text,
+          ask.memory.question.detail ?? null,
+          choicesOf(ask.memory.question.options),
+        ],
     ask.worker === undefined
       ? null
-      : [ask.worker.workspaceId, ask.worker.question.id, ask.worker.question.question],
+      : [
+          ask.worker.workspaceId,
+          ask.worker.question.id,
+          ask.worker.question.question,
+          ask.worker.question.context ?? null,
+          ask.worker.question.note ?? null,
+          choicesOf(ask.worker.question.options),
+        ],
   ]);
 
 /**
