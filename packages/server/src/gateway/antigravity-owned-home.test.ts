@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
@@ -194,6 +195,76 @@ const standIn = () =>
 const agyPath = () =>
   spawnSync("sh", ["-c", `command -v '${agy}'`], { encoding: "utf8" }).stdout.trim();
 
+/**
+ * Opens Gram's Antigravity host where `place` puts a repository's own customizations, expecting a
+ * refusal that starts nothing, then shows `agy acp` alone runs them there.
+ */
+const refusedWhereAgyRuns = (
+  place: (
+    root: string,
+    work: string,
+  ) => { cwd: string; marks: ReturnType<typeof repoCustomizations> },
+) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { root, home, work, data } = personHome();
+      try {
+        const { cwd, marks } = place(root, work);
+        const gemini = yield* standIn();
+        const base = {
+          PATH: process.env["PATH"] ?? "/usr/bin",
+          HOME: home,
+          DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
+          GEMINI_API_KEY: "placeholder",
+          GOOGLE_GEMINI_BASE_URL: gemini.url,
+        };
+        const geminiDir = antigravityGeminiDir(data);
+        const host = yield* Effect.provide(
+          Effect.gen(function* () {
+            return yield* AntigravityHost;
+          }),
+          AntigravityHostLive({
+            ownedHome: () => prepareOwnedAntigravityHome(data, home, base),
+            geminiDir,
+            binaryPath: agyPath(),
+          }),
+        );
+        const opened = yield* Effect.flip(
+          Effect.scoped(
+            host.open({
+              threadId: ThreadId.make("t"),
+              cwd,
+              permissionMode: "bypassPermissions",
+            }),
+          ),
+        );
+        expect(opened.message).toContain(CUSTOMIZATIONS_REFUSAL);
+        const listed = yield* Effect.flip(host.listSessions?.({ cwd }) ?? Effect.die("no listing"));
+        expect(listed.message).toContain(CUSTOMIZATIONS_REFUSAL);
+        expect(existsSync(geminiDir)).toBe(false);
+        expect(existsSync(marks.hook)).toBe(false);
+        expect(existsSync(marks.server)).toBe(false);
+
+        yield* prepareOwnedAntigravityHome(data, home, base);
+        const bare = yield* Effect.promise(() =>
+          acp(base, ["--gemini-dir", geminiDir], cwd, sessionServer(join(root, "own")), "hi"),
+        );
+        yield* Effect.promise(() =>
+          vi.waitFor(
+            () => {
+              expect(existsSync(marks.hook)).toBe(true);
+              expect(existsSync(marks.server)).toBe(true);
+            },
+            { timeout: 30_000 },
+          ),
+        );
+        bare.stop();
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }),
+  );
+
 describe("Gram's own Antigravity home", () => {
   it.effect("holds only Gram's settings, keeps the person's HOME, and drops config overrides", () =>
     Effect.gen(function* () {
@@ -272,67 +343,27 @@ describe("Gram's own Antigravity home", () => {
   it.effect.skipIf(!hasAgy)(
     "refuses to open where the work folder has its own hooks and MCP servers, which agy would run",
     () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const { root, home, work, data } = personHome();
-          try {
-            const marks = repoCustomizations(root, work);
-            const gemini = yield* standIn();
-            const base = {
-              PATH: process.env["PATH"] ?? "/usr/bin",
-              HOME: home,
-              DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
-              GEMINI_API_KEY: "placeholder",
-              GOOGLE_GEMINI_BASE_URL: gemini.url,
-            };
-            const geminiDir = antigravityGeminiDir(data);
-            const host = yield* Effect.provide(
-              Effect.gen(function* () {
-                return yield* AntigravityHost;
-              }),
-              AntigravityHostLive({
-                ownedHome: () => prepareOwnedAntigravityHome(data, home, base),
-                geminiDir,
-                binaryPath: agyPath(),
-              }),
-            );
-            const opened = yield* Effect.flip(
-              Effect.scoped(
-                host.open({
-                  threadId: ThreadId.make("t"),
-                  cwd: work,
-                  permissionMode: "bypassPermissions",
-                }),
-              ),
-            );
-            expect(opened.message).toContain(CUSTOMIZATIONS_REFUSAL);
-            const listed = yield* Effect.flip(
-              host.listSessions?.({ cwd: work }) ?? Effect.die("no listing"),
-            );
-            expect(listed.message).toContain(CUSTOMIZATIONS_REFUSAL);
-            expect(existsSync(geminiDir)).toBe(false);
-            expect(existsSync(marks.hook)).toBe(false);
-            expect(existsSync(marks.server)).toBe(false);
+      refusedWhereAgyRuns((root, work) => ({ cwd: work, marks: repoCustomizations(root, work) })),
+    120_000,
+  );
 
-            yield* prepareOwnedAntigravityHome(data, home, base);
-            const bare = yield* Effect.promise(() =>
-              acp(base, ["--gemini-dir", geminiDir], work, sessionServer(join(root, "own")), "hi"),
-            );
-            yield* Effect.promise(() =>
-              vi.waitFor(
-                () => {
-                  expect(existsSync(marks.hook)).toBe(true);
-                  expect(existsSync(marks.server)).toBe(true);
-                },
-                { timeout: 30_000 },
-              ),
-            );
-            bare.stop();
-          } finally {
-            rmSync(root, { recursive: true, force: true });
-          }
-        }),
-      ),
+  it.effect.skipIf(!hasAgy)(
+    "refuses a linked work folder whose real repository has them, which agy would run",
+    () =>
+      refusedWhereAgyRuns((root, work) => {
+        const repo = join(root, "repo");
+        mkdirSync(join(repo, "sub"), { recursive: true });
+        spawnSync("git", ["init", "-q", repo], {
+          env: {
+            PATH: process.env["PATH"],
+            GIT_CONFIG_GLOBAL: "/dev/null",
+            GIT_CONFIG_NOSYSTEM: "1",
+          },
+        });
+        const lnk = join(work, "lnk");
+        symlinkSync(join(repo, "sub"), lnk);
+        return { cwd: lnk, marks: repoCustomizations(root, repo) };
+      }),
     120_000,
   );
 

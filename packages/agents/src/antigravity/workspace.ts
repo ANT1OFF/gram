@@ -1,7 +1,7 @@
 // The repository's own Antigravity customizations: hooks, MCP servers and plugins that `agy acp`
 // loads from a work folder with no trust prompt, whatever `--gemini-dir` says.
 
-import { lstatSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 /** The folder Antigravity reads a workspace's own customizations from. */
@@ -25,21 +25,32 @@ const present = (path: string): boolean => {
   }
 };
 
-/** `dir` and each parent up to its repository's root (the nearest holding `.git`), else to `/`. */
+/** `dir` and each parent up to its repository's root (the nearest holding `.git`), else `dir` alone. */
 const upToRepoRoot = (dir: string): ReadonlyArray<string> => {
   const chain: Array<string> = [];
-  let at = resolve(dir);
+  let at = dir;
   for (;;) {
     chain.push(at);
     const up = dirname(at);
-    if (present(join(at, ".git")) || up === at) return chain;
+    if (present(join(at, ".git"))) return chain;
+    if (up === at) return [dir];
     at = up;
+  }
+};
+
+/** `dir` as given and with every link followed, as agy may read either. */
+const bothPaths = (dir: string): ReadonlyArray<string> => {
+  const given = resolve(dir);
+  try {
+    return [given, realpathSync(given)];
+  } catch {
+    return [given];
   }
 };
 
 /** The runnable customizations Antigravity would load for a session in `dirs`. */
 export const workspaceCustomizations = (dirs: ReadonlyArray<string>): ReadonlyArray<string> =>
-  [...new Set(dirs.flatMap(upToRepoRoot))].flatMap((dir) =>
+  [...new Set(dirs.flatMap(bothPaths).flatMap(upToRepoRoot))].flatMap((dir) =>
     RUNNABLE.map((path) => join(dir, path)).filter(present),
   );
 

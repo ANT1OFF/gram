@@ -133,25 +133,30 @@ const inGuarded = (path: string, guarded: ReadonlySet<string>) =>
 
 /**
  * Whether a call that may change files touches one of the `guarded` folders, whose contents the
- * agent loads as its own config: a path it names (its `locations` and its input's `keys`) runs
- * through one, as written or once links are followed, or a writing call names no path at all.
+ * agent loads as its own config: its `command` line mentions one, a path it names (its `locations`
+ * and its input's `keys`) runs through one, as written or once links are followed, or a writing
+ * call, or one of kind `other` with no command line, names no path at all.
  */
 export const touchesGuarded = (
   call: Json,
   roots: ReadonlyArray<string>,
   keys: ReadonlyArray<string>,
   guarded: ReadonlyArray<string>,
+  command?: string,
 ): boolean => {
   if (guarded.length === 0) return false;
-  const kind = text(call["kind"]) ?? "";
-  if (kind === "execute" || READING_KINDS.has(kind)) return false;
   const names = new Set(guarded.map((name) => name.toLowerCase()));
+  const line = command?.toLowerCase();
+  if (line !== undefined && [...names].some((name) => line.includes(name))) return true;
+  const kind = text(call["kind"]) ?? "other";
+  if (kind === "execute" || READING_KINDS.has(kind)) return false;
   const input = record(call["rawInput"]);
   const named = [
     ...records(call["locations"]).map((at) => at["path"]),
     ...keys.map((key) => input[key]),
   ].filter((path): path is string => typeof path === "string" && path !== "");
-  if (named.length === 0) return WRITING_KINDS.has(kind);
+  if (named.length === 0)
+    return WRITING_KINDS.has(kind) || (kind === "other" && line === undefined);
   const cwd = roots[0] ?? "/";
   return named.some((path) => {
     const absolute = resolve(cwd, path);
@@ -197,7 +202,7 @@ export const answerItself = (
   if (facts.appTool) return "allow";
   if (mode === "dontAsk") return "deny";
   const keys = [...EDIT_PATH_KEYS, ...(facts.editKeys ?? [])];
-  if (touchesGuarded(call, roots, keys, facts.guarded ?? [])) return undefined;
+  if (touchesGuarded(call, roots, keys, facts.guarded ?? [], facts.command)) return undefined;
   const kind = text(call["kind"]);
   if (mode === "acceptEdits" && kind === "edit" && editWithin(call, roots, facts.editKeys))
     return "allow";

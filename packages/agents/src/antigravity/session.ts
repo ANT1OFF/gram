@@ -4,7 +4,12 @@ import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 
 import type { AgentHost } from "../host.ts";
-import { baseMessageOf, SIGN_IN_PATTERN, type AcpAgentSpec, type AcpHostConfig } from "../acp/agent.ts";
+import {
+  baseMessageOf,
+  SIGN_IN_PATTERN,
+  type AcpAgentSpec,
+  type AcpHostConfig,
+} from "../acp/agent.ts";
 import { commandsOf } from "../acp/content.ts";
 import type { AcpConnection } from "../acp/connection.ts";
 import { makeAcpHost, withAcpAgent } from "../acp/host.ts";

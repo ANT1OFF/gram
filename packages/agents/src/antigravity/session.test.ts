@@ -8,7 +8,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { AcpError, type AcpConnection, type AcpHandlers, type StartAcpAgent } from "../acp/connection.ts";
+import {
+  AcpError,
+  type AcpConnection,
+  type AcpHandlers,
+  type StartAcpAgent,
+} from "../acp/connection.ts";
 import type { Json } from "../acp/json.ts";
 import {
   antigravityMode,
@@ -139,6 +144,27 @@ describe("Antigravity and a workspace's own .agents folder", () => {
     } finally {
       work.done();
     }
+  });
+
+  it("shows a card for a command naming .agents, and a call of kind other naming no path", () => {
+    const calls: ReadonlyArray<Json> = [
+      command("echo '{}' > .agents/hooks.json"),
+      command("cp /tmp/x ./.AGENTS/mcp_config.json"),
+      { kind: "other", name: "x", rawInput: { CommandLine: "mv h .agents/hooks.json" } },
+      { kind: "other", name: "write_anywhere", rawInput: { content: "{}" } },
+      { name: "write_anywhere", rawInput: {} },
+    ];
+    for (const call of calls)
+      for (const [mode, gate] of [
+        ["bypassPermissions", undefined],
+        ["bypassPermissions", "all"],
+        ["auto", "all"],
+      ] as const)
+        expect(autoAnswer(mode, gate, call, ROOTS, APP)).toBeUndefined();
+    expect(autoAnswer("bypassPermissions", undefined, command("ls src"), ROOTS, APP)).toBe("allow");
+    expect(
+      autoAnswer("bypassPermissions", undefined, { kind: "fetch", rawInput: {} }, ROOTS, APP),
+    ).toBe("allow");
   });
 
   it("refuses to open, and never starts agy, where the folder or a parent in its repo has them", async () => {
