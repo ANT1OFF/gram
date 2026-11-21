@@ -37,7 +37,8 @@
     {
       "files": ["packages/*/src/**", "apps/*/src/**"],
       "rules": {
-        "gram/no-raw-git": "error"
+        "gram/no-raw-git": "error",
+        "gram/no-comment": "error"
       }
     },
     {

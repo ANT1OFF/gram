@@ -3,8 +3,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
+import { addedComments } from "./no-comment.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Lints each source as a file of its own in one oxlint run, and returns each file's diagnostics. */
@@ -577,6 +578,88 @@ describe("no-timer", () => {
   }
   it.each(pending)("%s keeps exactly the %i timers it is allowed", (file, count) => {
     expect(found.get(file), `lower ${file}'s count in tools/oxlint/allowlists.mjs`).toBe(count);
+  });
+});
+
+describe("no-comment", () => {
+  const rule = "gram/no-comment";
+  beforeAll(() => {
+    process.env.GRAM_CHECK_ALL_COMMENTS = "1";
+  });
+  afterAll(() => {
+    delete process.env.GRAM_CHECK_ALL_COMMENTS;
+  });
+
+  it("refuses explanations, trailing notes, TODOs and docs on private code", () => {
+    const found = lint(
+      `import x from "y";
+      export function a() {
+        // explain the next line
+        return x; // trailing
+      }
+      /** A private helper. */
+      const b = 2;
+      /* a block */
+      export const c = b;
+      // TODO later
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([3, 4, 6, 8, 10]);
+    expect(found[0].message).toContain("fix the cause");
+    expect(found[2].message).toContain("export it");
+  });
+
+  it("keeps directives, a license header and docs on exports and their members", () => {
+    expect(
+      lint(
+        `// SPDX-License-Identifier: MIT
+        /// <reference types="vite/client" />
+        /** An export. */
+        export function a() {}
+        export interface I {
+          /** A member. */
+          m: string;
+        }
+        export const o = {
+          /** A key. */
+          k: 1,
+        };
+        /** A class. */
+        export class C {
+          /** A field. */
+          f = 1;
+        }
+        // oxlint-disable-next-line no-debugger -- a breakpoint the test needs
+        debugger;
+        // @ts-expect-error the fixture is untyped
+        const v = import(/* @vite-ignore */ "x");
+        /** The default. */
+        export default v;
+      `,
+        rule,
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves tests alone and is on in product source under the repository's own config", () => {
+    expect(lint("// a note\nexport const a = 1;\n", rule, ".test.ts")).toEqual([]);
+    expect(probeConfig("apps/web/src", "// a note\nexport const a = 1;\n")).toContain(
+      "gram(no-comment)",
+    );
+  });
+
+  it("counts only the comments a change adds, not those it moves or keeps", () => {
+    const text = "// old\nexport const a = 1;\n// old\n// new\n";
+    const at = (from) => ({ comment: { range: [from, text.indexOf("\n", from)] } });
+    const refused = [at(0), at(text.indexOf("// old", 1)), at(text.indexOf("// new"))];
+    const lines = (before) =>
+      addedComments(refused, text, before).map(({ comment }) => comment.range[0]);
+    expect(lines("export const a = 1;\n// old\n")).toEqual(
+      refused.slice(1).map((r) => r.comment.range[0]),
+    );
+    expect(lines("// new\n// old\n// old\n")).toEqual([]);
+    expect(lines(undefined)).toHaveLength(3);
   });
 });
 
