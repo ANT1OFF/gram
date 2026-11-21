@@ -84,6 +84,14 @@ import { SqlClient, SqlError } from "../platform/unstable.ts";
 import { MigrationsLayer } from "./migrations.ts";
 import { noteForeignCheckouts } from "../host/foreign-paths.ts";
 import { notePrivacy, noteReaders } from "../embedding/readable-by.ts";
+import { unlinkOrchestrationIn } from "./orchestration-links.ts";
+import {
+  type ClosedHolder,
+  holderMachinesIn,
+  notePrivateThreads,
+  rememberHolderIn,
+  rememberPrivateIn,
+} from "./private-readers.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
@@ -646,6 +654,8 @@ export interface ThreadStoreShape {
     workers?: ReadonlyArray<ClosedWorker>,
   ): Effect.Effect<void>;
   forgetClosed(threadId: ThreadId): Effect.Effect<void>;
+  /** Where a workspace's last closed orchestrator ran (`private-readers.ts` `holderMachinesIn`). */
+  closedHolderOf(workspaceId: WorkspaceId): Effect.Effect<ClosedHolder>;
   /**
    * Takes the newest closed thread that reads off the list, with `closedWorkers`, in one
    * transaction, so two reopens at once take two entries, never the same one twice.
@@ -1335,26 +1345,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const sql = yield* SqlClient.SqlClient;
       const reads = withReadWorker(yield* captureReadWorker);
       const unreadable = makeUnreadableLog();
-      // Whose each thread is, open or closed, and where it works, noted before anything asks
-      // (`embedding/readable-by.ts`): a thread no read has touched yet since the server started
-      // is still only its reader's, and so are its folders.
-      for (const row of yield* sql<{ id: string; data: string }>`
-        SELECT id, data FROM threads WHERE json_extract(data, '$.readableBy') IS NOT NULL
-        UNION ALL
-        SELECT thread_id AS id, data FROM closed_threads
-          WHERE json_extract(data, '$.readableBy') IS NOT NULL`.pipe(Effect.orDie)) {
-        const stored = JSON.parse(row.data) as Partial<Thread>;
-        if (typeof stored.readableBy === "string") {
-          const noted = { ...stored, id: row.id as ThreadId, readableBy: stored.readableBy };
-          notePrivacy(noted);
-          noteReaders({
-            ...noted,
-            readers: Array.isArray(stored.readers)
-              ? stored.readers.filter((each): each is string => typeof each === "string")
-              : undefined,
-          });
-        }
-      }
+      yield* notePrivateThreads(sql);
       const receiptScope = yield* Effect.scope;
       // The data methods below use one statement or one top-level transaction; nothing nests.
       // Message receipts own separate reservation/outcome transactions around the runtime action.
@@ -1485,6 +1476,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }
         });
 
+      const rememberPrivate = (table: "threads" | "closed_threads", ids: ReadonlyArray<string>) =>
+        rememberPrivateIn(sql, table, ids);
+
       const keepClosed = (
         id: string,
         closedAt: number,
@@ -1500,6 +1494,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           const evicted = yield* sql<{ thread_id: string }>`SELECT thread_id FROM closed_threads
             ORDER BY closed_at DESC, rowid DESC LIMIT -1 OFFSET ${CLOSED_THREADS_LIMIT}`;
           for (const { thread_id: evictedId } of evicted) {
+            yield* rememberPrivate("closed_threads", [evictedId]);
             yield* sql`DELETE FROM closed_threads WHERE thread_id = ${evictedId}`;
             yield* purgeHistory(evictedId);
           }
@@ -2147,29 +2142,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             : { ...rest, completedAt: completion.at, completedReason: completion.reason };
         }).pipe(Effect.map(({ thread }) => thread));
 
-      /**
-       * What a thread leaves behind in orchestration when it goes: the slot it held (column and
-       * JSON), its workers' link to it, the reports it filed unless `keepReports` (a close, whose
-       * reopen makes them its own again), and the link from a dream that ran as it. The dream's row
-       * stays, since its output is still there to review or discard. Runs inside the caller's
-       * transaction.
-       */
-      // SQLite's JSON functions raise on text that isn't JSON, so each is behind `json_valid`, and a
-      // row that doesn't parse is left as it is rather than failing the statement for every row.
       const unlinkOrchestration = (id: ThreadId, keepReports = false) =>
-        Effect.gen(function* () {
-          yield* sql`UPDATE workspaces SET orchestrator_thread_id = NULL,
-              data = CASE WHEN json_valid(data)
-                THEN json_remove(data, '$.workspace.orchestratorThreadId') ELSE data END
-            WHERE orchestrator_thread_id = ${id}`;
-          yield* sql`UPDATE threads SET data = json_remove(data, '$.spawnedBy')
-            WHERE CASE WHEN json_valid(data)
-              THEN json_extract(data, '$.spawnedBy.threadId') = ${id} ELSE 0 END`;
-          if (!keepReports) yield* sql`DELETE FROM worker_reports WHERE thread_id = ${id}`;
-          yield* sql`UPDATE dreams SET thread_id = NULL,
-              data = CASE WHEN json_valid(data) THEN json_remove(data, '$.threadId') ELSE data END
-            WHERE thread_id = ${id}`;
-        });
+        unlinkOrchestrationIn(sql, id, keepReports);
 
       const readAutomaticDreamState = (id: WorkspaceId) =>
         sql<{ data: string }>`SELECT data FROM automatic_dream WHERE workspace_id = ${id}`.pipe(
@@ -2810,6 +2784,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ]) {
                 yield* sql`DELETE FROM ${sql(table)} WHERE thread_id = ${id}`;
               }
+              yield* rememberPrivate("threads", [id]);
+              yield* rememberHolderIn(sql, id);
               yield* sql`DELETE FROM threads WHERE id = ${id}`;
               yield* sql`DELETE FROM message_receipts WHERE thread_id = ${id}
                 AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
@@ -2856,6 +2832,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ]) {
                 yield* sql`DELETE FROM ${sql(table)} WHERE thread_id = ${id}`;
               }
+              yield* rememberHolderIn(sql, id);
               yield* sql`DELETE FROM threads WHERE id = ${id}`;
               yield* unlinkOrchestration(id, true);
             }),
@@ -2956,9 +2933,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               };
             }),
           ),
+        closedHolderOf: (workspaceId) => run(holderMachinesIn(sql, workspaceId)),
         forgetClosed: (threadId) =>
           tx(
             Effect.gen(function* () {
+              yield* rememberPrivate("closed_threads", [threadId]);
               yield* sql`DELETE FROM closed_threads WHERE thread_id = ${threadId}`;
               yield* sql`DELETE FROM message_receipts WHERE thread_id = ${threadId}
                 AND thread_id NOT IN (SELECT id FROM threads)`;

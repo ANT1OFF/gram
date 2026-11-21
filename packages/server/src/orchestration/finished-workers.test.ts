@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { GramUIMessage, ThreadId, WorkspaceId, WorkspaceState } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 
+import { notePrivacy, ReadingAs } from "../embedding/readable-by.ts";
 import { renderClosedThread, type ThreadArchiveShape } from "./archive.ts";
 import {
   archivedHeading,
@@ -99,6 +100,29 @@ describe("finished workers", () => {
       expect(gone._tag).toBe("ThreadNotFound");
       // Without an archive only closed records are read.
       expect(yield* makeFinishedWorkers({ store, archive: undefined }).list(WS)).toEqual([]);
+    }),
+  );
+  it.effect("answers an archived worker of a workspace the caller may not see as not found", () =>
+    Effect.gen(function* () {
+      const hidden = "w-finished-private" as WorkspaceId;
+      notePrivacy({ id: "t-finished-ada" as ThreadId, readableBy: "ada", workspaceId: hidden });
+      const finished = makeFinishedWorkers({
+        store: {
+          ...store,
+          listWorkspaces: Effect.succeed([
+            { workspace: { id: hidden } } as unknown as WorkspaceState,
+          ]),
+        },
+        archive,
+      });
+      const bob = yield* finished
+        .detail(ID)
+        .pipe(Effect.provideService(ReadingAs, { subject: "bob" }), Effect.flip);
+      expect(bob._tag).toBe("ThreadNotFound");
+      const ada = yield* finished
+        .detail(ID)
+        .pipe(Effect.provideService(ReadingAs, { subject: "ada" }));
+      expect(ada.archived).toContain("Redis streams");
     }),
   );
   it.effect("pages through the whole archive, never repeating or skipping a worker", () =>

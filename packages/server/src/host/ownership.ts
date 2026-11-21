@@ -204,7 +204,7 @@ export const ownedMachines =
     );
 
 /** Every checkout a thread works in: its own, the one it follows now, and its other repos'. */
-const checkoutsOf = (thread: Thread) => [
+const checkoutsOf = (thread: Pick<Thread, "checkout" | "currentCheckout" | "extraCheckouts">) => [
   thread.checkout,
   ...(thread.currentCheckout === undefined ? [] : [thread.currentCheckout]),
   ...(thread.extraCheckouts ?? []),
@@ -230,6 +230,22 @@ export const mayReachThread = (
     if ((yield* currentCaller) === undefined) return true;
     const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
     if (thread === undefined) return true;
+    return yield* mayReachMachinesOf(ownerOf, thread);
+  });
+
+/**
+ * Whether this fiber's caller may reach every machine `thread` works or worked on: a stored
+ * thread's, or a closed one's as kept (`ThreadStore.closedHolderOf`).
+ */
+export const mayReachMachinesOf = (
+  ownerOf: OwnerOf,
+  thread: Pick<
+    Thread,
+    "checkout" | "currentCheckout" | "extraCheckouts" | "dreamHost" | "awaitingMachine"
+  >,
+): Effect.Effect<boolean> =>
+  Effect.gen(function* () {
+    if ((yield* currentCaller) === undefined) return true;
     // Started for someone before its machine was there: theirs alone until it is on one.
     const startedBy = thread.awaitingMachine?.startedBy;
     if (startedBy !== undefined && (yield* currentCaller)?.person !== startedBy) return false;
