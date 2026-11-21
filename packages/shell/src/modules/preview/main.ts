@@ -73,7 +73,7 @@ import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { focusedAppWindow } from "../../electron/decision-windows.ts";
 import { installPickHandlers } from "./pick-handlers.ts";
-import { guardWebRtc } from "./webrtc-guard.ts";
+import { guardWebRtc, heldForGuard } from "./webrtc-guard.ts";
 
 /**
  * No `persist:` prefix, so their cookies and storage live in memory and are gone at quit. The local
@@ -312,33 +312,36 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
         () => callback({ cancel: true }),
       );
     };
-    ses.webRequest.onBeforeRequest((details, callback) => {
-      const asked =
-        details.webContents === undefined
-          ? undefined
-          : options.agent?.request(details.webContents, {
-              id: details.id,
-              url: details.url,
-              method: details.method,
-              mainFrame: details.resourceType === "mainFrame",
-              subFrame: details.resourceType === "subFrame",
-              ...(details.initiatorOrigin === undefined
-                ? {}
-                : { initiator: details.initiatorOrigin }),
-            });
-      if (asked !== undefined) {
-        void asked.then(
-          (verdict) => answer(details.url, callback, verdict === "allow"),
-          () => callback({ cancel: true }),
-        );
-        return;
-      }
-      const verdict =
-        details.webContents === undefined
-          ? unattributedRequest(details.url, details.initiatorOrigin)
-          : previewRequest(details.url);
-      answer(details.url, callback, verdict === "allow");
-    });
+    // A page whose WebRTC removal isn't in place waits for it, and loads nothing without it.
+    ses.webRequest.onBeforeRequest(
+      heldForGuard((details: Electron.OnBeforeRequestListenerDetails, callback) => {
+        const asked =
+          details.webContents === undefined
+            ? undefined
+            : options.agent?.request(details.webContents, {
+                id: details.id,
+                url: details.url,
+                method: details.method,
+                mainFrame: details.resourceType === "mainFrame",
+                subFrame: details.resourceType === "subFrame",
+                ...(details.initiatorOrigin === undefined
+                  ? {}
+                  : { initiator: details.initiatorOrigin }),
+              });
+        if (asked !== undefined) {
+          void asked.then(
+            (verdict) => answer(details.url, callback, verdict === "allow"),
+            () => callback({ cancel: true }),
+          );
+          return;
+        }
+        const verdict =
+          details.webContents === undefined
+            ? unattributedRequest(details.url, details.initiatorOrigin)
+            : previewRequest(details.url);
+        answer(details.url, callback, verdict === "allow");
+      }),
+    );
   };
 
   const webSession = (ses: Session, network: WebNetwork, destination: string | undefined) => {
