@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import { vi } from "vitest";
 import { hasGit } from "../git/test-repo.ts";
+import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import {
   completeTurn,
   makeWorld,
@@ -92,6 +93,36 @@ describe.skipIf(!hasGit)("repositories an agent names behind a GitHub route", ()
           expect(
             yield* worker.session.callTool("pr_bind", { repo: "acme/app", number: 12 }),
           ).toMatchObject({ bound: { repo: "acme/app", number: 12 } });
+        }),
+      ),
+    { timeout: 90_000 },
+  );
+
+  it.effect(
+    "refuse pr_status on a pull request out of the thread's reach, before any read",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          world.originRepos.set(world.repo, "acme/app");
+          const { session } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "mail", title: "Mail" });
+          yield* completeTurn(worker.session);
+          const runtimes = yield* ThreadRuntimes;
+          const bindTo = (repo: string) =>
+            runtimes.updateThread(worker.thread.id, (t) => ({
+              ...t,
+              boundPr: { repo, number: 5, monitor: false },
+            }));
+          yield* bindTo("someone/private");
+          const refused = yield* worker.session.callTool("pr_status", {}).pipe(Effect.flip);
+          expect(refused.message).toContain("isn't a repository this thread works in");
+          expect(
+            world.ghCalls.filter((call) => call.join(" ").includes("someone/private")),
+          ).toEqual([]);
+          yield* bindTo("acme/app");
+          expect(yield* worker.session.callTool("pr_status", {})).toMatchObject({
+            bound: { repo: "acme/app", number: 5 },
+          });
         }),
       ),
     { timeout: 90_000 },

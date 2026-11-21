@@ -33,6 +33,13 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 export const GITHUB_ROUTE_NEEDS_HEADLESS =
   "GRAM_GITHUB_ROUTE_URL is for a headless control plane (GRAM_HEADLESS=1), which runs no agent that could inherit it.";
 
+/**
+ * The relay's answer to a call made for no thread, which it never sends on: the route can hold a
+ * read to what a thread may see only when it knows the thread, and an answer read for nobody in
+ * particular could otherwise reach an agent.
+ */
+export const NO_THREAD = "this call is made for no thread, and behind a GitHub route every call is";
+
 /** What `gh` is given while no thread is named: it is never sent on. */
 const PLACEHOLDER = "gram-relay";
 /** The prefix of a thread's handle in `GH_TOKEN`. */
@@ -144,6 +151,7 @@ export const relayRequest =
       headers[name] = Array.isArray(value) ? value.join(", ") : value;
     }
     const thread = threadOfAuthorization(req.headers.authorization);
+    if (thread === undefined) return answer(res, 403, NO_THREAD);
     let token: string | undefined;
     try {
       token = await bearerOf(endpoint);
@@ -152,7 +160,7 @@ export const relayRequest =
     }
     if (token !== undefined) headers.authorization = `Bearer ${token}`;
     headers["x-gram-upstream-host"] = host;
-    if (thread !== undefined) headers["x-gram-thread"] = thread;
+    headers["x-gram-thread"] = thread;
     let response: Response;
     try {
       response = await fetchImpl(`${endpoint.url.replace(/\/+$/, "")}/${kind}${path}`, {

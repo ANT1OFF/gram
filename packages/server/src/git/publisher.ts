@@ -4,10 +4,7 @@
 import {
   agentOwnsPrEvents,
   anyPrOpen,
-  type Checkout,
   effectiveCheckout,
-  type HostId,
-  hostOf,
   isLocalHost,
   LOCAL_HOST_ID,
   MAX_FAILING_CHECK_NAMES,
@@ -50,11 +47,19 @@ import * as Queue from "effect/Queue";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { embeddingOption } from "../embedding/embedding.ts";
+import { ghFolderOf } from "../fs/folders.ts";
 import { forThread, threadCaller } from "../embedding/gh-thread.ts";
+import {
+  checkoutKey,
+  checkoutReads,
+  type Spot,
+  spotKey,
+  spotOf,
+  thereHere,
+} from "./checkout-spot.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { besidesActivity, upsertsChanging } from "../events/upsert-changes.ts";
 import { branchPrOf, completionStep, type CompletionStep } from "./completion.ts";
-import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { isBadgeOf, markOf, prunedMarks, withMonitorMark, type PrRef } from "./extra-prs.ts";
 import { pushedEventTouches, type PushedRepoEvent } from "./pushed-event-touches.ts";
 import { activityMultiplier, makePollBackoff } from "../github/poll-backoff.ts";
@@ -330,55 +335,6 @@ const targetsOf = (thread: Thread) => [
   ...(thread.boundPr === undefined ? [] : [thread.boundPr]),
   ...(thread.extraPrs ?? []),
 ];
-
-/** Where a checkout is: the machine it is on, and its path there. */
-interface Spot {
-  readonly hostId: HostId;
-  readonly path: string;
-}
-
-const spotOf = (checkout: Pick<Checkout, "path" | "hostId">): Spot => ({
-  hostId: hostOf(checkout),
-  path: checkout.path,
-});
-
-/**
- * What the publisher keeps a checkout's state under: on this machine its path's `samePathKey`, and
- * on another its machine with its path as written (never looked up on this disk). Two machines can
- * hold the same path, and those are two checkouts.
- */
-const spotKey = (spot: Spot): string =>
-  spot.hostId === LOCAL_HOST_ID
-    ? samePathKey(spot.path)
-    : `${spot.hostId}\u0000${nodePath.resolve(spot.path)}`;
-
-/**
- * Whether a checkout's folder is there, by this disk for this machine's: another machine's is that
- * machine's to say, and its read does.
- */
-const thereHere = (spot: Spot) =>
-  spot.hostId === LOCAL_HOST_ID ? folderExists(spot.path) : Effect.succeed(true);
-
-/** How long a checkout's key stands for it, in `checkoutKey`. */
-const CHECKOUT_KEY_TTL_MS = 2_000;
-const checkoutKeys = new WeakMap<Checkout, { readonly key: string; readonly at: number }>();
-
-/**
- * `spotKey` of the checkout `thread` works in, kept a moment per checkout object. Each refresh
- * and sweep matches every thread against a key, so without it a sweep made a `realpath` (several
- * for a removed worktree) per thread per checkout: quadratic in threads, and synchronous. A thread
- * read again from the store is a new object, and a folder that changed under one is seen within
- * `CHECKOUT_KEY_TTL_MS`.
- */
-const checkoutKey = (thread: Thread): string => {
-  const checkout = effectiveCheckout(thread);
-  const now = Date.now();
-  const kept = checkoutKeys.get(checkout);
-  if (kept !== undefined && now - kept.at < CHECKOUT_KEY_TTL_MS) return kept.key;
-  const key = spotKey(spotOf(checkout));
-  checkoutKeys.set(checkout, { key, at: now });
-  return key;
-};
 
 /** A thread's bound PRs as one comparable string. */
 const targetsKey = (thread: Thread) => targetsOf(thread).map(extraKey).toSorted().join(" ");
@@ -1274,10 +1230,15 @@ export const GitStatePublisherLive = Layer.effectContext(
           const present = yield* gitState.present(path);
           const recorded = present ? {} : yield* recordedOf(key, inventory);
           const root = recorded.root;
+          const open = inventory ?? (yield* openThreads);
+          const reads = checkoutReads(
+            open.filter((t) => checkoutKey(t) === key),
+            options.remote,
+          );
           const next = present
             ? yield* gitState
                 .snapshot(path, {
-                  remote: options.remote,
+                  remote: reads.remote,
                   previous,
                   scanConcurrency: config.sweepConcurrency,
                   ...(options.rebase === undefined ? {} : { rebase: options.rebase }),
@@ -1286,13 +1247,15 @@ export const GitStatePublisherLive = Layer.effectContext(
                     : { scanElsewhere: options.scanElsewhere }),
                   ...(options.reuseLocal === undefined ? {} : { reuseLocal: options.reuseLocal }),
                 })
-                .pipe(Effect.option)
-            : Option.some<GitState>(yield* missingState(previous, recorded, options.remote));
+                .pipe(reads.as, Effect.option)
+            : Option.some<GitState>(
+                yield* reads.as(missingState(previous, recorded, reads.remote)),
+              );
           if (Option.isNone(next)) return;
           if (options.remote) reconciledAt.set(key, yield* Clock.currentTimeMillis);
           if (options.reuseLocal !== true) localReadAt.set(key, sweeps);
           // The lookup below can settle an archived thread, which still has to be sent its answer.
-          const tracked = new Set((inventory ?? (yield* openThreads)).map((t) => t.id));
+          const tracked = new Set(open.map((t) => t.id));
           const boundChanged =
             options.remote && (present || root !== undefined)
               ? yield* refreshBound(
@@ -1688,8 +1651,9 @@ export const GitStatePublisherLive = Layer.effectContext(
           [...entries].flatMap(({ spot, threads }) => {
             const state = states.get(spotKey(spot));
             // gh runs here, so another machine's checkout has no branch of its own to ask about.
-            const here = spot.hostId === LOCAL_HOST_ID;
-            const path = here ? spot.path : tmpdir();
+            const reads = checkoutReads(threads, true);
+            const here = spot.hostId === LOCAL_HOST_ID && reads.remote;
+            const path = spot.hostId === LOCAL_HOST_ID ? spot.path : tmpdir();
             const numbered = threads.flatMap((thread) => {
               const bound = state === undefined ? undefined : boundElsewhere(thread, state);
               return [
@@ -1711,7 +1675,7 @@ export const GitStatePublisherLive = Layer.effectContext(
               ].map((ref) => ({ ref, caller: threadCaller(thread.id) }));
             });
             return [
-              ...(here ? [{ cwd: path }] : []),
+              ...(here ? [{ cwd: path, caller: threadCaller(reads.owner ?? "") }] : []),
               ...numbered.map(({ ref, caller }) => ({ cwd: path, bound: ref, caller })),
             ];
           }),
