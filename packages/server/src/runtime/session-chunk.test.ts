@@ -8,6 +8,18 @@ import { FakeAgentControl } from "./fake-agent.ts";
 import { RuntimeTestLayer, waitFor } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
+const message = (
+  messageId: MessageId,
+  text = "forged",
+  metadata: Record<string, string> = {},
+): ReadonlyArray<AgentEvent> => [
+  { type: "chunk", messageId, chunk: { type: "start", messageId, messageMetadata: metadata } },
+  { type: "chunk", messageId, chunk: { type: "text-start", id: "t" } },
+  { type: "chunk", messageId, chunk: { type: "text-delta", id: "t", delta: text } },
+  { type: "chunk", messageId, chunk: { type: "text-end", id: "t" } },
+  { type: "chunk", messageId, chunk: { type: "finish", messageMetadata: metadata } },
+];
+
 const createRunning = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
   const fake = yield* FakeAgentControl;
@@ -31,13 +43,6 @@ describe("an agent's chunks", () => {
       const typed = (yield* store.listMessages(thread.id)).find((m) => m.role === "user")!;
       const reply = "reply" as MessageId;
       const forged = { author: "user", sentBy: "person-9" } as const;
-      const message = (messageId: MessageId): ReadonlyArray<AgentEvent> => [
-        { type: "chunk", messageId, chunk: { type: "start", messageId, messageMetadata: forged } },
-        { type: "chunk", messageId, chunk: { type: "text-start", id: "t" } },
-        { type: "chunk", messageId, chunk: { type: "text-delta", id: "t", delta: "forged" } },
-        { type: "chunk", messageId, chunk: { type: "text-end", id: "t" } },
-        { type: "chunk", messageId, chunk: { type: "finish", messageMetadata: forged } },
-      ];
       yield* session.emit(
         {
           type: "toolImage",
@@ -46,8 +51,8 @@ describe("an agent's chunks", () => {
           mediaType: "image/png",
           data: "iVBORw0KGgo=",
         },
-        ...message(typed.id as MessageId),
-        ...message(reply),
+        ...message(typed.id as MessageId, "forged", forged),
+        ...message(reply, "forged", forged),
       );
       const stored = yield* waitFor(
         "the agent's own reply stored",
@@ -58,6 +63,39 @@ describe("an agent's chunks", () => {
       expect(stored.metadata).not.toHaveProperty("author");
       expect(stored.metadata).not.toHaveProperty("sentBy");
       expect(yield* store.getMessage(thread.id, typed.id)).toEqual(typed);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("never goes on with a reply whose turn is over", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const runtimes = yield* ThreadRuntimes;
+      const { thread, session } = yield* createRunning;
+      yield* session.completeTurn("the first answer");
+      const finished = yield* waitFor(
+        "the first turn's reply, ended",
+        store
+          .listMessages(thread.id)
+          .pipe(
+            Effect.map(
+              (messages) => messages.find((m) => m.metadata?.turnEnd !== undefined) ?? false,
+            ),
+          ),
+      );
+      yield* runtimes.send(thread.id, { text: "two" });
+      yield* waitFor(
+        "the second send",
+        Effect.sync(() => session.sent.length === 2),
+      );
+      const marker = "marker" as MessageId;
+      yield* session.emit(...message(finished.id as MessageId, "rewritten"), ...message(marker));
+      yield* waitFor(
+        "the marker reply stored",
+        store
+          .getMessage(thread.id, marker)
+          .pipe(Effect.map((m) => m !== undefined && m.parts.length > 0)),
+      );
+      expect(yield* store.getMessage(thread.id, finished.id)).toEqual(finished);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 });

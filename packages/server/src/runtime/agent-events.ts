@@ -735,6 +735,15 @@ export const makeAgentEvents = ({
             );
             return;
           }
+          // A request under an id already in hand is another request: what the hook said, or is
+          // saying, of the first is never taken for it.
+          const key = hookedKey(rt.threadId, request.id);
+          hooked.asked.delete(key);
+          if (hooked.deciding.delete(key)) {
+            yield* Effect.logWarning("an agent asked again under an id the hook is deciding").pipe(
+              Effect.annotateLogs({ threadId: rt.threadId, requestId: request.id }),
+            );
+          }
           if (
             request.kind === "approval" &&
             decisions !== undefined &&
@@ -743,8 +752,9 @@ export const makeAgentEvents = ({
             const actions = requestActions(request);
             if (actions.length > 0) {
               // Asked off this loop: the card, if there is to be one, goes up when it answers.
-              hooked.deciding.set(hookedKey(rt.threadId, request.id), rt.threadId);
-              yield* forkDecision(decideRequest(rt, rt.session, decisions, request, actions));
+              const deciding = { threadId: rt.threadId, request };
+              hooked.deciding.set(key, deciding);
+              yield* forkDecision(decideRequest(rt, rt.session, decisions, deciding, actions));
               return;
             }
           }

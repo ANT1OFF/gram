@@ -36,6 +36,9 @@ import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { NotifyObservers } from "./runtime-observer.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
+/** The id prefix of a message an app's data part opened on its own (`appendDataPart`). */
+const DATA_MESSAGE_PREFIX = "app-";
+
 /** How stale a streaming message's search index row may get. */
 export const SEARCH_REFRESH_MS = 5_000;
 
@@ -231,11 +234,17 @@ export const makeFeedWriter = ({
       let chunk = incoming;
       let inFlight = rt.open.get(messageId);
       if (inFlight === undefined) {
-        // A reply opens or goes on only as a reply: never over a person's message, nor Gram's
-        // notice, whose id an agent was handed.
+        // A reply opens or goes on only as a reply still under way: never over a person's message,
+        // Gram's notice or an app's data message, whose ids an agent was handed, nor over a reply
+        // whose turn is over. A reply stored part-way (a session kept across a restart) goes on.
         const stored = yield* store.getMessage(rt.threadId, messageId);
-        if (stored !== undefined && stored.role !== "assistant") {
-          yield* Effect.logWarning("a reply named a message that isn't one").pipe(
+        if (
+          stored !== undefined &&
+          (stored.role !== "assistant" ||
+            messageId.startsWith(DATA_MESSAGE_PREFIX) ||
+            stored.metadata?.turnEnd !== undefined)
+        ) {
+          yield* Effect.logWarning("a reply named a message that isn't one under way").pipe(
             Effect.annotateLogs({ threadId: rt.threadId, messageId }),
           );
           return;
@@ -393,7 +402,7 @@ export const makeFeedWriter = ({
         yield* appendChunk(rt, reply.messageId, chunk);
         return reply.messageId;
       }
-      const messageId = `app-${randomUUID()}` as MessageId;
+      const messageId = `${DATA_MESSAGE_PREFIX}${randomUUID()}` as MessageId;
       const accumulator = new MessageAccumulator(messageId);
       const createdAt = yield* Clock.currentTimeMillis;
       accumulator.apply({ type: "start", messageId, messageMetadata: { createdAt } });
