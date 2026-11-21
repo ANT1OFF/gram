@@ -613,9 +613,11 @@ function SheetForm({
           >
             {created === undefined ? "Save without starting" : "Leave it saved"}
           </Button>
-          <Button type="button" variant="ghost" onClick={cancel}>
-            Cancel
-          </Button>
+          {created === undefined && (
+            <Button type="button" variant="ghost" onClick={cancel}>
+              Cancel
+            </Button>
+          )}
           {source !== undefined && (
             <span
               data-testid="new-workspace-from"
