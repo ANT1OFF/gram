@@ -3,6 +3,7 @@
 
 import {
   type AgentKind,
+  type HostFeature,
   type HostHello,
   type HostSessionOpen,
   hostServes,
@@ -31,6 +32,26 @@ export const HOST_OPENCODE_SESSIONS_MISSING =
 /** Why a Grok Build session isn't opened on a host that doesn't name `agent-grok`. */
 export const HOST_GROK_MISSING =
   "Its gram-host doesn't run Grok Build sessions: it is older than this Gram, or has no Grok Build. Update Gram there (Settings → Machines), then try again.";
+
+/** Why an Antigravity session isn't opened on a host that doesn't name `agent-antigravity`. */
+export const HOST_ANTIGRAVITY_MISSING =
+  "Its gram-host doesn't run Antigravity sessions: it is older than this Gram, or has no Antigravity CLI. Update Gram there (Settings → Machines), then try again.";
+
+/** The feature a host names once it knows an agent kind that older releases don't. */
+const AGENT_FEATURES: Partial<Record<AgentKind, HostFeature>> = {
+  opencode: "agent-opencode",
+  grok: "agent-grok",
+  antigravity: "agent-antigravity",
+};
+
+/** Whether the host that said `hello` knows `agent`, so it may be sent that agent's calls. */
+export const hostKnowsAgent = (
+  hello: Pick<HostHello, "capabilities" | "features">,
+  agent: AgentKind,
+): boolean => {
+  const feature = AGENT_FEATURES[agent];
+  return feature === undefined || hostServes(hello, feature);
+};
 
 /** Why an OpenCode session isn't opened on a host that doesn't name `agent-opencode`. */
 export const HOST_OPENCODE_MISSING =
@@ -79,6 +100,8 @@ export const openRefusal = (
   if (request.agent === "opencode" && !hostServes(hello, "agent-opencode-sessions"))
     return HOST_OPENCODE_SESSIONS_MISSING;
   if (request.agent === "grok" && !hostServes(hello, "agent-grok")) return HOST_GROK_MISSING;
+  if (request.agent === "antigravity" && !hostServes(hello, "agent-antigravity"))
+    return HOST_ANTIGRAVITY_MISSING;
   // An older host would drop the field and open an ordinary session, with its native tools,
   // where the dream's prompt asks it to write.
   if (
@@ -93,6 +116,8 @@ export const openRefusal = (
 export const readableBy =
   (hello: Pick<HostHello, "capabilities" | "features">) =>
   (input: UserInput): UserInput => {
-    const known = hostServes(hello, "agent-opencode") ? input : withoutAgents(input, "opencode");
-    return hostServes(hello, "agent-grok") ? known : withoutAgents(known, "grok");
+    let known = input;
+    for (const agent of ["opencode", "grok", "antigravity"] as const)
+      if (!hostKnowsAgent(hello, agent)) known = withoutAgents(known, agent);
+    return known;
   };

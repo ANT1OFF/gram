@@ -172,6 +172,7 @@ describe("gateway helpers", () => {
     expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "opencode")).toBe(true);
     expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "claude")).toBe(false);
     expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "grok")).toBe(false);
+    expect(gatewayModelForAgent(xai, { id: "grok-4.7" }, "antigravity")).toBe(false);
     expect(gatewayKindOf("https://API.x.ai/v1/")).toBe("xai");
     expect(gatewayKindOf("https://api.x.ai")).toBe("xai");
     expect(gatewayKindOf("https://openrouter.ai/api/v1")).toBe("openrouter");

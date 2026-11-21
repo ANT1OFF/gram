@@ -378,13 +378,28 @@ const serverRelayMessageOf = (message: unknown): WorkerMachineRelayMessage | und
   return undefined;
 };
 
-/** The fields this machine's server reads of each call's answer. */
+/**
+ * The fields this machine's server reads of each call's answer. `sandboxId` and `generation` name
+ * the run a start made or a status saw, for a later stop or release to be fenced to; `code` says
+ * where a fence held one back (`superseded`, `expired`), and a release's `applied: false` that it
+ * changed nothing.
+ */
 const ANSWER_FIELDS: Readonly<Record<WorkerMachineCall, ReadonlyArray<string>>> = {
   choices: ["choices", "note", "keeps", "models"],
   // `code` names the answer where a status alone doesn't (`name_in_use`, `released`, `not_found`).
-  start: ["code", "name", "message", "asked", "inUse", "total", "machines"],
-  status: ["code", "phase", "message", "step", "publicKey", "platform"],
-  release: ["code", "known", "released", "message"],
+  start: [
+    "code",
+    "name",
+    "message",
+    "asked",
+    "inUse",
+    "total",
+    "machines",
+    "sandboxId",
+    "generation",
+  ],
+  status: ["code", "phase", "message", "step", "publicKey", "platform", "sandboxId", "generation"],
+  release: ["code", "known", "released", "applied", "message"],
   stop: ["code", "stopped", "message"],
 };
 

@@ -367,12 +367,12 @@ export const MergeWhenReadyLive = Layer.effect(
     const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
     const freezes = yield* MergeFreezes;
     /**
-     * Why a merge of `pr` onto its base waits for a merge freeze, or `undefined` when none holds it
-     * (none stands, or the freeze allows this PR).
+     * Why `by`'s merge of `pr` onto its base waits for a merge freeze, or `undefined` when none
+     * holds it (none stands, the freeze allows this PR, or it holds another workspace's merges).
      */
-    const frozenFor = (pr: Pick<BoundPr, "repo" | "number">, baseRef: string | undefined) =>
+    const frozenFor = (by: Thread, pr: Pick<BoundPr, "repo" | "number">, base?: string) =>
       freezes
-        .holding(pr.repo, baseRef, pr.number)
+        .holding(pr.repo, base, pr.number, by.workspaceId)
         .pipe(Effect.map((freeze) => (freeze === undefined ? undefined : mergeFreezeText(freeze))));
 
     /** Gram's own passing check of the badge's head merged onto its current base, if there is one. */
@@ -805,7 +805,7 @@ export const MergeWhenReadyLive = Layer.effect(
         const badge = yield* publisher.badgeFor(thread.value);
         if (badge === undefined || !isBadgeOf(badge, bound) || badge.headRefOid !== head) return;
         if ((yield* blockerFor(thread.value, bound.repo, intent, badge)) !== undefined) return;
-        const frozen = yield* frozenFor(bound, badge.baseRef);
+        const frozen = yield* frozenFor(thread.value, bound, badge.baseRef);
         // The freeze's end looks at every armed merge in the repo again.
         if (frozen !== undefined) return yield* noteWait(thread.value, bound, frozen);
         const cwd = thread.value.checkout.path;
@@ -1117,7 +1117,7 @@ export const MergeWhenReadyLive = Layer.effect(
                     )
                       return undefined;
                     // A freeze set while the lookups ran: the merge waits for its end.
-                    const frozenNow = yield* frozenFor(bound, fresh.baseRef);
+                    const frozenNow = yield* frozenFor(latest, bound, fresh.baseRef);
                     if (frozenNow !== undefined) return { frozen: frozenNow } as const;
                     /**
                      * The launch's authority, decided again in the reservation's own transaction:
@@ -1683,7 +1683,7 @@ export const MergeWhenReadyLive = Layer.effect(
         const head = badge.headRefOid;
         // Frozen: it waits, saying who froze the base and why, and the freeze's end looks again.
         const frozen =
-          intent.hold === undefined ? yield* frozenFor(bound, badge.baseRef) : undefined;
+          intent.hold === undefined ? yield* frozenFor(thread, bound, badge.baseRef) : undefined;
         if (frozen !== undefined) {
           yield* noteWait(thread, bound, frozen);
           return yield* stop(thread.id);

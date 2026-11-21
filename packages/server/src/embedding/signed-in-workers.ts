@@ -41,6 +41,8 @@ import {
   type WorkerMachineStart,
   workerMachineIdentity,
 } from "./worker-machines.ts";
+import { fencedCalls } from "./signed-in-fences.ts";
+import { signInMarks } from "./signed-in-marks.ts";
 import {
   claimedHere,
   forgetReclaimed,
@@ -76,6 +78,7 @@ import {
   RECLAIMED_AFTER_MISSES,
   settleOwedStops,
   stopHoldUntil,
+  stopNotAfter,
   stopOutcome,
   stopSendBy,
   stopSettled,
@@ -83,6 +86,7 @@ import {
   withName,
 } from "./worker-machine-stops.ts";
 
+export * from "./signed-in-fences.ts";
 export * from "./signed-in-port.ts";
 export * from "./signed-in-reclaim.ts";
 export * from "./signed-in-calls.ts";
@@ -152,6 +156,11 @@ export interface SignedInDeps {
   readonly asleep?: Set<string>;
   /** The starts sent of each name, shared by every source and pass (`StartsSent`). */
   readonly sent?: StartsSent;
+  /**
+   * The mark a sign-in at `origin` has now, for one it had: a source made before its sign-in took
+   * its organisation's mark finds what was moved to it, and asks and owes under it from then on.
+   */
+  readonly markOf?: (origin: string, account: string) => string | undefined;
 }
 
 /**
@@ -175,10 +184,40 @@ export const signedInSource = (
   const { port, hosts } = deps;
   const now = deps.now ?? Date.now;
   const origin = server.origin;
-  /** The sign-in this source asks under: every call carries it, and everything it makes. */
-  const account = server.account;
+  /**
+   * The sign-in this source asks under: every call carries it, and everything it makes. Its mark
+   * now (`markOf`): a renewal that gives the sign-in its organisation's moves what it made to
+   * that mark, and this source with it, even mid-spawn.
+   */
+  const first = server.account;
+  const accountNow = () =>
+    first === undefined ? undefined : (deps.markOf?.(origin, first) ?? first);
+  /** The fields that carry the mark now, on an owing and on a registration. */
+  const markField = (): { account?: string } => {
+    const mark = accountNow();
+    return mark === undefined ? {} : { account: mark };
+  };
+  const viaField = (): { viaAccount?: string } => {
+    const mark = accountNow();
+    return mark === undefined ? {} : { viaAccount: mark };
+  };
+  /** Whether a mark is this source's sign-in's: the one it began under, or its mark now. */
+  const ours = (mark: string | undefined) => mark === first || mark === accountNow();
+  /** Whether this sign-in owes a stop of `name` (`ownsOwing`), under either of its marks. */
+  const owes = (name: string) =>
+    deps.owed
+      ?.list()
+      .some(
+        (each) =>
+          ownsOwing(each, origin, name, first) || ownsOwing(each, origin, name, accountNow()),
+      ) === true;
+  /** Lets go of what this sign-in owes for `name`, under either of its marks. */
+  const releaseOwed = (name: string) => {
+    deps.owed?.release(origin, name, first);
+    if (accountNow() !== first) deps.owed?.release(origin, name, accountNow());
+  };
   const offered: OfferedByServer = deps.offered ?? new Map();
-  const offeredKey = workerMachineIdentity(origin, account);
+  const offeredKey = workerMachineIdentity(origin, first);
   // One registered under another sign-in there is that sign-in's, never this one's to act on;
   // one registered before sign-ins were kept is taken as this one's, but never forgotten on what
   // another sign-in might say of it (`isLegacyRelayed`).
@@ -186,7 +225,7 @@ export const signedInSource = (
     machine.onDemand === "worker" &&
     machine.via === origin &&
     machine.owner === undefined &&
-    (machine.viaAccount === undefined || machine.viaAccount === account);
+    (machine.viaAccount === undefined || ours(machine.viaAccount));
   const named = (name: string) => hosts.list().find((each) => each.name === name && mine(each));
   /**
    * A machine of `name` there registered under another sign-in (the same person before they
@@ -213,7 +252,7 @@ export const signedInSource = (
   const asked = Effect.gen(function* () {
     const kept = offered.get(offeredKey);
     if (kept !== undefined && now() - kept.at < CHOICES_TTL_MS) return kept;
-    const answered = yield* port.call(origin, "choices", {}, { account });
+    const answered = yield* port.call(origin, "choices", {}, { account: accountNow() });
     const body = answered.ok && answered.status === 200 ? answered.body : undefined;
     const value = parseChoices(body);
     const models = parseOfferedModels(body);
@@ -247,12 +286,7 @@ export const signedInSource = (
         }
         // A start of unknown outcome with no owing of its own here was never admitted, so nothing
         // of it was sent: nothing to give back, and nothing to owe.
-        if (
-          unsettled &&
-          deps.owed !== undefined &&
-          named(name) === undefined &&
-          !deps.owed.list().some((each) => ownsOwing(each, origin, name, account))
-        ) {
+        if (unsettled && deps.owed !== undefined && named(name) === undefined && !owes(name)) {
           deps.starting?.delete(name);
           return true;
         }
@@ -280,8 +314,8 @@ export const signedInSource = (
               const answered = yield* port.call(
                 origin,
                 "stop",
-                { name },
-                { sendBy: stopSendBy(sentAt), account },
+                { name, notAfter: stopNotAfter(sentAt) },
+                { sendBy: stopSendBy(sentAt), account: accountNow() },
               );
               if (stopSettled(answered) && held !== undefined) deps.owed?.holds.answered(held);
               // "No such machine" ends nothing while a start of it may still be on its way, nor
@@ -304,21 +338,18 @@ export const signedInSource = (
           );
           // Registered here, the release pass tells the server; otherwise it is owed a stop, unless
           // the server is owed one of the name already (the start's own, which stands for it).
-          if (
-            named(name) === undefined &&
-            !deps.owed?.list().some((each) => ownsOwing(each, origin, name, account))
-          )
+          if (named(name) === undefined && !owes(name))
             deps.owed?.add({
               origin,
               name,
               since: now(),
               ...(unsettled ? { unsettled: true as const } : {}),
-              ...(account === undefined ? {} : { account }),
+              ...markField(),
               attempt: randomUUID(),
             });
           return false;
         }
-        deps.owed?.release(origin, name, account);
+        releaseOwed(name);
         port.unrelay(name);
         const machine = named(name);
         if (machine !== undefined) hosts.remove(HostId.make(machine.id));
@@ -330,7 +361,7 @@ export const signedInSource = (
     choices: Effect.map(asked, (kept) => kept.value),
     models: Effect.map(asked, (kept) => kept.models),
     givesBack: true,
-    identity: workerMachineIdentity(origin, account),
+    identity: workerMachineIdentity(origin, first),
     unrelease: (name) =>
       Effect.gen(function* () {
         // Answered `not_found` `RECLAIMED_AFTER_MISSES` times in a row, a little apart: this
@@ -338,7 +369,11 @@ export const signedInSource = (
         // it is waited for as any reused machine. Either way it stays registered and relayed:
         // only `forgetReclaimed` forgets one.
         for (let missed = 1; ; missed += 1) {
-          const told = yield* tellSignedInRelease(port, { name, via: origin, account }, false);
+          const told = yield* tellSignedInRelease(
+            port,
+            { name, via: origin, account: accountNow() },
+            false,
+          );
           if (told === "applied") return undefined;
           if (missed >= RECLAIMED_AFTER_MISSES) return "gone" as const;
           yield* Effect.sleep(deps.everyMs ?? ARRIVE_EVERY_MS);
@@ -371,7 +406,7 @@ export const signedInSource = (
           since: now(),
           unsettled: true as const,
           start: true as const,
-          ...(account === undefined ? {} : { account }),
+          ...markField(),
           attempt: randomUUID(),
         };
         // Asked for again: it may come back, so it is relayed once more.
@@ -405,7 +440,7 @@ export const signedInSource = (
               heldFor,
               // Asked under the sign-in this source is for, as its owing and its give-back are:
               // signed in there as someone else meanwhile, the app sends none of it.
-              account,
+              account: accountNow(),
               // Admitted, with room to owe it a stop, and owed it, in one step under the name: a
               // start with no room is refused, never sent where nothing could give it back.
               onLocked: () => {
@@ -501,7 +536,7 @@ export const signedInSource = (
           if (left <= 0) return { failed: "timeout" };
           const before = sentOf(deps.sent, name);
           const read = yield* port
-            .call(origin, "status", { name }, { account })
+            .call(origin, "status", { name }, { account: accountNow() })
             .pipe(Effect.timeoutOption(left));
           if (read._tag === "None") return { failed: "timeout" };
           const answered = read.value;
@@ -537,7 +572,7 @@ export const signedInSource = (
               // Within what is left of this wait, however long the start or its retries take.
               const waking = yield* wakeSignedIn(
                 port,
-                { name, via: origin, account },
+                { name, via: origin, account: accountNow() },
                 { ...deps, heldFor },
               ).pipe(Effect.timeoutOption(Math.max(0, deadline - now())));
               if (waking._tag === "None") return { failed: "timeout" };
@@ -563,15 +598,15 @@ export const signedInSource = (
                 platform: status.platform ?? "linux",
                 onDemand: "worker",
                 via: origin,
-                ...(account === undefined ? {} : { viaAccount: account }),
+                ...viaField(),
               });
               if (result.kind === "refused") return { failed: failedWords(name, result.message) };
               // Registered here: the release pass looks after it from now on.
-              deps.owed?.release(origin, name, account);
+              releaseOwed(name);
             }
           }
           if (named(name) !== undefined && !relayed) {
-            port.relay(origin, name, account);
+            port.relay(origin, name, accountNow());
             relayed = true;
           }
           if (now() >= deadline) return { failed: "timeout" };
@@ -635,10 +670,12 @@ export const takeRelayedDial = (hosts: RemoteHostsShape, dial: RelayedDial) =>
 export const SignedInWorkersLive = Layer.effect(
   SignedInWorkers,
   Effect.gen(function* () {
-    const port = yield* WorkerMachinePort;
+    const app = yield* WorkerMachinePort;
     const hosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-    if (!port.available || hosts === undefined)
-      return { port, source: Effect.succeed({ refused: NO_SIGNED_IN_SERVER } as const) };
+    if (!app.available || hosts === undefined)
+      return { port: app, source: Effect.succeed({ refused: NO_SIGNED_IN_SERVER } as const) };
+    // Every stop and release, this layer's and the release pass's, fenced to its run.
+    const port = fencedCalls(app);
     const offered: OfferedByServer = new Map();
     const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
     const owed = config === undefined ? memoryOwedStops() : fileOwedStops(config.dataDir);
@@ -690,34 +727,8 @@ export const SignedInWorkersLive = Layer.effect(
     sync(true);
     const unwatch = hosts.watch(() => sync(false));
     yield* Effect.addFinalizer(() => Effect.sync(unwatch));
-    /**
-     * Moves one sign-in's machines and stops from its former marks to its mark. Each ledger's move
-     * is whole or not at all, and asked for again at every pass, so one that failed, or that a
-     * restart cut short between the two, is finished by a later one: the app keeps the former
-     * marks for as long as the sign-in lasts, and answers what is asked under them meanwhile.
-     */
-    const adopt = (marks: {
-      readonly origin: string;
-      readonly account?: string | undefined;
-      readonly formerAccounts?: ReadonlyArray<string> | undefined;
-    }) => {
-      const account = marks.account;
-      if (account === undefined) return;
-      for (const former of marks.formerAccounts ?? []) {
-        if (former === account) continue;
-        try {
-          hosts.machines.remark(marks.origin, former, account);
-        } catch {
-          // Not written, so not moved: the next pass moves it.
-        }
-        owed.remark(marks.origin, former, account);
-      }
-    };
-    /** Every sign-in's move, paused or not, whichever of them new machines are asked of. */
-    const adoptAll = port.marks().pipe(
-      Effect.tap((marks) => Effect.sync(() => marks.forEach(adopt))),
-      Effect.catchCause((cause) => Effect.logWarning("moving former sign-in marks failed", cause)),
-    );
+    // Every sign-in's former marks moved to its mark, and its mark now for a source made before.
+    const { adopt, adoptAll, markOf } = signInMarks(port, hosts, owed);
     // At start, and whenever the app says its sign-ins changed.
     yield* Effect.forkScoped(adoptAll);
     const signIns = yield* Queue.sliding<void>(1);
@@ -856,6 +867,7 @@ export const SignedInWorkersLive = Layer.effect(
                   locks,
                   asleep,
                   sent,
+                  markOf,
                 }),
                 server: answered.server,
               }
