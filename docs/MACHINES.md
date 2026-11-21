@@ -1002,6 +1002,10 @@ and `merge_when_ready` read and gate on it as they do on a check of this machine
   branch declares in `.gram/merge-ci.json`, every declared job passing on the exact head. GitHub's
   check contexts don't stand in for it, nor does a pass recorded before; a base that declares none
   refuses the merge, and a worker on one of the person's own machines can take the PR over.
+  As with the local check, the gate trusts the repository's own definition of its CI: a pull request
+  that changes `.gram/merge-ci.json`, a workflow or the code its jobs run changes what qualifies the
+  next merge, and that is the reviewer's to catch, not Gram's. Where that isn't acceptable, use the
+  bot or a human review policy, or protect those paths with branch rules on GitHub.
 
 ## Add a machine over SSH
 
