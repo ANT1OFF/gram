@@ -63,6 +63,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
+import { forThread } from "../embedding/gh-thread.ts";
 import { folderExists } from "../fs/folders.ts";
 import { asBackground } from "../github/budget.ts";
 import { workerState } from "../orchestration/rules.ts";
@@ -377,7 +378,7 @@ export const checkWorktree = (
       pushed: headPushed({ head, headOnRemote: onRemote, prHeadRefOid: settled?.headRefOid }),
       prSettled: settled?.state === "MERGED" || settled?.state === "CLOSED",
     };
-  });
+  }).pipe(forThread(thread.id));
 
 /**
  * `checkWorktree` for a worktree whose folder was deleted outside Gram: nothing is left in it
@@ -415,7 +416,7 @@ export const checkMissingWorktree = (
       pushed: true,
       prSettled: settled?.state === "MERGED" || settled?.state === "CLOSED",
     };
-  });
+  }).pipe(forThread(thread.id));
 
 /** Where the sweep keeps a removed worktree's detached HEAD: `refs/gram/swept/<thread id>`. */
 export const SWEPT_REFS = "refs/gram/swept";
