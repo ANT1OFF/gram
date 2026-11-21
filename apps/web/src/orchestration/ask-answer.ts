@@ -2,6 +2,7 @@ import type { WorkspaceId } from "@gram/contracts";
 
 import type { Api } from "@/api/types";
 import { errorMessage } from "@/api/errors";
+import { respondToCard } from "@/api/respond-to-card";
 
 import type { Ask, AskAction } from "./ask-model";
 import { useAskStackStore, type SendResult } from "./ask-stack-store";
@@ -59,10 +60,7 @@ const sendAnswer = async (
     };
   }
   const [entry] = ask.group.entries;
-  const { shown } = entry.request;
-  await (shown === undefined
-    ? api.respond(entry.threadId, entry.request.id, action.answer)
-    : api.respond(entry.threadId, entry.request.id, action.answer, shown));
+  await respondToCard(api, entry.threadId, entry.request, action.answer);
   return {};
 };
 
