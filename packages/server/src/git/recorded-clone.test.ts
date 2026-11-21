@@ -1,5 +1,7 @@
 // A new checkout's clone identity against its project's recorded origin: the same repository by
 // another transport is the project's own, and only behind a GitHub route is another one refused.
+import * as fs from "node:fs";
+import * as nodePath from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import type { Project } from "@gram/contracts";
 import { Proc, ProcLive, ProcTimeout } from "@gram/git";
@@ -87,6 +89,29 @@ describe.skipIf(!hasGit)("where a project folder's git fetches and pushes origin
         "https://github.com/acme/",
       ]);
       expect((yield* checked(pushInstead.repo))._tag).toBe("Failure");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("is refused behind a GitHub route when the user's own config sends it elsewhere", () =>
+    Effect.gen(function* () {
+      relay.on = true;
+      const { tmp, repo } = yield* folder();
+      const global = nodePath.join(tmp, "global.gitconfig");
+      fs.writeFileSync(
+        global,
+        '[url "https://github.com/someone/"]\n\tinsteadOf = https://github.com/acme/\n',
+      );
+      const before = process.env.GIT_CONFIG_GLOBAL;
+      process.env.GIT_CONFIG_GLOBAL = global;
+      const out = yield* checked(repo).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (before === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+            else process.env.GIT_CONFIG_GLOBAL = before;
+          }),
+        ),
+      );
+      expect(out._tag).toBe("Failure");
     }).pipe(Effect.scoped),
   );
 

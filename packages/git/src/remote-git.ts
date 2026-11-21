@@ -10,8 +10,18 @@ export class OriginRefused extends Data.TaggedError("OriginRefused")<{
   readonly message: string;
 }> {}
 
-/** Whether git in `dir` may reach that folder's `origin`, run with the caller's `Proc`. */
-export type OriginGuard = (dir: string) => Effect.Effect<void, OriginRefused, Proc>;
+/** Where a guard checked that git in a folder fetches `origin` from and pushes it to. */
+export interface OriginUrls {
+  readonly fetch: string;
+  readonly push: string;
+}
+
+/**
+ * Whether git in `dir` may reach that folder's `origin`, run with the caller's `Proc`: refused,
+ * allowed as it is (nothing), or allowed only to the URLs the guard checked, which git is then
+ * given in place of the remote's name (`pinnedArgs`).
+ */
+export type OriginGuard = (dir: string) => Effect.Effect<OriginUrls | void, OriginRefused, Proc>;
 
 let guard: OriginGuard | undefined;
 
@@ -67,12 +77,54 @@ export const reachesOrigin = (args: ReadonlyArray<string>): boolean => {
   return positional === undefined || positional === "origin";
 };
 
+const FULL_OID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
+
+const trackingRefspec = (spec: string): string => {
+  const body = spec.startsWith("+") ? spec.slice(1) : spec;
+  if (body.includes(":") || FULL_OID.test(body)) return spec;
+  if (body.startsWith("refs/") && !body.startsWith("refs/heads/")) return spec;
+  const name = body.startsWith("refs/heads/") ? body.slice("refs/heads/".length) : body;
+  return `+refs/heads/${name}:refs/remotes/origin/${name}`;
+};
+
+/**
+ * `args`, which reach `origin` (`reachesOrigin`), with `origin` replaced by the URL the guard
+ * checked, so git never reads it again from config an agent can rewrite meanwhile: a fetch's
+ * refspecs spelled out as `origin`'s map them, and a fetch naming none takes every branch.
+ * `undefined` for git that can't be given a URL so: no remote named, `--all`, a pull, or a
+ * submodule's, LFS's or `remote` transfer.
+ */
+export const pinnedArgs = (
+  args: ReadonlyArray<string>,
+  urls: OriginUrls,
+): { readonly args: ReadonlyArray<string>; readonly url: string } | undefined => {
+  const at = leadingOptions(args);
+  const verb = args[at];
+  if (verb !== "fetch" && verb !== "push" && verb !== "ls-remote") return undefined;
+  const rest = args.slice(at + 1);
+  if (rest.includes("--all") || rest.includes("--multiple")) return undefined;
+  const end = rest.indexOf("--");
+  const index = end >= 0 ? end + 1 : rest.findIndex((arg) => !arg.startsWith("-") && arg !== "");
+  if (index < 0 || index >= rest.length || rest[index] !== "origin") return undefined;
+  const url = verb === "push" ? urls.push : urls.fetch;
+  const specs = rest.slice(index + 1);
+  const refspecs =
+    verb !== "fetch"
+      ? specs
+      : specs.length === 0
+        ? ["+refs/heads/*:refs/remotes/origin/*"]
+        : specs.map(trackingRefspec);
+  return { args: [...args.slice(0, at + 1), ...rest.slice(0, index), url, ...refspecs], url };
+};
+
 /**
  * The one way Gram's own git reaches a remote: `fetch`, `push`, `pull`, `ls-remote`, `remote
  * update`, a submodule's or LFS's transfer, a clone (`reachesRemote`). Before one that reaches a
  * folder's `origin` starts, the embedder's guard (`guardOrigins`) is asked whether that folder's
  * origin is the repository it should be, since a folder's git config is anyone's to rewrite who
- * works there; without a guard, as on a person's own desktop, git starts as it always did.
+ * works there; without a guard, as on a person's own desktop, git starts as it always did. Where
+ * the guard checked the URLs, git is given the checked one in place of `origin` (`pinnedArgs`),
+ * and refused if the repository's own config would send that URL elsewhere (`pinnedUrl`).
  * `gram/remote-git-only` fails the lint on a network git spelled anywhere else. A refusal starts nothing and fails as git that couldn't be started does
  * (`ProcSpawnError`), with the guard's words, so every caller that gives up on a failed fetch or
  * push gives up on this one too.
@@ -84,9 +136,16 @@ export const remoteGit = (
 ): Effect.Effect<ProcOutput, ProcError, Proc> =>
   Effect.gen(function* () {
     const ask = guard;
-    if (ask !== undefined && reachesOrigin(args))
-      yield* ask(cwd).pipe(
-        Effect.mapError((refused) => new ProcSpawnError({ bin: "git", message: refused.message })),
-      );
-    return yield* git(cwd, args, options);
+    if (ask === undefined || !reachesOrigin(args)) return yield* git(cwd, args, options);
+    const urls = yield* ask(cwd).pipe(
+      Effect.mapError((refused) => new ProcSpawnError({ bin: "git", message: refused.message })),
+    );
+    if (urls === undefined) return yield* git(cwd, args, options);
+    const pinned = pinnedArgs(args, urls);
+    if (pinned === undefined)
+      return yield* new ProcSpawnError({
+        bin: "git",
+        message: "Gram reaches a checked origin only by a fetch, push or ls-remote that names it.",
+      });
+    return yield* git(cwd, pinned.args, { ...options, pinnedUrl: pinned.url });
   });

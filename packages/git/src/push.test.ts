@@ -54,6 +54,27 @@ describe.skipIf(!hasGit)("pushCurrentBranch", () => {
     }).pipe(Effect.provide(ProcLive)),
   );
 
+  it.live("pushes to origin whatever remote.pushDefault or a branch's pushRemote names", () =>
+    Effect.gen(function* () {
+      const { root, repo, origin } = withOrigin();
+      const elsewhere = nodePath.join(root, "elsewhere.git");
+      run(root, "init", "-q", "--bare", "-b", "main", elsewhere);
+      run(repo, "remote", "add", "elsewhere", elsewhere);
+      run(repo, "checkout", "-q", "-b", "feat/away");
+      commit(repo, "a.txt");
+      expect(yield* pushCurrentBranch(repo)).toMatchObject({ published: true });
+      // Its upstream is origin's, but git would push it elsewhere on its own.
+      run(repo, "config", "remote.pushDefault", "elsewhere");
+      run(repo, "config", "branch.feat/away.pushRemote", "elsewhere");
+      commit(repo, "b.txt");
+      expect(yield* pushCurrentBranch(repo)).toMatchObject({ published: false });
+      expect(run(origin, "rev-parse", "feat/away").trim()).toBe(
+        run(repo, "rev-parse", "HEAD").trim(),
+      );
+      expect(run(elsewhere, "for-each-ref").trim()).toBe("");
+    }).pipe(Effect.provide(ProcLive)),
+  );
+
   it.live(
     "publishes a branch that tracks its base, as a worktree branched from origin/main does",
     () =>

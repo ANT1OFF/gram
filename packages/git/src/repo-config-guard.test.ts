@@ -436,6 +436,26 @@ describe("guardFor", () => {
     );
   });
 
+  it.effect("gives git none of a repository's HTTP proxy, TLS, header or resolve settings", () =>
+    Effect.gen(function* () {
+      const { repo } = setup();
+      const planted: Array<[string, string]> = [
+        ["http.proxy", "http://127.0.0.1:9"],
+        ["remote.origin.proxy", "http://127.0.0.1:9"],
+        ["http.https://github.com/.sslVerify", "false"],
+        ["http.sslCAInfo", "/tmp/planted-ca.pem"],
+        ["http.extraHeader", "X-Planted: 1"],
+        ["http.curloptResolve", "github.com:443:127.0.0.1"],
+        ["http.cookieFile", "/tmp/planted-cookies"],
+      ];
+      for (const [key, value] of planted) run(repo, "config", key, value);
+      for (const [key] of planted) {
+        const out = yield* git(repo, ["config", "--get", key]).pipe(provide);
+        expect([key, out.stdout.trim()]).toEqual([key, key.endsWith("sslVerify") ? "true" : ""]);
+      }
+    }),
+  );
+
   it("rebuilds a credential helper list from the user's helpers alone", () => {
     const guard = guardFor([
       { scope: "global", key: "credential.helper", value: "osxkeychain" },

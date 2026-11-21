@@ -40,8 +40,11 @@ const BOOLEAN = /^(?:true|false|yes|no|on|off|1|0)?$/i;
 
 /**
  * What a key that names a program is set to when the repository set it and the user didn't: the
- * value git treats as "nothing to run" where one exists, else the stock program. `undefined` for a
- * key that doesn't name a program.
+ * value git treats as "nothing to run" where one exists, else the stock program. The same for a
+ * key that decides how git reaches a remote over HTTP (a proxy, what TLS trusts and presents, extra
+ * headers, cookies, forced name resolution, redirects), through which a repository could send the
+ * user's credentials to a listener of its own: git's default, where an empty value clears a list
+ * or a path. `undefined` for any other key.
  */
 export const neutralValue = (key: string, value: string | undefined): string | undefined => {
   const k = key.toLowerCase();
@@ -82,8 +85,26 @@ export const neutralValue = (key: string, value: string | undefined): string | u
   if (/^lfs\.extension\..+\.(?:clean|smudge)$/.test(k)) return "cat";
   if (/^submodule\..+\.update$/.test(k))
     return value !== undefined && value.startsWith("!") ? "checkout" : undefined;
-  return undefined;
+  return httpNeutral(k);
 };
+
+const HTTP_NEUTRAL: ReadonlyArray<readonly [RegExp, string]> = [
+  [
+    /^http\.(?:.+\.)?(?:proxy|sslcainfo|sslcapath|sslcert|sslkey|pinnedpubkey|cookiefile|curloptresolve|extraheader|proxysslcert|proxysslkey|proxysslcainfo)$/,
+    "",
+  ],
+  [/^http\.(?:.+\.)?sslverify$/, "true"],
+  [
+    /^http\.(?:.+\.)?(?:sslcertpasswordprotected|proxysslcertpasswordprotected|savecookies|emptyauth)$/,
+    "false",
+  ],
+  [/^http\.(?:.+\.)?followredirects$/, "initial"],
+  [/^http\.(?:.+\.)?delegation$/, "none"],
+  [/^remote\..+\.proxy$/, ""],
+];
+
+const httpNeutral = (k: string): string | undefined =>
+  HTTP_NEUTRAL.find(([pattern]) => pattern.test(k))?.[1];
 
 /** External diff commands can't be given a harmless value, so the call is told not to use them. */
 const isExternalDiff = (key: string): boolean => {
@@ -122,7 +143,22 @@ export interface Guard {
   readonly noExtDiff: boolean;
   /** The repository's config includes other files, whose changes a cached answer wouldn't see. */
   readonly includes: boolean;
+  /**
+   * What the repository's own `url.*.insteadOf` and `url.*.pushInsteadOf` rewrite, and the names
+   * of the remotes it configures: a URL git is given that starts with one of the first, or is one
+   * of the second, goes where the repository says rather than where it reads.
+   */
+  readonly redirects?: {
+    readonly prefixes: ReadonlyArray<string>;
+    readonly remotes: ReadonlyArray<string>;
+  };
 }
+
+/** Whether git given `url` would go elsewhere by the repository's own config (`Guard.redirects`). */
+export const redirectedBy = (guard: Guard, url: string): boolean =>
+  guard.redirects !== undefined &&
+  (guard.redirects.remotes.includes(url) ||
+    guard.redirects.prefixes.some((prefix) => url.startsWith(prefix)));
 
 /**
  * The guard for one listing: the repository's program keys, put back to the user's values or off.
@@ -137,6 +173,8 @@ export const guardFor = (
   let noExtDiff = false;
   let includes = false;
   const handled = new Set<string>();
+  const prefixes: Array<string> = [];
+  const remotes: Array<string> = [];
   // `core.fsmonitor` always, so a nested repository this listing can't see (a submodule's own
   // `.git` folder) runs no monitor of its own either: off, then the user's values, then the
   // repository's own built-in choice (a plain boolean, which runs nothing of its own).
@@ -155,6 +193,10 @@ export const guardFor = (
   for (const entry of [...entries, ...nested]) {
     if (!REPO_SCOPES.has(entry.scope)) continue;
     if (isInclude(entry.key)) includes = true;
+    if (/^url\..+\.(?:insteadof|pushinsteadof)$/.test(entry.key) && entry.value !== undefined)
+      prefixes.push(entry.value);
+    const remote = /^remote\.(.+)\.[^.]+$/.exec(entry.key)?.[1];
+    if (remote !== undefined) remotes.push(remote);
     if (isExternalDiff(entry.key)) noExtDiff = true;
     const neutral = neutralValue(entry.key, entry.value);
     if (neutral === undefined || handled.has(entry.key)) continue;
@@ -167,7 +209,7 @@ export const guardFor = (
         pairs.push([own.key, own.value ?? "true"]);
     }
   }
-  return { pairs, noExtDiff, includes };
+  return { pairs, noExtDiff, includes, redirects: { prefixes, remotes } };
 };
 
 /** `env` with `pairs` as the next `GIT_CONFIG_*` entries after any already set. */

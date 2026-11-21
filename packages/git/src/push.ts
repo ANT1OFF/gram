@@ -12,7 +12,7 @@ export class PushFailed extends Data.TaggedError("PushFailed")<{ readonly messag
 
 export interface Pushed {
   readonly branch: string;
-  /** The branch had no upstream, so it was pushed with `-u origin <branch>`. */
+  /** The branch had no upstream on origin, so `origin/<branch>` is its upstream now. */
   readonly published: boolean;
 }
 
@@ -30,8 +30,9 @@ const counts = (stdout: string) => {
 const toPushFailed = (e: { readonly message: string }) => new PushFailed({ message: e.message });
 
 /**
- * `git push` for the current branch, or `git push -u origin <branch>` when it isn't on origin under
- * its own name yet. A branch tracking something else (a worktree branched from `origin/main` tracks
+ * Pushes the current branch's commit to `origin` under the branch's own name, always to `origin`
+ * by name, whatever `remote.pushDefault`, `branch.*.pushRemote` or `push.default` say, and records
+ * `origin/<branch>` as its upstream when it had none there yet. A branch tracking something else (a worktree branched from `origin/main` tracks
  * `origin/main`) counts as unpublished, as `GitState.upstream` does. Refuses a detached HEAD, a repo
  * without an `origin` remote, and a branch that is behind or has diverged from its upstream: that
  * needs a pull or rebase first, never a force.
@@ -82,15 +83,29 @@ export const pushCurrentBranch = (cwd: string): Effect.Effect<Pushed, PushFailed
       }
     }
 
+    const tip = yield* git(cwd, ["rev-parse", "--verify", "HEAD^{commit}"]).pipe(
+      Effect.mapError(toPushFailed),
+    );
+    const commit = tip.stdout.trim();
+    if (tip.status !== 0 || commit === "")
+      return yield* new PushFailed({ message: "Couldn't read the commit to push" });
     const out = yield* remoteGit(
       cwd,
-      hasUpstream
-        ? ["-c", "credential.interactive=false", "push", "--quiet"]
-        : ["-c", "credential.interactive=false", "push", "--quiet", "-u", "origin", branch],
+      [
+        "-c",
+        "credential.interactive=false",
+        "push",
+        "--quiet",
+        "origin",
+        `${commit}:refs/heads/${branch}`,
+      ],
       { tier: "network", timeoutMs: PUSH_TIMEOUT_MS },
     ).pipe(Effect.mapError(toPushFailed));
     if (out.status !== 0) {
       return yield* new PushFailed({ message: gitFailMsg(out, "git push failed") });
     }
+    yield* git(cwd, ["update-ref", `refs/remotes/origin/${branch}`, commit]).pipe(Effect.ignore);
+    if (!hasUpstream)
+      yield* git(cwd, ["branch", `--set-upstream-to=origin/${branch}`, branch]).pipe(Effect.ignore);
     return { branch, published: !hasUpstream };
   });

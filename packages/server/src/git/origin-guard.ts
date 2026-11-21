@@ -50,7 +50,7 @@ export const storeOriginGuard =
     Effect.gen(function* () {
       if (!githubRelayed()) return;
       const project = yield* projectOfFolder(store, dir);
-      yield* effectiveOriginsChecked(project, dir).pipe(
+      return yield* effectiveOriginsChecked(project, dir).pipe(
         Effect.mapError((refused) => new OriginRefused({ message: refused.message })),
       );
     });

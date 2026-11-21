@@ -32,6 +32,7 @@ import {
   submoduleGitDirs,
   leadingOptions,
   parseConfigList,
+  redirectedBy,
   withGuardArgs,
 } from "./repo-config-guard.ts";
 
@@ -62,6 +63,12 @@ export interface RunOptions {
    * showing a long command's progress while it runs. The collected output is unchanged.
    */
   readonly onOutput?: ((text: string) => void) | undefined;
+  /**
+   * A git given this URL in place of a remote's name (`remoteGit`, once the URL was checked) is
+   * refused when the repository's own config would send it elsewhere (`redirectedBy`), so the URL
+   * checked is the URL git reaches.
+   */
+  readonly pinnedUrl?: string | undefined;
 }
 
 export interface ProcOutput {
@@ -560,7 +567,7 @@ const makeProc = Effect.gen(function* () {
         resolved.set(bin, exe);
       }
       // The inherited env is filtered here, as data, so the runner (perhaps a worker) gets no function.
-      const { omitEnv, ...rest } = options;
+      const { omitEnv, pinnedUrl, ...rest } = options;
       const base = withoutEnv(childEnv(process.env, pathValue, process.platform), omitEnv);
       if (isGhExecutable(exe)) {
         // `gh` runs git itself in `cwd` (to find the repository, the branch, the remote), and that
@@ -581,6 +588,14 @@ const makeProc = Effect.gen(function* () {
       if (!isGitExecutable(exe)) return yield* runner.run(exe, bin, args, rest, base);
       const env = { ...base, ...rest.env };
       const guard = yield* repoConfigGuard(exe, args, rest, env);
+      if (pinnedUrl !== undefined && redirectedBy(guard, pinnedUrl))
+        return yield* Effect.fail(
+          new ProcSpawnError({
+            bin: "git",
+            message:
+              "The repository's own git config sends this remote elsewhere, so Gram doesn't reach it.",
+          }),
+        );
       return yield* runner.run(
         exe,
         bin,
