@@ -25,7 +25,9 @@ import {
   type PaneConsoleEntry,
   type PaneKeyModifier,
 } from "@gram/contracts/link-trust";
+import type { BrowseContext } from "./browse-rules.ts";
 import { browserObservations, jpegDimensions } from "./browser-observations.ts";
+export { consoleText } from "./browser-observations.ts";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -142,8 +144,11 @@ export interface PageDriver {
   waitFor(ms: number, until: { readonly text?: string; readonly ref?: string }): Promise<boolean>;
   /** Sets a field's value, a select's option or a checkbox, as the user changing it would. */
   formInput(ref: string, value: string | boolean): Promise<void>;
-  /** What the page logged since the driver attached, oldest first. */
-  console(onlyErrors: boolean): readonly PaneConsoleEntry[];
+  /**
+   * What the page logged since the driver attached, oldest first: a local page's lines in words,
+   * except Gram's own pages under `context`, and every other line by its count.
+   */
+  console(onlyErrors: boolean, context?: BrowseContext): readonly PaneConsoleEntry[];
   /**
    * Whether the page asked to navigate its main frame to `url` by submitting a form, by whatever
    * means (a submit control, `requestSubmit()`, `form.submit()`), in the last few seconds.
@@ -217,7 +222,6 @@ export const SNAPSHOT_MAX_CHARS = 40_000;
 /** Visible text longer than this is cut. */
 export const TEXT_MAX_CHARS = 60_000;
 const FIND_MAX_LINES = 30;
-const CONSOLE_MAX_CHARS = 2_000;
 const NAME_MAX_CHARS = 200;
 
 /** One node of `Accessibility.getFullAXTree`, as far as the outline reads it. */
@@ -449,20 +453,6 @@ export function findInOutline(outline: string, query: string): string {
   return hits.length > shown.length
     ? `${shown.join("\n")}\n… (${hits.length - shown.length} more)`
     : shown.join("\n");
-}
-
-/** The text of a console call's arguments, as the console would print them. */
-export function consoleText(args: ReadonlyArray<Record<string, unknown>>): string {
-  const text = args
-    .map((arg) => {
-      const value = arg["value"];
-      if (typeof value === "string") return value;
-      if (value !== undefined) return JSON.stringify(value);
-      const shown = arg["unserializableValue"] ?? arg["description"] ?? arg["type"];
-      return typeof shown === "string" ? shown : "";
-    })
-    .join(" ");
-  return text.length > CONSOLE_MAX_CHARS ? `${text.slice(0, CONSOLE_MAX_CHARS)}…` : text;
 }
 
 // Run in the driver's isolated world on the element (`this`); they read the DOM, never write it.
