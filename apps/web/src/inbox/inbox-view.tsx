@@ -18,7 +18,6 @@ export const INBOX_TEST_ID = "inbox";
  */
 export function InboxView() {
   const requested = useInboxStore((s) => s.open);
-  // Opens once its body is in hand, which the shell preloads after first paint.
   const body = inboxBody.useModule(requested);
   const open = requested && body !== undefined;
   const close = useInboxStore((s) => s.close);
@@ -36,11 +35,9 @@ export function InboxView() {
           data-testid={INBOX_TEST_ID}
           data-surface="overlay"
           aria-label="Inbox"
-          // The list first, where j/k move; the Later list or the empty state has none.
           initialFocus={() =>
             document.querySelector<HTMLElement>('[data-testid="inbox-list"]') ?? true
           }
-          // A thread just opened takes focus in its pane; a dismissal hands it back.
           finalFocus={() =>
             useInboxStore.getState().leftForThread ? false : returnFocusTo(opener)()
           }

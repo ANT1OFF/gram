@@ -33,7 +33,6 @@ function earlierLabel(history: OutlineHistory) {
       : "Load earlier prompts and chapters";
 }
 
-/** Scroll only this rail, leaving the transcript and focus owner alone. */
 function keepInRail(rail: HTMLElement, button: HTMLElement) {
   const viewport = rail.getBoundingClientRect();
   const mark = button.getBoundingClientRect();
@@ -121,8 +120,6 @@ export function ConversationRail({
 } & OutlineHistory) {
   const railRef = useRef<HTMLElement>(null);
   const pagingFromRail = useRef<string>(undefined);
-  // The transcript hands down a new `onJump` with every streamed frame. The chapter buttons call
-  // the latest through a ref, so while the chapters stay the same none of their tooltips re-render.
   const latestJump = useRef(onJump);
   useLayoutEffect(() => {
     latestJump.current = onJump;
@@ -130,12 +127,7 @@ export function ConversationRail({
   const jump = useCallback((messageId: string) => latestJump.current(messageId), []);
   const firstId = chapters[0]?.id;
   const { earlier, loadingEarlier, earlierFailed } = history;
-  // One mark has nowhere to jump to, and two on their track read as a stray bracket in the gutter,
-  // not an outline: the rail shows from the third prompt or chapter on while the transcript
-  // scrolls, or while earlier history waits to load. Fewer are a click away in Contents.
   const available = (chapters.length >= RAIL_MIN_MARKS && scrollable) || earlier === true;
-  // Disabling the loading button can blur it to body. That is not a new focus owner;
-  // deliberate focus/input elsewhere retires this request's keyboard continuation.
   useSubscription(() => {
     if (!available) return;
     const rail = railRef.current;
@@ -223,11 +215,8 @@ export function ConversationRail({
         if (buttons[next]) keepInRail(rail, buttons[next]);
       }}
     >
-      {/* Auto margins center fitting lists; an overflowing list grows from its top, so both ends remain reachable. */}
       <div className="flex min-h-full flex-col">
         <div className="relative my-auto shrink-0">
-          {/* The track the marks sit on, so they read as one outline rather than stray dashes;
-              each mark names its prompt or chapter on hover and to a screen reader. */}
           <span
             aria-hidden
             className="pointer-events-none absolute top-3 bottom-3 left-3 w-px bg-border"
@@ -262,11 +251,6 @@ export function ConversationRail({
   );
 }
 
-/**
- * The rail's chapter marks, one tooltip each. Memoized, since its parent renders with every streamed
- * frame and a long thread has hundreds: while the chapters, the current one and `onJump` stay the
- * same, none of them renders again.
- */
 const RailChapters = memo(function RailChapters({
   chapters,
   currentId,
@@ -295,10 +279,6 @@ const RailChapters = memo(function RailChapters({
   );
 });
 
-/**
- * One chapter's mark. Memoized on its own: the current chapter moves as the transcript scrolls, and
- * only the mark that leaves it and the one that takes it render again, not every tooltip on the rail.
- */
 const RailMark = memo(function RailMark({
   title,
   messageId,

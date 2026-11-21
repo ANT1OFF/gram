@@ -18,7 +18,6 @@ export interface HelperTextCall {
   readonly reasoningEffort?: ReasoningVariant | undefined;
 }
 
-/** What a call spent. Reasoning tokens are part of `outputTokens`, and billed as output. */
 interface HelperTokenUsage {
   readonly inputTokens: number;
   readonly outputTokens: number;
@@ -47,7 +46,6 @@ export const generateHelperText: GenerateHelperText = async ({
     prompt,
     maxOutputTokens,
     abortSignal,
-    // The scheduler owns retries: it knows which failures are worth one and which model to ask.
     maxRetries: 0,
     ...(reasoningEffort === undefined
       ? {}

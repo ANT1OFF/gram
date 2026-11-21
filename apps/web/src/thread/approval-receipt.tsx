@@ -7,10 +7,6 @@ import { cn } from "@/lib/utils";
 
 import type { ApprovalReceipt } from "./request-model";
 
-// What answering an approval did, in the scope that was chosen, where its card was: "Allowed once",
-// "Always allowed Bash(git push:*) · This repository · saved in …", or "Denied". It shows for a few
-// seconds, then goes; the tool row above carries the lasting state.
-
 export const RECEIPT_MS = 8000;
 
 /** Which request the receipt answered, and the tool call it held: its row shows the receipt. */

@@ -1,11 +1,3 @@
-// Whether two values derived from the stores say the same thing, so a view that derives a list on
-// every store change can keep the list it had, and with it every component that reads it, still.
-
-/**
- * Deep equality over plain data: primitives, arrays, plain objects, `Set`s and `Map`s. Anything
- * else (a function, a class instance, a `Date`) is the same only as the very same reference, so a
- * value carrying one is never mistaken for an equal one.
- */
 const sameData = (a: unknown, b: unknown): boolean => {
   if (Object.is(a, b)) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;

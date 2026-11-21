@@ -1,7 +1,3 @@
-// Port chips: TCP ports listening inside each thread's process trees (its agent and its terminals),
-// found by one machine-wide scan per poll and pushed as `thread.ports` events when they change. The
-// same scan finds what runs in the foreground of each terminal, pushed as `thread.terminalProcesses`.
-
 import {
   effectiveCheckout,
   hostOf,
@@ -72,10 +68,8 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
         const scan = (options.scan ?? liveScan).pipe(Effect.provideService(Proc, yield* Proc));
         const current = new Map<string, ReadonlyArray<number>>();
         const busy = new Map<string, ReadonlyArray<TerminalProcess>>();
-        /** When each terminal's foreground process was first seen, by `terminalId:pid`. */
         const firstSeen = new Map<string, number>();
 
-        /** Each thread's busy terminals in `scan`, and publishes the threads whose list changed. */
         const publishTerminals = (swept: PortScan | undefined) =>
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;
@@ -93,8 +87,6 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
               firstSeen.set(key, startedAt);
               next.set(threadId, [
                 ...(next.get(threadId) ?? []),
-                // Scrubbed like a log line, and whole: clipped first, a key's head could slip past
-                // the patterns. The second pass is for anything the shortening itself exposes.
                 {
                   terminalId,
                   pid: job.pid,
@@ -122,7 +114,6 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
           for (const [threadId, pid] of [...(yield* runtimes.processIds), ...(yield* roots.all)]) {
             byThread.set(threadId, [...(byThread.get(threadId) ?? []), pid]);
           }
-          // Nothing to attribute: skip the scan, but still clear chips of threads that stopped.
           const swept = byThread.size === 0 ? undefined : yield* scan;
           const next =
             swept === undefined
@@ -138,8 +129,6 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
           yield* publishTerminals(swept);
         }).pipe(Effect.ignore);
 
-        // The chips are the window's alone, and each scan runs `lsof` and `ps` over the whole
-        // machine, so the scan rests while no window shows and slows while none is focused.
         yield* pollWhileShown(
           yield* Effect.serviceOption(AppActivity),
           options.interval ?? "5 seconds",
@@ -196,7 +185,6 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
         store._tag === "None"
           ? Effect.succeed("here")
           : store.value.getThread(threadId).pipe(
-              // Where its terminals open (`placedHost`): a thread that isn't stored is this machine's.
               Effect.map((thread) => hostOf(effectiveCheckout(thread))),
               Effect.orElseSucceed(() => LOCAL_HOST_ID),
               Effect.flatMap((id): Effect.Effect<Answer> =>
@@ -207,7 +195,6 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
                         (host): Effect.Effect<Answer> =>
                           host.ports.terminalBusy?.(threadId) ?? Effect.succeed(undefined),
                       ),
-                      // Offline: its shells may well run on, out of sight.
                       Effect.orElseSucceed((): Answer => undefined),
                     ),
               ),

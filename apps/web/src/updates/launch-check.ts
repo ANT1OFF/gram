@@ -1,6 +1,5 @@
 import type { ReleaseInfo, UpdateCheck } from "@gram/contracts";
 
-/** How long a running app waits after one automatic check before the next. */
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 export interface UpdateDecision {

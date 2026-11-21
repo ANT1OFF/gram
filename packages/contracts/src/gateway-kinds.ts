@@ -1,5 +1,3 @@
-// What a gateway's kind means: where OpenRouter and xAI live, and which agent each offers a model to.
-
 import type { AgentKind } from "./agent-kind.ts";
 import type { GatewayKind, GatewayModel, GatewayProfile } from "./domain.ts";
 
@@ -35,8 +33,6 @@ export const gatewayModelForAgent = (
   return false;
 };
 
-// A loop rather than `/\/+$/`: that pattern backtracks quadratically on a long run of slashes, and
-// a base URL is whatever the user typed.
 const normalURL = (url: string): string => {
   const text = url.trim().toLowerCase();
   let end = text.length;

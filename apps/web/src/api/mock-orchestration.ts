@@ -95,12 +95,6 @@ import type {
   SetStageInput,
 } from "./types";
 
-// Threaded orchestration for MockApi: workspaces, the orchestrator slot, the charter and pause.
-// Nothing here spawns workers or wakes anyone by itself; the ledger is what the mock's threads say
-// it is. `simulate` scripts one orchestrator with one worker so every card can be seen, and
-// `simulateBoard` a workspace across repos so the tree, the board and the inbox have work to show:
-// two features run as a staged group, a third on its own, and one worker that spans three repos.
-
 /** The archive-only finished workers a page holds past the first, as the server pages them. */
 export const MOCK_FINISHED_PAGE = 50;
 
@@ -294,9 +288,7 @@ export interface MockReleaseSimulation {
   readonly archived: ThreadId;
 }
 
-/** How long the mock waits after a change before it sends the ledger again, as the server debounces. */
 const WATCH_DEBOUNCE_MS = 40;
-/** How long a mock handoff takes to bring the fresh session up. */
 const HANDOFF_MS = 600;
 
 /** What `advanceStage` moves: a feature's stage, or that of a group of them. */
@@ -308,26 +300,17 @@ const notFound = (entity: "workspace" | "project", id: string) =>
 /** The `workspace.*`, `orchestrator.*`, `thread.detach` and `thread.joinWorkspace` RPCs for the mock. */
 export function createMockOrchestration(host: MockOrchestrationHost) {
   let workspaces: WorkspaceState[] = [];
-  /** Each worker's latest report; only `simulate` files any. */
   const reports = new Map<ThreadId, WorkerReport>();
   const askedAt = new Map<string, number>();
   const overlaps = new Map<ThreadId, readonly ThreadId[]>();
-  /** Workers the user typed into since their last report. */
   const intervened = new Set<ThreadId>();
-  /** Projects set to have no local check (`noLocalCheck`): their workers' rows say so. */
   const noLocalCheck = new Set<string>();
-  /**
-   * Threads that have run a turn, as the server's memo records it (`hasStartedTurn`): a worker reads
-   * `briefed` until one has, and `working` after, however soon that turn ends.
-   */
   const started = new Set<ThreadId>();
   host.onEvent((event) => {
     if (event.type === "thread.status" && event.status === "running") started.add(event.threadId);
   });
   const closedWorkers = new Map<ThreadId, FinishedWorkerDetail>();
-  /** The other repos of a worker that spans several. */
   const alsoIn = new Map<ThreadId, readonly WorkerRepo[]>();
-  /** Workspaces whose orchestrator is between two agent sessions. */
   const handingOff = new Set<WorkspaceId>();
 
   const find = (workspaceId: WorkspaceId): WorkspaceState => {
@@ -342,7 +325,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     return found;
   };
 
-  /** The thread holding the slot, if it is still open; like the server, a stale slot is empty. */
   const holder = (state: WorkspaceState): Thread | undefined =>
     host.threads().find((t) => t.id === state.workspace.orchestratorThreadId);
 
@@ -353,7 +335,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     return next;
   };
 
-  /** A new workspace, on the charter it was given, else the one the server would give it (`newWorkspaceCharter`). */
   const create = async (
     input: Omit<SaveWorkspaceInput, "id" | "charter">,
     given?: OrchestratorCharter | undefined,
@@ -371,7 +352,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     });
   };
 
-  /** The slot's holder, or a new orchestrator thread in the home project that takes the slot. */
   const fillSlot = async (state: WorkspaceState, settings: Settings): Promise<Thread> => {
     const existing = holder(state);
     if (existing) return existing;
@@ -404,7 +384,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       (w) => w.workspace.projectIds.length === 1 && w.workspace.homeProjectId === projectId,
     );
     if (existing !== undefined) {
-      // As the server: a level the draft promised can't be kept by a workspace made meanwhile.
       if (autonomy !== undefined && autonomyOf(existing.charter) !== autonomy) {
         throw new MockInvalidState(
           `${existing.workspace.name} already has a workspace, at ${autonomyOf(existing.charter)} autonomy, which it keeps. Send again to start the task there.`,
@@ -412,7 +391,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       }
       return existing;
     }
-    // No await between choosing the name and create's synchronous put with this charter.
     return create(
       {
         name: availableWorkspaceName(
@@ -498,7 +476,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     const held = (heldOf.get(state.workspace.id) ?? []).toSorted((a, b) => a.until - b.until);
     const wakes = orchestrator === undefined ? [] : (wakesOf.get(orchestrator.id) ?? []);
     const asked = questionsOf.get(state.workspace.id) ?? [];
-    // As the server lists them: the open ones oldest first, then the closed ones newest first.
     const questions = [
       ...asked.filter(isOpenQuestion),
       ...asked
@@ -520,12 +497,9 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     };
   };
 
-  /** Each workspace's worker questions (`ask_question`), oldest first; only the simulations ask any. */
   const questionsOf = new Map<WorkspaceId, readonly WorkerQuestion[]>();
-  /** The message holding each question's card in its worker's transcript, replaced as it moves. */
   const questionCards = new Map<string, string>();
 
-  /** The question's card in its worker's transcript, in place of the one before. */
   const showQuestion = (question: WorkerQuestion) => {
     const id = questionCards.get(question.id) ?? host.ids();
     questionCards.set(question.id, id);
@@ -539,7 +513,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     });
   };
 
-  /** The user's answer or dismissal: to the worker now, the card and the ledger moved on. */
   const closeQuestion = async (
     workspaceId: WorkspaceId,
     questionId: string,
@@ -580,16 +553,12 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     return closed;
   };
 
-  /** Each workspace's low-priority briefs held until a usage limit resets (`simulateHeldBrief`). */
   const heldOf = new Map<WorkspaceId, readonly HeldBrief[]>();
   const wakesOf = new Map<ThreadId, readonly PendingWake[]>();
-  /** The timer that releases each held brief at its reset, as the server's alarm does. */
   const heldTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  /** Each workspace's cards, as the server persists them. */
   const cardsOf = new Map<WorkspaceId, readonly FeatureCard[]>();
 
-  /** The workers the workspace's orchestrator spawned for `feature`, parked ones aside. */
   const workersOfFeature = (state: WorkspaceState, feature: string): readonly Thread[] => {
     const orchestrator = holder(state);
     return host
@@ -602,10 +571,8 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
           !t.parked,
       );
   };
-  /** Whether a brief of `feature` is held in the workspace. */
   const heldIn = (workspaceId: WorkspaceId, feature: string): boolean =>
     (heldOf.get(workspaceId) ?? []).some((brief) => brief.feature === feature);
-  /** Helper sentences armed per feature; none unless a scenario asks. */
   const summaries = new Map<string, string>();
 
   const syncCards = (state: WorkspaceState): FeatureCards => {
@@ -662,7 +629,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     parts,
   });
 
-  /** What the scenario files (`mock-board.ts` and the rest) read and change of this mock's state. */
   const scenes: MockScenes = {
     host,
     workspaces: () => workspaces,
@@ -764,7 +730,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         const problem = connectorEntryProblem(entry);
         if (problem !== undefined) throw new MockInvalidState(`“${entry.trim()}”: ${problem}`);
       }
-      // As the server's write path: every routine is kept with an id.
       const before = find(workspaceId);
       const routines = withRoutineGenerations(
         before.charter.routines,
@@ -785,7 +750,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       const { paused: was, ...rest } = find(workspaceId);
       if (paused && was !== undefined) return find(workspaceId);
       const next = put(paused ? { ...rest, paused: { reason: "user", at: Date.now() } } : rest);
-      // As the server: resuming unparks the orchestrator.
       const parkedHolder = holder(next);
       if (!paused && was !== undefined && parkedHolder?.parked === true) {
         host.replace({ ...parkedHolder, parked: false });
@@ -806,7 +770,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       find(workspaceId);
       let timer: ReturnType<typeof setTimeout> | undefined;
       let last = "";
-      // Set after the channel exists: a signal that has aborted already closes it at once.
       let stop: (() => void) | undefined;
       const channel = createChannel<OrchestratorLedger>(signal, () => {
         clearTimeout(timer);
@@ -963,7 +926,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       const groups: Record<string, FeatureGroup> = {};
       for (const [name, each] of Object.entries(state.groups ?? {})) {
         const features = each.features.filter((slug) => slug !== feature);
-        // A group left with nothing in it goes, unless somebody's word is still on it.
         if (features.length > 0 || each.stage !== undefined) groups[name] = { ...each, features };
       }
       if (target !== undefined) {
@@ -1007,7 +969,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         );
       }
       for (const worker of workers) host.replace({ ...worker, parked: true });
-      // As the server: a pause on it goes with it.
       const state = find(workspaceId);
       if (state.pausedFeatures?.includes(feature) === true) {
         const kept = state.pausedFeatures.filter((each) => each !== feature);
@@ -1255,8 +1216,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         }
         host.setStatus(orchestrator.id, "idle");
       };
-      // Windows can take longer than the whole mock handoff to finish a click. A spec that checks
-      // the intermediate state releases it explicitly, just like the scripted agent's gates.
       if (typeof window !== "undefined" && window.gramMockHoldGates === true) {
         void host.gate("handoff").then(finish);
       } else {

@@ -101,7 +101,6 @@ export function useScopeCommands(
   const local = useOpensLocally();
   const openInEditor = useOpenInEditor();
   const revealInFileManager = useRevealInFileManager();
-  // A worker's workspace, for its ways back.
   const workerWorkspace =
     scope?.kind === "thread" && thread?.spawnedBy !== undefined
       ? workspaces.find((state) => state.workspace.id === thread.workspaceId)
@@ -226,7 +225,6 @@ export function useScopeCommands(
                 id: `scope:browser:${id}`,
                 label: thread.browser === true ? "Take your browser back" : "Lend it your browser",
                 keywords: "chrome claude in chrome computer use web console click sign in",
-                // Where its session can't carry it, lending would promise what it never gets.
                 ...(thread.browser !== true && browser?.cannot !== undefined
                   ? { unavailable: browser.cannot }
                   : {}),
@@ -321,8 +319,6 @@ export function useScopeCommands(
                 run: actions.freshSession,
               },
             ]),
-        // Only while a view of the thread has its messages: a thread no pane shows has no reply
-        // here to add.
         ...(lastReply === undefined
           ? []
           : [
@@ -410,10 +406,8 @@ export function useScopeCommands(
         },
       ],
     });
-    // The branch is the agents' working detail: kept out of the bar and the thread menu, here.
     const branch = summary?.git?.branch ?? thread.checkout.branch;
     if (branch) {
-      // Which checkout it is, to find it by, as the branch chip's glyph tells it.
       const worktree = isWorktreeCheckout(thread, summary?.git);
       threadSections.push({
         id: "branch",
@@ -439,7 +433,6 @@ export function useScopeCommands(
         ],
       });
     }
-    // An orchestrator follows no PR of its own; its workers carry theirs.
     if (worker) {
       threadSections.push({
         id: "pr",

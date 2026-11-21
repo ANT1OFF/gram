@@ -26,16 +26,13 @@ const post = async (path: string, body?: unknown): Promise<Response> =>
     }),
   );
 
-/** The server's own words for a refusal, when it sent JSON `{ message }` or plain text. */
 const refusal = async (response: Response, fallback: string): Promise<PhoneAccessError> => {
   const text = await response.text().catch(() => "");
   try {
     const value: unknown = JSON.parse(text);
     if (typeof value === "object" && value !== null && "message" in value)
       return new PhoneAccessError(String(value.message));
-  } catch {
-    // Plain text.
-  }
+  } catch (_plainText) {}
   return new PhoneAccessError(text.trim() !== "" && text.length < 200 ? text : fallback);
 };
 

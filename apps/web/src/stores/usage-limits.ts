@@ -33,10 +33,6 @@ export const NO_RESET_TTL_MS = LIMIT_NO_RESET_TTL_MS;
 /** A reading no agent has repeated for this long shows its age. */
 export const LIMIT_STALE_MS = 10 * 60 * 1000;
 
-/**
- * The same reading again within this long changes nothing: agents report on every request, and
- * the age it would move on is shown to the minute.
- */
 const REPEAT_QUIET_MS = 60 * 1000;
 
 /** The latest reading of one provider's window. */
@@ -79,8 +75,6 @@ const isProvider = (agent: string): agent is LimitProvider =>
  * so the next plain reading clears a rejection.
  */
 export function withReading(limits: UsageLimits, event: UsageLimitEvent, now: number): UsageLimits {
-  // Scoped process reports may be from a remote machine or a previous login. The
-  // server's snapshot selects the current local account for the shared meter.
   if (event.accountScope !== undefined) return limits;
   const window = limitWindowOf(event.window);
   if (event.gateway === true || !isProvider(event.agent) || window === undefined) return limits;
@@ -97,8 +91,6 @@ export function withReading(limits: UsageLimits, event: UsageLimitEvent, now: nu
     now,
   );
   if (reading === undefined || (before !== undefined && reading.at === before.at)) return limits;
-  // The same reading again soon after changes nothing, unless it moves a reset-less reading's
-  // expiry on by more than that.
   if (
     before?.at !== undefined &&
     before.utilization === reading.utilization &&
@@ -281,10 +273,8 @@ export const limitStale = (limit: UsageLimit, now: number): boolean =>
   limit.at !== undefined && now - limit.at >= LIMIT_STALE_MS;
 
 interface UsageLimitsState {
-  /** The latest reading per provider and window. */
   readonly limits: UsageLimits;
   record(event: UsageLimitEvent): void;
-  /** Puts the server's kept readings in place of the client's (`usageLimits.snapshot`). */
   replace(records: ReadonlyArray<LimitRecord>): void;
 }
 

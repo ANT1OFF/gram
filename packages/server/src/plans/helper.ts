@@ -90,7 +90,6 @@ const prFact = (badge: PrStatus, repo: string | undefined): PrFact => ({
           : "open",
 });
 
-/** The PR the badge at `url` is, among those the thread follows. */
 const followedBy = (followed: ReadonlyArray<BoundPr>, badge: PrStatus): BoundPr | undefined =>
   followed.find(
     (pr) =>
@@ -115,7 +114,6 @@ export const planFacts = (
   };
 };
 
-/** The previous plan as the helper reads it, every step with its lock. */
 const planMaterial = (plan: ThreadPlan | undefined) =>
   plan === undefined
     ? { goal: "", steps: [] }
@@ -171,7 +169,6 @@ export const factOf = (pr: PlanStepPr, prs: ReadonlyArray<PrFact>): PrFact | und
   return numbered.length === 1 ? numbered[0] : undefined;
 };
 
-/** A step whose PR merged is done, and one marked done for its PR's merge is open again once the PR is. */
 const withPrFact = (step: PlanStep, prs: ReadonlyArray<PrFact>): PlanStep => {
   if (step.pr === undefined || step.status === "dropped") return step;
   const pr = factOf(step.pr, prs);
@@ -210,7 +207,6 @@ export interface ValidateContext {
   readonly newId: () => PlanStepId;
 }
 
-/** More of the unlocked steps reworded than this, with no word from the user, is churn. */
 const CHURN_SHARE = 0.5;
 
 /**
@@ -228,12 +224,7 @@ export const validateHelperPlan = (
 ): ThreadPlan | undefined => {
   const old = new Map((previous?.steps ?? []).map((step) => [step.id as string, step]));
   const used = new Set<string>();
-  /** The answer's ids as kept, so its `next` can name a step whose id was replaced. */
   const renamed = new Map<string, PlanStepId>();
-  /**
-   * The PR an answer's bare number means: the one fact of that number, or, where two repos share
-   * it, the one the step already named; otherwise none rather than a guess.
-   */
   const prOf = (number: number, before: PlanStep | undefined): PlanStepPr | undefined => {
     const numbered = facts.prs.filter((pr) => pr.number === number);
     if (before?.pr?.number === number && factOf(before.pr, facts.prs) !== undefined) {
@@ -247,7 +238,6 @@ export const validateHelperPlan = (
   for (const raw of output.steps) {
     const text = planText(raw.text);
     if (text === "") continue;
-    // An id the answer repeats names its step once; the repeat is a new step, never a second copy.
     const named = raw.id === null || raw.id === undefined ? undefined : old.get(raw.id);
     const before = named !== undefined && !used.has(named.id) ? named : undefined;
     const id = before?.id ?? newId();
@@ -257,7 +247,6 @@ export const validateHelperPlan = (
     const evidence = raw.evidence == null ? "" : planText(raw.evidence);
     const status = raw.status === "done" && evidence === "" ? "doing" : raw.status;
     if (before !== undefined && before.locked === true) {
-      // The brief's step keeps its words; how it stands is what the helper reports.
       if (before.source === "orchestrator") {
         const { evidence: _evidence, pr: _pr, ...kept } = before;
         const keptPr = pr ?? before.pr;
@@ -282,7 +271,6 @@ export const validateHelperPlan = (
       ...(evidence === "" ? {} : { evidence }),
     });
   }
-  // Locked steps are the user's and the agent's; the helper may not drop them.
   (previous?.steps ?? []).forEach((step, index) => {
     if (step.locked === true && !used.has(step.id)) {
       steps.splice(Math.min(index, steps.length), 0, step);
@@ -322,7 +310,6 @@ export const validateHelperPlan = (
   };
   const settled = applyPrFacts(plan, facts.prs)!;
   if (settled.goal === "" && settled.steps.length === 0) return undefined;
-  // Nothing moved: the previous plan stands, its time and author with it.
   if (
     previous !== undefined &&
     previous.goal === settled.goal &&

@@ -1,6 +1,3 @@
-// Creating a thread and closing it: one close per thread at a time, which a guard can refuse, and
-// what of the checkout it releases.
-
 import type { EventSinkShape } from "../embedding/event-sink.ts";
 import { ActingPerson } from "../embedding/person.ts";
 import {
@@ -56,7 +53,6 @@ import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type { MessageQueue } from "./message-queue.ts";
 import * as FiberSet from "effect/FiberSet";
 
-/** Who may see a thread being made, as it inherits it: its person and its readers. */
 type Seen = { readonly readableBy: string; readonly readers: ReadonlyArray<string> };
 
 const seenOf = (
@@ -130,7 +126,6 @@ export const makeThreadLifecycle = ({
   send,
   openSession,
 }: ThreadLifecycleDeps) => {
-  /** The thread's running close, or a new one in `closes` with these options. */
   const claimClose = (threadId: ThreadId, options: CloseThreadOptions) =>
     closeLock.withPermits(1)(
       Effect.gen(function* () {
@@ -146,11 +141,6 @@ export const makeThreadLifecycle = ({
       }),
     );
 
-  /**
-   * A claimed close's outcome for a caller with `options`. A joined one that succeeded without the
-   * worktree removal the caller asked for fails it: the thread is gone with its worktree kept, which
-   * a worktree removal would count as done.
-   */
   const settleClose = (
     claim: Effect.Success<ReturnType<typeof claimClose>>,
     options: CloseThreadOptions,
@@ -166,7 +156,6 @@ export const makeThreadLifecycle = ({
       return yield* Fiber.join(claim.fiber);
     });
 
-  /** The whole close, run only by `claimClose`, so nothing but the server's shutdown interrupts it. */
   const closeNow = (threadId: ThreadId, options: CloseThreadOptions) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(threadId);
@@ -176,15 +165,9 @@ export const makeThreadLifecycle = ({
           ? {}
           : { permissionRules: options.permissionRules }),
       };
-      // While the session still runs: a refused close leaves the thread working as it was.
       yield* checkouts.checkRelease(thread, release);
       const onlyAtRest = options.onlyAtRest === true;
-      // Every close claims the runtime, a cold thread's too: without one to mark `closing`, a send
-      // during the release started a session that outlived the thread, untracked and unstoppable.
       const rt = yield* getRuntime(threadId);
-      // Before the session stops, so no recovery reopens it once the thread is gone: the mark
-      // turns away one the watchdog starts, and any send, while the session is still stopping.
-      // Under the lock sends take, so a guarded close sees the last send that got in.
       yield* locked(
         rt,
         Effect.gen(function* () {
@@ -205,25 +188,18 @@ export const makeThreadLifecycle = ({
         yield* cancelIdleTimer(rt);
         yield* FiberMap.remove(recoveries, threadId);
         yield* stopSession(rt, "close");
-        // A thread closed cold never had a session whose exit would do this.
         yield* locked(rt, failPendingDeliveries(rt, "ended"));
         yield* checkouts.release(thread, release);
-        // The checkout is gone, so the rest runs to the end even under a shutdown.
         yield* Effect.uninterruptible(
           Effect.gen(function* () {
             if (Option.isSome(mcpTokens)) yield* mcpTokens.value.revoke(threadId);
-            // Kept as it was, conversation included, so ⌘⇧T can bring it back, across restarts too.
             yield* store.closeThread(threadId, Date.now());
-            // Only once the row is gone: until then a send finds the closing runtime and is refused,
-            // where one finding none would make a fresh runtime and start a session.
             runtimes.delete(threadId);
             yield* hub.publish({ type: "thread.removed", threadId });
           }),
         );
       });
     }).pipe(
-      // Cover every post-claim failure, including a defect in the final store transaction or an
-      // interruption between marking the runtime and entering provider/checkout cleanup.
       Effect.onError(() =>
         Effect.suspend(() => {
           const rt = runtimes.get(threadId);
@@ -231,10 +207,8 @@ export const makeThreadLifecycle = ({
           return locked(
             rt,
             Effect.gen(function* () {
-              // Successful removal must never be turned into a reopen by notification failure.
               if (Option.isNone(yield* store.getThread(threadId).pipe(Effect.option))) return;
               rt.closing = false;
-              // Keep a still-owning provider's status; only an absent lifetime becomes cold.
               if (!FiberMap.hasUnsafe(sessions, threadId)) yield* setStatus(rt, "cold");
             }),
           );
@@ -297,9 +271,6 @@ export const makeThreadLifecycle = ({
         ...(input.browser === true ? { browser: true } : {}),
         ...input.kept,
       };
-      // Who may see it: its spawner's or its orchestrator's reader where they have one, else the
-      // reader of the agent whose tool call makes it, else what the start says. Its readers come
-      // with it, from the same place.
       const parentSeen = (id: ThreadId | undefined): Effect.Effect<Seen | undefined> =>
         id === undefined
           ? Effect.succeed(undefined)
@@ -337,8 +308,6 @@ export const makeThreadLifecycle = ({
         if (seen.readers.length > 0)
           (thread as { readers?: ReadonlyArray<string> }).readers = seen.readers;
       }
-      // Whom it works for: its spawner's person, else its orchestrator's, else the signed-in person
-      // this call is made for. A thread another thread spawned is never the caller's.
       const parentPerson = (id: ThreadId | undefined) =>
         id === undefined
           ? Effect.succeed(undefined)
@@ -356,13 +325,10 @@ export const makeThreadLifecycle = ({
       const stored = yield* store.insertThread(thread);
       if (input.restoreClosedHistory === true) yield* store.restoreClosedHistory(thread.id);
       if (eventSink !== undefined && thread.spawnedBy === undefined) {
-        // The signed-in person this call is made for, where there is one. A thread another
-        // thread spawned is its spawner's, whoever's call that turn began with.
         const person = yield* ActingPerson;
         if (person !== undefined) yield* eventSink.noteCreator(thread.id, person);
       }
       yield* publishUpsert(stored);
-      // Clients dropped the plan with the thread when it closed; the upsert carries only the thread.
       if (input.restoreClosedHistory === true) {
         yield* plans.publish(thread.id);
         yield* hub.publishOwn({ type: "messages.replaced", threadId: thread.id });
@@ -372,18 +338,15 @@ export const makeThreadLifecycle = ({
       } else if (
         input.resumeSessionId === undefined &&
         input.deferOpen !== true &&
-        // Nothing opens for a thread whose machine isn't named yet, or that runs on a server.
         input.awaitingMachine === undefined &&
         input.sentTo === undefined
       ) {
         const rt = yield* getRuntime(thread.id).pipe(Effect.orDie);
         yield* locked(rt, openSession(rt, stored));
       }
-      // A resumed session stays cold until the first send, like a fork.
       return stored;
     });
 
-  /** Whether `guard` still holds of the thread as stored; true without one. */
   const guardHolds = (threadId: ThreadId, guard: ClaimGuard) =>
     guard.expectedCheckout === undefined && guard.stillHolds === undefined
       ? Effect.succeed(true)
@@ -400,7 +363,6 @@ export const makeThreadLifecycle = ({
           Effect.orElseSucceed(() => false),
         );
 
-  /** `atRest`, nothing reserved, and no request waiting on the user. Holds the lock. */
   const restsNow = (rt: Runtime) =>
     Effect.gen(function* () {
       if (rt.reserved || !atRest(rt)) return false;
@@ -447,8 +409,6 @@ export const makeCloseMethods = ({
       const first = yield* claimClose(threadId, options);
       const exit = yield* Fiber.await(first.fiber);
       if (Exit.isSuccess(exit) || !first.joined) return yield* settleClose(first, options);
-      // The close it joined may have refused what this caller asks for regardless: a guarded
-      // close from the UI that found the thread working, under a workspace removal's.
       return yield* settleClose(yield* claimClose(threadId, options), options);
     }),
   releaseAfterClose: (threadId, release) =>
@@ -468,7 +428,6 @@ export const makeCloseMethods = ({
         rt,
         Effect.gen(function* () {
           const changed = !(yield* guardHolds(threadId, guard));
-          // Cold too: a live session is an agent that could start something of its own.
           if (changed || rt.closing || rt.session !== undefined || !(yield* restsNow(rt))) {
             return yield* new InvalidState({
               message: changed

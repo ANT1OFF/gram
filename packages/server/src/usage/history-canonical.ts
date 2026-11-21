@@ -30,7 +30,6 @@ const overlappingMinimum = (a: TokenUsage, b: TokenUsage): TokenUsage | undefine
 
 const validRequirement = (value: TokenUsage | undefined): value is TokenUsage =>
   value !== undefined && value !== null && typeof value === "object" && validCodexCounts(value);
-// Independent copies constrain the same request; requirements never add amounts.
 const mergeRequirements = (a: TokenUsage | undefined, b: TokenUsage | undefined) => {
   if (!validRequirement(a)) return validRequirement(b) ? { ...b } : undefined;
   if (!validRequirement(b)) return { ...a };
@@ -212,9 +211,6 @@ export function canonicalHistory(
         uncertain++;
         uncertainProviders.add(first.provider);
       }
-      // These representations overlap; neither summing them nor choosing the
-      // smaller incomplete projection preserves previously proven contributions.
-      // Keep lane minima only when their sum/subsets remain representable and safe.
       if (old.basis !== undefined && validCodexCounts(old.tokens)) {
         const minimum = overlappingMinimum(old.tokens, tokens);
         if (minimum === undefined || !equalCounts(minimum, tokens)) {
@@ -229,8 +225,6 @@ export function canonicalHistory(
             else delete combined.cacheIncomplete;
           } else {
             combined.model = old.model === combined.model ? combined.model : null;
-            // Lane minima from overlapping sources are not a full cache split of
-            // this new primary minimum, even when both cache lanes have witnesses.
             combined.cacheIncomplete = true;
           }
           if (minimum === undefined) {

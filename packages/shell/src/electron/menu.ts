@@ -1,7 +1,3 @@
-// The application menu. The stock UI turns its own ⌘W and ⌘⇧N handlers off whenever the shell is
-// there, so the menu carries them. The user's keybindings and the development items come in as
-// `MenuOptions`.
-
 import {
   MENU_SHORTCUT_IDS,
   type DesktopMenuAction,
@@ -156,10 +152,6 @@ export function menuTemplate(
   const developerItems: MenuItemConstructorOptions[] = developer
     ? [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, separator]
     : [];
-  // The zoom keys stay with the renderer, so a focused terminal can take them for its font first;
-  // what it leaves, the renderer hands back as window zoom (`windowZoomStep`). The items keep
-  // showing their keys. On macOS this used to be the menu's: its Zoom In accelerator is the US
-  // chord, so ⌘⇧= never reached a focused terminal, while a Nordic ⌘+ (another key) did.
   const zoomAccelerator: Pick<MenuItemConstructorOptions, "registerAccelerator"> = {
     registerAccelerator: false,
   };
@@ -218,7 +210,6 @@ export function menuTemplate(
       ],
     },
     {
-      // Built by hand: the `windowMenu` role adds a Close item bound to CmdOrCtrl+W on Windows.
       label: "Window",
       role: "window",
       submenu: [{ role: "minimize" }, ...windowExtras, ...windowList],

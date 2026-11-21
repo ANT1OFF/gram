@@ -24,7 +24,6 @@ const canonical = (keys: string) => {
   return "keys" in normal ? normal.keys : keys.toLowerCase();
 };
 
-/** The app shortcut `keys` already runs, by its label, or `undefined`. */
 const appShortcutOn = (keys: string): string | undefined => {
   const wanted = canonical(keys);
   return SHORTCUT_CATALOG.find((definition) => canonical(definition.keys) === wanted)?.label;
@@ -70,7 +69,6 @@ const scriptOf = (draft: Draft): ProjectScript => ({
 export function ProjectScriptsEditor({ projectId }: { projectId: ProjectId }) {
   const { data, isPending, isError } = useProjectScripts(projectId);
   const { save, saving, error, reset } = useSaveProjectScripts(projectId);
-  /** The script being edited by its index, or `"new"` for one being added. */
   const [editing, setEditing] = useState<number | "new">();
   const scripts = data?.scripts ?? [];
 
@@ -224,7 +222,6 @@ export function ProjectScriptsEditor({ projectId }: { projectId: ProjectId }) {
   );
 }
 
-/** One script's fields; Save is offered once they would save. */
 function ScriptForm({
   initial,
   others,
@@ -318,7 +315,6 @@ function ScriptForm({
   );
 }
 
-/** Records the next chord pressed while it has focus; Backspace clears it. */
 function ShortcutInput({
   value,
   labelledBy,

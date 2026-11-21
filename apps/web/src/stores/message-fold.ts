@@ -1,18 +1,6 @@
-// Folds `UIMessageChunk`s into a `UIMessage` with the semantics of the AI SDK's
-// `processUIMessageStream`, which the server's `MessageAccumulator` mirrors too, but in O(1) per
-// chunk. The SDK's `readUIMessageStream` deep-clones the whole message for every chunk, and one
-// agent turn is one message: a real 626-part turn replayed to a late subscriber is ~15,000 chunks,
-// which cost a single 5 s main-thread task on opening the thread.
-//
-// Parts are never mutated once created: a chunk replaces the part it touches, so a snapshot shares
-// every other part with the previous one and memoized rows can skip them.
 import type { GramUIMessage, GramUIMessageChunk } from "@gram/contracts";
 import type { parsePartialJson } from "ai";
 
-/**
- * The AI SDK's partial-JSON parser, loaded the first time a tool's input streams: the SDK brings zod
- * and its provider utilities, which the first screen doesn't need.
- */
 let partialJson: Promise<typeof parsePartialJson> | undefined;
 const loadPartialJson = () =>
   (partialJson ??= import("ai").then(
@@ -27,9 +15,7 @@ type Part = Record<string, unknown> & { type: string };
 type LooseChunk = Record<string, unknown> & { type: string };
 
 interface PartialToolCall {
-  /** The input JSON streamed so far. */
   text: string;
-  /** How much of `text` the part's `input` reflects. */
   parsed: number;
   toolName: unknown;
   dynamic: boolean;
@@ -58,7 +44,6 @@ const toolNameOf = (part: Part) =>
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** The SDK's metadata merge, except that agent message ids accumulate, as the server stores them. */
 function mergeMetadata(
   base: Record<string, unknown> | undefined,
   incoming: Record<string, unknown>,
@@ -127,10 +112,6 @@ export function createMessageFold(
     return parts.length - 1;
   };
 
-  /**
-   * The SDK's `updateToolPart` and `updateDynamicToolPart`: `input`, `output`, `errorText` and
-   * `preliminary` are set to what the chunk carries, so a field it leaves out is cleared.
-   */
   const updateTool = (
     c: LooseChunk,
     update: {
@@ -467,7 +448,6 @@ export function createMessageFold(
         const parse = await loadPartialJson();
         const { value } = await parse(text);
         const index = toolIndex.get(toolCallId);
-        // The input may have arrived in full, or the step been reset, while this one was parsed.
         if (partialToolCalls.get(toolCallId) !== partial || index === undefined) continue;
         partial.parsed = length;
         replace(index, withoutUndefined({ ...parts[index]!, input: value, rawInput: text }));

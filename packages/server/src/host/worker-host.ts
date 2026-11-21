@@ -74,7 +74,6 @@ export interface HostMachine {
   readonly ports: HostPorts;
 }
 
-/** A part a test's host leaves out: reaching it is a defect in the test, named so. */
 const missing = <A extends object>(part: string): A =>
   new Proxy({} as A, {
     get: (_, key) =>
@@ -193,7 +192,6 @@ export interface WorkerHostsShape {
 
 /** How long a session about to open waits for a stopped machine to be started. */
 export { WAKE_WAIT_MS };
-/** How often a machine being waited for is looked for. */
 const WAKE_LOOK = "500 millis";
 
 /**
@@ -228,8 +226,6 @@ export const awaitedMachines =
         Effect.map((host) => ({ host, away: undefined })),
         Effect.catch((away) => Effect.succeed({ host: undefined, away })),
       );
-      // Readied to stop, or back after one and not yet resumed (its folders maybe not there yet):
-      // it takes no new session until then, but a thread's own once its own folders are back.
       const settled = () =>
         !remote.stops.holding(id) &&
         (!remote.stops.resuming(id) ||
@@ -237,17 +233,12 @@ export const awaitedMachines =
       if (first.host !== undefined && settled()) return first.host;
       const asIs = first.host === undefined ? Effect.fail(first.away) : Effect.succeed(first.host);
       if (remote.machines.get(id)?.confirmedAt === undefined) return yield* asIs;
-      // With the hosted features off, a machine that is away isn't waited for; one that is there
-      // but owes a resume (back on another disk) is, as this Gram resumes it itself
-      // (`resumeOwedMachines`): no session opens over folders not yet put back.
       if (!embeddingOn(yield* store.getSettings) && (first.host === undefined || settled()))
         return yield* asIs;
       yield* Effect.logInfo("a session waits for its machine to be started").pipe(
         Effect.annotateLogs({ hostId: id }),
       );
       if (threadId !== undefined) remote.stops.awaiting(id, threadId);
-      // A resume that made no progress for too long: said, at once or once this waited for it,
-      // never opened. Only a resume that completes opens the machine.
       const stalledNow = () => remote.stops.stalled(id) !== undefined;
       const ready = get(id).pipe(
         Effect.filterOrFail(
@@ -269,9 +260,6 @@ export const awaitedMachines =
           const host = yield* ready.pipe(
             Effect.retry({
               schedule: Schedule.spaced(WAKE_LOOK),
-              // A block or a stall is the answer: nothing to wait for. `waitMs` is for the machine
-              // to be started; a resume under way is waited for as long as it makes progress, so
-              // the wait is never shorter than the step it waits on (`budgets.ts`).
               while: () =>
                 Effect.map(
                   Clock.currentTimeMillis,
@@ -316,10 +304,6 @@ export const restoreGateOf = (
 /** What a session waiting on a resume that made no progress is told. */
 export const RESUME_STALLED = `That machine's threads were being put back, and nothing came back for ${RESUME_STALL_MS / 60_000} minutes, so this session wasn't opened over folders that may not be there. It opens once the machine's resume completes.`;
 
-/**
- * The joined machines' worker hosts, when this server has joined machines (`RemoteHosts`) and the
- * services their hosts are built on; absent in test layers without them.
- */
 const joinedMachines = Effect.gen(function* () {
   const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
   const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
@@ -328,8 +312,6 @@ const joinedMachines = Effect.gen(function* () {
   if (remote === undefined || store === undefined || hub === undefined || proc === undefined)
     return undefined;
   const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
-  // A relayed machine's app-tool calls come over its connection, answered from this Gram's own
-  // endpoint on loopback (`app-tools-forward.ts`); without the tokens there is none to answer.
   const tokens = Option.getOrUndefined(yield* Effect.serviceOption(McpTokens));
   const http = Option.getOrUndefined(yield* Effect.serviceOption(HttpServer.HttpServer));
   const port = () =>
@@ -345,20 +327,16 @@ const joinedMachines = Effect.gen(function* () {
     ...(tokens === undefined ? {} : { appTools: forwardAppTools({ tokens, store, port }) }),
     agents: yield* AgentHosts,
     gate: Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate)),
-    // A server people sign in to, or one that runs no work, has no local user whose files a
-    // send may name: what it carries to a machine is only what was uploaded to it.
     ...(config !== undefined && openerFenced(config)
       ? { carriedFrom: attachmentsDir(config.dataDir) }
       : {}),
   });
-  // A thread placed on a machine since removed still routes there (and finds it unavailable).
   const placedBefore = (yield* store.listThreads.pipe(Effect.orElseSucceed(() => []))).some(
     (thread) =>
       [thread.checkout, thread.currentCheckout, ...(thread.extraCheckouts ?? [])].some(
         (checkout) => checkout !== undefined && !isLocalHost(checkout),
       ),
   );
-  // A machine started for one person is reached only for them, by every route (`ownership.ts`).
   const ownerOf = ownersOf(remote.machines);
   return {
     get: ownedMachines(ownerOf, get),
@@ -369,7 +347,6 @@ const joinedMachines = Effect.gen(function* () {
   };
 });
 
-/** No threads: every path is this machine's, and a machine is reached only by its id. */
 const NO_THREADS: Pick<ThreadStore["Service"], "listThreads" | "getThread"> = {
   listThreads: Effect.succeed([]),
   getThread: (threadId) => Effect.fail(new ThreadNotFound({ threadId })),
@@ -383,25 +360,15 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
   static readonly fromHosts = (
     local: WorkerHost,
     others: ReadonlyArray<WorkerHost> = [],
-    /** The joined machines' hosts, for an id that isn't among `others`. */
     machines?: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>,
-    /** The threads, which say where each one's work is placed. */
     store?: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
-    /** Whether any machine is joined now; with none, nothing is looked up to place a call. */
     anyMachines?: () => boolean,
-    /** A headless Gram's placement; `local` is then already the one that refuses (`headlessLocal`). */
     headless?: HeadlessPlacement,
-    /** The joined machines' hosts for a session about to open, when that differs from `machines`. */
     sessionMachines?: (
       id: HostId,
       threadId?: ThreadId,
     ) => Effect.Effect<WorkerHost, HostUnavailable>,
-    /** Who each joined machine was started for, where one was (`ownership.ts`). */
     ownerOf: OwnerOf = () => undefined,
-    /**
-     * Whether a joined machine is still paired. With none given, nothing here knows which machines
-     * are, so none counts as removed.
-     */
     pairedMachine: (id: HostId) => boolean = () => true,
   ) => {
     const byId = new Map<HostId, WorkerHost>([
@@ -435,7 +402,6 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       local,
       get,
       of: (record) => get(hostOf(record)),
-      // A headless Gram always routes: what names no machine is placed on one, never run here.
       placed: store === undefined && headless === undefined ? local : placed,
       machine: placed.machine,
       placeOf: placed.placeOf,
@@ -472,15 +438,12 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       const { parts } = yield* LocalHostProcess;
       const machines = yield* joinedMachines;
       const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
-      // A headless Gram (`GRAM_HEADLESS=1`) keeps this machine for reading only, and places what
-      // names no machine on a joined one.
       const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
       const embedding = Option.getOrUndefined(yield* Effect.serviceOption(Embedding));
       const headless =
         config?.headless === true
           ? headlessPlacement(
               Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts)),
-              // With hosts provisioned on demand, a person with no machine is told to start one.
               embedding?.config.hostProvider !== undefined,
             )
           : undefined;
@@ -542,7 +505,6 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
           Option.getOrElse(() => missing<S>(part)),
         );
       const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
-      // A test that provides joined machines (`RemoteHosts`) places threads on them, as the server.
       const machines = yield* joinedMachines;
       const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
       const owners = Option.getOrUndefined(

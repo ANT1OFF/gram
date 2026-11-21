@@ -94,8 +94,6 @@ export const addCodexCounts = (a: Counts, b: Counts): Counts => {
 /** Session counters are a baseline, never a turn snapshot. A new mapper may be resuming history. */
 export function makeCodexUsageLedger(fresh = false) {
   let previous: Counts | undefined = fresh ? zero() : undefined;
-  // Overlap is an admission constraint, not a cumulative baseline or a known amount.
-  // Losing telemetry or changing reception scope cannot make its stale last disjoint.
   let overlapPrimary: Pick<Counts, "inputTokens" | "outputTokens"> | undefined;
   let knownThisTurn = false,
     first = true,
@@ -107,7 +105,6 @@ export function makeCodexUsageLedger(fresh = false) {
     observedTotal = false;
   };
   const endTurn = () => {
-    // No report cannot certify that an intervening turn left session counters unchanged.
     if (active && !observedTotal) previous = undefined;
     active = false;
     observedTotal = false;
@@ -115,7 +112,6 @@ export function makeCodexUsageLedger(fresh = false) {
   const seen = new Set<string>();
   let seenBytes = 0;
   return {
-    // Cumulative continuity and current-scope replay protection have separate lifetimes.
     invalidateBaseline,
     endTurn,
     startTurn() {
@@ -126,9 +122,7 @@ export function makeCodexUsageLedger(fresh = false) {
       seen.clear();
       seenBytes = 0;
     },
-    // Read-only observed session evidence for the history producer coverage check.
     baseline: () => (previous === undefined ? undefined : { ...previous }),
-    // Private producer evidence; never a wire/provenance marker or a token amount.
     detailConflict: () => detailConflict,
     retainedBytes() {
       return (
@@ -166,7 +160,6 @@ export function makeCodexUsageLedger(fresh = false) {
       const stamp = JSON.stringify([total, last]);
       if (seen.has(stamp)) return { partial: false };
       if (seen.size >= 4096) {
-        // A refused increment must not be allocated to the next actual request.
         invalidateBaseline();
         return { partial: true };
       }
@@ -197,8 +190,6 @@ export function makeCodexUsageLedger(fresh = false) {
             last !== undefined &&
             last.inputTokens + last.outputTokens > 0 &&
             primaryFits(last, difference(primaryCounts(total), overlapPrimary));
-          // This pair constrains admission; it never supplies a missing delta baseline.
-          // Insufficient progress remains constrained at the latest observed primary.
           overlapPrimary = reset || supportedLast ? undefined : primaryCounts(total);
         }
         if (
@@ -222,8 +213,6 @@ export function makeCodexUsageLedger(fresh = false) {
           return {
             partial: initial && last !== undefined && last.inputTokens + last.outputTokens > 0,
           };
-        // Auxiliary refinements cannot prove another request when primary counters
-        // have not advanced. A reception scope change does not prove disjointness.
         if (stablePrimary) {
           detailConflict = keys
             .slice(2)
@@ -233,8 +222,6 @@ export function makeCodexUsageLedger(fresh = false) {
                 total[key] !== undefined &&
                 before[key] !== total[key],
             );
-          // Explicit zero is independent evidence of a zero request, even when
-          // auxiliary refinement prevents a complete session-counter difference.
           if (
             initial &&
             (total.inputTokens + total.outputTokens === 0 ||
@@ -257,8 +244,6 @@ export function makeCodexUsageLedger(fresh = false) {
           knownThisTurn = true;
           return { tokens: delta, basis: "delta", partial: false };
         }
-        // Invalid auxiliary differences do not erase a proven primary increment.
-        // A mismatching latest-last snapshot cannot certify a disjoint larger amount.
         if (before !== undefined) {
           const primary = difference(
             { inputTokens: total.inputTokens, outputTokens: total.outputTokens },
@@ -276,7 +261,6 @@ export function makeCodexUsageLedger(fresh = false) {
             return { tokens: primary, basis: "delta", partial: true };
           }
         }
-        // With no baseline (or after a reset), the last request is authoritative; totals are not.
         if (last !== undefined && (before !== undefined || !knownThisTurn)) {
           if (overlapPrimary !== undefined && last.inputTokens + last.outputTokens > 0)
             return { partial: true };
@@ -286,8 +270,6 @@ export function makeCodexUsageLedger(fresh = false) {
         return { partial: true };
       }
       invalidateBaseline();
-      // Without totals/response IDs, updates and distinct requests cannot be distinguished.
-      // Keep one proven request, then wait for an observed total baseline before adding deltas.
       if (last === undefined || knownThisTurn) return { partial: true };
       if (overlapPrimary !== undefined && last.inputTokens + last.outputTokens > 0)
         return { partial: true };

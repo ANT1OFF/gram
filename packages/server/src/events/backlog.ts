@@ -41,7 +41,6 @@ export class BacklogGauge {
         }),
       );
     }
-    // Half the floor, so a backlog hovering at the floor doesn't log on every offer.
     if (this.#nextWarnAt > this.floor && depth < this.floor / 2) {
       this.#nextWarnAt = this.floor;
       return Effect.logInfo("internal backlog drained").pipe(
@@ -105,9 +104,7 @@ export const makeCoalescingQueue = <A>(
   Effect.gen(function* () {
     const queue = yield* Queue.unbounded<Slot<A>>();
     const gauge = new BacklogGauge(name, floor);
-    /** Each subject's waiting replaceable items, by kind. */
     const waiting = new Map<string, Map<string, Slot<A>>>();
-    // The same slots as `queue`, oldest first, so the oldest's age can be read without taking it.
     let head: Slot<A> | undefined;
     let tail: Slot<A> | undefined;
     let depth = 0;
@@ -129,8 +126,6 @@ export const makeCoalescingQueue = <A>(
         } else if (subject !== undefined) {
           waiting.delete(subject);
         }
-        // A replaceable item that differs from the waiting one in a transition queues behind it,
-        // and is the one later items of its kind may supersede.
         const slot: Slot<A> = { item, at: now, subject, kind, transition, next: undefined };
         if (subject !== undefined && kind !== undefined) {
           const kinds = waiting.get(subject) ?? new Map<string, Slot<A>>();

@@ -91,7 +91,6 @@ function Field({
   );
 }
 
-/** A captioned radio group; not a `<label>`, which would rename every choice after the caption. */
 function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
@@ -161,7 +160,6 @@ export function AddConnectorForm({
         threadId !== undefined && targets.length === 1 && targets[0] === agent
           ? ""
           : ` to ${targets.map((t) => MCP_TARGET_LABEL[t]).join(", ")}`;
-      // Only the thread's own agent loads it here; the others pick it up in their own threads.
       const here =
         threadId === undefined
           ? restartsLive

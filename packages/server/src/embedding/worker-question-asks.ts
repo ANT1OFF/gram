@@ -1,9 +1,3 @@
-// A workspace's worker questions as the event sink's asks. A worker's own question (`WQ7`,
-// docs/design/worker-questions.md) waits on the user once it is forwarded: then it is an ask like a
-// harness's question, opened to the receiver with what it needs to answer it through
-// `asks/answer`, and resolved when it closes, however it closes and wherever it was answered.
-// Its id names the workspace too, since question ids restart at WQ1 in each.
-
 import type { QuestionAnswer, WorkerQuestion, WorkspaceId } from "@gram/contracts";
 import {
   ASK_OPTION_LABEL_MAX_CHARS,

@@ -52,7 +52,6 @@ export const mockPageFrame = (): Frame => {
   };
   g.fillStyle = "#f8fafc";
   g.fillRect(0, 0, WIDTH, HEIGHT);
-  // The site's own bar.
   g.fillStyle = "#0f172a";
   g.fillRect(0, 0, WIDTH, 56);
   text("Ledgerly", 32, 36, sans(18, 700), "#ffffff");
@@ -61,7 +60,6 @@ export const mockPageFrame = (): Frame => {
   text("Customers", 344, 35, sans(14), "#94a3b8");
   text("Reports", 446, 35, sans(14), "#94a3b8");
   box(WIDTH - 64, 12, 32, 32, 16, "#334155");
-  // The heading and its controls.
   text("Invoices", 32, 112, sans(28, 700), "#0f172a");
   text("8 of 214 shown", 32, 138, sans(14), "#64748b");
   box(WIDTH - 172, 84, 140, 40, 8, "#2563eb");
@@ -73,7 +71,6 @@ export const mockPageFrame = (): Frame => {
   g.lineWidth = 1;
   g.strokeRect(148.5, 164.5, 280, 36);
   text("Search invoices", 164, 187, sans(14), "#94a3b8");
-  // The table.
   box(32, 220, WIDTH - 64, 44 + ROWS.length * 52, 10, "#ffffff");
   const columns = [56, 220, 560, 800, 1100] as const;
   ["Number", "Customer", "Issued", "State", "Amount"].forEach((name, i) =>
@@ -91,7 +88,6 @@ export const mockPageFrame = (): Frame => {
       } else text(cell, columns[i]!, y + 32, sans(14, i === 0 ? 600 : 400), "#0f172a");
     });
   });
-  // The Filters menu, open.
   g.shadowColor = "rgba(15, 23, 42, 0.18)";
   g.shadowBlur = 24;
   g.shadowOffsetY = 8;

@@ -15,7 +15,6 @@ import { useThreadDialogs } from "./thread-dialogs-store";
 export function FolderMissingNotice({ threadId }: { threadId: ThreadId }) {
   const summary = useThreadsStore((s) => s.byId[threadId]);
   if (summary === undefined || !worktreeMissing(summary.git)) return null;
-  // The git state is the followed worktree's when the agent moved into one.
   const checkout = effectiveCheckout(summary.thread);
   const branch = summary.git?.branch ?? checkout.branch;
   const what = checkout.kind === "worktree" ? "worktree" : "folder";

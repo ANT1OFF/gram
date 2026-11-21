@@ -29,8 +29,6 @@ const LOG_LEVELS: readonly { value: LogLevel; label: string }[] = [
 export function InstallInfo() {
   const { data: info, isError } = useDiagnostics();
   if (isError) return null;
-  // Its rows hold their place while the version loads: arriving later, the group pushed what is
-  // under it down.
   return (
     <SettingsGroup
       label="This version"
@@ -166,8 +164,6 @@ export function DiagnosticsSection() {
   );
 }
 
-/** A fact about this install: its name, and the value in mono on the right. */
-/** A label and its value, the line kept while the value is still `undefined`. */
 function InfoRow({ label, value }: { label: string; value: string | undefined }) {
   return (
     <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-8">

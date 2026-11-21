@@ -17,7 +17,6 @@ import { useSettingsLink } from "@/settings/open-settings";
 import { useLayoutStore } from "@/stores/layout";
 import { DOCK_ITEM, NAV_REGION, useNavigationStore } from "@/stores/navigation";
 
-/** One of the dock's items: its icon over a short label, the label its name to a screen reader. */
 const ITEM =
   "relative flex min-w-14 flex-col items-center gap-0.5 rounded-(--radius-md) px-2 py-1 text-muted-foreground outline-none transition-[background-color,color] duration-(--dur-fast) ease-(--ease-out) [:where(&)_svg]:text-sidebar-icon hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-sidebar-row-active aria-expanded:text-foreground aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground aria-[current=page]:[&_svg]:text-primary [&_svg]:size-icon-row";
 
@@ -65,7 +64,6 @@ function DockButton({
   );
 }
 
-/** Needs you, with a dot while anything waits; the embedding app's own count where it gives one. */
 function NeedsYouItem() {
   const own = useNeedsYouPill();
   const host = useHostAttention();
@@ -89,7 +87,6 @@ function NeedsYouItem() {
   );
 }
 
-/** The embedding app's places, `main` then `foot`, each its icon and its own short label. */
 function PlaceItems() {
   const navigation = useEmbedShell((s) => s.navigation);
   const at = useCurrentDestination();
@@ -229,7 +226,6 @@ export function DockSheet({ edge }: { edge: "top" | "bottom" }) {
   const setSheet = useNavigationStore((s) => s.setSheet);
   const width = useLayoutStore((s) => s.sidebarWidth);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  // Going somewhere closes it: a row picked in it has done its job.
   const at = useRef(pathname);
   useEffect(() => {
     if (at.current === pathname) return;

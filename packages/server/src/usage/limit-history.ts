@@ -24,7 +24,6 @@ import { DAY_MS as DAY } from "../zone-time.ts";
 /** How often, at most, a write also prunes what has aged past `LIMIT_HISTORY_RETENTION_MS`. */
 export const LIMIT_HISTORY_PRUNE_EVERY_MS = 60 * 60_000;
 
-/** A broken database is a defect, as in `ThreadStore`. */
 const run = <A>(effect: Effect.Effect<A, SqlError>) =>
   effect.pipe(Effect.catch((error) => Effect.die(error)));
 
@@ -38,7 +37,6 @@ interface WindowRow {
   readonly resets_at: number | null;
 }
 
-/** A series' latest point, with when it was read, for telling its window from the next. */
 interface WindowState {
   readonly at: number;
   readonly bucket: number;
@@ -55,7 +53,6 @@ interface CreditRow {
   readonly added: number;
 }
 
-/** An account's latest kept credit bucket. */
 interface CreditState {
   readonly bucket: number;
   readonly balance: number;
@@ -85,15 +82,8 @@ export interface LimitHistoryStore {
  * It holds the shares, resets and balances the meter already shows, nothing else.
  */
 export function makeLimitHistory(sql: SqlClient.SqlClient) {
-  /**
-   * Each series' latest point and when it was read: the window it is of, so a reading of a new
-   * window (`sameLimitWindow`) starts a point and a peak of its own, and what was written, so a
-   * reading that changes nothing is no write.
-   */
   const lastWindow = new Map<string, WindowState>();
-  /** Series whose latest point was looked up in the database, after a restart. */
   const recovered = new Set<string>();
-  /** Each account's latest kept balance, for what the next one spent or added. */
   const lastCredit = new Map<string, CreditState>();
   const recoveredCredit = new Set<string>();
   let prunedAt = -Infinity;
@@ -102,7 +92,6 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
     Effect.gen(function* () {
       prunedAt = now;
       const oldest = now - LIMIT_HISTORY_RETENTION_MS;
-      // A bucket more than a day ahead came from a clock that was wrong; it would never age out.
       const newest = now + DAY;
       yield* run(
         sql`DELETE FROM usage_limit_history WHERE bucket < ${oldest} OR bucket > ${newest}`,
@@ -112,7 +101,6 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
       );
     });
 
-  /** The series' latest point, from memory or, once after a restart, from the database. */
   const latest = (agent: string, window: string, bucket: number) =>
     Effect.gen(function* () {
       const key = `${agent}/${window}`;
@@ -126,7 +114,6 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
           ORDER BY bucket DESC, window_id DESC LIMIT 1`,
       );
       if (row === undefined) return undefined;
-      // When in the bucket it was read is gone; its start is the earliest it can have been.
       const state: WindowState = {
         at: row.bucket,
         bucket: row.bucket,
@@ -139,7 +126,6 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
       return state;
     });
 
-  /** The account's latest kept balance, from memory or, once after a restart, the database. */
   const latestCredit = (agent: string, bucket: number) =>
     Effect.gen(function* () {
       const known = lastCredit.get(agent);
@@ -171,7 +157,6 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
       const same =
         before !== undefined &&
         sameLimitWindow(before, { resetsAt: record.resetsAt, utilization }, at);
-      // A new window is known by its first reset, or by when it was first read without one.
       const fresh = record.resetsAt ?? at;
       const windowId = same
         ? before.windowId
@@ -197,7 +182,6 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
         before.peak !== peak ||
         before.resetsAt !== next.resetsAt
       ) {
-        // `MAX` keeps a peak of this window read before a restart, which memory has forgotten.
         yield* run(sql`INSERT INTO usage_limit_history
             (agent, limit_window, bucket, window_id, utilization, peak, resets_at)
           VALUES (${record.agent}, ${record.window}, ${bucket}, ${windowId}, ${utilization},
@@ -211,7 +195,6 @@ export function makeLimitHistory(sql: SqlClient.SqlClient) {
       if (balance === undefined) return;
       const credit = yield* latestCredit(record.agent, bucket);
       if (credit !== undefined && credit.bucket === bucket && credit.balance === balance) return;
-      // The move from the last balance kept, added to the bucket's own when it is the same one.
       const change = credit === undefined ? 0 : balance - credit.balance;
       const carried = credit?.bucket === bucket ? credit : { spent: 0, added: 0 };
       const kept: CreditState = {

@@ -1,9 +1,3 @@
-// A thread's PR bindings (`boundPr` and `extraPrs`) and the rows the strip hides, as pure edits
-// shared by the RPC handlers, the agent's PR tools and babysit mode so they refuse the same things.
-// Every edit is a function of the thread the store's update transaction reads (`applyPrEdit`): an
-// update computed from an earlier read can write a main PR back over a promotion that landed in
-// between.
-
 import {
   MAX_EXTRA_PRS,
   MAX_HIDDEN_PRS,
@@ -56,7 +50,6 @@ export const dependencyBlocker = (thread: Thread): string | undefined => {
 export const validPrRef = (ref: PrRef): boolean =>
   /^[\w.-]+\/[\w.-]+$/.test(ref.repo) && Number.isSafeInteger(ref.number) && ref.number > 0;
 
-/** `thread` with its extras replaced; an empty list leaves the key off, as stored threads have it. */
 const withExtras = (thread: Thread, extras: ReadonlyArray<BoundPr>): Thread => {
   const { extraPrs, ...rest } = thread;
   void extraPrs;
@@ -100,7 +93,6 @@ const MARK_KEYS = [
   "commentWakes",
 ] as const satisfies ReadonlyArray<keyof MonitorMark>;
 
-/** Whether two monitor marks say the same. */
 const sameMark = (a: MonitorMark | undefined, b: MonitorMark | undefined): boolean =>
   MARK_KEYS.every((key) => JSON.stringify(a?.[key]) === JSON.stringify(b?.[key]));
 
@@ -134,13 +126,11 @@ export const unmarked = (bound: BoundPr): BoundPr => {
   return rest;
 };
 
-/** A binding's mark with only what the monitors still on wrote: the CI monitor's, the review monitor's. */
 const prunedPr = (pr: BoundPr, main: boolean): BoundPr => {
   const seen = pr.seen;
   if (seen === undefined) return pr;
   const { ci, head, ...review } = seen;
   const reviewing = main && pr.reviewMonitor === true;
-  // With the review monitor on, the CI monitor stands aside, so what it saw goes stale.
   const ciOn = pr.monitor && !reviewing && ci !== undefined;
   const reviewOn = reviewing && Object.keys(review).length > 0;
   if (!ciOn && !reviewOn) return unmarked(pr);

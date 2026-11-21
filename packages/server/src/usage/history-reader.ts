@@ -153,8 +153,6 @@ export function makeHistoryReader(
       admitted = ++budget.files <= limits.files;
       return admitted;
     };
-    // Changed completed entries also need prefix verification. Reject the extra admission
-    // before opening it; unchanged completed entries perform no byte reads and remain exempt.
     if (needsRead(fingerprint(before)) && !admitRead()) return undefined;
     const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     try {
@@ -172,11 +170,9 @@ export function makeHistoryReader(
         return undefined;
       const version = fingerprint(actual),
         local = { bytes: 0 };
-      // A change between initial stat and the opened handle must not bypass byte-read admission.
       if (needsRead(version) && !admitRead()) return undefined;
       let state = cache.get(resolved);
       if (state !== undefined && state.fingerprint !== version) {
-        // A prefix rewritten anywhere (not merely at its tail) must never reuse stale accounting.
         if (actual.size < state.offset) state = undefined;
         else {
           const verification =
@@ -295,7 +291,6 @@ export function makeHistoryReader(
         }
         position += chunk.length;
       }
-      // Retain a position inside an oversized discarded line; refresh can make bounded progress.
       if (state.discarding) {
         state.offset = position;
         state.hasher = lineHasher.copy();
@@ -318,7 +313,6 @@ export function makeHistoryReader(
       signal: AbortSignal,
       window = { from: -Infinity, to: Infinity },
     ): Promise<HistoryScan> {
-      // The handler serializes scans. Refuse misuse rather than racing mutable reducer state.
       if (active) throw new Error("Usage history scan already active");
       active = true;
       if (period !== window.to - window.from) cache.clear();
@@ -514,9 +508,7 @@ export function makeHistoryReader(
           sources.push(source);
         }
         if (roots.length > limits.roots && sources[0] !== undefined) sources[0].status = "partial";
-        // Deleted/retained sources disappear on refresh; no stale history is returned from cache.
         for (const path of cache.keys()) if (!visited.has(path)) cache.delete(path);
-        // Cache admission is independent of response admission; retain at most bounded metadata.
         let cacheBytes = 0,
           cacheRecords = 0;
         for (const [path, entry] of cache) {

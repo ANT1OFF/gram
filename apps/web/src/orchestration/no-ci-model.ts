@@ -5,12 +5,6 @@ import {
   type WorkerPr,
 } from "@gram/contracts";
 
-// Which of a workspace's repos run no CI at all: their open pull requests have no hosted checks
-// (GitHub reports none, as when Actions is off), and their project has no local check configured
-// (the ledger's `localGate`). The Board says so once per workspace, calmly, instead of a red mark
-// per PR; a repo whose hosted checks only ever fail for billing can't be told apart from a real
-// failure here, and stays its worker's to look at. No React.
-
 /** A repo of the workspace's that nothing tests before a merge. */
 export interface NoCiRepo {
   /** `owner/name`, as its PRs name it. */
@@ -22,15 +16,11 @@ export interface NoCiRepo {
 interface RepoFacts {
   readonly repo: string;
   readonly project: string;
-  /** Some PR here reports no hosted checks. */
   none: boolean;
-  /** Some PR here reports checks of any kind, or its checks aren't known yet. */
   other: boolean;
-  /** Its project has a local check. */
   gated: boolean;
 }
 
-/** A worker's PRs, each beside the project it works them in and whether that has a local check. */
 const prsByProject = (
   worker: WorkerLedgerEntry,
 ): ReadonlyArray<{

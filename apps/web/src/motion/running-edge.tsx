@@ -1,6 +1,5 @@
 import { clockPhase, onClock } from "./spin";
 
-/** How long the light takes to cross the border once. */
 const SWEEP_MS = 2800;
 
 const sweep = onClock({

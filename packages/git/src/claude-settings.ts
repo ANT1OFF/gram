@@ -1,9 +1,3 @@
-// Sync the repo-root `.claude/settings.local.json` permission lists into worktrees: Claude Code treats
-// each worktree as its own project root, and the file is gitignored, so `git worktree add` leaves every
-// worktree thread re-approving everything. Seeds on create; unions a user-picked checklist back on
-// remove. Add-only, and outward-facing commands are never carried in either direction. The file is
-// read and written only inside its own checkout: a branch can track `.claude` as a link elsewhere.
-
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import * as Effect from "effect/Effect";
@@ -63,10 +57,6 @@ type JsonObject = Record<string, unknown>;
 const isObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/**
- * The parsed settings object; `undefined` when missing, unreadable, non-JSON, not an object, or
- * reached through a link.
- */
 const readSettings = (dir: string): JsonObject | undefined => {
   try {
     const parsed: unknown = JSON.parse(readInside(realRoot(dir), SETTINGS_REL));
@@ -157,17 +147,12 @@ export const unionInto = (base: unknown, incoming: Buckets): JsonObject => {
   return root;
 };
 
-/** Throws when the file or its `.claude` folder is a link or resolves outside `dir`. */
 const writeSettings = (dir: string, value: JsonObject): void => {
   writeInside(realRoot(dir), SETTINGS_REL, (fd) =>
     fs.writeFileSync(fd, JSON.stringify(value, null, 2)),
   );
 };
 
-/**
- * Serialises every read → union → write of a settings file, so two worktrees removed concurrently
- * can't lost-update the same root file. Coarse and process-wide; contention is negligible.
- */
 const settingsLock = Semaphore.makeUnsafe(1);
 
 const locked = <A>(f: () => A): Effect.Effect<A> =>

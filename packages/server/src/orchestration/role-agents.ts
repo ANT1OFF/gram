@@ -1,8 +1,5 @@
-// The agents a deployment adds to the orchestrator and worker roles beside Claude Code and Codex.
-
 import type { AgentKind } from "@gram/contracts";
 
-/** The agents a deployment may add to the orchestrator and worker roles (`GRAM_ROLE_AGENTS`). */
 const OPTIONAL_ROLE_AGENTS: ReadonlyArray<AgentKind> = ["grok", "antigravity"];
 
 /**

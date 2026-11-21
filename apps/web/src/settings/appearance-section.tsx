@@ -58,7 +58,6 @@ import { SearchScope, useSettingSearch } from "./search-scope";
 import { SettingDescription } from "./help-tip";
 import { GROUP_TITLE, SETTINGS_STACK, SettingsGroup } from "./settings-group";
 
-/** The click point, or the control's centre when activated from the keyboard. */
 function originOf(event: MouseEvent<HTMLElement>): Point {
   if (event.detail > 0) return { x: event.clientX, y: event.clientY };
   const rect = event.currentTarget.getBoundingClientRect();
@@ -77,7 +76,6 @@ function useThemePrefs(): ThemePrefs {
   const surfaces = useThemeStore((s) => s.surfaces);
   const sidebar = useThemeStore((s) => s.sidebar);
   const sidebarIcons = useThemeStore((s) => s.sidebarIcons);
-  // What shows: the person's choices, and the embedding app's defaults for the rest.
   return effectivePrefs(
     {
       look,
@@ -169,7 +167,6 @@ function AppearancePage({ preview }: { preview: boolean }) {
           </Button>
         </div>
       )}
-      {/* An accent goes over the palette, so it is chosen after it. */}
       <LookSection />
       <SettingsGroup
         label="Fonts"
@@ -188,13 +185,11 @@ const FONT_KEYWORDS = ["typeface", "family", "monospace"];
 const READING_KEYWORDS = ["transcript", "conversation", "text size", "line width"];
 const PALETTE_EDITOR_KEYWORDS = ["custom palette", "edit palette", "colour", "color", "seed"];
 
-/** Accent, picture, surfaces and the sidebar, for the mode on screen. */
 function LookSection() {
   const { prefs, attrs } = useThemeAttributes();
   return <LookRows prefs={prefs} mode={attrs["data-mode"] === "light" ? "light" : "dark"} />;
 }
 
-/** Mode, Density, Contrast and Motion: one row each, as every other Settings page's rows. */
 function ThemeRows() {
   const prefs = useThemePrefs();
   return (
@@ -240,10 +235,6 @@ function ThemeRows() {
   );
 }
 
-/**
- * Where the main navigation sits and whether it hides when not in use. The app Gram is mounted in
- * may set a default; a pick here wins over it.
- */
 function NavigationRows() {
   const { position, autoHide } = useNavigationLayout();
   const pick = useNavigationStore((s) => s.pick);
@@ -277,7 +268,6 @@ function NavigationRows() {
 
 const AUTO_HIDE = ["off", "on"] as const;
 
-/** The palette grid with its editor's door, and the desktop app's icon under it. */
 function PaletteControls({ onEditColours }: { onEditColours: () => void }) {
   const { prefs, attrs, palettes } = useThemeAttributes();
   const customPalettes = useThemeStore((s) => s.customPalettes);
@@ -385,7 +375,6 @@ export function AppIconControl() {
   );
 }
 
-/** The half of a pair the screen shows now, so the colour editor starts from what is on screen. */
 const shownHalf = (choice: PaletteChoice, mode: string) =>
   (mode === "light" ? choice.ids[0] : choice.ids.at(-1)) ?? choice.id;
 
@@ -396,7 +385,6 @@ function PaletteCard({
   onSelect,
 }: {
   choice: PaletteChoice;
-  /** The half the screen's mode shows, which the sample is drawn in. */
   palette: Palette | undefined;
   selected: boolean;
   onSelect: (event: MouseEvent<HTMLElement>) => void;
@@ -434,21 +422,14 @@ function PaletteCard({
   );
 }
 
-/** A thin line standing for text, in a palette's own colour. */
 function SampleLine({ color, width }: { color: string; width: string }) {
   return <span className="block h-1 rounded-full" style={{ backgroundColor: color, width }} />;
 }
 
-/** A status dot, in a palette's own colour. */
 function SampleDot({ color }: { color: string }) {
   return <span className="size-1 shrink-0 rounded-full" style={{ backgroundColor: color }} />;
 }
 
-/**
- * A palette in miniature, in its own colours rather than the page's: a sidebar with its current
- * row and status dots, a conversation with a message and a reply, and a diff's added and removed
- * lines.
- */
 function PaletteSample({ colors }: { colors: SemanticColors }) {
   return (
     <span
@@ -503,7 +484,6 @@ function PaletteSample({ colors }: { colors: SemanticColors }) {
   );
 }
 
-/** One Appearance control under its caption, found in Settings search by the caption and hint. */
 function Control({
   label,
   hint,
@@ -513,7 +493,6 @@ function Control({
 }: {
   label: string;
   hint?: string;
-  /** The hint above the control, for one with an action of its own below. */
   hintFirst?: boolean;
   keywords?: readonly string[];
   children: ReactNode;

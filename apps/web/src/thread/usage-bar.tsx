@@ -33,8 +33,6 @@ export function contextTokensLabel({ tokens, window }: ContextUsage): string | u
 export const contextLevel = (percent: number): ContextLevel =>
   percent >= 97 ? "critical" : percent >= 90 ? "warning" : "normal";
 
-// Fills and the percent label use text-grade tokens, which the contrast matrix checks on every
-// surface, so the bar holds the UI floor on its track and the label the text floor.
 const TONE: Record<ContextLevel, string> = {
   normal: "[--meter:var(--color-primary)]",
   warning: "text-warning [--meter:var(--color-warning)]",
@@ -95,8 +93,6 @@ export function UsageBar({
 
 function ContextMeter({ percent, tokens }: { percent: number; tokens: string | undefined }) {
   const motion = useMotionLevel();
-  // At Full the fill grows in from empty when the meter first shows; otherwise it starts where it is.
-  // Later changes glide through the fill's transition and roll the number.
   const [grown, setGrown] = useState(motion !== "full");
   useEffect(() => {
     if (grown) return;

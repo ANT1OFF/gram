@@ -36,10 +36,6 @@ export const placeOf = (pathname: string): CameFrom | undefined => {
   return isAside(pathname) ? undefined : { kind: "nowhere" };
 };
 
-/**
- * The last place this window was on; `undefined` until it has been on one, as when it opened on a
- * form.
- */
 let cameFrom: CameFrom | undefined;
 
 export const readCameFrom = (): CameFrom | undefined => cameFrom;

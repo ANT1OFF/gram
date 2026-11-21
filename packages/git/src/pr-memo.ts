@@ -1,6 +1,3 @@
-// What a PR resolver remembers between documents, for each caller apart (`GhCallEnv`): a lookup
-// made for one caller never rides on what was read for another.
-
 /**
  * How long a PR's review threads are reused before they ride a sweep again. A thread someone opens
  * or replies to moves the PR's `updatedAt`, which refetches them at once; resolving one on
@@ -8,13 +5,10 @@
  */
 export const THREADS_MAX_AGE_MS = 120_000;
 
-/** The most callers a memo remembers apart; the one asked of longest ago is forgotten first. */
 const CALLERS_MAX = 256;
 
 interface CarriedThreads {
-  /** The `reviewThreads` connection as GitHub returned it. */
   readonly threads: unknown;
-  /** `headRefOid|updatedAt` of the PR when they were read. */
   readonly stamp: string;
   readonly at: number;
 }

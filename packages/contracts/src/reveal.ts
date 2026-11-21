@@ -1,14 +1,3 @@
-// Text an approval shows, made to read as it runs. A command or path can carry characters that
-// draw nothing or reorder what follows (bidi overrides and isolates, zero-width and tag
-// characters, variation selectors, fillers), so what a person reads differs from what runs. Every
-// approval surface shows such characters as an explicit marker, ⟨U+202E⟩, and withholds an Allow
-// that skips reading. Schema-free, like `notice.ts`.
-
-/**
- * Characters that hide or reorder text: control, format, separator, private-use and unassigned
- * characters, default-ignorable ones and variation selectors, and the Hangul fillers that draw as
- * blank. A line break and a tab are not among them: they show as what they are.
- */
 const HIDDEN =
   /(?![\n\t])[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Variation_Selector}ᅟᅠㅤﾠ]/gu;
 

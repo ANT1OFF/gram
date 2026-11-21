@@ -132,8 +132,6 @@ export function themeAttributes(
     resolvePalette(PRESET_PALETTES, DEFAULT_PALETTE_ID, requestedMode)!;
   return {
     "data-look": prefs.look,
-    // With an accent, the palette rendered is the chosen one with the accent laid over it; its
-    // `[data-palette]` block is written at run time (`syncLookStyle`).
     "data-palette":
       prefs.accent && prefs.accent !== "palette"
         ? `${palette.id}${ACCENT_SEPARATOR}${prefs.accent}`

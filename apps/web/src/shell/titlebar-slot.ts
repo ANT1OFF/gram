@@ -8,11 +8,6 @@ import { useThreadsStore } from "@/stores/threads";
 import { threadRoleOf } from "@/thread/orchestration-model";
 import { useViewStore } from "@/views/view-store";
 
-// One bar, not two: the shell's title bar carries what would be a second bar under it. A thread
-// alone in Chat puts its header there, and Board its own controls. The shell marks the place; the
-// view portals into it.
-
-/** Under this width the title bar folds all it can into the "…" menu, whatever it carries. */
 const TITLEBAR_FOLD_PX = 560;
 
 /**
@@ -31,19 +26,12 @@ export const FOLD_ICONS = 3 satisfies TitlebarFold;
 /** The bar's last fold, where everything that folds has: Chat · Board and Settings too. */
 export const FOLD_ALL = 4 satisfies TitlebarFold;
 
-/** What a header in the bar marks: the room its title has, the attribute's value its least. */
 const TITLEBAR_ROOM = "data-titlebar-room";
-/** What a narrow bar folds away, the attribute's value the gap before it: see `Foldable`. */
 const TITLEBAR_FOLD = "data-titlebar-fold";
-/** The fold that takes it: see `Foldable`. */
 const TITLEBAR_FOLD_LEVEL = "data-titlebar-fold-level";
-/** Room to spare before folded buttons come back, so they never fold again at once. */
 const UNFOLD_SLACK_PX = 16;
-/** The title itself, inside the room: its whole width is what the bar folds for, up to a cap. */
 const TITLEBAR_TITLE = "data-titlebar-title";
-/** What in the room gives way before the title (the header's chips): no share of what it needs. */
 const TITLEBAR_GIVES = "data-titlebar-gives";
-/** The most of a title the bar folds its buttons for: a longer one still truncates. */
 const TITLE_WANTS_PX = 240;
 
 /** A header's title in the bar, as laid out now. */
@@ -91,13 +79,8 @@ export interface TitlebarFoldAt {
   readonly unfoldAt?: readonly number[] | undefined;
 }
 
-/** The fold a bar this wide keeps whatever its room: a narrow bar's view actions are "…"'s. */
 const floorOf = (barWidth: number): TitlebarFold => (barWidth < TITLEBAR_FOLD_PX ? FOLD_VIEW : 0);
 
-/**
- * The room that decides `step`: as far as `FOLD_VIEW` the title's whole width (`spare`), past it
- * only its least (`tight`), so Chat · Board stay for any title that still reads.
- */
 const roomFor = (step: number, spare: number, tight: number) => (step <= FOLD_VIEW ? spare : tight);
 
 /**
@@ -116,8 +99,6 @@ export function nextFold(at: TitlebarFoldAt): TitlebarFold {
   let fold: number = at.fold;
   let spare = at.spare;
   let tight = at.tight ?? at.spare;
-  // Narrow, at least to the floor; then short of room, until what folds gives the title what it
-  // needs.
   for (let step = fold + 1; step <= FOLD_ALL; step++) {
     if (step > floor && roomFor(step, spare, tight) >= 0) break;
     fold = step;
@@ -125,8 +106,6 @@ export function nextFold(at: TitlebarFoldAt): TitlebarFold {
     tight += width(step);
   }
   if (fold !== at.fold) return fold as TitlebarFold;
-  // Room to spare: unfold while each step's buttons fit back with some over, and the bar is as
-  // wide as the step needed when it folded.
   while (
     fold > floor &&
     roomFor(fold, spare, tight) - width(fold) >= UNFOLD_SLACK_PX &&
@@ -155,7 +134,6 @@ export function unfoldWidths(at: TitlebarFoldAt, next: TitlebarFold): readonly n
   let spare = at.spare;
   let tight = at.tight ?? at.spare;
   for (let step = at.fold + 1; step <= next; step++) {
-    // Unfolded back to the step before, the title would be this far over what the step keeps.
     const room = roomFor(step, spare, tight);
     widths[step - 1] =
       step <= floor
@@ -166,13 +144,11 @@ export function unfoldWidths(at: TitlebarFoldAt, next: TitlebarFold): readonly n
     spare += at.widths[step - 1] ?? 0;
     tight += at.widths[step - 1] ?? 0;
   }
-  // Nothing past what it held: a narrow bar's own steps leave no width to go by.
   return widths.every((each) => each === 0) ? kept : widths;
 }
 
 interface TitlebarSlotState {
   readonly slot: HTMLElement | null;
-  /** How far the bar has folded its buttons into "…": see `TitlebarFold`. */
   readonly fold: TitlebarFold;
   setSlot(slot: HTMLElement | null): void;
   setFold(fold: TitlebarFold): void;
@@ -218,7 +194,6 @@ export function useRouteAgent(): string | undefined {
   );
 }
 
-/** Each header the bar has carried, by a number of its own: a fold's widths are its header's. */
 let headerSeq = 0;
 const headerIds = new WeakMap<Element, number>();
 function headerId(header: Element | null): number | "" {
@@ -228,7 +203,6 @@ function headerId(header: Element | null): number | "" {
   return id;
 }
 
-/** From `room`'s start to the far edge of its furthest child. */
 function contentWidth(room: Element): number {
   const start = room.getBoundingClientRect().left;
   let end = start;
@@ -247,9 +221,6 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
     const { setFold } = useTitlebarSlot.getState();
     let room: Element | null = null;
     let frame = 0;
-    // The widths the bar's folded steps need to come back, and what they were measured from: the
-    // header, the title's whole width, the room's least and each fold's parts. A change there (the
-    // next thread's header, a renamed title) measures afresh.
     let held: { readonly of: string; readonly unfoldAt: readonly number[] } = {
       of: "",
       unfoldAt: [],
@@ -262,15 +233,12 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
         if (next !== null) resize.observe(next);
         room = next;
       }
-      // Each fold's parts, laid out even while folded, and the gap its row leaves before each.
       const widths = Array.from({ length: FOLD_ALL }, () => 0);
       for (const part of bar.querySelectorAll(`[${TITLEBAR_FOLD}]`)) {
         const level = Number(part.getAttribute(TITLEBAR_FOLD_LEVEL) ?? FOLD_ALL);
         widths[level - 1]! +=
           part.getBoundingClientRect().width + Number(part.getAttribute(TITLEBAR_FOLD));
       }
-      // The title before the bar's lesser buttons: it folds them to show the title whole (up to
-      // a cap), not only its few letters.
       const title = room?.querySelector(`[${TITLEBAR_TITLE}]`) ?? null;
       const gives = room?.querySelector(`[${TITLEBAR_GIVES}]`) ?? null;
       const least = titleRoomNeed(
@@ -284,7 +252,6 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
               gives: gives?.getBoundingClientRect().width ?? 0,
             },
       );
-      // The header itself: what rings it, a needs-you pulse say, may stand past it on purpose.
       const header = slot?.querySelector("header") ?? null;
       const leastRoom = Number(room?.getAttribute(TITLEBAR_ROOM) ?? 0);
       const of = [
@@ -298,7 +265,6 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
         barWidth: bar.getBoundingClientRect().width,
         spare: room === null ? Infinity : room.getBoundingClientRect().width - least,
         tight: room === null ? Infinity : room.getBoundingClientRect().width - leastRoom,
-        // The header's controls run past its end, or the bar's own past the window's.
         overflow:
           (header !== null && header.scrollWidth > header.clientWidth + 1) ||
           bar.scrollWidth > bar.clientWidth + 1,
@@ -315,10 +281,8 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
     };
     const resize = new ResizeObserver(later);
     resize.observe(bar);
-    // What the place carries: another thread's header, Board's, a chip that came.
     const mutations = new MutationObserver(later);
     mutations.observe(bar, { childList: true, subtree: true, characterData: true });
-    // A font arriving widens the title's whole width with nothing resized: measure it again.
     const fonts = typeof document === "undefined" ? undefined : document.fonts;
     fonts?.addEventListener("loadingdone", later);
     void fonts?.ready.then(later);

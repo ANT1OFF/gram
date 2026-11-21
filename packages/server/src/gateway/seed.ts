@@ -137,9 +137,7 @@ export const readOpenCodeKey = (
         const key = string(record(auth[name])?.["key"]);
         if (key !== undefined) return Option.some(Redacted.make(key));
       }
-    } catch {
-      // Unreadable config: nothing to import.
-    }
+    } catch (_unreadableConfigNothingToImport) {}
     return Option.none();
   });
 

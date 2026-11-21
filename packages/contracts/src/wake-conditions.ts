@@ -1,10 +1,3 @@
-// Condition wakes: what a `schedule_wake` may wait on beside a time, as a closed union of kinds.
-//
-// A leaf like `orchestration.ts`, which imports it. Each kind is a member of `WakeCondition`, has its
-// words in `wakeConditionWhen`, and a source on the server (`packages/server/src/wakes/conditions.ts`)
-// that takes its baseline when the wake is set and looks whether it is met. Adding a kind is adding
-// those three; see docs/AGENTS_AND_FEATURES.md#condition-wakes.
-
 import * as Schema from "effect/Schema";
 import { ThreadId, WorkspaceId } from "./ids.ts";
 
@@ -52,8 +45,6 @@ export const CI_STUCK_DEFAULT_MINUTES = 15;
 export const CiStuckCondition = Schema.Struct({
   kind: Schema.Literal("ciStuck"),
   repo: RepoName,
-  // Finite rather than Int: a tool's input schema is read at every session's start, and an Int's
-  // bounds cost twice its words there. The source refuses a fraction.
   pr: Schema.optionalKey(Schema.Finite),
   runId: Schema.optionalKey(Schema.Finite),
   queuedMinutes: Schema.optionalKey(Schema.Finite),
@@ -249,7 +240,6 @@ export const VERSION_TARGET_NAMES: Readonly<Record<VersionTarget, string>> = {
 /** `codex` for `@openai/codex` or `openai/codex`: a release's name, short. */
 export const releaseShortName = (name: string): string => name.slice(name.lastIndexOf("/") + 1);
 
-/** How old a release must be, in words: ", at least 7 days old"; nothing for no age. */
 const ageWords = (condition: ReleasePublishedCondition, least = "at least "): string => {
   const days = condition.minAgeDays ?? RELEASE_MIN_AGE_DAYS;
   return days === 0 ? "" : `, ${least}${days} ${days === 1 ? "day" : "days"} old`;

@@ -16,13 +16,6 @@ import { RAIL_TONES } from "@/orchestration/rail-tones";
 import { StatusDot } from "@/orchestration/status-dot";
 import { useThreadsStore } from "@/stores/threads";
 
-// The Board on a phone: a card per task rather than the grid's columns, which a 390 px window
-// clips. Each card says its dot, title and state, its stage bar, then what it is
-// doing or waits on (its station where it has no more to say) and its PR; a card that needs you
-// or failed says why instead of the bar. Its agent is named only where the Board's workers run
-// different ones, as the sidebar marks it. Now, Waiting and Done stand in for the desktop's lines
-// and Done band. A tap opens the worker's thread, or its ask in the Inbox, as the desktop's row does.
-
 export type PhoneBoardSegment = "now" | "waiting" | "done";
 
 const SEGMENTS: readonly {
@@ -57,7 +50,6 @@ export const phoneCards = (rows: readonly RailRow[]): readonly PhoneCard[] =>
     ),
   );
 
-/** The stage bar: a segment per station, the current one in the accent, the rest grey. */
 function StageBar({ station }: { station: FeatureStation }) {
   const at = FEATURE_STATIONS.indexOf(station);
   const name = `${STATION_LABELS[station]}, step ${at + 1} of ${FEATURE_STATIONS.length}`;
@@ -104,17 +96,13 @@ function TaskCard({
 }: {
   card: PhoneCard;
   asking: boolean;
-  /** The Board's workers run different agents, so each card names its own. */
   showAgent: boolean;
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
 }) {
   const { worker, station } = card;
   const tone = RAIL_TONES[worker.tone];
   const agent = useThreadsStore((s) => s.byId[worker.threadId]?.thread.model?.agent);
-  // A card that waits on you or failed says why, in place of a stage bar that would read as
-  // progress under "Failed".
   const stuck = worker.tone === "needs" || worker.tone === "error";
-  // A finished card has no stage left to show: five full segments under "Done" said nothing.
   const finished = phoneSegmentOf(card) === "done";
   return (
     <li
@@ -127,7 +115,6 @@ function TaskCard({
         worker.tone === "needs" && "border-status-needs-mark/60",
       )}
     >
-      {/* The title's button stretches over the whole card; the PR chips sit above it. */}
       <button
         type="button"
         data-testid="phone-board-open"
@@ -198,16 +185,13 @@ export function PhoneBoard({
     waiting: by("waiting").length + held.length,
     done: by("done").length,
   };
-  // Whether the cards' workers run different agents: only then is each one's worth naming.
   const showAgent = useThreadsStore(
     (s) =>
       new Set(cards.flatMap((card) => s.byId[card.worker.threadId]?.thread.model?.agent ?? []))
         .size > 1,
   );
   const [picked, setPicked] = useState<PhoneBoardSegment | undefined>(undefined);
-  // Until one is picked, the first with anything in it.
   const segment = picked ?? SEGMENTS.find(({ id }) => counts[id] > 0)?.id ?? "now";
-  // Done reads newest first, as the desktop's Done band does.
   const shown = segment === "done" ? by(segment).toReversed() : by(segment);
   return (
     <div data-testid="phone-board" className="flex flex-col gap-2 px-4 pt-2">

@@ -1,24 +1,15 @@
 import * as Effect from "effect/Effect";
 import { SqlClient } from "../platform/unstable.ts";
 
-/*
- * Full-text search over messages and thread titles. Triggers keep both indexes in step with every
- * write to `messages` and `threads` (persist, upsert, rewind truncation, rename, close), so no store
- * method has to remember them. Index rows share the source row's rowid; nothing in the app runs
- * VACUUM, which could renumber those.
- */
-
 const TOKENIZE = "tokenize = 'unicode61 remove_diacritics 2'";
 
 const parts = (message: string) =>
   `json_each(CASE WHEN json_valid(${message}) THEN ${message} ELSE '{}' END, '$.parts') p`;
 
-/** Text and reasoning parts: what was said. */
 const bodyOf = (message: string) => `(SELECT group_concat(json_extract(p.value, '$.text'), char(10))
   FROM ${parts(message)}
   WHERE json_extract(p.value, '$.type') IN ('text', 'reasoning'))`;
 
-/** Tool names with their inputs, ranked below the body. */
 const toolsOf = (message: string) => `(SELECT group_concat(
     CASE WHEN json_extract(p.value, '$.type') = 'dynamic-tool' THEN json_extract(p.value, '$.toolName')
       ELSE substr(json_extract(p.value, '$.type'), 6) END
@@ -56,7 +47,6 @@ export const searchSchema = Effect.gen(function* () {
     `CREATE VIRTUAL TABLE message_search USING fts5(
       thread_id UNINDEXED, message_id UNINDEXED, body, tools, ${TOKENIZE})`,
     `CREATE VIRTUAL TABLE thread_title_search USING fts5(thread_id UNINDEXED, title, ${TOKENIZE})`,
-    // Holds only the marked rows: the few replies streaming now, or cut off by a crash.
     `CREATE INDEX messages_search_pending ON messages(search_pending)
       WHERE search_pending IS NOT NULL`,
 

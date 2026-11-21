@@ -13,7 +13,6 @@ export const makeAccountScopes = (
   onChange?: (account: string) => Effect.Effect<void>,
 ) => {
   const known = new Map<string, string | undefined>();
-  // A restart must not forget a scoped wait merely because the first auth probe fails.
   for (const thread of threads.toSorted(
     (a, b) => (a.limitWait?.since ?? 0) - (b.limitWait?.since ?? 0),
   )) {
@@ -40,9 +39,7 @@ export const makeAccountScopes = (
           !pair[1].startsWith("thread:")
         )
           known.set(keyOf(thread), scope);
-      } catch {
-        /* An unrecognized legacy scope is not identity evidence. */
-      }
+      } catch (_anUnrecognizedLegacyScopeIsNotIdentityEvidence) {}
     }
   }
   const observe = (thread: Thread) =>
@@ -56,8 +53,6 @@ export const makeAccountScopes = (
               machine,
               machine === LOCAL_HOST_ID ? `thread:${thread.id}` : "unknown",
             );
-      // Only this machine may retain a legacy unscoped key. An unidentified joined
-      // login must never enter the shared local bucket, even when its probe fails.
       const failedScope = () => (machine === LOCAL_HOST_ID ? known.get(key) : fallback());
       if (thread.model.profileId !== undefined)
         return {
@@ -102,8 +97,6 @@ export const makeAccountScopes = (
     remember: (thread: Thread, login: string, previous: string | undefined) => {
       const machine = sessionHostOf(thread);
       const scope = scopeFor(machine, login);
-      // A local old process must not replace the fresh CLI observation. On a joined
-      // machine, only a new identity for this process updates the shared known login.
       if (!known.has(keyOf(thread)) || (machine !== LOCAL_HOST_ID && scope !== previous))
         known.set(keyOf(thread), scope);
       return scope;

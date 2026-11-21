@@ -38,8 +38,6 @@ export function useCountUp(
   anchor?: RefObject<Element | null>,
 ): number {
   const [shown, setShown] = useState(value);
-  // What is showing, for the effect below to start from. Kept in an effect of its own, declared
-  // first so it has run by then: a ref may not be written during render.
   const current = useRef(value);
   useEffect(() => {
     current.current = shown;

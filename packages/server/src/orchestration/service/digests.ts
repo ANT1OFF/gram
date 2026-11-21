@@ -1,6 +1,3 @@
-// Wakes and digests: the reasons that wake an
-// orchestrator, the debounce that gathers them, the digest built from the ledger against the last
-// acknowledged snapshot, and its delivery, retries and the pause after repeated failures.
 import {
   autonomyOf,
   briefFooterOf,
@@ -91,7 +88,6 @@ export const DELIVERY_RETRY_DELAYS: ReadonlyArray<Duration.Duration> = [
 ];
 /** Consecutive failed deliveries after which orchestration pauses instead of trying again. */
 export const DELIVERY_FAILURES_BEFORE_PAUSE = 3;
-/** The user's routines by name and time; their briefs reach the workers, not this charter. */
 const routineLines = (charter: OrchestratorCharter): ReadonlyArray<string> => {
   const on = (charter.routines ?? []).filter((routine) => routine.off !== true);
   return on.length === 0
@@ -109,7 +105,6 @@ const routineLines = (charter: OrchestratorCharter): ReadonlyArray<string> => {
 const charterLines = (
   charter: OrchestratorCharter,
   mode: Thread["mode"],
-  /** The charter's roster as it runs here (`rosterHere`). */
   here: {
     readonly roster: ReadonlyArray<RosterModel>;
     readonly unavailable: RosterUnavailable;
@@ -142,7 +137,6 @@ const charterLines = (
   ...(charter.otherWorkerModels === true ? [OTHER_WORKER_MODELS_LINE] : []),
 ];
 
-/** Reports as a digest names them; one from a thread that is no longer a worker is left out. */
 const digestReports = (
   records: ReadonlyArray<{ readonly seq: number; readonly report: WorkerReport }>,
   features: OrchestratorLedger["features"],
@@ -197,10 +191,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
   } = kit;
   const { survey, endRecovery, pause } = deps;
 
-  // ---------------------------------------------------------------------------------------
-  // Pausing
-  // ---------------------------------------------------------------------------------------
-
   const cancelDelivery = (workspaceId: WorkspaceId, orchestratorId: ThreadId | undefined) =>
     Effect.gen(function* () {
       yield* FiberMap.remove(wakeTimers, workspaceId);
@@ -218,10 +208,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
       );
     });
 
-  /**
-   * Notes a reason and restarts the workspace's window, so a burst lands in one digest. While
-   * any thread of the tree is being rate limited the window is twice as long.
-   */
   const wake = (
     workspaceId: WorkspaceId,
     reason: string,
@@ -241,15 +227,10 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         Effect.annotateLogs({ workspaceId, reason }),
       );
       const window = retryingIn(workspaceId) === undefined ? debounce : Duration.times(debounce, 2);
-      // A steady trickle of reasons would otherwise push the digest back forever.
       const left = firstReasonAt.get(workspaceId)! + Duration.toMillis(maxWait) - now;
       yield* armWake(workspaceId, Duration.min(window, Duration.millis(Math.max(0, left))));
     });
 
-  /**
-   * Wakes for `event`, unless it is about a worker (`from`) of a feature the user paused: that
-   * wakes nobody, and the ledger's word on it rides along on the next digest something else sends.
-   */
   const wakeFor = (workspaceId: WorkspaceId, event: WakeEvent, from?: Thread) =>
     Effect.gen(function* () {
       const reason = wakeWorthy(event);
@@ -261,30 +242,19 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
       });
     });
 
-  /** Forgets a workspace's pending reasons and what is kept beside them. */
   const forgetReasons = (workspaceId: WorkspaceId) => {
     reasons.delete(workspaceId);
     reasonsAbout.delete(workspaceId);
     firstReasonAt.delete(workspaceId);
-    // A reason the diff can't show went with them; left set, it would force a later digest.
     diffless.delete(workspaceId);
   };
 
-  /**
-   * What a digest sent now would say, or `undefined` when there is nothing to say: the ledger
-   * against the snapshot of the last acknowledged digest, and the reports filed since.
-   */
   const planDigest = (workspaceId: WorkspaceId, owedBoot = false) =>
     Effect.gen(function* () {
-      // Before the workspace is read, so a stage set after this may be missing from the text.
       const readAt = yield* Clock.currentTimeMillis;
       const state = yield* findWorkspace(workspaceId);
       const settings = yield* store.getSettings;
       if (state === undefined) return undefined;
-      // A pause holds every digest back but one: the boot of a session a handoff has just
-      // emptied, which would otherwise sit there knowing nothing until the user resumed.
-      // A switch's boot, owed as its handoff, goes when the switch gives it: the claim holds the
-      // thread meanwhile, an archive included, so a pause left from that archive doesn't.
       const bootsAnyway =
         (owedBoot || bootWhilePaused.has(workspaceId)) && !(yield* readOutbox(workspaceId)).booted;
       if (state.paused !== undefined && !bootsAnyway) return undefined;
@@ -320,7 +290,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         : reasons.get(workspaceId)?.has(AWAY_REASON) === true
           ? "away"
           : "digest";
-      // A wake the orchestrator set that has fallen due is owed a digest by itself, restart or not.
       const wakeDue = (outbox.dueWakes ?? []).length > 0;
       const liveRemoved = (outbox.liveRemovals ?? []).length > 0;
       if (
@@ -335,17 +304,9 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
       return { state, settings, found, records, reports, diff, variant, readAt };
     });
 
-  /**
-   * The digest for `turnId`, or `undefined` when there is nothing to say. Runs under the
-   * orchestrator's runtime lock, so it reads the store and asks other threads' status only.
-   */
   const buildDigest = (workspaceId: WorkspaceId, turnId: TurnId, owedBoot = false) =>
     Effect.gen(function* () {
-      // An outbox that can't be read, or one set aside and waiting on the user's resume, gives
-      // nothing to diff against: the empty state would make this a boot digest.
       const stored = readStoredOutbox(yield* store.getOutbox(workspaceId));
-      // Never released here: a row is set aside by the first outbox write after it is found,
-      // which can come before its pause lands, so a missing pause doesn't mean the user ended it.
       if (
         stored._tag === "unreadable" ||
         (stored._tag === "read" && stored.setAside !== undefined)
@@ -367,7 +328,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
       const { state, settings, found, records, reports, diff, variant, readAt } = plan;
       const { outbox } = found;
       const taken = [...(reasons.get(workspaceId) ?? [])];
-      // What comes after this is a new window's, bounded from its own first reason.
       firstReasonAt.delete(workspaceId);
       const about = reasonsAbout.get(workspaceId);
       const boot =
@@ -376,7 +336,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
               memoryIndex: yield* memory.index(workspaceId).pipe(Effect.orElseSucceed(() => "")),
               decisions: yield* memory.read(workspaceId, DECISIONS_FILE).pipe(
                 Effect.catchTag("NotFound", () => Effect.succeed("")),
-                // Unreadable isn't absent: the session is told, so no restriction is lost.
                 Effect.catch((e) => Effect.succeed({ unreadable: e.message })),
               ),
               charterLines: charterLines(
@@ -386,14 +345,12 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
               ),
             })
           : [];
-      // An orchestrator switch's note and the last exchanges with the user, fenced: last of all.
       const holder = state.workspace.orchestratorThreadId;
       const switchBoot = variant === "boot" ? outbox.switchBoot : undefined;
       const switchNote =
         switchBoot === undefined || holder === undefined
           ? undefined
           : yield* switchBootNote(store, holder, switchBoot);
-      // Not on a boot: the last usage on record is then the session a handoff left behind.
       const context =
         variant === "boot"
           ? { note: undefined, noted: outbox.contextNoted === true }
@@ -441,8 +398,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         Option.isSome(appActivity) ? yield* appActivity.value.inactiveSince : undefined,
         readAt,
       );
-      // The newest message the user typed into the orchestrator's own conversation, to say when
-      // this digest lands in the middle of it. A boot digest opens a session; nothing to break in on.
       const orchestratorId = state.workspace.orchestratorThreadId;
       const [lastTyped] =
         variant === "boot" || orchestratorId === undefined
@@ -545,7 +500,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         } = withNotesAcked(outbox, flight.notesUpTo);
         const rest =
           limited === undefined || flight.limitNoted === true ? acked : { ...acked, limited };
-        // The boot carried the switch's handoff: no later digest carries it again.
         const { switchBoot: _boot, ...copied } = withCopiesTold(
           rest,
           flight.questionCopiesTaken ?? [],
@@ -615,8 +569,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
   ) =>
     Effect.gen(function* () {
       if (turnId !== undefined) carried.delete(turnId);
-      // The orchestrator stopped on a limit it now waits out. Nothing failed: the digest goes
-      // back to wait at the thread, and the resume delivers it, with all that came meanwhile.
       if (reason === "limited") {
         yield* updateOutbox(workspaceId, (outbox) => {
           const { inFlight: _, ...rest } = outbox;
@@ -628,7 +580,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
           .requestSystemDelivery(holder, DIGEST_KEY, deliveryFor(workspaceId))
           .pipe(Effect.catchTag("ThreadNotFound", () => Effect.void));
       }
-      // The generation stays where it was, so the retry carries the same number.
       const failures = yield* updateOutbox(workspaceId, (outbox) => {
         const { inFlight: _, ...rest } = outbox;
         const next = { ...rest, failures: outbox.failures + 1 };
@@ -637,7 +588,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
       yield* Effect.logWarning("orchestration digest not delivered").pipe(
         Effect.annotateLogs({ workspaceId, reason, failures }),
       );
-      // An orchestrator in `error` or `ended` won't take the next one either.
       if (reason === "error" || reason === "ended") {
         return yield* pause(
           workspaceId,
@@ -654,16 +604,10 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
           `A digest failed to reach the orchestrator ${failures} times in a row (${reason}).`,
         );
       }
-      // The reasons it carried are still pending, so the retry says what this one would have.
       const delay = DELIVERY_RETRY_DELAYS[failures - 1] ?? DELIVERY_RETRY_DELAYS.at(-1)!;
       yield* armWake(workspaceId, delay);
     });
 
-  /**
-   * The boot digest as an orchestrator switch's handoff (`SessionPolicyPort.switchHandoff`): the
-   * switch sends, retries, holds and releases it as any thread's handoff, so a failure here only
-   * puts the books back; the digest's own retries and pause aren't its.
-   */
   const bootDelivery = (workspaceId: WorkspaceId): SystemDelivery => ({
     build: (turnId) => buildDigest(workspaceId, turnId, true),
     accepted: (turnId) => onAccepted(workspaceId, turnId),
@@ -680,31 +624,19 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
   });
 
   const deliveryFor = (workspaceId: WorkspaceId): SystemDelivery => ({
-    // Into a running turn, cancelling nothing: a report or a merge the orchestrator reads only
-    // once its turn ends is often stale by then.
     steer: true,
     build: (turnId) => buildDigest(workspaceId, turnId),
     accepted: (turnId) => onAccepted(workspaceId, turnId),
     failed: (turnId, reason) => onFailed(workspaceId, turnId, reason),
   });
 
-  /**
-   * The window closed. Nothing is counted or rationed here: how often an orchestrator is woken
-   * is not the app's to limit. `build` decides, at the moment of sending, whether there is
-   * anything to say.
-   */
   const onWakeDue = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       const state = yield* findWorkspace(workspaceId);
       const holder = state?.workspace.orchestratorThreadId;
       if (state === undefined || holder === undefined || state.paused !== undefined) return;
-      // Parked and not yet paused for it: the reasons wait for the resume that unparking brings.
       if ((yield* findThread(holder))?.parked === true) return;
-      // A digest now would go to the session a handoff is about to replace. The reasons stay,
-      // and the boot digest that ends the handoff carries them.
       if ((yield* readOutbox(workspaceId)).handoff !== undefined) return;
-      // Asked here as well as in `build`, so a cold orchestrator's agent isn't started only to
-      // be told nothing. `build` asks again, since the thread may be busy for a while yet.
       if ((yield* planDigest(workspaceId)) === undefined) {
         forgetReasons(workspaceId);
         return;
@@ -714,10 +646,8 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         .pipe(Effect.catchTag("ThreadNotFound", () => Effect.void));
     });
 
-  // Dreams' seam (`dreams.ts`).
   const addNote: OrchestrationShape["addNote"] = (workspaceId, note, reason, key) =>
     Effect.gen(function* () {
-      // With a key, the note and its key go in one write: one already there is the same occurrence.
       const added = yield* updateOutbox(workspaceId, (outbox) => {
         if (key === undefined) return [withNotes(outbox, [note]), true];
         const keys = outbox.noteKeys ?? [];
@@ -734,10 +664,6 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
   const noteQuietly: OrchestrationShape["noteQuietly"] = (workspaceId, note) =>
     updateOutbox(workspaceId, (outbox) => [withNotes(outbox, [note]), undefined]);
 
-  /**
-   * The note the first digest after the orchestrator's limit wait carries: how long it lasted,
-   * which workers resumed, and which still wait and when they go. None while it still waits.
-   */
   const orchestratorLimitNote = (
     state: WorkspaceState,
     outbox: OutboxState,

@@ -1,5 +1,3 @@
-// Answers to cards over the socket: each names the card it was given for (`PendingRequest.shown`).
-
 import {
   InvalidState,
   type RequestAnswer,
@@ -44,7 +42,6 @@ export const makeRespondHandlers = (
       readonly answers: Parameters<ThreadRuntimesShape["respondMany"]>[0];
     }) =>
       Effect.gen(function* () {
-        // Each refused on its own, as one that fails anywhere else is, and the rest still go.
         const refusals = yield* Effect.forEach(answers, (each) =>
           keyless(each.threadId, each.requestId, each.shown),
         );

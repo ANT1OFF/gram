@@ -58,33 +58,16 @@ import {
 import { besideKey, WorkerRow } from "./worker-row";
 import { WIDE_ROW_PARTS } from "./worker-row-wide";
 
-// The right pane's Workers mode, as its list: one orchestrator's workers by where they stand, Needs
-// you first and Done folded, each group's count quiet beside its name. Its rows are the sidebar's
-// own worker row, wide (`worker-row.tsx`), so a worker reads alike in both lists. The pane's height
-// is for the workers: no workspace named, nothing from other workspaces. Its rows are ⌘J's, and
-// its Needs you is the needs-you selector's in this workspace (`needsYouIn`), so every count agrees
-// with the sidebar, the Board and the Inbox. A row opens its worker in the pane
-// (`worker-pane.tsx`); Back comes here to the same place: the groups open as they were, the scroll
-// where it was, and the keys on the worker's row.
-
 export const WORKERS_PANEL_TEST_ID = "workers-panel";
 
 interface WorkersPanelState {
-  /** Groups folded or unfolded against their default (`FOLDED_BY_DEFAULT`). */
   readonly toggled: ReadonlySet<StatusGroupId>;
-  /** Groups the filter shows; none picked shows every one. */
   readonly shown: ReadonlySet<StatusGroupId>;
-  /** Done's rows past `DONE_SHOWN` are shown. */
   readonly doneAll: boolean;
-  /** The Docs section under the groups is folded. */
   readonly docsFolded: boolean;
-  /** The search, kept while a worker is open; `undefined` with the search closed. */
   readonly query: string | undefined;
-  /** The workspace the search is in: another one's list starts without it. */
   readonly queryFor: WorkspaceId | undefined;
-  /** Where the list was scrolled to, and the row's place in it, when a worker opened from it. */
   readonly place: { readonly scroll: number; readonly index: number } | undefined;
-  /** Something asked for the keys in the list (the sidebar's "N in Workers"). */
   readonly focus: boolean;
   toggleDocs: () => void;
   toggle: (id: StatusGroupId) => void;
@@ -116,7 +99,6 @@ export const useWorkersPanelStore = create<WorkersPanelState>()((set) => ({
       const shown = new Set(s.shown);
       if (on) shown.add(id);
       else shown.delete(id);
-      // Every group picked is no filter at all.
       return { shown: shown.size === STATUS_GROUPS.length ? new Set() : shown };
     }),
   showAll: () => set({ shown: new Set() }),
@@ -140,9 +122,7 @@ export function useWorkerGroups(workspaceId: WorkspaceId, query = "") {
   const ids = useMemo(() => [workspaceId], [workspaceId]);
   const ledger = useOrchestratorLedgers(ids).get(workspaceId);
   const finished = useFinishedWorkerPages(ids).finished.get(workspaceId);
-  // Minute resolution is enough for the ages rows show.
   const now = useNow(true, undefined, 60_000);
-  // Who an ask in the stack is from, so a row's dot takes the tone every other view gives it.
   const asks = useWorkspaceAsks();
   const askKeys = useMemo(
     () => askKeysByThread(asks.find((w) => w.workspaceId === workspaceId)?.asks ?? []),
@@ -150,7 +130,6 @@ export function useWorkerGroups(workspaceId: WorkspaceId, query = "") {
   );
   const asking = useMemo(() => new Set(askKeys.keys()), [askKeys]);
   const answered = useAnsweredWorkers();
-  // What needs you here, by the one selector the workspace's badge counts by.
   const needs = useNeedsYouIn({ workspaceId });
   const needing = useMemo(() => needsYouThreads(needs.here), [needs.here]);
   const tabs = useMemo(
@@ -164,7 +143,6 @@ export function useWorkerGroups(workspaceId: WorkspaceId, query = "") {
   return { groups, askKeys };
 }
 
-/** The sidebar's facts of each worker it lists, by thread, which the pane's rows draw from. */
 function useCardRows(workspaceId: WorkspaceId) {
   const features = useOverviewFeatures(workspaceId);
   return useMemo(
@@ -246,7 +224,6 @@ export function WorkersPanel({
   const cards = useCardRows(workspaceId);
   const searching = query !== undefined && query.trim() !== "";
   const matches = groups.some((group) => group.rows.length > 0);
-  // No worker at all, in any group: one empty state, not five groups that each say so.
   const none = !searching && all.every((group) => group.rows.length === 0);
   const messageOrchestrator = useMessageOrchestrator();
   const listed = groups.filter((group) => group.rows.length > 0);
@@ -256,13 +233,11 @@ export function WorkersPanel({
   const current = useBesideStore((s) => s.current);
   const scroller = useRef<HTMLDivElement>(null);
   const openWorker = useOpenWorker();
-  // How many are on now, and how many are done, beside the list's name.
   const doneCount = all.find((group) => group.id === "done")?.rows.length ?? 0;
   const liveCount = all.reduce((sum, group) => sum + group.rows.length, 0) - doneCount;
   usePlaceKept(scroller, all, current);
 
   const open = (row: PanelRow, event: Pick<MouseEvent, "metaKey" | "ctrlKey">) => {
-    // Its place, which Back puts back.
     const rows = [...(scroller.current?.querySelectorAll<HTMLElement>(LIST_ROWS) ?? [])];
     const index = rows.findIndex((each) => each.dataset.threadId === row.threadId);
     useWorkersPanelStore.setState({
@@ -309,7 +284,6 @@ export function WorkersPanel({
           </p>
         ) : (
           <>
-            {/* Only the groups that hold something: "Stopped 0" said nothing. */}
             {listed.map((group) => (
               <Group
                 key={group.id}
@@ -333,7 +307,6 @@ export function WorkersPanel({
                 }}
               />
             ))}
-            {/* A filter that picks only empty groups still says why the list is bare. */}
             {listed.length === 0 && (
               <p
                 role="status"
@@ -345,7 +318,6 @@ export function WorkersPanel({
             )}
           </>
         )}
-        {/* What the workers wrote, after the workers themselves; a search is for workers only. */}
         {!searching && (
           <WorkersDocs workspaceId={workspaceId} folded={docsFolded} onToggle={toggleDocs} />
         )}
@@ -354,16 +326,8 @@ export function WorkersPanel({
   );
 }
 
-/** The list's worker rows, in the order drawn. */
 const LIST_ROWS = '[data-testid="workers-panel-row"]';
 
-/**
- * Puts the list back where it was when a worker opened from it, once Back asks (`returned`): the
- * current worker's group unfolded (and Done's rest shown) if it is out of sight, the scroll where
- * it was, and the keys on the current worker's row (the one last open, after ↑ ↓ or the switcher
- * too), scrolled into view; else the row nearest its place, else the list's first control. Takes
- * the keys too when asked (`focus`), on the current row or the first.
- */
 function usePlaceKept(
   scroller: React.RefObject<HTMLDivElement | null>,
   groups: readonly StatusGroup[],
@@ -371,7 +335,6 @@ function usePlaceKept(
 ) {
   const restore = useBesideStore((s) => s.returned);
   const focus = useWorkersPanelStore((s) => s.focus);
-  // Reveal first: the row has to be drawn before it can take the keys.
   useLayoutEffect(() => {
     if (!restore || current === undefined) return;
     const group = groups.find((each) => each.rows.some((row) => row.threadId === current));
@@ -383,8 +346,6 @@ function usePlaceKept(
       if (at >= DONE_SHOWN) store.setDoneAll(true);
     }
   }, [restore, current, groups]);
-  // Whether the current worker has a row in the list as filtered and searched: it is waited for
-  // while its group unfolds, rather than the keys landing on whichever row stood in its place.
   const listed =
     current !== undefined && groups.some((g) => g.rows.some((r) => r.threadId === current));
   useEffect(() => {
@@ -404,21 +365,15 @@ function usePlaceKept(
       const all = rows();
       const own = all.find((row) => row.dataset.threadId === current);
       if (own !== undefined) return own;
-      // Its group still unfolding: a few frames for its row before anything else.
       if (listed && ++tries < 20) return null;
       if (all.length > 0) return all[Math.min(restore ? (place?.index ?? 0) : 0, all.length - 1)]!;
       return box.querySelector<HTMLElement>("button");
     }, 30).then(() => {
-      // In view, without moving a list already showing it.
       (document.activeElement as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" });
     });
   }, [restore, focus, scroller, current, listed]);
 }
 
-/**
- * The list's head: its name and counts ("Workers 4 · 6 done"), then search, the filter, the
- * orchestrator's own views and ✕. Nothing about the workspace: the chat beside it says that.
- */
 function Header({
   word,
   counts,
@@ -542,10 +497,6 @@ const POPUP =
 const ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor";
 
-/**
- * The orchestrator's own views (its Diff, Files, Terminal and the rest), named as its, and only in
- * the list's head: never in a worker's, whose tools are its own.
- */
 function OrchestratorMenu({
   views,
   onPick,
@@ -590,7 +541,6 @@ function OrchestratorMenu({
   );
 }
 
-/** Which groups show: each one checked, or every one. The glyph is on while a filter holds. */
 function FilterMenu() {
   const shown = useWorkersPanelStore((s) => s.shown);
   const setShown = useWorkersPanelStore((s) => s.setShown);
@@ -609,7 +559,6 @@ function FilterMenu() {
             aria-label={label}
             className={cn(
               "flex size-7 shrink-0 items-center justify-center rounded-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring data-popup-open:bg-accent data-popup-open:text-foreground",
-              // A filter that hides groups shows on the glyph's background, never by colour alone.
               filtering && "bg-accent text-foreground",
             )}
           />
@@ -661,10 +610,6 @@ function Check() {
   );
 }
 
-/**
- * One group: its name and quiet count, a chevron that folds it, and its rows. A group with nothing
- * in it isn't drawn at all. `open` unfolds it whatever its fold, as a search does.
- */
 function Group({
   group,
   open,
@@ -680,7 +625,6 @@ function Group({
   const setDoneAll = useWorkersPanelStore((s) => s.setDoneAll);
   const body = `workers-group-${group.id}-rows`;
   const count = group.rows.length;
-  // Done shows its latest few before the rest fold behind "N more", as the sidebar's does.
   const capped = group.id === "done" && !doneAll && !open && count > DONE_SHOWN + 1;
   const rows = capped ? group.rows.slice(0, DONE_SHOWN) : group.rows;
   return (
@@ -714,13 +658,8 @@ function Group({
   );
 }
 
-/** The rows the arrow keys move through: the workers, then the docs under them. */
 const KEYED_ROWS = '[data-testid="workers-panel-row"], [data-testid="doc-row"]';
 
-/**
- * ↑↓, Home and End move between the rows shown, as in every list; ⏎ opens the one focused. Off a
- * row (in the search box, on a heading) only ↑↓ from a row count, so typing keeps its keys.
- */
 function rowKeys(event: KeyboardEvent<HTMLElement>) {
   const from = (event.target as HTMLElement).closest<HTMLElement>(KEYED_ROWS);
   if (from === null) return;

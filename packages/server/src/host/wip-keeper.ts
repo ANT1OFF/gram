@@ -1,16 +1,3 @@
-// Keeps a thread's work in progress off a joined machine while the thread works there, so a
-// machine that is lost (its node gone, its process killed) costs minutes of work and not the
-// turn's. A stop keeps the work too (`host.stop.prepare`), but a lost machine gets no stop.
-//
-// After each turn of a thread whose folder is on a joined machine, and while a turn runs there
-// whenever the last keep is a few minutes old, the thread's folders are kept under its hidden ref
-// at the remote (`keepThreadWork`). A machine started again on another disk then gets them back
-// from there, as after a stop (`resumeHost`). A hosted feature: off, nothing is pushed.
-//
-// One worker per thread does the keeping. A turn's start or end only says what is due: a keep
-// asked for at a turn's end stays asked for when the next turn starts, a running turn's work is
-// never older than `KEEP_EVERY` past the last keep, and a keep under way is never interrupted.
-
 import {
   effectiveCheckout,
   type HostId,
@@ -49,36 +36,26 @@ export interface WipKeeperDeps {
   readonly runtimes: Pick<ThreadRuntimesShape, "observe" | "updateThread">;
 }
 
-/** The joined machine a thread works on, or undefined when it works on this one. */
 const machineOf = (thread: Thread) => {
   const id = hostOf(effectiveCheckout(thread));
   return id === LOCAL_HOST_ID ? undefined : id;
 };
 
-/** What is due of one thread's keeping. Changed only in synchronous steps. */
 interface Watch {
-  /** A turn of the thread is open on a joined machine. */
   open: boolean;
-  /** When a keep asked for at a turn's end is due, epoch ms; a turn starting leaves it asked. */
   asked: number | undefined;
-  /** What the work's age counts from: the start of the last keep, or of the turn since. */
   since: number;
-  /** A keep is under way. */
   keeping: boolean;
-  /** Its worker runs. */
   working: boolean;
-  /** Wakes the worker from its wait when what is due changed. */
   wake: Deferred.Deferred<void>;
 }
 
-/** When the next keep is due, epoch ms; undefined when none is. */
 const dueOf = (watch: Watch, every: number): number | undefined => {
   const age = watch.open ? watch.since + every : undefined;
   if (watch.asked === undefined) return age;
   return age === undefined ? watch.asked : Math.min(age, watch.asked);
 };
 
-/** How a keep went, for its log line and the thread. */
 type Outcome =
   | { readonly kind: "skipped"; readonly reason: string }
   | {
@@ -90,7 +67,6 @@ type Outcome =
 
 const skipped = (reason: string): Outcome => ({ kind: "skipped", reason });
 
-/** One line per keep: kept (pushed or caught up), skipped and why, or not kept and why. */
 const logOutcome = (threadId: ThreadId, outcome: Outcome) => {
   if (outcome.kind === "skipped")
     return Effect.logInfo("keeping a thread's work in progress was skipped").pipe(
@@ -167,9 +143,6 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
         ),
       );
 
-    // The thread says when its work was last saved and what that held, its main folder's first;
-    // and, when a folder's work didn't reach the remote, that the last try failed and why, so a
-    // save that is out of date never reads as current.
     const noteKept = (thread: Thread, id: HostId, kept: ReadonlyArray<KeptWork>) =>
       Effect.gen(function* () {
         const main = effectiveCheckout(thread).path;
@@ -204,7 +177,6 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
       watch.wake = Deferred.makeUnsafe<void>();
     };
 
-    /** What the worker does next, decided in one step. */
     const next = (threadId: ThreadId, now: number) => {
       const watch = watches.get(threadId);
       if (watch === undefined) return { kind: "done" } as const;
@@ -230,8 +202,6 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
             yield* Effect.raceFirst(Effect.sleep(step.ms), Deferred.await(step.wake));
             continue;
           }
-          // Never interrupted by what the thread does meanwhile: a push cut off halfway keeps
-          // nothing and says nothing.
           const outcome = yield* slots.withPermits(1)(keepOnce(threadId));
           yield* logOutcome(threadId, outcome);
           step.watch.keeping = false;
@@ -239,7 +209,6 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
         }
       });
 
-    /** Changes what is due of the thread, and has its worker see it. */
     const touch = (threadId: ThreadId, change: (watch: Watch, now: number) => void) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
@@ -267,7 +236,6 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
         machineOf(thread) === undefined
           ? Effect.void
           : touch(thread.id, (watch, now) => {
-              // Work before this turn is kept already, or is about to be: its age counts from now.
               if (!watch.open && watch.asked === undefined && !watch.keeping) watch.since = now;
               watch.open = true;
             }),
@@ -275,20 +243,17 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
         machineOf(thread) === undefined
           ? watches.has(thread.id)
             ? touch(thread.id, (watch) => {
-                // Moved to this machine: nothing more is due there.
                 watch.open = false;
                 watch.asked = undefined;
               })
             : Effect.void
           : touch(thread.id, (watch, now) => {
               watch.open = false;
-              // An earlier ask still waiting keeps its time, so turns ending often still get kept.
               watch.asked = Math.min(watch.asked ?? Number.POSITIVE_INFINITY, now + after);
             }),
     });
   });
 
-/** `saved` with its last try at `at` failed for `failure`. */
 const failedAt = (saved: SavedWork, at: number, failure: string): SavedWork => ({
   ...saved,
   lastAttemptAt: at,

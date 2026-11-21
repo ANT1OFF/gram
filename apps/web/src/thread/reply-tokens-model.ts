@@ -4,9 +4,6 @@ import { compactTokens, wholeTokens } from "@/usage/usage-model";
 
 import { contextUsage, type ContextUsage } from "./context-usage";
 
-// The tokens a turn used, as its last reply shows them: one short count beside the reply's time,
-// and what makes it up behind it. No React.
-
 export interface TokenRow {
   readonly key: "input" | "cacheRead" | "cacheWrite" | "output" | "reasoning";
   readonly label: string;

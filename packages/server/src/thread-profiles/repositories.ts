@@ -1,7 +1,3 @@
-// A profile's workplace of repositories: each repository cloned once under the data folder and
-// fetched after, and a worktree of it made for the thread on a branch of its own. A thread placed
-// on a joined machine is cloned only there, by that machine's host with its own git settings and
-// credentials: this server keeps no copy of its repositories and never reaches their remotes.
 import {
   type Checkout,
   type CheckoutRequest,
@@ -81,7 +77,6 @@ export const originsOn = (proc: ProcShape, root: string) => {
     if ("error" in filed || identity === undefined)
       return Effect.fail(refuse("error" in filed ? filed.error : `${url} can't be cloned.`));
     const dest = join(root, filed.folder);
-    // Every folder from `root` down is a real folder of its own, never a link.
     const contained = () => {
       let at = root;
       for (const part of filed.folder.split(sep)) {
@@ -152,11 +147,6 @@ export const makeProfileRepositories = (deps: ProfileRepositoriesDeps) => {
   const repos = reposOn(deps.proc, join(deps.dataDir, PROFILE_REPOS_DIR), deps.gitEnv);
   const origins = originsOn(deps.proc, join(deps.dataDir, PROFILE_ORIGINS_DIR));
 
-  /**
-   * What `ref` names in the clone, as a worktree's base takes it: the remote's branch of that name
-   * as just fetched, else a tag or a commit. Never a silent fallback to the default branch, since
-   * work on the wrong base looks like work.
-   */
   const baseOf = (clone: string, ref: string) =>
     Effect.gen(function* () {
       for (const name of [`origin/${ref}`, ref]) {
@@ -173,9 +163,6 @@ export const makeProfileRepositories = (deps: ProfileRepositoriesDeps) => {
 
   const one = (threadId: ThreadId, repository: ProfileRepository, machine: HostId | undefined) =>
     Effect.gen(function* () {
-      // On a joined machine the machine clones, fetches and resolves the ref itself (a branch to
-      // its origin's tip as just fetched, else a tag or a commit), so nothing here reaches the
-      // remote. Here, the clone is this server's own.
       const { path: clone } =
         machine === undefined
           ? yield* repos
@@ -203,11 +190,6 @@ export const makeProfileRepositories = (deps: ProfileRepositoriesDeps) => {
       return { clone, checkout };
     });
 
-  /**
-   * The thread's worktrees, one per repository, in the profile's order. All or none: a repository
-   * that can't be cloned, or can't give a worktree, takes the worktrees made so far with it. With
-   * `machine`, each worktree is made on that joined machine, from its own clone.
-   */
   const prepare = (
     threadId: ThreadId,
     repositories: ReadonlyArray<ProfileRepository>,

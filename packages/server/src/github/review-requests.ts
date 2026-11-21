@@ -46,7 +46,6 @@ import { asBackground } from "./budget.ts";
 import { makePollBackoff, quotaMultiplier } from "./poll-backoff.ts";
 import { GhQuota, windowHeadroom } from "./quota.ts";
 
-/** How often the review-request poll runs, and how soon a focus may poll again. */
 const REVIEW_REQUESTS_INTERVAL = Duration.minutes(5);
 const REVIEW_REQUESTS_THROTTLE = Duration.seconds(60);
 
@@ -107,7 +106,6 @@ export class ReviewRequestsPoller extends Context.Service<
 
 const keyOf = reviewRequestKey;
 
-/** Presentation fields retain the timestamp and refusal state of their own read. */
 const information = (details: ReviewRequestDetails | undefined) => ({
   ...(details?.labelsCount === undefined ? {} : { labelsCount: details.labelsCount }),
   ...(details?.labels === undefined ? {} : { labels: details.labels }),
@@ -126,13 +124,6 @@ const listed = (
   return { ...request, author: searched.author };
 };
 
-/**
- * One own PR as the list holds it, each field from the read that saw GitHub latest. `updatedAt`
- * and `isDraft` come from the details lookup unless the search saw GitHub later, as when the
- * lookup was refused and its details are carried; the search alone can lag behind its index. The
- * checks, merge state and reviews can only come from the lookup, so `detailsAt` dates them on
- * their own, and the UI lets a thread's badge correct each against its own stamp.
- */
 const listedOwn = (
   searched: SearchedReviewRequest,
   details: ReviewRequestDetails | undefined,
@@ -167,7 +158,6 @@ const listedOwn = (
 const newestFirst = (a: { updatedAt: string }, b: { updatedAt: string }) =>
   b.updatedAt.localeCompare(a.updatedAt);
 
-/** `found`'s details: the fresh lookup's, or what each last had. */
 const carried = (
   found: ReadonlyArray<SearchedReviewRequest>,
   fresh: ReadonlyMap<string, ReviewRequestDetails>,
@@ -182,12 +172,9 @@ const carried = (
     }),
   );
 
-/** What the review-request half of a poll found, before its details are looked up. */
 type RequestsSearch =
-  /** Review requests are off in Settings → Notifications. */
   | { readonly kind: "off" }
   | { readonly kind: "signedOut" }
-  /** GitHub refused or failed: what was listed stays. */
   | { readonly kind: "failed" }
   | { readonly kind: "found"; readonly found: ReadonlyArray<SearchedReviewRequest> };
 
@@ -222,30 +209,20 @@ export const makeReviewRequestsPoller = (
 
       let state: ReviewRequests = { requests: [] };
       let own: OwnPrs = { prs: [] };
-      /** Listed PRs already notified for, or seeded as ready; `undefined` until a poll seeds. */
       let notified: ReadonlySet<string> | undefined;
       let lastPollAt: number | undefined;
       let lastFilters: string | undefined;
       let lastHolds: string | undefined;
-      /** PRs the last poll listed without notifying for, which is what a lifted hold releases. */
       let held: ReadonlySet<string> = new Set();
-      /** Notified-for PRs a lifted hold passed quietly, which a hold set again takes back. */
       let quiet: ReadonlySet<string> = new Set();
-      /** Monotonic count of searches GitHub refused on rate-limit grounds, and the last signal. */
       let refusals = 0;
       let lastSignal: RateLimitSignal | undefined;
-      /**
-       * The last details each listed PR had, so a lookup GitHub refuses doesn't blank the row's
-       * marks; one map per list, so a search that fails keeps its own list's.
-       */
       let lastDetails: ReadonlyMap<string, ReviewRequestDetails> = new Map();
       let lastOwnDetails: ReadonlyMap<string, ReviewRequestDetails> = new Map();
 
-      /** Known projects by their origin, lowercased: where a listed PR can be checked out. */
       const projectsByRepo = Effect.gen(function* () {
         const byRepo = new Map<string, string>();
         for (const project of yield* store.listProjects) {
-          // A folder without an origin (yet) is asked again on the next poll.
           if (origins.get(project.root) === undefined) {
             origins.set(project.root, yield* source.originOf(project.root));
           }
@@ -257,7 +234,6 @@ export const makeReviewRequestsPoller = (
         return byRepo;
       });
 
-      /** Counts a search GitHub refused on rate-limit grounds, for the backoff. */
       const countRefusal = (error: ReviewRequestsError) =>
         Effect.sync(() => {
           const signal = detectRateLimit(error.message);
@@ -283,8 +259,6 @@ export const makeReviewRequestsPoller = (
       const searchRequests = (settings: Settings, ready: boolean): Effect.Effect<RequestsSearch> =>
         Effect.gen(function* () {
           if (!reviewRequestsOn(settings)) return { kind: "off" };
-          // A widened or narrowed search seeds again, so switching doesn't notify for PRs that were
-          // only filtered out before.
           const directOnly = reviewRequestsDirectOnly(settings);
           const hideBots = reviewRequestsHideBots(settings);
           const maxAgeDays = reviewRequestsMaxAgeDays(settings);
@@ -300,8 +274,6 @@ export const makeReviewRequestsPoller = (
             .search({ directOnly, updatedSince })
             .pipe(Effect.tapError(countRefusal), Effect.option);
           if (result._tag === "None") return { kind: "failed" };
-          // GitHub has no bot qualifier, so app authors can only go after the search — which the
-          // `--limit` truncates first, exactly as it does the age cutoff's own ceiling.
           return {
             kind: "found",
             found: hideBots ? result.value.filter((r) => !r.isBot) : result.value,
@@ -319,8 +291,6 @@ export const makeReviewRequestsPoller = (
             reviewRequestReady(r, reviewRequestHolds(settings, r.repo));
           const holdsChanged = lastHolds !== undefined && lastHolds !== holdsKey;
           lastHolds = holdsKey;
-          // A PR a lifted hold passed quietly was never notified for, so a hold that comes back
-          // (its repository put back on the review-bot list, say) holds it again until it is ready.
           const rearmed = new Set(
             holdsChanged ? requests.filter((r) => quiet.has(keyOf(r)) && !ready(r)).map(keyOf) : [],
           );
@@ -329,14 +299,9 @@ export const makeReviewRequestsPoller = (
               ? undefined
               : new Set([...notified].filter((key) => !rearmed.has(key)));
           const due = requests.filter((r) => before?.has(keyOf(r)) !== true && ready(r));
-          // A lifted hold makes every PR it held due at once; those pass quietly, like a seed, but
-          // only those: a PR first seen in the same poll (the settings toggle forces one) is news.
-          // What was already notified stays so, so setting a hold doesn't raise a PR a second time.
-          // Taking a repository off the review-bot list lifts its bot hold the same way.
           const released = holdsChanged ? held : undefined;
           const added =
             before === undefined ? [] : due.filter((r) => released?.has(keyOf(r)) !== true);
-          // Only listed PRs are kept, so one that goes and comes back is new again.
           notified = new Set(
             [...requests.filter((r) => before?.has(keyOf(r)) === true), ...due].map(keyOf),
           );
@@ -373,7 +338,6 @@ export const makeReviewRequestsPoller = (
             : undefined;
           const found = searched.kind === "found" ? searched.found : [];
           const owned = mine?._tag === "Some" ? mine.value : [];
-          // One details lookup for both lists, so their PRs share its documents.
           const both = [...found, ...owned];
           const bots = reviewBotsOf(settings);
           const fresh: ReadonlyMap<string, ReviewRequestDetails> =
@@ -388,8 +352,6 @@ export const makeReviewRequestsPoller = (
               yield* replace({ requests: [] });
               break;
             case "signedOut":
-              // Nothing to show, but what was known stays, so signing back in only notifies for
-              // PRs that are really new.
               yield* replace({ requests: [] });
               break;
             case "failed":
@@ -416,18 +378,14 @@ export const makeReviewRequestsPoller = (
 
       const refresh = ({ force = false }: { readonly force?: boolean } = {}) =>
         Effect.gen(function* () {
-          // Like the timer, off while git sweeps are off, so no test or e2e focus reaches `gh`.
           if (gitConfig.sweepInterval === undefined) return;
           const now = yield* Clock.currentTimeMillis;
           const throttled = lastPollAt !== undefined && now - lastPollAt < throttle;
           if (throttled && !force) return;
-          // A focus while GitHub is refusing us would spend the search allowance on a certain 403.
           if (!force && (yield* backoff.consecutive) > 0) return;
-          // "Check now" is the user asking; a window merely gaining focus is a poll like the timer's.
           yield* force ? poll : asBackground(poll);
         });
 
-      /** Searches already backed off for, so one refused poll is only ever counted once. */
       let counted = 0;
 
       const nextDelay = Effect.gen(function* () {
@@ -437,8 +395,6 @@ export const makeReviewRequestsPoller = (
         }
         const snapshot = Option.isNone(quota) ? undefined : yield* quota.value.current();
         const level = Option.isNone(activity) ? "active" : yield* activity.value.level;
-        // The search allowance is ~30/min, an order of magnitude tighter than core: this poll is the
-        // one that must respect it, and it is also the one that can afford to wait.
         const thin = quotaMultiplier(windowHeadroom(snapshot?.search));
         return yield* backoff.recovered(thin * (level === "active" ? 1 : 2));
       });

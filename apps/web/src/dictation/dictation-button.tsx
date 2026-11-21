@@ -8,15 +8,11 @@ import { Hint } from "@/components/hint";
 
 import type { DictationState } from "./session";
 
-/** Muted like the toolbar's other glyphs until hovered. */
 const IDLE = "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
-/** Listening: the glyph and a faint tint in the danger tone, the way a recording light reads. */
 const LIVE =
   "bg-destructive-tint text-destructive transition-colors hover:bg-destructive-tint-hover";
-/** Couldn't start: the glyph crossed out in the warning tone, until the next try. */
 const FAILED = "text-warning transition-colors hover:bg-accent";
 
-/** What the button and the composer's status line say about a dictation. */
 const dictationLabel = (state: DictationState): string => {
   switch (state.phase) {
     case "idle":

@@ -5,10 +5,6 @@ import { useMemo } from "react";
 import { noCiRepos, noCiText } from "./no-ci-model";
 import { useOrchestratorLedger } from "./use-orchestration";
 
-// One calm line on the Board for the workspace's repos that run no CI (`noCiRepos`): informational,
-// so neutral, with no count, no red and nothing to dismiss. It explains why their PRs show no checks
-// rather than raising each one.
-
 /** The workspace's repos with no CI, in one muted line; nothing when every repo has some. */
 export function NoCiNote({
   workspaceId,

@@ -1,6 +1,3 @@
-// When a pull request's own checks stop mattering, as merge_when_ready sees each of its states:
-// the merge intent dropped, the PR merged or closed, or its head moved past the head checked. Each
-// cancels the PR's running checks (`LocalChecks.cancel`), whoever started them.
 import type { PrStatus, Thread, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 
@@ -8,15 +5,10 @@ import { isBadgeOf } from "./extra-prs.ts";
 import type { CheckPr } from "./local-check-cancel.ts";
 import type { LocalCheck, LocalChecksShape } from "./local-checks.ts";
 
-/**
- * Whether `badge` was read after `check` started: a badge read before it may name a head or state
- * the check's own fresh read already moved past, which cancels nothing.
- */
 const readAfter = (badge: PrStatus, check: LocalCheck) =>
   badge.updatedAt !== undefined && Date.parse(badge.updatedAt) > check.startedAt;
 
 export const makeCheckSettle = (localChecks: LocalChecksShape | undefined) => {
-  /** Each thread's PR with a merge intent, as last seen, so the intent's end is seen once. */
   const armed = new Map<ThreadId, CheckPr>();
   return (thread: Thread, badge: PrStatus | undefined): Effect.Effect<void> =>
     Effect.gen(function* () {

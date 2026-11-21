@@ -33,7 +33,6 @@ const POLICY: Record<Workspace["policy"], string> = {
   off: "Lending not allowed",
 };
 
-/** The device's state, read again whenever the shell says it changed. */
 const useHostedDevice = (bridge: Bridge | undefined) => {
   const [state, setState] = useState<HostedDeviceView | null>();
   const read = useCallback(() => {
@@ -207,7 +206,6 @@ export function HostedServersPage() {
   );
 }
 
-/** What a sign-in lets this computer do with its server, in the order a person meets them. */
 const allows = (server: Server): string | undefined => {
   const said = [
     server.runsWork === true ? "Runs work sent from here" : undefined,

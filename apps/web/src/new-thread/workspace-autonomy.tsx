@@ -20,7 +20,6 @@ import { known } from "@/thread/orchestration-model";
 
 import { AUTONOMY_LINE, useAutonomyLine } from "./autonomy-choice";
 
-/** The level's glyph, placed as the button places a leading icon. */
 const ICON_PROPS = { "aria-hidden": true, "data-icon": "inline-start" } as const;
 
 /** "Workspace: full autonomy": the trigger's words, the level in lower case. */

@@ -56,7 +56,6 @@ export function UsagePage() {
     retry: false,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
-    // A new filter keeps the last view, dimmed, rather than flashing empty.
     placeholderData: (previous) => previous,
   });
   const data = query.data;
@@ -214,7 +213,6 @@ function UsageSnapshot({ data }: { data: UsageOverview }) {
               </summary>
               <div className="mt-3">
                 <ModelTable
-                  // Its own model and day filters start over with a new period or provider.
                   key={`${data.provider}-${data.to - data.from}`}
                   rows={data.rows}
                   history={history !== undefined}
@@ -242,9 +240,7 @@ function Stat({
   testId,
 }: {
   label: string;
-  /** A token count, shown compact with the whole number on hover; null when none is known. */
   value?: number | null;
-  /** Shown as it is, in place of a count. */
   text?: string;
   detail?: ReactNode;
   testId?: string;

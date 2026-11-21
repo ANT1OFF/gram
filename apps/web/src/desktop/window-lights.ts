@@ -34,7 +34,6 @@ export function watchWindowLights(
   };
   sync();
   if (!mac) return () => root.style.removeProperty("--window-lights-inset");
-  // Zoom changes the viewport's width in CSS pixels, so a zoom step comes as a resize.
   window.addEventListener("resize", sync);
   const off = bridge.fullScreen?.onChange((next) => {
     fullScreen = next;
@@ -42,7 +41,6 @@ export function watchWindowLights(
   });
   bridge.fullScreen?.get().then(
     (now) => {
-      // A change that came first is newer than this answer.
       if (fullScreen !== undefined) return;
       fullScreen = now;
       sync();

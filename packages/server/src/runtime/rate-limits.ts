@@ -2,16 +2,10 @@ import type { AgentEvent } from "@gram/contracts";
 
 type RateLimit = Omit<Extract<AgentEvent, { type: "rateLimit" }>, "type">;
 
-/** Utilisation past which a window's warning shows again. Its first warning shows wherever it is. */
 const RATE_LIMIT_THRESHOLDS = [0.8, 0.95] as const;
 
-/**
- * How long a window with no warning or rejection is remembered, and one with no known reset at all,
- * when its reset hasn't passed first.
- */
 const RATE_LIMIT_FORGET_MS = 6 * 60 * 60 * 1000;
 
-/** Warnings below, at and past the thresholds rank 1 to 3; a rejection ranks above them all. */
 const levelOf = (limit: RateLimit) =>
   limit.status === "rejected"
     ? RATE_LIMIT_THRESHOLDS.length + 2
@@ -48,7 +42,6 @@ export const makeRateLimitGate = () => {
     const key = `${account}\0${limit.window}`;
     const seen = shown.get(key);
     const level = Math.max(levelOf(limit), seen?.level ?? 0);
-    // A reset already past says nothing about when this window ends; the six hours cover it.
     const resetsAt =
       limit.resetsAt !== undefined && limit.resetsAt > now ? limit.resetsAt : seen?.resetsAt;
     shown.set(key, { level, resetsAt, seenAt: now, shownAt: seen?.shownAt ?? now });

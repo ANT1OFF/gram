@@ -18,10 +18,6 @@ import type { WorkerActivity } from "./wait-model";
 import type { WaitingOn } from "./waiting-on";
 import { workerShown } from "./worker-shown";
 
-// The Board view's feature lines: one row per feature card, its
-// workers placed on the five stations the card gives them. Stations come from the card
-// (`stationOf` on the server); nothing here works one out again. No React.
-
 /**
  * What a worker's chip says at a glance. Waiting is busy on CI, a review or another automation;
  * attention is stopped where the worker has to act and nothing armed will bring it back.
@@ -111,7 +107,6 @@ export interface RailFacts {
   readonly waiting?: Readonly<Record<string, WaitingOn>> | undefined;
 }
 
-/** A card's plan with steps still to come: its line isn't finished, whatever its workers say. */
 const planGoesOn = (stage: FeatureCard["stage"]): boolean =>
   stage?.plan !== undefined &&
   stage.plan.includes(stage.current) &&
@@ -161,14 +156,12 @@ export const workerStarting = (
 export const workerTone = (facts: ToneFacts): RailTone => {
   const { state, status, activity } = facts;
   if (facts.asking) return "needs";
-  // Answered here: on its way back to work, whatever the server says it waits on until it hears.
   if (facts.answered === true) return "working";
   if (state !== undefined && NEEDS.has(state)) return "needs";
   if (facts.failed) return "error";
   if (state !== undefined && DONE.has(state)) return "merged";
   if (status === "needsApproval" || status === "needsInput") return "needs";
   if (status === "running" || status === "starting" || facts.working === true) return "working";
-  // Spawned and not begun: starting, never stopped. One with a wait armed already says that wait.
   if (workerStarting(facts) && activity !== "automation") return "working";
   return activity === "working"
     ? "working"
@@ -209,7 +202,6 @@ export const TONE_DOT: Readonly<Record<RailTone, string>> = {
   attention: "bg-status-idle",
   error: "bg-destructive",
   working: "bg-status-working",
-  // Busy on CI or a review rather than a turn: the working colour, hollow.
   waiting: "border border-status-working bg-transparent",
   idle: "bg-status-idle",
   merged: "bg-merged",
@@ -244,7 +236,6 @@ export const railRows = (
   const titles = new Map(
     cards.flatMap((card) => card.workers.map((worker) => [worker.threadId, worker.title] as const)),
   );
-  // A running thread its status says runs counts as at work, as the sidebar's does.
   const running = new Set(facts.running);
   for (const card of cards) {
     for (const worker of card.workers) {
@@ -254,7 +245,6 @@ export const railRows = (
   }
   const shownFacts = { running, asking: facts.asking, over: facts.over };
   const rows = cards.flatMap((card): RailRow[] => {
-    // Its workers, the archived ones only with all drawn; of them, those it draws.
     const workers =
       draw === "all" ? card.workers : card.workers.filter((worker) => worker.state !== "archived");
     const shown = card.workers.filter((worker) => workerShown(worker, shownFacts));
@@ -266,7 +256,6 @@ export const railRows = (
     for (const worker of drawn) {
       reach = Math.max(reach, FEATURE_STATIONS.indexOf(worker.station));
       const tone = railTone(worker, facts);
-      // Said only of a calm chip, as the sidebar's row says it.
       const waiting = calmTone(tone) ? facts.waiting?.[worker.threadId] : undefined;
       cells[worker.station].push({
         threadId: worker.threadId,
@@ -290,14 +279,12 @@ export const railRows = (
       workers.every(
         (worker) => DONE.has(worker.state) && facts.ongoing?.has(worker.threadId) !== true,
       );
-    // A line that has left for Done is named as it last was, by all its workers.
     const named = drawn.length > 0 ? drawn : workers;
     return [
       {
         feature: card.feature,
         card,
         group: card.group,
-        // Only a held brief: it is about to be.
         state: leastAdvanced(workers.map((worker) => worker.state)) ?? "briefed",
         projects: [
           ...new Set([...named.map((worker) => worker.project), ...held.map((h) => h.project)]),
@@ -305,7 +292,6 @@ export const railRows = (
         reach,
         needs: tones.includes("needs"),
         finished,
-        // The sidebar's rule: no worker left to show, and no brief held.
         settled: shown.length === 0 && held.length === 0,
         title:
           named.length > 1 ? card.feature : (named[0]?.title ?? held[0]?.title ?? card.feature),
@@ -391,7 +377,6 @@ export const railEntries = (
       const index = order.indexOf(row.feature);
       return index < 0 ? order.length : index;
     };
-    // In the order they joined, finished lines last, as everywhere on the Board.
     const members = rows
       .filter((row) => row.group === group)
       .toSorted((a, b) => Number(a.finished) - Number(b.finished) || rank(a) - rank(b));

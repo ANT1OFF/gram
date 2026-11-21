@@ -3,13 +3,8 @@ import type { ThemedToken } from "shiki";
 import type { TokenizedCode } from "@/lib/code-highlighting";
 import type { EmbeddedScript } from "@/lib/embedded-scripts";
 
-/** Line separators as Shiki splits on them; tokens carry no separators of their own. */
 const separatorsOf = (text: string) => text.match(/\r?\n/gu) ?? [];
 
-/**
- * Each token with its offset in `text`, or `undefined` when the tokens don't spell `text` exactly
- * (a raw fallback, a grammar that changed something): those are never painted.
- */
 function placed(text: string, tokenized: TokenizedCode) {
   const separators = separatorsOf(text);
   if (tokenized.tokens.length !== separators.length + 1) return undefined;
@@ -26,7 +21,6 @@ function placed(text: string, tokenized: TokenizedCode) {
   return offset === text.length ? out : undefined;
 }
 
-/** A raw fallback token has no colour to give; painting it would wash out the outer colours. */
 const colourless = (token: ThemedToken) =>
   (token.color === undefined || token.color === "inherit") && token.htmlStyle === undefined;
 
@@ -55,7 +49,6 @@ export function paintEmbedded(
     for (const { token, offset } of inner) {
       if (colourless(token)) continue;
       for (let index = offset; index < offset + token.content.length; index += 1) {
-        // A newline inside the script is the command's newline: it carries no colour.
         if (script.text[index] === "\n" || script.text[index] === "\r") continue;
         styles.fill(token, script.starts[index]!, script.ends[index]!);
         painted = true;

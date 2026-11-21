@@ -1,9 +1,3 @@
-// The agent browser module's main half: Settings → Agent may browse, the public hosts agents may
-// open in the Preview pane without a card. Kept in a file of its own beside the trusted links,
-// since trusting a link to open isn't trusting an agent on the site. The renderer can list and
-// remove hosts; only an approval card's "Always for this host", answered in the server and sent
-// here as a pane command, adds one.
-
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 
 import { nativeImage } from "electron";
@@ -35,7 +29,6 @@ export function installAgentBrowse(
       try {
         return (JSON.parse(readFileSync(path, "utf8")) as { hosts?: unknown }).hosts;
       } catch {
-        // Missing or unreadable: no host is approved, so every public one asks.
         return [];
       }
     },
@@ -44,7 +37,6 @@ export function installAgentBrowse(
         writeFileSync(`${path}.tmp`, JSON.stringify({ hosts: list }));
         renameSync(`${path}.tmp`, path);
       } catch (error) {
-        // The change holds until quit; the next launch asks again for what it couldn't save.
         log.warn({ source: "agent-browse", error: String(error) }, "couldn't save the hosts");
       }
     },

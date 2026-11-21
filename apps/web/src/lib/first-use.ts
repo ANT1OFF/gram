@@ -5,7 +5,6 @@ import { createJSONStorage, persist } from "zustand/middleware";
 export type TermId = "solo" | "quiet" | "dreams";
 
 interface FirstUseState {
-  /** The terms whose explanation was shown once, on this machine. */
   readonly seen: Readonly<Partial<Record<TermId, true>>>;
   see: (term: TermId) => void;
 }

@@ -37,7 +37,6 @@ import { installLookDefaults } from "@/theme/look-defaults";
 
 import { bootTheme } from "./theme-boot";
 
-/** An added page, in the conversation's place: it scrolls on its own, as Usage does. */
 function ShellPage({ route }: { route: ShellRoute }) {
   const params = useParams({ strict: false }) as Readonly<Record<string, string>>;
   const Page = route.component;
@@ -66,7 +65,6 @@ const addedRoutes = (routes: readonly ShellRoute[]): AnyRoute[] => {
   });
 };
 
-/** Turns the hosted features on in the in-memory server, which has nobody else to do it. */
 const withHostedMock = async (api: Api): Promise<void> => {
   await api.updateSettings({ experimental: { embedding: true } });
 };
@@ -79,14 +77,12 @@ let mounted = false;
  * are on: anywhere else the app is exactly as it is on its own.
  */
 export const mountGram: MountGram = async (options) => {
-  // The stores, the keyboard and the theme on `<html>` are the page's, not the element's.
   if (mounted) throw new Error("gram: the app is already mounted on this page");
   mounted = true;
   try {
     const mock = options.server === "mock";
     setServerBase(mock ? undefined : (options.server as { base?: string } | undefined)?.base);
     setAppBasePath(options.basePath);
-    // The host's look first, so the boot attributes already name its palette.
     installHostTheme(document, options.theme);
     installLookDefaults(options.defaults);
     bootTheme(
@@ -104,11 +100,8 @@ export const mountGram: MountGram = async (options) => {
     );
     if (mock) {
       await withHostedMock(api);
-      // Before the router is built, so a page that opens on one of them finds it.
       for (const thread of options.mockThreads ?? []) await window.gramMock?.simulateThread(thread);
     }
-    // One answer, before the router is built: a page added to a server that has the features off
-    // would otherwise exist and lead nowhere.
     const settings = await api.getSettings();
     const hosted = embeddingOn(settings);
     const shell: ShellContributions = shellFor(settings, options.shell);
@@ -163,7 +156,6 @@ export const mountGram: MountGram = async (options) => {
       shell: hosted ? "on" : "off",
       update: (next) => {
         if (!hosted) return;
-        // Only what `next` names: a host that updates its counts keeps its switcher.
         useEmbedShell.setState({
           ...("navigation" in next ? { navigation: next.navigation ?? [] } : {}),
           ...("workspaceSwitcher" in next ? { workspaceSwitcher: next.workspaceSwitcher } : {}),

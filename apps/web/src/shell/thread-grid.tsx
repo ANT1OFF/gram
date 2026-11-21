@@ -41,8 +41,6 @@ export function ThreadGrid() {
   const { cols, rows } = GRID_SHAPES[grid.preset];
   const colFr = grid.colFr ?? even(cols);
   const rowFr = grid.rowFr ?? even(rows);
-  // On a touch screen one pane shows at a time, the focused one, whatever the layout: panes side
-  // by side are too cramped to read or tap there.
   const touch = useTouch();
   const multi = !touch && grid.panes.length > 1;
   const maximized = grid.panes.length > 1 && (touch || grid.maximized);
@@ -233,10 +231,8 @@ function PaneActions({ index, maximized }: { index: number; maximized: boolean }
   );
 }
 
-/** How many recent threads an empty pane offers. */
 const EMPTY_PANE_THREADS = 6;
 
-/** An empty pane: start a thread that lands here, or open a recent thread that isn't on screen. */
 function EmptyPane({ index }: { index: number }) {
   const navigate = useNavigate();
   const panes = useLayoutStore((s) => s.grid.panes);
@@ -252,7 +248,6 @@ function EmptyPane({ index }: { index: number }) {
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
 
-  // The new thread opens in the focused pane once it's created, so focus this one first.
   const newThread = () => {
     useLayoutStore.getState().focusPane(index);
     void navigate({ to: "/new" });

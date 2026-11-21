@@ -1,6 +1,3 @@
-// One of the Settings pages built from several sections, apart from the page list (`pages.tsx`) so
-// that the list, which the nav and every Settings route load, does not bring the sections with it.
-
 import { AgentChecks } from "@/launch-checks/tool-checks";
 
 import { AgentsSection } from "./agents-section";

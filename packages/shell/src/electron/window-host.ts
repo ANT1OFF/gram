@@ -1,5 +1,3 @@
-/** The window manager over real BrowserWindows and displays. */
-
 import type { GridLayout } from "@gram/contracts";
 import { type BrowserWindow, screen, type WebContents } from "electron";
 
@@ -40,14 +38,11 @@ export interface ShellWindows extends WindowManager, WindowIpc {
   revealHeld(): boolean;
 }
 
-/** A window made before there was a URL, until `loadPending` loads it. */
 interface Unloaded {
   readonly maximized: boolean;
-  /** Brought forward while it waited (the Window menu), so it is focused once it has loaded. */
   focus: boolean;
 }
 
-/** `pending(win)` is the window's wait for a URL; showing it then would show an empty window. */
 function managed(win: BrowserWindow, pending: () => Unloaded | undefined): ManagedWindow {
   return {
     bounds: () => win.getNormalBounds(),
@@ -98,12 +93,7 @@ export function createShellWindows({
   readonly startHidden?: boolean;
 }): ShellWindows {
   const byContents = new Map<number, string>();
-  /**
-   * Windows made before there was a URL, which `loadPending` loads. Each is maximized and focused
-   * only then: either would show it, and put an empty window on screen.
-   */
   const unloaded = new Map<BrowserWindow, Unloaded>();
-  /** Windows restored hidden, with whether each is maximized once it shows (maximizing shows it). */
   const held = new Map<BrowserWindow, { readonly maximized: boolean }>();
   let holding = startHidden;
   const manager = createWindowManager({
@@ -159,7 +149,6 @@ export function createShellWindows({
       if (held.size === 0) return false;
       for (const win of held.keys()) {
         const waiting = unloaded.get(win);
-        // Still waiting for the boot: shown once it has loaded and painted.
         if (waiting === undefined) focusWindow(win);
         else waiting.focus = true;
       }
@@ -191,7 +180,6 @@ export function createShellWindows({
         unloaded.delete(win);
         if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
         if (maximized) win.maximize();
-        // After `createWindow`'s own listener has shown it.
         if (focus) {
           win.once("ready-to-show", () => {
             if (!win.isDestroyed()) focusWindow(win);

@@ -1,13 +1,3 @@
-// "Open at login". The OS keeps the setting, not Gram: on macOS Electron registers the app itself
-// with `SMAppService` (`mainAppService`), which lists it under its name and team in System Settings
-// → General → Login Items and keeps it across signed updates, since the registration follows the
-// bundle identifier and team rather than one build. On Windows it is the run key, given an argument
-// so a login launch can tell itself apart. Nothing here registers or removes the item at startup,
-// so an update never undoes the user's choice, and one removed in System Settings stays removed.
-// Linux has no API for it: there it is an XDG autostart entry (`~/.config/autostart/gram.desktop`)
-// that Gram writes and removes itself, which GNOME, KDE and the other XDG desktops run at login and
-// list in their own autostart settings.
-
 import { randomUUID } from "node:crypto";
 import {
   existsSync,
@@ -79,7 +69,6 @@ export const autostartExec = (
  * value, whose own escapes are undone first, so every backslash is then doubled once more.
  */
 export const desktopExecArg = (arg: string): string => {
-  // A line break would end the key, and the line after it could be any key at all.
   // oxlint-disable-next-line no-control-regex -- control characters are what this refuses
   if (/[\u0000-\u001f\u007f]/.test(arg))
     throw new Error("the app's path can't be started at login");
@@ -88,7 +77,6 @@ export const desktopExecArg = (arg: string): string => {
   return `"${percent.replace(/(["`$\\])/g, "\\$1")}"`.replaceAll("\\", "\\\\");
 };
 
-/** What marks an autostart entry as Gram's own, so Gram never rewrites or removes anyone else's. */
 const GRAM_ENTRY_MARK = "X-Gram-Autostart=true";
 
 /** The autostart entry that starts `exec` at login, marked as a login launch. */
@@ -121,14 +109,12 @@ export const gramExecTarget = (line: string): string | undefined => {
   if (rest === undefined) return undefined;
   const target =
     rest.length >= 2 && rest.startsWith('"') && rest.endsWith('"')
-      ? // The string value's escapes first, then the quoting's, then the doubled `%`.
-        rest
+      ? rest
           .slice(1, -1)
           .replaceAll("\\\\", "\\")
           .replace(/\\(["`$\\])/g, "$1")
           .replaceAll("%%", "%")
       : rest.replaceAll("%%", "%");
-  // Only what Gram would have written itself: anything else is someone's own line.
   try {
     return desktopExecArg(target) === rest ? target : undefined;
   } catch {
@@ -160,20 +146,15 @@ export const fileAutostart = (path: string, exec: string): Autostart => ({
     try {
       return readFileSync(path, "utf8");
     } catch (error) {
-      // Only a missing entry is no entry; one that can't be read is someone's, and kept.
       if ((error as { code?: string }).code === "ENOENT") return undefined;
       throw error;
     }
   },
   write: (text) => {
-    // An entry linked from a dotfiles repository is written through the link, onto its target, so
-    // the link stays.
     let target = path;
     try {
       if (lstatSync(path).isSymbolicLink()) target = realpathSync(path);
-    } catch {
-      // No entry yet, or a dangling link: written at `path`.
-    }
+    } catch (_noEntryYetOrADanglingLinkWrittenAt) {}
     mkdirSync(dirname(target), { recursive: true });
     const temp = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
     try {
@@ -218,10 +199,6 @@ export function createLoginItem(deps: {
     deps.packaged && (platform === "darwin" || platform === "win32" || autostart !== undefined);
   const args = platform === "win32" ? { args: [LOGIN_ARG] } : {};
 
-  // An entry Gram wrote for an executable that is gone (a versioned AppImage since replaced, or one
-  // moved) would start nothing at login while Settings said on: at launch its `Exec` line, and only
-  // that line, is pointed at this one. Only an entry that is on and Gram's own, whose `Exec` still
-  // has the shape Gram writes; every other line, and any `Exec` a person changed, stays theirs.
   if (supported && autostart !== undefined) {
     try {
       const text = autostart.read();
@@ -232,7 +209,6 @@ export function createLoginItem(deps: {
         isGramEntry(text) &&
         autostartEnabled(text) &&
         stale !== undefined &&
-        // Gram writes only absolute paths; a bare name is someone's command on their PATH.
         isAbsolute(stale) &&
         stale !== autostart.exec &&
         !autostart.exists(stale)
@@ -240,12 +216,9 @@ export function createLoginItem(deps: {
         const fresh = EXEC_LINE.exec(autostartEntry(autostart.exec))![0];
         autostart.write(text.replace(EXEC_LINE, () => fresh));
       }
-    } catch {
-      // Unreadable, a path that can't go in an entry, or a folder that can't be written: left as is.
-    }
+    } catch (_unreadableAPathThatCantGoInAnEntry) {}
   }
 
-  /** The entry, or `foreign` when there is one Gram can't read, which is never Gram's to touch. */
   const readEntry = (): string | undefined | "foreign" => {
     try {
       return autostart?.read();
@@ -262,7 +235,6 @@ export function createLoginItem(deps: {
     }
     const settings = api.getLoginItemSettings(args);
     const needsApproval = platform === "darwin" && settings.status === "requires-approval";
-    // Registered but waiting for approval doesn't launch anything yet; the row says so.
     return { enabled: settings.openAtLogin || needsApproval, needsApproval };
   };
 

@@ -17,10 +17,8 @@ import { NPM_PACKAGES } from "./policy.ts";
 import { makeVendorReleases, npmView } from "./releases.ts";
 import { resolveAgentRuntimes } from "./resolve.ts";
 
-/** How long a listing waits for vendor releases before answering with what it has. */
 const RELEASES_WAIT_MS = 3_000;
 
-/** A thread in one of these has a session open, which keeps the CLI it started with. */
 const LIVE: ReadonlySet<ThreadStatus> = new Set([
   "starting",
   "idle",
@@ -29,12 +27,6 @@ const LIVE: ReadonlySet<ThreadStatus> = new Set([
   "needsInput",
 ]);
 
-/**
- * `agentRuntime.list`: the launch checks' view of each agent CLI, judged against the shipped
- * bindings, with the newest vendor release. Vendor metadata is read only when first asked, then at
- * most every six hours, or ten minutes on an explicit re-check.
- * `agentRuntime.{update,watchUpdate,cancelUpdate}` run a listed step on the user's own CLI.
- */
 const agentRuntimeHandlers = Effect.gen(function* () {
   const checks = yield* LaunchChecksCache;
   const managed = Option.getOrUndefined(yield* Effect.serviceOption(ManagedRuntimes));
@@ -48,11 +40,7 @@ const agentRuntimeHandlers = Effect.gen(function* () {
     Effect.gen(function* () {
       const again = refresh === true;
       const [launch, vendor] = yield* Effect.all(
-        [
-          checks.get(again),
-          // Settings shouldn't wait on a cold packument; it asks again while `checking`.
-          releases.get(again, RELEASES_WAIT_MS),
-        ],
+        [checks.get(again), releases.get(again, RELEASES_WAIT_MS)],
         { concurrency: "unbounded" },
       );
       return yield* resolveAgentRuntimes({

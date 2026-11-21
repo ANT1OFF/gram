@@ -64,7 +64,6 @@ export function ThreadSwitcher() {
   const byId = useListedThreads();
   const [cycle, setCycle] = useState<{ order: ThreadId[]; index: number }>();
 
-  // Every focus change moves that thread to the front of the most-recent order.
   useEffect(() => {
     const touch = (threadId: ThreadId | null | undefined) => {
       if (threadId) useThreadHistory.getState().touch(threadId);

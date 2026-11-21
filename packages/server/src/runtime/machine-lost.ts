@@ -1,9 +1,3 @@
-// A joined machine that went away under a thread's session and didn't come back in time
-// (`EndedEvent.lostMachine`). The turn fails, saying so (`ThreadError.machineLost`), and the
-// thread's work in progress is what was last kept of it (`wip-keeper.ts`). Resuming sends the same
-// conversation a note of what happened, which opens it again on the machine once it is back, on
-// its folder as kept.
-
 import { MACHINE_LOST_DURING_MAX, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -61,13 +55,10 @@ export const resumeAfterMachineLost = (
       text: machineLostText(lost.machine, lost.during),
       author: "server",
     });
-    // Only the loss the note was for is taken as resumed: one newer meanwhile stays. Its error
-    // stays too, but no longer says the machine was lost, so it isn't resumed again from it.
     const resumedAt = thread.machineIncident?.at ?? lost.at ?? thread.lastError?.at;
     const next = yield* store
       .updateThread(threadId, (current) => {
         const { machineIncident: incident, lastError: error, ...rest } = current;
-        // A loss newer than the one resumed stays, with the error that carries it.
         if (incident !== undefined && incident.at !== resumedAt)
           return {
             ...rest,

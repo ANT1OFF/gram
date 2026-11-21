@@ -17,9 +17,7 @@ export interface EmbeddedScript {
   readonly ends: readonly number[];
 }
 
-/** Nesting this deep (`ssh` → `zsh -c` → `bash -c` → …) is as far as scripts are looked for. */
 const MAX_DEPTH = 4;
-/** Bounds the work for one command; the outer colours stay either way. */
 const MAX_SCRIPTS = 32;
 
 interface Mapped {
@@ -29,7 +27,6 @@ interface Mapped {
 }
 
 interface Word extends Mapped {
-  /** The value as typed, for flag matching; `undefined` when it can't be mapped exactly. */
   exact: boolean;
 }
 
@@ -42,7 +39,6 @@ interface HereDoc {
 
 interface SimpleCommand {
   words: Word[];
-  /** `<<<` and `>`-style redirections, in order. */
   hereStrings: { fd: number; word: Word }[];
   outputs: string[];
   hereDocs: HereDoc[];
@@ -50,7 +46,6 @@ interface SimpleCommand {
 
 interface Lexed {
   commands: SimpleCommand[];
-  /** `$(…)`, `` `…` `` and `<(…)` bodies, as stretches of the text, read again as shell. */
   substitutions: { start: number; end: number }[];
 }
 
@@ -64,9 +59,7 @@ export function embeddedScripts(command: string): EmbeddedScript[] {
   const found: EmbeddedScript[] = [];
   try {
     collect(identity(command), 0, found);
-  } catch {
-    // A shape the reader didn't expect: the outer colours stand.
-  }
+  } catch (_aShapeTheReaderDidntExpectTheOuterColours) {}
   return found.slice(0, MAX_SCRIPTS);
 }
 
@@ -106,18 +99,13 @@ function collect(source: Mapped, depth: number, found: EmbeddedScript[]) {
   }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Reading the shell
-
 const BLANK = new Set([" ", "\t"]);
 const ENDS_WORD = new Set([" ", "\t", "\n", ";", "&", "|", "(", ")", "<", ">"]);
 
-/** A small POSIX/bash reader: words with their spelling, separators, redirections, here-docs. */
 function lex(text: string): Lexed {
   const commands: SimpleCommand[] = [];
   const substitutions: Lexed["substitutions"] = [];
   let current = newCommand();
-  /** Here-docs whose bodies start on the next line. */
   let waiting: HereDoc[] = [];
   let index = 0;
 
@@ -150,7 +138,6 @@ function lex(text: string): Lexed {
     }
     if (char === ";" || char === "&" || char === "|" || char === "(" || char === ")") {
       if (char === "&" && text[index + 1] === ">") {
-        // `&>file` and `&>>file`: both streams to a file.
         index += text[index + 2] === ">" ? 3 : 2;
         const target = readWord(text, index, substitutions);
         index = target.next;
@@ -163,7 +150,6 @@ function lex(text: string): Lexed {
       else if (char === "|" && text[index] === "&") index += 1;
       continue;
     }
-    // A redirection, with an optional descriptor spelled right before it; `<(…)` is a word.
     const substituted = (char === "<" || char === ">") && text[index + 1] === "(";
     const redirect = /^(\d*)(<<<|<<-|<<|<>|<&|>&|>>|>\||<|>)/u.exec(text.slice(index, index + 8));
     if (!substituted && redirect && (redirect[1] === "" || startsWord(text, index))) {
@@ -186,7 +172,6 @@ function lex(text: string): Lexed {
     }
     const read = readWord(text, index, substitutions);
     if (read.next === index) {
-      // Nothing a word can start with: step over it rather than stall.
       index += 1;
       continue;
     }
@@ -201,7 +186,6 @@ const newCommand = (): SimpleCommand => ({ words: [], hereStrings: [], outputs: 
 
 const startsWord = (text: string, index: number) => index === 0 || ENDS_WORD.has(text[index - 1]!);
 
-/** A here-doc's body, from `start` to the line that ends it; the index after that line. */
 function readHereDocBody(text: string, start: number, hereDoc: HereDoc): number {
   let line = start;
   while (line <= text.length) {
@@ -209,14 +193,12 @@ function readHereDocBody(text: string, start: number, hereDoc: HereDoc): number 
     const end = lineEnd === -1 ? text.length : lineEnd;
     const content = text.slice(line, end).replace(/\r$/u, "");
     if ((hereDoc.strip ? content.replace(/^\t+/u, "") : content) === hereDoc.delimiter) {
-      // The body's own last newline belongs to it; the terminator line does not.
       hereDoc.body = slice(text, start, line);
       return lineEnd === -1 ? text.length : lineEnd + 1;
     }
     if (lineEnd === -1) break;
     line = lineEnd + 1;
   }
-  // No terminator: the rest of the text is the body, as a shell would read it with a warning.
   hereDoc.body = slice(text, start, text.length);
   return text.length;
 }
@@ -226,10 +208,6 @@ const slice = (text: string, start: number, end: number): Mapped => {
   return { text: text.slice(start, end), starts, ends: starts.map((at) => at + 1) };
 };
 
-/**
- * One word from `start`: its value with each character's spelling, the delimiter-style raw value
- * (quotes removed, nothing expanded) and where it stops.
- */
 function readWord(
   text: string,
   start: number,
@@ -249,7 +227,6 @@ function readWord(
   while (index < text.length) {
     const char = text[index]!;
     if (ENDS_WORD.has(char)) {
-      // `<(…)` and `>(…)` start a word of their own.
       if ((char === "<" || char === ">") && text[index + 1] === "(" && index === start) {
         const end = balanced(text, index + 2, "(", ")");
         substitutions.push({ start: index + 2, end: Math.max(index + 2, end - 1) });
@@ -283,7 +260,6 @@ function readWord(
       continue;
     }
     if (char === "$" && text[index + 1] === "'") {
-      // ANSI-C quoting: `\n` and friends don't map character for character.
       let at = index + 2;
       while (at < text.length && text[at] !== "'") at += text[at] === "\\" ? 2 : 1;
       const body = text.slice(index + 2, Math.min(at, text.length));
@@ -355,7 +331,6 @@ function readWord(
   return { word, raw, next: index };
 }
 
-/** The index after the `close` that matches an already-open `open`, skipping quoted text. */
 function balanced(text: string, start: number, open: string, close: string): number {
   let depth = 1;
   let index = start;
@@ -392,24 +367,14 @@ function backtick(text: string, start: number): number {
   return Math.min(index + 1, text.length);
 }
 
-// ---------------------------------------------------------------------------------------------
-// What each program runs
-
 interface Interpreter {
   readonly language: string;
-  /** Flags whose next word (or `=value`) is the program's code. */
   readonly inline: (flag: string) => boolean;
-  /** Flags that take the next word as a value. */
   readonly values?: ReadonlySet<string>;
-  /** Flags that run a file or module instead: the code isn't on the command line. */
   readonly fromFile?: ReadonlySet<string>;
-  /** Reads its program from standard input: when no file is named, or always (SQL shells). */
   readonly stdin: "no-file" | "always" | "never";
-  /** The code is this positional argument (0-based), as for `awk` and `sqlite3 db 'sql'`. */
   readonly positional?: number;
-  /** Takes several `-c`/`-e` scripts, in order. */
   readonly repeatable?: boolean;
-  /** Flag names match without case, as PowerShell's do. */
   readonly anyCase?: boolean;
 }
 
@@ -420,7 +385,6 @@ const flags =
 
 const SHELL: Interpreter = {
   language: "shellscript",
-  // `-c`, and `-c` among others in one word: `-lc`, `-euc`.
   inline: (flag) => /^-[A-Za-z]*c[A-Za-z]*$/u.test(flag),
   values: new Set(["-o", "-O", "--rcfile", "--init-file"]),
   stdin: "no-file",
@@ -519,7 +483,6 @@ const ALIASES: Readonly<Record<string, string>> = {
   pypy3: "python",
 };
 
-/** Programs that run the command after their own options: `sudo -u x python3 -c …`. */
 const WRAPPERS: Readonly<Record<string, ReadonlySet<string>>> = {
   env: new Set(["-u", "--unset", "-C", "--chdir", "-S"]),
   sudo: new Set(["-u", "--user", "-g", "--group", "-C", "-D", "--chdir", "-h", "--host"]),
@@ -533,7 +496,6 @@ const WRAPPERS: Readonly<Record<string, ReadonlySet<string>>> = {
   stdbuf: new Set(["-i", "-o", "-e"]),
 };
 
-/** `ssh` options that take a value; the first word after them is the host. */
 const SSH_VALUES = new Set([
   "-B",
   "-b",
@@ -559,7 +521,6 @@ const SSH_VALUES = new Set([
   "-w",
 ]);
 
-/** Here-doc delimiters that say what they hold: `<<'PY'`, `<<SQL`. */
 const DELIMITERS: Readonly<Record<string, string>> = {
   py: "python",
   python: "python",
@@ -597,7 +558,6 @@ function interpreterFor(name: string): Interpreter | undefined {
   return Object.hasOwn(INTERPRETERS, key) ? INTERPRETERS[key] : undefined;
 }
 
-/** Where the program itself is: past `FOO=1` assignments and wrappers such as `env` and `sudo`. */
 function programAt(words: readonly Word[]): number {
   let index = 0;
   while (index < words.length && /^[A-Za-z_]\w*=/u.test(words[index]!.text)) index += 1;
@@ -606,7 +566,6 @@ function programAt(words: readonly Word[]): number {
     const values = WRAPPERS[name];
     if (!Object.hasOwn(WRAPPERS, name) || !values) {
       if (name === "timeout") {
-        // `timeout [options] duration command`.
         index += 1;
         while (index < words.length && words[index]!.text.startsWith("-")) index += 1;
         index += 1;
@@ -642,7 +601,6 @@ function scriptsOf(command: SimpleCommand): Found[] {
       const remote = sshCommand(args);
       if (remote) {
         scripts.push({ language: "shellscript", mapped: remote });
-        // What the remote command reads from its input, as `ssh host 'python3 -' <<'PY'`.
         stdinLanguage = stdinLanguageOf(remote.text);
       }
     } else if ((name === "kubectl" || name === "oc") && args[0]?.text === "exec") {
@@ -693,7 +651,6 @@ function scriptsOf(command: SimpleCommand): Found[] {
   return scripts;
 }
 
-/** The code an interpreter's arguments carry, and whether they name a file to run instead. */
 function interpreterScripts(
   interpreter: Interpreter,
   args: readonly Word[],
@@ -753,7 +710,6 @@ const sliceMapped = (mapped: Mapped, start: number): Mapped => ({
   ends: mapped.ends.slice(start),
 });
 
-/** `ssh [options] host command`: the remote command, when it is one word. */
 function sshCommand(args: readonly Word[]): Mapped | undefined {
   let index = 0;
   while (index < args.length && args[index]!.text.startsWith("-")) {
@@ -768,7 +724,6 @@ function sshCommand(args: readonly Word[]): Mapped | undefined {
   return rest.length === 1 && rest[0]!.exact ? rest[0] : undefined;
 }
 
-/** The language the last command of `script` reads as its program from standard input. */
 function stdinLanguageOf(script: string): string | undefined {
   const last = lex(script).commands.at(-1);
   if (!last) return undefined;

@@ -1,9 +1,3 @@
-/*
- * A thread's cost, added up across its agent sessions. An agent counts from zero: Claude's
- * `total_cost_usd` covers one agent process, so every resume (an app restart, an eviction, a model
- * switch) would otherwise start the thread's ticker over.
- */
-
 export interface CostLedger {
   /** The thread's cost as far as agents have priced it; `undefined` until one has. */
   settled: number | undefined;
@@ -40,8 +34,6 @@ export const bookCost = (
   if (report.costEstimated === true) {
     return { costUsd: Math.max(ledger.settled ?? 0, ledger.base + costUsd), costEstimated: true };
   }
-  // A counter that went backwards was restarted under us: `/clear` does it, and a crash result
-  // carries zeroes. What it had counted is already settled, so count on from there.
   if (costUsd < ledger.session) ledger.base = ledger.settled ?? 0;
   ledger.session = costUsd;
   ledger.settled = ledger.base + costUsd;

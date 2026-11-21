@@ -13,14 +13,6 @@ import * as Schema from "effect/Schema";
 import { redactText } from "../logging/redact.ts";
 import { basisHash, type HelperScheduler } from "./scheduler.ts";
 
-// "One line per feature" (buildout "Smart touches"): a plain sentence on a feature card, written
-// by the helper for one card version. It is the `recap` kind on the workspace's orchestrator
-// thread, scoped to the feature, so the Recaps switch, the provider's conversation consent and the
-// usage ledger apply unchanged and the output is cached per feature. The basis leaves out the now
-// lines and times, so a card whose versions only move its now lines is answered from the cache
-// with no call: a quiet feature costs nothing. The card is complete without it.
-
-/** Bumped whenever the prompt or the output shape changes, so stored summaries are made again. */
 const FEATURE_SUMMARY_PROMPT_VERSION = 2;
 
 const FEATURE_SUMMARY_SYSTEM = [
@@ -34,7 +26,6 @@ const FEATURE_SUMMARY_SYSTEM = [
 
 const FeatureSummaryOutput = Schema.Struct({ summary: Schema.String });
 
-/** The card's facts the sentence is about, without what only moves (now lines, times, version). */
 const summaryFacts = (card: FeatureCard) => ({
   feature: card.feature,
   stage: card.stage?.current,
@@ -147,7 +138,6 @@ export const makeFeatureSummaries =
         output: FeatureSummaryOutput,
       });
       if (result._tag !== "Done") return undefined;
-      // An empty answer is the helper saying the card's own lines say it all: no sentence.
       if (result.value.summary.trim() === "") return undefined;
       const text = validFeatureSummary(result.value.summary);
       if (text === undefined) {

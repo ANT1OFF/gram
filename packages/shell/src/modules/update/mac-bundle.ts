@@ -19,8 +19,6 @@ export async function sha256(path: string): Promise<string> {
 }
 
 export async function boundedText(path: string, max = 4 * 1024 ** 2): Promise<string> {
-  // Bind type and byte limit to the opened file, not a prior path stat. Read at most max + 1
-  // bytes even if its content grows; the caller never allocates an unbounded readFile buffer.
   const file = await open(path, macFs.constants.O_RDONLY | macFs.constants.O_NOFOLLOW);
   try {
     const s = await file.stat();
@@ -119,8 +117,6 @@ export function validateMacBuildMethod(
   build: Record<string, unknown>,
   policy: MacBundlePolicy,
 ): void {
-  // An unsigned build is a private RC, cut only from a private repository; a signed release may
-  // come from the public one.
   if (policy.method === "unsigned-private-helper") {
     if (
       build.developerIdSigned !== false ||
@@ -260,7 +256,6 @@ export async function verifyMacBundleForMethod(
             throw new Error("Bundle SHA-256/size mismatch");
           if (rel.startsWith("Contents/Resources/web/") && web.get(rel) !== sums.get(rel))
             throw new Error("Web manifest mismatch");
-          // Refuse any foreign Mach-O native, not just the main executable.
           const file = await open(path, "r");
           try {
             const head = Buffer.alloc(8);

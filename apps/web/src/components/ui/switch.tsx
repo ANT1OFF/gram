@@ -2,10 +2,6 @@ import { Switch as SwitchPrimitive } from "@base-ui/react/switch";
 
 import { cn } from "@/lib/utils";
 
-/**
- * An on/off control. It renders a native button, so a `<label htmlFor>` names it and clicking the
- * label flips it.
- */
 function Switch({ className, ...props }: Omit<SwitchPrimitive.Root.Props, "nativeButton">) {
   return (
     <SwitchPrimitive.Root

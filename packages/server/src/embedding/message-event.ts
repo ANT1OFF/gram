@@ -1,11 +1,3 @@
-// A stored message as the event sink sends it (`message`), cut to fit one event when it is large.
-//
-// A message can be megabytes, nearly all of it what tools returned. An event is at most
-// `SINK_MESSAGE_EVENT_MAX_BYTES`, so what is cut goes in this order, largest first within each
-// step, and only as far as it takes: what tools returned, what tools were given, every other part
-// that isn't text, and last the text itself. Each cut leaves a mark where it was made
-// (`SinkTruncated`). The whole message stays in the server's own store.
-
 import {
   type GramUIMessage,
   SINK_MESSAGE_EVENT_MAX_BYTES,
@@ -15,7 +7,6 @@ import {
 import type { StoredMessage } from "../persistence/thread-store.ts";
 import type { SinkRecord } from "./event-sink.ts";
 
-/** Kept free of an event's size for what the outbox adds to it: its number and its time. */
 const ENVELOPE_BYTES = 128;
 
 /** What ends a text that was cut. */
@@ -23,7 +14,6 @@ export const TEXT_CUT_MARK = "\n[truncated]";
 
 const bytesOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value) ?? "null");
 
-/** What the mark adds to a text it ends: its own bytes, without the quotes a string has anyway. */
 const MARK_BYTES = bytesOf(TEXT_CUT_MARK) - 2;
 
 type Part = Record<string, unknown> & { readonly type: string };
@@ -37,7 +27,6 @@ const mark = (bytes: number, part?: string): SinkTruncated => ({
   ...(part === undefined ? {} : { part }),
 });
 
-/** The longest start of `text` whose JSON is at most `bytes`, never ending inside a pair. */
 const startOf = (text: string, bytes: number): string => {
   let low = 0;
   let high = text.length;
@@ -63,7 +52,6 @@ export const fitMessage = (
   const parts = (message.parts as ReadonlyArray<Part>).map((part): Part => ({ ...part }));
   const result = (): GramUIMessage => ({ ...message, parts }) as unknown as GramUIMessage;
 
-  /** Cuts the largest first, until the message fits or there is nothing left to cut. */
   const cut = (
     candidates: ReadonlyArray<{ readonly bytes: number; readonly apply: () => number }>,
   ) => {
@@ -73,7 +61,6 @@ export const fitMessage = (
     }
   };
 
-  /** A tool part's `field`, replaced by its mark where that makes it smaller. */
   const fields = (field: "output" | "input") =>
     parts.flatMap((part, index) => {
       if (!isTool(part) || part[field] === undefined) return [];
@@ -94,7 +81,6 @@ export const fitMessage = (
 
   cut(fields("output"));
   cut(fields("input"));
-  // Every other part that isn't text, whole: a file, a drawing, a tool call's error.
   cut(
     parts.flatMap((part, index) => {
       if (part.type === "text") return [];
@@ -113,7 +99,6 @@ export const fitMessage = (
       ];
     }),
   );
-  // The text itself, only when it alone is too much: the largest gives up what is over.
   const texts = parts
     .flatMap((part, index) =>
       part.type === "text" && typeof part["text"] === "string"
@@ -123,8 +108,6 @@ export const fitMessage = (
     .toSorted((a, b) => b.bytes - a.bytes);
   for (const { index, text, bytes } of texts) {
     if (total <= budget) break;
-    // The mark's bytes as it is sent, not its length: its line break is two bytes in JSON. One
-    // byte over, and the whole message would go as the mark below, its text with it.
     const kept = startOf(text, Math.max(0, bytes - (total - budget) - MARK_BYTES));
     const shortened = `${kept}${TEXT_CUT_MARK}`;
     const after = bytesOf(shortened);
@@ -133,7 +116,6 @@ export const fitMessage = (
     total += after - bytes;
   }
   if (bytesOf(result()) <= budget) return { message: result(), truncated: true };
-  // What is left is over by its metadata or by more small parts than fit: only the mark is sent.
   return {
     message: {
       id: message.id,

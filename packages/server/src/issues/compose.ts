@@ -43,7 +43,6 @@ export const issueLabels = (kind: IssueKind, area?: IssueArea): ReadonlyArray<st
   ...(area === undefined ? [] : [area]),
 ];
 
-/** The characters `plainCardText` drops from a card, which would let a body read differently there. */
 const HIDDEN = /[\u061c\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/gu;
 
 /** `text` as it may be posted: tokens redacted, the home directory as `~`, no hidden reordering. */
@@ -82,7 +81,6 @@ export const composeIssue = (
   const written = scrubIssueText(text.body, home).trimEnd();
   const footer =
     diagnostics === undefined ? undefined : scrubIssueText(diagnosticsFooter(diagnostics), home);
-  // The blank line keeps the rule from turning the line above it into a heading.
   const body =
     footer === undefined ? written : written === "" ? footer : `${written}\n\n---\n\n${footer}`;
   const labels = issueLabels(text.kind, text.area);
@@ -115,7 +113,6 @@ export const parseFiledIssue = (stdout: string): FiledIssue | undefined => {
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    // gh printed something other than the issue; the caller reports the call as failed.
     return undefined;
   }
   const issue = record(parsed);
@@ -150,7 +147,6 @@ export const parseIssueSearch = (
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    // Not a search response: no hits rather than a guess.
     return [];
   }
   const items = record(parsed)?.["items"];

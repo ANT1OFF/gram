@@ -1,20 +1,10 @@
-// Owns the server process (src/server) for main: forks it, reads its boot URL, relays its output to
-// the shell's log and its messages to main, stops it, and restarts it when it dies unasked. There is
-// one child at a time. A child that was stopped, or that exited, is detached at once, so a late
-// event from it changes nothing. A stop the host was asked for cancels any restart and never leads
-// to one: only `start` and `retry` fork after it. Electron stays out of this module, so tests drive
-// it with fakes.
-
 import type { UpdateEssential } from "@gram/contracts";
 import { createInterface } from "node:readline";
 
 import { bootUrlFromLine, bootUrlFromMessage, isBootLine } from "./boot.ts";
 
-/** How long `stop` waits for the server to exit after asking it to, before killing it outright. */
 const STOP_TIMEOUT_MS = 10_000;
-/** How long `stop` waits after a forced kill before reporting the server is still there. */
 const FORCE_KILL_GRACE_MS = 2_000;
-/** How long a start may take to report boot before the child is killed. */
 const BOOT_TIMEOUT_MS = 120_000;
 
 /**
@@ -44,7 +34,6 @@ export interface HealthCheck {
 
 const HEALTH_INTERVAL_MS = 15_000;
 const HEALTH_TIMEOUT_MS = 10_000;
-/** Far past the longest stall seen (8 s): a restart costs every running turn. */
 const HEALTH_HUNG_MS = 120_000;
 
 /** When and how often an unexpected exit is answered with a restart. */
@@ -83,15 +72,8 @@ export interface ServerChild {
   kill(): boolean;
 }
 
-/** Why the host was asked to stop the server: an update install, the app quitting, a smoke run. */
 type StopReason = "update" | "quit" | "smoke";
 
-/**
- * `idle` before the first start, `booting` until the boot URL arrives, `running` after it,
- * `stopping` while a stop waits, `stopped` after one, `crashed` when it exited unasked and won't be
- * restarted, `recovering` from an unexpected exit until a restart boots, and `failed` once the
- * restarts are used up.
- */
 type ServerState =
   | "idle"
   | "booting"
@@ -125,7 +107,6 @@ export type StopOutcome =
   | "survived"
   | "unverified";
 
-/** What `forceKill` killed beside the root (`process-tree.ts`), for the log and the receipt. */
 interface ForcedKill {
   readonly under: number;
   readonly names: ReadonlyArray<string>;
@@ -140,11 +121,6 @@ export interface TreeCheck {
   readonly watch: (root: number) => TreeWatch | undefined;
 }
 
-/**
- * A server tree followed since its stop: `freeze` stops all of it before the kill and is false when
- * that can't be settled; `survivors` counts what is left after it, undefined when that can't be
- * told, and kills what is left either way.
- */
 interface TreeWatch {
   readonly freeze: () => Promise<boolean>;
   readonly survivors: () => Promise<number | undefined>;
@@ -161,7 +137,6 @@ export interface UpdateStopReport {
   readonly survivors?: number;
 }
 
-/** The shell's logger, as the host writes to it. */
 interface ServerLog {
   info(fields: Readonly<Record<string, unknown>>, message: string): void;
   warn(fields: Readonly<Record<string, unknown>>, message: string): void;
@@ -241,12 +216,10 @@ export interface ServerHost {
 
 interface Running {
   readonly child: ServerChild;
-  /** Whether it timed out booting and is being made to exit. */
   readonly reaping: () => boolean;
   readonly boot: Promise<string>;
   readonly exited: Promise<number>;
   readonly shutdown: { requested: boolean; complete: boolean; forced: boolean };
-  /** What the server reported of its update essentials; `attested` settles when it sealed them. */
   readonly essentials: {
     report?: { readonly failed: UpdateEssential } | { readonly waitingOn: Record<string, number> };
     readonly attested: PromiseWithResolvers<void>;
@@ -254,7 +227,6 @@ interface Running {
 }
 
 const ESSENTIALS = new Set<unknown>(["sessions", "agents", "database"]);
-/** A `process.getActiveResourcesInfo()` kind; at most this many are kept from a report. */
 const RESOURCE_KIND = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
 const MAX_RESOURCE_KINDS = 16;
 
@@ -292,12 +264,9 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
   let state: ServerState = "idle";
   let url = "";
   let reason: StopReason | undefined;
-  /** Restarts tried since the last server that stayed up `stableMs`. */
   let failures = 0;
   let retryTimer: unknown;
-  /** A `retry` asked for while a child is still exiting; it starts once that one has. */
   let retryPending = false;
-  /** A child `stop` let go of whose exit isn't confirmed yet; nothing starts until it is. */
   let exiting: Running | null = null;
   const exitListeners = new Set<(exit: ServerExit) => void>();
   const bootListeners = new Set<(url: string) => void>();
@@ -308,9 +277,7 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
   const forceKill = (pid: number | undefined): ForcedKill | undefined => {
     try {
       if (pid !== undefined) return options.forceKill(pid) ?? undefined;
-    } catch {
-      // ESRCH: it exited between the timeout and the kill.
-    }
+    } catch (_esrchItExitedBetweenTheTimeoutAndTheKill) {}
     return undefined;
   };
 
@@ -320,10 +287,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
     retryTimer = undefined;
   };
 
-  /**
-   * The current child is gone without being asked: restart it after the backoff, or give up once
-   * the budget is spent. `ranMs` is how long it had been up since booting, null if it never booted.
-   */
   const lost = (problem: string, ranMs: number | null) => {
     if (policy.attempts === 0) {
       state = "crashed";
@@ -346,7 +309,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
     retryTimer = options.setTimeout(() => {
       retryTimer = undefined;
       if (state !== "recovering" || current !== null) return;
-      // A failed restart is counted by `lost` from its exit or boot timeout.
       start().catch(() => {});
     }, delayMs);
   };
@@ -363,18 +325,14 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
     if (!restart) state = "booting";
     let booted = false;
     let bootedAt = 0;
-    /** Why it was given up on before booting, while it is being made to exit. */
     let timedOut: string | undefined;
     let reaper: unknown;
     let healthTimer: unknown;
-    /** Set once the health check gave up on it, for the exit that follows the kill. */
     let hung: string | undefined;
-    /** When it last answered a ping; only that much of its uptime counts toward `stableMs`. */
     let answeredAt: number | undefined;
     const exited = Promise.withResolvers<number>();
     const shutdown = { requested: false, complete: false, forced: false };
     const essentials: Running["essentials"] = { attested: Promise.withResolvers<void>() };
-    /** The timed-out child has exited: start what was asked for, else count it as a failure. */
     const gone = (problem: string) => {
       current = null;
       if (retryPending) {
@@ -403,10 +361,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
         }
         if (options.health !== undefined) watchHealth(options.health, bootUrl);
       };
-      /**
-       * Pings the booted child until it is no longer current. A gap between ticks far longer than
-       * the interval is the Mac waking from sleep, which restarts the count.
-       */
       const watchHealth = (health: HealthCheck, bootUrl: string) => {
         const intervalMs = health.intervalMs ?? HEALTH_INTERVAL_MS;
         const timeoutMs = health.timeoutMs ?? HEALTH_TIMEOUT_MS;
@@ -417,7 +371,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
           healthTimer = undefined;
           if (current?.child !== child || hung !== undefined) return;
           const at = options.now();
-          // Far longer than a tick or a ping can take: the Mac slept, which isn't the server's.
           const slept = (from: number) => options.now() - from > intervalMs + timeoutMs * 3;
           if (slept(lastTick)) unansweredSince = undefined;
           lastTick = at;
@@ -439,7 +392,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
             },
             () => {
               if (current?.child !== child) return;
-              // A ping the Mac slept through says nothing of the server either.
               if (slept(at)) {
                 unansweredSince = undefined;
                 next();
@@ -452,7 +404,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
               } else if (downMs >= hungMs) {
                 hung = `server stopped answering for ${Math.round(downMs / 1000)}s`;
                 log.error({ source: "server", downMs, pid: child.pid }, `${hung}; killing it`);
-                // Its event loop is stuck, so it can't act on a polite kill.
                 forceKill(child.pid);
                 return;
               }
@@ -469,8 +420,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
         timedOut = problem;
         if (!restart) state = "crashed";
         reject(new Error(problem));
-        // It stays the current child until it has exited, so nothing forks beside it on the same
-        // data dir, and a stop or quit still reaches it.
         child.kill();
         reaper = options.setTimeout(() => {
           log.warn(
@@ -480,8 +429,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
           forceKill(child.pid);
           reaper = options.setTimeout(() => {
             if (current?.child !== child) return;
-            // Still tracked, so nothing starts beside it on the same database; recovery has
-            // failed, and only its exit lets a retry start.
             log.error({ source: "server", pid: child.pid }, "server still running after a kill");
             state = "failed";
             const stuck = `${problem}, and it is still running after being killed`;
@@ -512,7 +459,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
       });
       if (child.stdout) {
         createInterface({ input: child.stdout }).on("line", (line) => {
-          // Boot lines are never logged: an older server's line still carries the token.
           if (!isBootLine(line)) {
             log.info({ source: "server" }, line);
             return;
@@ -533,18 +479,13 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
         options.clearTimeout(healthTimer);
         exited.resolve(code);
         if (!booted) reject(new Error(`server exited with code ${code} before booting`));
-        // One the host stopped was detached from it then; this is the server dying by itself.
         if (current?.child !== child) return;
         if (timedOut !== undefined) {
           gone(timedOut);
           return;
         }
         current = null;
-        // A first start that never booted is its caller's to handle; anything else is recovered.
-        // Before the listeners, so one that stops the host cancels the restart this schedules.
         if (booted || restart) {
-          // A hung server's unanswered time isn't uptime: counted, a server that hangs straight
-          // after every boot would look stable and refill the restart budget each time.
           const ranMs = !booted
             ? null
             : hung === undefined
@@ -568,11 +509,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
     return boot;
   };
 
-  /**
-   * Cancels any restart, detaches the current child and has it exit: `ask` posts the server's
-   * shutdown request, so it ends its agents itself; `kill` is `utilityProcess.kill()`, which is
-   * SIGTERM and then SIGKILL two seconds later on POSIX, and TerminateProcess on Windows.
-   */
   const detach = (why: StopReason, how: "ask" | "kill"): Running | null => {
     cancelRetry();
     retryPending = false;
@@ -585,7 +521,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
       stopping?.child.kill();
     } else {
       if (stopping) stopping.shutdown.requested = true;
-      // Only where the kill's leftovers can be checked; elsewhere an update stays as strict as a quit.
       const request =
         why === "update" && options.treeCheck !== undefined
           ? UPDATE_SHUTDOWN_REQUEST
@@ -596,7 +531,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
     return stopping;
   };
 
-  /** Preserves what settled first; undefined means the wait expired. */
   const within = async <T>(settled: Promise<T>, ms: number): Promise<T | undefined> => {
     let timer: unknown;
     const done = await Promise.race([
@@ -612,8 +546,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
   return {
     start,
     async stop(why) {
-      // Capture ownership before posting shutdown: the server may fork and orphan a child as
-      // soon as it receives that message. A later baseline would mistake it for a preexisting orphan.
       const root = current?.child.pid;
       const watch =
         why === "update" && root !== undefined ? options.treeCheck?.watch(root) : undefined;
@@ -633,7 +565,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
         start().catch(() => {});
       });
       let outcome: StopOutcome = "exited";
-      // Only an update's server seals its essentials, so only an update stops waiting for that.
       const attested =
         why === "update"
           ? stopping.essentials.attested.promise.then(() => "attested" as const)
@@ -656,12 +587,10 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
         let exitedAfterKill = false;
         let counted: number | undefined;
         try {
-          // Stopped whole before the kill, so nothing under the server can fork past it.
           frozen = (await watch?.freeze()) === true;
           killed = forceKill(pid);
           exitedAfterKill = (await within(stopping.exited, FORCE_KILL_GRACE_MS)) !== undefined;
         } finally {
-          // Counted, and the tree released on every path: nothing of it is left stopped.
           counted = await watch?.survivors();
         }
         update = { waitingOn: report.waitingOn, ...(killed === undefined ? {} : { killed }) };
@@ -729,7 +658,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
         return;
       }
       if (current !== null) {
-        // Booting or running already; one that timed out is retried once it has exited.
         if (current.reaping()) {
           retryPending = true;
           failures = 0;

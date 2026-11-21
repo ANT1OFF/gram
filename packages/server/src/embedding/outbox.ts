@@ -1,17 +1,8 @@
-// The event sink's outbox: a small SQLite file of its own beside the server's database, so what
-// is recorded survives a restart and is sent from where the receiver left off.
-//
-// The file names its own source id, made with it, and numbers events from 1 with no gaps: the
-// number is kept in the same transaction as the row, not left to a rowid. A file that is lost, or
-// that the receiver asks for more of than it kept, starts a new source at 1 rather than reuse a
-// number for a different event.
-
 import type { SinkEvent } from "@gram/contracts";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type { DatabaseSync as Database } from "node:sqlite";
 
-// Loaded like the store's own workers load it, so bundling leaves the builtin alone.
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
   DatabaseSync: typeof Database;
 };
@@ -51,8 +42,6 @@ export interface Outbox {
    * longer holds what was confirmed.
    */
   readonly restart: (forget: "unsent" | "all") => void;
-  // The backfill: stored messages owed to the receiver from before it was sent any, thread by
-  // thread, kept here so a restart goes on from where the last one stopped.
   /** Whether the backfill was ever planned for this receiver. */
   readonly backfillPlanned: () => boolean;
   /**
@@ -106,7 +95,6 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
   const dropCreator = db.prepare("DELETE FROM creators WHERE thread_id = ?");
   const allCreators = db.prepare("SELECT thread_id, person FROM creators");
   const dropMeta = db.prepare("DELETE FROM meta WHERE key = ?");
-  // A thread already waiting keeps the earlier of the two places.
   const queueBackfill = db.prepare(
     `INSERT INTO backfill (position, thread_id, after_seq)
        VALUES ((SELECT COALESCE(MAX(position), 0) + 1 FROM backfill), ?, ?)
@@ -118,7 +106,6 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
   const moveBackfill = db.prepare("UPDATE backfill SET after_seq = ? WHERE thread_id = ?");
   const dropBackfill = db.prepare("DELETE FROM backfill WHERE thread_id = ?");
   const clearBackfill = db.prepare("DELETE FROM backfill");
-  // Each thread's first unconfirmed message, by its place in the thread.
   const unsentMessages = db.prepare(
     `SELECT json_extract(body, '$.threadId') AS thread_id, MIN(json_extract(body, '$.data.seq')) AS first
        FROM events
@@ -170,7 +157,6 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
       transaction(() => {
         if (!Number.isInteger(ack) || ack < 0 || ack > number("last")) return false;
         const kept = (oldest.get() as { seq: number | null }).seq;
-        // Everything after the ack must still be here: nothing is, only when nothing is owed.
         if (ack < number("last") && (kept === null || kept > ack + 1)) return false;
         setMeta.run("confirmed", String(ack));
         prune.run(ack - keepsConfirmed);

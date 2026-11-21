@@ -34,7 +34,6 @@ export function updatedClis(): Readonly<Record<string, string>> {
       typeof sessionStorage === "undefined" ? null : sessionStorage.getItem(MOCK_UPDATED_CLIS_KEY);
     return saved ? (JSON.parse(saved) as Record<string, string>) : {};
   } catch {
-    // A malformed record updates nothing.
     return {};
   }
 }
@@ -55,9 +54,7 @@ export function mockLaunchChecks(): LaunchChecks {
     const saved =
       typeof sessionStorage === "undefined" ? null : sessionStorage.getItem(MOCK_LAUNCH_CHECKS_KEY);
     if (saved) override = JSON.parse(saved) as Partial<LaunchChecks>;
-  } catch {
-    // A malformed override keeps the defaults.
-  }
+  } catch (_aMalformedOverrideKeepsTheDefaults) {}
   const checks = { ...ALL_GOOD, ...override, checkedAt: Date.now() };
   const updated = updatedClis();
   return {

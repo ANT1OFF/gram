@@ -15,7 +15,6 @@ export function useSettleRule(): SettleRule {
   const days = useServerSettings((s) =>
     s.settings === undefined ? SETTLE_AFTER_DAYS_DEFAULT : settleAfterDaysOf(s.settings),
   );
-  // Minute resolution: a thread settles days after its last activity, not to the second.
   const now = useNow(true, undefined, 60_000);
   return useMemo(() => ({ now, days }), [now, days]);
 }

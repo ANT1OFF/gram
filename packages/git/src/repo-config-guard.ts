@@ -1,10 +1,3 @@
-// Gram's own git runs outside any agent sandbox, in folders agents can write. A repository's local
-// config (`.git/config`, `config.worktree`, anything they include) can name programs git then runs:
-// `core.fsmonitor` on reading the index, a clean filter on `add`, `core.sshCommand` on a fetch. So
-// before each git call Gram reads that config, and every key there that names a program is put back
-// to the user's own (system or global) value for the call, or switched off. The user's own setup
-// keeps working; what a checkout says about itself never runs.
-
 import * as fs from "node:fs";
 import { devNull } from "node:os";
 import * as nodePath from "node:path";
@@ -45,7 +38,6 @@ const BOOLEAN = /^(?:true|false|yes|no|on|off|1|0)?$/i;
  */
 export const neutralValue = (key: string, value: string | undefined): string | undefined => {
   const k = key.toLowerCase();
-  // A plain true/false is git's own built-in monitor, which runs nothing of the repository's.
   if (k === "core.fsmonitor")
     return value === undefined || BOOLEAN.test(value) ? undefined : "false";
   if (k === "core.sshcommand") return "ssh";
@@ -62,19 +54,13 @@ export const neutralValue = (key: string, value: string | undefined): string | u
   if (k === "gpg.program" || k === "gpg.openpgp.program") return "gpg";
   if (k === "gpg.x509.program") return "gpgsm";
   if (k === "gpg.ssh.program") return "ssh-keygen";
-  // An empty helper clears the list; the user's own helpers are added back after it.
   if (k === "credential.helper" || /^credential\..+\.helper$/.test(k)) return "";
-  // An empty filter command is no filter.
   if (/^filter\..+\.(?:clean|smudge|process)$/.test(k)) return "";
-  // A filter the repository marked required, with its commands gone, would fail every checkout.
   if (/^filter\..+\.required$/.test(k)) return "false";
-  // `cat` as a textconv is the file as it is.
   if (/^diff\..+\.textconv$/.test(k)) return "cat";
-  // A failing merge driver leaves the conflict for a person, as a merge without one would.
   if (/^merge\..+\.driver$/.test(k)) return "false";
   if (/^remote\..+\.uploadpack$/.test(k)) return "git-upload-pack";
   if (/^remote\..+\.receivepack$/.test(k)) return "git-receive-pack";
-  // `commit --trailer` and `interpret-trailers` run a trailer's command; `true` adds nothing.
   if (/^trailer\..+\.(?:cmd|command)$/.test(k)) return "true";
   if (/^(?:difftool|mergetool)\..+\.cmd$/.test(k)) return "false";
   if (/^lfs\.customtransfer\..+\.path$/.test(k)) return "false";
@@ -160,7 +146,6 @@ export const pinnedTransport = (
   return pairs;
 };
 
-/** External diff commands can't be given a harmless value, so the call is told not to use them. */
 const isExternalDiff = (key: string): boolean => {
   const k = key.toLowerCase();
   return k === "diff.external" || /^diff\..+\.command$/.test(k);
@@ -171,15 +156,6 @@ const isInclude = (key: string): boolean => {
   return k === "include.path" || /^includeif\..+\.path$/.test(k);
 };
 
-/**
- * Always set. No hook runs: `$GIT_DIR/hooks` and a `core.hooksPath` are both content a checkout's
- * agent (or whoever planted the repository) can write, and Gram's own merges, fetches, checkouts
- * and commits are not the user's to vet. A remote URL never runs a command through `ext::`,
- * whatever the repository allows. And git never starts a git of its own inside a submodule unless
- * asked on the command line: that one would read the submodule's config, which the guard reads
- * only for the nested repositories it finds. Status and diff still show a submodule's moved commit
- * (`dirty` reads its HEAD in place), not its uncommitted changes.
- */
 const ALWAYS: ReadonlyArray<readonly [string, string]> = [
   ["core.hooksPath", devNull],
   ["protocol.ext.allow", "never"],
@@ -237,9 +213,6 @@ export const guardFor = (
   const prefixes: Array<string> = [];
   const remotes: Array<string> = [];
   let ownTls = false;
-  // `core.fsmonitor` always, so a nested repository this listing can't see (a submodule's own
-  // `.git` folder) runs no monitor of its own either: off, then the user's values, then the
-  // repository's own built-in choice (a plain boolean, which runs nothing of its own).
   handled.add("core.fsmonitor");
   pairs.push(["core.fsmonitor", "false"]);
   for (const entry of entries)
@@ -265,8 +238,6 @@ export const guardFor = (
     if (neutral === undefined || handled.has(entry.key)) continue;
     handled.add(entry.key);
     pairs.push([entry.key, neutral]);
-    // The user's own values for the key, in git's order, so the last single value still wins and a
-    // list (credential helpers) is rebuilt from the user's entries alone.
     for (const own of entries) {
       if (own.key === entry.key && !REPO_SCOPES.has(own.scope))
         pairs.push([own.key, own.value ?? "true"]);
@@ -284,7 +255,6 @@ export const appendGitConfig = (
   pairs: ReadonlyArray<readonly [string, string]>,
 ): Readonly<Record<string, string>> => {
   if (pairs.length === 0) return env;
-  // Windows env names are case-insensitive, so an inherited count may be spelled any way.
   const countKey =
     Object.keys(env).find((key) => key.toUpperCase() === "GIT_CONFIG_COUNT") ?? "GIT_CONFIG_COUNT";
   const count = Number.parseInt(env[countKey] ?? "", 10);
@@ -297,7 +267,6 @@ export const appendGitConfig = (
   return next;
 };
 
-/** Options git takes before its subcommand, with the ones that take the next argument. */
 const GLOBAL_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace"]);
 
 /** How many leading arguments are git's own options, before the subcommand. */
@@ -315,14 +284,10 @@ export const withGuardArgs = (args: ReadonlyArray<string>, guard: Guard): Readon
   const at = leadingOptions(args);
   const sub = args[at];
   if (sub === undefined || !DIFFING.has(sub)) return args;
-  // `stash show` diffs; the flag goes after its own subcommand.
   const insertAt = sub === "stash" ? (args[at + 1] === "show" ? at + 2 : -1) : at + 1;
   if (insertAt < 0) return args;
   return [...args.slice(0, insertAt), "--no-ext-diff", ...args.slice(insertAt)];
 };
-
-// ---------------------------------------------------------------------------------------------
-// Submodules
 
 const SUBMODULE_LIMIT = 64;
 
@@ -374,7 +339,6 @@ export const nestedGitDir = (path: string): string | undefined => {
   const dotGit = nodePath.join(path, ".git");
   let st: fs.Stats;
   try {
-    // Followed, as git follows a `.git` that is a link to a folder or to a gitdir file.
     st = fs.statSync(dotGit);
   } catch {
     return undefined;
@@ -407,9 +371,6 @@ export const submoduleConfigFiles = (gitDir: string): ReadonlyArray<string> => [
   nodePath.join(gitDir, "config.worktree"),
 ];
 
-// ---------------------------------------------------------------------------------------------
-// What a cached guard depends on
-
 /**
  * What decides which repository git finds from `cwd`, and what its local config says: every
  * ancestor's `.git` and `HEAD` (a bare layout), the git dirs' `commondir`, and the config files.
@@ -431,8 +392,6 @@ export const discoverySignature = (
     else if (st.isDirectory()) parts.push(`${path}:d${st.ino}`);
     else parts.push(`${path}:${st.ino}:${st.ctimeNs}:${st.size}`);
   };
-  // A link's own stat doesn't change when what it points to does: a file git reads through a
-  // link is marked as the link and as its target.
   const markFollowed = (path: string) => {
     mark(path);
     const target = statOrUndefined(path);
@@ -444,7 +403,6 @@ export const discoverySignature = (
           : `${path}=>${target.ino}:${target.ctimeNs}:${target.size}`,
     );
   };
-  // A nested or submodule git folder's config, and the shared one its `commondir` names.
   const markConfigOf = (dir: string) => {
     markFollowed(nodePath.join(dir, "commondir"));
     const shared = nestedCommonDir(dir);
@@ -467,7 +425,6 @@ export const discoverySignature = (
     nodePath.join(gitDir, "config.worktree"),
     nodePath.join(commonDir, "config"),
     nodePath.join(commonDir, "config.worktree"),
-    // A gitlink added to the index is a nested repository whose config the guard has to read.
     nodePath.join(gitDir, "index"),
   ])
     markFollowed(path);
@@ -476,9 +433,6 @@ export const discoverySignature = (
     mark(nodePath.join(nested, "index"));
     markConfigOf(nested);
   }
-  // Every gitlink's `.git`, checked out or not: one made later at a gitlink nothing was checked
-  // out at is a nested repository whose config the guard hasn't read. Followed too, so a link
-  // pointed elsewhere changes the signature.
   for (const path of gitlinkDotGits) markFollowed(path);
   const submodules = submoduleGitDirs(commonDir);
   if (submodules === undefined) parts.push("submodules:too-many");

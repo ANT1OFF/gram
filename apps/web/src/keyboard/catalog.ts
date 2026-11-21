@@ -52,7 +52,6 @@ const paneMove = (
   group: "Navigation",
 }));
 
-/** Ctrl+Shift+1…6 pick the layout presets in the picker's order, on every platform (⌘⇧3–5 are macOS screenshots). */
 const layoutPresets = [1, 2, 3, 4, 5, 6].map((n): ShortcutDefinition => ({
   id: `layout.preset${n}`,
   keys: `ctrl+shift+${n}`,
@@ -60,7 +59,6 @@ const layoutPresets = [1, 2, 3, 4, 5, 6].map((n): ShortcutDefinition => ({
   group: "Navigation",
 }));
 
-/** ⌘1–⌘9 switch workspace in the Orchestrator layout, where the switcher replaces the sidebar. */
 const workspaceSwitch = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n): ShortcutDefinition => ({
   id: `workspace.switch${n}`,
   keys: `mod+${n}`,
@@ -222,8 +220,6 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   },
   { id: "thread.rename", keys: "f2", label: "Rename thread…", group: "Thread" },
   { id: "thread.close", keys: "mod+alt+w", label: "Close thread…", group: "Thread" },
-  // An approval's verbs, by number, as Claude Code's own prompt numbers them: the same keys answer
-  // it in the thread, the Inbox and Quiet, and each verb's button shows its key.
   { id: "approval.allow", keys: "1", label: "Allow once", group: "Thread" },
   { id: "approval.always", keys: "2", label: "Always allow this rule…", group: "Thread" },
   { id: "approval.deny", keys: "3", label: "Deny", group: "Thread" },
@@ -259,8 +255,6 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
     listed: voiceInputOn,
     loneModifier: true,
   },
-  // Answered in the composer's text area through `shortcutPressed`, and only while a suggested
-  // reply shows there, so they shadow nothing: the caret is already at the end.
   {
     id: "composer.acceptSuggestion",
     keys: "arrowright",

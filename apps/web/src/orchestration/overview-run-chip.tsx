@@ -10,14 +10,8 @@ import { cn } from "@/lib/utils";
 
 import { runChipOf, type RunChip, type WatchedRun } from "./overview-run-chip-model";
 
-// The workflow runs a worker watches (`run_monitor`), as one chip beside its PR chips: the run
-// glyph, a count when it watches more than one, and the running mark CI's pending checks have. Its
-// words, each run's name and that it is watched, are its hover; a click opens the run on GitHub.
-
-/** A run is watched only while it runs (`runReason`), so its mark is CI's pending ring. */
 const RUNNING = checksMarkOf("pending");
 
-/** The chip's box: a PR chip's plain one, 16 px tall on a row's status line or 20 px elsewhere. */
 const chipClass = (dense: boolean) =>
   cn(
     "inline-flex cursor-default items-center gap-1 rounded-(--radius-sm) bg-sidebar-row-hover px-1.5 text-meta text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring",

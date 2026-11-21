@@ -15,7 +15,6 @@ import {
   type HistoryReducer,
 } from "./history-types.ts";
 
-// Only bounded session/ancestry scalars participate in source ownership proof.
 const sessionMetadata = (payload: Record<string, unknown>) => {
   const spawn = object(object(object(payload.source).subagent).thread_spawn);
   const values = [
@@ -48,8 +47,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
     nativeTurnIds = new Set<string>();
   const responses = new Map<string, Set<string>>(),
     rejected = new Set<string>();
-  // Original response evidence survives window projection/context quarantine.
-  // Null retains a refused unknown origin: replay cannot invent its execution time.
   const responseProofs = new Map<string, HistoryRecord | null>(),
     responseRequirements = new Map<string, TokenUsage>(),
     requirementConflicts = new Set<string>();
@@ -89,8 +86,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
       if (raw !== undefined) conflict();
       return false;
     }
-    // Requirement contradictions are scoped response evidence even when the
-    // original execution date was refused and no amount projection can exist.
     const prior = responseRequirements.get(id);
     if (
       expectedKeys.some(
@@ -124,8 +119,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
     }
     return !requirementConflicts.has(id);
   };
-  // Codex rollouts report usage as cumulative `token_count` events, and newer ones also write a
-  // `token_usage_record` per response. These are the contributions read from the counters.
   const counterContributions = new Map<
     string,
     {
@@ -140,7 +133,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
   >();
   const uncertainDetails = new Set<string>();
   let counterContributionCount = 0;
-  // null means only scope completeness changed; a number is the first affected receipt.
   const dirty = new Map<string, number | null>();
   const markDirty = (id: string, index: number | null) => {
     const prior = dirty.get(id);
@@ -152,7 +144,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
       const contributions = counterContributions.get(id),
         record = records.get(id);
       if (record === undefined || contributions === undefined) continue;
-      // Reserve complete selected-receipt traversal, not just helper recomputation.
       const start = firstReceipt ?? contributions.length;
       const repair = coverage.repairBudget(1 + contributions.length - start);
       const prefix = start === 0 ? undefined : contributions[start - 1];
@@ -177,8 +168,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
         ) {
           if (!partial) reducer.ambiguous++;
           partial = true;
-          // Only the first independently known request can be retained without a delta;
-          // later last snapshots may overlap an already known request in this native scope.
           const priorKnown = tokens !== undefined && tokens.inputTokens + tokens.outputTokens > 0;
           const normalized = makeCodexUsageLedger().observe(
             undefined,
@@ -200,8 +189,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
         contribution.admittedSum = tokens;
         contribution.admittedBasis = basis;
       }
-      // Refused repair conservatively retires these receipts after one bounded cleanup.
-      // They cannot be revisited on every access after the shared work budget is exhausted.
       if (!repair) counterContributions.delete(id);
       if (tokens === undefined) records.delete(id);
       else {
@@ -293,8 +280,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
       );
     },
     breakContext() {
-      // A discarded report may contain a whole intervening request/session increment.
-      // Later cumulative differences cannot attribute that missing usage to a new turn.
       ledger.invalidateBaseline();
       hasContext = false;
       awaitingContext = false;
@@ -321,7 +306,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
           reducer.owner = owner;
           parent = next?.fork ?? null;
           nested = next?.nestedParent != null;
-          // Telemetry/context preceding the first header did not prove this session.
           ledger.endTurn();
           reducer.breakContext();
         }
@@ -332,9 +316,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
           next.fork !== metadata.fork ||
           next.nestedParent !== metadata.nestedParent
         ) {
-          // Contradiction is permanent for this physical source, including a later
-          // return to the original header. Neither contexts nor terminals can repair
-          // unscoped counter attribution or prove the absence of copied native IDs.
           metadataConflict = true;
           reducer.identityComplete = false;
           reducer.invalid++;
@@ -344,7 +325,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
         return;
       }
       if (firstMeta) {
-        // Unowned context/counters cannot become the first header's ancestry/baseline.
         if (!precedingMetadataGap) {
           precedingMetadataGap = true;
           reducer.invalid++;
@@ -352,8 +332,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
         }
         return;
       }
-      // Per-response records carry their own actual owner/turn/response IDs.
-      // A mixed header cannot lend them counter model context or terminal proof.
       if (metadataConflict && raw.type !== "token_usage_record") return;
       if (raw.type === "turn_context") {
         const next = identity(payload.turn_id) ?? (awaitingContext ? turnId : undefined);
@@ -381,7 +359,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
         (payload.type === "task_started" || payload.type === "turn_started")
       ) {
         const next = identity(payload.turn_id);
-        // A repeated start for the current native turn is not a new accounting baseline.
         if (hasContext && next !== undefined && next === turnId) return;
         replaying = next !== turnId && next !== undefined && nativeTurnIds.has(next);
         if (replaying) reducer.invalid++;
@@ -410,8 +387,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
       ) {
         const id = identity(payload.turn_id);
         if (id === undefined) {
-          // Close counter admission without fabricating native completion or losing replay proof.
-          // An older identified replay is not a new cumulative accounting scope.
           if (!replaying) {
             ledger.invalidateBaseline();
             ledger.endTurn();
@@ -434,8 +409,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
             record.turnComplete = true;
           });
         }
-        // Each admitted response needs terminal proof once, including outside the window.
-        // Repeated terminals must not rescan already completed response identities.
         responses.delete(id);
         return;
       }
@@ -443,7 +416,7 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
         const scope = identity(payload.thread_id),
           turn = identity(payload.turn_id),
           response = identity(payload.response_id);
-        if (nested || (owner !== undefined && scope !== owner)) return; // copied parent/subagent request
+        if (nested || (owner !== undefined && scope !== owner)) return;
         const counts = codexCounts(payload.usage, true),
           expected = codexCounts(payload.turn_token_usage, true);
         if (
@@ -491,8 +464,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
           expected,
           counts,
         );
-        // A larger native requirement proves missing coverage, not a new amount or
-        // session counter. Apply it before window/replay returns and future deltas.
         if (expected !== undefined) coverage.requirement(turn, expected);
         else ledger.invalidateBaseline();
         if (!coverage.covers(ledger.baseline())) {
@@ -504,7 +475,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
         remember(turn);
         if (rejected.has(id)) return;
         if (evidence === "duplicate") {
-          // Amount identity is not a new date/model/requirement observation.
           updateResponse(id, (record) => {
             const witness = turn === turnId ? turnModel : undefined;
             if (
@@ -519,7 +489,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
               rejected.add(id);
               reducer.ambiguous++;
             } else if (record.modelWitness === undefined && witness !== undefined) {
-              // Preserve original Unknown; a later reception does not rewrite execution.
               record.modelWitness = witness;
             }
             if (record.complete && !requirementComplete) reducer.ambiguous++;
@@ -546,7 +515,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
           reducer.invalid++;
           return;
         }
-        // A completed response has its own stable identity and a proven zero request baseline.
         const report = makeCodexUsageLedger(true).observe(counts, counts);
         if (report.tokens === undefined || report.basis === undefined) {
           reducer.invalid++;
@@ -582,7 +550,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
       if (raw.type !== "event_msg" || payload.type !== "token_count" || nested) return;
       if (replaying || turnEnded) return;
       const info = object(payload.info);
-      // A syntactically valid null report is still an accounting continuity gap.
       const total = codexCounts(info.total_token_usage, true),
         last = codexCounts(info.last_token_usage, true);
       if (!coverage.covers(ledger.baseline())) ledger.invalidateBaseline();
@@ -595,7 +562,7 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
       if (!hasContext) {
         if (total !== undefined && total.inputTokens + total.outputTokens > 0)
           reducer.identityComplete = false;
-        return; // idle/resume telemetry only seeds a baseline
+        return;
       }
       if (total === undefined && last === undefined) reducer.invalid++;
       if (report.partial) reducer.ambiguous++;
@@ -624,7 +591,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
       }
       if (turnId === undefined) reducer.identityComplete = false;
       if (timestamp < from || timestamp >= to) return;
-      // Settle earlier dirty evidence before admitting another contribution to its sum.
       reconcile();
       const id = turnId ?? `request-${++ordinal}`,
         previous = turnId === undefined ? undefined : records.get(id);
@@ -691,8 +657,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
                   : "delta",
             }),
       });
-      // Certify the new allocation now; a future metadata refusal cannot erase its proof
-      // merely because a caller deferred reading the records getter.
       reconcile();
     },
   };

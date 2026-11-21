@@ -51,7 +51,6 @@ const toDrafts = (models: ReadonlyArray<CustomModel>): CustomModelDraft[] =>
       : [],
   );
 
-/** The drafts as saved models, for comparing with the stored list; `undefined` while invalid. */
 const asSaved = (drafts: ReadonlyArray<CustomModelDraft>) => {
   const { models } = validateCustomModels(drafts);
   return models === undefined ? undefined : JSON.stringify(models);
@@ -65,7 +64,6 @@ export function CustomModelsSection() {
   const saved = settings.agents.customModels ?? [];
   return (
     <CustomModelsEditor
-      // A save from elsewhere resets the drafts.
       key={JSON.stringify(saved)}
       saved={saved}
       status={status}
@@ -80,7 +78,6 @@ function CustomModelsEditor({
   onStatus,
 }: {
   saved: ReadonlyArray<CustomModel>;
-  /** The last save succeeded and nothing has changed since. */
   status: boolean;
   onStatus: (saved: boolean) => void;
 }) {
@@ -89,7 +86,6 @@ function CustomModelsEditor({
   const [drafts, setDrafts] = useState(() => toDrafts(saved));
   const [rows, setRows] = useState<ReadonlyArray<string | undefined>>([]);
   const [error, setError] = useState<string>();
-  // Saved models start folded to a line each; one just added opens on its form.
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const setOpenKey = (key: string, next: boolean) =>
     setOpen((was) => {
@@ -106,9 +102,6 @@ function CustomModelsEditor({
 
   const dirty = asSaved(drafts) !== JSON.stringify(saved);
 
-  // Ids the user's own Claude Code config mentions. An agent advertises no early-access model, so
-  // where it was already used is the only place one can be found; a model the agent does list needs
-  // no row here and is left out.
   const api = useApi();
   const suggested = useQuery({
     queryKey: ["model-suggestions"],
@@ -135,7 +128,6 @@ function CustomModelsEditor({
     if (result.models === undefined) return;
     try {
       await save({ agents: { customModels: result.models } });
-      // Every model picker reads `models.list`, which it otherwise keeps for five minutes.
       await queryClient.invalidateQueries({ queryKey: ["models"] });
       onStatus(true);
     } catch (e) {

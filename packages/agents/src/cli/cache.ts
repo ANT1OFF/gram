@@ -22,7 +22,6 @@ export const resettableOnSuccess = <A, E>(
             : effect.pipe(Effect.tap((ok) => Effect.sync(() => void (value = { ok })))),
         ),
       ),
-      // Under the lock, so a read under way finishes first and its value is the one dropped.
       reset: lock.withPermits(1)(
         Effect.sync(() => {
           value = undefined;

@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
 import type { SqlClient } from "../platform/unstable.ts";
 import { machineAccountScope } from "../runtime/limit-wait.ts";
 
-/** Gram's own privacy state, separate from app settings and every provider credential. */
 const STATE_KEY = "usage-account-hmac-v1";
 const keyedScope = (key: Buffer) => (machine: string, login: string) =>
   machineAccountScope(machine, createHmac("sha256", key).update(login).digest("hex"));

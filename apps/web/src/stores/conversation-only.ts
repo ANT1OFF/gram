@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 interface ConversationOnlyState {
-  /** Transcripts leave out the agent's tool calls and reasoning. */
   readonly on: boolean;
   set(on: boolean): void;
   toggle(): void;

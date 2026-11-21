@@ -62,8 +62,7 @@ export function HistoryChart({
   const line = runs
     .map((run) =>
       run.length === 1
-        ? // A lone reading: a short stroke, so it shows as a dot whatever the chart's width.
-          `M${x(run[0]!.at).toFixed(1)},${y(run[0]!.value).toFixed(1)}h0.01`
+        ? `M${x(run[0]!.at).toFixed(1)},${y(run[0]!.value).toFixed(1)}h0.01`
         : run
             .map((p, i) => `${i === 0 ? "M" : "L"}${x(p.at).toFixed(1)},${y(p.value).toFixed(1)}`)
             .join(""),
@@ -219,7 +218,6 @@ export function HistoryChart({
   );
 }
 
-/** A legend swatch's box: as tall as a line of meta text, the width of a short stroke. */
 const SWATCH = "h-3 w-5 shrink-0 overflow-visible";
 
 /**

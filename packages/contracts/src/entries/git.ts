@@ -1,4 +1,3 @@
-// Git, pull requests, review bots and worktrees, and the projects they live in.
 export * from "../git.ts";
 export * from "../diff-chunk.ts";
 export * from "../git-base.ts";

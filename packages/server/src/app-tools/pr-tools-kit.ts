@@ -1,4 +1,3 @@
-// Shared fixtures for the PR app tool tests, which are split across files so they run side by side.
 import { afterAll, expect } from "@effect/vitest";
 import {
   MAX_RUN_WATCHES,
@@ -79,7 +78,6 @@ const MockPr = Layer.succeed(Pr, {
 const FakeGh = Layer.succeed(Proc, {
   run: (bin, args, { cwd }) =>
     Effect.sync(() => {
-      // Git is the real one, so a checkout's `origin` reads as it would.
       if (bin === "git") {
         const out = spawnSync(bin, args, { cwd, encoding: "utf8" });
         return {
@@ -92,8 +90,6 @@ const FakeGh = Layer.succeed(Proc, {
       ghCalls.push([bin, ...args]);
       ghDirs.push(cwd);
       const answer = gh.answer(args);
-      // `gh pr view --json` of what merge_when_ready's approval covers, unless a test answers it:
-      // the badge's PR, from a branch in the repository itself.
       if (
         answer === ok &&
         args[0] === "pr" &&
@@ -122,13 +118,11 @@ const FakeGh = Layer.succeed(Proc, {
     }),
 });
 
-// Approvals, turns and merges log as they go; a warning would be news.
 const quietLogs = captureLogs({ printWarnings: true }).layer;
 
 /** A merge freeze the PR tools see, when a test sets one; none otherwise. */
 export const standingFreeze: { current: MergeFreeze | undefined } = { current: undefined };
 
-/** Merge freezes as `standingFreeze` says, with no fence to wait on. */
 const StubFreezes = Layer.succeed(MergeFreezes, {
   freeze: () => Effect.die("not in these tests"),
   lift: () => Effect.die("not in these tests"),
@@ -192,7 +186,6 @@ export const viewCall = (field: string) => [
 /** A gh call's command, `pr merge` or `pr view`. */
 export const command = (args: ReadonlyArray<string>) => args.slice(0, 2).join(" ");
 
-// Deleted once the layer has shut down: on Windows a live checkout watcher holds the tree.
 const dirs: Array<string> = [];
 afterAll(() => {
   for (const dir of dirs.splice(0)) removeDir(dir);

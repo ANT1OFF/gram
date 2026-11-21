@@ -22,7 +22,6 @@ export const toolSideText = (value: unknown): string | undefined => {
     const json = JSON.stringify(value);
     return json === undefined || json === "{}" ? undefined : cutToolText(json);
   } catch {
-    // History comes off JSON files and JSON APIs, so nothing here is cyclic; this keeps a fake from throwing.
     return undefined;
   }
 };

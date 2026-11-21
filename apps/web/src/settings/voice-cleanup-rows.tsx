@@ -22,7 +22,6 @@ export function VoiceCleanupRows({
 }) {
   const cleanup = dictationCleanupOf(settings);
   const initial = dictationCleanupOf(DEFAULT_SETTINGS);
-  /** A reset back to `value` while the switch differs from it. */
   const resetTo = (now: boolean, value: boolean, patch: CleanupPatch) =>
     now === value ? undefined : () => onChange(patch);
   return (

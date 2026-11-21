@@ -13,7 +13,6 @@ export const sidebarHandlers = Effect.gen(function* () {
         (threadId, sortOrder) =>
           runtimes
             .updateThread(threadId, (t) => (t.sortOrder === sortOrder ? t : { ...t, sortOrder }))
-            // A thread closed while the drag was in flight just drops out of the order.
             .pipe(Effect.catchTag("ThreadNotFound", () => Effect.void)),
         { discard: true },
       ),

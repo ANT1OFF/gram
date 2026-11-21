@@ -1,7 +1,3 @@
-// What a window or this machine's server asks to send to a hosted server, read before it goes:
-// each part as a server takes it, or nothing at all. Shared by the app's bridge (`main.ts`) and
-// the server's requests (`serve-work.ts`).
-
 import { HOSTED_THREAD_ID } from "@gram/contracts";
 
 const text = (value: unknown, most: number): string | undefined =>
@@ -17,7 +13,6 @@ export const hostedThreadIdOf = (arg: unknown): string | undefined => {
 };
 
 const CLIENT_KEY = /^[A-Za-z0-9_-]{1,100}$/;
-/** A repository as a server takes one: `owner/name` or a git URL, nothing that spans lines. */
 const REPOSITORY = /^(?!-)[\x21-\x7e]{3,512}$/;
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/-]{1,200}(?<![./])$/;
 

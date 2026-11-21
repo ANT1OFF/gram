@@ -31,7 +31,6 @@ import {
 import { useAgentRuntimes, useCliUpdate } from "./use-agent-runtimes";
 import { useLaunchChecks } from "./use-launch-checks";
 
-/** Runs `recheck` (the launch checks, unless given another), with the state a Re-check button shows. */
 function useRecheck(again?: () => Promise<unknown>) {
   const { checks, recheck: launchRecheck } = useLaunchChecks();
   const recheck = again ?? launchRecheck;
@@ -52,7 +51,6 @@ function useRecheck(again?: () => Promise<unknown>) {
   return { checks, checking, error, run };
 }
 
-/** The ↻ on a group's caption; it turns while the checks run. */
 function RecheckButton({ checking, onClick }: { checking: boolean; onClick: () => void }) {
   return (
     <Hint
@@ -121,7 +119,6 @@ export function ToolChecks() {
  */
 export function AgentChecks() {
   const runtimes = useAgentRuntimes();
-  // The server's runtime re-check runs the launch checks again as well.
   const { checks, checking, error, run } = useRecheck(runtimes.recheck);
   return (
     <SettingsGroup
@@ -151,10 +148,6 @@ export function AgentChecks() {
   );
 }
 
-/**
- * The registry refused npm's credential (a 401 or 403), so no newer release can be checked or
- * fetched. A registry sign-in can expire independently of the installed CLI's subscription login.
- */
 function RegistrySignIn() {
   return (
     <div
@@ -190,10 +183,7 @@ function AgentStatusRow({
   const [open, setOpen] = useState(false);
   const StatusIcon = trouble?.level === "error" ? CircleX : TriangleAlert;
   const tone = trouble?.level === "error" ? "text-destructive" : "text-warning";
-  // The managed store's runtime replaces the PATH install the launch checks looked at.
   const shown = runtime?.resolved?.source === "managed" ? runtime.resolved.version : version;
-  // Codex's fix is an install, which the runtime's installer-aware, release-gated
-  // steps say better than the launch checks; Claude's is its sign-in, which stays.
   const runtimeStep = runtime?.installSteps[0];
   const fix = agent !== "claude" && runtime !== undefined ? undefined : trouble?.fix;
   const step = fix === undefined ? runtimeStep : undefined;
@@ -202,8 +192,6 @@ function AgentStatusRow({
   const [confirming, setConfirming] = useState(false);
   const updating = update.state !== undefined && update.state.state !== "idle";
   const cliUpdateOffered = runnable !== undefined && !confirming && !updating;
-  // Whether a button on the row already names the release that is out ("Update to 0.159.4"):
-  // Gram's own store's, or the CLI's own update.
   const updateOffered =
     runtime !== undefined &&
     newerNote(runtime)?.kind === "update" &&
@@ -211,7 +199,6 @@ function AgentStatusRow({
       (cliUpdateOffered && (runnable.version ?? runtime.newer?.version) !== undefined));
   return (
     <div role="group" aria-label={name} data-testid="agent-check" data-trouble={trouble?.level}>
-      {/* On a phone its actions wrap under its name rather than run past the card. */}
       <div className="flex min-h-7 items-center gap-2 phone:flex-wrap">
         <AgentIcon agent={agent} className="size-icon-row" />
         <span className="font-medium">{name}</span>
@@ -242,8 +229,6 @@ function AgentStatusRow({
               <span className="sr-only">. {trouble.detail.replaceAll("`", "")}</span>
             </Hint>
           )}
-          {/* "0.159.4 available" steps aside for a button that says "Update to 0.159.4": the
-              row named the version twice, side by side. */}
           {trouble === undefined && runtime !== undefined && !updateOffered && (
             <NewerMark runtime={runtime} />
           )}

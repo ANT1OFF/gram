@@ -129,7 +129,6 @@ export function installProgress(state: RuntimeInstallState | undefined): string 
 export const installing = (state: RuntimeInstallState | undefined): boolean =>
   state?.state === "downloading" || state?.state === "verifying" || state?.state === "testing";
 
-/** The step a row's Update runs: the one it offers to copy, when Gram can run it. */
 const runnableStep = (step: InstallStep | undefined): InstallStep | undefined =>
   step?.run === undefined ? undefined : step;
 

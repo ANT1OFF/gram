@@ -68,13 +68,10 @@ export function mockAgentRuntimes(now = Date.now()): AgentRuntimes {
         ? null
         : sessionStorage.getItem(MOCK_AGENT_RUNTIMES_KEY);
     if (saved) override = JSON.parse(saved) as Partial<AgentRuntimes>;
-  } catch {
-    // A malformed override keeps the defaults.
-  }
+  } catch (_aMalformedOverrideKeepsTheDefaults) {}
   return { agents: agents(now), releasesCheckedAt: now, ...override, checkedAt: now };
 }
 
-/** Steps of a simulated install, as fractions of the download. */
 const STEPS = [0, 0.4, 0.8, 1];
 const STEP_MS = 150;
 
@@ -229,7 +226,6 @@ export class MockAgentRuntime {
   }
 }
 
-/** A thread in one of these has a live session, which keeps the CLI it started with. */
 const LIVE: ReadonlySet<ThreadStatus> = new Set([
   "starting",
   "idle",

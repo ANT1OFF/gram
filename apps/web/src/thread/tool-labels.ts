@@ -1,17 +1,7 @@
 import type { ToolPhase } from "./parts";
 
-// What a tool row calls a call: a few plain words, never the raw id an MCP server gives its tools
-// (`mcp__gram__merge_when_ready`), which the row's details still show. Pure, so the words are
-// tested without a browser.
-
-/** A verb for a call in flight and one for a call that finished, as the row's state reads it. */
 type Verbs = readonly [doing: string, done: string];
 
-/**
- * Gram's own app tools, by their bare names, in words that claim no more than the call does:
- * `merge_when_ready` queues a merge that happens once the policy and checks allow, so it reads
- * "Queued to merge when ready", not "Merged".
- */
 const GRAM_TOOLS: Readonly<Record<string, Verbs>> = {
   spawn_worker: ["Starting a worker", "Started a worker"],
   merge_when_ready: ["Queuing a merge when ready", "Queued to merge when ready"],
@@ -83,7 +73,6 @@ const GRAM_TOOLS: Readonly<Record<string, Verbs>> = {
   settings_read: ["Reading settings", "Read settings"],
 };
 
-/** Claude Code's own tools that reach a generic row, in words. */
 const BUILT_IN: Readonly<Record<string, Verbs>> = {
   TodoWrite: ["Updating the to-do list", "Updated the to-do list"],
   ToolSearch: ["Looking up tools", "Looked up tools"],
@@ -94,7 +83,6 @@ const BUILT_IN: Readonly<Record<string, Verbs>> = {
 
 const MCP = /^mcp__(.+?)__(.+)$/;
 
-/** "list_issues" → "List issues"; "getIssue" → "Get issue". */
 const words = (name: string): string => {
   const spaced = name
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -104,7 +92,6 @@ const words = (name: string): string => {
   return spaced === "" ? name : spaced.charAt(0).toUpperCase() + spaced.slice(1);
 };
 
-/** A finished call reads in the past tense; everything else, a call still to settle, in the present. */
 const settled = (phase: ToolPhase) =>
   phase === "done" || phase === "error" || phase === "denied" || phase === "cancelled";
 
@@ -135,7 +122,6 @@ export function toolLabel(tool: string, phase: ToolPhase, title?: string): ToolL
   const [, server, name] = mcp as unknown as [string, string, string];
   if (server === "gram") {
     const verbs = GRAM_TOOLS[name];
-    // A browser tool says what it does in its own row detail; its verb is the action.
     return raw(verbs === undefined ? words(name.replace(/^browser_/, "Browser ")) : verbs[done]);
   }
   return raw(`${words(name)} · ${server.replace(/^claude_ai_/, "").replaceAll("_", " ")}`);

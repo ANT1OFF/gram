@@ -52,7 +52,6 @@ export function RoutinesPage() {
   );
 }
 
-/** One workspace's routines under its name, with a way to the rest of its settings. */
 function WorkspaceRoutines({
   state,
   projects,

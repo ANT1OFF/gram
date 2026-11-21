@@ -1,8 +1,3 @@
-// Where a follow-up task's thread starts. A chip used to start in the offering thread's own checkout
-// unless it asked otherwise, and the tool never said it could ask: two follow-ups accepted while
-// their parent was still working put three agents in one working tree, sharing one HEAD and one
-// index, where one's `git switch` moved the files under the other two.
-
 import type { CheckoutRequest, TaskChipData } from "@gram/contracts";
 
 /**

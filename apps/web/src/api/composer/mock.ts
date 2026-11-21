@@ -24,17 +24,12 @@ import type { ComposerApi } from "./types";
  * script a recap; `api` is what joins the `Api`.
  */
 export function createComposerMock(world: MockWorld, persist: boolean) {
-  /** Uploaded bytes by path, so `readAttachment` can serve back what was pasted or dropped. */
   const uploads = new Map<string, string>();
   const stashes = createMockStashes(persist);
   const assist = createMockAssist();
-  /** Replies armed by `simulateSuggestions`, sent when the thread's next turn ends. */
   const armed = new Map<ThreadId, readonly string[]>();
-  /** The last suggestions sent for each thread, as the server's memo. */
   const suggested = new Map<ThreadId, ThreadSuggestions>();
-  /** Replies the helper "drafts" for a free-form question, armed by `armAskReplies`. */
   const askReplies = new Map<RequestId, readonly string[]>();
-  /** Titles the helper "suggests" for a request's notification, armed by `armNoticeTitle`. */
   const noticeTitles = new Map<RequestId, string>();
 
   const api: ComposerApi = {
@@ -52,10 +47,7 @@ export function createComposerMock(world: MockWorld, persist: boolean) {
     },
     readAttachment: async (threadId, path) => {
       await world.delay(20);
-      // The page folds the same chunks on its own, and can ask for a part's file before this fold
-      // has caught up with it.
       await world.settled(threadId);
-      // A stored tool image or sent file the Files view lists, drawn for its thread.
       const made = mockOutputImage(world, threadId, path, "attachment");
       if (made !== undefined) return made;
       const referenced = world
@@ -114,13 +106,11 @@ export function createComposerMock(world: MockWorld, persist: boolean) {
     requestReplies: async (threadId, requestId) => {
       world.summary(threadId);
       await world.delay(30);
-      // The server's switch: Suggested replies off, or every helper off, makes none.
       return helperOn(await world.settings(), "suggest") ? (askReplies.get(requestId) ?? []) : [];
     },
     requestNoticeTitle: async (threadId, requestId) => {
       world.summary(threadId);
       await world.delay(30);
-      // The server's switch: Notification titles off, or every helper off, makes none.
       return helperOn(await world.settings(), "notice")
         ? (noticeTitles.get(requestId) ?? null)
         : null;

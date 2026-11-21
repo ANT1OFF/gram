@@ -1,81 +1,3 @@
-/**
- * Routines (docs/AGENTS_AND_FEATURES.md#routines): each of a workspace's routines, kept in its charter
- * (`OrchestratorCharter.routines`), comes due on its schedule and starts a worker in one of the
- * workspace's projects through the orchestrator's own `spawnWorker`, or puts its brief in the
- * orchestrator's next digest and wakes it. Either way it goes the way a wake does: as the server's
- * word, never as the user's, so what it starts has no more authority than any worker or digest.
- * What a routine is, the charter says; how its runs stand (next run, last run, its claim) the
- * workspace's outbox keeps, under the routine's id (`RoutineState`).
- *
- * A worker a routine starts is the workspace's orchestrator's worker like any other, spawned under
- * the same gates: the workspace's autonomy, its charter's worker models and cap, the limits that hold
- * or pause spawns, and every approval and merge rule after. Its spawn is `unattended`: what would ask
- * the user (one worker past the cap, the limit threshold's question) refuses instead, the cap checked
- * under the spawn's own lock, and the run is recorded as failed, saying so. A run never raises a card.
- *
- * The engine keeps one timer per routine, as the wakes do (`wakes/thread-wakes.ts`): it sleeps until
- * the routine's `nextRunAt` and runs it then.
- *
- * Each run is one occurrence, and a routine has at most one unsettled occurrence at a time, kept on
- * it as its `claim`. The claim is written before the run starts anything, and its `requestId`
- * (`routine:<id>:<slot>`) is the spawn's request id, so the worker it makes has one thread id
- * however often the run is retried. An occurrence moves through:
- *
- *   pending ──spawn──▶ held ──release──▶ spawning ──brief sent──▶ live ──finishes──▶ settled
- *      │                  │ (cancelled or dropped) ─────────────────────────────────▶ settled
- *      ├──spawn──▶ spawning (a crash here leaves a worker without its brief)
- *      └──refused, or the orchestrator noted────────────────────────────────────────▶ settled
- *
- * Its phase is read from durable facts alone, never remembered: a held brief whose request id is
- * the claim's (held), the thread that id names without its spawn's audit entry (spawning), with it
- * and live on the ledger (live), or neither (pending, unless it got as far as a brief or a thread,
- * then settled). It is read under `withHeldReleases`, the lock every release and cancel of a held
- * brief takes from taking the brief out to its worker existing, so the phase is never read in the
- * gap between held and spawning. A due run, or Run now:
- *
- * - held or live: starts nothing, recorded as skipped (Run now is refused);
- * - spawning: finishes making that worker (the spawn, retried with the claim's request id, sends the
- *   brief a crash kept from it), and records it as the run;
- * - pending: resumes it when it is this slot's (a restart cut it short), else drops it (a claim for a
- *   slot the schedule no longer has, or a Run now a restart cut short);
- * - settled, or none: a new occurrence for the slot, unless another worker of the routine is live or
- *   another brief of it is held.
- *
- * After its spawn the claim is kept while the occurrence is held, spawning or live, and cleared once
- * it is settled. Two more rules hold every run:
- *
- * - A run missed while Gram was closed runs once, a minute after the next start, never once for each
- *   time it missed: the next run is reckoned from when it ran (`nextRunAfter`). A routine with a
- *   claim is looked at then too, so a worker a Run now left without its brief is finished.
- * - A paused workspace pauses its routines: a run that falls due waits, marked `waiting`, and runs
- *   once when the workspace resumes.
- *
- * An event routine (`on`, docs/design/event-routines-sources.md) comes due at each look instead of
- * at a time: its `nextRunAt` is when it next looks. Its watch (`RoutineState.trigger`) moves through
- *
- *   off ──on, new or changed──▶ unseeded ──first look──▶ armed ──a look sees new keys──▶ pending
- *    ▲                                                     ▲                               │
- *    │                                                     │       free, cooled, not paused │
- *    └──off, removed or changed (from any state)           │                               ▼
- *                                         cooled down ◀──settles── fired (a claim with the events)
- *
- * - A look (polling) runs outside the engine's lock, since it may read GitHub; what it found is
- *   merged under the lock only while the routine is still what was looked for (its `whenKey` and
- *   generation), and is never kept in memory alone.
- * - The first look after the routine is new, changed or back on (a new generation) records what is
- *   there already as seen, and fires for none of it.
- * - Every new key is recorded as seen when it is first found, before it is delivered, so it is
- *   delivered at most once, a restart included. It waits in `pending` (at most
- *   `ROUTINE_EVENTS_PENDING_MAX`, the oldest dropped and counted) while the routine's last
- *   occurrence is unsettled, within `ROUTINE_EVENT_COOLDOWN_MINUTES` of its last run, or while the
- *   workspace is paused.
- * - Firing claims the occurrence as a scheduled run does, with the events it delivers (at most
- *   `ROUTINE_EVENTS_PER_RUN`, the rest counted) taken out of `pending` in the same write. From then
- *   it is the occurrence above: resumed with the same events after a restart, finished, admitted
- *   under the spawn lock, refused for a routine off or changed meanwhile.
- * - Off, removed, or given another event or parameter: the next look starts unseeded, so events
- *   while it was off never fire.
- */
 import {
   InvalidState,
   NotFound,
@@ -158,55 +80,34 @@ export interface RoutinesShape {
 
 export class Routines extends Context.Service<Routines, RoutinesShape>()("@gram/server/Routines") {}
 
-/**
- * A routine as the engine works on it: what the charter says, its run state from the outbox, and
- * which workspace it is in. `enabled` is the charter's `off` turned round.
- */
 interface Routine extends RoutineState {
   readonly workspaceId: WorkspaceId;
   readonly id: RoutineId;
   readonly name: string;
   readonly brief: string;
-  /** A routine has this or `on`. */
   readonly schedule?: RoutineSchedule | undefined;
   readonly on?: RoutineTrigger | undefined;
   readonly project?: ProjectId | undefined;
   readonly model?: ModelRef | undefined;
   readonly target?: "orchestrator" | undefined;
   readonly enabled: boolean;
-  /** The charter's generation for it now; `generation` is the one `nextRunAt` was reckoned for. */
   readonly charterGeneration: number;
 }
 
-/**
- * What the routine runs on as `RoutineState.scheduleKey` keeps it, to tell a new schedule, event or
- * event parameter from the one reckoned.
- */
 const scheduleKeyOf = (routine: RoutineWhen) => routineWhenKey(routine);
 
-/** How long an event routine waits after a run before it fires again. */
 const COOLDOWN_MS = ROUTINE_EVENT_COOLDOWN_MINUTES * 60_000;
 
-/** When the routine next comes due after `at`: its schedule's next time, or its next look. */
 const nextAfter = (routine: Pick<Routine, "schedule" | "on">, at: number): number =>
   routine.on !== undefined
     ? at + Duration.toMillis(pollEveryOf(routine.on))
     : nextRunAfter(routine.schedule!, at, localZone());
 
-/**
- * Whether the routine's next run was reckoned for something it no longer is: none yet, another
- * schedule, or before an off and on (`generation`). Such a routine is reckoned again from now; a
- * run never starts on what it was.
- */
 const stale = (routine: Routine) =>
   routine.nextRunAt === undefined ||
   routine.scheduleKey !== scheduleKeyOf(routine) ||
   (routine.generation ?? 0) !== routine.charterGeneration;
 
-/**
- * The routine reckoned again from `now`, for what it is now; a claim stays until it settles. An
- * event routine looks at once, unseeded: what is there then is seen, never fired for.
- */
 const reckoned = (routine: Routine, now: number): Routine => {
   const { waiting: _waiting, trigger: _trigger, ...rest } = routine;
   return {
@@ -214,7 +115,6 @@ const reckoned = (routine: Routine, now: number): Routine => {
     nextRunAt: routine.on !== undefined ? now : nextAfter(routine, now),
     scheduleKey: scheduleKeyOf(routine),
     generation: routine.charterGeneration,
-    // Its last run's time stays, so an edit right after a run doesn't skip the cooldown.
     ...(routine.on !== undefined
       ? {
           trigger:
@@ -224,7 +124,6 @@ const reckoned = (routine: Routine, now: number): Routine => {
   };
 };
 
-/** The run state of `routine`, as the outbox keeps it. */
 const stateOf = (routine: Routine): RoutineState => ({
   ...(routine.nextRunAt === undefined ? {} : { nextRunAt: routine.nextRunAt }),
   ...(routine.scheduleKey === undefined ? {} : { scheduleKey: routine.scheduleKey }),
@@ -277,7 +176,6 @@ export const routineEventBlock = (
   ].join("\n");
 };
 
-/** "the scheduled routine "CI triage" (every 6 hours)", "the routine "Review" (when …)". */
 const routineSource = (routine: Pick<Routine, "name" | "schedule" | "on">) =>
   `${routine.on === undefined ? "the scheduled routine" : "the routine"} "${routine.name.trim()}" (${routineWhenText(routine)})`;
 
@@ -312,7 +210,6 @@ export const routineNote = (
 /** How many looks in a row may fail to tell before the routine says so. */
 export const ROUTINE_LOOK_MISSES_TOLD = 6;
 
-/** Said when looks keep failing to tell. */
 const MISSES_PROBLEM =
   "Gram couldn't check the last few times: GitHub or the registry didn't answer (offline, signed out, rate-limited or out of the background allowance).";
 
@@ -409,10 +306,6 @@ export const mergeLook = (
   };
 };
 
-/**
- * The routine with `ran` recorded, its claim as the occurrence now stands (`undefined` once it
- * settled), and the next run reckoned from it unless `manual`.
- */
 const recorded = (
   routine: Routine,
   ran: RoutineRun,
@@ -445,7 +338,6 @@ const recorded = (
   };
 };
 
-/** The routine without its claim: its occurrence settled, or was for a slot it no longer has. */
 const withoutClaim = (routine: Routine, threadId?: ThreadId): Routine => {
   const { claim: _claim, lastHeld: _held, ...rest } = routine;
   return threadId === undefined ? rest : { ...rest, lastWorker: threadId };
@@ -504,11 +396,9 @@ export const occurrencePhase = (facts: OccurrenceFacts): Phase => {
     : { phase: "settled", threadId: thread.id };
 };
 
-/** Whether `phase` still holds the routine back: its brief waits, or its worker is made or live. */
 const unsettled = (phase: Phase) =>
   phase.phase === "held" || phase.phase === "spawning" || phase.phase === "live";
 
-/** The charter's routines that have ids: the write path gives every saved one one. */
 const charterRoutines = (state: WorkspaceState) =>
   (state.charter.routines ?? []).flatMap((routine) =>
     routine.id === undefined ? [] : [routine as WorkspaceRoutine & { readonly id: RoutineId }],
@@ -546,17 +436,12 @@ export const RoutinesLive = Layer.effect(
     const hub = yield* EventHub;
     const orchestration = yield* Orchestration;
     const sources = yield* RoutineEventSources;
-    // A sleep here; with an outside scheduler, each routine's next run is registered there too.
     const clock = yield* Timers;
-    /** Per workspace and routine id, the timer that runs it when it falls due. */
     const timers = yield* FiberMap.make<string>();
-    /** The keys `timers` holds a timer under, which `FiberMap` doesn't list. */
     const armed = new Set<string>();
     const disarm = (key: string) =>
       Effect.sync(() => armed.delete(key)).pipe(Effect.andThen(FiberMap.remove(timers, key)));
-    /** Every run and every look at the charters, one at a time: a run reads the state it records. */
     const lock = yield* Semaphore.make(1);
-    /** Whether `start` has armed the routines; nothing runs before it. */
     let started = false;
 
     const changed = (workspaceId: WorkspaceId) =>
@@ -565,7 +450,6 @@ export const RoutinesLive = Layer.effect(
     const workspaceOf = (workspaceId: WorkspaceId) =>
       store.getWorkspace(workspaceId).pipe(Effect.option, Effect.map(Option.getOrUndefined));
 
-    /** The routine `id` of the workspace as its charter and outbox have it now. */
     const load = (state: WorkspaceState, id: RoutineId) =>
       Effect.gen(function* () {
         const routine = charterRoutines(state).find((each) => each.id === id);
@@ -574,22 +458,12 @@ export const RoutinesLive = Layer.effect(
         return routineOf(state.workspace.id, routine, states[id]);
       });
 
-    /** Stores the routine's run state in its workspace's outbox. */
-    /**
-     * Stores the routine's run state. Every engine write runs under `lock`, so they are one at a
-     * time; the one writer outside it is the charter's prune of a removed routine. So a write finds
-     * the state it read, or none: and one that finds none brings nothing back (`create` aside, for
-     * the reckoning that starts a routine's state), so a run in flight can't revive a routine
-     * removed meanwhile.
-     */
     const write = (routine: Routine, create = false) =>
       Effect.gen(function* () {
         yield* orchestration.updateRoutineState(routine.workspaceId, routine.id, (current) =>
           current === undefined && !create ? undefined : stateOf(routine),
         );
         if (!create) return;
-        // A create is idempotent against a removal: the charter's prune runs after its own commit,
-        // so whichever lands second, a state for a routine the charter no longer has is dropped.
         const still = yield* store.getWorkspace(routine.workspaceId).pipe(
           Effect.map((each) => charterRoutines(each).some((r) => r.id === routine.id)),
           Effect.orElseSucceed(() => false),
@@ -599,7 +473,6 @@ export const RoutinesLive = Layer.effect(
         }
       });
 
-    /** Runs at a deadline or after a retry delay, defaulting to `nextRunAt`; nothing while off. */
     const arm = (
       routine: Routine,
       wake?: { readonly at: number } | { readonly after: Duration.Duration },
@@ -613,8 +486,6 @@ export const RoutinesLive = Layer.effect(
           timers,
           key,
           Effect.gen(function* () {
-            // Keep the deadline absolute until this timer starts. The arming fiber can yield
-            // before FiberMap.run registers its replacement, after writes and publication too.
             const now = yield* Clock.currentTimeMillis;
             const at =
               wake !== undefined && "after" in wake
@@ -626,7 +497,6 @@ export const RoutinesLive = Layer.effect(
         );
       });
 
-    /** The workspace's ledger rows by thread, to tell a live worker from a finished one. */
     const ledgerRows = (workspaceId: WorkspaceId) =>
       orchestration.ledger(workspaceId).pipe(
         Effect.option,
@@ -642,17 +512,12 @@ export const RoutinesLive = Layer.effect(
 
     type Rows = Effect.Success<ReturnType<typeof ledgerRows>>;
 
-    /** Whether `thread` is a live worker: not parked, and live on the ledger (or not on it yet). */
     const liveWorker = (thread: Thread, rows: Rows) => {
       if (thread.parked) return false;
       const row = rows.get(thread.id);
       return row === undefined || isLiveWorker(row);
     };
 
-    /**
-     * Where `claim`'s occurrence stands, from durable facts alone. Read under `withHeldReleases`,
-     * so a held brief being released is never between the outbox and its worker.
-     */
     const phaseOf = (routine: Routine, claim: RoutineClaim, rows: Rows) =>
       Effect.gen(function* () {
         const workspaceId = routine.workspaceId;
@@ -663,7 +528,6 @@ export const RoutinesLive = Layer.effect(
         const requested = outbox.requests[claim.requestId];
         const threadId = requested ?? workerThreadId(workspaceId, claim.requestId);
         const thread = Option.getOrUndefined(yield* store.getThread(threadId).pipe(Effect.option));
-        // A spawn ends with its audit entry, as `spawnFor` finds a crash cut short by.
         const spawned =
           thread !== undefined &&
           (yield* store.listOrchestrationEvents(workspaceId, thread.createdAt)).some(
@@ -695,10 +559,6 @@ export const RoutinesLive = Layer.effect(
         });
       });
 
-    /**
-     * Why another of the routine's workers or briefs, not `claim`'s, holds a new run back: a worker
-     * it started is live (one a finished worker resumed since, say), or a brief of it is held.
-     */
     const otherBusy = (routine: Routine, claim: RoutineClaim | undefined, rows: Rows) =>
       Effect.gen(function* () {
         const outbox = readOutbox(yield* store.getOutbox(routine.workspaceId)).state;
@@ -722,7 +582,6 @@ export const RoutinesLive = Layer.effect(
           : { why: `The worker from its last run, "${live.title}", is still live.`, live };
       });
 
-    /** The orchestrator thread that follows the run, or why there is none. */
     const holderOf = (state: WorkspaceState) =>
       Effect.gen(function* () {
         const holder = state.workspace.orchestratorThreadId;
@@ -731,7 +590,6 @@ export const RoutinesLive = Layer.effect(
         return thread._tag === "Some" ? holder : undefined;
       });
 
-    /** Starts what the routine is for, and says how it went. */
     const execute = (
       routine: Routine,
       state: WorkspaceState,
@@ -754,7 +612,6 @@ export const RoutinesLive = Layer.effect(
             ? undefined
             : routineEventBlock(claim.events, claim.more ?? 0);
         if (routine.target === "orchestrator") {
-          // Once per occurrence: a run a restart cut short after its note doesn't queue it twice.
           yield* orchestration.addNote(
             workspaceId,
             routineNote(routine, event),
@@ -783,10 +640,8 @@ export const RoutinesLive = Layer.effect(
           ),
           branch: `routine/${words}-${runStamp(claim.slot, localZone())}`,
           ...(routine.model === undefined ? {} : { model: workerModelLabel(routine.model) }),
-          // The claim's, kept before this call: a retry after a restart gets the same worker back.
           clientRequestId: claim.requestId,
           atLimit: "stay" as const,
-          // What this run was decided on: the admission under the spawn lock holds the launch to it.
           routine: {
             id: routine.id,
             name: routine.name,
@@ -795,7 +650,6 @@ export const RoutinesLive = Layer.effect(
             scheduleKey: scheduleKeyOf(routine),
             ...(event === undefined ? {} : { event }),
           },
-          // Nobody answers a card for a schedule: what would ask is refused, under the spawn lock.
           unattended: true as const,
         };
         return yield* orchestration.spawnWorker(holder, input).pipe(
@@ -836,11 +690,6 @@ export const RoutinesLive = Layer.effect(
         );
       });
 
-    /**
-     * Tells the orchestrator's next digest how a run went, quietly: the worker it started (its
-     * brief is the routine's, so follow it like your own) or why it couldn't run. A skip or a
-     * message to the orchestrator itself needs no note.
-     */
     const noteFailure = (routine: Routine, ran: RoutineRun) =>
       ran.outcome === "failed"
         ? orchestration.noteQuietly(
@@ -854,10 +703,6 @@ export const RoutinesLive = Layer.effect(
             )
           : Effect.void;
 
-    /**
-     * Runs `claim`'s occurrence (a new one, a resumed one, or one whose worker a crash left without
-     * its brief), then reads where it stands: its claim stays while it is unsettled.
-     */
     const runClaim = (
       routine: Routine,
       state: WorkspaceState,
@@ -869,12 +714,6 @@ export const RoutinesLive = Layer.effect(
         | { readonly routine: Routine; readonly ran: RoutineRun }
         | { readonly routine: Routine; readonly stale: true }
       > {
-        // The one place a run launches (a new occurrence, a resumed claim, a half-made worker
-        // finished), so the one place it is checked: immediately before, under the held-release
-        // lock, the routine as the charter has it now. Removed: nothing launches. A scheduled run
-        // also doesn't launch for a routine off, toggled or rescheduled since the run was decided.
-        // Otherwise it launches with what the routine is now: its brief, name, target, project and
-        // model, never the ones it had when the run was decided.
         const live = yield* store.getWorkspace(routine.workspaceId).pipe(
           Effect.map((each) => ({
             each,
@@ -913,8 +752,6 @@ export const RoutinesLive = Layer.effect(
           : phase.phase === "held"
             ? { ...reached, heldId: phase.heldId }
             : { ...reached, threadId: phase.threadId };
-        // A run that started nothing (refused, failed, no orchestrator) delivered nothing: its
-        // events wait again, and the cooldown from this try paces the next.
         const events = claim.events ?? [];
         if (ran.outcome === "failed" && kept === undefined && events.length > 0) {
           const retried: Routine = {
@@ -930,10 +767,6 @@ export const RoutinesLive = Layer.effect(
         return { routine: recorded(routine, ran, manual, kept), ran };
       });
 
-    /**
-     * One run of the routine, scheduled or Run now (`manual`), under `withHeldReleases`: the last
-     * occurrence first, until it settles, then a new one. What it ran, or why it is busy.
-     */
     const runOnce = (stored: Routine, state: WorkspaceState, now: number, manual: boolean) =>
       orchestration.withHeldReleases(
         stored.workspaceId,
@@ -960,10 +793,8 @@ export const RoutinesLive = Layer.effect(
                   busy: `The worker from its last run, "${phase.title}", is still live.`,
                 };
               case "spawning":
-                // Its worker exists without its brief: finished, as the spawn's retry does.
                 return yield* runClaim(routine, state, now, last, last.manual === true);
               case "pending":
-                // An event run is its events, not a slot: resumed whenever it comes up again.
                 if (
                   last.manual !== true &&
                   (routine.on !== undefined
@@ -972,7 +803,6 @@ export const RoutinesLive = Layer.effect(
                 ) {
                   return yield* runClaim(routine, state, now, last, false);
                 }
-                // Dropped, as a Run now a restart cut short is: its events wait again.
                 routine =
                   last.events === undefined
                     ? withoutClaim(routine)
@@ -986,8 +816,6 @@ export const RoutinesLive = Layer.effect(
                 break;
             }
           }
-          // Under the held-release lock, just before anything starts: the routine as the charter
-          // has it now. Turned off, off and on, or rescheduled while this run waited: nothing new.
           if (!manual) {
             const current = yield* store.getWorkspace(routine.workspaceId).pipe(
               Effect.map((each) => charterRoutines(each).find((r) => r.id === routine.id)),
@@ -1016,11 +844,9 @@ export const RoutinesLive = Layer.effect(
                 slot: routine.nextRunAt!,
               };
           if (routine.on === undefined) return yield* runClaim(routine, state, now, slot, manual);
-          // An event routine fires for what waits, taken out of `pending` in the claim's own write.
           const trigger = routine.trigger ?? {};
           const pending = trigger.pending ?? [];
           if (pending.length === 0 && !manual) return { routine, idle: true as const };
-          // Checked here, once the last occurrence has settled: a run within the cooldown waits.
           const cooled = (trigger.firedAt ?? Number.NEGATIVE_INFINITY) + COOLDOWN_MS;
           if (!manual && now < cooled) return { routine, idle: true as const, until: cooled };
           const events = pending.slice(-ROUTINE_EVENTS_PER_RUN);
@@ -1041,10 +867,6 @@ export const RoutinesLive = Layer.effect(
         }),
       );
 
-    /**
-     * Settles the routine's claim between its runs, when it has one: finishes a worker a crash left
-     * without its brief, and drops a claim that settled or is stale. Nothing new starts.
-     */
     const settleOnly = (stored: Routine, state: WorkspaceState, now: number) =>
       orchestration.withHeldReleases(
         stored.workspaceId,
@@ -1053,10 +875,8 @@ export const RoutinesLive = Layer.effect(
           if (last === undefined) return undefined;
           const phase = yield* phaseOf(stored, last, yield* ledgerRows(stored.workspaceId));
           if (phase.phase === "spawning") {
-            // Recorded as the run it was: a scheduled one moves the schedule on past its slot.
             const finished = yield* runClaim(stored, state, now, last, last.manual === true);
             if ("stale" in finished) {
-              // Removed, off, or changed: the worker is the orchestrator's now; the claim goes.
               yield* write(withoutClaim(stored));
               yield* changed(stored.workspaceId);
               return undefined;
@@ -1074,7 +894,6 @@ export const RoutinesLive = Layer.effect(
         }),
       );
 
-    /** Saves a run, tells the windows, notes a failure for the orchestrator; arms nothing. */
     const record = (routine: Routine, ran: RoutineRun, quiet = false) =>
       Effect.gen(function* () {
         yield* write(routine);
@@ -1082,18 +901,6 @@ export const RoutinesLive = Layer.effect(
         if (!quiet) yield* noteFailure(routine, ran);
       });
 
-    /**
-     * The routine's run comes due: it runs, waits on a pause, or is skipped behind a live one. Before
-     * it is due, a routine with a claim only has the claim settled. This runs in the routine's own
-     * timer fiber, which arming the next run replaces, so the run is saved, told and noted first and
-     * the next run armed last.
-     */
-    /**
-     * An event routine's look, outside the lock, since it may read GitHub: what the source found,
-     * and what the routine was when it looked, which the merge under the lock holds it to. None for
-     * a routine off, stale (reckoned first), not on an event, or that looked within half its poll
-     * (woken for its cooldown's end, say).
-     */
     const lookFor = (workspaceId: WorkspaceId, id: RoutineId) =>
       Effect.gen(function* () {
         const state = yield* workspaceOf(workspaceId);
@@ -1123,11 +930,6 @@ export const RoutinesLive = Layer.effect(
 
     type Looked = Effect.Success<ReturnType<typeof lookFor>>;
 
-    /**
-     * An event routine comes due: the look merged in, then what waits fires once the routine is
-     * free and cooled down and its workspace isn't paused; else it waits, and the next look is
-     * armed. A claim from its last run is followed first, as a scheduled run's is.
-     */
     const dueEvent = (stored: Routine, state: WorkspaceState, now: number, looked: Looked) =>
       Effect.gen(function* () {
         const fits =
@@ -1139,10 +941,6 @@ export const RoutinesLive = Layer.effect(
         const pending = merged?.pending ?? [];
         const look = nextAfter(routine, now);
         const cooled = (merged?.firedAt ?? Number.NEGATIVE_INFINITY) + COOLDOWN_MS;
-        /**
-         * Kept as it stands, looking next at `at`, and told to the windows when it changed. A
-         * claim keeps its `nextRunAt` (the slot it was made for); `blocked` says why events wait.
-         */
         const wait = (next: Routine, at: number, blocked?: string) =>
           Effect.gen(function* () {
             const { blocked: _was, ...watch } = next.trigger ?? {};
@@ -1160,8 +958,6 @@ export const RoutinesLive = Layer.effect(
           });
         const { waiting: _waiting, ...unpaused } = routine;
         if (state.paused !== undefined) {
-          // Events go on being seen while paused, and fire once on the resume; a run a restart
-          // cut short keeps its claim and slot, and resumes then.
           return yield* wait(
             pending.length === 0 && routine.claim === undefined
               ? unpaused
@@ -1179,11 +975,9 @@ export const RoutinesLive = Layer.effect(
           return yield* wait(outcome.routine, Math.min(look, outcome.until ?? look));
         }
         if ("busy" in outcome) {
-          // Busy with the last occurrence: what waits stays for when it settles, and says why.
           return yield* wait(outcome.routine, look, outcome.busy);
         }
         const next = outcome.routine;
-        // A retry that fails as the last try did isn't told to the orchestrator again.
         const again =
           outcome.ran.outcome === "failed" &&
           stored.lastRun?.outcome === "failed" &&
@@ -1192,10 +986,8 @@ export const RoutinesLive = Layer.effect(
         yield* arm(next);
       });
 
-    /** Changed under a run: reckoned again from now, from what the charter says now. */
     const restale = (workspaceId: WorkspaceId, id: RoutineId, now: number) =>
       Effect.gen(function* () {
-        // Read again: the workspace read before the run is the one that went stale.
         const latest = yield* workspaceOf(workspaceId);
         const fresh = latest === undefined ? undefined : yield* load(latest, id);
         if (fresh === undefined || !fresh.enabled) return yield* disarm(timerKey(workspaceId, id));
@@ -1217,8 +1009,6 @@ export const RoutinesLive = Layer.effect(
                   return yield* disarm(timerKey(workspaceId, id));
                 }
                 const now = yield* Clock.currentTimeMillis;
-                // Waited on the lock while it went off and on, or got a new schedule: reckoned
-                // again from now, never run on the time it had before.
                 if (stored.enabled && stale(stored)) {
                   const next = reckoned(stored, now);
                   yield* write(next, true);
@@ -1241,7 +1031,6 @@ export const RoutinesLive = Layer.effect(
           ),
         );
 
-    /** A scheduled routine, or one off with a claim to settle, at its timer. */
     const dueSchedule = (stored: Routine, state: WorkspaceState, now: number) =>
       Effect.gen(function* () {
         const id = stored.id;
@@ -1263,7 +1052,6 @@ export const RoutinesLive = Layer.effect(
           return yield* arm((yield* load(state, id)) ?? stored);
         }
         const outcome = yield* runOnce(stored, state, now, false);
-        // Changed under it: reckoned again.
         if ("stale" in outcome) return yield* restale(workspaceId, id, now);
         if ("idle" in outcome) return yield* arm(outcome.routine);
         const next =
@@ -1282,12 +1070,6 @@ export const RoutinesLive = Layer.effect(
         yield* arm(next);
       });
 
-    /**
-     * Brings the timers in line with the workspaces' charters: a routine added, turned on, or given
-     * a new schedule is reckoned from now (never run for a time it missed); one removed or turned
-     * off stops. With `catchUp`, the start's look: a run that fell due while Gram was closed, or a
-     * routine with a claim, is looked at `ROUTINE_CATCH_UP_DELAY` from now, once.
-     */
     const sync = (only: WorkspaceId | undefined, catchUp: boolean) =>
       lock.withPermits(1)(
         Effect.gen(function* () {
@@ -1303,9 +1085,6 @@ export const RoutinesLive = Layer.effect(
             if (all.length === 0) continue;
             const runs = yield* orchestration.routineStates(workspaceId);
             let touched = false;
-            // Off: no next run, so turning it back on reckons from then, never from a time it
-            // missed; its claim and what its runs did stay, so a run still going is followed to
-            // its end, and one a crash left half made is finished at the start's look.
             for (const charterRoutine of all.filter((routine) => routine.off === true)) {
               const stored = runs[charterRoutine.id];
               if (stored === undefined) continue;
@@ -1316,7 +1095,6 @@ export const RoutinesLive = Layer.effect(
                 stored.waiting !== undefined ||
                 stored.trigger !== undefined
               ) {
-                // An event routine's watch goes too: turned on again, it looks afresh.
                 const { nextRunAt: _next, waiting: _waiting, trigger: _trigger, ...rest } = routine;
                 yield* write(rest);
                 touched = true;
@@ -1328,7 +1106,6 @@ export const RoutinesLive = Layer.effect(
             for (const charterRoutine of routines) {
               let routine = routineOf(workspaceId, charterRoutine, runs[charterRoutine.id]);
               if (stale(routine)) {
-                // New, back on (however briefly it was off), or a new schedule: from now.
                 routine = reckoned(routine, now);
                 yield* write(routine, true);
                 touched = true;
@@ -1345,8 +1122,6 @@ export const RoutinesLive = Layer.effect(
             }
             if (touched) yield* changed(workspaceId);
           }
-          // Routines removed or turned off, or of a workspace that went.
-          // Deleting the key being visited is safe while a Set is iterated.
           for (const key of armed) {
             if (!live.has(key)) yield* disarm(key);
           }
@@ -1379,20 +1154,16 @@ export const RoutinesLive = Layer.effect(
             if (outcome.routine !== routine) yield* changed(workspaceId);
             return yield* new InvalidState({ message: outcome.busy });
           }
-          // Run now doesn't recheck the schedule (its own click is the go-ahead), so never stale.
           if ("stale" in outcome || "idle" in outcome) {
             return yield* new InvalidState({ message: "The routine changed; try again." });
           }
           yield* record(outcome.routine, outcome.ran);
-          // A resumed scheduled run moved the next run on: its timer follows.
           if (outcome.routine.nextRunAt !== routine.nextRunAt) yield* arm(outcome.routine);
           const charterRoutine = charterRoutines(state).find((each) => each.id === id)!;
           return statusOf(outcome.routine, charterRoutine);
         }),
       );
 
-    // A charter change (a routine added, edited, turned off or removed) and a resume come as
-    // `orchestration.changed`; a workspace removed as `workspaces.changed`.
     yield* hub
       .internalEvents(
         (event) => event.type === "orchestration.changed" || event.type === "workspaces.changed",
@@ -1407,9 +1178,6 @@ export const RoutinesLive = Layer.effect(
         Effect.forkScoped,
       );
 
-    // A held brief of a routine's run that starts later (the user's release, a reset, a probe) is
-    // the routine's worker from then on: its row shows it. Display only: a run reads the phase from
-    // the facts under `withHeldReleases`, never from this.
     yield* hub
       .internalEvents(
         (event) => event.type === "thread.upsert" && event.thread.spawnedBy?.routine !== undefined,
@@ -1448,15 +1216,6 @@ export const RoutinesLive = Layer.effect(
         Effect.forkScoped,
       );
 
-    /**
-     * The one admission of a routine's worker (`RoutineAdmission`), which `spawnFor` calls with the
-     * spawn lock held for every launch: a scheduled run, Run now, a held brief's release (by a reset,
-     * a probe or the user, after a restart too), a half-made worker's recovery. The routine as the
-     * charter has it now: removed, it doesn't launch; for a scheduled run, nor off, toggled or
-     * rescheduled since the run was decided; nor one that now goes to the orchestrator or whose
-     * project left the workspace. Otherwise the spawn is rewritten with exactly its values now:
-     * brief, name, project and model.
-     */
     yield* orchestration.setRoutineAdmission((state, input) =>
       Effect.sync(() => {
         const ref = input.routine!;

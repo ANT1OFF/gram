@@ -41,11 +41,6 @@ const modifiedAt = (path: string): Promise<number | undefined> =>
     () => undefined,
   );
 
-/**
- * Clears the login path for its link. A file Grok wrote in the link's place holds a session it
- * refreshed: it replaces the person's own when it is the newer of the two, and is never deleted
- * while it is. Neither file is read.
- */
 const keepRotatedLogin = async (link: string, auth: string): Promise<void> => {
   const found = await lstat(link).catch(() => undefined);
   if (found === undefined) return;

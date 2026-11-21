@@ -7,29 +7,19 @@ import {
   type MergeMarkKind,
 } from "@/components/pr-marks-model";
 
-// What stands between an open PR and its merge, as the PR panel knows it, worst first, and the one
-// next step for the worst. The order is the PR vocabulary's (`worstPrMark`): failing checks, then
-// conflicts, then changes people asked for, then the review bot's, then a review still missing.
-
 export type MergeBlockerKind = "checks" | "conflicts" | "changes" | "bot" | "review" | "required";
 
 /** The next step for a blocker, which the panel's summary offers as its one primary button. */
 export type BlockerAction =
-  /** Open the failing check's job evidence, under Checks. */
   | { readonly kind: "inspectCheck"; readonly label: string; readonly check: string }
-  /** A failing check on another provider: open its page there. */
   | { readonly kind: "openCheck"; readonly label: string; readonly url: string }
-  /** Show the review that asked for changes: its comment under Conversation, else the Review tab. */
   | {
       readonly kind: "readChanges";
       readonly label: string;
       readonly where: "conversation" | "review";
     }
-  /** The review bot's blockers, on the Review tab. */
   | { readonly kind: "openReview"; readonly label: string }
-  /** Ask the thread's agent to merge the base in and resolve the conflicts. */
   | { readonly kind: "fixConflicts"; readonly label: string }
-  /** Nobody has been asked to review yet: open the Request review form. */
   | { readonly kind: "requestReview"; readonly label: string };
 
 export interface MergeBlocker {
@@ -70,7 +60,6 @@ type CheckRun = PrDetail["checkRuns"][number];
 const isFailing = (run: CheckRun) =>
   run.status === "failing" && run.conclusion?.toUpperCase() !== "CANCELLED";
 
-/** "a failing", "a and b failing", "a and 2 more failing". */
 const failingText = (names: readonly string[]): string => {
   const [first = "", second] = names;
   if (names.length === 1) return `${first} failing`;
@@ -78,7 +67,6 @@ const failingText = (names: readonly string[]): string => {
   return `${first} and ${names.length - 1} more failing`;
 };
 
-/** Whether the panel's Checks section can show the check's job evidence (`CiCheckDetail`). */
 const inspectable = (run: CheckRun, detail: BlockerSource): boolean => {
   const repo = detail.url === undefined ? undefined : repoFromPrUrl(detail.url);
   return (
@@ -110,7 +98,6 @@ export function mergeBlockersOf(
 ): readonly MergeBlocker[] {
   const blockers: MergeBlocker[] = [];
 
-  // Required checks first: they are the ones GitHub holds the merge for.
   const failing = detail.checkRuns
     .filter(isFailing)
     .toSorted((a, b) => Number(a.required === false) - Number(b.required === false));
@@ -163,7 +150,6 @@ export function mergeBlockersOf(
     });
   }
 
-  // GitHub blocks for a reason the panel can't see beyond the above: name a missing review if that's it.
   if (blockers.length === 0 && merge === "blocked") {
     if (detail.reviewDecision === "REVIEW_REQUIRED") {
       const requested = detail.reviewRequests ?? [];
@@ -173,7 +159,6 @@ export function mergeBlockersOf(
         detail:
           reviewMarkOf({ reviewDecision: "REVIEW_REQUIRED", reviewRequests: requested })?.detail ??
           "Waiting on an approving review",
-        // Named apart from the Reviewers row's own "Request review…", which opens the same form.
         action:
           requested.length === 0
             ? { kind: "requestReview", label: "Ask for a review…" }
@@ -194,7 +179,6 @@ export function mergeBlockersOf(
 export const blockedLineOf = (blockers: readonly MergeBlocker[]): string | undefined =>
   blockers.length === 0 ? undefined : `Blocked: ${blockers.map((b) => b.word).join(", ")}`;
 
-/** Each kind of blocker as a category in the summary's count line. */
 const CATEGORY: Record<MergeBlockerKind, string> = {
   checks: "checks",
   conflicts: "conflicts",

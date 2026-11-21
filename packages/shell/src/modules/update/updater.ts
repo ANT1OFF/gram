@@ -111,13 +111,10 @@ export async function statfsFreeBytes(dir: string): Promise<number | undefined> 
     const stats = await statfs(dir);
     return stats.bavail * stats.bsize;
   } catch {
-    // A filesystem `statfs` can't read (a network drive): the download goes ahead, and a full disk
-    // is still explained when the write fails (`explainUpdateFailure`).
     return undefined;
   }
 }
 
-/** `bytes` as gigabytes or megabytes, for a message. */
 const sizeText = (bytes: number) =>
   bytes >= 1024 ** 3
     ? `${(bytes / 1024 ** 3).toFixed(1)} GB`
@@ -161,10 +158,6 @@ export function createUpdater(options: UpdaterOptions): Updater {
     canSelfInstall,
   });
 
-  /**
-   * The channel's releases `check` lists, newest first, from a fresh list; `undefined`, with a
-   * warning, when the source failed or said something unparseable.
-   */
   async function installable(
     releases: ReleaseSource,
     channel: UpdateChannel,
@@ -175,10 +168,6 @@ export function createUpdater(options: UpdaterOptions): Updater {
 
     const eligible = eligibleReleases(parsed, channel === "prerelease");
     if (!canSelfInstall) return eligible;
-    // release.yml publishes a release with the macOS build and attaches the Windows installer when
-    // its own signing finishes, so a new release can be out without one for a while. Until it has
-    // one it isn't offered, nor listed in the picker; the next check looks again. Older releases
-    // aren't asked about: each one's was attached long ago, or never will be.
     const newer = eligible.filter((release) => compareVersions(release.version, current) > 0);
     const views = await Promise.all(newer.map((release) => releases.view(release.tag)));
     if (views.includes(undefined)) return undefined;
@@ -199,7 +188,6 @@ export function createUpdater(options: UpdaterOptions): Updater {
       warn(`update check: unparseable current version ${currentVersion}`);
       return unavailable();
     }
-    // One filtered, sorted list feeds both the picker and the selection, so they can't disagree.
     const eligible = await installable(source, channel, current);
     if (!eligible) return unavailable();
     const releases = releaseList(eligible, current);
@@ -212,16 +200,11 @@ export function createUpdater(options: UpdaterOptions): Updater {
       channel,
       latestVersion: formatVersion(latest.version),
       tag: latest.tag,
-      // Only the macOS notify-and-link path uses the page; skip the extra round-trip on Windows.
       htmlUrl: canSelfInstall ? "" : await source.pageUrl(latest.tag),
       releases,
     };
   }
 
-  /**
-   * The release `intent` may install, re-checked against the saved settings and a fresh release
-   * list rather than trusting the renderer's: throws, with what to do next, when it may not.
-   */
   async function permitted(
     releases: ReleaseSource,
     intent: UpdateInstallIntent,
@@ -253,8 +236,6 @@ export function createUpdater(options: UpdaterOptions): Updater {
     if (cmp > 0 && intent.downgrade) {
       throw new Error(`${version} is newer than ${currentVersion}, not a downgrade`);
     }
-    // Settings → Updates pins anything but the newest release before installing it, so the next
-    // launch doesn't offer to undo the choice. An install the pin didn't reach would be undone.
     if (release !== eligible[0] && prefs.pinnedVersion !== version) {
       throw new Error(
         `${version} isn't the newest release and isn't pinned: check for updates again`,
@@ -272,7 +253,6 @@ export function createUpdater(options: UpdaterOptions): Updater {
     const { tag } = release;
     const version = formatVersion(release.version);
     const asset = installerAssetName(version);
-    // Again, right before the download: the release may have gone back to draft since the list.
     const view = await releases.view(tag);
     if (!view) throw new Error(`couldn't read release ${tag}`);
     if (view.tagName !== tag || view.isDraft !== false) {
@@ -322,7 +302,6 @@ export function createUpdater(options: UpdaterOptions): Updater {
           "try again.",
       );
     }
-    // A unique dir per download, so a concurrent updater can't drop a different installer next to ours.
     const dir = join(tempDir, `${UPDATE_DIR_PREFIX}${randomUUID()}`);
     await mkdir(dir, { recursive: true });
     try {

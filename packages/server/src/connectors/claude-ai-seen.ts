@@ -1,10 +1,3 @@
-// The account's claude.ai connectors as Claude threads last reported them, so Settings can show
-// them with no Claude thread running. Claude Code has no way to list them without connecting every
-// one, so the only source is a session that is running anyway: its
-// `mcpServerStatus` when something asks it, and each turn's `system/init`. Nothing here asks a
-// session anything, and what is kept is names, states, masked addresses, ids and tool names, and
-// when they were seen: never a token.
-
 import type { ConnectorsSeen, ConnectorStatus } from "@gram/agents";
 import type { SeenConnector } from "@gram/contracts";
 import * as Clock from "effect/Clock";
@@ -37,7 +30,6 @@ export const mergeSeen = (
   const reported = seen.connectors.filter(isClaudeAi);
   if (reported.length === 0) return undefined;
   const before = new Map(stored.map((entry) => [entry.name, entry]));
-  // A turn's init names only states, so the address, id and tools an earlier report gave stay.
   const fresh = new Map(
     reported.map(({ name, status, url, claudeAi, tools }): [string, SeenConnector] => {
       const old = before.get(name);
@@ -99,8 +91,6 @@ export const ClaudeAiSeenLive: Layer.Layer<never, never, ThreadStore> = Layer.ef
     const store = yield* ThreadStore;
     return {
       record: (seen) =>
-        // Most reports name no connector: a gateway or confined thread's, or one made before
-        // claude.ai's list loaded.
         seen.connectors.some(isClaudeAi)
           ? Clock.currentTimeMillis.pipe(
               Effect.flatMap((now) =>

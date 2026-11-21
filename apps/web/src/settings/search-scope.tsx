@@ -1,12 +1,3 @@
-/**
- * Settings search has no index. Each `Field`, `Toggle` and `SearchScope` matches itself against the
- * query in this context, so a new setting is searchable by existing, and what is searched is the
- * label and description on screen, dynamic ones included. A visible match carries
- * `data-setting-match`; a scope or the empty state that has to know whether anything inside matched
- * asks CSS `:has()`, which is right on the first paint where counting in an effect would flicker.
- * The same matching, in spotlight mode, marks the settings a link into a page points at with
- * `data-setting-spotlight` and hides nothing.
- */
 import { Search, X } from "lucide-react";
 import { createContext, useContext, useMemo, type ReactNode, type RefObject } from "react";
 

@@ -1,7 +1,3 @@
-// The local routes for stopping a joined machine with its disk kept and resuming its threads
-// (`host/stop-resume.ts`), for whoever runs the machines. Part of the hosted features: with the
-// setting off, none of them is there.
-
 import {
   embeddingOn,
   type HostFailed,
@@ -66,17 +62,11 @@ export const HOST_STOP_PATHS: ReadonlySet<string> = new Set([
   MACHINES_JOBS_GET_PATH,
 ]);
 
-/** The longest key a caller names a job by. */
 const KEY_MAX = 256;
 
 const BODY_MAX = 4_096;
-/** A resume can carry what a stop kept of each of its folders. */
 const RESUME_BODY_MAX = 512 * 1024;
 
-/**
- * What a stop kept, as a resume's caller gives it back: the entries a restore can be held to
- * (a folder with a commit that was pushed), or undefined for anything that isn't such a list.
- */
 const keptBefore = (value: unknown): ReadonlyArray<KeptBefore> | undefined => {
   if (!Array.isArray(value) || value.length > STOP_FOLDERS_MAX) return undefined;
   const kept: Array<KeptBefore> = [];
@@ -95,7 +85,6 @@ const keptBefore = (value: unknown): ReadonlyArray<KeptBefore> | undefined => {
       (remote !== undefined && (typeof remote !== "string" || !isPushRemote(remote)))
     )
       return undefined;
-    // Not pushed, or nothing committed: the remote was never said to have it.
     if (pushed === false || commit === undefined) continue;
     if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(commit)) return undefined;
     kept.push({
@@ -110,7 +99,6 @@ const keptBefore = (value: unknown): ReadonlyArray<KeptBefore> | undefined => {
   return kept;
 };
 
-/** The threads a resume may make from their branch without their kept work, or undefined. */
 const threadIds = (value: unknown): ReadonlyArray<ThreadId> | undefined =>
   Array.isArray(value) &&
   value.length <= STOP_FOLDERS_MAX &&
@@ -121,7 +109,6 @@ const threadIds = (value: unknown): ReadonlyArray<ThreadId> | undefined =>
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 const refuse = (message: string, status: number) => json({ message }, status);
 
-/** A small JSON object body, or undefined for anything else. */
 const jsonBody = (max: number) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -145,11 +132,9 @@ const parsed = (text: string): Record<string, unknown> | undefined => {
   }
 };
 
-/** A machine that is away is a conflict with what was asked; one that refused is its own answer. */
 const failed = (error: HostFailed | HostUnavailable) =>
   refuse(error.message, error._tag === "HostUnavailable" ? 409 : 502);
 
-/** An ended job as its synchronous route answers it. */
 const answerOf = (job: MachineJob | undefined) =>
   job === undefined
     ? refuse("It was cut off.", 502)
@@ -228,16 +213,12 @@ export const hostStopRoute = (
         budgetMs: RESUME_JOB_MS,
         run: (follow) => resumeHost(deps, hostId, { remote, kept, follow, fromBranch }),
       });
-    /** The resume's `kept`, or `null` for one that isn't a stop's answer. */
     const keptOfBody = () =>
       body["kept"] === undefined ? undefined : (keptBefore(body["kept"]) ?? null);
-    /** The resume's `fromBranch`, or `null` for one that isn't a list of threads. */
     const fromBranchOfBody = () =>
       body["fromBranch"] === undefined ? undefined : (threadIds(body["fromBranch"]) ?? null);
     switch (path) {
       case MACHINES_STOP_PREPARE_PATH: {
-        // A job all the same, so a retry joins it. One this call started is cut off with it, so
-        // its stop is taken back: no machine holds a stop whose caller went away.
         const { job, joined } = yield* prepareJob();
         const ended = deps.jobs.ended(job.id);
         return answerOf(
@@ -253,7 +234,6 @@ export const hostStopRoute = (
           Effect.match({ onFailure: failed, onSuccess: () => json({ ok: true }) }),
         );
       case MACHINES_STOP_EXPECT_PATH:
-        // Said only once written: a word lost in a restart would let the machine back unowed.
         try {
           deps.hosts.stops.expect(hostId);
         } catch {
@@ -264,7 +244,6 @@ export const hostStopRoute = (
         const kept = keptOfBody();
         const fromBranch = fromBranchOfBody();
         if (kept === null || fromBranch === null) return refuse("bad request", 400);
-        // A job, which goes on should this call go away: a retry joins it.
         const { job } = yield* resumeJob(kept, fromBranch);
         return answerOf(yield* deps.jobs.ended(job.id));
       }

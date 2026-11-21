@@ -76,12 +76,9 @@ export function browserObservations(cdp: Cdp, heldFrom: number | null) {
   let holding = heldFrom;
   let droppedConsole = 0;
   let droppedNetwork = 0;
-  /** Each line as diagnostics say it (no contents), with its redacted words and their origin. */
   const console: Array<PaneConsoleEntry & { readonly words?: string; readonly origin?: string }> =
     [];
-  /** The origin of each execution context, by id, as the page made them. */
   const origins = new Map<number, string>();
-  // Redacted whole, then cut, so a token at the cut is never left too short to be seen.
   const wordsOf = (contextId: unknown, text: () => string) => {
     const origin = typeof contextId === "number" ? origins.get(contextId) : undefined;
     return origin !== undefined && loopbackOrigin(origin)
@@ -179,7 +176,6 @@ export function browserObservations(cdp: Cdp, heldFrom: number | null) {
       if (holding !== null) return;
       const event = record(params);
       if (typeof event["timestamp"] !== "number" || typeof event["requestId"] !== "string") return;
-      // A redirect's new hop replaces the old one; retain a failed redirect response first.
       const old = pending.get(event["requestId"]);
       const redirect = record(event["redirectResponse"]);
       if (

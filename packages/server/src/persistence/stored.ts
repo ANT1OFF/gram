@@ -1,9 +1,3 @@
-// The server's one way of reading back JSON it stored itself. Decoding here never throws: a value
-// that doesn't decode comes back `unreadable` with the field paths that failed, and the caller
-// decides by the kind of data what that means. Nothing here writes, so a value that doesn't decode
-// stays on disk exactly as it was, and what is logged about it is where it failed, never what it
-// holds.
-
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import type * as Schema from "effect/Schema";
@@ -39,7 +33,6 @@ const issuesOf = (issue: SchemaIssue.Issue, path: FieldPath, out: Array<IssueAt>
     case "Filter":
       return issuesOf(issue.issue, path, out);
     default:
-      // A union's members each fail somewhere else; the union itself is what failed here.
       out.push({ path, unexpected: issue._tag === "UnexpectedKey" });
   }
 };
@@ -62,7 +55,6 @@ const parse = (text: string): Result.Result<Json, undefined> => {
   try {
     return Result.succeed(JSON.parse(text) as Json);
   } catch {
-    // Not JSON at all: unreadable as a whole, which the empty path says.
     return Result.fail(undefined);
   }
 };
@@ -97,7 +89,6 @@ export const decodeStoredValue = <S extends Schema.Top>(
 export const mapDecoded = <A, B>(decoded: Decoded<A>, f: (value: A) => B): Decoded<B> =>
   decoded.ok ? { ok: true, value: f(decoded.value) } : decoded;
 
-/** An object key that reads as a field name; any other (a record's key) is user data and masked. */
 const FIELD_NAME = /^[A-Za-z_$][\w$]{0,63}$/;
 
 /** A path as logged: `agents.claude.model`, with array indexes kept and data-shaped keys as `*`. */
@@ -114,7 +105,6 @@ export const describePath = (path: FieldPath): string =>
         )
         .join(".");
 
-/** How many failed paths one log line names; the rest are counted. */
 const FIELDS_LOGGED = 8;
 
 /**
@@ -189,7 +179,6 @@ const getAt = (value: Json, path: FieldPath): Json => {
   return node;
 };
 
-/** Sets `path` in `root`, a plain object, or deletes it for `undefined`; parents must exist. */
 const setAt = (root: Record<PropertyKey, Json>, path: FieldPath, value: Json): void => {
   const parent = getAt(root, path.slice(0, -1));
   const key = path.at(-1);
@@ -198,7 +187,6 @@ const setAt = (root: Record<PropertyKey, Json>, path: FieldPath, value: Json): v
   else parent[key] = structuredClone(value);
 };
 
-/** `setAt`, making the plain objects missing on the way. */
 const setDeep = (root: Record<PropertyKey, Json>, path: FieldPath, value: Json): void => {
   let node: Record<PropertyKey, Json> = root;
   for (const key of path.slice(0, -1)) {
@@ -233,11 +221,6 @@ const sameJson = (a: Json, b: Json): boolean => {
 const samePath = (a: FieldPath, b: FieldPath) =>
   a.length === b.length && a.every((key, index) => key === b[index]);
 
-/**
- * Where a failure at `path` is mended from the defaults: as deep as both the stored value and the
- * defaults are objects, so a bad leaf costs only that leaf, but never inside an array or a record
- * the defaults don't have, whose entries the defaults can't stand in for one by one.
- */
 const mendPoint = (stored: Json, defaults: Json, path: FieldPath): FieldPath => {
   let s = stored;
   let d = defaults;
@@ -252,7 +235,6 @@ const mendPoint = (stored: Json, defaults: Json, path: FieldPath): FieldPath => 
   return path;
 };
 
-/** `paths` without those inside another of them. */
 const outermost = (paths: ReadonlyArray<FieldPath>): ReadonlyArray<FieldPath> =>
   paths.filter(
     (path) =>
@@ -261,7 +243,6 @@ const outermost = (paths: ReadonlyArray<FieldPath>): ReadonlyArray<FieldPath> =>
       ),
   );
 
-/** Mending rounds before giving up and taking the defaults whole. */
 const MEND_ROUNDS = 32;
 
 export interface Mended<A> {
@@ -293,8 +274,6 @@ export const decodeMended = <S extends Schema.Top>(
     const earlier = mended.slice();
     for (const { path } of decoded.failure) {
       let at = mendPoint(working, encodedDefaults, path);
-      // Mended there in an earlier round and failing again: the defaults' part doesn't fit what
-      // was kept around it, so mend one level up.
       while (at.length > 0 && earlier.some((done) => samePath(done, at))) at = at.slice(0, -1);
       if (at.length === 0) return whole;
       if (mended.some((done) => samePath(done, at))) continue;
@@ -305,11 +284,6 @@ export const decodeMended = <S extends Schema.Top>(
   return whole;
 };
 
-/**
- * The paths of keys in `json` that `schema` doesn't know: what a newer build stored, which a write
- * by this one should carry along. One inside a list is given as the list's path, since its entries
- * have no identity to carry a key over by: the list is kept whole, or not at all.
- */
 const unknownKeys = <S extends Schema.Top>(schema: S, json: Json): ReadonlyArray<FieldPath> => {
   const decoded = decodeValue(schema, json, { errors: "all", onExcessProperty: "error" });
   if (Result.isSuccess(decoded)) return [];
@@ -362,10 +336,7 @@ export const mendedWrite = <S extends Schema.Top>(
       }
       continue;
     }
-    // Set whole, or from above: the caller's value stands.
     if (touched.some((set) => set.length <= path.length && overlaps(set, path))) continue;
-    // Set inside it: what was stored, with only those paths taken from the caller. The rest of the
-    // caller's part is the defaults the read stood in with, which would drop readable siblings.
     const inside = touched.filter((set) => set.length > path.length && overlaps(set, path));
     const kept = getAt(raw, path);
     if (inside.length > 0 && !isObject(kept)) continue;
@@ -374,13 +345,11 @@ export const mendedWrite = <S extends Schema.Top>(
     for (const [at, value] of set) setDeep(out, at, value);
   }
   const unknown = unknownKeys(schema, raw);
-  // What the read gave, encoded, to tell a list the caller left alone from one it changed.
   const read =
     unknown.length === 0
       ? undefined
       : encodeValue(schema, decodeMended(schema, defaults, encodedDefaults, stored).value);
   for (const path of unknown) {
-    // Set or cleared by the caller: its value stands, even one that leaves the key out.
     if (touched?.some((set) => overlaps(set, path))) continue;
     const now = getAt(out, path);
     if (now === undefined) setAt(out, path, getAt(raw, path));

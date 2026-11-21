@@ -9,8 +9,6 @@ import type { SqlClient } from "../platform/unstable.ts";
  * stays, since its output is still there to review or discard. Runs inside the caller's
  * transaction.
  */
-// SQLite's JSON functions raise on text that isn't JSON, so each is behind `json_valid`, and a
-// row that doesn't parse is left as it is rather than failing the statement for every row.
 export const unlinkOrchestrationIn = (
   sql: SqlClient.SqlClient,
   id: ThreadId,

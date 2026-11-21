@@ -1,14 +1,6 @@
-// The fences a desktop's late stop or release carries to a hosted server: which
-// machine and which run of it the call is for (`sandboxId`, `generation`), as a start or a status
-// last named them, and the latest time the server may act on it (`notAfter`). Past either, the
-// server does nothing and says so (`superseded`, `expired`), so a call that came late never lands
-// on a newer start of its name. A server from before fences ignores them on a stop, and refuses
-// a release that carries them (`400`): see `tellSignedInRelease`.
-
 import * as Effect from "effect/Effect";
 import type { MachineRun, WorkerMachinePortShape } from "./signed-in-port.ts";
 
-/** A sandbox id as the server makes them: an opaque id of letters, digits and `_ . : -`. */
 const SANDBOX_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 
 /** The run an answer names, read field by field; undefined where it names none. */
@@ -57,11 +49,9 @@ export const sameRun = (a: MachineRun | null | undefined, b: MachineRun | null |
 /** The answer a call given a run (`run`) gets here, unsent, once its name is known as another. */
 export const SUPERSEDED_HERE = { ok: true, status: 200, body: { code: "superseded" } } as const;
 
-/** A run is known by server, name and sign-in. */
 const keyOf = (origin: string, name: string, account: string | undefined) =>
   JSON.stringify([origin, name, account ?? null]);
 
-/** The most runs kept: one per machine name a server named lately. */
 const RUNS_MOST = 512;
 
 /**
@@ -86,7 +76,6 @@ export const fencedCalls = (port: WorkerMachinePortShape): WorkerMachinePortShap
       const key = keyOf(origin, name, options?.account);
       const fenced = call === "stop" || call === "release";
       const pinned = fenced ? options?.run : undefined;
-      // Decided for a run its name is no longer known as: nothing is sent.
       if (pinned !== undefined && !sameRun(runs.get(key), pinned))
         return Effect.succeed(SUPERSEDED_HERE);
       const run = !fenced
@@ -110,7 +99,6 @@ export const fencedCalls = (port: WorkerMachinePortShape): WorkerMachinePortShap
             return Effect.void;
           }
           const refused = fenceRefusalOf(answered);
-          // The run it named is no more: forgotten, unless a newer one was told meanwhile.
           if (refused === "superseded" && run !== undefined && sameRun(runs.get(key), run))
             runs.delete(key);
           const stopped =
@@ -119,8 +107,6 @@ export const fencedCalls = (port: WorkerMachinePortShape): WorkerMachinePortShap
             refused === undefined &&
             (answered.body as { stopped?: unknown } | null)?.stopped === true;
           if (stopped && sameRun(runs.get(key), run)) runs.delete(key);
-          // Its `notAfter` had passed by the server's clock: one now and then is a slow call, every
-          // one a clock here behind the server's by more than the margin left for it.
           return fenced && refused === "expired"
             ? Effect.logWarning(
                 "a worker machine's call came after its time there: this machine's clock may be behind the server's",

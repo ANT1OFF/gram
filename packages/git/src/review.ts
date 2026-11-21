@@ -1,7 +1,3 @@
-// Review-bot output parsing. The bot's format is undocumented, so everything format-specific lives
-// here and degrades to "unknown" instead of failing: untagged findings, missing meta, unfamiliar
-// progress comments.
-
 import {
   HUMAN_REVIEW_BODY_CHARS,
   isAppAuthor,
@@ -36,10 +32,8 @@ const at = (value: unknown, path: ReadonlyArray<string | number>): unknown => {
   return current;
 };
 const login = (node: Json): string => str(at(node, ["author", "login"]));
-/** Whether a configured review bot wrote `node`: an app account by GitHub's word, login matching. */
 const writtenByBot = (node: Json, bots: ReadonlyArray<ReviewBot>): boolean =>
   isReviewBotAuthor(bots, login(node), at(node, ["author", "__typename"]));
-/** Whether an app account wrote `node`, a configured bot or not. */
 const byApp = (node: Json): boolean => isAppAuthor(login(node), at(node, ["author", "__typename"]));
 
 const normaliseLogin = (value: string) =>
@@ -48,7 +42,6 @@ const normaliseLogin = (value: string) =>
     .toLowerCase()
     .replace(/\[bot\]$/, "");
 
-// The matching moved to contracts, where the web app and the helper's PR context read it too.
 export { isBotLogin, isReviewBotAuthor, matchesBotLogin } from "@gram/contracts";
 
 const TAG = /^\s*(?:\*\*|`)?\[(blocker|suggestion|still outstanding)\](?:\*\*|`)?/i;
@@ -73,19 +66,12 @@ export const threadSeverity = (bodies: ReadonlyArray<string>): ReviewSeverity =>
 
 const META_OPEN = /<!--\s*code-review-meta:/g;
 
-/**
- * Every `<!-- code-review-meta: … -->` comment in `body`, as offsets. The close is found with
- * `indexOf` rather than a lazy `[\s\S]*?-->` in the pattern: that rescans to the end of the body
- * from each opening, which is quadratic in a body that opens the comment many times and never
- * closes it, and the body is whatever a PR's reviewer wrote.
- */
 const metaSpans = (body: string) => {
   const spans: Array<{ start: number; contentStart: number; contentEnd: number; end: number }> = [];
   const open = new RegExp(META_OPEN);
   for (let match = open.exec(body); match !== null; match = open.exec(body)) {
     const contentStart = match.index + match[0].length;
     const contentEnd = body.indexOf("-->", contentStart);
-    // Nothing after this point closes either.
     if (contentEnd === -1) break;
     spans.push({ start: match.index, contentStart, contentEnd, end: contentEnd + 3 });
     open.lastIndex = contentEnd + 3;
@@ -166,7 +152,6 @@ export const verdictOf = (state: string): ReviewVerdict | undefined => {
   }
 };
 
-/** Bot reviews with a summary body; empty-body reviews are GitHub's wrappers around thread replies. */
 const summaryReviews = (node: Json, bots: ReadonlyArray<ReviewBot>) =>
   arr(at(node, ["reviews", "nodes"])).filter(
     (r) => writtenByBot(r, bots) && str(r["body"]).trim() !== "" && r["state"] !== "PENDING",
@@ -179,11 +164,6 @@ const startedByBot = (thread: Json, bots: ReadonlyArray<ReviewBot>) => {
   return first !== undefined && writtenByBot(first, bots);
 };
 
-/**
- * The reviews a verdict is read from, oldest first: the badge's window of the latest reviews, and
- * each reviewer's own latest verdict (`latestOpinionatedReviews`), which no number of newer
- * comment-only reviews, replies or bot rounds pushes out.
- */
 const verdictReviews = (node: Json): Array<Json> => {
   const byId = new Map<string, Json>();
   for (const review of [
@@ -250,7 +230,6 @@ export const humanReviewsOf = (node: Json, author: string): Array<HumanReview> =
   });
 };
 
-/** Whether `node`'s author is a person: not a configured bot, not a GitHub App, not deleted. */
 const byPerson = (node: Json, bots: ReadonlyArray<ReviewBot>): boolean => {
   const who = login(node);
   return who !== "" && !byApp(node) && !/\[bot\]$/i.test(who) && !writtenByBot(node, bots);
@@ -268,18 +247,15 @@ export const personCommentsOf = (
 ): Array<PersonComment> => {
   const comments = arr(at(node, ["comments", "nodes"]));
   const reviews = arr(at(node, ["reviews", "nodes"])).filter((r) => r["state"] === "COMMENTED");
-  return (
-    [...comments, ...reviews]
-      .filter((each) => str(each["id"]) !== "" && byPerson(each, bots))
-      .map((each) => ({
-        id: str(each["id"]),
-        author: login(each),
-        at: postedAt(each),
-      }))
-      // One without a time can't be put in order, so it can't be told new from old.
-      .filter((each) => !Number.isNaN(Date.parse(each.at)))
-      .slice(-MAX_PERSON_COMMENTS)
-  );
+  return [...comments, ...reviews]
+    .filter((each) => str(each["id"]) !== "" && byPerson(each, bots))
+    .map((each) => ({
+      id: str(each["id"]),
+      author: login(each),
+      at: postedAt(each),
+    }))
+    .filter((each) => !Number.isNaN(Date.parse(each.at)))
+    .slice(-MAX_PERSON_COMMENTS);
 };
 
 /** How many of each the badge reads: `comments(last:…)` and `reviews(last:…)`. */
@@ -338,7 +314,6 @@ export const buildReviewState = (
   const summaries = summaryReviews(node, bots);
   const threads = arr(at(node, ["reviewThreads", "nodes"]));
   const botThreads = threads.filter((t) => startedByBot(t, bots));
-  // A person's thread: started by neither a configured bot nor any GitHub App account.
   const humanUnresolved = threads.filter((t) => {
     const first = threadComments(t)[0];
     return (

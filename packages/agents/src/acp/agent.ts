@@ -118,7 +118,6 @@ export const baseMessageOf = (error: unknown): string =>
 
 const DETAIL_LIMIT = 500;
 
-/** The provider's answer an ACP error carries in `data`, capped, when it adds to the message. */
 const detailOf = (error: unknown): string | undefined => {
   if (!(error instanceof AcpError)) return undefined;
   const raw = typeof error.data === "string" ? error.data : record(error.data)["message"];

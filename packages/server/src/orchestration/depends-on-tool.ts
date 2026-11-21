@@ -1,4 +1,3 @@
-// `depends_on`: a pull request declared to wait for another, and woken as that one moves.
 import { AppToolError, MAX_PR_DEPENDENCIES, type ThreadId } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";

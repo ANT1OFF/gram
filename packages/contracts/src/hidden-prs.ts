@@ -1,6 +1,3 @@
-// When a PR the user hid from the strip (`Thread.hiddenPrs`) asks to be seen again. The web app
-// reads it to draw the strip; the server reads it to narrow each entry as badges are published, so
-// something that cleared and came back counts as new even while no window shows the thread.
 import { samePr, type HiddenPr } from "./domain.ts";
 import { requiredChecksOf, type PrStatus } from "./git.ts";
 
@@ -81,7 +78,6 @@ export function narrowHiddenPrs(
     });
     if (badge === undefined || resurfaces(entry, badge)) return entry;
     const fresh = hiddenEntryOf(entry, badge);
-    // A badge that didn't read the reviews can't say the bot's change request cleared.
     const kept =
       badge.reviewUnread === true
         ? (entry.seen ?? []).filter((key) => key.startsWith("bot:") && !fresh.seen?.includes(key))

@@ -5,10 +5,6 @@ import type { LookDefaults } from "@/embed/contract";
 import { hostPaletteFor, type HostTheme } from "./host-theme";
 import type { ThemePrefs } from "./theme";
 
-// What an app that mounts Gram gives as the look a person sees until they choose their own
-// (`MountOptions.defaults`): a built-in palette by its id, an accent, a picture, the surfaces and
-// the sidebar's shape and icons, by name only. A person's own choice in Settings always wins.
-
 const PRESETS: readonly Palette[] = PRESET_PALETTES;
 const DEFAULT_PAIR: ReadonlySet<string> = new Set(
   PRESETS.filter((p) => p.id === DEFAULT_PALETTE_ID || p.pairId === DEFAULT_PALETTE_ID).map(
@@ -16,7 +12,6 @@ const DEFAULT_PAIR: ReadonlySet<string> = new Set(
   ),
 );
 
-/** The look's parts a person chooses, which an app's defaults fill until then. */
 type LookPart = "accent" | "backdrop" | "surfaces" | "sidebar" | "sidebarIcons";
 
 let current: LookDefaults | undefined;

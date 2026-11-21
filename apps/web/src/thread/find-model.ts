@@ -17,7 +17,6 @@ export interface FindMatch {
   readonly toolCallId?: string | undefined;
 }
 
-/** A tool's output can be a whole file; past this much of it, find doesn't look. */
 const TOOL_TEXT_LIMIT = 20_000;
 /** Past this many matches the count says "+", as a browser's does. */
 export const FIND_LIMIT = 999;
@@ -28,7 +27,6 @@ const toolText = (value: unknown): string => {
   return (text ?? "").slice(0, TOOL_TEXT_LIMIT);
 };
 
-/** What find searches in a message, lower-cased, kept per message (messages keep their identity). */
 const segmentCache = new WeakMap<GramUIMessage, readonly FindSegment[]>();
 
 export function findSegments(message: GramUIMessage): readonly FindSegment[] {

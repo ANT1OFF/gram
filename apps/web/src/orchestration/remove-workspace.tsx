@@ -46,7 +46,6 @@ export function RemoveWorkspaceDialog({
     () => (state === undefined ? undefined : workspaceRemoval(state, Object.values(byId))),
     [state, byId],
   );
-  // What the dialog said when the user confirmed, which closing the orchestrator would change.
   const [confirmed, setConfirmed] = useState<WorkspaceRemoval>();
   const removal = confirmed ?? live;
   const [closeWorkers, setCloseWorkers] = useState(false);
@@ -58,9 +57,7 @@ export function RemoveWorkspaceDialog({
   const { happens, kept } = removalLines(removal, closeWorkers);
   const workers = workersText(removal);
 
-  /** Closes a thread unless an earlier attempt already did, so a retry picks up where one failed. */
   const closeOnce = async (threadId: ThreadId) => {
-    // Remembered here as well as read from the store, whose `thread.removed` may not have arrived.
     if (!closed.current.has(threadId) && useThreadsStore.getState().byId[threadId] !== undefined) {
       try {
         await api.closeThread(threadId, {});
@@ -74,13 +71,10 @@ export function RemoveWorkspaceDialog({
   };
 
   const submit = async () => {
-    // A retry keeps the plan that was confirmed: the orchestrator it closed has cut its workers
-    // loose, so the live one would no longer list them.
     setConfirmed(removal);
     setPending(true);
     setError(undefined);
     try {
-      // The orchestrator first, so closing a worker wakes nobody.
       if (removal.orchestrator !== undefined) await closeOnce(removal.orchestrator.thread.id);
       for (const pass of removal.passes) await closeOnce(pass.thread.id);
       if (closeWorkers) {
@@ -88,7 +82,6 @@ export function RemoveWorkspaceDialog({
       }
       await api.removeWorkspace(workspaceId);
       await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
-      // Off a page that showed it: its settings page goes back to the list, a board or memory home.
       if (params.workspaceId === workspaceId) {
         void navigate({ to: inSettings ? "/settings/workspaces" : "/" });
       }
@@ -103,7 +96,6 @@ export function RemoveWorkspaceDialog({
     <DialogShell
       testId="remove-workspace-dialog"
       title={`Remove the workspace “${state.workspace.name}”?`}
-      // Closing mid-removal would hide work that carries on regardless, so it waits until done.
       onClose={pending ? ignore : onClose}
     >
       <ul

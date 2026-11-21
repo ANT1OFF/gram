@@ -1,13 +1,9 @@
-// What passes between Gram and an ACP agent as content: a message as prompt blocks, the slash
-// commands the agent lists, and a past session's conversation from the updates it replays.
-
 import type { SessionTranscriptMessage, SlashCommand, UserInput } from "@gram/contracts";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { type Json, record, records, text } from "./json.ts";
 
-/** The largest image sent inline; a bigger one goes as a link to its file. */
 const IMAGE_INLINE_MAX = 10 * 1024 * 1024;
 
 /**

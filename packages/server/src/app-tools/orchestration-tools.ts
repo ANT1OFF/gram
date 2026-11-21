@@ -75,7 +75,6 @@ export const originOf = (message: GramUIMessage): MessageOrigin | undefined => {
   return undefined;
 };
 
-/** Opens a queued item that carries more than one message. */
 const JOINED_PREFACE =
   "These are separate messages, oldest first. A later one may change an earlier one.";
 
@@ -105,20 +104,13 @@ export const joinMessages: JoinQueued = ({ input, queuedAt, messages }, next, no
   return { ...joined, origin };
 };
 
-/** What `send_message` delivers, less its retry id. */
 interface SendInput {
   readonly threadId: string;
   readonly text: string;
   readonly mode?: DeliveryMode;
-  /** The caller's retry id: a message that went to a server goes there once under it. */
   readonly clientRequestId?: string;
 }
 
-/**
- * How a message reaches a running thread. `queue`: after its turn ends. `steer`: into the turn,
- * once the tool calls under way finish, cancelling nothing. `interrupt`: the turn stops now, cutting
- * off its tool calls, and the agent answers the message; for a stop or a correction only.
- */
 type DeliveryMode = "queue" | "steer" | "interrupt";
 const DELIVERY_MODES = ["queue", "steer", "interrupt"] as const;
 
@@ -146,7 +138,6 @@ export const archiveHold = (
   if (thread.babysit?.phase === "watching") return "it is babysitting its pull request";
   const bound = thread.boundPr;
   const followed = [
-    // Without a binding, the badge is its checkout's own PR.
     ...(bound === undefined
       ? badge === undefined
         ? []
@@ -175,7 +166,6 @@ export const archiveHold = (
   return undefined;
 };
 
-/** How long a queued message has waited, as the sender is told. */
 const waited = (ms: number) => {
   const minutes = Math.floor(ms / 60_000);
   return minutes < 1 ? "under a minute" : minutes === 1 ? "1 minute" : `${minutes} minutes`;
@@ -195,23 +185,16 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
     const store = yield* ThreadStore;
     const hosts = yield* AgentHosts;
     const checkouts = yield* CheckoutService;
-    // Absent in runtime-only layers, where there are no watchers to release on park.
     const publisher = Option.getOrUndefined(yield* Effect.serviceOption(GitStatePublisher));
     const releaseWatchers = publisher === undefined ? Effect.void : publisher.sync;
-    // Absent in runtime-only layers, where nothing is ever delegated.
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
-    // Where a worker sent to a server is messaged and stopped: through the desktop app.
     const sentWork = Option.getOrUndefined(yield* Effect.serviceOption(SentWorkPort));
-    /** Epoch ms of each sender's recent sends, for the rate limit. */
     const sends = new Map<ThreadId, ReadonlyArray<number>>();
 
     const isDelegated = (caller: ThreadId, threadId: string) =>
       orchestration === undefined
         ? Effect.succeed(false)
         : orchestration.isDelegated(caller, threadId);
-    /**
-     * A gate may ask twice for one call, so this only reads. Anything that goes wrong asks the user.
-     */
     const needsApproval = (caller: ThreadId, { threadId }: { readonly threadId: string }) =>
       isDelegated(caller, threadId).pipe(
         Effect.map((delegated) => !delegated),
@@ -228,7 +211,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         return !(yield* isDelegated(caller, threadId)) && !(yield* isWorkerSend(caller, threadId));
       }).pipe(Effect.catchCause(() => Effect.succeed(true)));
 
-    // Exact persisted identity, including dormant threads; no prefix or title-based routing.
     const resolveSendTarget = (threadId: string) =>
       store
         .getThread(threadId as ThreadId)
@@ -290,7 +272,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
     const modelsFor = (tool: string, agent: AgentKind, profileId: string | undefined) =>
       selectableModels(store, hosts, agent, profileId).pipe(Effect.mapError(toolError(tool)));
 
-    /** A delegated or full-autonomy worker send with a retry id runs once. */
     const sendOnce = <A extends SentMessage, E>(
       caller: ThreadId,
       message: { readonly threadId: string; readonly text: string; readonly mode?: string },
@@ -321,11 +302,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           : result;
       });
 
-    /**
-     * One message to another thread, through whichever loop guard applies to the pair. With
-     * `ownWorkerOnly` it is refused unless the target is still the caller's own worker, which a
-     * send nobody approves needs: the user may detach one while a broadcast runs.
-     */
     const deliver = (
       caller: ThreadId,
       { threadId, text, mode, clientRequestId }: SendInput,
@@ -344,12 +320,9 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         yield* resolveSendTarget(threadId);
         const target = yield* summaryOf(tool, threadId);
         const source = yield* summaryOf(tool, caller);
-        // An orchestrator writing to its own worker: the back-to-back rule would refuse every
-        // follow-up to a brief, so its guard leaves that rule out, and the hop count stays at 1.
         const delegated =
           orchestration !== undefined && (yield* orchestration.isDelegated(caller, threadId));
         const workerSend = yield* isWorkerSend(caller, threadId);
-        // Recheck after the gate: a changed workspace/owner must not inherit the earlier exemption.
         if (uncarded && !delegated && !workerSend) {
           return yield* new AppToolError({
             tool,
@@ -359,7 +332,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         if (ownWorkerOnly && !delegated) {
           return yield* new AppToolError({ tool, message: "It is no longer your worker." });
         }
-        // A worker that runs on a server takes its orchestrator's messages there, and no other's.
         const sent = target.thread.sentTo;
         if (sent !== undefined) {
           if (!delegated)
@@ -375,7 +347,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
             });
           const answer = yield* sentWork.message(sent.origin, sent.workspaceId, sent.threadId, {
             text,
-            // A retry with the same id is the same message there, even after an unknown answer.
             clientKey:
               clientRequestId === undefined
                 ? randomUUID()
@@ -395,8 +366,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               }`,
             });
           yield* orchestration.noteMessage(caller, target.thread.id);
-          // Asked again, it is at work again: followed again if it had ended, and an end heard
-          // from a wait that began before this isn't taken as its last.
           const askedAt = yield* Clock.currentTimeMillis;
           yield* runtimes
             .updateThread(target.thread.id, (current) =>
@@ -419,7 +388,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
             note: `It runs on ${sent.server}, in ${sent.workspace}: its reply comes as its report.`,
           };
         }
-        // The guard reads only each side's latest user message.
         const callerUser = yield* findUserMessages(store, caller, { from: "newest", count: 1 });
         const callerOrigin = callerUser.length === 0 ? undefined : originOf(callerUser.at(-1)!);
         let depth = 1;
@@ -446,13 +414,8 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           depth = verdict.depth;
           counted = verdict.recentSends;
         }
-        // Steered unless the sender picks another mode: a steer cancels nothing, and a message
-        // that waits out the turn is often stale by the time it is read. A worker the user is
-        // talking to takes it by the same mode: the user's messages and its orchestration's go in
-        // side by side, neither held behind the other.
         const asked = mode ?? "steer";
         const role = source.thread.role;
-        // A worker's feature marks its message a worker's, which the receiving agent reads fenced.
         const feature = source.thread.spawnedBy?.feature;
         const input = {
           text,
@@ -470,8 +433,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         if (workerSend) yield* orchestration!.checkWorkerMessage(caller, target.thread.id);
         const canSteer = target.capabilities?.steer === true && target.status === "running";
         const steer = asked === "steer" || asked === "interrupt";
-        // An agent that can't stop its turn for a message (Codex) takes it as a steer, which lands
-        // at its next step anyway.
         const interrupt = asked === "interrupt" && target.capabilities?.steerInterrupt === true;
         const notes: Array<string> = [];
         if (asked === "interrupt" && canSteer && !interrupt) {
@@ -486,8 +447,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
             .steer(target.thread.id, input, interrupt ? { interrupt } : undefined)
             .pipe(
               Effect.as(true),
-              // The turn can end between the snapshot and the steer, or the agent refuse it; then
-              // it is an ordinary send, which a thread that can't take it at all refuses itself.
               Effect.catchTag("InvalidState", () => Effect.succeed(false)),
             ));
         let delivered: "sent" | "queued" | "steered" = "steered";
@@ -535,7 +494,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         };
       });
 
-    /** `text` with what the user said to the worker questions `ids` name after it. */
     const attachUserAnswers = (
       tool: string,
       caller: ThreadId,
@@ -570,7 +528,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           userMessages: Schema.optionalKey(
             Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: USER_MESSAGES_MAX })),
           ),
-          // Its limits are checked where it is read: this schema is every thread's to pay for.
           userAnswers: Schema.optionalKey(Schema.Array(Schema.String)),
         }),
         { text: ["message", "content"] },
@@ -671,7 +628,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         }),
         { text: ["message", "content"] },
       ),
-      // Only the caller's own workers are ever sent to, which is delegated like one send to each.
       needsApproval: () => Effect.succeed(false),
       handle: (caller, { text, feature, threadIds, mode }) =>
         Effect.gen(function* () {
@@ -741,7 +697,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
       handle: (caller, { threadId }) =>
         Effect.gen(function* () {
           const target = yield* otherThread("stop_thread", caller, threadId, "stop");
-          // A thread that runs on a server is stopped there.
           const sent = target.thread.sentTo;
           if (sent !== undefined) {
             if (sentWork === undefined)
@@ -759,7 +714,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               yield* orchestration.noteStop(caller, target.thread.id);
             return { threadId: target.thread.id, stopped: true };
           }
-          // A thread waiting out a provider limit would start again on its own: Stop ends that too.
           const waiting =
             target.thread.limitWait !== undefined && target.thread.limitWait.cancelled !== true;
           if (target.status !== "running" && target.status !== "starting" && !waiting) {
@@ -782,7 +736,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         threadId: Schema.optionalKey(Schema.NonEmptyString),
         interrupt: Schema.optionalKey(Schema.Boolean),
       }),
-      // Its own session goes no further than a restart once the turn it asks in has ended.
       needsApproval: (caller, { threadId }) =>
         threadId === undefined || threadId === caller
           ? Effect.succeed(false)
@@ -847,7 +800,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           const current = target.thread.model;
           const profile = profileId ?? current.profileId;
           const options = yield* modelsFor(tool, current.agent, profile);
-          // An alias, a pinned id or the picker's name, stored as the picker would store it.
           const chosen = listedRow(options, model);
           const stored = canonicalModelId(options, model) ?? model;
           if (chosen === undefined) {
@@ -878,8 +830,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
                 }),
           } as typeof current;
           if (orchestration !== undefined) {
-            // Admission holds on every path a model changes by, and a delegated switch also stays
-            // inside the charter's worker models.
             yield* orchestration.checkModelChange(target.thread.id, next);
             if (yield* orchestration.isDelegated(caller, threadId)) {
               yield* orchestration.checkWorkerModel(caller, next);
@@ -923,8 +873,6 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               message: `${current.model} supports ${efforts.join(", ")}.`,
             });
           }
-          // A delegated raise past high stays inside what the charter allows its model: a model
-          // off the roster runs at high or below (`checkWorkerModel`).
           if (
             orchestration !== undefined &&
             aboveHigh(variant) &&

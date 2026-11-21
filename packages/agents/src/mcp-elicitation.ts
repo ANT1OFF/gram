@@ -1,10 +1,3 @@
-// An MCP server's permission prompt (an MCP elicitation) as an approval card: what computer use
-// and the browser extensions raise before they touch an app or a site ("Allow ChatGPT to use
-// Safari?"). Only a prompt that is a yes or no is a card: its form asks for nothing but how long
-// the yes lasts. A form with fields of its own, a link to open and a user verification are
-// declined. Each adapter reads its agent's request into `McpPrompt` and writes the answer back
-// in its agent's shape.
-
 import type { ApprovalScope } from "@gram/contracts";
 
 /** An elicitation as either agent hands it over. */
@@ -41,23 +34,19 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 
-/** How long a word for a grant lasts: "session", "always", or neither (once). */
 const lifetimeOf = (word: string): Exclude<ApprovalScope, "once"> | undefined => {
   const lower = word.toLowerCase();
   if (lower.includes("session")) return "session";
   return /always|permanent|forever|persistent/.test(lower) ? "always" : undefined;
 };
 
-/** A word that grants this one use and no more. */
 const ONCE = /^(?:once|accept|approve|allow)(?:[_\s-]*(?:once(?:[_\s-]*only)?|this[_\s-]*time))?$/i;
 
 interface Field {
   readonly key: string;
   readonly type: string | undefined;
-  /** An enum's values, from `enum` or `oneOf`. */
   readonly options: ReadonlyArray<string>;
   readonly default: unknown;
-  /** A boolean that asks whether to remember the grant, by its key, title or description. */
   readonly remembers: boolean;
 }
 
@@ -66,11 +55,9 @@ interface Form {
   readonly required: ReadonlyArray<string>;
 }
 
-/** The prompt's form, or `undefined` for a mode that has none or a schema that isn't one. */
 const formOf = (prompt: McpPrompt): Form | undefined => {
   if (prompt.mode !== "form" && prompt.mode !== "openai/form" && prompt.mode !== "openaiForm")
     return undefined;
-  // A form with no schema asks for nothing but the yes.
   const schema = prompt.requestedSchema === undefined ? {} : record(prompt.requestedSchema);
   if (schema === undefined) return undefined;
   const properties = record(schema["properties"]) ?? {};
@@ -105,7 +92,6 @@ const formOf = (prompt: McpPrompt): Form | undefined => {
   return { fields, required };
 };
 
-/** The lifetimes the prompt's `_meta.persist` names. */
 const metaLifetimes = (prompt: McpPrompt): ReadonlySet<ApprovalScope> => {
   const meta = record(prompt.meta);
   const persist = meta?.["persist"];
@@ -119,10 +105,6 @@ const metaLifetimes = (prompt: McpPrompt): ReadonlySet<ApprovalScope> => {
   return found;
 };
 
-/**
- * The accepting answer for `scope`, or `undefined` where the prompt can't be accepted that way:
- * it doesn't offer that lifetime, or its form requires a field a yes or no can't fill.
- */
 const acceptFor = (prompt: McpPrompt, scope: ApprovalScope): McpPromptAnswer | undefined => {
   const form = formOf(prompt);
   if (form === undefined) return undefined;
@@ -194,7 +176,6 @@ export const promptAnswer = (
   gated: boolean,
 ): McpPromptAnswer => {
   if (!allow) return DECLINE;
-  // A scope the card didn't offer falls back to the one use, never to a longer grant.
   const granted = promptScopes(prompt, gated).includes(scope) ? scope : "once";
   return acceptFor(prompt, granted) ?? DECLINE;
 };

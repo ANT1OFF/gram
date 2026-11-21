@@ -1,5 +1,3 @@
-// Comparing decoded values as `start.ts` does: a profile's stored settings against those asked for.
-
 /** Two decoded values, alike whatever order their keys were written in. */
 export const sameValue = (a: unknown, b: unknown): boolean => {
   if (Array.isArray(a) || Array.isArray(b)) {

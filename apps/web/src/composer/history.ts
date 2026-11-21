@@ -3,6 +3,8 @@ import { useEffect } from "react";
 
 import { useApi } from "@/api/context";
 
+const recallStillWorksForThisSessionsPrompts = (): void => {};
+
 export interface PromptHistory {
   push(text: string): void;
   /** The next older prompt, or undefined at the oldest. `draft` is restored when stepping back. */
@@ -16,9 +18,7 @@ export interface PromptHistory {
 }
 
 export function createPromptHistory(limit = 50): PromptHistory {
-  /** Oldest first, each prompt once. */
   const entries: string[] = [];
-  /** Steps back from the newest entry; -1 means not navigating. */
   let index = -1;
   let draft = "";
 
@@ -61,7 +61,6 @@ export function createPromptHistory(limit = 50): PromptHistory {
 
 const histories = new Map<string, PromptHistory>();
 
-/** Per-thread prompt navigation for the window's lifetime. */
 function historyFor(threadId: string): PromptHistory {
   let history = histories.get(threadId);
   if (!history) {
@@ -80,14 +79,9 @@ export function usePromptHistory(threadId: ThreadId): PromptHistory {
   const history = historyFor(threadId);
   useEffect(() => {
     let cancelled = false;
-    api.promptHistory(threadId).then(
-      (prompts) => {
-        if (!cancelled) history.seed(prompts);
-      },
-      () => {
-        // Recall still works for this session's prompts.
-      },
-    );
+    api.promptHistory(threadId).then((prompts) => {
+      if (!cancelled) history.seed(prompts);
+    }, recallStillWorksForThisSessionsPrompts);
     return () => {
       cancelled = true;
     };

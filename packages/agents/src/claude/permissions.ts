@@ -109,7 +109,6 @@ const toSdkUpdate = (update: PermissionUpdate): SdkPermissionUpdate => {
   }
 };
 
-/** `settingSources` undefined means the SDK default (user, project, local). */
 const loadsLocalSettings = (settingSources: ReadonlyArray<SettingSource> | undefined): boolean =>
   settingSources === undefined || settingSources.includes("local");
 
@@ -119,10 +118,6 @@ export interface Resolution {
   readonly setMode?: PermissionMode;
 }
 
-/**
- * Multi-select answers are comma-separated in `updatedInput.answers`, keyed by question text
- * (`AskUserQuestionOutput.answers` in the SDK's `sdk-tools.d.ts`).
- */
 const MULTI_SELECT_SEPARATOR = ", ";
 
 export const resolveRequest = (
@@ -152,8 +147,7 @@ export const resolveRequest = (
           ? suggestions.map((u) => ({ ...u, destination: "session" as const }))
           : loadsLocalSettings(settingSources)
             ? suggestions
-            : // Rules written to settings only take effect in-session while their source is loaded.
-              [
+            : [
                 ...suggestions,
                 ...suggestions
                   .filter((u) => u.destination !== "session")

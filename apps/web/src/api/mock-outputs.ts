@@ -1,9 +1,3 @@
-// The mock's workspace Files: a few synthetic outputs for each thread of a workspace (browser
-// evidence, a stored tool image, a written document, a sent report), made from the world's threads
-// when asked, so any scenario with workers shows some. The pictures are drawn SVG stand-ins served
-// through the same `fsImage` / `readAttachment` a real screenshot is, and only for the thread that
-// "made" them; nothing here is a real capture.
-
 import {
   checkoutRoots,
   effectiveCheckout,
@@ -30,7 +24,6 @@ const ATTACHMENTS = "/Users/dev/Library/Application Support/gram-state/attachmen
 interface Planned {
   readonly path: string;
   readonly source: OutputSource;
-  /** Before the thread's last activity. */
   readonly ago: number;
   readonly size: number;
 }
@@ -41,11 +34,9 @@ const slug = (text: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "") || "work";
 
-/** What `thread` "made", the `index`th of its workspace: workers more, the orchestrator a plan. */
 const planFor = (thread: Thread, index: number): Planned[] => {
   const root = effectiveCheckout(thread).path;
   const feature = thread.spawnedBy?.feature ?? slug(thread.title);
-  // Spread over the last few days, so the view groups by day.
   const base = index * 9 * HOUR;
   if (thread.role === "orchestrator") {
     return [
@@ -90,7 +81,6 @@ const planFor = (thread: Thread, index: number): Planned[] => {
       ago: base + 12 * MINUTE,
       size: 412_000,
     });
-    // Sent from outside its checkout: listed and revealed, but no reader of the thread opens it.
     planned.push({
       path: `/Users/dev/Downloads/${feature}-summary.txt`,
       source: "sent",
@@ -101,7 +91,6 @@ const planFor = (thread: Thread, index: number): Planned[] => {
   return planned;
 };
 
-/** The threads of `workspaceId`, orchestrator first, then workers by title. */
 const workspaceThreads = (world: MockWorld, workspaceId: WorkspaceId): Thread[] =>
   world
     .threads()
@@ -164,7 +153,6 @@ const hue = (text: string) => {
   return hash % 360;
 };
 
-/** A drawn page: a title bar, a sidebar and a few blocks, tinted by `path`. */
 const pageSvg = (path: string, recording: boolean) => {
   const h = hue(path);
   const accent = `hsl(${h} 62% 56%)`;
@@ -175,23 +163,16 @@ const pageSvg = (path: string, recording: boolean) => {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" fill="#f7f7f8"/><rect width="320" height="18" fill="#e6e6e9"/><circle cx="10" cy="9" r="3" fill="#ff5f57"/><circle cx="20" cy="9" r="3" fill="#febc2e"/><circle cx="30" cy="9" r="3" fill="#28c840"/><rect x="0" y="18" width="70" height="182" fill="${soft}"/><rect x="10" y="30" width="48" height="6" rx="3" fill="${accent}"/><rect x="10" y="44" width="40" height="5" rx="2.5" fill="#c9c9cf"/><rect x="10" y="56" width="44" height="5" rx="2.5" fill="#c9c9cf"/><rect x="86" y="32" width="150" height="10" rx="3" fill="#2b2b30"/><rect x="86" y="52" width="216" height="56" rx="6" fill="#fff" stroke="#e1e1e5"/><rect x="96" y="64" width="120" height="6" rx="3" fill="#c9c9cf"/><rect x="96" y="78" width="160" height="6" rx="3" fill="#dcdce1"/><rect x="96" y="92" width="64" height="8" rx="4" fill="${accent}"/><rect x="86" y="120" width="104" height="64" rx="6" fill="#fff" stroke="#e1e1e5"/><rect x="198" y="120" width="104" height="64" rx="6" fill="#fff" stroke="#e1e1e5"/><rect x="96" y="132" width="60" height="6" rx="3" fill="${accent}" opacity="0.6"/><rect x="208" y="132" width="70" height="6" rx="3" fill="#c9c9cf"/>${play}</svg>`;
 };
 
-/** A drawn diagram, for an image that isn't a page. */
 const diagramSvg = (path: string) => {
   const h = hue(path);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" fill="hsl(${h} 30% 96%)"/><g fill="none" stroke="hsl(${h} 45% 45%)" stroke-width="2"><rect x="30" y="80" width="70" height="40" rx="8"/><rect x="125" y="40" width="70" height="40" rx="8"/><rect x="125" y="120" width="70" height="40" rx="8"/><rect x="220" y="80" width="70" height="40" rx="8"/><path d="M100 100 L125 60 M100 100 L125 140 M195 60 L220 100 M195 140 L220 100"/></g></svg>`;
 };
 
-/** The drawings are ASCII, so `btoa` takes them as they are. */
 const toBase64 = (text: string) => btoa(text);
 
 /** The server reader a request comes through: `fs.image`, `attachment.read` or `fs.file`. */
 export type MockOutputReader = "image" | "attachment" | "file";
 
-/**
- * The synthetic output `threadId` made at `path`, when `reader` would serve it on the server:
- * `attachment.read` only what a message part names (a tool's image, a sent file), and `fs.image` /
- * `fs.file` what is in the thread's checkouts or a file it wrote.
- */
 const servedOutput = (
   world: MockWorld,
   threadId: ThreadId | undefined,

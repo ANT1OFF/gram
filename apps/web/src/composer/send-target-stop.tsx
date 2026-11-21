@@ -13,7 +13,6 @@ import { Spinner } from "@/motion";
 
 import { type SendCheckRow, type SendTarget, sendTargetKey, sentModelLabel } from "./send-target";
 
-/** The picker's value for this computer. */
 const HERE = "__here__";
 
 /**

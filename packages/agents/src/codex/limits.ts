@@ -3,11 +3,9 @@ import type { AgentEvent, SubscriptionLimitReport } from "@gram/contracts";
 const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
-/** Positions aren't durations; model-specific buckets aren't the subscription allowance. */
 function codexLimitSnapshot(snapshot: unknown): ReadonlyArray<SubscriptionLimitReport> {
   const raw = object(snapshot);
   if (raw.limitId != null && raw.limitId !== "codex") return [];
-  // Credits left (or unlimited): Codex goes on past a full window, billed, rather than stopping.
   const balance = object(raw.credits);
   const credits = balance.hasCredits === true || balance.unlimited === true;
   return [raw.primary, raw.secondary].flatMap((lane) => {

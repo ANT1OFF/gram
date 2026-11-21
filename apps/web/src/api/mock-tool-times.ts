@@ -1,11 +1,5 @@
 import type { GramUIMessageChunk, ToolTime } from "@gram/contracts";
 
-// The mock's `toolTimes`, as the server stamps them (`stampToolTime`): when each tool call of a
-// message starts and ends, sent as the message's whole map again on each change. Scripted turns
-// play in milliseconds, and the shots hold the clock still, so the mock lets each call take a
-// believable time of its own by tool, never less than the clock says.
-
-/** How long a scripted call of each tool takes, in ms. */
 const TAKES: Readonly<Record<string, number>> = {
   Bash: 6_200,
   Read: 400,
@@ -20,7 +14,6 @@ const TAKES: Readonly<Record<string, number>> = {
   WebSearch: 2_400,
 };
 const TAKES_OTHERWISE = 1_500;
-/** The model's own time between one call's end and the next one's start. */
 const BETWEEN = 1_800;
 
 export interface MockToolClock {

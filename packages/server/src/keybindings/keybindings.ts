@@ -25,10 +25,6 @@ const bindingsCodec = {
   },
 };
 
-/**
- * The overrides to apply for `text`, the file as read (`undefined` when it couldn't be): a version
- * with any problem is broken as a whole, and the last good one stays in use.
- */
 const settleKeybindings = (dataDir: string, text: string | undefined, readProblem?: string) => {
   const parsed =
     text === undefined
@@ -41,7 +37,6 @@ const settleKeybindings = (dataDir: string, text: string | undefined, readProble
   return settleLastGood(lastGoodFiles(dataDir), read, bindingsCodec);
 };
 
-/** The chords the web registry understands: `mod`, `alt` and `shift`, then one key. */
 const KEYS_PATTERN = "^((mod|ctrl|alt|shift)\\+)*[^+\\s]+$";
 const KEYS = new RegExp(KEYS_PATTERN, "i");
 
@@ -100,7 +95,6 @@ export function parseKeybindings(text: string): {
 const formatKeybindingsFile = (bindings: KeybindingOverrides): string =>
   `${JSON.stringify({ $schema: `./${KEYBINDINGS_SCHEMA_FILE}`, bindings }, null, 2)}\n`;
 
-/** Writes the schema beside the file so editors validate and complete it. */
 const writeSchema = async (dataDir: string) => {
   await mkdir(dataDir, { recursive: true });
   await writeFile(
@@ -188,8 +182,6 @@ export function watchKeybindings(
       return undefined;
     }
   };
-  // Capture before returning, including a missing file. An asynchronous first stat can absorb
-  // the first write as its baseline when the native event for that write is lost.
   let previous = stamp();
   const changed = () => {
     if (stopped) return;
@@ -222,7 +214,6 @@ export function watchKeybindings(
       });
       close = () => watcher.close();
     } catch (error) {
-      // Linux's inotify limit (ENOSPC/EMFILE) throws here; polling the file needs no watch.
       options.onWatchFailed?.(error);
       startPolling();
     }

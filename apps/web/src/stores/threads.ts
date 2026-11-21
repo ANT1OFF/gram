@@ -115,12 +115,10 @@ export interface ThreadsState {
 const samePlan = (a: ThreadPlan | undefined, b: ThreadPlan | undefined): boolean =>
   a === b || (a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b));
 
-/** `byId` with one thread replaced by `fn`; the same map when `fn` changes nothing, so nobody re-renders. */
 const sameCompaction = (a: CompactionActivity | undefined, b: CompactionActivity | undefined) =>
   a === b ||
   (a?.startedAt === b?.startedAt && a?.trigger === b?.trigger && a?.preTokens === b?.preTokens);
 
-/** How many background shells' last output a thread keeps, running or ended. */
 const BACKGROUND_OUTPUTS_KEPT = 8;
 
 const patch = (
@@ -136,7 +134,6 @@ const patch = (
 
 export const createThreadsSlice = (
   set: (fn: (s: ThreadsState) => Partial<ThreadsState>) => void,
-  /** The current state, for events that read it before changing anything. */
   get?: () => ThreadsState,
 ): ThreadsState => ({
   ready: false,
@@ -150,10 +147,7 @@ export const createThreadsSlice = (
   applyEvent(event) {
     switch (event.type) {
       case "threads.snapshot":
-        // A snapshot stands in for events missed while disconnected, turns that started among
-        // them: what was suggested may answer a turn that's gone. Focus asks again.
         useSuggestionsStore.getState().reset();
-        // It also stands in for a lapsed connector's return, which forgets its dismissal.
         useLapsedDismissals
           .getState()
           .reconcile(
@@ -161,8 +155,6 @@ export const createThreadsSlice = (
           );
         set(() => ({
           ready: true,
-          // Live details override snapshot activity only until the next snapshot. It accounts
-          // for statuses missed while disconnected, including background work starting/stopping.
           statusDetail: {},
           byId: Object.fromEntries(
             event.threads.map(({ usage: _usage, turnPlan: _turnPlan, ...t }) => [t.thread.id, t]),
@@ -174,13 +166,11 @@ export const createThreadsSlice = (
             event.threads.flatMap((t) => (t.turnPlan ? [[t.thread.id, t.turnPlan]] : [])),
           ),
         }));
-        // Turns that started while disconnected end the WebRTC switch as an event's would.
         endWebRtcWhereAgentsWork(Object.fromEntries(event.threads.map((t) => [t.thread.id, t])));
         return;
       case "thread.upsert":
         set((s) => {
           const current = s.byId[event.thread.id];
-          // Publishes can land out of commit order; the higher revision is the later write.
           const held = current?.thread.revision;
           const revision = event.thread.revision;
           if (held !== undefined && revision !== undefined && revision < held) return s;
@@ -191,7 +181,6 @@ export const createThreadsSlice = (
         });
         return;
       case "thread.removed": {
-        // The server keeps the closed thread for ⌘⇧T.
         useThreadHistory.getState().forget(event.threadId);
         useSuggestionsStore.getState().clear(event.threadId);
         useLapsedDismissals.getState().prune(event.threadId, []);
@@ -205,13 +194,9 @@ export const createThreadsSlice = (
         return;
       }
       case "thread.status":
-        // A turn under way makes the last one's suggested replies stale.
         if (event.status === "starting" || event.status === "running") {
           useSuggestionsStore.getState().clear(event.threadId);
         }
-        // Most of these only move the activity line, several a second per working thread; that
-        // leaves `byId` alone, so the sidebar and every `byId` subscriber sit it out. Every one
-        // states the compaction under way, so one without it says none is.
         set((s) => {
           const detail = event.detail ?? "";
           return {
@@ -232,8 +217,6 @@ export const createThreadsSlice = (
                 : { ...s.statusDetail, [event.threadId]: detail },
           };
         });
-        // A turn under way ends the user's WebRTC switch on every page its folders serve: on each
-        // such status, since turning it off is a no-op where it is off.
         if (get !== undefined) endWebRtcWhereAgentsWork(get().byId, [event.threadId]);
         return;
       case "thread.request":
@@ -265,7 +248,6 @@ export const createThreadsSlice = (
           byId: patch(s.byId, event.threadId, (t) => ({
             ...t,
             identity: event.identity,
-            // A thread first seen after the snapshot learns what its agent can do here.
             ...(event.capabilities === undefined ? {} : { capabilities: event.capabilities }),
           })),
         }));
@@ -276,9 +258,6 @@ export const createThreadsSlice = (
         );
         return;
       case "thread.plan":
-        // The todo list moves with every step the agent ticks off, and the sidebar shows none of it,
-        // so only a change to the thread's plan touches `byId`.
-        // A late plan for a thread already removed would come back with it if it were reopened.
         set((s) => ({
           plans: s.byId[event.threadId] ? { ...s.plans, [event.threadId]: event.items } : s.plans,
           byId: patch(s.byId, event.threadId, (t) => {
@@ -322,8 +301,6 @@ export const createThreadsSlice = (
         set((s) => ({
           byId: patch(s.byId, event.threadId, (t) => ({
             ...t,
-            // Kept past the task's end, so a finished shell still shows what it last wrote; only
-            // the newest few, as the server sends each running task's whole tail again.
             backgroundOutput: [
               ...(t.backgroundOutput ?? []).filter((each) => each.taskId !== output.taskId),
               output,
@@ -391,9 +368,6 @@ export const createThreadsSlice = (
         set(() => ({ showPanel: event }));
         return;
       case "pr.reviewRound": {
-        // The Review tab refetches through the `git.state` that accompanies a round; this is the toast.
-        // Approval or changes requested on head is the user's cue, so it notifies natively too.
-        // A worker's round is the worker's: its review monitor wakes it, and the user isn't told.
         const owner = get?.().byId[event.threadId]?.thread;
         if (owner !== undefined && agentOwnsPrEvents(owner)) return;
         const verdict = event.round.verdictOnHead;
@@ -430,11 +404,8 @@ export const createThreadsSlice = (
       case "outputs.changed":
       case "docs.changed":
       case "pages.changed":
-        // Only query caches hold these, and `useServerEvents` invalidates them; it also pulls the
-        // settings again on `settings.changed`.
         return;
       default:
-        // A new server event must be handled here rather than silently dropped.
         event satisfies never;
     }
   },
@@ -460,7 +431,6 @@ export const createThreadsSlice = (
 
 export const useThreadsStore = create<ThreadsState>()((set, get) => createThreadsSlice(set, get));
 
-/** Applies the server events still waiting for their frame, set while `useServerEvents` runs. */
 let flushPending: (() => void) | undefined;
 
 /**
@@ -469,9 +439,7 @@ let flushPending: (() => void) | undefined;
  */
 export const flushServerEvents = () => flushPending?.();
 
-/** How deep in applying a batch of server events we are; 0 outside one. */
 let applying = 0;
-/** What waits for the batch being applied to end, each once however often it was asked for. */
 const settling = new Set<() => void>();
 
 /**
@@ -515,9 +483,6 @@ export const setServerEventsFlush = (flush: () => void) => {
   };
 };
 
-// ---------------------------------------------------------------------------------------------
-// Closing: the store follows the server's answer, not only its event.
-
 /**
  * Drops a thread the server has said is closed. Every list, the Workspaces tree and its Done row
  * included, holds a summary until `thread.removed` takes it out, and nothing else did: a client
@@ -546,11 +511,9 @@ export const closeThread = async (
     if (state.byId[threadId] === undefined) removed = true;
   });
   try {
-    // Called as the caller would, so an absent `options` isn't passed as `undefined`.
     const result = await (options === undefined
       ? api.closeThread(threadId)
       : api.closeThread(threadId, options));
-    // The removal the server sent before answering may still be waiting for its frame.
     flushServerEvents();
     const now = useThreadsStore.getState().byId[threadId]?.thread.createdAt;
     if (!removed && now === lifetime) forgetClosedThread(threadId);
@@ -559,9 +522,6 @@ export const closeThread = async (
     unsubscribe();
   }
 };
-
-// ---------------------------------------------------------------------------------------------
-// Queue operations: optimistic locally, rolled back if the server rejects.
 
 interface QueueApi {
   queueEdit(threadId: ThreadId, itemId: QueueItemId, input: UserInput): Promise<void>;
@@ -585,8 +545,6 @@ async function optimistic(
   try {
     await commit();
   } catch (error) {
-    // Only over the guess: a queue the server sent meanwhile (a turn took an item, another window
-    // added one) is what the queue is now, and putting `previous` back would undo it.
     if (getState().byId[threadId]?.queue === guessed) getState().setQueue(threadId, previous);
     throw error;
   }

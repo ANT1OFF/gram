@@ -51,7 +51,6 @@ export interface MachineBusy {
 
 /** A joined machine's update to this Gram's release, as the server keeps it. Times are epoch ms. */
 export type MachineUpdate =
-  /** Busy: it updates once it is idle. */
   | { readonly phase: "waiting"; readonly release: string; readonly busy: MachineBusy }
   | {
       readonly phase: "downloading";
@@ -128,7 +127,6 @@ export type OfflineReason =
   | { readonly kind: "tailscale-down"; readonly cause: TailscaleDown }
   | { readonly kind: "unconfirmed"; readonly at: number }
   | { readonly kind: "bad-signature"; readonly at: number }
-  /** Its clock against this machine's: positive when it is ahead. */
   | { readonly kind: "clock"; readonly at: number; readonly skewMs: number }
   | {
       readonly kind: "mismatch";
@@ -249,9 +247,7 @@ const refusal = async (response: Response, fallback: string): Promise<MachinesEr
     const value: unknown = JSON.parse(text);
     if (typeof value === "object" && value !== null && "message" in value)
       return new MachinesError(String(value.message));
-  } catch {
-    // Plain text.
-  }
+  } catch (_plainText) {}
   return new MachinesError(text.trim() !== "" && text.length < 200 ? text : fallback);
 };
 
@@ -484,9 +480,7 @@ export const machinesApi = {
     let value: { message?: unknown; output?: unknown; reason?: unknown; started?: unknown } = {};
     try {
       value = JSON.parse(text) as typeof value;
-    } catch {
-      // Plain text.
-    }
+    } catch (_plainText) {}
     const output = typeof value.output === "string" ? value.output : "";
     if (!response.ok)
       throw new SshJoinError(
@@ -535,9 +529,7 @@ export const machinesApi = {
     } = {};
     try {
       value = JSON.parse(text) as typeof value;
-    } catch {
-      // Plain text.
-    }
+    } catch (_plainText) {}
     const output = typeof value.output === "string" ? value.output : "";
     if (!response.ok)
       throw new SshJoinError(

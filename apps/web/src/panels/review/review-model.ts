@@ -16,9 +16,7 @@ export const SEVERITY_LABEL: Record<ReviewSeverity, string> = {
 
 interface ReviewFileGroup {
   path: string;
-  /** Unresolved threads on current lines, most severe first, then by line. */
   current: ReviewThread[];
-  /** Unresolved threads whose lines changed since the review. */
   outdated: ReviewThread[];
 }
 

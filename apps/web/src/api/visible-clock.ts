@@ -18,9 +18,7 @@ export const visibleTimeClock = (
   base: Clock.Clock,
   page: PageVisibility,
 ): { readonly clock: Clock.Clock; readonly stop: () => void } => {
-  /** When the page was last hidden, on `base`, while it still is. */
   let hiddenAt: number | undefined;
-  /** How long the page was hidden before that. */
   let hiddenFor = 0;
   const follow = () => {
     const now = base.currentTimeMillisUnsafe();
@@ -32,7 +30,6 @@ export const visibleTimeClock = (
     return now;
   };
   const millis = () => {
-    // Read the page too: a timer can run before the browser's `visibilitychange` event does.
     const now = follow();
     return (hiddenAt ?? now) - hiddenFor;
   };

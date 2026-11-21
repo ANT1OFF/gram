@@ -15,19 +15,8 @@ import type { Ask } from "./ask-model";
 import type { SendAction } from "./ask-answer";
 import type { WorkspaceAsks } from "./ask-stack";
 
-// Answering an ask from outside the window: a desktop notification, the menu bar. One rule for
-// all of them:
-//
-// - An approval shows its exact command and extras, or says it was cut short and offers Open only.
-// - Allow (Merge for a merge) is the ask's own Allow option, answered with `holdAnswer`.
-// - An action answers only the very ask that was shown: same key, same fingerprint, still waiting.
-//
-// No React.
-
-/** The most equal asks one Allow answers from outside the window ("Allow 99"). */
 const MAX_AWAY_COUNT = 99;
 
-/** A question's choices as they read: each label and what it says it means. */
 const choicesOf = (
   choices: ReadonlyArray<{
     readonly label: string;
@@ -35,7 +24,6 @@ const choicesOf = (
   }> = [],
 ) => choices.map((choice) => [choice.label, choice.description ?? null]);
 
-/** A request's own words and input, as its card reads. */
 const requestRead = (request: PendingRequest) => {
   switch (request.kind) {
     case "approval":
@@ -137,22 +125,16 @@ export const mergesPr = (request: ApprovalRequest): boolean =>
   (typeof request.input["command"] === "string" &&
     /^gh pr merge(?:\s|$)/.test(request.input["command"]));
 
-/** The approval an ask answers, if it is one. */
 const approvalOf = (ask: Ask): ApprovalRequest | undefined => {
   const request = ask.group?.entries[0]?.request;
   return ask.icon === "approval" && request?.kind === "approval" ? request : undefined;
 };
 
-/**
- * A line that can't be shown whole: a plain start, marked as cut. A character that hides or
- * reorders text shows as its marker (`revealHidden`), a line break or tab as a replacement mark.
- */
 const cutLine = (line: string): string => {
   const plain = [...revealHidden(line)].map((char) => (noticePlain(char) ? char : "�"));
   return `${plain.slice(0, NOTICE_ROW_CHARS - 1).join("")}…`;
 };
 
-/** A plain word or two of the command for a title, or nothing when it has none. */
 const verbOf = (command: string): string | undefined => {
   const words = command.trim().split(/\s+/).slice(0, 2);
   const plain = words.filter(
@@ -187,23 +169,10 @@ export interface AwayButton {
   readonly option: number;
 }
 
-/** The input field an approval leads with, as `approvalSubject` picks it. */
 const SUBJECT_KEYS = ["command", "file_path", "url"] as const;
 
-/** An input value as the stack's Details shows it: a string as is, anything else as JSON. */
 const raw = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value));
 
-/**
- * The exact lines an approval answers, from its raw input, or `undefined` when they can't be shown
- * faithfully: a value with a control, format or line-breaking character (a tab, a newline, a bidi
- * override) would read as something else once drawn, so it is refused before anything is joined
- * or normalized.
- *
- * - A command, path or URL: it, then each other argument as `label: value`.
- * - An app tool: the server's description of the resolved call (its PR, method and holds for a
- *   merge), then the tool and its whole input. A merge tool without that description is refused:
- *   its input alone doesn't name the pull request.
- */
 const exactLines = (request: ApprovalRequest): string[] | undefined => {
   const key = SUBJECT_KEYS.find((candidate) => typeof request.input[candidate] === "string");
   const lines =
@@ -268,7 +237,6 @@ export const awayAsk = (ask: Ask, actions: boolean): AwayAsk => {
     (candidate) => candidate.action.kind === "group" && candidate.action.decision === "allow",
   );
   if (!actions || option < 0 || ask.count > MAX_AWAY_COUNT) return { text, whole: true };
-  // The Inbox's own verb, "Allow once" or "Allow 3 once"; a PR's merge says Merge.
   const label = mergesPr(request)
     ? "Merge"
     : (ask.options[option]?.label ?? allowOnceLabel(ask.count));
@@ -294,7 +262,6 @@ export const checkAwayAction = (
   if (shown.button === undefined) return undefined;
   const found = findShownAsk(all, shown);
   if (found === undefined) return undefined;
-  // The button the ask would offer now, with its lines still whole, must be the one shown.
   const now = awayAsk(found.ask, true).button;
   if (now?.label !== shown.button.label || now.option !== shown.button.option) return undefined;
   const option = found.ask.options[now.option];

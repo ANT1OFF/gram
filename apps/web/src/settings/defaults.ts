@@ -74,7 +74,6 @@ export const restorePatch = (list: readonly DefaultSetting[]): SettingsPatch => 
 
 const DEFAULT_CHIME = chimeOf(DEFAULT_SETTINGS.notifications);
 
-/** A page's settings by key, so a row names its own and the page lists them all. */
 const defaults = <K extends string>(settings: Record<K, DefaultSetting>) => settings;
 
 /** Settings → General. */
@@ -98,14 +97,12 @@ export const GENERAL_DEFAULTS = defaults({
     label: "Overview sidebar",
     read: overviewSidebarOf,
     reset: { layout: { overviewSidebar: null } },
-    // The window lays it out from the layout store, which the settings sync keeps.
     afterRestore: () => useLayoutStore.getState().setOverviewSidebar(undefined),
   },
   overviewSections: {
     label: "Sidebar sections",
     read: overviewHiddenOf,
     reset: { layout: { overviewSections: null } },
-    // Laid out from the layout store too, which the settings sync keeps.
     afterRestore: () => useLayoutStore.getState().setOverviewHidden(OVERVIEW_HIDDEN_BY_DEFAULT),
   },
   defaultFolder: {

@@ -15,9 +15,7 @@ interface PathFieldProps {
   value: string;
   onChange: (value: string) => void;
   debounceMs?: number;
-  /** A joined machine whose folders are suggested, through its host; this Mac's when absent. */
   hostId?: HostId | undefined;
-  /** The field's name; "Project path" when absent. */
   label?: string;
   placeholder?: string;
 }

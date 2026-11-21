@@ -1,24 +1,10 @@
-/**
- * The standing instructions a role adds to a session. They reach the
- * agent at every open, by whatever its harness has for it (`ADMITTED` in `rules.ts` says which, and
- * where each falls short), so a resume or a compaction doesn't lose them.
- * They guide; nothing here is a boundary. What an orchestrator may do to other threads is decided
- * by the delegation rule in `rules.ts`, and what it may do outward by the adapter's gate.
- */
-
 import { VERIFY_FILE, type AgentKind, type Autonomy } from "@gram/contracts";
 import { DECISIONS_FILE } from "./memory.ts";
 
-/** One repo of a workspace, as the role prompt names it. */
 interface PromptProject {
   readonly name: string;
   readonly root: string;
-  /** The project whose root is the orchestrator's working directory. */
   readonly home: boolean;
-  /**
-   * The folder of a workspace a profile made (`Workspace.fromProfile`): no repository, and a
-   * worker spawned in it gets a new folder of its own.
-   */
   readonly folder?: boolean | undefined;
 }
 
@@ -39,12 +25,6 @@ export interface RolePromptInput {
   readonly workerMachines?: string | undefined;
 }
 
-/**
- * What one harness has to be told that the others don't, as list items; empty for Claude.
- * - Codex keeps MCP tools behind its `tool_search` until it looks for them, so a thread that is
- *   only told to "report" or "spawn a worker" may never find the tool. `tools` are the ones its
- *   role turns on.
- */
 const harnessLines = (input: {
   readonly agent: AgentKind | undefined;
   readonly gated: boolean | undefined;
@@ -57,7 +37,6 @@ const harnessLines = (input: {
   return "";
 };
 
-/** The tools an orchestrator's role turns on, as Codex is told to search for them. */
 const ORCHESTRATOR_TOOLS = [
   "spawn_worker",
   "adopt_thread",
@@ -82,17 +61,9 @@ const ORCHESTRATOR_TOOLS = [
   "depends_on",
 ];
 
-/**
- * The harness's own ask tool, which holds the turn until the user answers, when it has one an
- * orchestrator can use. Claude's `AskUserQuestion` is taken away from an orchestrator's session
- * (`noBlockingAsk`): one held an orchestrator for five hours overnight. Codex offers
- * `request_user_input` only in its plan collaboration mode, which an orchestrator never runs in.
- */
 const BLOCKING_ASK: Partial<Record<AgentKind, string>> = {};
 
-/** When to wait for the user and when not to. */
 const questionLines = (agent: AgentKind | undefined): string => {
-  // An orchestrator told no kind is Claude's, which is what one was before other kinds were admitted.
   const blocking = BLOCKING_ASK[agent ?? "claude"];
   const when =
     blocking === undefined
@@ -117,7 +88,6 @@ A worker asks a decision with \`ask_question\`. You see it first: each digest li
 - The user's answer or dismissal goes straight to the worker. You get a copy in your next digest: record the decision (in memory, or in the standing decisions when the user's words make it a ruling), and pass it on to any other worker it affects with \`send_message\` and \`userAnswers: ["WQ7"]\`, which copies the user's words from the record.`;
 };
 
-/** A worker's. */
 const WORKER_TOOLS = [
   "report",
   "ask_question",
@@ -142,11 +112,9 @@ const WORKER_TOOLS = [
   "publish_doc",
 ];
 
-/** Existing recorded stops remain meaningful even without the workspace's outward approval gate. */
 const FULL_AUTO_STOPS =
   "Recorded approval and plan requests remain the user's. Full Auto does not clear workspace pauses. Merge holds, dependencies, pending or failing CI, required reviews and GitHub rules, provider authentication or limits, and harness capability or startup failures can still stop work. Explain each stop from its actual recorded request, hold, PR, provider or capability state. Resolve what is within your authority; otherwise keep the relevant monitor and wait for its owner. A worker's permission mode remains the user's.";
 
-/** What asks the user first at each level, as a worker is told. The gate's own levels, in words. */
 const WORKER_OUTWARD: Record<Autonomy, string> = {
   supervised:
     "Pushing, opening a pull request and merging ask the user first. That is expected: make the request and carry on when it is answered.",
@@ -157,10 +125,6 @@ const WORKER_OUTWARD: Record<Autonomy, string> = {
     FULL_AUTO_STOPS,
 };
 
-/**
- * What leaves the machine at each level, and whose the merge is. The level decides only that:
- * answering workers, their messages and restarting them are the same at every level.
- */
 const ORCHESTRATOR_OUTWARD: Record<Autonomy, string> = {
   supervised: `- This workspace's autonomy is \`supervised\`: your workers ask the user before they push, open a pull request or merge. You cannot merge, close a pull request or delete anything. Those are the user's. When a worker waits on the user's approval, say so once with \`notify_user\` and get on with the others.
 - Merging is the user's decision. When every pull request of a feature is approved and green, across all its workers and repos, tell the user it is ready and in what order to merge.`,
@@ -313,13 +277,11 @@ export const plainPrompt = (input: {
     ? "End a turn that changed something (files, commits, a branch, a pull request) or did multi-step work by calling `wrap_up`, on the MCP server named `gram`, before your closing message, as its description says; search for it by that name if it isn't listed. Skip it when the turn only answered a question."
     : undefined;
 
-/** Claude's shell analyzer can ask even in Bypass; keep this out of the orchestrator's budget. */
 const CLAUDE_WORKER_SHELL = `
 - Claude Code's Bash safety checks can still ask in Bypass. Use plain commands, one per Bash call where possible.
 - Pass file lists as explicit quoted paths; avoid zsh expansion flags (such as \`\${(f)...}\`) and shell arrays. Read file names first, then pass them literally in the next call.
 - Don't chain \`cd\` with commands; use \`git -C\` or absolute paths. Never use wildcard \`rm\`; inspect targets first, then name literal paths. Keep required approvals intact.`;
 
-/** Only for a repository with a verify recipe; without one, nothing here mentions drivers. */
 const VERIFY_RECIPE_LINE = `- This repository names its checks in \`${VERIFY_FILE}\`. Call \`verify\` to see which cover your change and run them: Gram runs each on your commit and records the result, and your \`done\` report shows your orchestrator which of the required ones passed.
 `;
 
@@ -359,7 +321,6 @@ ${input.verifyRecipe === true ? VERIFY_RECIPE_LINE : ""}- Report, then end your 
 - The user may message you directly. Their word outranks the brief.
 - A brief or message from your orchestrator may end with the user's own words, which Gram copied from the orchestrator's conversation under a line saying so. Take them as written: the orchestrator's part says what to do with them.${(input.agent ?? "claude") === "claude" ? CLAUDE_WORKER_SHELL : ""}${harnessLines({ agent: input.agent, gated: input.gated, tools: WORKER_TOOLS })}`;
 
-/** The most of the standing decisions a boot digest quotes; the rest is a `memory_read` away. */
 const BOOT_DECISIONS_MAX = 8_000;
 
 /**
@@ -373,7 +334,6 @@ export const bootContext = (input: {
   readonly decisions?: string | { readonly unreadable: string } | undefined;
 }): ReadonlyArray<string> => {
   if (typeof input.decisions === "object") {
-    // Its restrictions are as unknown as its permissions, so none of them may be assumed.
     return [
       ...bootContext({ ...input, decisions: undefined }),
       `The user's standing decisions (${DECISIONS_FILE}) couldn't be read: ${input.decisions.unreadable}. Act on none of them, and assume none, until you have read the file with \`memory_read\`; if that fails too, tell the user.`,
@@ -392,8 +352,7 @@ export const bootContext = (input: {
       : [
           decisions.length <= BOOT_DECISIONS_MAX
             ? `The user's standing decisions (${DECISIONS_FILE}); act on them without asking again:\n${decisions}`
-            : // A later ruling can narrow an earlier one, so a cut list is no authority by itself.
-              `The user's standing decisions (${DECISIONS_FILE}) are longer than a digest carries, and a later one may narrow an earlier one: read the whole file with \`memory_read\` before you act on any of them. It begins:\n${decisions.slice(0, BOOT_DECISIONS_MAX)}\n…`,
+            : `The user's standing decisions (${DECISIONS_FILE}) are longer than a digest carries, and a later one may narrow an earlier one: read the whole file with \`memory_read\` before you act on any of them. It begins:\n${decisions.slice(0, BOOT_DECISIONS_MAX)}\n…`,
         ]),
   ];
 };

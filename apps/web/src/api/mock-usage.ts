@@ -27,7 +27,6 @@ type Bucket =
       readonly role: UsageThreadRole;
     }
   | { readonly kind: "outside"; readonly sessions: number };
-/** Where each provider's tokens go, as shares; the last takes what rounding leaves. */
 type Plan = Readonly<Record<UsageProvider, ReadonlyArray<readonly [Bucket, number]>>>;
 
 const thread = (
@@ -80,7 +79,6 @@ const SHOWCASE_PLAN: Plan = {
 const largest = <T extends { totals: UsageTotals }>(list: T[]) =>
   list.toSorted((a, b) => b.totals.totalTokens - a.totals.totalTokens);
 
-/** The rows' totals spread over a plan's buckets exactly, so the breakdown sums to the totals. */
 function mockBreakdown(
   rows: readonly UsageOverviewRow[],
   plan: Plan,
@@ -182,7 +180,6 @@ function mockBreakdown(
   };
 }
 
-/** Thirty-odd days of invented work across four model families, for the page's own screenshots. */
 function showcaseRows(to: number, from: number, provider: UsageProvider | undefined) {
   const rows: UsageOverviewRow[] = [];
   let seed = 11;
@@ -228,11 +225,6 @@ function showcaseRows(to: number, from: number, provider: UsageProvider | undefi
   return rows;
 }
 
-/**
- * Codex's 5-hour window over the last day as local snapshots would record it: a rise through each
- * window, a drop at each reset, and the current window climbing fast. Relative to `now`, like the
- * mock limits.
- */
 function showcaseLimitHistory(now: number): UsageLimitObservation[] {
   const HOUR = 3_600_000;
   const resets = [-19.5, -13.75, -4.25];
@@ -265,7 +257,6 @@ export async function mockUsageOverview(query: UsageOverviewQuery): Promise<Usag
       "This period exceeds the recorded usage payload budget (1 MiB per attribution projection, 4 KiB per turn snapshot, 32 MiB total). Select a shorter period.",
     );
   if (state === "error") throw new Error("Usage snapshot is unavailable");
-  // The showcase runs to now, beside the live mock limits; the test fixtures stay fixed.
   const to = state === "showcase" ? Date.now() : Date.parse("2026-10-12T12:00:00Z");
   const from = to - query.days * 86_400_000;
   const rows: UsageOverviewRow[] =
@@ -298,7 +289,6 @@ export async function mockUsageOverview(query: UsageOverviewQuery): Promise<Usag
       }
     }
   }
-  // Mirrors the actual migrated SQLite large-body oracle: 20 turns per provider, both Unknown.
   if (state === "large-history") {
     for (const provider of ["claude", "codex"] as const) {
       if (query.provider !== undefined && provider !== query.provider) continue;
@@ -320,7 +310,6 @@ export async function mockUsageOverview(query: UsageOverviewQuery): Promise<Usag
       });
     }
   }
-  // Mirrors the immutable older-history handler oracle; all metadata and counts are invented.
   if (
     ["history-after", "history-partial"].includes(state ?? "") &&
     Date.parse("2026-10-06T12:00:00Z") >= from

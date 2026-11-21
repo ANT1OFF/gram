@@ -1,6 +1,3 @@
-// How Gram hands a thread a message of its own making by default: steered into a running turn,
-// cancelling nothing, and otherwise sent as `send` would take it.
-
 import type { ThreadId, UserInput } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
@@ -28,7 +25,6 @@ export const steerOrSend = <E = never>(
       summary.status === "running" &&
       (yield* runtimes.steer(threadId, input).pipe(
         Effect.as(true),
-        // The turn can end, or reach a card, between the snapshot and the steer.
         Effect.catchTag("InvalidState", () => Effect.succeed(false)),
       ));
     if (steered) return "steered" as SteerOrSendResult;

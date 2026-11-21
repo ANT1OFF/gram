@@ -1,4 +1,3 @@
-// What merge_when_ready tells a thread of its merge: merged, waiting, refused, or not known.
 import type { BoundPr, MergeIntent } from "@gram/contracts";
 
 import type { PendingMerge } from "../persistence/merge-fence.ts";

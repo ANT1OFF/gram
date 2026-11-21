@@ -1,6 +1,3 @@
-// The workspace an orchestrator started from a profile orchestrates (`ThreadProfile.role`): its
-// charter, made from the profile, and the folder here it is filed under, which keeps the profile so
-// that each worker spawned there is started with the same files, skills, MCP server and level.
 import {
   DEFAULT_CHARTER,
   decodeThreadProfile,

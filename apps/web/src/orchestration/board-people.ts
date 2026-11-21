@@ -2,11 +2,6 @@ import type { PeopleNames, ThreadId } from "@gram/contracts";
 
 import type { RailRow, RailWorker } from "./rail-model";
 
-// The Board once more than one person's work is on it (`Thread.startedBy`, on each card's worker):
-// whose each line is, who is on what, and where two people's work changes the same files. Pure, so
-// what the Board shows and filters is tested without a browser. A Board that is all one person's
-// work, as the desktop app's always is, says none of it.
-
 /** A person's key: their subject, or `""` for work done for nobody. */
 export type PersonKey = string;
 

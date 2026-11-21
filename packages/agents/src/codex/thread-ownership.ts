@@ -81,8 +81,6 @@ export const makeThreadOwnership = (
           : "waiting for thread/unsubscribe; awaiting owning app-server exit",
       };
       lease.state = closing;
-      // The cached child must eventually exit even for ordinary eviction. This only retires
-      // acquisition; its held siblings remain alive and only owner.exit releases the writer.
       lease.owner.onClosing();
       run(
         lease.owner.rpc.request("thread/unsubscribe", { threadId: lease.threadId }).pipe(
@@ -93,7 +91,6 @@ export const makeThreadOwnership = (
               closing.detail = `thread/unsubscribe failed: ${error.message}; awaiting owning app-server exit`;
             },
             onSuccess: (response) => {
-              // No qualified protocol acknowledgement of recorder/writer release (measured at 0.162.1).
               if (lease.uncertainOpen) return;
               const status = response?.status;
               closing.detail =
@@ -128,9 +125,6 @@ export const makeThreadOwnership = (
           return Effect.void;
         });
       return {
-        // No reservation or finalizer while waiting: cancellation cannot release the old writer.
-        // The host acquires a held server only afterwards, so another config change during this
-        // wait cannot bind the replacement to a stale child or configuration.
         waitForExit: (threadId: string, onWait: Effect.Effect<void>) =>
           Effect.suspend(() => {
             const lease = threads.get(keyFor(home, threadId));
@@ -195,7 +189,6 @@ export const makeThreadOwnership = (
               state: { phase: "open", users: 1 },
               uncertainOpen: false,
             });
-            // Reserve the reference before sending resume: another scope may close during its RPC.
             if (lease !== undefined && lease.state.phase === "open") lease.state.users++;
             else if (resumeId !== undefined) {
               lease = makeLease(resumeId);
@@ -206,8 +199,6 @@ export const makeThreadOwnership = (
               Effect.timeoutOrElse({
                 duration: openTimeoutMs,
                 orElse: () => {
-                  // A timed-out RPC may still load a writer after a close notification. With no
-                  // settled reply, only process exit is conclusive; an unknown new ID fences its home.
                   if (reserved === undefined) owner.unknownOpen = true;
                   else reserved.uncertainOpen = true;
                   return Effect.fail(
@@ -244,7 +235,6 @@ export const makeThreadOwnership = (
             }
             return { started, lease };
           });
-          // The lease is installed before any post-open validation can fail or be interrupted.
           return Effect.acquireRelease(
             resumeId === undefined ? acquire : serialized(keyFor(home, resumeId), acquire),
             ({ lease }) => close(lease),

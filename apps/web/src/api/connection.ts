@@ -66,7 +66,6 @@ const EXPIRED: ConnectionState = { status: "expired" };
  */
 export type ProbeAnswer = "rejected" | "unknown" | ConnectionNotice;
 
-/** A 503's `{ message, detail? }`, or `undefined` for any other body. */
 async function noticeOf(response: Response): Promise<ConnectionNotice | undefined> {
   try {
     const body: unknown = await response.json();
@@ -75,7 +74,6 @@ async function noticeOf(response: Response): Promise<ConnectionNotice | undefine
     if (typeof message !== "string" || message.trim() === "") return undefined;
     return typeof detail === "string" && detail.trim() !== "" ? { message, detail } : { message };
   } catch {
-    // Not JSON: a proxy's own error page says nothing worth showing.
     return undefined;
   }
 }
@@ -145,7 +143,6 @@ export function withSessionProbe(
             session.expired();
           }
         })
-        // A sign-in service or probe that isn't answering is an outage, never a sign-out.
         .catch(() => undefined)
         .finally(() => {
           probing = false;
@@ -218,7 +215,6 @@ export function createConnectionMonitor(): ConnectionControl {
       publish();
     },
     explain: (next) => {
-      // A probe answered after the connection reopened is stale.
       if (failing.size === 0) return;
       notice = next;
       publish();

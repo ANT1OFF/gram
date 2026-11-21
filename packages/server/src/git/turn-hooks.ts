@@ -32,16 +32,12 @@ export const GitTurnHooksLive = Layer.effect(
       );
     return {
       onTurnStart: (threadId, turnId, cwd) => snapshot(cwd, threadId, turnId),
-      // GitHub is asked only when the turn did something it would know about. Every turn end used
-      // to ask, and most turns only edit files; a push this misses is a sweep away.
       onTurnEnd: (threadId, turnId, cwd, _reason, touchedRemote) =>
         snapshot(cwd, threadId, endCheckpointId(turnId)).pipe(
           Effect.andThen(refresh.request(cwd, touchedRemote)),
         ),
       onRemoteCommand: (_threadId, cwd) => refresh.request(cwd, true, { expectChange: true }),
       onFilesChanged: (_threadId, cwd) => refresh.request(cwd, false),
-      // A worktree the agent entered on its own gets the repo root's permission rules, as ones we
-      // create do.
       resolveCwd: (thread, cwd, follow) =>
         (isLocalHost(effectiveCheckout(thread))
           ? resolveWorktreeMove(thread, cwd, follow)

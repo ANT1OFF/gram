@@ -53,9 +53,7 @@ export function dailyFile(options: DailyFileOptions): DailyFile {
     if (fd === undefined) return;
     try {
       closeSync(fd);
-    } catch {
-      // Already closed or gone; nothing to flush.
-    }
+    } catch (_alreadyClosedOrGoneNothingToFlush) {}
     fd = undefined;
   };
 
@@ -96,9 +94,7 @@ export function pruneLogs(dir: string, name: string, now: Date, retainDays: numb
       const fileDay = dayOf(name, file);
       if (fileDay !== undefined && fileDay < cutoff) rmSync(join(dir, file), { force: true });
     }
-  } catch {
-    // A missing or unreadable dir has nothing to prune.
-  }
+  } catch (_aMissingOrUnreadableDirHasNothingToPrune) {}
 }
 
 /** The newest `<name>-<day>.log` in `dir`, if any. */
@@ -124,7 +120,6 @@ export function tailLines(file: string, count: number, maxBytes = 1_048_576): st
     const buffer = Buffer.alloc(length);
     readSync(fd, buffer, 0, length, size - length);
     const lines = buffer.toString("utf8").split(/\r?\n/);
-    // Reading from the middle of the file cuts the first line short.
     if (length < size) lines.shift();
     return lines.filter((line) => line !== "").slice(-count);
   } catch {

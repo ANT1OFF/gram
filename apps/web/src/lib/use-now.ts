@@ -2,11 +2,6 @@ import { useEffect, useState, type RefObject } from "react";
 
 import { outOfSight } from "@/motion";
 
-/**
- * One timer per interval, shared by every `useNow` on it: forty sidebar rows on a 30 s clock wake the
- * renderer once every 30 s and render in one commit, not forty times at forty moments. The timers
- * stop while the window is hidden and tick once when it is shown again.
- */
 const clocks = new Map<
   number,
   { listeners: Set<() => void>; timer: ReturnType<typeof setInterval> | undefined }

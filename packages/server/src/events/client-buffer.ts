@@ -92,10 +92,8 @@ export const serverEventKey = (event: ServerEvent): string | undefined => {
     case "thread.lapsedConnectors":
     case "git.state":
       return `${event.type}:${event.threadId}`;
-    // Each read is the task's whole tail so far.
     case "thread.backgroundOutput":
       return `${event.type}:${event.threadId}:${event.taskId}`;
-    // A ledger moves with every worker, and the event only says "refetch": the last one will do.
     case "orchestration.changed":
     case "memory.changed":
     case "outputs.changed":

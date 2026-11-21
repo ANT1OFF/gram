@@ -36,12 +36,10 @@ import {
 } from "./ghostty-loader";
 
 const RESIZE_DEBOUNCE_MS = 80;
-/** `fonts.monoSize` when unset. */
 const DEFAULT_FONT_SIZE = 12;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
 
-// Only the desktop app knows where a dropped file lives; a browser drop has no path to type.
 const droppedPaths = (event: DragEvent) =>
   [...event.dataTransfer.files]
     .map((file) => window.gram?.getPathForFile(file))
@@ -86,7 +84,6 @@ export function TerminalView({
 }) {
   const api = useApi();
   const openInEditor = useOpenInEditor();
-  // In managed mode a path opens in the Files panel: there is no editor to open it in.
   const local = useOpensLocally();
   const saveSettings = useSaveSettings();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -99,21 +96,17 @@ export function TerminalView({
   const [problem, setProblem] = useState<string | undefined>();
   const theme = useTerminalTheme();
   const searchColors = useTerminalSearchColors();
-  // Re-render on a look switch so the font effect below picks up the new `--font-mono`.
   useThemeStore((s) => s.look);
   const shortcuts = useShortcutList();
   const monoSize = useServerSettings((s) => s.settings?.fonts.monoSize);
   const fontSize = monoSize ?? DEFAULT_FONT_SIZE;
-  // Re-renders when the monospace setting changes, so the effect below picks up the new family.
   useServerSettings((s) => s.settings?.fonts.mono);
   const root = useThreadsStore((s) =>
     threadId === undefined ? undefined : s.byId[threadId]?.thread.checkout.path,
   );
 
-  // The theme by value: the hook makes a new object every render, and a new theme remakes the terminal.
   const themeKey = JSON.stringify(theme);
 
-  /** The find last run, so a terminal remade for a new theme can take it over from the old one. */
   const lastFind = useRef<{ query: string; toggles: FindToggles } | null>(null);
 
   const latest = useRef({
@@ -186,21 +179,17 @@ export function TerminalView({
         return;
       }
       const term = handle;
-      // Preferences may change while WASM or a cold font is loading.
       term.setFont(monoFont());
       term.setFontSize(latest.current.fontSize);
       handleRef.current = term;
       term.setKeyFilter((event) => {
         const clipboard = terminalClipboardKey(event);
         if (clipboard === "copy") {
-          // Also keeps an app shortcut on the same chord from running.
           event.preventDefault();
           const selection = term.getSelection();
           if (selection !== "") void copyText(selection).catch(() => {});
           return false;
         }
-        // The emulator lets the browser's paste through and keeps ^V from the shell on its own,
-        // but only for a key it is still handling.
         if (clipboard === "paste") return true;
         if (!isAppShortcut(event, latest.current.shortcuts)) return true;
         dispatchShortcut(event);
@@ -248,7 +237,6 @@ export function TerminalView({
           if (event.type === "replay") {
             term.reset();
             term.write(event.data);
-            // The find bar only searches when its query changes, and this may be a new emulator.
             const open = lastFind.current;
             if (open !== null) {
               term.findNext(
@@ -270,7 +258,6 @@ export function TerminalView({
         }
       } catch (error) {
         if (abort.signal.aborted) return;
-        // The server no longer has it, as after a restart: its shell is gone, so offer a new one.
         if (isNotFound(error)) setExit({ gone: true });
         else setProblem(terminalProblem(error));
       }
@@ -297,13 +284,11 @@ export function TerminalView({
   useEffect(() => {
     handleRef.current?.setVisible(active);
     if (active) {
-      // A hidden terminal may have loaded a font without notifying its PTY.
       resizeRef.current?.();
       if (latest.current.takesKeys?.() ?? true) handleRef.current?.focus();
     }
   }, [active]);
 
-  // Zoom only while this terminal is the active tab and has focus; app shortcuts keep working.
   const focused = () =>
     latest.current.active && containerRef.current?.contains(document.activeElement) === true;
   const zoom = (size: number | null) =>
@@ -337,7 +322,6 @@ export function TerminalView({
     run: () => zoom(null),
   });
 
-  // Scoped to the whole terminal, bar included, so ⌘F reaches it over Find in thread.
   const inTerminal = () =>
     latest.current.active && rootRef.current?.contains(document.activeElement) === true;
   useShortcut({

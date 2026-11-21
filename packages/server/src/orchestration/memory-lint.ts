@@ -1,12 +1,3 @@
-/**
- * Checks of a whole memory set that a single write can't make: links that lead nowhere, two notes
- * on one subject, notes the index doesn't name, and an index grown past what is worth loading into
- * every session. Pure: no filesystem, no clock.
- *
- * A dream runs these with `dream_check` while it rewrites memory, and Gram runs them again when it
- * says it is done: what is still wrong then goes back to it once, and what it leaves goes to the
- * reviewer in its report. They never refuse a set; `checkMemorySet` does that.
- */
 import { MEMORY_INDEX, MEMORY_INDEX_MAX_BYTES } from "./memory.ts";
 
 /**
@@ -16,7 +7,6 @@ import { MEMORY_INDEX, MEMORY_INDEX_MAX_BYTES } from "./memory.ts";
 export const MEMORY_INDEX_TARGET_BYTES = Math.floor(MEMORY_INDEX_MAX_BYTES / 2);
 /** Longer than this, an index line is a note's content, not its pointer. */
 export const MEMORY_INDEX_LINE_MAX_CHARS = 200;
-/** The most problems a check reports, so one broken index can't flood a context. */
 const PROBLEMS_MAX = 60;
 
 export type MemoryLintKind =
@@ -51,7 +41,6 @@ export const SERIOUS_LINT_KINDS: ReadonlySet<MemoryLintKind> = new Set([
   "index_over_target",
 ]);
 
-/** `text` without fenced code blocks and inline code, where `[[x]]` is an example, not a link. */
 const withoutCode = (text: string): string => {
   const kept: Array<string> = [];
   let fence: string | undefined;
@@ -93,7 +82,6 @@ export const frontMatterOf = (text: string): Readonly<Record<string, string>> =>
   return fields;
 };
 
-/** A name as a link, a file name and front matter can all spell it: `Repo_API` is `repo-api`. */
 const keyOf = (name: string): string =>
   name
     .normalize("NFC")
@@ -121,7 +109,6 @@ export const lintMemory = (
   const index = notes.find((file) => file.path === MEMORY_INDEX);
   const others = notes.filter((file) => file.path !== MEMORY_INDEX);
 
-  // Every key a note answers to, and the notes that answer to each.
   const byKey = new Map<string, Set<string>>();
   const keysOf = new Map<string, ReadonlyArray<string>>();
   const answer = (key: string, path: string) => {
@@ -153,7 +140,6 @@ export const lintMemory = (
     }
   }
 
-  // Two notes on one subject: one's name is another's, or they describe themselves alike.
   const reported = new Set<string>();
   for (const [key, paths] of byKey) {
     if (paths.size < 2) continue;
@@ -184,7 +170,6 @@ export const lintMemory = (
 
   if (index !== undefined) {
     const named = new Set(memoryLinks(index.content).map(keyOf));
-    // The starter index names notes by their file (`- goals.md: …`), which counts as naming one.
     const mentioned = withoutCode(index.content);
     for (const note of others) {
       const keys = keysOf.get(note.path) ?? [];

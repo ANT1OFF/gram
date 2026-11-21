@@ -1,16 +1,3 @@
-/**
- * Claude Code's MCP config, read straight from its files: its global config (`~/.claude.json`,
- * wherever `claudeUserConfigPath` finds it) holds the `user` servers
- * and, per project folder, the `local` ones, and a repo's `.mcp.json` holds the `project` ones.
- *
- * The files and not `claude mcp list`, because that command health-checks what it lists: it would
- * spawn every stdio server and connect to every remote one each time Settings opened. Reading
- * connects nothing, and nothing read is kept. Entries hold header and env secrets, which
- * `describeClaudeEntry` drops before anything leaves this module; nothing here logs, and no error
- * quotes file contents. Writes stay with `claude mcp add-json`/`remove`, which own the format.
- * `claudeEverConnected` takes one key of the same file, the names of the claude.ai connectors
- * Claude Code has connected, and nothing else.
- */
 import type { ConfiguredServer } from "@gram/contracts";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -44,7 +31,6 @@ const parsed = (text: string | undefined): Record<string, unknown> => {
     const value: unknown = JSON.parse(text);
     return isRecord(value) ? value : {};
   } catch {
-    // A file Claude Code is midway through rewriting; the next read gets it whole.
     return {};
   }
 };

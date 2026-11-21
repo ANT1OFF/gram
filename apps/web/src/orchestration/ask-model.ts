@@ -30,26 +30,13 @@ import {
 
 import type { InboxEntry, InboxGroup } from "./inbox-model";
 
-// The ask stack: a workspace's open requests, the orchestrator's open questions and the workers'
-// questions forwarded to the user as one list of asks, each answerable in a key. Built from the
-// inbox's groups, so equal approvals stay one ask. No React.
-
 /** What choosing an option does. */
 export type AskAction =
-  /** Every member of the group, through `answerGroup`. */
   | { readonly kind: "group"; readonly decision: "allow" | "deny" }
-  /** The one request's own answer. */
   | { readonly kind: "answer"; readonly answer: RequestAnswer }
-  /** An orchestrator's open question, answered with these words. */
   | { readonly kind: "memory"; readonly answer: string }
-  /** A worker's question forwarded to the user, answered with these words, straight to the worker. */
   | { readonly kind: "worker"; readonly answer: string }
-  /**
-   * Answered where it can be read in full: the asking thread. `always` opens its card on what
-   * "Always allow this rule…" would keep.
-   */
   | { readonly kind: "open"; readonly threadId: ThreadId; readonly always?: true }
-  /** Answered on the board's questions, where several choices can be picked. */
   | { readonly kind: "board"; readonly workspaceId: WorkspaceId };
 
 export interface AskOption {
@@ -83,7 +70,6 @@ export const choiceLayout = (options: readonly AskOption[]): "row" | "list" =>
   options.some(
     (option) =>
       option.description !== undefined ||
-      // An approval's verbs are a row, "Always allow this rule…" too.
       (option.label.length > ROW_LABEL_MAX && !isAlways(option.action)),
   )
     ? "list"
@@ -135,7 +121,6 @@ export interface AskVisuals {
   readonly mock?: string | undefined;
 }
 
-/** A question's pictures when it has any: an option's screenshot or mock page, or the mock. */
 const visualsOf = (
   threadId: ThreadId | undefined,
   options: readonly QuestionChoice[],
@@ -236,7 +221,6 @@ const whoOf = (entries: readonly InboxEntry[]): string => {
   return titles.length <= 2 ? titles.join(", ") : `${titles[0]} and ${titles.length - 1} more`;
 };
 
-/** Its feature, or the orchestrator, and who asks; a solo thread's only who asks. */
 const contextOf = (group: InboxGroup): string => {
   const [first] = group.entries;
   const where = first.feature ?? (first.orchestrator === true ? "orchestrator" : undefined);
@@ -285,7 +269,6 @@ export const askOf = (group: InboxGroup): Ask => {
   if (request.kind === "approval") {
     const pause = limitPauseAsk(request);
     if (pause !== undefined) {
-      // Pausing is the safer answer, so it comes first, as 1.
       return {
         ...base,
         icon: "approval",
@@ -306,8 +289,6 @@ export const askOf = (group: InboxGroup): Ask => {
       };
     }
     const n = group.entries.length;
-    // The verbs of the thread's card: Allow once, Always allow this rule… and Deny. "Always" is for
-    // one ask alone, whose rule its card shows before it keeps it; several equal asks answer once.
     const always: AskOption[] =
       n === 1 && canAlwaysAllow(request)
         ? [
@@ -336,7 +317,6 @@ export const askOf = (group: InboxGroup): Ask => {
     ];
     const summary = appToolSummary(request);
     const extras = approvalExtras(request);
-    // More to the input than the line the ask leads with, or a value cut short: Details has it all.
     const more =
       Object.keys(request.input).length > 1 + extras.length ||
       extras.some((field) => field.value.endsWith("…"));
@@ -359,7 +339,6 @@ export const askOf = (group: InboxGroup): Ask => {
     };
   }
   if (request.kind === "plan") {
-    // Never one key for a plan nobody has read, nor for the mode it would start in.
     return { ...base, icon: "plan", lead: "Plan to review", options: [open("Review")] };
   }
   const [question] = request.questions;
@@ -434,7 +413,6 @@ export const memoryAskOf = (
     };
   }
   if (options.length === 0) return { ...base, options: [], freeForm: { question: question.text } };
-  // The orchestrator's pick first, read first and tagged Recommended; nothing is picked for the user.
   const ordered = [
     ...options.filter((option) => option.label === question.recommended),
     ...options.filter((option) => option.label !== question.recommended),
@@ -452,7 +430,6 @@ export const memoryAskOf = (
   };
 };
 
-/** What a worker's question says beside its words: the worker's context, then the orchestrator's line. */
 const workerQuestionDescription = (question: WorkerQuestion): string | undefined => {
   const lines = [
     ...(question.context === undefined ? [] : [question.context]),

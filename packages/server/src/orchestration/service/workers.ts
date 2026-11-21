@@ -1,5 +1,3 @@
-// Workers: `list_workers`, a worker's `report`, the mark on a worker the user types into (with the
-// timer that lets it lapse), and whether a worker may merge its own PR.
 import {
   autonomyOf,
   type HostId,
@@ -42,7 +40,6 @@ export interface WorkersDeps {
   readonly wakeFor: Digests["wakeFor"];
 }
 
-/** A joined machine as `list_workers` weighs whether to list it. */
 type ListedMachine = NamedMachine & { readonly name: string; readonly onlineSince?: number };
 
 /**
@@ -68,8 +65,6 @@ export const machinesForOrchestrator = <M extends ListedMachine>(
     return !(machine.onDemand === "worker" && machine.onlineSince === undefined);
   });
 
-/** Listing workers, their reports, and the user's holds on them. */
-/** `list_workers`' `machines`: the joined machines, left out while none is. */
 const machinesListed = (
   machines: ReadonlyArray<{ readonly name: string; readonly onlineSince?: number }>,
 ) =>
@@ -128,7 +123,6 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         state,
         features: filterWorkers(
           visibleFeatures(found.features, (threadId) => found.lastActivityAt.get(threadId) ?? 0, {
-            // Asking for archived workers by state is asking to see them.
             includeArchived:
               options.includeArchived === true || options.states?.includes("archived") === true,
             since: options.since,
@@ -175,10 +169,6 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
       };
     });
 
-  /**
-   * The orchestrator's own model slot, when it follows a tier: which, what the orchestrator runs
-   * on, and why that isn't the tier's model when nothing here fills it (it opened on what stood in).
-   */
   const orchestratorSlot = (thread: Thread, state: WorkspaceState) =>
     Effect.gen(function* () {
       const slot = state.charter.orchestratorModel ?? defaultSlotOf(yield* store.getSettings);
@@ -240,11 +230,6 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
       return report;
     });
 
-  /**
-   * Clears the board's "the user is talking to it" flag other than by a report, which says enough
-   * by itself: the flag lapsing. The worker was the orchestrator's throughout and nothing waited on
-   * the flag, so the next digest says so without a wake of its own.
-   */
   const endHold = (workspaceId: WorkspaceId, worker: Thread) =>
     Effect.gen(function* () {
       yield* FiberMap.remove(holdTimers, worker.id);
@@ -272,7 +257,6 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
       yield* orchestrationChanged(workspaceId);
     });
 
-  /** Waits out `USER_HOLD_IDLE_MS` from the user's latest input, then looks again. */
   const armHold = (threadId: ThreadId, afterMs: number) =>
     FiberMap.run(
       holdTimers,
@@ -282,7 +266,6 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
       ),
     ).pipe(Effect.asVoid);
 
-  /** Arms the lapse of every hold on the workspace's workers, one overdue at once. */
   const armHolds = (state: WorkspaceState, threads: ReadonlyArray<Thread>) =>
     Effect.gen(function* () {
       const { workers } = yield* readOutbox(state.workspace.id);
@@ -295,10 +278,6 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
       }
     });
 
-  /**
-   * A held worker that is done with its turn arms the lapse; one still in a turn, or waiting on a
-   * request, is armed again by that turn's end.
-   */
   const onHoldDue = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* findThread(threadId);
@@ -315,10 +294,6 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
       if (status !== "idle" && status !== "cold" && status !== "error") return;
       yield* endHold(state.workspace.id, thread);
     });
-
-  // ---------------------------------------------------------------------------------------
-  // What an orchestrator does to its own workers without a card: always, and at full autonomy
-  // ---------------------------------------------------------------------------------------
 
   const allowsAtFull: OrchestrationShape["fullAutonomyAllows"] = (callerId, targetId) =>
     Effect.gen(function* () {

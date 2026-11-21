@@ -1,10 +1,3 @@
-/**
- * A conversation an embedding host keeps outside Gram (a chat thread, an issue, an email thread),
- * tied to the thread that answers it. Gram never reads what the id means: it is the host's own
- * reference, given on the messages it sends in (`/embed/v1/thread-messages`), kept on the thread
- * that owns it now, and named back when that thread replies (`reply`), which goes out through the
- * host's event sink (`conversation.reply`). See `docs/EMBEDDING.md#conversations`.
- */
 import * as Schema from "effect/Schema";
 
 /** The longest a conversation's id is, in characters. */

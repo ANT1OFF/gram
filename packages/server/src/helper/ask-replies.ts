@@ -6,19 +6,13 @@ import { MAX_REPLIES, validReplies } from "./replies.ts";
 import { basisHash, type HelperScheduler } from "./scheduler.ts";
 import { SuggestOutput } from "./suggest.ts";
 
-// Short answers the helper drafts for a free-form question the agent asked: chips that fill the
-// reply field, never sent. Governed by the Suggested replies switch and its consent ("suggest").
-
 /** Bumped whenever the prompt or the output shape changes, so stored replies are made again. */
 export const ASK_REPLIES_PROMPT_VERSION = 1;
 
-/** A chip longer than this is dropped, never cut. */
 const ASK_REPLY_MAX_WORDS = 6;
 
-/** How many of the user's own messages show the model how they write. */
 const STYLE_SAMPLES = 5;
 const STYLE_SAMPLE_MAX_CHARS = 120;
-/** The agent's last reply, which the question usually follows from. */
 const REPLY_MAX_CHARS = 2_000;
 const QUESTION_MAX_CHARS = 1_000;
 
@@ -69,7 +63,6 @@ const textOf = (message: GramUIMessage | undefined): string =>
     .join("\n")
     .trim();
 
-/** The single free-form question of `request`, when it is a question with exactly one and no options. */
 const freeFormQuestion = (request: PendingRequest): Question | undefined => {
   if (request.kind !== "question" || request.questions.length !== 1) return undefined;
   const [question] = request.questions;
@@ -112,7 +105,6 @@ export const makeAskReplies = (deps: AskRepliesDeps): AskReplies => ({
       if (question === undefined) return [];
       const material = yield* Effect.cached(
         Effect.gen(function* () {
-          // The newest that say something: the style samples, the last of them the latest.
           const users = (yield* deps.userMessages(threadId, {
             from: "newest",
             count: STYLE_SAMPLES,
@@ -146,12 +138,10 @@ export const makeAskReplies = (deps: AskRepliesDeps): AskReplies => ({
         ).pipe(Effect.annotateLogs({ threadId }));
         return [];
       }
-      // The request may have been answered or replaced while the helper was running.
       const latest = (yield* deps.listRequests(threadId)).find((r) => r.id === requestId);
       if (latest === undefined || basisHash(freeFormQuestion(latest)) !== basisHash(question))
         return [];
       const m = yield* material;
-      // Long ones go before `validReplies` keeps its first three, so they don't crowd out short ones.
       const short = result.value.replies.filter((reply) => wordCount(reply) <= ASK_REPLY_MAX_WORDS);
       return validReplies(short, {
         material: askRepliesPrompt(m),

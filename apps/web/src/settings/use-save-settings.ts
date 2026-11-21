@@ -6,10 +6,6 @@ import { useServerSettings } from "@/settings-sync/store";
 
 import { claimTouchedRow, markSaved } from "./saved-mark";
 
-/**
- * The save in flight, which the next one waits for. A field that saves on blur and the reset beside
- * it both save in one click; sent together, the older could land last and undo the reset.
- */
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
@@ -28,7 +24,6 @@ export function useSaveSettings(): (patch: SettingsPatch) => Promise<Settings> {
         markSaved(row);
         return settings;
       });
-      // A failed save is its caller's to report; the next one still goes.
       queue = next.catch(() => undefined);
       return next;
     },

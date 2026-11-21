@@ -1,10 +1,3 @@
-// Thread-to-thread messages and threaded orchestration.
-//
-// A leaf beside `ids.ts`, `thread-status.ts` and `agent-failure.ts`: `domain.ts` imports
-// `MessageOrigin`, the thread's role fields and the digest from here, so nothing in this file may
-// import `domain.ts`. The shapes that need `PermissionMode` or `ModelRef` (the charter, and so the
-// workspace state) live in `workspaces.ts`.
-
 import * as Schema from "effect/Schema";
 import { AgentFailureKind } from "./agent-failure.ts";
 import { AgentKind } from "./agent-kind.ts";
@@ -901,7 +894,6 @@ export const USER_AWAY_AFTER_MINUTES = 30;
  */
 export const USER_IN_CONVERSATION_MINUTES = 3;
 
-/** `95` as `1 h 35 min`. */
 const awayFor = (minutes: number): string => {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
@@ -909,11 +901,8 @@ const awayFor = (minutes: number): string => {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 };
 
-/** A wake reason or a change's note: a server-written sentence that may quote a worker's title. */
 const REASON_MAX = 200;
-/** How many wake reasons `Woken by:` lists before it counts the rest. */
 const WOKEN_BY_MAX = 8;
-/** How many features the line for left-out rows names before it counts the rest. */
 const QUIET_NAMED = 8;
 
 /**
@@ -962,7 +951,6 @@ export const fenceThreadMessage = (origin: MessageOrigin, text: string): string 
   const from = threadSender(origin);
   const tag = from.feature === undefined ? "thread-message" : "worker-message";
   const sender = from.feature === undefined ? "another Gram thread" : "a worker";
-  // Every field the sender could influence goes through `inline`, the preface's as the block's.
   const attributes = [
     `thread="${from.threadId}"`,
     ...(from.feature === undefined ? [] : [`feature="${from.feature}"`]),
@@ -1046,10 +1034,6 @@ const prText = (pr: WorkerPr): string => {
   return `PR ${pr.repo}#${pr.number}${facts.length === 0 ? "" : ` (${facts.join(", ")})`}${chain.join("")}`;
 };
 
-/**
- * The stage as the orchestrator reads it back: its own earlier word, so it is marked as such. One
- * set before `readAt` has been read whole already, so it gets its name and place alone.
- */
 const stageText = (stage: FeatureStage | undefined, readAt: number | undefined): string => {
   if (stage === undefined) return "";
   const name = ` · stage "${inline(stage.stage, FEATURE_STAGE_MAX)}"`;
@@ -1079,18 +1063,15 @@ const alsoInText = (repo: WorkerRepo): string => {
   return `also in ${inline(repo.project)} (${facts.join(", ")})`;
 };
 
-/** A waiting request with the id `answer_worker` takes; what it asks is the worker's text, so inlined. */
 const pendingText = (request: WorkerPendingRequest): string => {
   const id = request.requestId === undefined ? "" : ` [request ${request.requestId}]`;
   const asks = request.summary === undefined ? "" : `: "${inline(request.summary, REASON_MAX)}"`;
   return `waiting ${request.ageMin}m on ${inline(request.kind)}${id}${asks}`;
 };
 
-/** A limit wait as the ledger line shows it: when it resumes, in UTC to the minute, as wakes do. */
 const limitWaitText = (wait: NonNullable<WorkerLedgerEntry["limitWait"]>): string =>
   `${wait.kind === "limit" ? "usage limit" : "rate limited"}, resumes on its own ${new Date(wait.resumeAt).toISOString().slice(0, 16)}Z`;
 
-/** How its last turn failed, as `error gatewayRefused (HTTP 429): "…"`; the text is redacted already. */
 const errorText = (error: WorkerError): string =>
   `error ${error.kind}${error.httpStatus === undefined ? "" : ` (HTTP ${error.httpStatus})`}: "${inline(error.text, REASON_MAX)}"`;
 
@@ -1106,7 +1087,6 @@ export const wakeText = (wake: PendingWake): string => {
   return `wakes ${when} "${inline(wake.note, REASON_MAX)}"`;
 };
 
-/** "acme/web#645 (round 12, changes requested)": a dependency as the dependent's row names it. */
 const dependencyText = (dependency: WorkerPrDependency): string => {
   const facts = [
     ...(dependency.state === undefined || dependency.state === "open" ? [] : [dependency.state]),
@@ -1123,10 +1103,6 @@ const dependencyText = (dependency: WorkerPrDependency): string => {
   return `${dependency.repo}#${dependency.number}${facts.length === 0 ? "" : ` (${facts.join(", ")})`}`;
 };
 
-/**
- * The flag a dependency that drags on puts on its dependent's row: what drags, and the advice to
- * stack the dependent PR on the dependency's branch.
- */
 const dragText = (pr: WorkerPr, dependency: WorkerPrDependency): string => {
   const why = [
     ...(pr.conflictedMin !== undefined && pr.conflictedMin >= DEPENDENCY_DRAG_CONFLICT_MIN
@@ -1140,7 +1116,6 @@ const dragText = (pr: WorkerPr, dependency: WorkerPrDependency): string => {
   return `dependency drags on (${why.join("; ")}): consider stacking #${pr.number} on ${onto} (retarget its base there and rebase) rather than waiting`;
 };
 
-/** How many shared paths a row names. */
 const OVERLAP_FILES_NAMED = 3;
 
 const overlapFilesText = (files: ReadonlyArray<string> | undefined): string => {
@@ -1149,7 +1124,6 @@ const overlapFilesText = (files: ReadonlyArray<string> | undefined): string => {
   const more = files.length - listed.length;
   return ` on ${listed.join(", ")}${more === 0 ? "" : ` and ${more} more`}`;
 };
-/** "plan 2 of 3 · Waiting on review · #235": the worker's progress without its transcript. */
 const planCell = (plan: NonNullable<WorkerLedgerEntry["plan"]>): string =>
   `plan ${plan.done} of ${plan.total}${plan.headline === undefined ? "" : ` · ${inline(plan.headline)}`}`;
 
@@ -1215,14 +1189,11 @@ const LIMIT_WINDOW: Readonly<Record<LimitUse["window"], string>> = {
   weekly: "weekly",
 };
 
-/** "2026-10-15T16:00Z": a reset as the ledger's wakes write a time. */
 const utcMinute = (at: number): string => `${new Date(at).toISOString().slice(0, 16)}Z`;
 
-/** Group the integer part without rounding or losing precision in the provider's balance string. */
 const creditBalanceText = (balance: string): string =>
   balance.replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
 
-/** "Claude 5-hour 92% (resets 2026-10-15T16:00Z)". */
 const limitText = (limit: LimitUse): string =>
   `${LIMIT_AGENT[limit.agent] ?? limit.agent} ${LIMIT_WINDOW[limit.window]} ${limit.usedPct}%` +
   (limit.creditsUnlimited === true
@@ -1232,10 +1203,6 @@ const limitText = (limit: LimitUse): string =>
       : "") +
   (limit.resetsAt === undefined ? "" : ` (resets ${utcMinute(limit.resetsAt)})`);
 
-/**
- * The workers against the cap and the subscription limits in use, never a dollar figure, then a
- * line for each limit at the workspace's threshold saying what `spawn_worker` does about it.
- */
 const budgetLines = (budget: BudgetMeters): ReadonlyArray<string> => {
   const limits = budget.limits ?? [];
   const pause = budget.pauseAtPct;
@@ -1267,7 +1234,6 @@ const WAIT_WORDS: Readonly<Record<WaitKind, readonly [one: string, many: string]
   action: ["step to take", "steps to take"],
 };
 
-/** "42m", "3 h", "2 d". */
 const ageText = (minutes: number): string =>
   minutes < 60
     ? `${minutes}m`
@@ -1275,7 +1241,6 @@ const ageText = (minutes: number): string =>
       ? `${Math.floor(minutes / 60)} h`
       : `${Math.floor(minutes / (24 * 60))} d`;
 
-/** The lines saying what waits on the user, and what they finished since the last digest. */
 const waitingLines = (waiting: DigestWaiting): ReadonlyArray<string> => {
   const lines: Array<string> = [];
   if (waiting.open > 0) {
@@ -1303,10 +1268,8 @@ const waitingLines = (waiting: DigestWaiting): ReadonlyArray<string> => {
   return lines;
 };
 
-/** The most of a question's own words, and of its context, a digest quotes. */
 const DIGEST_QUESTION_MAX = 400;
 
-/** A worker's question inside its block: the words, the options with the worker's pick, the context. */
 const questionBody = (question: WorkerQuestion): ReadonlyArray<string> => [
   quoted(question.question, DIGEST_QUESTION_MAX),
   ...(question.options === undefined || question.options.length === 0
@@ -1324,17 +1287,12 @@ const questionBody = (question: WorkerQuestion): ReadonlyArray<string> => [
   ...(question.context === undefined
     ? []
     : [`context: ${quoted(question.context, DIGEST_QUESTION_MAX)}`]),
-  // The user sees each option's screenshot on the card; the mock is named for a relay with `show_mock`.
   ...(question.mock === undefined ? [] : [`mock: ${quoted(question.mock, DIGEST_QUESTION_MAX)}`]),
 ];
 
 const questionOpen = (question: WorkerQuestion, extra = ""): string =>
   `<worker-question id="${inline(question.id)}" thread="${question.threadId}" feature="${inline(question.feature)}" title="${inline(question.title)}"${extra}>`;
 
-/**
- * The triage step and the copies: each question in triage with the rule for it and when it forwards
- * itself, then each the user closed since, with the prompt to record it and pass it on.
- */
 const questionLines = (
   questions: NonNullable<OrchestrationDigest["questions"]>,
 ): ReadonlyArray<string> => {
@@ -1381,13 +1339,6 @@ const named = (names: ReadonlyArray<string>, max: number): string =>
     ? names.join(", ")
     : `${names.slice(0, max).join(", ")} and ${names.length - max} more`;
 
-/**
- * The `Ledger:` block. Rows named in `quiet` are left out and counted in one line, and so is a
- * feature with no row left, unless its stage is new to the orchestrator. A group lists its features
- * that still have a row and those with no worker yet, and counts the rest; one with none of those
- * and a stage it has read is named on a single line with the others like it. Archived groups are
- * always names only: their membership and stages need no action.
- */
 const ledgerLines = (digest: OrchestrationDigest): ReadonlyArray<string> => {
   const readAt = digest.lastDigestAt;
   const unread = (stage: FeatureStage | undefined): boolean =>

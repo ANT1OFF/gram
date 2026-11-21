@@ -25,7 +25,6 @@ export async function focusWindowShowing(threadId: ThreadId): Promise<boolean> {
   return true;
 }
 
-/** The address of a browser tab that names itself `name` and starts on `threadId`. */
 function newTabUrl(origin: string, name: string, threadId?: ThreadId): string {
   const url = new URL("/", origin);
   url.searchParams.set("window", `tab-${Math.random().toString(36).slice(2, 10)}`);

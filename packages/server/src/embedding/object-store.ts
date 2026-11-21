@@ -1,33 +1,3 @@
-// Attachments, docs and outputs kept in an object store an embedding deployment configured
-// (`GRAM_OBJECT_STORE_URL`), so they outlive the server's disk and that disk stays small.
-//
-// The data folder stays what everything reads and writes: nothing above this file changes how it
-// stores a file. This mirrors it outward and reads back what is missing:
-//
-// - Every minute the attachments and docs folders are walked, and each file that is new or changed
-//   since it was last sent is `PUT`. What was sent is remembered in a manifest beside them
-//   (`object-store.json`), so a restart sends nothing twice.
-// - A file a thread produced outside those folders (an output in its checkout) is copied up as it
-//   is recorded (`put`). One on another machine is read there first, into a file of this server's
-//   own that is sent and removed (`putStaged`).
-// - A closed thread's objects are deleted with it. Nothing else deletes: a file missing here is
-//   never taken as a reason to delete it there, since a fresh disk is missing all of them.
-// - A server starting on a fresh disk (no manifest) lists the docs and brings them back before
-//   anything reads them. An attachment is brought back when the transcript asks for it (`fetch`).
-//
-// The store is plain HTTP, with the bearer token on every call:
-//
-//   PUT    <url>/objects/<key>          the object's bytes
-//   GET    <url>/objects/<key>          its bytes, or 404
-//   GET    <url>/objects?prefix=<p>     { "keys": ["<key>", …] }, every key under the prefix
-//   DELETE <url>/objects?prefix=<p>     deletes every key under the prefix
-//
-// Keys: `attachments/<threadId>/<file>`, `docs/<workspaceId>/<docId>.doc`,
-// `outputs/<threadId>/<16 hex of the path's SHA-256>/<file name>`. The deployment may itself keep
-// a thread's agent sessions under `sessions/<threadId>/`, so a thread whose machine is replaced
-// resumes its conversation on the next one; Gram writes nothing there, and deletes that prefix with
-// the thread, as it does its own.
-
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -52,13 +22,10 @@ import { callOutside } from "./outside.ts";
 export const SESSIONS_PREFIX = "sessions/";
 /** The largest file sent or brought back; a larger one stays where it is. */
 export const OBJECT_MAX_BYTES = 64 * 2 ** 20;
-/** How often the mirrored folders are walked. */
 const SWEEP_EVERY = "1 minute";
-/** How many keys one listing may name; more is refused rather than half-restored. */
 const LIST_MAX = 10_000;
 const LIST_MAX_BYTES = 4 * 2 ** 20;
 const MANIFEST = "object-store.json";
-/** Where a file read from another machine waits to be sent; emptied at each start. */
 const STAGING = "object-store-staging";
 const NAME = "object store";
 
@@ -101,15 +68,12 @@ export const ObjectStore = Context.Reference<ObjectStoreShape>("@gram/server/Obj
   }),
 });
 
-/** How long a copy from another machine that did not arrive waits before it is tried again. */
 const STAGED_RETRY_AFTER_MS = 5 * 60_000;
-/** How many times in a row such a copy is tried before it waits. */
 const STAGED_TRIES_AT_ONCE = 2;
 
 const objectPath = (key: string) => `/objects/${key.split("/").map(encodeURIComponent).join("/")}`;
 const prefixPath = (prefix: string) => `/objects?prefix=${encodeURIComponent(prefix)}`;
 
-/** A key this server made: plain segments, none of them `.` or `..`, no leading slash. */
 const KEY = /^[A-Za-z0-9_.@-]+(\/[A-Za-z0-9_.@ -]+)+$/;
 const safeKey = (key: string): boolean =>
   KEY.test(key) && key.split("/").every((segment) => segment !== "." && segment !== "..");
@@ -134,11 +98,8 @@ export const outputKey = (threadId: ThreadId, path: string): string =>
   }`;
 
 interface Manifest {
-  /** Whether a fresh disk's docs were brought back, or there were none to bring. */
   restored: boolean;
-  /** key → `<size>:<mtime>` of the file as it was last sent. */
   objects: Record<string, string>;
-  /** Prefixes of closed threads the store hasn't confirmed deleting yet. */
   deletes: Array<string>;
 }
 
@@ -158,10 +119,8 @@ const readManifest = async (file: string): Promise<Manifest | undefined> => {
   }
 };
 
-/** A download in progress, beside where it will land; never sent, and swept away if abandoned. */
 const PART = ".part";
 
-/** Every plain file under `root` (no links followed), as `/`-joined paths below it. */
 const walk = async (
   root: string,
   keep: (relative: string, entry: Dirent) => boolean,
@@ -180,7 +139,6 @@ const walk = async (
   return found;
 };
 
-/** The body's bytes, or `undefined` once it passes `max`: never more than `max` held at once. */
 const readCapped = async (response: Response, max: number): Promise<Buffer | undefined> => {
   if (Number(response.headers.get("content-length") ?? "0") > max || response.body === null) {
     await response.body?.cancel().catch(() => undefined);
@@ -208,7 +166,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
     const loaded = yield* Effect.promise(() => readManifest(manifestFile));
     const manifest: Manifest = loaded ?? { restored: false, objects: {}, deletes: [] };
     let unsaved = false;
-    // One writer at a time: the walk, the outputs and a restore all save through here.
     const saveLock = yield* Semaphore.make(1);
     const saveManifest = saveLock.withPermits(1)(
       Effect.promise(async () => {
@@ -224,7 +181,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
       }),
     );
 
-    /** Keys already said to be left out, so the log says so once each. */
     const skipped = new Set<string>();
     const skip = (key: string, why: string) =>
       skipped.has(key)
@@ -237,11 +193,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
             ),
           );
 
-    /**
-     * Sends the file when it is new or changed since it was last sent. `real` is where the file
-     * was when it was judged fit to send: it is sent only while it is still exactly there, so a
-     * folder swapped for a link in between sends nothing from wherever the link leads.
-     */
     const send = (key: string, path: string, real: string) =>
       Effect.gen(function* () {
         if (!safeKey(key)) return yield* skip(key, "its name can't be a key");
@@ -254,7 +205,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
           return yield* skip(key, "it moved behind a link");
         }
         const body = yield* Effect.promise(() => openAsBlob(real));
-        // The bytes opened are the file that was checked, not one put there since.
         if (body.size !== info.size) return;
         yield* callOutside(NAME, service, {
           method: "PUT",
@@ -266,7 +216,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
         unsaved = true;
       }).pipe(
         Effect.catchCause((cause) =>
-          // Sent again by the next walk, or the next time the output is recorded.
           Effect.logWarning("couldn't send a file to the object store").pipe(
             Effect.annotateLogs({ key, cause: Cause.pretty(cause) }),
           ),
@@ -277,20 +226,16 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
       {
         prefix: "attachments",
         dir: attachmentsDir(dataDir),
-        // Drafts are staging: their files are sent once a thread has them.
         keep: (relative: string) => !relative.startsWith("_"),
       },
       {
         prefix: "docs",
         dir: resolve(dataDir, "docs"),
-        // A save is a temporary file renamed into place: only the records themselves.
         keep: (relative: string, entry: Dirent) => entry.isDirectory() || relative.endsWith(".doc"),
       },
     ];
 
-    /** Asks the store to delete what `manifest.deletes` still lists; what fails stays listed. */
     const flushDeletes = Effect.gen(function* () {
-      // The list as it stood: a confirmed delete replaces it rather than changing it underfoot.
       const listed = manifest.deletes;
       for (const prefix of listed) {
         const done = yield* callOutside(NAME, service, {
@@ -330,7 +275,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
       }
       yield* saveManifest;
     });
-    // One walk at a time, whoever asked.
     const sweepLock = yield* Semaphore.make(1);
     const sweep = sweepLock.withPermits(1)(sweepNow);
 
@@ -345,8 +289,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
         if (response.status === 404) return false;
         const bytes = yield* Effect.promise(() => readCapped(response, OBJECT_MAX_BYTES));
         if (bytes === undefined) return false;
-        // Whole before it has its name: written beside it, then linked into place, which fails
-        // rather than replace whatever arrived here in the meantime.
         const part = `${path}.${randomUUID().slice(0, 8)}${PART}`;
         yield* Effect.promise(async () => {
           await mkdir(dirname(path), { recursive: true });
@@ -359,7 +301,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
         });
         const info = yield* Effect.promise(() => lstat(path).catch(() => undefined));
         if (info === undefined) return false;
-        // As it came from the store: the next walk has nothing to send for it.
         manifest.objects[key] = `${info.size}:${Math.trunc(info.mtimeMs)}`;
         unsaved = true;
         return true;
@@ -380,10 +321,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
         ),
       );
 
-    /**
-     * A fresh disk's docs, before anything lists them. Counted done only when every one of them
-     * came back; otherwise the next start asks again for the ones still missing.
-     */
     const restoreDocs = Effect.gen(function* () {
       if (manifest.restored || !(yield* on)) return;
       const response = yield* callOutside(NAME, service, {
@@ -423,7 +360,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
         yield* Effect.logInfo("docs restored from the object store", { restored, missed });
       }
     }).pipe(
-      // Start waits on this, so not for long: what didn't come is asked for at the next start.
       Effect.timeout("30 seconds"),
       Effect.catchCause((cause) =>
         Effect.logWarning("couldn't restore docs from the object store").pipe(
@@ -432,10 +368,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
       ),
     );
 
-    /**
-     * A closed thread's objects. Listed in the manifest before the store is asked, so a store that
-     * is down, or a server stopped first, still has them deleted by a later walk.
-     */
     const removeUnder = (prefix: string) =>
       Effect.gen(function* () {
         if (!(yield* on)) return;
@@ -449,13 +381,7 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
         yield* saveManifest;
       });
 
-    /**
-     * Sends a file read from another machine: staged under the data folder, sent from there, and
-     * removed whether or not it went. Remembered by the stamp the other machine gave, since the
-     * staged copy's own times say nothing about the file.
-     */
     const stagingDir = resolve(dataDir, STAGING);
-    /** The copies under way or that did not arrive, by key: what was tried, and when. */
     const failedStaged = new Map<
       string,
       { readonly stamp: string; readonly at: number; readonly tries: number }
@@ -468,9 +394,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
       Effect.gen(function* () {
         if (!safeKey(key)) return yield* skip(key, "its name can't be a key");
         if (manifest.objects[key] === stamp) return;
-        // A copy that has failed twice is not made again at once: an output is recorded each
-        // time it is written, and reading the whole file from its machine every time, for a
-        // store that is down, would hold up every other thread's outputs behind it.
         const before = failedStaged.get(key);
         const tries = before?.stamp === stamp ? before.tries : 0;
         if (
@@ -479,7 +402,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
           Date.now() - before.at < STAGED_RETRY_AFTER_MS
         )
           return;
-        // Counted as failed until it has arrived.
         failedStaged.set(key, { stamp, at: Date.now(), tries: tries + 1 });
         const path = join(stagingDir, `${randomUUID()}${PART}`);
         yield* Effect.gen(function* () {
@@ -503,18 +425,15 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
         );
       }).pipe(
         Effect.catchCause((cause) =>
-          // Sent the next time the output is recorded.
           Effect.logWarning("couldn't send another machine's file to the object store").pipe(
             Effect.annotateLogs({ key, cause: Cause.pretty(cause) }),
           ),
         ),
       );
-    // A copy a stopped server left behind is of no use: its file is read again when recorded.
     yield* Effect.promise(() =>
       rm(stagingDir, { recursive: true, force: true }).catch(() => undefined),
     );
 
-    // Outputs go one at a time, off the caller's fiber.
     type Output =
       | { readonly key: string; readonly real: string }
       | {
@@ -527,7 +446,6 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
       Effect.flatMap((output) =>
         Effect.gen(function* () {
           if (!(yield* on)) return;
-          // Not a thread closed since: its outputs were deleted, and this would put one back.
           if (manifest.deletes.some((prefix) => output.key.startsWith(prefix))) return;
           if ("stage" in output) yield* sendStaged(output.key, output.stamp, output.stage);
           else yield* send(output.key, output.real, output.real);

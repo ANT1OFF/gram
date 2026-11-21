@@ -98,7 +98,6 @@ export function FilesSearchResults({
       )}
       {enabled && matches.length > 0 && (
         <ResultList
-          // A new search starts from its first result.
           key={JSON.stringify(debounced)}
           threadId={threadId}
           matches={matches}
@@ -223,7 +222,6 @@ function ResultList({
   );
 }
 
-/** A result's line with its matches marked; leading indentation is dropped. */
 function Snippet({ text, ranges }: { text: string; ranges: ReadonlyArray<FsSearchRange> }) {
   const parts = [];
   let at = text.length - text.trimStart().length;

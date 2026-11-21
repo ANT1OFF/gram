@@ -1,4 +1,3 @@
-// The notice a finished automatic review leaves in the thread, when it leaves one.
 import type { AgentEvent } from "@gram/contracts";
 import type { GuardianApprovalReviewAction } from "./protocol/v2/GuardianApprovalReviewAction.ts";
 import type { ItemGuardianApprovalReviewCompletedNotification } from "./protocol/v2/ItemGuardianApprovalReviewCompletedNotification.ts";
@@ -6,7 +5,6 @@ import type { ItemGuardianApprovalReviewCompletedNotification } from "./protocol
 const clip = (text: string, max = 120): string =>
   text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 
-/** `text` as inline code, fenced past any backticks it holds. */
 const code = (text: string): string => {
   const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((run) => run[0].length));
   const fence = "`".repeat(longest + 1);
@@ -14,7 +12,6 @@ const code = (text: string): string => {
   return `${fence}${pad}${text}${pad}${fence}`;
 };
 
-/** What Codex's automatic reviewer was asked about, in a few words. */
 const reviewedAction = (action: GuardianApprovalReviewAction): string => {
   switch (action.type) {
     case "command":
@@ -33,7 +30,6 @@ const reviewedAction = (action: GuardianApprovalReviewAction): string => {
       return `${action.toolTitle ?? action.toolName} on ${action.connectorName ?? action.server}`;
     case "requestPermissions":
       return "more permissions";
-    // A kind a newer CLI added; the payload is [UNSTABLE].
     default:
       return "a request";
   }

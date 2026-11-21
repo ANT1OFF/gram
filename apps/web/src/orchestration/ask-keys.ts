@@ -3,18 +3,12 @@ import { ACTIVATABLE } from "@/keyboard/registry";
 
 import type { AskOption } from "./ask-model";
 
-// The safe-key rules the ask stack and Quiet share: a plain key answers only while focus is on
-// nothing that types or activates, and never in the wake of an answer or of a current ask that
-// changed by itself. No React.
-
 /** A key within this long of an answer, or of a new current ask, is taken as a slip, not an answer. */
 export const SETTLE_MS = 300;
 /** The clock those are measured on; read in handlers and effects only. */
 export const clock = () => performance.now();
 
-/** Fields and the ARIA roles of what types, whatever draws them. */
 const FIELDS = "input, textarea, select, [role='textbox'], [role='searchbox']";
-/** What sits over the page and keeps its keys. */
 const OVERLAYS = '[role="dialog"], [role="menu"], [role="listbox"]';
 
 /**
@@ -27,11 +21,6 @@ export const plainKeysReach = (target: Element | null, area: Element): boolean =
   return target.closest(OVERLAYS) === null && !types(target) && !target.closest(ACTIVATABLE);
 };
 
-/**
- * Whether `target` is editable by the attribute the nearest editing host carries: any value but
- * "false" ("", "true", "plaintext-only" and whatever a browser adds) makes it one, as the platform
- * does, for where `isContentEditable` isn't reported.
- */
 const editableByAttribute = (target: Element): boolean => {
   const host = target.closest("[contenteditable]");
   return host !== null && host.getAttribute("contenteditable")?.toLowerCase() !== "false";
@@ -76,7 +65,6 @@ export const answerKey = (
   }
   if (mod || event.altKey || event.shiftKey || !/^[1-9]$/.test(event.key)) return false;
   const target = event.target instanceof Element ? event.target : null;
-  // A choice's own radio or checkbox has focus after a click: it types nothing, so keys still pick.
   if (target !== null && types(target) && !target.matches(CHOICE)) return false;
   const choice = root.querySelectorAll<HTMLElement>(CHOICE)[Number(event.key) - 1];
   if (choice === undefined) return false;

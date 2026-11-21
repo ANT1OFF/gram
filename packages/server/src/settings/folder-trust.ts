@@ -1,20 +1,13 @@
-// What a folder brings that would load as the user once they trust it: the question Gram asks,
-// once, when a folder is added. Reading it runs nothing; every file is read inside the folder,
-// never through a link that leaves it.
-
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { type FolderSettings, type Project, parseScriptsFile, SCRIPTS_FILE } from "@gram/contracts";
 import { readInside, realRoot } from "@gram/git";
 
-/** The files whose contents would load as the user's: Claude's project and local settings, MCP. */
 const CLAUDE_SETTINGS = [".claude/settings.json", ".claude/settings.local.json"] as const;
 const MCP_FILE = ".mcp.json";
 
-/** Settings keys that name a command Claude Code runs. */
 const COMMAND_KEYS = ["apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "statusLine"];
 
-/** The settings keys read above, and those known to load nothing that runs or widens access. */
 const READ_KEYS = new Set(["hooks", "permissions", "env", "mcpServers", ...COMMAND_KEYS]);
 const HARMLESS_KEYS = new Set([
   "$schema",
@@ -25,10 +18,8 @@ const HARMLESS_KEYS = new Set([
   "alwaysThinkingEnabled",
   "language",
 ]);
-/** Permission keys that only narrow what runs; `allow` is counted, and any other key is other. */
 const NARROWING_PERMISSIONS = new Set(["allow", "deny", "ask"]);
 
-/** What under `.claude` is read above or loads nothing that runs: every other entry counts. */
 const KNOWN_CLAUDE_ENTRIES = new Set([
   "settings.json",
   "settings.local.json",
@@ -41,7 +32,6 @@ type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** The file's text; `undefined` when it isn't there, `null` when it is but can't be read. */
 const read = (root: string, rel: string): string | undefined | null => {
   try {
     return readInside(root, rel);
@@ -68,11 +58,6 @@ const lstat = (path: string) => {
   }
 };
 
-/**
- * What else `.claude` holds that isn't empty, such as Claude Code's agents, skills and commands,
- * whose frontmatter can carry hooks and tools; or `.claude` itself when it is a link or can't be
- * looked in. Each would load as the user's.
- */
 const definitions = (real: string): ReadonlyArray<string> => {
   try {
     const claude = lstat(nodePath.join(real, ".claude"));
@@ -106,7 +91,6 @@ export const folderSettings = (root: string): FolderSettings => {
     const text = read(real, rel);
     if (text === undefined) return undefined;
     const parsed = text === null ? undefined : parse(text);
-    // A file Claude Code would still try to load counts, so it is asked about rather than missed.
     if (parsed === undefined) unreadable.push(rel);
     return parsed;
   };
@@ -131,7 +115,6 @@ export const folderSettings = (root: string): FolderSettings => {
     if (isObject(settings["mcpServers"]))
       for (const name of Object.keys(settings["mcpServers"])) mcpServers.add(name);
     for (const key of COMMAND_KEYS) if (settings[key] !== undefined) commands.push(key);
-    // A key not known to be harmless counts, so a setting Gram hasn't met is asked about.
     for (const key of Object.keys(settings))
       if (!READ_KEYS.has(key) && !HARMLESS_KEYS.has(key)) other.push(`${rel}: ${key}`);
     for (const key of Object.keys(permissions))

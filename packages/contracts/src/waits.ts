@@ -210,7 +210,6 @@ export const isWaitLink = (link: string): boolean => {
     const url = new URL(link);
     return url.protocol === "https:" || url.protocol === "http:";
   } catch {
-    // Not a URL at all.
     return false;
   }
 };
@@ -218,11 +217,9 @@ export const isWaitLink = (link: string): boolean => {
 /** The longest a title made from a message is, as "Add to Waiting on you" names it. */
 export const WAIT_TITLE_FROM_MESSAGE_MAX = 60;
 
-/** One Markdown marker opening a line; each is stripped in turn, so no pattern backtracks. */
 const LINE_MARKER = /^(?:#{1,6}[ \t]|>|[-*+][ \t]|\d{1,9}[.)][ \t])/u;
 const FENCE_LINE = /^(?:`{3}|~{3})/u;
 
-/** `line` without the markers that open it. */
 const unmarked = (line: string): string => {
   let rest = line.trimStart();
   for (let marker = LINE_MARKER.exec(rest); marker !== null; marker = LINE_MARKER.exec(rest)) {
@@ -249,10 +246,6 @@ export const waitTitleOf = (text: string): string | undefined => {
   return undefined;
 };
 
-/**
- * A title as the note quotes it: a JSON string, with angle brackets escaped, so text the agent or a
- * reply wrote can neither close the quote nor the fence and pass for Gram's own words.
- */
 const quotedTitle = (title: string) =>
   JSON.stringify(title).replace(/</gu, "\\u003c").replace(/>/gu, "\\u003e");
 
@@ -272,7 +265,6 @@ export const waitNoteText = (
   if (news.length === 0) return undefined;
   const fresh = new Set(news.map((item) => item.id));
   const done = news.filter((item) => !waitIsOpen(item));
-  // A suggestion the user kept is theirs as much as one they added.
   const added = news.filter((item) => waitIsOpen(item) && item.source !== "agent");
   const reopened = news.filter((item) => waitIsOpen(item) && item.source === "agent");
   const still = open.filter((item) => !fresh.has(item.id));

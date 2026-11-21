@@ -10,7 +10,6 @@ import { Dialog } from "@/thread/dialog-shell";
 
 import { usePeekStore } from "./peek-store";
 
-/** What the sheet shows of a worker or a PR, loaded after the shell's first paint. */
 const peekSheetBody = lazyPart(() => import("./peek-sheet-body"));
 
 export const PEEK_SHEET_TEST_ID = "peek-sheet";
@@ -33,7 +32,6 @@ export function useOpenFull() {
  */
 export function PeekSheet() {
   const requested = usePeekStore((s) => s.open);
-  // Opens once its body is in hand, which the shell preloads after first paint.
   const body = peekSheetBody.useModule(requested);
   const open = requested && body !== undefined;
   const target = usePeekStore((s) => s.target);
@@ -43,7 +41,6 @@ export function PeekSheet() {
   const titleId = useId();
   const openFull = useOpenFull();
   useCloseOnNavigate(open, close);
-  // In the pane while it is on the page, else over the window.
   const inPane = container?.isConnected === true;
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Enter" || target?.kind !== "worker") return;

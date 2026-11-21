@@ -68,7 +68,6 @@ export const launchAcp = (
     });
   });
 
-/** Gram's app tools, and the session's own server, as ACP's `mcpServers`. */
 const mcpServersOf = (options: OpenSessionOptions, appToolsServer: string) => [
   ...(options.mcp === undefined
     ? []

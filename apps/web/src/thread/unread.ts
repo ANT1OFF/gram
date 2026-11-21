@@ -1,11 +1,6 @@
 import type { GramUIMessage, ThreadId } from "@gram/contracts";
 import { useState } from "react";
 
-// Where "New" goes in a transcript: over the first message that came after the user last looked at
-// the thread (`Thread.lastViewedAt`, the moment "Since you looked" counts from too). Decided once,
-// as the view opens: what arrives while you watch is something you saw.
-
-/** The user's own words, which they saw as they sent them. */
 const ownWords = (message: GramUIMessage) =>
   message.role === "user" && !message.parts.some((part) => part.type === "data-thread-origin");
 

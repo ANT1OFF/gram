@@ -1,9 +1,3 @@
-// A repository's verify recipe: the named commands (drivers) an agent runs to check its work, kept
-// in `.gram/verify.json`. Gram runs a driver itself, on a commit, in its own clean worktree, and
-// records the result against that commit, so a pass is Gram's word and never the agent's. The
-// file is optional: a repository without one keeps today's behaviour. Parsers here are pure so the
-// server, the mock and the tests read the file the same way.
-
 import * as Schema from "effect/Schema";
 import { inline } from "./agent-text.ts";
 
@@ -49,11 +43,9 @@ export const VerifyDriver = Schema.Struct({
 export type VerifyDriver = typeof VerifyDriver.Type;
 
 const NAME = /^[a-z0-9][a-z0-9_.-]{0,47}$/;
-/** Control and invisible formatting characters, which have no place in a one-line command. */
 const CONTROL = /[\p{Cc}؜​-‏‪-‮⁠⁦-⁩﻿]/u;
 const KINDS: ReadonlySet<string> = new Set(VerifyDriverKind.literals);
 
-/** Why `pattern` can't be a path pattern, or `undefined`. */
 const patternProblem = (pattern: string): string | undefined => {
   if (pattern === "" || pattern.trim() !== pattern)
     return "a pattern is empty or has spaces around it";
@@ -150,7 +142,6 @@ export const pathMatches = (pattern: string, path: string): boolean => {
   for (let i = 0; i < wanted.length; i++) {
     const char = wanted[i]!;
     if (char === "*" && wanted[i + 1] === "*") {
-      // `**/` matches no folder too, so `src/**/a.ts` matches `src/a.ts`.
       if (wanted[i + 2] === "/") {
         source += "(?:.*/)?";
         i += 2;

@@ -32,7 +32,6 @@ export function TurnFilesChip({
   undo?: TurnUndoData | undefined;
 }) {
   const api = useApi();
-  // A finished turn's checkpoints never change, so its diff is fetched once.
   const { data } = useQuery({
     queryKey: ["git.diff.turn", threadId, turnId],
     queryFn: () => api.gitDiff(threadId, { kind: "turn", turnId }),
@@ -40,7 +39,6 @@ export function TurnFilesChip({
     retry: false,
   });
   const [confirming, setConfirming] = useState(false);
-  // Read only (a finished worker beside the chat): its changes to look at, nothing to undo.
   const readOnly = useReadOnlyTranscript();
   const undoing = useMutation({
     mutationFn: () => api.undoTurn(threadId, turnId),
@@ -86,7 +84,6 @@ export function TurnFilesChip({
           <span className="text-success">+{additions.toLocaleString()}</span>{" "}
           <span className="text-destructive">−{deletions.toLocaleString()}</span>
         </span>
-        {/* Its actions wrap under the count in a narrow pane, inside the card's edge. */}
         <span
           data-testid="turn-files-actions"
           className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1"

@@ -1,9 +1,3 @@
-/**
- * Where a repo's branches stand on GitHub, for the condition wakes that wait on them: its default
- * branch and a branch's head commit. One bounded REST `gh api` each, run in a folder of the waiting
- * thread's (gh needs one to start in, and it picks the host from there), and paced to the
- * background share of the allowance like the other polls.
- */
 import { ghApi, Proc } from "@gram/git";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -37,7 +31,6 @@ const decodeBranch = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ commit: Schema.Struct({ sha: Schema.String }) })),
 );
 
-/** GitHub has no such repo or branch. */
 const NOT_FOUND = /not found|HTTP 404/i;
 
 export const BranchHeadsLive = Layer.effect(

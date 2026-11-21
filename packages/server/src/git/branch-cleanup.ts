@@ -21,7 +21,6 @@ export interface BranchCleanup {
 
 const BRANCH_NAME = /^(?!-)[\w./-]+$/;
 
-/** Detached HEAD hides the branch a rebase or bisect still needs to restore. */
 const operationUsesBranch = (worktree: string, branch: string) =>
   Effect.gen(function* () {
     const directory = yield* git(worktree, [
@@ -56,7 +55,6 @@ const operationUsesBranch = (worktree: string, branch: string) =>
     ).pipe(Effect.option);
     if (Option.isNone(state)) return "unknown" as const;
     const [mergeHead, applyHead, bisectStart, updateRefs] = state.value;
-    // update-refs stores triples: ref name, original oid, rewritten oid.
     const names = [
       mergeHead,
       applyHead,
@@ -106,16 +104,12 @@ export const deleteMergedBranch = (
     const list = yield* git(repoPath, ["worktree", "list", "--porcelain"]).pipe(Effect.option);
     if (Option.isNone(list) || list.value.status !== 0 || list.value.truncated)
       return keep("couldn't list the repo's worktrees");
-    // Only git's explicit prunable marker permits skipping a registration. A missing locked
-    // checkout can be a temporarily unmounted worktree and must still fail closed below.
     const worktrees = parseWorktrees(list.value.stdout)
       .filter((w) => !w.prunable)
       .map((w) => ({ ...w, path: fromGitPath(w.path) }));
     const holder = worktrees.find((w) => w.branch === branch);
     if (holder !== undefined) return keep(`it's checked out in ${holder.path}`);
 
-    // `git branch -D` guarded these detached worktrees itself. The conditional ref deletion
-    // below must preserve that guard, reading every worktree's own operation state last.
     for (const worktree of worktrees) {
       const operation = yield* operationUsesBranch(worktree.path, branch);
       if (operation === "held") return keep(`it's being rebased or bisected in ${worktree.path}`);
@@ -123,8 +117,6 @@ export const deleteMergedBranch = (
         return keep(`couldn't inspect git operation state in ${worktree.path}`);
     }
 
-    // Ref deletion compares under git's lock: another writer's new commits keep their branch.
-    // Never dereference a symbolic branch ref into another branch's target.
     const out = yield* git(repoPath, [
       "update-ref",
       "--no-deref",

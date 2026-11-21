@@ -1,7 +1,3 @@
-// Link trust wired to Electron: the shell's dialog asks before a link leaves the app, unless its
-// host is trusted, and the hosts trusted from it are kept in a file. The decisions are the link
-// gate's (`core/link-gate.ts`); this module only shows them and keeps the file.
-
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 
 import { type BrowserWindow, clipboard, dialog, shell, type MessageBoxOptions } from "electron";
@@ -10,7 +6,6 @@ import { Channels } from "../channels.ts";
 import { createLinkGate, type LinkGate } from "../core/link-gate.ts";
 import { appWindows } from "./decision-windows.ts";
 
-/** Set by `loadLinkTrust` before the first window; until then nothing opens. */
 let gate: LinkGate<BrowserWindow> | undefined;
 
 const BUTTONS = ["Open", "Copy Link", "Cancel"] as const;
@@ -22,7 +17,6 @@ export function loadLinkTrust(path: string) {
       try {
         return (JSON.parse(readFileSync(path, "utf8")) as { hosts?: unknown }).hosts;
       } catch {
-        // Missing or unreadable: nothing is trusted, so every link asks.
         return [];
       }
     },
@@ -31,7 +25,6 @@ export function loadLinkTrust(path: string) {
         writeFileSync(`${path}.tmp`, JSON.stringify({ hosts }));
         renameSync(`${path}.tmp`, path);
       } catch (error) {
-        // The change holds until quit; the next launch asks again for what it couldn't save.
         process.stderr.write(`links: couldn't save the trusted hosts: ${String(error)}\n`);
       }
     },

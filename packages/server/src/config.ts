@@ -42,11 +42,8 @@ export const endpointFrom = (
     return undefined;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
-  // A credential belongs in the token, which is never logged; a URL is.
   if (parsed.username !== "" || parsed.password !== "") return undefined;
   if (parsed.hash !== "") return undefined;
-  // A token is one header value: printable, with no spaces. Anything else can't be sent, and the
-  // error for it would quote it.
   if (token && !/^[\x21-\x7e]+$/.test(token)) return undefined;
   return { url: parsed.toString(), ...(token ? { token } : {}) };
 };
@@ -71,8 +68,6 @@ export const endpointSetting = (
   if (url === undefined || url.trim() === "") return undefined;
   const file = tokenFile?.trim() ?? "";
   if (file === "") return endpointFrom(url, token) ?? ENDPOINT_UNUSABLE;
-  // One token or the other, and a file named from the root: a relative one would follow the
-  // working directory.
   if (token || !isAbsolute(file)) return ENDPOINT_UNUSABLE;
   const endpoint = endpointFrom(url, undefined);
   return endpoint === undefined ? ENDPOINT_UNUSABLE : { ...endpoint, tokenFile: file };
@@ -226,12 +221,10 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
     const listenHost = listenHostFrom(env);
     const embed = embedFromEnv(env);
-    // Read once, here; no child process inherits them from the server's own environment.
     if (env === process.env) scrubEmbedSecrets(env);
     const provisionedHosts = provisionedHostsFrom(env);
     const dataDir = defaultDataDir(env);
     const secretPaths = secretPathsFrom(env, dataDir);
-    // Throws on a partial or malformed configuration: such a server must not start.
     const frontedIdentity = frontedIdentityFrom(env);
     const decisionHook = endpointSetting(
       env["GRAM_DECISION_HOOK_URL"],
@@ -248,8 +241,6 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       env["GRAM_GITHUB_ROUTE_TOKEN"],
       env["GRAM_GITHUB_ROUTE_TOKEN_FILE"],
     );
-    // Read once, here: `gh`, agents, terminals and everything else the server starts would
-    // inherit them, and an agent holding a hook's or a sink's token could answer or record as Gram.
     if (env === process.env) for (const name of ENDPOINT_TOKEN_VARIABLES) delete env[name];
     return {
       dataDir,

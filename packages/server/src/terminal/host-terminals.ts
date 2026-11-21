@@ -39,9 +39,7 @@ export const terminalsThroughHost = (
   },
 ) =>
   Effect.gen(function* () {
-    /** The terminals the host holds, with the thread each was opened for. */
     const onHost = new Map<TerminalId, ThreadId | undefined>();
-    /** The host's shells counted among the server's process roots. */
     const counted = new Set<number>();
     const uncountAll = Effect.sync(() => {
       for (const pid of counted) deps.roots?.remove(pid);
@@ -60,7 +58,6 @@ export const terminalsThroughHost = (
         }),
       ),
       Effect.ignore,
-      // The host's shells end with it, and their ids with them.
       Effect.ensuring(
         Effect.andThen(
           uncountAll,
@@ -69,7 +66,6 @@ export const terminalsThroughHost = (
       ),
       Effect.forkScoped,
     );
-    /** Threads closed while this server runs, so a terminal opening as one closes is closed too. */
     const closedIds = new Set<ThreadId>();
     yield* deps.closedThreads.pipe(
       Stream.tap((threadId) => Effect.sync(() => closedIds.add(threadId))),
@@ -98,10 +94,6 @@ export const terminalsThroughHost = (
     const held = (threadId: ThreadId | undefined) =>
       threadId !== undefined && deps.held?.(threadId) === true;
 
-    /**
-     * Whether the host's terminal `terminal` still has an owner here: a thread that is stored, not
-     * closed, and has its folder on this host.
-     */
     const owned = (terminal: TerminalInfo) =>
       terminal.threadId === undefined || closedIds.has(terminal.threadId)
         ? Effect.succeed(false)
@@ -109,12 +101,6 @@ export const terminalsThroughHost = (
             Effect.as(true),
             Effect.orElseSucceed(() => false),
           );
-    /**
-     * The host's own list is what it holds, whatever this side remembers: what a connection before
-     * this one opened (a redial), or a main Gram before this one (a restart within the host's
-     * grace). Each terminal whose thread still owns it here is taken up again, so its input and
-     * close reach it; with `closeOrphans`, one nothing owns is closed.
-     */
     const adopt = (terminals: ReadonlyArray<TerminalInfo>, closeOrphans: boolean) =>
       Effect.forEach(
         terminals,
@@ -134,14 +120,10 @@ export const terminalsThroughHost = (
               ),
         { discard: true },
       );
-    // Once, as this connection starts: what the host kept that nothing here owns any more (its
-    // thread closed, or moved off this machine, while nothing could reach it) is closed, so a
-    // shell a restart abandoned doesn't run on for as long as the host stays connected.
     yield* host.list(undefined).pipe(
       Effect.flatMap((terminals) => adopt(terminals, true)),
       Effect.forkScoped,
     );
-    /** Whether `terminalId` is the host's, asking the host when this side doesn't know it. */
     const isOnHost = (terminalId: TerminalId): Effect.Effect<boolean> =>
       onHost.has(terminalId)
         ? Effect.succeed(true)
@@ -169,13 +151,9 @@ export const terminalsThroughHost = (
             (deps.hostSettings === true
               ? undefined
               : { settingsShell: yield* deps.settingsShell, path: yield* deps.path });
-          // Checked last, as the server's own terminals do, so a hold taken meanwhile counts.
           if (held(request.threadId)) return yield* new InvalidState({ message: HELD });
           const opened = yield* host.open({ ...request, cwd }, resolved);
           onHost.set(opened.terminalId, request.threadId);
-          // The open crossed to the host and back, so a hold taken or a close made meanwhile
-          // didn't see this shell: it is closed again here, as the server's own spawn never lets
-          // one through.
           const threadId = request.threadId;
           if (threadId !== undefined && (held(threadId) || closedIds.has(threadId))) {
             yield* host.close(opened.terminalId).pipe(Effect.ignore);
@@ -252,7 +230,6 @@ export class HostTerminals extends Context.Service<HostTerminals, Terminals>()(
         const store = yield* ThreadStore;
         const hub = yield* EventHub;
         const probe = yield* PathProbe;
-        // Absent in test layers without closes only at rest.
         const gate = Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate));
         const closedThreads = (label: string) =>
           hub.internalEvents(isThreadRemoved, label).pipe(Stream.map((event) => event.threadId));
@@ -267,7 +244,6 @@ export class HostTerminals extends Context.Service<HostTerminals, Terminals>()(
           settingsShell: store.getSettings.pipe(Effect.map((settings) => settings.terminal.shell)),
           path: probe.path,
         };
-        // Absent in test layers that run no host process.
         const local = Option.getOrUndefined(yield* Effect.serviceOption(LocalHostProcess));
         const connection = local?.connection;
         const inServer = yield* makeTerminals({

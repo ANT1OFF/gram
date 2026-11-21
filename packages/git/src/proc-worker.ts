@@ -1,5 +1,3 @@
-// Worker entry point only. All subprocesses still go through runCommand and its scope finalizers.
-
 import { parentPort } from "node:worker_threads";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -38,7 +36,6 @@ port.on(
     const request = message;
     const run = { cancel: undefined as (() => void) | undefined, cancelled: closing };
     runs.set(request.id, run);
-    // Drain cancellations before starting another native spawn after a previous one was held up.
     setImmediate(() => {
       const command = run.cancelled
         ? Effect.interrupt

@@ -43,7 +43,6 @@ export const SETTINGS_DEBOUNCE_MS = 400;
 /** Local changes the server hasn't acknowledged yet, as a settings patch. */
 export const UNSYNCED_SETTINGS_KEY = "gram.settings.unsynced";
 
-/** Unimplemented RPCs keep local state quietly; anything else is logged and local state kept. */
 const report = (what: string, error: unknown) => {
   if (!isNotImplemented(error)) console.error(`settings sync: ${what}`, error);
 };
@@ -59,20 +58,14 @@ const report = (what: string, error: unknown) => {
 export function createSettingsSync(options: SettingsSyncOptions) {
   const { api, theme, layout, debounceMs = SETTINGS_DEBOUNCE_MS } = options;
   const storage = options.storage ?? globalThis.localStorage;
-  /** What the last push assumed the server holds; the base for the next patch. */
   let synced: SyncedSettings | undefined;
-  /** What the server has acknowledged; the base for the unsynced record. */
   let confirmed: SyncedSettings | undefined;
   let syncedPalettes: readonly Palette[] | undefined;
-  /** The custom palettes the server has acknowledged; what a failed palette push falls back to. */
   let confirmedPalettes: readonly Palette[] | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
-  /** Applying pulled values is not a local change, so it must not be scheduled as one. */
   let pulling = false;
-  /** A pull is running: changes are still recorded, but no push may race its reads. */
   let holding = false;
-  /** Every write still out, so a pull can wait for one a timer started before it. */
   let pushing: Promise<unknown> = Promise.resolve();
   const unsubscribe: (() => void)[] = [];
 
@@ -97,7 +90,6 @@ export function createSettingsSync(options: SettingsSyncOptions) {
     layout.getState().setOverviewHidden(overviewHiddenOf(settings));
   };
 
-  /** Records what the server hasn't acknowledged, or clears the record once it has everything. */
   const recordUnsynced = () => {
     if (!confirmed) return;
     const patch = settingsPatch(confirmed, current());
@@ -131,7 +123,6 @@ export function createSettingsSync(options: SettingsSyncOptions) {
               recordUnsynced();
             },
             (e: unknown) => {
-              // The next push diffs from what the server really has, so it retries this one.
               synced = confirmed;
               report("save", e);
             },
@@ -156,7 +147,6 @@ export function createSettingsSync(options: SettingsSyncOptions) {
       ];
       pending.push(
         Promise.all(writes).then(() => {
-          // As with settings: the next push diffs from what the server really has, so it retries.
           if (failed) syncedPalettes = confirmedPalettes;
           else confirmedPalettes = local;
         }),
@@ -169,15 +159,12 @@ export function createSettingsSync(options: SettingsSyncOptions) {
 
   const schedule = () => {
     if (disposed || pulling) return;
-    // Recorded now rather than at the push, so closing the window mid-debounce loses nothing.
     recordUnsynced();
     clearTimeout(timer);
     if (holding) return;
     timer = setTimeout(() => void flush(), debounceMs);
   };
 
-  // Local changes are pushed once something was read to diff them against: at start, or at the
-  // first pull to succeed when the server was unreachable as the window opened.
   let listening = false;
   const listen = () => {
     if (listening || disposed) return;
@@ -266,7 +253,6 @@ export function createSettingsSync(options: SettingsSyncOptions) {
         holding = false;
       }
 
-      // Replayed outside `pulling` and `holding`, so they are scheduled like any local change.
       if (ackedPalettes) {
         const ops = paletteOps(ackedPalettes, localPalettes);
         const removed = new Set<string>(ops.remove);
@@ -284,7 +270,6 @@ export function createSettingsSync(options: SettingsSyncOptions) {
       }
       if (pulledSettings && edited) apply(applySettingsPatch(pulledSettings, edited));
       if (synced || syncedPalettes) listen();
-      // A read that failed replays nothing, and what was held back still has to go out.
       schedule();
     },
     dispose() {

@@ -42,7 +42,6 @@ const bucketOf = (run: PrCheckRun): CheckBucketKind => {
       return "running";
     case "passing":
       return "passed";
-    // Cancelled, skipped and neutral conclusions all count as not having run to a verdict.
     case "neutral":
       return "skipped";
   }
@@ -151,8 +150,6 @@ export function prRowOf(
   const { number } = target;
   const repo = target.repo ?? git?.origin;
   const badge = targetBadge(git, boundPr);
-  // `git.branch` is the PR's branch only when the badge came from this checkout's branch lookup,
-  // not when the server swapped in a PR bound from another repository.
   const ownBranch =
     badge !== undefined &&
     (boundPr === undefined ||
@@ -201,7 +198,6 @@ export function extraRowsOf(
   return (extraPrs ?? []).map((extra) => {
     const badge = git?.extraPrs?.find((pr) => ifTarget(extra, pr) !== undefined);
     const url = prUrlOf({ ...extra, url: badge?.url });
-    // A followed PR is never this checkout's branch, so merged and closed always show.
     const status = badge === undefined ? undefined : { ...badge, headMatches: true };
     return {
       ...placeOf(extra.repo, badge?.headRef, url, git),

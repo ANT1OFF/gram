@@ -1,6 +1,3 @@
-// Pausing new workers near a subscription limit (One thread buildout, "Usage, not dollars"): which
-// limits a workspace runs against, which of them stand at its threshold, and what the user chose.
-
 import {
   limitCurrent,
   limitExpiresAt,
@@ -124,10 +121,6 @@ export const limitUses = (
 export const resumeNote = (hold: LimitHold): string =>
   `${limitName(hold)} has reset, so new ${limitAgentName(hold.agent)} workers can be spawned again. Pick up the briefs you held back.`;
 
-// ---------------------------------------------------------------------------------------------
-// Holding low-priority briefs until a limit resets
-// ---------------------------------------------------------------------------------------------
-
 /**
  * The share at which a workspace holds low-priority briefs: its pause threshold, which the user
  * opts into. Without one, only a limit the agent refused a turn on holds them, never a share: a
@@ -154,7 +147,6 @@ export const holdingLimit = (
 export const heldBriefOf = (stored: StoredHeldBrief): HeldBrief => ({
   id: stored.id,
   ...(stored.breaker === undefined ? {} : { reason: heldWords(stored) }),
-  // Keyed as the worker it becomes is, so its card is the feature's card.
   feature: featureSlug(stored.input.feature) ?? stored.input.feature,
   title: stored.input.title,
   project: stored.projectName,
@@ -174,7 +166,6 @@ export const HELD_RETRY_MS = 2 * 60_000;
 /** Releases refused for now (rate limited, paused, a failing git) before a held brief is dropped. */
 export const HELD_RETRIES_MAX = 5;
 
-/** Refusals that pass on their own: the brief is tried again rather than dropped. */
 const PASSING_REFUSALS: ReadonlySet<string> = new Set([
   "rate",
   "paused",
@@ -196,7 +187,6 @@ export const refusalPasses = (message: string): boolean => {
 export const slotWaitNote = (stored: StoredHeldBrief, live: number, cap: number): string =>
   `${stored.breaker === undefined ? `${limitName(stored)} has reset` : "The provider recovery hold is ready"}, but ${live} workers are live and the charter allows ${cap}, so the held brief “${stored.input.title}” (${stored.input.feature}) waits for a worker to finish and starts on its own then.`;
 
-/** "2026-10-15T16:00Z": a time as the orchestrator reads it. */
 const utcMinute = (at: number): string => `${new Date(at).toISOString().slice(0, 16)}Z`;
 
 /** What `spawn_worker` tells the orchestrator about a brief it held. */
@@ -213,24 +203,12 @@ export const releasedNote = (stored: StoredHeldBrief, threadId: string, byUser: 
 export const releaseFailedNote = (stored: StoredHeldBrief, why: string): string =>
   `The held brief “${stored.input.title}” (${stored.input.feature}) couldn't be spawned at the reset of ${stored.breaker === undefined ? limitName(stored) : "the provider recovery hold"}, so it is dropped: ${why.trim().replace(/\.+$/, "")}. Spawn it again if it is still wanted.`;
 
-// ---------------------------------------------------------------------------------------------
-// Offering another worker model at a limit (`routeAtLimit`)
-// ---------------------------------------------------------------------------------------------
-// Routing never reads a meter's share. It follows what actually stops a spawn: an account the
-// agent's own CLI refused turns on (a rejected window; a share, even a full one, never counts,
-// since credits can carry on past it), and
-// the hold and pause gates, whatever makes those fire.
-
 /**
  * What stopped a spawn: its account is at its limit, so its worker would only wait in its queue
  * (`queued`); the hold gate held its brief (`held`); or the pause gate refused it (`paused`).
  */
 export type LimitStop = "queued" | "held" | "paused";
 
-/**
- * Whether `record` says its account is at its limit now: the CLI refused turns on it. A full
- * window isn't, since turns can go on past it on credits, as the hold gate reads it too.
- */
 const atItsLimit = (record: Pick<LimitRecord, "status">): boolean => record.status === "rejected";
 
 /**

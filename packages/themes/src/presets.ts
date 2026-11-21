@@ -394,7 +394,6 @@ export const PRESET_PALETTES = [
       cyan: "#2b86c9",
     },
   },
-  // Additional light/dark palette pairs.
   {
     id: "neutral",
     name: "Neutral",
@@ -419,8 +418,6 @@ export const PRESET_PALETTES = [
     mode: "dark",
     pairId: "neutral",
     seeds: {
-      // Near-black, not black: the page, its chrome and a raised card are three steps apart that
-      // read as surfaces, as the other dark palettes' do.
       bg: "#131313",
       surface: "#0b0b0b",
       text: "#f5f5f5",
@@ -433,9 +430,6 @@ export const PRESET_PALETTES = [
       cyan: "#94e2d5",
     },
   },
-  // Petrol: a calm petrol accent on a warm stone page in light and a blue-black page in dark. The
-  // sidebar is a step lighter than the page in both, so cards (raised from the lighter of the two)
-  // are white on stone and a step up from blue-black.
   {
     id: "petrol",
     name: "Petrol",

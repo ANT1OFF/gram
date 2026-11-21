@@ -11,21 +11,15 @@ import { formatClockTime, formatStamp } from "@/lib/time";
 
 import { PrChip, WorkerLink } from "./feature-card";
 
-/** When the user had last looked, as the view opened. */
 interface Opened {
   readonly since: number | undefined;
   readonly at: number;
 }
 
-/**
- * The absences already dismissed, by thread and the time it was last viewed: a dismissed line
- * stays dismissed when the view is opened again before the thread records the visit.
- */
 const dismissed = new Set<string>();
 const absenceKey = (threadId: Thread["id"], since: number | undefined) =>
   `${threadId}:${since ?? "never"}`;
 
-/** "api#212, api#431", or the workers' names where a line has no PR. */
 function Named({ lines }: { lines: readonly StreamLine[] }) {
   return (
     <>
@@ -64,18 +58,15 @@ export function SinceYouLeft({
   thread: Thread;
   digests: readonly DeliveredDigest[];
 }) {
-  // Decided once, as the view opens; the caller keys this by thread, so another thread decides anew.
   const [opened] = useState<Opened>(() => ({ since: thread.lastViewedAt, at: Date.now() }));
   const key = absenceKey(thread.id, opened.since);
   const [gone, setGone] = useState(() => dismissed.has(key));
   const since = opened.since;
   const now = opened.at;
-  // What arrives while you watch is in the stream; the chip covers the time you were away.
   const summary = sinceYouLeftOf(
     digests.filter((delivered) => delivered.at <= now),
     since,
   );
-  // Only what happened: an absence with no merge and no failure needs no chip.
   if (gone || summary === undefined) return null;
   const merged = summary.merged.length;
   const failed = summary.failed.length;
@@ -103,7 +94,6 @@ export function SinceYouLeft({
           aria-label={`Since you left: ${words}. Show what happened`}
           className="flex h-7 items-center gap-1 rounded-sm px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {/* Always said: without it, "2 merged" would read like a count of the day's merges. */}
           <span className="shrink-0">Since you left</span>
           {merged > 0 && (
             <span data-testid="since-merged" className="shrink-0">
@@ -156,7 +146,6 @@ export function SinceYouLeft({
                   )}
                 </p>
               ))}
-              {/* Read, it can go: Dismiss lives with the summary, not as a × on the strip. */}
               <button
                 type="button"
                 aria-label="Dismiss Since you left"

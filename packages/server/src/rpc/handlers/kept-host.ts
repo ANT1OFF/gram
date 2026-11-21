@@ -1,6 +1,3 @@
-// `app.keptHost` and `app.keptHostStop`: this machine's host kept running after Gram quits, as
-// Settings shows it and stops it.
-
 import { InvalidState, keepRunningAfterQuitOn, type KeptHostStatus } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -18,7 +15,6 @@ import type { Handlers } from "./common.ts";
 export const keptHostHandlers = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const store = yield* ThreadStore;
-  // Absent in layers that run no host process or keep nothing.
   const local = Option.getOrUndefined(yield* Effect.serviceOption(LocalHostProcess));
   const kept = Option.getOrUndefined(yield* Effect.serviceOption(KeptSessions));
   const platform = localServicePlatform();
@@ -44,12 +40,10 @@ export const keptHostHandlers = Effect.gen(function* () {
     "app.keptHostStop": () =>
       platform === undefined || paths === undefined || !available
         ? Effect.fail(new InvalidState({ message: "This machine keeps no host running." }))
-        : // Its definition goes too: stopped, it isn't loaded or started again until Gram does.
-          stopLocalService(platform, paths, undefined, true).pipe(
+        : stopLocalService(platform, paths, undefined, true).pipe(
             Effect.andThen(
               Effect.logInfo("kept host: stopped from Settings; its sessions ended with it"),
             ),
-            // Said as it is: a stop that didn't take, or left something running, is a failure.
             Effect.mapError((error) => new InvalidState({ message: error.message })),
           ),
   } satisfies Partial<Handlers>;

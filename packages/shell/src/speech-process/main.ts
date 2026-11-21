@@ -1,6 +1,3 @@
-// The local recogniser runs in an Electron utility process. Native crashes and model memory
-// are isolated from the server and agents. Logs contain event names and numbers only.
-
 import type { SpeechHostMessage } from "./protocol.ts";
 import { createSpeechService, type SessionPort } from "./service.ts";
 import { loadSherpaRuntime } from "./sherpa.ts";
@@ -15,8 +12,6 @@ const service = createSpeechService({
     process.stdout.write(`${JSON.stringify({ event, ...fields })}\n`);
   },
   now: () => performance.now(),
-  // A moment for the `stopped` just posted to cross the port, which closing it with the process
-  // would otherwise drop.
   exit: () => setTimeout(() => process.exit(0), 100),
 });
 

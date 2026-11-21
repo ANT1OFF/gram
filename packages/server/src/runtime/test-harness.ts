@@ -64,7 +64,6 @@ export const makeRuntimeTestLayer = (
     Layer.provideMerge(hooks),
     Layer.provideMerge(checkouts),
     Layer.provideMerge(ServerConfig.layer(config)),
-    // As the server runs: its own work holds the capability (`host/ownership.ts`).
     Layer.provideMerge(Layer.succeed(ServerWork)(true)),
     Layer.orDie,
   );

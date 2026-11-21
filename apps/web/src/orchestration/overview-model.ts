@@ -22,11 +22,6 @@ import type { WorkspaceStatus } from "./tree-model";
 import type { WorkerActivity } from "./wait-model";
 import type { WaitingOn } from "./waiting-on";
 
-// The overview sidebar: one line per workspace, the
-// one the window is on opened into its features and their live workers. Everything a worker row
-// says is its feature card's: the station, the now line and the PRs. Only who asks comes from the
-// asks the stack shows. No React.
-
 /** What a row's now line says while its worker waits on an ask. */
 export const ASKS_YOU = "asks you";
 
@@ -110,7 +105,6 @@ export interface OverviewFeature {
   readonly updatedAt: number;
 }
 
-/** Whether a card's worker has finished by its own state: a running one is then at work again. */
 const finishedByCard = (worker: FeatureCardWorker): boolean =>
   OVER_STATES.has(worker.state) || worker.station === "merged";
 
@@ -177,7 +171,6 @@ export const overviewFeatures = (
   const shown = new Set<ThreadId>();
   const features = cards.flatMap((card) => {
     const live = card.workers.filter((worker) => workerShown(worker, shownFacts));
-    // A running worker its card has as finished is at work again.
     const atWork = live.map((worker) =>
       runningIds.has(worker.threadId) && finishedByCard(worker)
         ? { ...worker, station: "working" as const, state: "working" as const, now: "working" }
@@ -198,7 +191,6 @@ export const overviewFeatures = (
           },
         ];
   });
-  // By id, so rows no card has keep their places as their activity comes in.
   const extras = running.toSorted((a, b) => (a.threadId < b.threadId ? -1 : 1));
   for (const worker of extras) {
     if (shown.has(worker.threadId)) continue;
@@ -233,10 +225,6 @@ export type OverviewItem =
     }
   | { readonly kind: "held"; readonly held: FeatureCardHeld; readonly feature: string };
 
-/**
- * Where a tone sorts in the overview: what needs the user, then what works, then what waits on
- * automation, then the rest.
- */
 const TONE_RANK: Readonly<Record<RailTone, number>> = {
   needs: 0,
   attention: 0,
@@ -342,7 +330,6 @@ export const needsYouRow = (row: Pick<OverviewWorkerRow, "askKey" | "tone">): bo
 export const handedOverItems = (items: readonly OverviewItem[]): readonly OverviewItem[] =>
   items.filter((item) => item.kind === "worker" && needsYouRow(item.row));
 
-/** Now lines that only say what a row's dot says. */
 const DOT_WORDS: ReadonlySet<string> = new Set(["working", "briefed", "in review", "idle"]);
 
 /**
@@ -375,7 +362,6 @@ export const workLineText = (
   return headline.text;
 };
 
-/** A plan headline's step count, "Step 2 of 4", and the " · " after it. */
 const STEP_COUNT = /^Step \d+ of \d+(?: · |$)/;
 
 /**
@@ -491,11 +477,6 @@ export const workspaceWorkersText = ({
       ? `${working} working`
       : `${live} ${live === 1 ? "worker" : "workers"}`;
 
-/**
- * The lines too long for a row's edge (7 rem), in the words that fit it: they were cut to "stopped
- * on an e…" and "Under your cont…", and took the room from the title beside them. The red dot
- * says a failure stopped it; the hover and the worker's own view keep the whole line.
- */
 const EDGE_WORDS: Readonly<Record<string, string>> = {
   "stopped on an error": "failed",
   "Under your control": "held by you",

@@ -1,7 +1,3 @@
-// Whether a pull request is a worker's own, the one thing the `full`-autonomy merge delegation
-// covers. One check for every place that merges without a card: the
-// tools' gate, their recheck in `handle`, and `merge_when_ready`'s launch, which can come long after.
-
 import {
   type Checkout,
   hostOf,
@@ -20,13 +16,8 @@ import { cloneUrlOf } from "../host/repos.ts";
 import { WorkerHosts, type WorkerHostsShape } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 
-/** `owner/repo` names as GitHub compares them, ignoring case. */
 const sameRepo = (a: string | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();
 
-/**
- * A path with its symlinks resolved, else as given. A project keeps the path it was opened by, and a
- * worktree's `repoRoot` is git's `--show-toplevel`, so one repo can be `/var/…` and `/private/var/…`.
- */
 const canonical = (path: string) => Effect.promise(() => realPathOrOwned(path));
 
 /**
@@ -150,7 +141,6 @@ const EXPLANATIONS: Record<string, OwnershipExplanation> = {
 
 /** A blocker `checkWorkerPr` returned, in plain words and with what an agent can do about it. */
 export const explainOwnershipBlocker = (blocker: string): OwnershipExplanation => {
-  // Own keys only: a blocker spelled like an inherited key (`constructor`) has no explanation.
   const known = Object.hasOwn(EXPLANATIONS, blocker) ? EXPLANATIONS[blocker] : undefined;
   if (known !== undefined) return known;
   const state = /^it is (\w+)$/.exec(blocker)?.[1];
@@ -186,13 +176,11 @@ export const ownershipRefusalText = (
   return `Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: ${explanation.reason}. ${fix} Then call ${tool} again so Gram verifies ownership. The call was refused; the user wasn't asked.`;
 };
 
-/** The worktrees Gram gave the thread: never one it follows (`currentCheckout`). */
 const heldWorktrees = (thread: Thread) =>
   [thread.checkout, ...(thread.extraCheckouts ?? [])].filter(
     (checkout) => checkout.kind === "worktree",
   );
 
-/** Whether `a` and `b` are one folder on one machine: a path alone is two machines' at once. */
 const sameCheckout = (a: Pick<Checkout, "path" | "hostId">, b: Pick<Checkout, "path" | "hostId">) =>
   hostOf(a) === hostOf(b) && samePath(a.path, b.path);
 
@@ -229,11 +217,6 @@ export const withOwnedBranch = (
   };
 };
 
-/**
- * The branches recorded as observed in `checkout`, a held worktree on this machine. One recorded
- * before entries named their machine counts only while no folder the thread has on another
- * machine shares its path, since it can't say on which of them it was seen.
- */
 const ownedIn = (thread: Thread, checkout: Checkout): ReadonlyArray<string> => {
   const elsewhere = [
     thread.checkout,
@@ -249,10 +232,6 @@ const ownedIn = (thread: Thread, checkout: Checkout): ReadonlyArray<string> => {
     .map((owned) => owned.branch);
 };
 
-/**
- * A local folder's `origin` URL as stored, not as `insteadOf` rewrites it; unread when its config
- * can't be read.
- */
 const originUrlOf = (at: string) =>
   git(at, ["config", "--get", "remote.origin.url"], { timeoutMs: 2_000 }).pipe(
     Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
@@ -264,14 +243,8 @@ export type LiveHead =
   | { readonly kind: "branch"; readonly name: string }
   | { readonly kind: "detached" }
   | { readonly kind: "no-repository" }
-  /** The folder is gone, its repository is unreadable, or git failed, timed out or didn't start. */
   | { readonly kind: "unknown" };
 
-/**
- * No repository markers from the real folder up to its filesystem root. `lstat` sees broken links
- * too; any marker or filesystem error keeps the doubt. Bare git-dir markers cover those repositories too,
- * including broken ones that git itself no longer recognizes. Nothing here reads their contents.
- */
 const noGitMarkersAbove = (path: string): boolean => {
   try {
     let at = realPathSync(path);
@@ -302,16 +275,12 @@ export const liveHeadAt = (path: string): Effect.Effect<LiveHead, never, Proc> =
     });
     const name = out.stdout.trim();
     if (out.status === 0 && !out.truncated && name !== "") return { kind: "branch", name } as const;
-    // `--quiet` exits 1, silently, only for a HEAD that is a commit rather than a branch.
     if (out.status === 1 && out.stderr.trim() === "") return { kind: "detached" } as const;
     if (out.status === 128 && !out.truncated) {
       const probe = yield* git(path, ["rev-parse", "--git-dir"], {
         timeoutMs: 2_000,
         env: { LC_ALL: "C", LANGUAGE: "C", GIT_DISCOVERY_ACROSS_FILESYSTEM: "1" },
       });
-      // Exit 128 alone also means bad config, unsafe ownership, or broken repository metadata.
-      // Fix the locale and search across mounts (as the disk walk does), then accept only git's
-      // exact discovery failure. Other diagnostics, even at exit 128, keep the doubt.
       if (
         probe.status === 128 &&
         !probe.truncated &&
@@ -325,12 +294,6 @@ export const liveHeadAt = (path: string): Effect.Effect<LiveHead, never, Proc> =
     return { kind: "unknown" } as const;
   }).pipe(Effect.orElseSucceed(() => ({ kind: "unknown" }) as const));
 
-/**
- * The workspace project a worktree on another machine was made for, from what this machine
- * recorded as it made it: the identity of the origin it cloned (`cloneIdentity`), which must name
- * the repository the project recorded when it was added (`Project.originIdentity`), never the one
- * its folder names now, and both the PR's repository.
- */
 const projectOfClone = (
   checkout: Checkout,
   projects: ReadonlyArray<Project>,
@@ -338,20 +301,12 @@ const projectOfClone = (
 ): Project | undefined => {
   const clone = checkout.cloneIdentity;
   if (clone === undefined || !mayNameRepo(cloneUrlOf(clone), repo)) return undefined;
-  // Both name the PR's repository, whatever transport each reaches it by (https, ssh).
   return projects.find(
     (project) =>
       project.originIdentity !== undefined && mayNameRepo(cloneUrlOf(project.originIdentity), repo),
   );
 };
 
-/**
- * Whether the machine `checkout` is on confirms what this machine recorded as it made it: the
- * worktree still shares the clone's repository, its origin has the recorded identity, and the
- * recorded branch is checked out. Asked of that machine by its id (`hostOf`), never by the path,
- * which another machine can share. Its answer only ever confirms: a host that is offline, too old
- * to say, or says anything else leaves the worktree unconfirmed.
- */
 const machineConfirms = (
   hosts: WorkerHostsShape | undefined,
   checkout: Checkout,
@@ -378,10 +333,6 @@ const machineConfirms = (
         Effect.orElseSucceed(() => false),
       );
 
-/**
- * GitHub's own hosts, and the port each transport may name on them (none, or its default). A
- * `Map`, so a host spelled like an inherited object key (`constructor`, `__proto__`) is none.
- */
 const GITHUB_HOSTS: ReadonlyMap<string, { readonly https: string; readonly ssh: string }> = new Map(
   [
     ["github.com", { https: "443", ssh: "22" }],
@@ -389,11 +340,8 @@ const GITHUB_HOSTS: ReadonlyMap<string, { readonly https: string; readonly ssh: 
     ["ssh.github.com", { https: "443", ssh: "443" }],
   ],
 );
-/** An account or repository name as GitHub spells one: plain ASCII, nothing encoded. */
 const PLAIN_NAME = /^[A-Za-z0-9._-]+$/;
-/** A host name: plain ASCII letters, digits, dots and hyphens. */
 const PLAIN_HOST = /^[A-Za-z0-9.-]+$/;
-/** A `.git` suffix, in any case, as git and GitHub take it. */
 const GIT_SUFFIX = /\.git$/i;
 
 /** The repository a remote URL names, as `remoteRepoOf` reads it. */
@@ -469,11 +417,6 @@ export const prHostOf = (url: string): string | undefined => {
     : host.toLowerCase();
 };
 
-/**
- * Whether a remote on `remoteHost` is on the host of a PR on `prHost`: GitHub's own hosts
- * (`github.com` and its explicit aliases `www.` and `ssh.`) for a PR on GitHub, and exactly the PR's
- * host for an Enterprise one. A lookalike (`github.com.example`, `github-com.example`) is neither.
- */
 const onPrHost = (remoteHost: string, prHost: string): boolean =>
   GITHUB_HOSTS.has(prHost) ? GITHUB_HOSTS.has(remoteHost) : remoteHost === prHost;
 
@@ -490,11 +433,6 @@ export const remoteNamesRepo = (url: string | undefined, repo: string, prHost: s
   );
 };
 
-/**
- * Whether the remote `url` spells `repo`'s owner and name, on whatever host: only to pick the
- * folders worth asking GitHub about. It grants nothing; ownership is `remoteNamesRepo`, once the
- * PR's host is known.
- */
 const mayNameRepo = (url: string | undefined, repo: string): boolean => {
   const named = url === undefined ? undefined : remoteRepoOf(url);
   return named !== undefined && sameRepo(`${named.owner}/${named.name}`, repo);
@@ -516,13 +454,6 @@ export const remoteNamesOtherRepo = (url: string | undefined, repo: string): boo
   );
 };
 
-/**
- * The remote a folder is a clone of, by what this machine can trust: the URL of the origin Gram
- * recorded as it made the folder (`cloneIdentity`), on any machine. Only a folder here made before
- * that was recorded goes by its live origin (its repo's main checkout's, once the folder is gone),
- * which its agent can rewrite: never enough for ownership (`checkWorkerPr` requires the record),
- * only for another thread's claim, where a doubt counts as holding the branch.
- */
 const remoteUrlOf = (checkout: Checkout) =>
   Effect.gen(function* () {
     if (checkout.cloneIdentity !== undefined) return cloneUrlOf(checkout.cloneIdentity);
@@ -531,26 +462,12 @@ const remoteUrlOf = (checkout: Checkout) =>
     return at === undefined ? undefined : yield* originUrlOf(at);
   });
 
-/**
- * Whether `checkout`, a folder of another thread's, may be a clone of `repo`, by what this machine
- * can trust (`remoteUrlOf`): the origin Gram recorded as it made it, else, for an older folder
- * here, its live origin; never the path another machine reports. Only a remote that plainly names
- * another repository (`remoteNamesOtherRepo`) is a no: a folder, origin or identity that is
- * missing, unreadable, malformed or ambiguous may hold the branch, so it counts as holding it.
- */
 const mayHoldRepo = (checkout: Checkout, repo: string) =>
   remoteUrlOf(checkout).pipe(
     Effect.map((url) => !remoteNamesOtherRepo(url, repo)),
     Effect.orElseSucceed(() => true),
   );
 
-/**
- * Whether another live (unarchived) thread claims `repo#number`: it is that thread's main PR, or
- * its branch is checked out, or recorded as observed, in a folder that thread holds of the same
- * repository, on any machine and in any clone. Checking the branch out here doesn't take it from
- * that thread. A folder that is `where` itself is the worker's own, whoever else sits in it.
- * Following a PR (`extraPrs`) alone claims nothing.
- */
 const claimedByAnother = (
   thread: Thread,
   repo: string,
@@ -560,7 +477,6 @@ const claimedByAnother = (
 ) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
-    // A row that doesn't decode can't be ruled out: it may bind the PR or hold its branch.
     const { threads, unknown } = yield* store.listThreadsForClaims;
     if (unknown.some((id) => id !== thread.id)) return true;
     for (const other of threads) {
@@ -569,18 +485,11 @@ const claimedByAnother = (
       if (bound !== undefined && sameRepo(bound.repo, repo) && bound.number === number) return true;
       for (const checkout of [other.checkout, ...(other.extraCheckouts ?? [])]) {
         if (sameCheckout(checkout, where)) continue;
-        // A branch recorded for the folder counts whichever machine the record names: a record
-        // that can't say where it was seen still says the thread held the branch.
         let holds =
           checkout.branch === branch ||
           (other.ownedBranches ?? []).some(
             (owned) => samePath(owned.path, checkout.path) && owned.branch === branch,
           );
-        // The record can lag: on this machine, read the folder's live HEAD too, so a branch the
-        // sibling just switched or renamed to is seen before the publisher samples it. A HEAD that
-        // can't be read (the folder moved or is gone, its git directory is broken, git failed or
-        // timed out) may hold the branch, so it counts as holding it; a verified non-repository,
-        // another branch or a detached HEAD leaves only the recorded claims to speak for it.
         if (!holds && isLocalHost(checkout)) {
           const live = yield* liveHeadAt(checkout.path);
           holds = live.kind === "unknown" || (live.kind === "branch" && live.name === branch);
@@ -591,23 +500,6 @@ const claimedByAnother = (
     return false;
   });
 
-/**
- * The verified held path and branch of the worker's open, non-fork PR, else why it is not owned.
- * The held worktree must still belong to a workspace project. Read-only, so the tool's gate can
- * call it repeatedly; arming persists the verified branch with the intent. GitHub supplies the head
- * on every call, asked from the repo's main checkout when the worktree's folder is gone. A doubt is a refusal; `reviewedHead`, when given, must still be its head.
- *
- * A worktree here counts only by the identity of its repository's origin Gram recorded as it made
- * it (`cloneIdentity`), never by the origin its git config names now, which the worker can
- * rewrite; one made before that was recorded owns nothing (`originUnrecorded`).
- *
- * A worktree Gram made on another machine counts from what this machine recorded as it made it,
- * never from what that machine says: its machine, the identity of the origin it cloned, which
- * must be a workspace project's origin here (`projectOfClone`), and its branch, the only one it
- * can own. Its host only confirms that record (`machineConfirms`); until it does (it is offline,
- * too old to say, or says otherwise), the worktree confirms nothing, and the check says it couldn't
- * verify rather than that the PR isn't the worker's.
- */
 const checkWorkerPr = (
   thread: Thread,
   repo: string,
@@ -617,7 +509,6 @@ const checkWorkerPr = (
 ) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
-    // Present wherever a worker can be on another machine; without it, such a worktree fails closed.
     const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     if (thread.workspaceId === undefined) return OWNERSHIP_BLOCKERS.noWorkspace;
     const { workspace } = yield* store.getWorkspace(thread.workspaceId);
@@ -627,24 +518,16 @@ const checkWorkerPr = (
     const roots = new Set(
       yield* Effect.forEach(projects, (project) => canonical(project.repoRoot ?? project.root)),
     );
-    // `currentCheckout` is left out: following the agent into a worktree doesn't make it the
-    // worker's, and it may be another thread's.
     const branches = new Map<string, Checkout>();
-    /** Where `gh` starts for the PR, which it names with `--repo`. */
     let cwd: string | undefined;
-    /** The held checkout when GitHub's head branch is among none of `branches`. */
     let held: Checkout | undefined;
     let unrecorded = false;
-    /** A worktree on another machine of the PR's project that its machine didn't confirm. */
     let unconfirmed = false;
-    /** A worktree on another machine made before its clone's identity was recorded. */
     let unrecordedClone = false;
-    /** A worktree here made before its origin's identity was recorded. */
     let unrecordedOrigin = false;
     for (const checkout of heldWorktrees(thread)) {
       if (!isLocalHost(checkout)) {
         if (checkout.repoRoot === undefined || checkout.branch === undefined) continue;
-        // Made before its clone's identity was recorded: nothing here says which project it is.
         if (checkout.cloneIdentity === undefined) {
           unrecordedClone = true;
           continue;
@@ -659,8 +542,6 @@ const checkWorkerPr = (
         held ??= checkout;
         continue;
       }
-      // A worktree deleted outside Gram is asked about from its repo's main checkout, and
-      // only the branches recorded for it count, since there is no HEAD left to read.
       const present = yield* folderExists(checkout.path);
       const at = present ? checkout.path : checkout.repoRoot;
       if (at === undefined) {
@@ -668,8 +549,6 @@ const checkWorkerPr = (
         continue;
       }
       if (!roots.has(yield* canonical(checkout.repoRoot ?? checkout.path))) continue;
-      // The origin Gram recorded as it made the worktree, never the live one: the worktree's git
-      // config is the agent's to rewrite, and a rewritten origin would claim any repository.
       if (checkout.cloneIdentity === undefined) {
         unrecordedOrigin = true;
         continue;
@@ -678,8 +557,6 @@ const checkWorkerPr = (
       if (checkout.branch !== undefined) branches.set(checkout.branch, checkout);
       for (const owned of ownedIn(thread, checkout)) branches.set(owned, checkout);
       if (present) {
-        // A tool can arrive before the watcher sees a branch created immediately before gh pr
-        // create.
         const local = yield* git(checkout.path, ["symbolic-ref", "--quiet", "--short", "HEAD"], {
           timeoutMs: 2_000,
         });
@@ -719,15 +596,10 @@ const checkWorkerPr = (
         ? OWNERSHIP_BLOCKERS.headUnknown
         : OWNERSHIP_BLOCKERS.headMoved;
     const where = branches.get(head.headRefName) ?? held;
-    // The folder's remote must be the PR's repository on the PR's own host, not a lookalike or
-    // another provider's repository of the same name.
     const prHost = prHostOf(head.url);
     if (prHost === undefined) return OWNERSHIP_BLOCKERS.unverified;
     if (!remoteNamesRepo(yield* remoteUrlOf(where), repo, prHost))
       return OWNERSHIP_BLOCKERS.otherRepo;
-    // Another thread's claim blocks even an identity-only check (the reused-authorization path): a
-    // sibling that bound the PR or took its branch is that thread's work, whether or not this worker
-    // still holds the branch. The reused approval never carries authority over a sibling's PR.
     if (yield* claimedByAnother(thread, repo, number, head.headRefName, where))
       return OWNERSHIP_BLOCKERS.otherThread;
     return {
@@ -805,14 +677,8 @@ export const workerPrBlocker = (
 export const workerOwnsPr = (thread: Thread, repo: string, number: number) =>
   workerPrBlocker(thread, repo, number).pipe(Effect.map((why) => why === undefined));
 
-/** A git branch name as it may appear in an agent's instructions: the ref charset only. */
 const SAFE_BRANCH = /^[\w./-]{1,200}$/;
 
-/**
- * Whether another thread follows or holds `branch` of `repo#number`: its bound or extra PR, a
- * worktree on that branch, or a branch recorded for one. Then the PR is someone else's work, and
- * the user decides, not the agent.
- */
 const heldByAnother = (thread: Thread, repo: string, number: number, branch: string) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
@@ -831,11 +697,6 @@ const heldByAnother = (thread: Thread, repo: string, number: number, branch: str
     );
   });
 
-/**
- * Whether `branch` is checked out in a git worktree of the repository other than `here`, as
- * `git worktree list` says from `here`; a doubt is a yes. There `git switch` would refuse it, so
- * the agent couldn't follow the fix.
- */
 const checkedOutElsewhere = (here: string, branch: string) =>
   Effect.gen(function* () {
     const out = yield* git(here, ["worktree", "list", "--porcelain"], { timeoutMs: 5_000 });
@@ -904,7 +765,6 @@ export const ownershipRefusal = (
         : `Have the worker check it out in the worktree Gram gave it (${steps}), then call ${options.tool} again`;
     return `Full auto covers only a worker's own pull request: one whose head branch is checked out in the worktree Gram gave the worker. ${repo}#${number}'s head branch \`${branch}\` isn't checked out there. ${fix}; Gram then ${options.action} without asking. That holds only while no other thread has it as its pull request or holds its branch: checking out another thread's branch never makes it yours. The user wasn't asked, and their approval isn't the way through for this.`;
   }).pipe(
-    // Finish inside the registry's refusal-hook budget even when GitHub or a sibling is slow.
     Effect.timeoutOrElse({
       duration: "4 seconds",
       orElse: () =>

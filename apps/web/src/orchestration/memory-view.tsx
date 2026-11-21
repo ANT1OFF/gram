@@ -47,24 +47,17 @@ import { useFocusOnOpen } from "./use-focus-on-open";
 import { useWorkspacesQuery } from "./use-orchestration";
 
 const SECTION = "flex flex-col gap-3 rounded-(--radius-md) border border-edge bg-card/40 p-3";
-/** A tab's one line on what it is for, beside its action. */
 const LEAD = "min-w-0 flex-1 text-meta text-pretty text-muted-foreground";
-/** A size beside its cap, the cap as short as it reads: 32 KB, not 32.0 KB. */
 const capText = (cap: number): string => `${cap / 1024} KB`;
 const INPUT =
   "rounded-md border border-input bg-transparent px-2 text-reading outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
-/**
- * The questions the orchestrator left for the user: the open ones answerable here, then a fold of
- * the closed ones with how each was closed, which is left out while there are none.
- */
 function Questions({ state }: { state: WorkspaceState }) {
   const all = useQuestions(state.workspace.id);
   const open = all.filter((question) => question.open);
   const closed = all.filter((question) => !question.open);
   const [showClosed, setShowClosed] = useState(false);
   const closedId = useId();
-  // Asked of the threads store, as the slot may name a thread that has since been closed.
   const orchestratorId = useThreadsStore((s) =>
     state.workspace.orchestratorThreadId !== undefined &&
     s.byId[state.workspace.orchestratorThreadId] !== undefined
@@ -141,7 +134,6 @@ function Questions({ state }: { state: WorkspaceState }) {
   );
 }
 
-/** The editor for one memory file: a plain textarea, the cap it is held to, and its three actions. */
 function FileEditor({
   workspaceId,
   path,
@@ -160,8 +152,6 @@ function FileEditor({
   });
   const loaded = file.data?.content;
   const [draft, setDraft] = useState<string>();
-  // What the draft was started from: when memory moves on under an untouched draft it follows, and
-  // under an edited one it stays, with a word that saving will overwrite what is there now.
   const [base, setBase] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -244,7 +234,6 @@ function FileEditor({
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          // A quiet outline until there is something to save, so it never looks ready when it isn't.
           variant={dirty && !size.over ? "default" : "outline"}
           data-testid="memory-save"
           disabled={busy || !dirty || size.over}
@@ -252,7 +241,6 @@ function FileEditor({
             run(
               () => api.writeMemory(workspaceId, path, text),
               () => {
-                // Ahead of the refetch, or the editor would follow the stale read back to the old text.
                 queryClient.setQueryData(["memory", workspaceId, "file", path], {
                   path,
                   content: text,
@@ -313,7 +301,6 @@ function FileEditor({
   );
 }
 
-/** Names a new file; it exists once its first save goes through. */
 function NewFileForm({
   existing,
   onCreate,
@@ -384,7 +371,6 @@ function Files({
 }: {
   workspaceId: WorkspaceId;
   files: readonly MemoryFileInfo[];
-  /** The file open in the editor, which Current memory's Edit can choose. */
   selected: string | undefined;
   onSelect: (path: string | undefined) => void;
 }) {
@@ -442,8 +428,6 @@ function Files({
                   )}
                 >
                   <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
-                  {/* Its size and cap are file details, shown above the editor; only a file
-                      already too large to save says so here. */}
                   {file.bytes > memoryCapFor(file.path) && (
                     <span
                       data-testid="memory-file-size"
@@ -453,7 +437,6 @@ function Files({
                       over cap
                     </span>
                   )}
-                  {/* The compact age, on one line: "3h", and "now" for what "just now" is. */}
                   <span
                     data-testid="memory-file-age"
                     className="w-12 shrink-0 text-right whitespace-nowrap text-muted-foreground tabular-nums"
@@ -593,13 +576,8 @@ function Versions({ workspaceId }: { workspaceId: WorkspaceId }) {
   );
 }
 
-/** The Memory view's tabs. */
 type MemoryTab = "overview" | "files" | "decisions" | "history" | "update";
 
-/**
- * Draft memory update's mark on its tab: amber while a finished run waits for your review, the working
- * colour while one runs, nothing otherwise.
- */
 function UpdateTabMark({ workspaceId }: { workspaceId: WorkspaceId }) {
   const api = useApi();
   const dreams = useQuery({
@@ -608,7 +586,6 @@ function UpdateTabMark({ workspaceId }: { workspaceId: WorkspaceId }) {
     retry: false,
   });
   const list = dreams.data ?? [];
-  // An Auto run waits on nobody, unless its adoption stopped and handed it to you.
   const waiting = list.filter(dreamWaitsForReview).length;
   const running = list.some((dream) => dream.status === "running" || dream.status === "pending");
   if (waiting > 0) {
@@ -651,8 +628,6 @@ export function MemoryView({
   const api = useApi();
   const { workspaces, settled, error } = useWorkspacesQuery();
   const state = workspaces.find((candidate) => candidate.workspace.id === workspaceId);
-  // Whether the window already names Memory right above: the bar's path with the workspace's
-  // places beside it, or a phone's row of them.
   const pathBar = usePathBar();
   const phone = usePhone();
   const placed = useWorkspacePlaces(false)?.some((place) => place.current) === true;
@@ -664,7 +639,6 @@ export function MemoryView({
     retry: false,
   });
   const [starting, setStarting] = useState<DreamKind>();
-  // A dream's review opens on Draft memory update, and `#questions` from the board's chip on Decisions.
   const [tab, setTab] = useState<MemoryTab>(() =>
     reviewing !== undefined
       ? "update"
@@ -672,7 +646,6 @@ export function MemoryView({
         ? "decisions"
         : "overview",
   );
-  // The file open in Files, which Current memory's Edit opens there.
   const [openFile, setOpenFile] = useState<string>();
   const [reviewingSeen, setReviewingSeen] = useState(reviewing);
   if (reviewing !== reviewingSeen) {
@@ -680,7 +653,6 @@ export function MemoryView({
     if (reviewing !== undefined) setTab("update");
   }
   const openQuestions = useQuestions(workspaceId).filter((question) => question.open).length;
-  // The section exists only once the workspace has loaded.
   const ready = state !== undefined;
   useEffect(() => {
     if (ready && window.location.hash === "#questions") {
@@ -711,7 +683,6 @@ export function MemoryView({
   }
 
   const empty = files.data !== undefined && memoryIsEmpty(files.data);
-  // Keep an inline review's scrollable content from extending the root document's scroll range.
   return (
     <div
       data-testid="memory-view"
@@ -720,10 +691,6 @@ export function MemoryView({
         reviewing !== undefined && "contain-paint",
       )}
     >
-      {/* Its title alone: the way to the chat and the Board is the title bar's Chat · Board,
-          right above it, which two buttons here only repeated. Where the bar is a path with the
-          workspace's places beside it, or a phone has their row, Memory is already named and
-          selected right above: the title is kept for a screen reader only. */}
       <header
         className={cn(
           "flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3",
@@ -735,18 +702,10 @@ export function MemoryView({
           <span className="truncate">Memory · {state.workspace.name}</span>
         </h1>
       </header>
-      <Tabs
-        value={tab}
-        onValueChange={(value) => setTab(value as MemoryTab)}
-        // Its own height, so the tab bar stays stuck over the whole of a long tab.
-        className="flex-none"
-      >
+      <Tabs value={tab} onValueChange={(value) => setTab(value as MemoryTab)} className="flex-none">
         <TabsList
           aria-label="Memory"
           data-testid="memory-tabs"
-          // On a phone the tabs keep one line each and the row scrolls sideways. Its right edge
-          // fades, so a tab cut by the window reads as more to scroll to, with room after the
-          // last for it to clear the fade.
           className="sticky top-0 z-10 bg-thread px-4 phone:overflow-x-auto phone:pe-10 phone:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] phone:[scrollbar-width:none] phone:[&_[data-slot=tabs-indicator]]:bottom-0 phone:whitespace-nowrap phone:[&>button]:h-11 phone:[&>button]:shrink-0"
         >
           <TabsTrigger value="overview" data-testid="memory-tab-overview">
@@ -772,7 +731,6 @@ export function MemoryView({
           <TabsTrigger value="history" data-testid="memory-tab-history">
             History
           </TabsTrigger>
-          {/* Dreams' tab, explained on hover: what a draft is, and that memory waits for adopting it. */}
           <Hint
             label={EXPLAIN.dreams}
             side="bottom"
@@ -806,9 +764,6 @@ export function MemoryView({
               </button>
             </p>
           )}
-          {/* Mounted only while chosen: left to the tabs, a switch made while its Markdown is still
-              settling kept this tall panel mounted above the next one, which then opened far
-              down the page. */}
           {tab === "overview" && (
             <TabsContent value="overview">
               {files.error ? (
@@ -841,7 +796,6 @@ export function MemoryView({
               />
             )}
           </TabsContent>
-          {/* Decisions and History sit in the column Current memory reads in, not edge to edge. */}
           <TabsContent value="decisions" className="thread-column">
             <Questions state={state} />
           </TabsContent>

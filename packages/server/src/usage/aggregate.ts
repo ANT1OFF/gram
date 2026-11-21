@@ -102,8 +102,6 @@ export function aggregateUsage(
     if (!completeCache) incompleteCacheTurns++;
     const read = u.cacheReadTokens ?? 0,
       write = u.cacheWriteTokens ?? 0;
-    // Claude input excludes caches; Codex input includes them. Unknown Codex cache detail
-    // leaves the remaining input unsplit; it must not be presented as uncached.
     const rest = provider === "codex" ? u.inputTokens - read - write : u.inputTokens;
     const t: UsageTotals = {
       totalTokens: u.inputTokens + u.outputTokens + (provider === "claude" ? read + write : 0),

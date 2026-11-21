@@ -13,7 +13,6 @@ import { join } from "node:path";
 
 export const SEARCH_PAGE = 200;
 export const SEARCH_MAX_PAGE = 500;
-/** Matches a search lists at most, across pages. */
 const SEARCH_MAX_RESULTS = 2000;
 const SEARCH_MAX_BYTES = 4 * 1024 * 1024;
 const SEARCH_TIMEOUT_MS = 10_000;
@@ -26,10 +25,6 @@ export interface SearchOptions extends FsSearchFlags {
   readonly timeoutMs?: number | undefined;
 }
 
-/**
- * `git grep` over the checkout: in a repo, tracked files plus untracked ones git doesn't ignore;
- * elsewhere every file (`--no-index`). `-I` skips binary files, `-z` keeps odd names parseable.
- */
 const grepArgs = (query: string, flags: FsSearchFlags, inRepo: boolean): string[] => [
   "grep",
   inRepo ? "--untracked" : "--no-index",
@@ -96,7 +91,6 @@ export const searchFiles = (
       return yield* new InvalidState({ message: "Couldn't run git to search the files" });
     }
     const { status, stdout, stderr, truncated } = out.success;
-    // 0: matches; 1: none; anything else is git refusing, e.g. a malformed regex.
     if (status > 1) {
       const detail = stderr.trim().replace(/^fatal:\s*/i, "") || "git grep failed";
       return yield* new InvalidState({

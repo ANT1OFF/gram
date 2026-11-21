@@ -47,21 +47,8 @@ import { WaitingItemRow } from "@/thread/waiting-tray";
 
 import { InboxContext } from "./inbox-context";
 
-// The Inbox's detail pane: the item picked in its list, with everything it takes to answer it. An
-// ask answered in place (an approval's verbs, a question's choices or a reply) is drawn as the Asks
-// dock drew it, under the one answer rule: a click or 1–9 picks, Send answer or ⌘⏎ sends, and an
-// approval's verbs act on a click; the answer waits out Undo before it goes. An ask read in full (a
-// plan, a long request, an open or forwarded question) is its own card, as its thread draws it. A
-// wait has Done, Copy or Open; a failure its next step. Each has Open thread, Later and, where it
-// applies, Dismiss. Under it, what its thread said last and what it changed (`InboxContext`).
-
-/** The Inbox's dialog: the pane's keys answer only from inside it. */
 const INBOX = '[data-testid="inbox"]';
 
-/**
- * Hands every key pressed inside the Inbox to `take` before the Inbox's own keys see it, while
- * mounted; a key `take` answers goes no further.
- */
 function useInboxKeys(take: (event: KeyboardEvent) => boolean, enabled = true) {
   const onKey = useEffectEvent((event: KeyboardEvent) => {
     if (!enabled) return;
@@ -79,17 +66,12 @@ function useInboxKeys(take: (event: KeyboardEvent) => boolean, enabled = true) {
   }, []);
 }
 
-/** The buttons of an approval card's verbs, by the shortcut that presses them. */
 const APPROVAL_VERBS: Readonly<Record<ApprovalShortcut, string>> = {
   "approval.allow": "approval-allow",
   "approval.always": "approval-always",
   "approval.deny": "approval-deny",
 };
 
-/**
- * The enabled verb button of the approval card in `root` that `event` presses by its shortcut, as
- * the thread's card is answered; none while focus types.
- */
 const approvalVerbPressed = (
   event: KeyboardEvent,
   root: Element,
@@ -150,7 +132,6 @@ function WorkerQuestionFull({ worker }: { worker: NonNullable<Ask["worker"]> }) 
   );
 }
 
-/** An ask read in full: its own card, answered through its own path. */
 function AskInFull({
   ask,
   orchestratorId,
@@ -158,14 +139,12 @@ function AskInFull({
 }: {
   ask: Ask;
   orchestratorId: ThreadId | undefined;
-  /** Opened by "Always allow this rule…": the card starts on what it would keep. */
   always: boolean;
 }) {
   if (ask.memory !== undefined) {
     return <MemoryQuestionFull memory={ask.memory} orchestratorId={orchestratorId} />;
   }
   if (ask.worker !== undefined) return <WorkerQuestionFull worker={ask.worker} />;
-  // A request is answered by its own card, the one its thread shows.
   const first = ask.group?.entries[0];
   if (first === undefined) return null;
   const cards = (
@@ -176,21 +155,13 @@ function AskInFull({
   return always ? <AlwaysPreviewRequestCards>{cards}</AlwaysPreviewRequestCards> : cards;
 }
 
-/**
- * An ask answered in place, under the one answer rule. Its keys answer it wherever focus is in the
- * Inbox, except in a field that types: 1–9 pick, ⌘⏎ sends the pick. An approval's verbs are keyed
- * as on the thread's card instead (1 Allow once, 2 Always allow this rule…, 3 Deny), and act on the
- * press, held for Undo as a click is.
- */
 function AskInPlace({
   ask,
   onFull,
   card,
 }: {
   ask: Ask;
-  /** An option that opens the ask in full: the pane draws its card instead. */
   onFull: (option: AskOption) => void;
-  /** One card of the phone's column: answered by touch, with no keys and no key hints. */
   card: boolean;
 }) {
   const api = useApi();
@@ -198,7 +169,6 @@ function AskInPlace({
   const problems = useAskStackStore((s) => s.problems);
   const [picked, setPicked] = useState<number>();
   const replyRef = useRef<HTMLInputElement | null>(null);
-  // A key within a moment of the ask arriving here is a slip, not an answer. A new ask mounts anew.
   const since = useRef(0);
   useEffect(() => {
     since.current = clock();
@@ -243,7 +213,6 @@ function AskInPlace({
     } else return false;
     const index = pick ?? picked;
     if (index !== undefined && index === otherIndex(ask)) {
-      // "Other…": its number picks it and puts the cursor in its field, ⌘⏎ sends what is typed.
       if (clock() - since.current < SETTLE_MS) return true;
       if (!sending) {
         setPicked(index);
@@ -281,7 +250,6 @@ function AskInPlace({
   );
 }
 
-/** An ask: in place, or its card when it is read in full first. */
 function AskDetail({ item, card }: { item: NeedsYouItem; card: boolean }) {
   const ask = item.ask!;
   const [full, setFull] = useState(() => answersInFull(ask));
@@ -290,9 +258,6 @@ function AskDetail({ item, card }: { item: NeedsYouItem; card: boolean }) {
   const orchestratorId = useDerivedAsks(
     (s) => s.asks.find((w) => w.workspaceId === item.workspaceId)?.orchestratorThreadId,
   );
-  // Read in full, the card's own answer rule: a number picks its choice, ⌘⏎ its Send answer; an
-  // approval's verbs, its card's keys, as in the thread. A key within a moment of the card opening
-  // is a slip: the press that opened "Always allow this rule…" never also saves it.
   const fullSince = useRef(0);
   useEffect(() => {
     if (full) fullSince.current = clock();
@@ -320,9 +285,6 @@ function AskDetail({ item, card }: { item: NeedsYouItem; card: boolean }) {
               setFull(true);
             }}
           />
-          {/* A question's own card: its whole text with the answer row kept in sight however
-              long it runs, the orchestrator's note, and Dismiss. Its own words are answered here
-              already, in "Other…". */}
           {(ask.memory !== undefined || ask.worker !== undefined) && ask.options.length > 0 && (
             <Button
               size="xs"
@@ -340,11 +302,6 @@ function AskDetail({ item, card }: { item: NeedsYouItem; card: boolean }) {
   );
 }
 
-/**
- * A stopped Watch PR, read in full: what stopped the watch, in plain words, and a one-click Resume
- * that turns Watch PR back on. Not a failure — the watch ended, it didn't fail; where the PR is gone
- * (merged or closed) there is nothing to resume, so it only says so.
- */
 function WatchStoppedBody({ item, onResume }: { item: NeedsYouItem; onResume: () => void }) {
   const babysit = useThreadsStore((s) =>
     item.threadId === undefined ? undefined : s.byId[item.threadId]?.thread.babysit,
@@ -381,7 +338,6 @@ export const answersOnCard = (item: NeedsYouItem): boolean =>
       ? item.threadId !== undefined
       : item.kind === "watch" || item.failure !== undefined;
 
-/** What a tap on a card lands on that is a control of its own, not the card. */
 const CONTROL = "button, a, input, textarea, select, label, [role='radio'], [role='checkbox']";
 
 /**
@@ -430,8 +386,6 @@ export function InboxDetail({
           : "flex min-h-0 flex-1 flex-col"
       }
     >
-      {/* A quiet line over the request: its kind, where it is from and when, and what else can be
-          done with it. The request itself, under it, is what the pane leads with. */}
       <header className="flex shrink-0 items-start gap-2 px-4 pt-3 pb-1">
         <div className="min-w-0 flex-1">
           <h2 className="text-meta font-medium text-foreground">{kind.label}</h2>
@@ -442,7 +396,6 @@ export function InboxDetail({
             {[where, item.at === undefined ? undefined : formatRelative(item.at, now)]
               .filter((part) => part !== undefined && part !== "")
               .join(" · ")}
-            {/* The other machine its thread runs on, if any, after where it is from. */}
             {item.threadId !== undefined && (
               <ThreadMachineMarker
                 threadId={item.threadId}
@@ -522,7 +475,6 @@ export function InboxDetail({
         className={card ? "px-2 pt-1" : "min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3"}
       >
         {!inPlace ? (
-          // What it asks, where its kind (the line above) doesn't already say it.
           item.title !== kind.label && (
             <p data-testid="inbox-card-summary" className="px-2 pb-1 text-reading break-words">
               {item.title}
@@ -535,8 +487,6 @@ export function InboxDetail({
             </p>
           )
         ) : item.ask !== undefined ? (
-          // A new ask, or another request where this one was, starts afresh: nothing picked, the
-          // slip guard armed again, read in place unless it must be read in full.
           <AskDetail key={askFingerprint(item.ask)} item={item} card={card} />
         ) : item.wait !== undefined && item.threadId !== undefined ? (
           <ul className="px-2">
@@ -558,13 +508,10 @@ export function InboxDetail({
             <FailureRowView item={item.failure} />
           </ul>
         ) : null}
-        {/* A thread gone with its worker has nothing to read; a card leaves it to its thread. */}
         {!card && item.threadId !== undefined && item.owned && (
           <InboxContext key={item.threadId} threadId={item.threadId} />
         )}
       </div>
-      {/* A phone card's actions in words, at the card's foot where a thumb is: a glyph alone in
-          the corner was a 28 px guess. */}
       {card && (
         <footer data-testid="inbox-card-actions" className="flex items-center gap-1 px-2 pt-1">
           <Button

@@ -1,6 +1,3 @@
-// Laying a profile's files in a folder, and keeping them out of a repository's commits. Used where
-// the folder is: by the server for a thread of its own machine, by a machine's host for one placed
-// there (`host/thread-places.ts`).
 import { InvalidState, type ProfileFile } from "@gram/contracts";
 import { git, Proc, type ProcShape } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -38,12 +35,10 @@ export const layProfileFiles = (
           }
           const path = join(parent, names.at(-1)!);
           if (options.keepExisting === true && (await lstat(path).catch(() => undefined))) continue;
-          // `wx` never follows a link left at the name, nor replaces what is there.
           await writeFile(path, file.content, { encoding: "utf8", flag: "wx" });
           laid.push(file.path);
         }
       },
-      // The file's own path and the error's code: never where the data folder is.
       catch: (cause) =>
         refuse(
           `The profile's files couldn't be written (${at}: ${
@@ -54,7 +49,6 @@ export const layProfileFiles = (
     return laid;
   });
 
-/** The file a checkout's own excludes are kept in, inside its git folder. */
 const PROFILE_EXCLUDE = "profile-exclude";
 
 /**
@@ -89,7 +83,6 @@ export const excludeLaid = (
         if (set !== "" && set !== file) return;
         yield* Effect.promise(async () => {
           const have = new Set((await readFile(file, "utf8").catch(() => "")).split("\n"));
-          // Anchored at the top and escaped, so a name is that one file and never a pattern.
           const lines = laid
             .map((path) => `/${path.replace(/[\\[\]*?!# ]/g, "\\$&")}`)
             .filter((line) => !have.has(line));

@@ -1,18 +1,3 @@
-// Telling the host provider when a worker's own machine has no work left (`worker-machines.ts`).
-//
-// A machine an orchestrator started for its workers pauses when idle and wakes on the next message,
-// so a finished worker's machine costs only its disk. The provider keeps that disk for a while
-// after the work ends and then reclaims it; what it can't see is when the work ended, which is
-// Gram's to say: every worker on the machine finished, as the ledger reads it (its pull requests
-// merged or closed, delivered, or archived), or closed with its worktree.
-//
-// Every `WORKER_RELEASE_EVERY` this looks at each joined worker machine and tells the provider
-// (`POST /hosts/release`) once when it has none left at work, and once more, `released: false`,
-// should one be at work there again (a worker reopened), so its disk is kept. A machine that came
-// online within `WORKER_RELEASE_SETTLE_MS` is left alone: its first worker may not be placed yet.
-// What was told is kept in memory: after a restart it is told again, which the provider takes as
-// the same word.
-
 import {
   effectiveCheckout,
   type FeatureLedgerEntry,
@@ -137,8 +122,6 @@ export const releaseDecisions = (
           !(thread.spawnedBy === undefined && thread.parked === true),
       );
       const said = told.get(toldKey(machine));
-      // An embedder's provider: told only what changed, once the machine has settled, and never
-      // that one it hasn't been told is released is working (as it always has been).
       if (machine.via === undefined) {
         const settled =
           machine.onlineSince === undefined ||
@@ -148,8 +131,6 @@ export const releaseDecisions = (
           ? []
           : [{ machine, released }];
       }
-      // A hosted server's: what was told is trusted a while only, as a reuse that failed may have
-      // taken a release back, and after a restart one at work is told so once.
       const fresh = (released: boolean) =>
         said !== undefined && said.released === released && now - said.at < TOLD_FOR_MS;
       if (atWork) return fresh(false) ? [] : [{ machine, released: false }];
@@ -235,7 +216,6 @@ export const releaseTeller = (
   now: () => number = Date.now,
 ) => {
   if (hosts === undefined && signedIn === undefined) return undefined;
-  /** By `toldKey`: when a hosted machine refused may be told again, and the wait that was. */
   const refused = new Map<string, { readonly until: number; readonly waitMs: number }>();
   const tellSignedIn = (
     port: WorkerMachinePortShape,
@@ -245,13 +225,9 @@ export const releaseTeller = (
   ): Effect.Effect<void, Error> =>
     Effect.suspend(() => {
       const at = now();
-      // One not asked again within the longest wait after its own is no longer being told (told
-      // since, or forgotten): let go.
       for (const [each, entry] of refused) if (at - entry.until > TOLD_FOR_MS) refused.delete(each);
       const key = toldKey(machine);
       const before = refused.get(key);
-      // Held off until its time, but never longer than its own wait from now: a clock stepped
-      // back since keeps it no longer.
       if (before !== undefined && at < before.until && before.until - at <= before.waitMs)
         return Effect.fail(new ReleaseHeldOff("the server refused it before; told again later"));
       return tellSignedInRelease(
@@ -303,13 +279,10 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
-    /** What the provider was last told of each machine (`toldKey`). */
     const told = new Map<string, { readonly released: boolean; readonly at: number }>();
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
       if (machines.length === 0) return;
-      // Each hosted machine's run, taken before anything the decision reads: a start of it in
-      // between (a wake) is a newer run, which its release is then never told for.
       const runs = new Map<string, MachineRun | null | undefined>(
         machines.flatMap((machine) =>
           machine.via === undefined
@@ -341,7 +314,6 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
       ).map((decision) => ({ ...decision, run: runs.get(decision.machine.id) }));
       for (const { machine, released, run } of decided) {
         const sent = yield* tell(machine, released, run).pipe(Effect.result);
-        // Kept only once the provider took it: one it didn't apply is told again next pass.
         recordTold(told, machine, released, sent._tag === "Success", Date.now());
         if (sent._tag === "Failure" && !(sent.failure instanceof ReleaseHeldOff)) {
           yield* Effect.logWarning("a worker machine's release could not be told").pipe(

@@ -59,8 +59,6 @@ export function CiCheckDetail({
       }}
     />
   );
-  // The check's own row names it: the words are "Inspect job" or, in that row, "Inspect", and
-  // the name stays in the button's accessible name.
   const inspect = (words: [string, string]) => (
     <button
       type="button"

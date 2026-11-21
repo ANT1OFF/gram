@@ -1,9 +1,3 @@
-// A host's loopback tunnels (`host.loopback.*`): TCP connections to the machine's own loopback
-// ports, opened for the control plane, so the browser a thread drives there reaches the dev server
-// the thread runs here. Only loopback, only ports from 1024 up (the contract's schema holds both),
-// and each tunnel lives as long as its stream: the control plane ending it, or the host
-// connection going, closes the socket.
-
 import { connect as netConnect, type Socket } from "node:net";
 
 import {
@@ -31,11 +25,9 @@ export interface HostLoopback {
 
 type Connect = (options: { host: string; port: number }) => Socket;
 
-/** The addresses `host` names, in the order they are tried. */
 const addressesOf = (host: LoopbackHost): ReadonlyArray<string> =>
   host === "localhost" ? ["127.0.0.1", "::1"] : [host];
 
-/** A socket connected to the first of `addresses` that answers, or why none did. */
 const connectFirst = (
   connect: Connect,
   addresses: ReadonlyArray<string>,
@@ -58,7 +50,6 @@ const connectFirst = (
     attempt(0);
   });
 
-/** Splits `chunk` into pieces of at most `LOOPBACK_CHUNK_BYTES`, as base64. */
 const encoded = (chunk: Buffer): ReadonlyArray<string> => {
   const pieces: string[] = [];
   for (let at = 0; at < chunk.length; at += LOOPBACK_CHUNK_BYTES)

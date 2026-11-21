@@ -166,7 +166,6 @@ export class CheckoutService extends Context.Service<CheckoutService, CheckoutSe
       checkRelease: (_thread, { removeWorktree }) => releaseNoGit(removeWorktree),
       release: (_thread, { removeWorktree }) => releaseNoGit(removeWorktree),
       discard: () => Effect.void,
-      // Every folder counts as there: runtime tests run threads in made-up paths.
       present: () => Effect.succeed(true),
       restore: () =>
         Effect.fail(new InvalidState({ message: "restoring a worktree needs the git runtime" })),

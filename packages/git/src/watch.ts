@@ -1,8 +1,3 @@
-// Filesystem watches behind push-based git state: the repo's common `.git` dir (commits, checkouts,
-// staging, fetches — linked worktrees' git dirs live under it) plus each checkout's working tree (edits
-// made outside the agent). Events are classified to the affected checkouts, coalesced in a debounce
-// window, throttled per checkout, and recomputed; only a changed state is published.
-
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import type { GitState } from "@gram/contracts";
@@ -55,7 +50,6 @@ export const RECONCILE_MS = 10_000;
  */
 export const RECONCILE_MAX_MS = 160_000;
 
-/** Settles once every native watcher call so far has. */
 let nativeTail: Promise<unknown> = Promise.resolve();
 
 /**
@@ -139,11 +133,6 @@ const nodeListeners = new Set<RootListener>();
 const restartNudged = new Set<RootListener>();
 let restartNudge: ReturnType<typeof setTimeout> | undefined;
 
-/**
- * On macOS libuv runs every `fs.watch` through one FSEvents stream and restarts it whenever a watch
- * starts or closes, dropping events that land within tens of milliseconds. Once that window has
- * passed, every live listener is told events were lost, coalesced across a burst of restarts.
- */
 const nudgeAfterRestart = () => {
   if (process.platform !== "darwin") return;
   for (const listener of nodeListeners) restartNudged.add(listener);
@@ -186,8 +175,6 @@ export const subscribeRoot = async (
       (err, events) => listener(err ? undefined : events.map((event) => event.path)),
       {
         ignore: parcelIgnore(ignore),
-        // Parcel's default probes watchman with popen; a missing binary throws while decoding BSER
-        // before pclose, leaking an unreaped shell (seen in 0.10.0-rc.5). Linux needs only inotify.
         ...(process.platform === "linux" ? { backend: "inotify" as const } : {}),
       },
     ),
@@ -217,10 +204,6 @@ const relativeUnder = (path: string, root: string): string | undefined => {
   return p.startsWith(`${r}/`) ? p.slice(r.length + 1) : undefined;
 };
 
-/**
- * Entries at the top of the common dir that belong to the main checkout alone, as a linked
- * worktree's own copies live in its `worktrees/<name>` dir. A `.lock` beside one counts as it.
- */
 const MAIN_CHECKOUT_ONLY: ReadonlySet<string> = new Set([
   "HEAD",
   "index",
@@ -233,13 +216,6 @@ const MAIN_CHECKOUT_ONLY: ReadonlySet<string> = new Set([
   "sequencer",
 ]);
 
-/**
- * Which of the checkouts sharing `common` an event at `rel` below it can change: its own git dir's
- * for `worktrees/<name>/…` and the main checkout's private files, none for Gram's checkpoint
- * refs, which no git state reads, and all of them for anything else (refs, packed-refs, config).
- * Every checkout used to recompute on any of these, so one worktree's `git status` refreshing its
- * index, or one turn's checkpoint, recomputed every worktree of the repo.
- */
 const commonDirTargets = (
   rel: string,
   common: string,
@@ -277,8 +253,6 @@ const classifyOnce = (
     }
     return true;
   }
-  // Longest toplevel wins, so an edit inside an enclosed `.worktrees/<name>` goes to that worktree
-  // rather than the main checkout recursively enclosing it. Ties (one checkout, many threads) all hit.
   let best: { length: number; rel: string; paths: Array<string> } | undefined;
   for (const checkout of checkouts) {
     const rel = relativeUnder(path, checkout.top);
@@ -289,7 +263,6 @@ const classifyOnce = (
   }
   if (!best) return false;
   for (const component of best.rel.split("/")) {
-    // A `.git` suffix belongs to the common-dir pass; leave it unclaimed for the canonical retry.
     if (component === ".git") return false;
     if (PRUNE_DIRS.includes(component)) return true;
   }
@@ -342,7 +315,6 @@ export interface WatchOptions {
   readonly backend?: WatchBackend | undefined;
 }
 
-/** Size and mtime of `path`, or "-" when it can't be read. */
 const fileStamp = (path: string): string => {
   try {
     const stat = fs.statSync(path);
@@ -361,16 +333,13 @@ export const gitDirStamp = (checkout: RepoRoots): string => {
   let head = "";
   try {
     head = fs.readFileSync(nodePath.join(checkout.gitDir, "HEAD"), "utf8").trim();
-  } catch {
-    // Unreadable: the stamp says so, and the next full read decides.
-  }
+  } catch (_unreadableTheStampSaysSoAndTheNextFull) {}
   const ref = head.startsWith("ref: ") ? head.slice(5) : undefined;
   return [
     head,
     fileStamp(nodePath.join(checkout.gitDir, "index")),
     ref === undefined ? "" : fileStamp(nodePath.join(checkout.common, ref)),
     fileStamp(nodePath.join(checkout.common, "packed-refs")),
-    // A reftable repo keeps every ref here; its HEAD always names `.invalid`.
     fileStamp(nodePath.join(checkout.common, "reftable", "tables.list")),
   ].join("|");
 };
@@ -388,7 +357,6 @@ export const watchGitState = (
   paths: ReadonlyArray<string>,
   options: WatchOptions = {},
 ): Stream.Stream<GitStateChange, never, Proc> => {
-  // One record per checkout: a path asked for twice would count its reconcile ticks down twice.
   const unique = [...new Set(paths)];
   return Stream.callback<GitStateChange, never, Proc>((queue) =>
     Effect.gen(function* () {
@@ -397,19 +365,13 @@ export const watchGitState = (
       const runFork = yield* FiberMap.makeRuntime<Proc, string>();
       const last = new Map<string, GitState>();
       const lastThrottledRun = new Map<string, number>();
-      /**
-       * macOS: per checkout, in reconcile ticks, the wait before its next full read and the ticks
-       * left until it.
-       */
       const backoff = new Map<string, { wait: number; left: number }>();
       const resetBackoff = (path: string) => {
         if (backoff.has(path)) backoff.set(path, { wait: 1, left: 1 });
       };
 
       const seqs = new Map<string, number>();
-      /** Paths whose git dir and working-tree roots both subscribed; filled before the first read. */
       const live = new Set<string>();
-      /** What each path's last change said of `live`, so losing its watch is a change too. */
       const sentLive = new Map<string, boolean>();
       const recompute = (path: string) =>
         localGitState(path).pipe(
@@ -470,9 +432,6 @@ export const watchGitState = (
       const onEvents: RootListener = (eventPaths) => {
         const classification: Classification = { hit: new Set(), internal: new Set() };
         if (eventPaths === undefined) {
-          // Events were lost; per-path attribution is meaningless, so recompute everything. A watch
-          // that lost events, or failed, can't be trusted to report the next change: none is live
-          // from here on, and the recompute tells the consumer so.
           live.clear();
           for (const checkout of checkouts) {
             classification.hit.add(checkout.path);
@@ -498,8 +457,6 @@ export const watchGitState = (
           roots.set(checkout.top, { topLevel: [".git"], anyDepth: PRUNE_DIRS });
       }
       for (const [dir, ignore] of roots) {
-        // A root that can't be watched (OS limit, permissions) degrades to no live updates for it;
-        // the OS limit, which the user can raise, is logged once.
         const subscribed = yield* Effect.option(
           Effect.acquireRelease(
             Effect.tryPromise(() => subscribeRoot(backend, dir, ignore, onEvents)),
@@ -514,8 +471,6 @@ export const watchGitState = (
         );
         if (subscribed._tag === "Some") watchedRoots.add(dir);
       }
-      // FSEvents can stay silent after a write even once subscribed (hence the reconcile below), so a
-      // macOS watch never counts as live: the consumer keeps reading what it shows.
       for (const checkout of checkouts) {
         if (
           process.platform !== "darwin" &&
@@ -524,7 +479,6 @@ export const watchGitState = (
         )
           live.add(checkout.path);
       }
-      // Subscribe before the initial read to close the ordinary setup/read race.
       for (const path of unique) yield* recompute(path);
       if (process.platform === "darwin") {
         const ticksMax = Math.max(1, Math.round(RECONCILE_MAX_MS / RECONCILE_MS));
@@ -549,13 +503,10 @@ export const watchGitState = (
                       backoff.set(path, { wait: next.wait, left: next.left - 1 });
                       continue;
                     }
-                    // Nothing moved since the last full read: wait twice as long for the next.
                     const wait = moved ? 1 : Math.min(next.wait * 2, ticksMax);
                     backoff.set(path, { wait, left: wait });
-                    // Do not interrupt a slow read: it may need longer than this interval.
                     runFork(path, recompute(path), { onlyIfMissing: true });
                   }
-                  // A path that wasn't a repo when the watch began has no git dir to stamp.
                   for (const path of unrooted)
                     runFork(path, recompute(path), { onlyIfMissing: true });
                 }),

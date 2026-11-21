@@ -1,7 +1,3 @@
-// The stops of worker machines from a hosted server (`signed-in-workers.ts`): one lock per machine
-// name, so a start and a stop of it never overlap, and the stops a server never confirmed, kept
-// and asked again until it does.
-
 import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
@@ -28,7 +24,6 @@ export const STOP_CALL_MS = 45_000;
  */
 export const stopSendBy = (sentAt: number) => sentAt + 30_000;
 
-/** How long the app's own request may take once it is sent (`HOSTED_CALL_MS` in the shell). */
 const STOP_REQUEST_MS = 15_000;
 
 /**
@@ -230,7 +225,6 @@ const memoryStopHolds = (
 ) => {
   const holds = new Map(kept.map((each) => [each.id, each]));
   let next = 0;
-  /** Lets go of every hold whose time is up: what is kept, and written, is only what still holds. */
   const prune = () => {
     const at = now();
     for (const [id, each] of holds) if (each.until <= at) holds.delete(id);
@@ -280,7 +274,6 @@ export const ownsOwing = (
 /** The most stops kept owed at once: a start that would need one more is refused. */
 export const OWED_MOST = 256;
 
-/** Which owing a stop is: its attempt id, or, for one kept before ids, its name and time. */
 const owingOf = (stop: OwedStop) => stop.attempt ?? `${stop.name}@${stop.since}`;
 
 export const memoryOwedStops = (
@@ -321,22 +314,13 @@ export const memoryOwedStops = (
 /** The most the stops owed file may hold, as it is read back: no more is ever written. */
 export const STOPS_FILE_MOST = 512 * 1024;
 
-/**
- * The most read back of a file written before writes were bounded: one grown with holds long
- * over is still read, its owings kept, and written back small.
- */
 const STOPS_FILE_READ_MOST = 16 * 1024 * 1024;
 
 /** `memoryOwedStops` kept in `<dataDir>/remote-access/worker-machine-stops.json`. */
 export const fileOwedStops = (dataDir: string, now: () => number = Date.now): OwedStops => {
-  // Room for every stop that may be owed (`OWED_MOST`), long origins included: one past it, or a
-  // file too large to read, would lose them all.
   const file = privateJsonFile(dataDir, "worker-machine-stops.json", STOPS_FILE_MOST);
   let read: { version?: unknown; owed?: unknown; holds?: unknown } | undefined;
-  // Whether nothing may be written: a file that couldn't be read, nor set aside, is never
-  // replaced, since it may hold stops still owed.
   let keepFile = false;
-  /** A move of marks that isn't on disk yet: the next `remark` writes it. */
   let remarkUnsaved = false;
   try {
     read = privateJsonFile(
@@ -346,7 +330,6 @@ export const fileOwedStops = (dataDir: string, now: () => number = Date.now): Ow
     ).read() as typeof read;
   } catch {
     read = undefined;
-    // Never dropped: set aside beside it, for a person to read, before a new one is written.
     const path = join(dataDir, "remote-access", "worker-machine-stops.json");
     try {
       if (existsSync(path)) renameSync(path, `${path}.unreadable-${Date.now()}`);
@@ -354,8 +337,6 @@ export const fileOwedStops = (dataDir: string, now: () => number = Date.now): Ow
       keepFile = true;
     }
   }
-  // No stop holds a name past `STOP_HOLD_MS` from now: one read back further ahead was written
-  // before the clock stepped back, and would keep every start of its name waiting that much longer.
   const readAt = now();
   const keptHolds = (Array.isArray(read?.holds) ? (read.holds as unknown[]) : []).flatMap(
     (each): StopHold[] =>
@@ -373,13 +354,10 @@ export const fileOwedStops = (dataDir: string, now: () => number = Date.now): Ow
           ]
         : [],
   );
-  // Each hold is written as it is made, before its stop is sent, so a restart keeps it.
   const owed = memoryOwedStops(keptHolds, () => save(), now);
   try {
     const kept = read;
     if (kept?.version === 1 && Array.isArray(kept.owed))
-      // Every owing kept, however many: one is never left out on reading. Past `OWED_MOST`, no
-      // start is admitted until enough are settled.
       for (const each of kept.owed)
         if (
           typeof each === "object" &&
@@ -401,25 +379,16 @@ export const fileOwedStops = (dataDir: string, now: () => number = Date.now): Ow
             ...(typeof each.account === "string" && each.account.length <= 64
               ? { account: each.account }
               : {}),
-            // Written since sign-ins were kept, each says so: one that doesn't is from before.
             ...(each.legacy === true || (each.account === undefined && each.noAccount !== true)
               ? { legacy: true as const }
               : {}),
           });
-  } catch {
-    // An owing that can't be read is left out; the rest are kept.
-  }
-  /**
-   * Whether what is owed is on disk now. A write that failed keeps it in memory for this run, and
-   * so does one past what the file may hold (`STOPS_FILE_MOST`): written, it couldn't be read back
-   * after a restart, and every stop owed would be lost with it.
-   */
+  } catch (_anOwingThatCantBeReadIsLeftOut) {}
   function save() {
     if (keepFile) return false;
     try {
       const value = {
         version: 1,
-        // One owed under no sign-in says so, so it isn't read back as one from before.
         owed: owed
           .list()
           .map((each) =>
@@ -431,7 +400,6 @@ export const fileOwedStops = (dataDir: string, now: () => number = Date.now): Ow
       };
       if (Buffer.byteLength(JSON.stringify(value)) > STOPS_FILE_MOST) return false;
       file.write(value);
-      // Every owing is on disk now, any move of marks with them.
       remarkUnsaved = false;
       return true;
     } catch {
@@ -445,7 +413,6 @@ export const fileOwedStops = (dataDir: string, now: () => number = Date.now): Ow
       owed.add(stop);
       save();
     },
-    // Admitted only once it is on disk: a start owed in memory alone would be lost on a restart.
     admit: (stop) => {
       if (!owed.admit(stop)) return false;
       if (save()) return true;
@@ -457,8 +424,6 @@ export const fileOwedStops = (dataDir: string, now: () => number = Date.now): Ow
         .list()
         .some((each) => each.origin === origin && each.legacy !== true && each.account === from);
       owed.remark(origin, from, to);
-      // A move whose write failed is on disk only once a later write takes it: the next move
-      // asked for (each pass asks again) writes it, moved or not.
       if (moved || remarkUnsaved) remarkUnsaved = !save();
       return !remarkUnsaved;
     },
@@ -486,15 +451,9 @@ export const fileOwedStops = (dataDir: string, now: () => number = Date.now): Ow
 export const settleOwedStops = (
   port: WorkerMachinePortShape,
   owed: OwedStops,
-  /**
-   * Whether a machine of the stop's name is registered here: `true` under the stop's own sign-in
-   * (the release pass has it, and the owing goes), `"other"` under another, or with whose unknown
-   * (the owing stays, and its stop isn't sent: it might end that machine).
-   */
   claimed: (name: string, origin: string, stop: OwedStop) => boolean | "other" = () => false,
   now: () => number = Date.now,
   locks?: NameLocks,
-  /** Names a start of this Gram's is on its way for: a start's own debt is kept while it is. */
   startingNow: (name: string) => boolean = () => false,
   misses: Map<string, number> = new Map(),
 ) =>
@@ -504,9 +463,6 @@ export const settleOwedStops = (
         locks,
         stop.name,
         Effect.gen(function* () {
-          // Looked at again once the name is this pass's alone. A start of it on its way here:
-          // every owing of it is kept, so a refusal of that start, or a restart, still gives the
-          // machine back. Taken since (registered here): let go, the release pass has it.
           if (!owed.list().some((each) => owingOf(each) === owingOf(stop))) return;
           if (startingNow(stop.name)) return;
           const held = claimed(stop.name, stop.origin, stop);
@@ -515,7 +471,6 @@ export const settleOwedStops = (
             owed.remove(stop.name, stop);
             return;
           }
-          // Held before it is sent, or not sent: asked again next pass.
           const sentAt = now();
           const hold = owed.holds.hold(stop.origin, stop.name, stopHoldUntil(sentAt));
           if (hold === undefined) return;
@@ -525,20 +480,15 @@ export const settleOwedStops = (
             { name: stop.name, notAfter: stopNotAfter(sentAt) },
             { sendBy: stopSendBy(sentAt), account: stop.account },
           );
-          // Its own answer came: its hold goes. Unanswered or a 5xx, it may still act: held.
           if (stopSettled(answered)) owed.holds.answered(hold);
           const outcome = stopOutcome(answered);
           const key = owingOf(stop);
           const missed = outcome === "missing" ? (misses.get(key) ?? 0) + 1 : 0;
           if (missed === 0) misses.delete(key);
           else misses.set(key, missed);
-          // Unanswered or a 5xx, it may still act there: its hold, kept above, keeps every start
-          // of the name back until it can't.
-          // One from before sign-ins were kept is settled by its stop alone (`OwedStop.legacy`).
           const absent =
             stop.legacy !== true &&
             (outcome === "absent" || (outcome === "missing" && missed >= RECLAIMED_AFTER_MISSES));
-          // Only what this pass settled: a start owed since, its name's lock waited for, stays.
           if (outcome === "stopped") owed.remove(stop.name, stop);
           else if (absent && (stop.unsettled !== true || now() - stop.since >= UNSETTLED_START_MS))
             owed.remove(stop.name, stop);

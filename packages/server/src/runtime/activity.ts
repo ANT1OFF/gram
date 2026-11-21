@@ -8,10 +8,6 @@ const truncate = (text: string, max = MAX_TEXT): string => {
   return line.length <= max ? line : `${line.slice(0, max - 1)}…`;
 };
 
-/**
- * `path` relative to `cwd` when it's inside it, shortened from the left when long. Separators are
- * `/` on every OS, so the line reads the same everywhere.
- */
 const displayPath = (path: string, cwd: string | undefined): string => {
   const inside = cwd === undefined ? undefined : relativeInside(cwd, path);
   const shown = (inside !== undefined && inside !== "" ? inside : path).replaceAll("\\", "/");
@@ -42,7 +38,6 @@ const hostOf = (url: string) => {
   }
 };
 
-/** One line for a tool call; `edited` collects the files edited this turn. */
 const describeTool = (
   name: string,
   input: unknown,
@@ -114,7 +109,6 @@ const describeTool = (
 const SUBAGENT_TOOLS: ReadonlySet<string> = new Set(["Task", "Agent"]);
 const EDIT_TOOLS: ReadonlySet<string> = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 const KEEP = Symbol("keep");
-/** The line while the agent compacts its context, which the web's live line says in full. */
 const COMPACTING_LINE = "Compacting context";
 
 /**
@@ -201,7 +195,6 @@ export class ActivityTracker {
           case "starting":
           case "running":
             this.#inTurn = true;
-            // A `/compact` does no other work, and its line mustn't outlast it.
             return this.#work ?? (this.#line === COMPACTING_LINE ? undefined : KEEP);
         }
         return KEEP;
@@ -256,7 +249,6 @@ export class ActivityTracker {
       case "abort": {
         if (!this.#openSubagents.delete(messageId) || this.#openSubagents.size > 0) return KEEP;
         this.#subagentWork = undefined;
-        // The last subagent is done; with no turn running there is nothing left to show.
         return this.#inTurn ? KEEP : undefined;
       }
       case "reasoning-start":
@@ -265,7 +257,6 @@ export class ActivityTracker {
         return this.#working(messageId, "Writing a reply");
       case "tool-input-start": {
         const name = c.toolName ?? "";
-        // Keep "Editing a.ts" while the next edit's input streams, rather than "Editing a file".
         if (EDIT_TOOLS.has(name) && this.#edited.size > 0) return KEEP;
         return this.#working(messageId, describeTool(name, undefined, cwd, this.#edited));
       }
@@ -286,7 +277,6 @@ export class ActivityTracker {
     const parent = this.#subagentMessages.get(messageId);
     const label = parent === undefined ? undefined : this.#subagents.get(parent);
     const work = label === undefined ? line : `${label}: ${line}`;
-    // The main agent working means a turn; a background subagent's work between turns isn't one.
     if (parent === undefined) this.#inTurn = true;
     if (this.#inTurn) this.#work = work;
     if (parent !== undefined) this.#subagentWork = work;

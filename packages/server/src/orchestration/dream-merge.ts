@@ -1,18 +1,3 @@
-/**
- * A conflict's merge: one model call that folds the dream's version of a
- * memory file and the orchestrator's live write into one text, for the user to review and adopt.
- *
- * It runs the way a dream runs, on the dream's own agent and model and confined like one
- * (file-only tools for strict harnesses; normal native permissions and scope instructions for Codex), so it follows the settings the
- * user chose and works on every harness a dream does. Unlike a dream it is a one-shot prompt that
- * needs no tool: the three texts go in the message, the merged file comes back in the reply, the
- * session's cwd is an empty folder nothing is read back from, and every permission it asks for is
- * denied. The session is not a thread, so nothing of it reaches the transcript store, and the
- * agent's own record of it is deleted afterwards where the host can.
- *
- * What comes back meets memory's rules before anyone sees it: scrubbed like every memory write,
- * and refused, never cut, when it is over the file's cap.
- */
 import { dreamSupportFor, type AgentHost, type AgentSession, type OutwardGate } from "@gram/agents";
 import type { ModelRef, PendingRequest, RequestAnswer, ThreadId } from "@gram/contracts";
 import * as Data from "effect/Data";
@@ -24,16 +9,10 @@ import { randomUUID } from "node:crypto";
 import { redactText } from "../logging/redact.ts";
 import { MEMORY_FILE_MAX_BYTES, MEMORY_INDEX, MEMORY_INDEX_MAX_BYTES } from "./memory.ts";
 
-/** How long a merge may take before it counts as failed; a 32 KB file is a few minutes at worst. */
 const MERGE_TIMEOUT: Duration.Input = Duration.minutes(10);
 
-/**
- * The most reply a merge reads before giving up: the largest file with room for the tags and a
- * preamble. Held while it streams, since the cap is only checked on the whole reply at the end.
- */
 const MERGE_REPLY_MAX_CHARS = 4 * MEMORY_FILE_MAX_BYTES;
 
-/** The longest reason a model's refusal is shown with. */
 const REASON_MAX = 300;
 
 const OPEN = "<merged_file>";
@@ -48,7 +27,6 @@ const capOf = (path: string): number =>
 /** Why a merge didn't produce a file to adopt, as a sentence to show. Never logged: it can quote the model. */
 export class MergeFailed extends Data.TaggedError("MergeFailed")<{ readonly message: string }> {}
 
-/** The standing instructions of a merge session. */
 const mergeRolePrompt = [
   "You merge two edits of one file of an orchestrator's long-term memory into a single file, because the user asked for both to be kept. You are not a coding agent here and nobody is waiting on code from you.",
   "Answer in text alone. Use no tool: read no file, run no command, search nothing, write nothing. Everything you need is in the message.",
@@ -92,7 +70,6 @@ export const mergePrompt = (sides: MergeSides): string =>
     fenced("current", sides.current),
   ].join("\n");
 
-/** Strips a code fence the model wrapped the file in, when neither side is one. */
 const unfence = (text: string, sides: MergeSides): string => {
   const fence = /^```[\w-]*\n([\s\S]*?)\n?```\s*$/.exec(text);
   if (fence === null) return text;
@@ -145,7 +122,6 @@ export const mergedFromReply = (
   return { ok: true, merged };
 };
 
-/** The refusal for whatever a merge session asks: it was told it needs nothing. */
 const deny = (request: PendingRequest): RequestAnswer => {
   const message = "A merge answers in text and needs no tool.";
   switch (request.kind) {
@@ -167,7 +143,6 @@ export interface MergeSession {
   readonly outwardGate: OutwardGate | undefined;
 }
 
-/** One turn: sends the prompt, answers every request with a refusal, and returns the reply's text. */
 const oneTurn = (session: AgentSession, prompt: string, onIdentity: (id: string) => void) =>
   Effect.gen(function* () {
     let reply = "";
@@ -189,7 +164,6 @@ const oneTurn = (session: AgentSession, prompt: string, onIdentity: (id: string)
                 )
               : Effect.void;
           case "request":
-            // A refusal that didn't arrive leaves the agent waiting on it, so the merge can't finish.
             return session
               .respond(event.request.id, deny(event.request))
               .pipe(Effect.mapError((error) => new MergeFailed({ message: error.message })));
@@ -208,7 +182,6 @@ const oneTurn = (session: AgentSession, prompt: string, onIdentity: (id: string)
         }
       }),
     );
-    // Subscribed before the send, so nothing the turn says is missed.
     const fiber = yield* Effect.forkScoped(consume);
     yield* session.send({ text: prompt });
     yield* Fiber.join(fiber);
@@ -234,7 +207,6 @@ export const mergeConflict = (
     Effect.gen(function* () {
       const session = yield* host
         .open({
-          // Not a thread: an id no thread has, so nothing the host keys by it meets a real one.
           threadId: `merge-${randomUUID()}` as ThreadId,
           cwd,
           model,
@@ -274,7 +246,6 @@ export const mergeConflict = (
         ),
     }),
   );
-  // The agent's own history of the session holds the memory text; it served its one turn.
   const forget = Effect.suspend(() =>
     agentSessionId === undefined || host.deleteSession === undefined
       ? Effect.void

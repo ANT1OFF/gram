@@ -1,8 +1,3 @@
-// The Preview tab where no shell draws a page (a browser tab): the page the thread's agent drives
-// in the server's own browser, drawn from the server's frames. A click, a key or a scroll in it
-// takes the page over, as in the desktop app; it goes back to the agent with Hand back, or by
-// itself once the person has sent nothing for a while.
-
 import {
   VIEW_IDLE_MS,
   VIEW_INPUT_BATCH,
@@ -54,7 +49,6 @@ export interface ServerPage {
   };
 }
 
-/** Follows the thread's page on the server, telling `changed` of each state; returns the end. */
 const followServerPage = (
   api: Api,
   threadId: ThreadId,
@@ -93,7 +87,6 @@ const followServerPage = (
         }
       }
     } catch {
-      // This server shows no page of its own: the tab is what it was without one.
       if (!abort.signal.aborted) changed(undefined);
     }
   })();
@@ -116,7 +109,6 @@ export function useServerPage(threadId: ThreadId, enabled: boolean): ServerPage 
   return enabled && held?.threadId === threadId ? held.view : undefined;
 }
 
-/** Alt 1, Control 2, Meta 4, Shift 8. */
 const modifiersOf = (event: {
   altKey: boolean;
   ctrlKey: boolean;
@@ -128,7 +120,6 @@ const modifiersOf = (event: {
   (event.metaKey ? 4 : 0) |
   (event.shiftKey ? 8 : 0);
 
-// No middle button: on the server it would paste a selection every thread's page shares.
 const BUTTONS = ["left", undefined, "right"] as const;
 
 /** What a key types, when it types anything: a held Control or Command makes it a shortcut. */
@@ -138,7 +129,6 @@ export const typedBy = (event: {
   metaKey: boolean;
   altKey?: boolean;
 }) => {
-  // Control with Alt is AltGr, which types characters of its own on many keyboards.
   if (event.metaKey || (event.ctrlKey && event.altKey !== true)) return undefined;
   if (event.key === "Enter") return "\r";
   return Array.from(event.key).length === 1 ? event.key : undefined;
@@ -165,11 +155,6 @@ export const keyInput = (
   };
 };
 
-/**
- * Sends inputs in the order they happened, a batch at a time: the next goes once the last is
- * answered, so a slow connection gets fewer, fuller messages. Pointer moves waiting together
- * become the latest one.
- */
 const inputSender = (api: Api, threadId: ThreadId) => {
   let waiting: BrowserViewInput[] = [];
   let sending = false;
@@ -180,7 +165,6 @@ const inputSender = (api: Api, threadId: ThreadId) => {
       while (waiting.length > 0) {
         const batch = waiting.slice(0, VIEW_INPUT_BATCH);
         waiting = waiting.slice(batch.length);
-        // An input lost to a dropped connection isn't sent again later, out of its moment.
         await api.browserViewInput(threadId, batch).catch(() => {
           waiting = [];
         });
@@ -215,9 +199,7 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
   const yours = page?.driver === "user";
   const live = page !== null && drawn;
 
-  // Each frame goes straight to the image: no render for a repaint.
   useEffect(() => {
-    // The image is there only while the page is drawn.
     if (!live) return;
     const draw = () => {
       const element = image.current;
@@ -231,10 +213,6 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     return frames.listen(draw);
   }, [frames, live]);
 
-  /**
-   * A point of the window in the page's own CSS pixels; `undefined` outside the drawn page, unless
-   * `nearest` asks for the point of the page closest to it.
-   */
   const pointOf = (event: { clientX: number; clientY: number }, nearest = false) => {
     const element = image.current;
     const frame = frames.current;
@@ -251,7 +229,6 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     return x < 0 || y < 0 || x > frame.width || y > frame.height ? undefined : { x, y };
   };
 
-  /** The button held down in the page, which is let go wherever the pointer is by then. */
   const pressed = useRef<(typeof BUTTONS)[number]>(undefined);
   useEffect(() => {
     if (!live) return;
@@ -272,11 +249,9 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     };
     window.addEventListener("mouseup", up);
     return () => window.removeEventListener("mouseup", up);
-    // `pointOf` reads refs only.
     // oxlint-disable-next-line react/exhaustive-deps -- `pointOf` reads refs only
   }, [live, send]);
 
-  // A wheel listener React adds can't stop the tab from scrolling too; this one can.
   useEffect(() => {
     const element = stage.current;
     if (element === null || !live) return;
@@ -295,15 +270,12 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     };
     element.addEventListener("wheel", wheel, { passive: false });
     return () => element.removeEventListener("wheel", wheel);
-    // `pointOf` reads refs only.
     // oxlint-disable-next-line react/exhaustive-deps -- `pointOf` reads refs only
   }, [live, send]);
 
   const pointer = (event: React.MouseEvent, action: "move" | "down") => {
-    // A drag goes on past the page's edge, at the nearest point of it.
     const at = pointOf(event, action === "move" && pressed.current !== undefined);
     if (at === undefined) return;
-    // The agent's page takes no pointer passing over it; the server would drop it too.
     if (action === "move" && !yours) return;
     if (action === "down" && BUTTONS[event.button] === undefined) return;
     if (action === "down") {
@@ -324,15 +296,11 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
 
   const key = (event: React.KeyboardEvent, action: "down" | "up") => {
     if (!live) return;
-    // The way out for someone without a pointer: every other key is the page's while it has the
-    // focus, Tab and Escape among them.
     if (event.key === "Escape" && event.shiftKey) {
       event.preventDefault();
       if (action === "down") leave.current?.focus();
       return;
     }
-    // Only what the page may get is taken from the app: Command's shortcuts, the function keys
-    // and any other shortcut stay the app's and the browser's.
     const input = keyInput(event.nativeEvent, action);
     if (event.metaKey || event.key === "Meta" || viewInput(input) === undefined) return;
     event.preventDefault();
@@ -394,7 +362,6 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
             }
           >
             <Shield aria-hidden className="size-icon-row" />
-            {/* The word where the panel has room for it and the address both. */}
             <span className="hidden @lg:inline">Server</span>
           </Hint>
           <input
@@ -405,7 +372,6 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
             readOnly
             spellCheck={false}
             title={page?.title || undefined}
-            // As a browser shows it: the whole address once it is being read or copied.
             value={addressFocused ? (page?.url ?? "") : shownAddress(page?.url ?? "")}
             onFocus={(event) => {
               setAddressFocused(true);
@@ -451,7 +417,6 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
                 )}
                 {yours ? "You're driving" : "Agent driving"}
               </span>
-              {/* After who drives, so a narrow panel's first line keeps the driver and the action. */}
               {page.recording === true && (
                 <span
                   data-testid="preview-recording"
@@ -461,13 +426,11 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
                   Recording
                 </span>
               )}
-              {/* In a narrow panel a recording starts the second line, beside how to take over. */}
               {!yours && page.recording === true && (
                 <span aria-hidden className="order-1 basis-full @lg:hidden" />
               )}
               {yours ? (
                 <>
-                  {/* In a narrow panel the button ends the first line and the rest takes the next. */}
                   <span className="order-3 flex min-w-0 basis-full flex-wrap items-center gap-x-2 @lg:order-none @lg:flex-1 @lg:basis-auto">
                     <span data-testid="server-preview-yours">
                       Agent resumes after {IDLE_SECONDS} s idle
@@ -535,7 +498,6 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
       <div
         ref={stage}
         data-testid="server-preview-stage"
-        // The page takes the keys while it has the focus, as a page in a pane would.
         tabIndex={live ? 0 : -1}
         role={live ? "application" : undefined}
         aria-label={live ? `The agent's page: ${page.title || page.url}` : undefined}
@@ -593,7 +555,6 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
   );
 }
 
-/** What the "Server" mark in the address says of where the page runs. */
 const WHERE =
   "On the server's browser: it opens addresses on the server only, such as its dev servers.";
 
@@ -608,7 +569,6 @@ function Key({ children }: { children: ReactNode }) {
   );
 }
 
-/** What the tab says in the page's place while there is none: a mark, what is so, and what next. */
 function Notice({
   testId,
   role = "status",

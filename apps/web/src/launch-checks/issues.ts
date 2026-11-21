@@ -22,11 +22,6 @@ export interface LaunchIssue {
   readonly update?: GatewayAgentTool | undefined;
 }
 
-/**
- * The problems the first-run screen's readiness card already says, with what to do about each: a
- * missing or signed-out agent, git and the GitHub CLI. While that card is on screen the banner and
- * its chip leave them to it, so a first run with no agent warns once, not twice.
- */
 const FIRST_RUN_COVERS: ReadonlySet<string> = new Set([
   "agents-missing",
   "claude-missing",
@@ -55,7 +50,6 @@ export function launchIssues(checks: LaunchChecks): LaunchIssue[] {
   const found = (tool: LaunchTool) => checks.tools.find((t) => t.tool === tool)?.found === true;
   const issues: LaunchIssue[] = [];
   const claudeUnusable = checks.tools.find((t) => t.tool === "claude")?.unusable;
-  // With neither agent installed nothing can start, whichever one threads or settings name.
   const noAgent = !found("claude") && !found("codex");
   const usesClaude =
     !noAgent &&
@@ -72,7 +66,6 @@ export function launchIssues(checks: LaunchChecks): LaunchIssue[] {
       text: "Claude Code isn't installed, so Claude threads can't start. Install it, then re-check.",
     });
   } else if (usesClaude && claudeUnusable !== undefined) {
-    // Signing in wouldn't help, so the sign-in state waits until a thread can start.
     issues.push({ id: "claude-unusable", text: claudeUnusable });
   } else if (usesClaude && checks.claudeSignIn === "notSignedIn") {
     issues.push({
@@ -120,7 +113,6 @@ export function launchIssues(checks: LaunchChecks): LaunchIssue[] {
     });
   }
 
-  // Only the agents the user relies on: a Claude-only user isn't told about Codex.
   for (const agent of checks.agentsInUse ?? []) {
     const tool = checks.tools.find((t) => t.tool === agent);
     if (tool === undefined || (noAgent && !tool.found)) continue;
@@ -139,7 +131,6 @@ export function launchIssues(checks: LaunchChecks): LaunchIssue[] {
       isOlderVersion(tool.version, tool.testedVersion)
     ) {
       issues.push({
-        // Per installed version, so dismissing one doesn't hide a later, different skew.
         id: `${agent}-outdated-${tool.version}`,
         text: `${name} ${tool.version} is older than the ${tool.testedVersion} Gram is tested with. Some features may not work.${
           command === undefined ? "" : ` Upgrade with \`${command}\`.`

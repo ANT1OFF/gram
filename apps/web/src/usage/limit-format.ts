@@ -21,7 +21,6 @@ export const PROVIDER_SHORT: Readonly<Record<LimitProvider, string>> = {
   grok: "Grok",
 };
 
-/** An agent's short word (`PROVIDER_SHORT`); one the meter doesn't know by its full name. */
 const shortName = (agent: string): string =>
   Object.hasOwn(PROVIDER_SHORT, agent) ? PROVIDER_SHORT[agent as LimitProvider] : agentLabel(agent);
 
@@ -56,7 +55,6 @@ export const limitPercent = (utilization: number): number =>
 export const meterText = ({ provider, limit }: TightestLimit): string =>
   `${PROVIDER_SHORT[provider]} ${limitPercent(limit.utilization)}% used${limit.credits === true ? " · credits" : ""}`;
 
-/** Why the meter shows the reading it does: the thread's agent's, or the highest of all. */
 type MeterWhy = { readonly why?: "agent" | "highest" | undefined };
 
 /**
@@ -101,10 +99,6 @@ export const resetText = (at: number, now: number, intl: IntlOptions = {}): stri
  */
 export const resetAtText = resetText;
 
-/**
- * "1,250.5": a credit balance as the agent gave it, its whole part grouped by thousands and its
- * fraction cut to two places without trailing zeros (Codex reports ten: "40706.6175120000").
- */
 const creditBalanceText = (balance: string): string =>
   balance
     .replace(/\.(\d*)$/, (_, fraction: string) => {
@@ -144,7 +138,6 @@ export const meterState = (limit: UsageLimit): MeterState | undefined =>
         ? "approaching"
         : undefined;
 
-/** The state as the button's name says it, after its reading. */
 const STATE_WORDS: Readonly<Record<MeterState, string>> = {
   approaching: "near the limit",
   credits: "limit reached, continuing on credits",
@@ -189,7 +182,6 @@ export const forecastText = (
     intl,
   )}`;
 
-/** "until 18:00": when a held brief starts, on a 24-hour clock (`resetText`), for a narrow chip. */
 const untilText = (until: number, now: number, intl: IntlOptions = {}): string =>
   `until ${resetText(until, now, intl)}`;
 

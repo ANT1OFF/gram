@@ -30,9 +30,7 @@ const wordsOf = (error: unknown, fallback: string): string =>
   error instanceof ThreadTransferError ? error.message : fallback;
 
 type Moved = Extract<HostedThreadMoved, { ok: true }> & {
-  /** What the export left behind, in this Gram's words. */
   readonly left: readonly string[];
-  /** Why the copy here isn't read-only, when settling it failed. */
   readonly unsettled?: string;
 };
 
@@ -66,7 +64,6 @@ export function MoveThreadDialog({
   const [error, setError] = useState<{ readonly why: string; readonly unknown: boolean }>();
   const [moved, setMoved] = useState<Moved>();
   const started = useRef(false);
-  // A send with no clear answer is sent again as it was: the same export answers the same thread.
   const unanswered = useRef<ExportedThread>(undefined);
 
   const move = async () => {
@@ -114,7 +111,6 @@ export function MoveThreadDialog({
     }
   };
 
-  // "Move when this turn ends": the move starts once the thread is at rest.
   useEffect(() => {
     if (phase !== "waiting") return undefined;
     const atRest = () => {
@@ -184,7 +180,6 @@ export function MoveThreadDialog({
       <DialogShell
         testId="move-thread-dialog"
         title={`Moving "${title}" to ${target.name}`}
-        // Closing would hide a move under way; it ends on its own, either way.
         onClose={ignore}
       >
         <ol data-testid="move-thread-steps" className="flex flex-col gap-2 text-reading">

@@ -1,17 +1,3 @@
-// Machines an orchestrator starts for its own workers, through the embedder's host provider.
-//
-// A headless Gram runs no work itself: an orchestrator's workers go on its own machine, the
-// person's own (`on-demand.ts`). Where the provider offers it, an orchestrator may instead ask for
-// a machine of a worker's own, with the size and processor the work needs, so a heavy build or a
-// test suite on the other processor doesn't crowd the person's machine. The provider decides:
-// whether that person allows it, how much their orchestrators may hold at once, and what each
-// machine may be. Over that total nothing starts, and the orchestrator is told what is in use, so
-// it can wait, put the worker on a machine it already has, or run it on its own.
-//
-// The provider registers the machine here (`/machines/provision`) under the name asked for, with
-// the person as its owner and `onDemand: "worker"`. Only that person's orchestrators place work on
-// it (`orchestration/service/spawning.ts` `workerMachine`), and it is never anyone's default.
-
 import { hostListing, type WorkerPlacement } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { createHash, randomBytes } from "node:crypto";
@@ -173,8 +159,6 @@ export const resolveWorkerPicks = (
       resolved[key] = asked;
       continue;
     }
-    // Every option the person was offered, not only those their own machine may have: a worker's
-    // machine has limits of its own, which the provider checks.
     const usable = choice.options;
     const wanted = plain(asked);
     const found =
@@ -205,7 +189,6 @@ export type StartAnswer =
   | { readonly status: number; readonly body: unknown }
   | { readonly failed: string };
 
-/** Whether an ask's name and picks are ones there are, before anything is sent. */
 const askIsWellFormed = (ask: Omit<WorkerMachineAsk, "owner">) =>
   NAME.test(ask.name) &&
   (ask.size === undefined || SHORT.test(ask.size)) &&
@@ -247,8 +230,6 @@ export const askWorkerMachine = <R>(
       } as const;
     const { status, body } = answered;
     if (status === 409 && !codes) return parseOverTotal(body);
-    // The name was a machine's the server has since reclaimed: it isn't given out again. Asked
-    // once, never again under the same name, so the orchestrator picks another request id.
     if (
       status === 409 &&
       typeof body === "object" &&
@@ -259,7 +240,6 @@ export const askWorkerMachine = <R>(
         kind: "refused",
         message: `The machine name ${ask.name} was a machine's that the server has since reclaimed, so it isn't used again. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
       } as const;
-    // Held as released there, even after it was taken back once.
     if (
       status === 409 &&
       typeof body === "object" &&
@@ -270,8 +250,6 @@ export const askWorkerMachine = <R>(
         kind: "refused",
         message: `${ask.name} is still held as released there, after it was told it is working again. Try again in a minute, or spawn with another clientRequestId.`,
       } as const;
-    // Over the person's total, as a `409` with no code, or `over_total`, says; another code is no
-    // total to show.
     const code =
       typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
     if (status === 409 && (code === undefined || code === "over_total"))
@@ -427,7 +405,6 @@ export const placementOf = (
   };
 };
 
-// ---------------------------------------------------------------------------------------------
 /** A joined machine as a provider reads it. */
 export interface ProvidedMachine {
   readonly id: string;
@@ -546,7 +523,6 @@ export const parseOfferedModels = (value: unknown): ReadonlyArray<OfferedModel> 
   return models.length === 0 ? undefined : models;
 };
 
-/** A pin on one model's own id (`claude-opus-5-5`), not a tier, a name or an alias (`opus`). */
 const CONCRETE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9.]+)*-[0-9][a-z0-9.[\]-]*$/i;
 
 /**
@@ -564,8 +540,6 @@ export const pinRefusal = (
   const colon = named.indexOf(":");
   const wanted = (colon === -1 ? named : named.slice(colon + 1)).trim().toLowerCase();
   if (!CONCRETE_ID.test(wanted)) return undefined;
-  // The row the launch names exactly first (`opus[1m]`), before one that only matches once a
-  // window is set aside (`opus`).
   const launched = chosen.model.toLowerCase();
   const row =
     rows.find((each) => each.id.toLowerCase() === launched) ?? hostListing(rows, chosen.model);
@@ -614,7 +588,6 @@ export const embeddedSource = (
 ): WorkerMachineSource => ({
   label: "This deployment",
   choices: choicesFor(hosts, owner),
-  // Its machines' hosts say what they run once they join (`admitMachineModel`).
   models: Effect.succeed(undefined),
   start: (ask) => startWorkerMachine(hosts, { ...ask, owner }),
   theirs: (machine) => machine.onDemand === "worker" && machine.owner === owner,
@@ -622,14 +595,11 @@ export const embeddedSource = (
     awaitWorkerMachine(machines, { name, owner }).pipe(
       Effect.map((id) => id ?? { failed: "timeout" }),
     ),
-  // The provider keeps it starting: a retry with the same request id waits for that one.
   timedOut: (name) =>
     Effect.succeed(
       `The machine ${name} was asked for but hasn't come online yet. Spawn again with the same clientRequestId in a minute, or put the worker on your machine.`,
     ),
-  // Its provider pauses an idle machine and reclaims it once released (`worker-machine-release.ts`).
   givesBack: false,
-  // Its provider wakes a machine on the next message, released or not.
   unrelease: () => Effect.succeed(undefined),
   idOf: (name) =>
     machines().find(

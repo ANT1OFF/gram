@@ -5,11 +5,6 @@ import { sleep } from "@/lib/sleep";
 import { errorMessage } from "./errors";
 import { fetchOnDemandStatus, startOnDemand } from "./on-demand";
 
-// A workspace with an environment of its own runs on a machine of its own (the server's
-// `embedding/workspace-machines.ts`). Opening its orchestrator with that machine not running is
-// refused; the person's app then starts it, in a request of their own the fronting proxy signs,
-// waits for it, and opens the orchestrator again. Every way into an orchestrator goes through here.
-
 /** How often a wait for a workspace's machine asks whether it is up. */
 export const WORKSPACE_MACHINE_POLL_MS = 2_000;
 /** How long it waits, as the server waits for a worker's own machine. */

@@ -37,7 +37,6 @@ export const AgentUnavailableReason = Schema.Literals([
   "claude-not-found",
   "startup-failed",
   "auth-status-failed",
-  /** `resume` named a session with no transcript, e.g. one opened but never sent a message. */
   "session-not-found",
 ]);
 export type AgentUnavailableReason = typeof AgentUnavailableReason.Type;

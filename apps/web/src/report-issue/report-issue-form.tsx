@@ -36,7 +36,6 @@ const KINDS: readonly {
   readonly value: IssueKind;
   readonly label: string;
   readonly icon: LucideIcon;
-  /** The icon's colour while the kind is picked: the text colour, never a status one. */
   readonly tone: string;
 }[] = [
   { value: "bug", label: "Bug", icon: Bug, tone: "text-foreground" },
@@ -83,7 +82,6 @@ export function ReportIssueForm({
     includeDiagnostics,
     ...(threadId === undefined ? {} : { threadId }),
   };
-  // The footer doesn't depend on what's typed, so one preview serves the whole form.
   const footer = useQuery({
     queryKey: ["issues.footer", threadId],
     queryFn: () =>
@@ -151,8 +149,6 @@ export function ReportIssueForm({
       onClose={onClose}
     >
       <form className="flex min-h-0 flex-col gap-3" onSubmit={(event) => void submit(event)}>
-        {/* The fields scroll in a short window; the error and the buttons below them stay in view.
-            The inset keeps the inputs' focus rings inside the scroll box. */}
         <div
           data-testid="report-issue-fields"
           className="-m-1 flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain p-1"

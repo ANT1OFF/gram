@@ -1,4 +1,3 @@
-// Entirely generated: never accepts a source database, host auth or provider configuration.
 import { DEFAULT_CHARTER, type Thread, type ThreadId, type WorkspaceId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { mkdirSync } from "node:fs";
@@ -63,7 +62,6 @@ export const seedSqliteFixture = (dir: string) =>
           createdAt: FIXTURE_NOW,
         },
         charter: DEFAULT_CHARTER,
-        // The benchmark requests ledgers directly; no boot digest or autonomous work is owed.
         paused: { reason: "user", at: FIXTURE_NOW },
       });
       const workers = Object.fromEntries(
@@ -82,8 +80,6 @@ export const seedSqliteFixture = (dir: string) =>
         }),
       );
     }
-    // Half the history is on a long-lived orchestrator; the rest spans all 299 other threads.
-    // Bulk generation still runs the shipped FTS/usage triggers. Each transaction holds 1,000 rows.
     for (let start = 0; start < FIXTURE.messages; start += 1000) {
       yield* sql.withTransaction(sql`WITH RECURSIVE n(x) AS (
         SELECT CAST(${start} AS INTEGER) UNION ALL SELECT x + 1 FROM n WHERE x < ${start + 999}
@@ -107,7 +103,6 @@ export const seedSqliteFixture = (dir: string) =>
     }
     yield* sql`UPDATE feed_revision SET rev = ${FIXTURE.messages}`;
     yield* sql`UPDATE threads SET feed_rev = ${FIXTURE.messages}`;
-    // 30 days of turns. A one-day usage query is below the shipped admission limits.
     yield* sql`INSERT INTO turns (id, thread_id, started_at, ended_at, reason, usage)
       SELECT turn_id, thread_id, ${FIXTURE_NOW} - 1000 - (seq % 30) * ${DAY_MS},
         ${FIXTURE_NOW} - (seq % 30) * ${DAY_MS}, 'completed',
@@ -125,7 +120,6 @@ export const seedSqliteFixture = (dir: string) =>
       INSERT INTO thread_wakes (id, thread_id, at, set_at, note)
       SELECT 'wake-' || x, 'perf-thread-' || (x % 300), ${FIXTURE_NOW + DAY_MS * 3650},
         ${FIXTURE_NOW}, 'Synthetic wake' FROM n`;
-    // Fixed statistics and an empty WAL make the five repeats start from the same file.
     yield* sql`ANALYZE`;
     yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
   });

@@ -8,7 +8,6 @@ import { Toggle } from "./fields";
 
 const KEPT_HOST = ["keptHost"] as const;
 
-/** What the row says under itself: where the host runs now, and how to stop it. */
 const statusLine = (status: {
   readonly on: boolean;
   readonly running: boolean;
@@ -48,7 +47,6 @@ export function KeepRunningField({
   const queries = useQueryClient();
   const status = useQuery({ queryKey: KEPT_HOST, queryFn: () => api.keptHost() });
   const [stopping, setStopping] = useState(false);
-  /** Asked once: stopping it ends the agents in it, mid-turn too. */
   const [confirming, setConfirming] = useState(false);
   const [stopError, setStopError] = useState<string>();
   const on = keepRunningAfterQuitOn(settings);

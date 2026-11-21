@@ -55,11 +55,6 @@ interface Timing {
   readonly drainAfterExitMs: number;
 }
 
-/**
- * Variables that change what a shell command means when `/bin/sh` is bash: exported functions,
- * options, start-up files, the prompt it traces with, where `cd` looks and how words split. They
- * come from the person's own login environment, and are dropped whatever the caller passes.
- */
 const SHELL_MEANING = new Set([
   "SHELLOPTS",
   "BASHOPTS",
@@ -84,7 +79,6 @@ export const shellEnvironment = (env: Readonly<Record<string, string>>): Record<
 /** Pieces kept before the oldest are joined: a command writing a byte at a time stays small. */
 export const OUTPUT_PIECES_MOST = 64;
 
-/** The last `most` bytes of what was pushed, cut at a character, and whether anything was lost. */
 const makeTail = (most: number) => {
   const kept: Array<{ stream: "stdout" | "stderr"; bytes: Buffer }> = [];
   let total = 0;
@@ -94,13 +88,10 @@ const makeTail = (most: number) => {
       if (text === "") return;
       const bytes = Buffer.from(text, "utf8");
       const last = kept.at(-1);
-      // One piece per run of a stream, not one per read.
       if (last !== undefined && last.stream === stream)
         last.bytes = Buffer.concat([last.bytes, bytes]);
       else kept.push({ stream, bytes });
       total += bytes.length;
-      // Past the most, the two oldest pieces become one, under the later stream's name: the
-      // order between them is lost, and the result says so.
       while (kept.length > OUTPUT_PIECES_MOST) {
         const [first, second] = kept;
         if (first === undefined || second === undefined) break;
@@ -118,7 +109,6 @@ const makeTail = (most: number) => {
           total -= first.bytes.length;
           continue;
         }
-        // Cut inside the oldest piece, forward to the start of a character.
         let from = over;
         while (from < first.bytes.length && ((first.bytes[from] ?? 0) & 0xc0) === 0x80) from += 1;
         total -= from;
@@ -135,7 +125,6 @@ const makeTail = (most: number) => {
         const text = bytes.toString("utf8");
         for (let at = 0; at < text.length;) {
           let to = Math.min(text.length, at + DEVICE_OUTPUT_EVENT_MAX);
-          // Never between the two halves of one character.
           const last = text.charCodeAt(to - 1);
           if (to < text.length && last >= 0xd800 && last <= 0xdbff) to -= 1;
           output.push({ stream, text: text.slice(at, to) });
@@ -150,11 +139,8 @@ const makeTail = (most: number) => {
 const stopTree = (child: ChildProcess, signal: NodeJS.Signals): void => {
   if (child.pid === undefined) return;
   try {
-    // The group, so what the command started goes with it.
     process.kill(-child.pid, signal);
-  } catch {
-    // Already gone.
-  }
+  } catch (_alreadyGone) {}
 };
 
 export const runCommand = (
@@ -170,7 +156,6 @@ export const runCommand = (
       done({ output: [], truncated: false, timedOut: false, stopped: true });
       return;
     }
-    // Node reports a missing working folder as a missing shell.
     if (!existsSync(request.cwd)) {
       fail(new Error("The working folder is gone."));
       return;
@@ -179,7 +164,6 @@ export const runCommand = (
     try {
       child = spawn("/bin/sh", ["-c", request.command], {
         cwd: request.cwd,
-        // Exactly this environment: nothing of the app's own leaks in.
         env: shellEnvironment(request.env),
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
@@ -204,7 +188,6 @@ export const runCommand = (
       });
       ends.push(() => tail.push(stream, redactor.push(decoder.end()) + redactor.end()));
     }
-    /** The shell has been collected: its number is free, so its group is never signalled again. */
     let exited = false;
     const signalGroup = (signal: NodeJS.Signals) => {
       if (!exited) stopTree(child, signal);
@@ -229,7 +212,6 @@ export const runCommand = (
       clearTimeout(drainTimer);
       request.signal.removeEventListener("abort", onAbort);
       clearTimeout(killTimer);
-      // Output still unread when the pipes are cut is lost, and the result says so.
       if ((child.stdout?.readableLength ?? 0) > 0 || (child.stderr?.readableLength ?? 0) > 0)
         tail.lost();
       child.stdout?.destroy();
@@ -255,16 +237,11 @@ export const runCommand = (
     });
     child.on("exit", (code, signal) => {
       exit = { code, signal };
-      // What the command left in its group goes now, in the same step as Node collecting the
-      // shell, and never later: after this the number may be given to another process.
       stopTree(child, "SIGKILL");
       exited = true;
-      // It ended by itself: a timeout or an abort from now on changes nothing it did.
       clearTimeout(timer);
       request.signal.removeEventListener("abort", onAbort);
-      // A background process may hold the pipes open; it gets a moment, not for ever.
       drainTimer = setTimeout(() => {
-        // Something it left running still holds the output open: what it writes later is lost.
         tail.lost();
         finish(code, signal);
       }, timing.drainAfterExitMs);

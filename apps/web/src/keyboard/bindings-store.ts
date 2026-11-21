@@ -4,10 +4,8 @@ import { create } from "zustand";
 export type BindingOverrides = Readonly<Record<string, string | null>>;
 
 interface KeybindingsSnapshot {
-  /** Where `keybindings.json` lives, for "Edit keybindings.json". */
   path: string;
   bindings: BindingOverrides;
-  /** Why parts of the file were ignored. */
   problems: readonly string[];
 }
 

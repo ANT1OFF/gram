@@ -1,36 +1,3 @@
-// Machines started for one person (`embedding/on-demand.ts`): who may reach one.
-//
-// Ownership is the machine's alone. A thread is its machine's owner's; nothing is inherited from
-// an orchestrator or a spawner. One rule, `mayReach`, decides, and it is asked at the few places
-// every path to a machine passes:
-//
-// 1. Where a host or a session is resolved: `WorkerHosts.get` and the session lookup
-//    (`ownedMachines`), which every terminal, file, git call and session opening goes through,
-//    and the runtimes' deliveries to a session already open (`runtime/owned-runtimes.ts`).
-// 2. Where work is kept to be done later: `durable-work.ts` records who it is for when it is
-//    written (`recordActor`) and runs every attempt, a retry included, as them (`asRecorded`).
-//
-// The calls are told who they are made for (`RoutedFor`): every RPC as its signed-in person, and
-// every agent tool call as its own thread's machine's owner (`asThreadOwner`). The server's own
-// work is told so explicitly (`ServerWork`, granted where the server starts and to kept work
-// written by it): a fiber that says nothing is no one's, never the server's. Threads in one
-// orchestration have one owner: a link between them (a spawn, a join, a move) is made only
-// between machines of the same owner's, or of no one's (`sameOwner`), so a workspace's
-// orchestrator and its workers never span two people.
-//
-// A machine started on demand always names its owner: the subject of the person it is for, or
-// one no person signs in with (such as a run's), which leaves it to the server's own work and
-// its own threads. Such a host may name the one person who reaches it besides
-// (`PairedMachine.person`): reach alone, never placement or a link, so its threads and their agents
-// stay its owner's and touch nothing of that person's. One registered before owners were required names none, and is closed the same
-// way (`holderOf`): reached by the server's own work alone, and of no owner's but its own. Only a
-// machine joined or registered for no one in particular (no kind) is open to every caller.
-//
-// One thread has no machine yet: one started before its machine (`Thread.awaitingMachine`). Until
-// it is placed it is reached only by whoever it was started by, where the start named a person
-// (`mayReachThread`), and it is placed only on a machine of theirs or of no one's
-// (`mayPlaceAwaited`).
-
 import {
   effectiveCheckout,
   hostOf,
@@ -84,7 +51,6 @@ export const asServer = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect
     Effect.provideService(ServerWork, true),
   );
 
-/** The caller of a fiber that says nothing and holds no `ServerWork`: no one. */
 const NO_ONE: Caller = { person: undefined };
 
 /**
@@ -113,7 +79,6 @@ export type OwnerOf = ((hostId: HostId) => string | undefined) & {
   readonly personOf?: (hostId: HostId) => string | undefined;
 };
 
-/** What a closed machine's holder starts with: no person's subject or owner can (`holderOf`). */
 const CLOSED = "\u0000closed:";
 
 /**
@@ -203,7 +168,6 @@ export const ownedMachines =
         : Effect.fail(new HostUnavailable({ hostId: id, message: NOT_YOUR_MACHINE })),
     );
 
-/** Every checkout a thread works in: its own, the one it follows now, and its other repos'. */
 const checkoutsOf = (thread: Pick<Thread, "checkout" | "currentCheckout" | "extraCheckouts">) => [
   thread.checkout,
   ...(thread.currentCheckout === undefined ? [] : [thread.currentCheckout]),
@@ -226,7 +190,6 @@ export const mayReachThread = (
   threadId: ThreadId,
 ): Effect.Effect<boolean> =>
   Effect.gen(function* () {
-    // The server's own work reaches everything, and reads nothing to say so.
     if ((yield* currentCaller) === undefined) return true;
     const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
     if (thread === undefined) return true;
@@ -246,12 +209,10 @@ export const mayReachMachinesOf = (
 ): Effect.Effect<boolean> =>
   Effect.gen(function* () {
     if ((yield* currentCaller) === undefined) return true;
-    // Started for someone before its machine was there: theirs alone until it is on one.
     const startedBy = thread.awaitingMachine?.startedBy;
     if (startedBy !== undefined && (yield* currentCaller)?.person !== startedBy) return false;
     for (const checkout of checkoutsOf(thread))
       if (!(yield* mayReach(ownerOf, hostOf(checkout)))) return false;
-    // A memory update's session runs on a machine its folder isn't on (`Thread.dreamHost`).
     if (thread.dreamHost !== undefined && !(yield* mayReach(ownerOf, thread.dreamHost)))
       return false;
     return true;

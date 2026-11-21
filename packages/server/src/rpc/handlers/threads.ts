@@ -77,8 +77,6 @@ import { clientInput } from "../../runtime/user-input.ts";
 import { makeRespondHandlers } from "./respond.ts";
 import { taskCheckoutRequest } from "./task-checkout.ts";
 
-// Narrow the union before handing codecs to the receipt store, so each handler keeps its
-// own declared success and error types.
 const messageRpcs = [...ThreadRpcs.requests.values()];
 const sendRpc = messageRpcs.find((rpc) => rpc._tag === "thread.send")!;
 const steerRpc = messageRpcs.find((rpc) => rpc._tag === "thread.steer")!;
@@ -99,7 +97,6 @@ export const heldForRemoval = (
     : [thread.checkout.path, effective];
 };
 
-/** A thread at `MAX_OPEN_WAITS`, as the client hears of it. */
 const waitsFull = (threadId: ThreadId) => (full: { readonly open: number }) =>
   Effect.fail(
     new InvalidState({
@@ -116,29 +113,23 @@ export const threadHandlers = Effect.gen(function* () {
   const waits = yield* ThreadWaits;
   const keeper = Option.getOrUndefined(yield* Effect.serviceOption(PlanKeeper));
   const helper = Option.getOrUndefined(yield* Effect.serviceOption(HelperScheduler));
-  /** Counts what the user did with a helper's suggestion, for its keep rate. */
   const waitEvent = (event: "kept" | "dismissed" | "restored") =>
     helper === undefined ? Effect.void : helper.recordEvent("wait", event);
   const hub = yield* EventHub;
   const checkouts = yield* CheckoutService;
-  // Absent in runtime-only test layers, where no machine is joined.
   const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
   const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
   const checkpoints = yield* Checkpoints;
   const config = yield* ServerConfig;
-  // Absent in runtime-only test layers, where no branch is ever deleted.
   const pr = yield* Effect.serviceOption(Pr);
   const proc = yield* Effect.serviceOption(Proc);
-  // Absent in runtime-only test layers, where there are no git watchers to release.
   const publisher = yield* Effect.serviceOption(GitStatePublisher);
   const releaseWatchers = Option.match(publisher, {
     onNone: () => Effect.void,
     onSome: (git) => git.sync,
   });
-  // Absent in runtime-only test layers, where a close only at rest is then always refused.
   const ports = Option.getOrUndefined(yield* Effect.serviceOption(ThreadPorts));
   const gate = Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate));
-  // Absent in runtime-only test layers, where no thread has a role.
   const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
   const holdWatch = (path: string) =>
     Option.match(publisher, {
@@ -146,17 +137,11 @@ export const threadHandlers = Effect.gen(function* () {
       onSome: (git) => git.hold(path),
     });
 
-  /**
-   * The commit `ref` names in the checkout at `path`; `undefined` when it names none there, outside
-   * a repo, before a first commit, or without `Proc`. For `HEAD`, the commit rather than the thread's
-   * recorded branch: a session switches branches as it works.
-   */
   const commitOf = (path: string, ref: string) =>
     Option.match(proc, {
       onNone: () => Effect.succeed<string | undefined>(undefined),
       onSome: (service) =>
         Effect.gen(function* () {
-          // The worktree layer's own gate first, so nothing it would refuse is resolved here.
           if ((yield* sanitizeBase(path, ref)) === undefined) return undefined;
           const out = yield* runGit(path, [
             "rev-parse",
@@ -181,10 +166,6 @@ export const threadHandlers = Effect.gen(function* () {
       : {}),
   });
 
-  /**
-   * The project of a joined machine's one-off threads (`machineProjectRoot`), named for the
-   * machine, made the first time one starts there.
-   */
   const machineProject = (hostId: HostId) =>
     Effect.gen(function* () {
       const root = machineProjectRoot(hostId);
@@ -203,10 +184,6 @@ export const threadHandlers = Effect.gen(function* () {
   const profiles = yield* profileStarter;
   const prepareCheckout = creator.prepare;
 
-  /**
-   * A fork's checkout other than the source's own. A new worktree branches from the source branch
-   * and gets the fork point's checkpoint files when the source recorded them.
-   */
   const prepareForkCheckout = (plan: ForkPlan, request: CheckoutRequest) =>
     Effect.gen(function* () {
       const { source } = plan;
@@ -225,7 +202,6 @@ export const threadHandlers = Effect.gen(function* () {
           Effect.fail(new InvalidState({ message: e.message })),
         ),
       );
-      // Checkpoints are this machine's: a fork made or forked on another machine starts clean.
       if (
         request.kind === "newWorktree" &&
         plan.turnId !== undefined &&
@@ -280,13 +256,10 @@ export const threadHandlers = Effect.gen(function* () {
         draftId,
         alsoIn,
       },
-      /** The call's transport, which the RPC server always gives; absent in-process. */
       call?: { readonly headers?: Readonly<Record<string, string | undefined>> },
     ) =>
       Effect.gen(function* () {
         const input = sentInput === undefined ? undefined : clientInput(sentInput);
-        // A folder on another machine is the local app's to pick, never a paired phone's: the
-        // transport says which connection this is (`isLocalApp`), not anything the caller sent.
         if (checkout.kind === "machineFolder" && !isLocalApp(call?.headers)) {
           return yield* new InvalidState({ message: MACHINE_FOLDER_LOCAL_ONLY });
         }
@@ -298,9 +271,6 @@ export const threadHandlers = Effect.gen(function* () {
             message: "A past session resumes on this machine, not in a folder on another.",
           });
         }
-        // Check the folders first, so a typo reads "Folder not found" rather than a git or
-        // platform failure from deeper in. A folder on another machine is its host's to check
-        // (`prepare`), never this disk's: its thread belongs to that machine's project.
         const root =
           checkout.kind === "machineFolder"
             ? yield* machineProject(checkout.hostId)
@@ -315,7 +285,6 @@ export const threadHandlers = Effect.gen(function* () {
             message: "A thread in a folder on another machine uses that folder alone.",
           });
         }
-        // Checked before anything is made, so a typo makes nothing.
         const otherRoots: Array<string> = [];
         for (const other of others) {
           const folder = yield* resolveFolder(other);
@@ -331,7 +300,6 @@ export const threadHandlers = Effect.gen(function* () {
           root,
           otherRoots,
         );
-        // Chosen here so the draft's staged attachments move into the thread before the first send.
         const id = Schema.decodeSync(ThreadId)(randomUUID());
         const create = (firstInput: UserInput | undefined) =>
           runtimes.create({
@@ -340,7 +308,6 @@ export const threadHandlers = Effect.gen(function* () {
             checkout: resolved,
             ...(extraCheckouts.length === 0 ? {} : { extraCheckouts }),
             ...(additionalDirectories.length === 0 ? {} : { additionalDirectories }),
-            // With none picked, `create` takes the saved default, resolving one that follows a tier.
             ...(model === undefined ? {} : { model }),
             ...(mode === undefined ? {} : { mode }),
             ...(title === undefined ? {} : { title }),
@@ -354,9 +321,6 @@ export const threadHandlers = Effect.gen(function* () {
       }),
     "thread.createFromProfile": ({ profile, threadId }) =>
       Effect.gen(function* () {
-        // A signed-in person never names the id. A start asked for again under an id answers the
-        // thread already there, so an id a person chose ahead of the service's own start would be
-        // taken for that start (`thread-profiles/start.ts`).
         if (threadId !== undefined && (yield* ActingPerson) !== undefined)
           return yield* new InvalidState({ message: PERSON_NAMES_NO_ID });
         return yield* profiles.start(profile, { threadId });
@@ -380,7 +344,6 @@ export const threadHandlers = Effect.gen(function* () {
         interrupt === true ? ["interrupt", input] : ["steer", input],
         steerRpc.successSchema,
         steerRpc.errorSchema,
-        // The user's own composer: their steer goes in past a card too.
         runtimes.steer(
           threadId,
           input,
@@ -397,7 +360,6 @@ export const threadHandlers = Effect.gen(function* () {
       remoteHosts === undefined
         ? Effect.fail(new InvalidState({ threadId, message: "This Gram has no joined machines." }))
         : restoreFromBranch({ hosts: remoteHosts, store, runtimes }, threadId).pipe(
-            // Its saved work is dropped: the error that said it was gone has nothing left to offer.
             Effect.andThen(
               runtimes.updateThread(threadId, (t) => {
                 if (t.lastError?.code !== KEPT_WORK_GONE_CODE) return t;
@@ -418,26 +380,21 @@ export const threadHandlers = Effect.gen(function* () {
     "thread.restartSession": ({ threadId, midTurn }) => runtimes.restartSession(threadId, midTurn),
     "thread.startSession": ({ threadId }) => runtimes.startSession(threadId),
     ...makeRespondHandlers(store, runtimes),
-    // The user's own pick, which the orchestration's auto downgrade must leave alone.
     "thread.setMode": ({ threadId, mode }) =>
       (orchestration === undefined ? Effect.void : orchestration.userChoseMode(threadId)).pipe(
         Effect.andThen(runtimes.setMode(threadId, mode)),
       ),
     "thread.setModel": ({ threadId, model }) =>
-      // Admission is an invariant of a role-bearing or spawned thread, so the user's own picker
-      // is held to it too.
       (orchestration === undefined
         ? Effect.void
         : orchestration.checkModelChange(threadId, model)
       ).pipe(Effect.andThen(runtimes.setModel(threadId, model))),
     "thread.startFreshOn": ({ threadId, model }) =>
-      // A worker on another model is held to the same admission and gate as on a new model.
       (orchestration === undefined
         ? Effect.void
         : orchestration.checkModelChange(threadId, model)
       ).pipe(Effect.andThen(runtimes.startFreshOn(threadId, model))),
     "thread.switchAgent": ({ threadId, target, note }) =>
-      // A worker on the other agent is held to the same admission and gate as on a new model.
       (orchestration === undefined
         ? Effect.void
         : orchestration.checkModelChange(threadId, target)
@@ -460,7 +417,6 @@ export const threadHandlers = Effect.gen(function* () {
         yield* runtimes.addDirectories(threadId, [folder]);
         return folder;
       }),
-    // The user's own grant for one thread; the session reopens once idle to load or drop Chrome.
     "thread.setBrowser": ({ threadId, browser }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
@@ -474,7 +430,6 @@ export const threadHandlers = Effect.gen(function* () {
           });
         }
         if ((thread.browser === true) === browser) return thread;
-        // Lending it where the session can't carry it would promise what it never gets.
         if (browser) {
           const { cannot } = yield* runtimes.browserStatusOf(threadId);
           if (cannot !== undefined) return yield* new InvalidState({ message: cannot, threadId });
@@ -495,7 +450,6 @@ export const threadHandlers = Effect.gen(function* () {
       }),
     "thread.pin": ({ threadId, pinned }) =>
       runtimes.updateThread(threadId, (t) => ({ ...t, pinned })).pipe(Effect.asVoid),
-    // Parking and closing drop the thread's git watcher; returning only once it's released.
     "thread.park": ({ threadId, parked }) =>
       runtimes
         .updateThread(threadId, (t) => ({ ...t, parked }))
@@ -519,8 +473,6 @@ export const threadHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
         const { checkout } = thread;
-        // A worktree about to be deleted is unwatched first: on Windows the native watcher can take
-        // the process down when its folder goes away under it. A refused removal gets its watch back.
         yield* Effect.acquireUseRelease(
           Effect.forEach(heldForRemoval(thread, removeWorktree !== undefined), holdWatch),
           () => {
@@ -534,7 +486,6 @@ export const threadHandlers = Effect.gen(function* () {
               ? closeAtRest(runtimes, ports, gate, threadId, options)
               : runtimes.close(threadId, options);
           },
-          // Only once the close is over: a client gone mid-close ends this wait, not the close.
           (releases) =>
             runtimes.releaseAfterClose(
               threadId,
@@ -592,7 +543,6 @@ export const threadHandlers = Effect.gen(function* () {
         const { item, changed } = yield* waits
           .resolve(threadId, id, undo === true ? undefined : { by: "user", at: Date.now() })
           .pipe(Effect.catchTag("WaitsFull", waitsFull(threadId)));
-        // A suggestion the user resolves is one they dismissed.
         if (changed && item.suggested === true) {
           yield* waitEvent(undo === true ? "restored" : "dismissed");
         }
@@ -640,7 +590,6 @@ export const threadHandlers = Effect.gen(function* () {
     "thread.listWaits": ({ threadId, state }) =>
       Effect.gen(function* () {
         yield* store.getThread(threadId);
-        // A signed-in person's own and the ones for anyone, as their events carry them.
         return waitsFor(yield* store.listWaits(threadId, state ?? "open"), yield* ActingPerson);
       }),
     "thread.markCompleted": ({ threadId, completed }) =>
@@ -660,7 +609,6 @@ export const threadHandlers = Effect.gen(function* () {
           if (target.turnId === undefined) {
             return yield* new InvalidState({ message: "that message has no checkpoint", threadId });
           }
-          // A user message keeps its turn's starting files; an agent reply keeps where the turn ended.
           const checkpoint =
             target.role === "user" ? target.turnId : endCheckpointId(target.turnId);
           restoreFiles = Effect.suspend(() =>
@@ -676,15 +624,12 @@ export const threadHandlers = Effect.gen(function* () {
 
     "thread.fork": ({ threadId, fromMessageId, checkout, title }) =>
       Effect.gen(function* () {
-        // A fork stays in its source's folder or gets a new worktree: a folder on another machine
-        // is picked only for a new chat (`thread.create`).
         if (checkout?.kind === "machineFolder") {
           return yield* new InvalidState({
             message: "A fork goes in its chat's folder or a new worktree, not another folder.",
           });
         }
         const plan = yield* runtimes.forkTarget(threadId, fromMessageId);
-        // Refused before a worktree is made for it on another machine (`fork` refuses it too).
         if (checkout !== undefined) {
           const elsewhere = forkHostRefusal(
             plan.source,
@@ -707,23 +652,13 @@ export const threadHandlers = Effect.gen(function* () {
         if (project === undefined) {
           return yield* new NotFound({ entity: "project", id: parent.projectId });
         }
-        // A one-off thread on a joined machine has no repository here to branch from, and its
-        // folder is that machine's: its chips are for the user to start by hand there.
         if (machineOfProject(project) !== undefined) {
           return yield* new InvalidState({
             message:
               "A task from a chat on another machine starts from New task: pick the machine and folder there.",
           });
         }
-        // Where the parent is working now, not where it was created: a thread that moved into
-        // another worktree offers its chips from there, and `current` means beside it.
         const own = effectiveCheckout(parent);
-        // A base the chip names is where the task starts, or the task doesn't start. It is resolved
-        // here, in the parent's own worktree, to the commit it names there, and that commit is what
-        // is branched from: the worktree layer resolves a base again from the project root, where
-        // `HEAD` and the like name something else, and it drops a base it can't use and branches
-        // from the default instead, which is right for a hint and would start a typo's follow-up on
-        // unrelated code, looking fine.
         const base = task.base === undefined ? undefined : yield* commitOf(own.path, task.base);
         if (task.base !== undefined && task.checkout !== "current" && base === undefined) {
           return yield* new InvalidState({
@@ -747,7 +682,6 @@ export const threadHandlers = Effect.gen(function* () {
           yield* accept;
           return yield* runtimes.create({ ...start, projectRoot: project.root, checkout });
         }
-        // The path `spawn_worker` starts its workers by: one guard, one set of errors.
         return yield* creator
           .createIn(request, project.root, start, () => accept)
           .pipe(

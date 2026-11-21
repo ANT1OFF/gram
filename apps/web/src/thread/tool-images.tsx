@@ -24,7 +24,6 @@ export const ToolImagesContext = createContext<{
   byCall: ReadonlyMap<string, readonly ToolImageData[]>;
 } | null>(null);
 
-/** A source is only a candidate: attachment.read must independently authorize it. */
 function readImageSource(part: AnyToolPart): string | undefined {
   if (toolNameOf(part) !== "Read" || part.state !== "output-available") return undefined;
   const output = part.output;
@@ -86,7 +85,6 @@ function ReadSourceImage({
   );
 }
 
-/** Same 5 MiB preview bound as attachment.read; size checked before scanning/decoding inline bytes. */
 const INLINE_MAX_BYTES = 5 * 1024 * 1024;
 function HistoricalToolImage({
   image,

@@ -93,7 +93,6 @@ interface Step {
   readonly status: PlanStep["status"];
 }
 
-/** The steps the headline counts: the plan's, or the agent's todo list while the plan has none. */
 const stepsOf = (facts: HeadlineFacts): { steps: ReadonlyArray<Step>; next: Step | undefined } => {
   const plan = facts.plan;
   if (plan !== undefined && plan.steps.length > 0)
@@ -108,7 +107,6 @@ const stepsOf = (facts: HeadlineFacts): { steps: ReadonlyArray<Step>; next: Step
   };
 };
 
-/** "Review the plan: 5 steps", counting the plan's top-level list items. */
 const planSteps = (markdown: string): number => {
   const items = markdown.split("\n").flatMap((line) => {
     const match = /^(\s*)(?:\d+[.)]|[-*+])\s+\S/u.exec(line);
@@ -121,7 +119,6 @@ const planSteps = (markdown: string): number => {
 
 const firstLine = (text: string): string => planText(text.split("\n").find((l) => l.trim()) ?? "");
 
-/** Rules 1–4: a request waiting on the user, or a stop. */
 const needsYouText = (facts: HeadlineFacts): string | undefined => {
   const approval = facts.pendingRequests.find((r) => r.kind === "approval");
   if (approval !== undefined) {
@@ -148,7 +145,6 @@ const needsYouText = (facts: HeadlineFacts): string | undefined => {
   return undefined;
 };
 
-/** Rule 5: what on an open PR needs the user, with who asked for changes. */
 const prTrouble = (pr: PrStatus): string | undefined => {
   if (requiredChecksOf(pr) === "failing") return `CI failing on #${pr.number}`;
   const person = pr.review?.humanReviews?.findLast((r) => r.verdict === "changesRequested");
@@ -161,7 +157,6 @@ const prTrouble = (pr: PrStatus): string | undefined => {
   return undefined;
 };
 
-/** Rules 7–9, and a draft: what an open PR waits on, the AI reviewer told apart from people. */
 const waitingOn = (pr: PrStatus): { phase: PlanPhase; text: string } => {
   const facts = prFactsOf(pr);
   if (pr.isDraft) return { phase: "next", text: `Draft · #${pr.number}` };
@@ -172,7 +167,6 @@ const waitingOn = (pr: PrStatus): { phase: PlanPhase; text: string } => {
   if (requiredChecksOf(pr) === "pending") {
     return { phase: "waitingCi", text: `Waiting on CI · #${pr.number}` };
   }
-  // The AI reviewer, not a person: its round is minutes away, theirs may be days.
   if (pr.review?.roundInFlight === true) {
     return { phase: "waitingReview", text: `AI review running · #${pr.number}` };
   }
@@ -228,7 +222,6 @@ export const planHeadline = (facts: HeadlineFacts): PlanHeadline | undefined => 
     const { phase, text } = waitingOn(waiting);
     return of(phase, text, waiting);
   }
-  // Bound, but its badge hasn't been looked up yet.
   if (anyPrOpen(badges)) return of("waitingReview", "Waiting on review");
 
   const merged = badges.find((b) => b?.state === "MERGED");
@@ -256,7 +249,6 @@ export const planHeadline = (facts: HeadlineFacts): PlanHeadline | undefined => 
       ? of("next", `Next: ${step}`)
       : of("followUp", `Follow-up after #${merged.number} · ${step}`, merged);
   }
-  // Work went on after the merge, with no plan to say what it is.
   if (merged !== undefined && reopenedSinceMerge(facts.thread, badges)) {
     return of("followUp", `Follow-up after #${merged.number}`, merged);
   }

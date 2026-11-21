@@ -15,9 +15,6 @@ import { passedCount } from "@/panels/proof-panel";
 
 import type { BesideTab } from "./beside-store";
 
-// A worker's own tools in the pane's row, and why each that is off is off: from its git state, its
-// PR and its repository's verify recipe, or from its record once only that is kept.
-
 export interface Tool {
   readonly id: BesideTab;
   readonly label: string;
@@ -55,7 +52,6 @@ export interface ToolFacts {
   readonly verify?: VerifyState | undefined;
 }
 
-/** "3/4": the drivers that cover the change and passed on the head, of those that cover it. */
 const proofCount = (verify: VerifyState): string | undefined => {
   if (verify.recipe !== "ok") return undefined;
   const { passed, of } = passedCount(verify);
@@ -76,7 +72,6 @@ export const liveTools = ({
 }: ToolFacts): readonly Tool[] => {
   const outside = git !== undefined && !git.repo;
   const missing = worktreeMissing(git as GitState | undefined);
-  // The one its PR panel opens, its row's chip names and its head line shows.
   const pr = prTargetOf(git, boundPr)?.number;
   const changed = finished && prFiles !== undefined ? prFiles : (git?.changedFiles ?? 0);
   const noCheckout = missing ? FOLDER_MISSING : finished ? FINISHED : undefined;
@@ -87,7 +82,6 @@ export const liveTools = ({
       label: "Changes",
       icon: FileDiff,
       count: changed > 0 ? String(changed) : undefined,
-      // A finished one's from its PR, which needs no checkout.
       off: outside
         ? NO_REPOSITORY
         : missing && !(finished && prFiles !== undefined)
@@ -101,7 +95,6 @@ export const liveTools = ({
       count: pr === undefined ? undefined : `#${pr}`,
       off: outside ? NO_REPOSITORY : pr === undefined ? NO_PR_YET : undefined,
     },
-    // Only where the repository names checks: a repository without a recipe opted into none.
     ...(verify === undefined || verify.recipe === "none" || outside
       ? []
       : [{ id: "proof" as const, label: "Proof", icon: ShieldCheck, count: proofCount(verify) }]),

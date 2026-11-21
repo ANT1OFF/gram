@@ -1,6 +1,3 @@
-// What "Since you looked" says, decided apart from its card. No React.
-
-/** A sentence as two copies of it compare: one line, no case, no closing stop. */
 const plain = (text: string): string =>
   text
     .replaceAll(/\s+/g, " ")

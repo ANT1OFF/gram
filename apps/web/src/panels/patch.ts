@@ -90,7 +90,6 @@ export function splitRows(lines: readonly PatchLine[]): SplitRow[] {
   };
   for (const line of lines) {
     if (line.kind === "del") {
-      // A removal after additions starts a new change, not a longer one.
       if (adds.length > 0) flush();
       dels.push(line);
     } else if (line.kind === "add") {

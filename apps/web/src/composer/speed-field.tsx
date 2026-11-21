@@ -108,7 +108,6 @@ export function SpeedField({
   const usage = speedUsage(agent);
   const report = speedReport(state);
   const shown = items.find((item) => item.value === (value ?? "default"))?.label ?? "CLI default";
-  // On a toolbar a short value after its dimension, "Speed: Standard", as effort and mode say theirs.
   const toolbarValue = ghost ? speedValueWord(value, state) : shown;
   return (
     <div className="flex flex-col gap-1" data-testid="speed-field">
@@ -126,7 +125,6 @@ export function SpeedField({
           ref={trigger}
           label="Speed"
           value={toolbarValue}
-          // "Speed: Default" on the chip; its name and tooltip say whose, "Speed: CLI default".
           words={ghost && value === undefined ? "Default" : undefined}
           compact={ghost ? speedCompactWord(value) : undefined}
           labelled={labelled}
@@ -143,7 +141,6 @@ export function SpeedField({
           size={ghost ? "sm" : size}
           {...(ghost ? { className: GHOST_TRIGGER } : {})}
         />
-        {/* On a toolbar, never over the draft: flipped up, it clears the whole composer. */}
         <SelectContent {...(ghost ? { anchor: () => aboveComposer(trigger.current) } : {})}>
           {items.map((item) => (
             <SelectItem

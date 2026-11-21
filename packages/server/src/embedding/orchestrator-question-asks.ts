@@ -1,9 +1,3 @@
-// A workspace orchestrator's own questions for the user (`questions.md`, `ask_user`) as the event
-// sink's asks. An open entry with an id is an ask like a harness's question: opened to the receiver
-// with what it needs to answer it through `asks/answer`, on the orchestrator's thread, and resolved
-// once the entry closes or goes, however and wherever that happened. Its id names the workspace
-// too, since entry ids (`Q3`) restart in each.
-
 import type { MemoryQuestion, QuestionAnswer, WorkspaceId } from "@gram/contracts";
 import {
   ASK_OPTION_DESCRIPTION_MAX_CHARS,

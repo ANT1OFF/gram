@@ -38,7 +38,6 @@ export const listReviewRequestsTool = (
     }),
     handle: (threadId, { repo, refresh }) =>
       Effect.gen(function* () {
-        // A repository named is checked first, so a refused one asks for no poll either.
         yield* refuseOutOfReach("list_review_requests", store, threadId, { repos: [repo] });
         if (refresh === true) yield* poller.refresh();
         const settings = yield* store.getSettings;
@@ -52,7 +51,6 @@ export const listReviewRequestsTool = (
         );
         const wanted = repo?.toLowerCase();
         return {
-          // Off in Settings → Notifications, nothing is polled and the list is always empty.
           enabled: reviewRequestsOn(settings),
           directOnly: reviewRequestsDirectOnly(settings),
           ...(checkedAt === undefined ? {} : { checkedAt: new Date(checkedAt).toISOString() }),
@@ -96,7 +94,6 @@ export const listOpenPrsTool = (
         const caller = Option.getOrUndefined(yield* store.getThread(threadId).pipe(Effect.option));
         const origins = yield* poller.projectOrigins;
         const roots = new Map((yield* store.listProjects).map((p) => [p.id, p.root]));
-        // No thread the caller's reader may not see owns one here (`embedding/readable-by.ts`).
         const threads = yield* readableOnly(yield* store.listThreads, (thread) => thread);
         const titles = new Map(threads.map((thread) => [thread.id, thread.title]));
         const live = yield* Effect.forEach(threads, (thread) =>

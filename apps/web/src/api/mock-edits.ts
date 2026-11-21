@@ -1,9 +1,5 @@
 import type { GramUIMessage, MessageMetadata } from "@gram/contracts";
 
-// Two finished transcripts made of file edits, one per agent, as each mapper stores them: Claude's
-// Edit, MultiEdit and Write calls with the SDK's structured results, and Codex's file changes,
-// which its mapper turns into dynamic `Edit`/`Write` calls carrying the patch's `changes`.
-
 type Part = GramUIMessage["parts"][number];
 
 const WEB = "/Users/dev/code/web/.worktrees/feat-file-tabs";
@@ -44,9 +40,6 @@ const codexTool = (name: string, id: string, input: unknown, output: unknown): P
   output,
   providerExecuted: true,
 });
-
-// ---------------------------------------------------------------------------------------------
-// Claude
 
 const TABS_TEST = `${WEB}/src/tabs/file-tabs.test.tsx`;
 const TABS = `${WEB}/src/tabs/file-tabs.tsx`;
@@ -220,7 +213,6 @@ const claudeMessages = (): GramUIMessage[] => [
         },
       ),
       say("A subagent also tidied the README's tab section."),
-      // A subagent's result is plain text: the SDK sends no structured result on a sidechain.
       claudeTool(
         "Edit",
         "toolu_edit_readme",
@@ -235,9 +227,6 @@ const claudeMessages = (): GramUIMessage[] => [
     ],
   },
 ];
-
-// ---------------------------------------------------------------------------------------------
-// Codex
 
 const LIMITER = `${API}/src/limiter.ts`;
 const LIMITER_TEST = `${API}/src/limiter.test.ts`;
@@ -293,7 +282,6 @@ const TEST_DIFF = [
   "",
 ].join("\n");
 
-/** The `structuredPatch` the Codex mapper puts on a finished file change, flattened across files. */
 const flatHunks = (diff: string) => {
   const [header, ...lines] = diff.trimEnd().split("\n");
   const [, oldStart, oldLines, newStart, newLines] =

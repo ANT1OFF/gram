@@ -46,7 +46,6 @@ export const OPENCODE_CAPABILITIES: AgentCapabilities = {
   steer: true,
   steerInterrupt: true,
   planMode: true,
-  // OpenCode saves an `always` for the project; it has no session-long grant.
   approvalScopes: ["once", "always"],
   userQuestions: false,
   costReporting: true,
@@ -62,7 +61,6 @@ export const GATEWAY_KEY_ENV = "GRAM_OPENCODE_GATEWAY_KEY";
 
 const unavailable = (message: string) => new AgentUnavailable({ agent: "opencode", message });
 
-/** A call to the server, failing as the agent being unavailable, with `what` and the reason. */
 const attempt = <A>(what: string, run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,
@@ -87,8 +85,6 @@ const ACTS = ["edit", "write", "shell", "webfetch", "subagent", "external_direct
  * permissions are bypassed: a subagent's session isn't known to hold its parent's rules.
  */
 export const rulesFor = (mode: PermissionMode): ReadonlyArray<OpenCodePermissionRule> => {
-  // First, so the rules after it win: an action not named here (an MCP tool, `execute`) is
-  // refused in `dontAsk`, asked about in `plan` and `default`, and run in `bypassPermissions`.
   const reads = [
     rule("*", mode === "dontAsk" ? "deny" : mode === "bypassPermissions" ? "allow" : "ask"),
     ...READS.map((action) => rule(action, "allow")),
@@ -258,18 +254,15 @@ export interface OpenCodeHostConfig {
 
 const textOf = (input: UserInput): string => {
   const names = (input.attachments ?? []).map((attachment) => attachment.name);
-  // OpenCode takes files by URI; until Gram hands them over, the agent is told what was attached.
   return names.length === 0 ? input.text : `${input.text}\n\n(Attached: ${names.join(", ")})`;
 };
 
 const replyFor = (answer: RequestAnswer): OpenCodePermissionReply | undefined => {
   if (answer.kind !== "approval") return undefined;
   if (answer.decision === "deny") return "reject";
-  // OpenCode's `always` is saved for the project; only an answer that says so gets it.
   return answer.scope === "always" ? "always" : "once";
 };
 
-/** A server's start: its binary, env and key, then the process, read only once a key. */
 const startFor = (config: OpenCodeHostConfig, profileId: ProfileId | undefined) =>
   Effect.gen(function* () {
     const binary = yield* config.binary;
@@ -312,10 +305,6 @@ export const makeOpenCodeHost = (
       }),
     );
 
-    /**
-     * The server for a profile, started once: the start is kept before it runs, so two opens at
-     * once share it, and a profile invalidated while it starts stops what it started.
-     */
     const serverFor = (profileId: ProfileId | undefined) =>
       Effect.gen(function* () {
         const key = profileId ?? "";
@@ -353,7 +342,6 @@ export const makeOpenCodeHost = (
         const server = yield* serverFor(options.model?.profileId);
         const client: OpenCodeClient = server.client;
         let mode = options.permissionMode ?? "default";
-        /** While a mode change is under way, every gated command is shown, under either mode. */
         let changingMode = false;
         const gate = gateLevel(options.outwardGate);
         const model = modelRefFor(options.model);
@@ -395,9 +383,7 @@ export const makeOpenCodeHost = (
           tools: [],
           commands: [],
         });
-        /** The sessions this one's subagents run in, by id: whether each is one of them. */
         const children = new Map<string, Promise<boolean>>();
-        /** Which session each shown request is answered under. */
         const answeredUnder = new Map<string, string>();
         const isChild = (id: string): Promise<boolean> => {
           let known = children.get(id);
@@ -414,7 +400,6 @@ export const makeOpenCodeHost = (
           if (event.type === "permission.asked") {
             const permission = permissionOf(event.data);
             if (permission === undefined) return;
-            // A command the mode runs unasked and the gate doesn't ask about: let it through.
             if (!changingMode && gateAllows(mode, gate, permission)) {
               void client.reply(under, permission.id, "once").catch((error: unknown) => {
                 Queue.offerUnsafe(events, {
@@ -447,7 +432,6 @@ export const makeOpenCodeHost = (
               onPermission(event, session.id);
               return;
             }
-            // A subagent's session asks under its own id; its parent's thread shows and answers it.
             void isChild(from).then((child) => {
               if (child) onPermission(event, from);
             });
@@ -476,9 +460,7 @@ export const makeOpenCodeHost = (
             await subscribed;
           }),
         );
-        // Nothing is sent before the stream is open, so no event of the turn is missed.
         yield* Effect.promise(() => Promise.race([ready.promise, sleep(5_000)]));
-        // A request the session already had waiting (a resumed one) is shown again.
         const waiting = yield* attempt("Couldn't read the session's requests", () =>
           client.permissions(session.id),
         ).pipe(Effect.orElseSucceed(() => []));
@@ -537,8 +519,6 @@ export const makeOpenCodeHost = (
                 }),
             });
           },
-          // The mode is reported only once OpenCode holds its rules, never on a failed change, and
-          // a change that fails half way puts the old rules and agent back.
           setMode: (next) =>
             Effect.tryPromise({
               try: async () => {

@@ -1,7 +1,3 @@
-// Which file a page is pinned or offered from: an HTML file in one of the thread's own folders on
-// this machine, as the Preview tab resolves it (`previewTarget`, then `pageFolderCheck`), never one
-// outside them, whatever a transcript names. The folder copied is that file's resolved folder.
-
 import {
   checkoutRoots,
   effectiveCheckout,
@@ -25,7 +21,6 @@ export const pageEntryOf = (
   path: string,
 ): Effect.Effect<string, InvalidState | NotFound> =>
   Effect.gen(function* () {
-    // A mock's board after `#` names the same file.
     const file = previewFileFragment(path).path;
     if (previewFileKind(file) !== "html") {
       return yield* new InvalidState({ message: `${file} isn't an HTML file` });

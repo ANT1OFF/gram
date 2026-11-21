@@ -1,10 +1,3 @@
-// This machine's server asks the app for machines of a worker's own from a hosted server
-// (`packages/server/src/embedding/signed-in-workers.ts`, `docs/design/desktop-worker-machines.md`).
-// The app holds the sign-in, so it makes each call, and it carries each such machine's connection:
-// it dials the server's relay for the machine, and passes what comes through to this machine's
-// server as frames over the same port, and back. It reads nothing in those frames but the first,
-// which says how the host signed its dial; the server checks that signature itself.
-
 import { randomUUID } from "node:crypto";
 
 import {
@@ -23,18 +16,12 @@ import type { HostedDevice } from "./hosted-device.ts";
 const NONE: WorkerMachineResult = { ok: false, why: "Hosted features are off in this app." };
 const MALFORMED: WorkerMachineResult = { ok: false, why: "The request isn't one the app sends." };
 
-/** The first wait after a relay ends, doubled each time up to the last. */
 const RETRY_FIRST_MS = 2_000;
 const RETRY_MOST_MS = 60_000;
-/** A relay that lasted this long resets the wait. */
 const STEADY_MS = 60_000;
-/** How long the relay may take to say how the host dialled, once it is open. */
 const FIRST_FRAME_MS = 30_000;
-/** The most bytes of one frame passed on: the host protocol's frames are far smaller. */
 const FRAME_MOST_BYTES = 16 * 1024 * 1024;
-/** How many machines' connections the app carries at once. */
 const RELAYS_MOST = 64;
-/** How often live relays are checked against the sign-in, besides each change of it. */
 const REVALIDATE_MS = 30_000;
 /**
  * How often a live relay's lease is renewed: a token is had for it again, which renews the sign-in
@@ -42,16 +29,13 @@ const REVALIDATE_MS = 30_000;
  */
 export const RELAY_LEASE_MS = 5 * 60_000;
 
-/** Closes a socket with a code Node's WebSocket takes (1000, or 3000–4999), never throwing. */
 const closeSafely = (socket: RelaySocket, code: number, reason: string) => {
   try {
     socket.close(
       code === 1000 || (code >= 3000 && code <= 4999) ? code : 1000,
       reason.slice(0, 120),
     );
-  } catch {
-    // Already closed.
-  }
+  } catch (_alreadyClosed) {}
 };
 
 const isRequest = (message: unknown): message is { type: "machines.request"; id: string } =>
@@ -120,7 +104,6 @@ export interface WorkerMachineRelays {
 
 interface Wanted {
   readonly origin: string;
-  /** The sign-in it is carried under alone (`WorkerMachineServer.account`), where one is. */
   readonly account?: string | undefined;
   stopped: boolean;
   socket?: RelaySocket;
@@ -157,7 +140,6 @@ export const makeWorkerMachineRelays = (options: {
     entry.timer = setTimeout(() => void dial(name, entry), entry.waitMs);
   };
 
-  /** Whether the sign-in covers carrying a machine from `origin` now. */
   const covered = (entry: Wanted) =>
     options.device()?.workerMachineRelayAllowed(entry.origin, entry.account) === true;
 
@@ -171,8 +153,6 @@ export const makeWorkerMachineRelays = (options: {
             .workerMachineRelayDial(entry.origin, name, entry.account)
             .catch(() => undefined);
     if (entry.stopped) return;
-    // Covered again as it opens: a sign-out or another sign-in while the dial was prepared (a
-    // token renewal, a nonce) opens nothing under the old one.
     if (prepared === undefined || !prepared.ok || !covered(entry)) {
       again(name, entry, undefined);
       return;
@@ -200,7 +180,6 @@ export const makeWorkerMachineRelays = (options: {
       if (typeof data !== "string" && !(data instanceof Uint8Array)) return;
       const size = typeof data === "string" ? Buffer.byteLength(data, "utf8") : data.byteLength;
       if (size > FRAME_MOST_BYTES) {
-        // 1009 is the standard's own code, which Node's WebSocket refuses to send.
         closeSafely(socket, 4009, "frame too large");
         return;
       }
@@ -208,7 +187,6 @@ export const makeWorkerMachineRelays = (options: {
         options.post({ type: "machines.relay.frame", conn, data });
         return;
       }
-      // The first: how the host signed its dial, which the server checks.
       clearTimeout(firstFrame);
       let first: unknown;
       try {
@@ -286,9 +264,7 @@ export const makeWorkerMachineRelays = (options: {
   };
   const watcher = options.watch === false ? undefined : setInterval(revalidate, REVALIDATE_MS);
   watcher?.unref?.();
-  /** Renews each live relay's lease, closing those whose sign-in can't be had any more. */
   const renew = async () => {
-    // A copy: the list may change while a renewal is awaited.
     for (const entry of Array.from(wanted.values())) {
       const socket = entry.socket;
       if (socket === undefined) continue;
@@ -308,13 +284,11 @@ export const makeWorkerMachineRelays = (options: {
     unrelay,
     sync: (machines, fresh) => {
       const named = new Map(machines.map((each) => [each.name, each]));
-      // Deleting from a Map as it is iterated is safe: what is left is still visited.
       for (const name of wanted.keys()) {
         const listed = named.get(name);
         const kept = wanted.get(name);
         if (listed?.origin !== kept?.origin || listed?.account !== kept?.account) unrelay(name);
       }
-      // A server just started knows none of the connections carried for the one before it.
       if (fresh)
         for (const entry of wanted.values())
           if (entry.socket !== undefined) closeSafely(entry.socket, 4503, "Gram restarted");
@@ -330,7 +304,6 @@ export const makeWorkerMachineRelays = (options: {
           typeof message.data === "string"
             ? Buffer.byteLength(message.data, "utf8")
             : message.data.byteLength;
-        // Bounded both ways, as what comes from the relay is.
         if (size > FRAME_MOST_BYTES) {
           closeSafely(socket, 4009, "frame too large");
           return;
@@ -353,7 +326,6 @@ export const makeWorkerMachineRelays = (options: {
   };
 };
 
-/** A relay message from this machine's server, read field by field. */
 const serverRelayMessageOf = (message: unknown): WorkerMachineRelayMessage | undefined => {
   if (typeof message !== "object" || message === null) return undefined;
   const type = Reflect.get(message, "type");
@@ -378,15 +350,8 @@ const serverRelayMessageOf = (message: unknown): WorkerMachineRelayMessage | und
   return undefined;
 };
 
-/**
- * The fields this machine's server reads of each call's answer. `sandboxId` and `generation` name
- * the run a start made or a status saw, for a later stop or release to be fenced to; `code` says
- * where a fence held one back (`superseded`, `expired`), and a release's `applied: false` that it
- * changed nothing.
- */
 const ANSWER_FIELDS: Readonly<Record<WorkerMachineCall, ReadonlyArray<string>>> = {
   choices: ["choices", "note", "keeps", "models"],
-  // `code` names the answer where a status alone doesn't (`name_in_use`, `released`, `not_found`).
   start: [
     "code",
     "name",
@@ -411,11 +376,9 @@ const answerFields = (call: WorkerMachineCall, body: unknown): unknown => {
   return kept;
 };
 
-/** A sign-in's mark as the server sends it (`WorkerMachineServer.account`). */
 const isMark = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(value);
 
-/** The `relays` op's list, read entry by entry; undefined when it isn't one. */
 const relaysOf = (
   value: unknown,
 ):
@@ -454,8 +417,6 @@ export const answerWorkerMachines = async (
     result,
   });
   const op = Reflect.get(message, "op");
-  // What to carry is kept whether or not the sign-in is there yet: an app still restoring it, or
-  // one with hosted features off, dials each once it is covered (`revalidate`).
   if (op === "unrelay") {
     const name = textOf(message, "name", 40);
     if (name === undefined || !WORKER_MACHINE_NAME.test(name)) return respond(MALFORMED);
@@ -519,8 +480,6 @@ export const answerWorkerMachines = async (
       sendBy as number | undefined,
       account,
     );
-    // Only the fields this machine's server reads of each answer: nothing else a server sends,
-    // a token it echoed say, leaves the app.
     return respond(
       answered.ok
         ? {

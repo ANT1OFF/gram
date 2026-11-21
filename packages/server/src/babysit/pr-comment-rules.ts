@@ -1,6 +1,3 @@
-// What a person's comment on a worker's PR becomes: the rules that pass one over, and the notice
-// that carries it to the worker. Pure, so each rule is tested on its own.
-
 import { markHidden, type ReviewBot } from "@gram/contracts";
 import type { FetchedComment } from "@gram/git";
 import { fence, FENCE_OPENER } from "../git/untrusted-fence.ts";
@@ -24,7 +21,6 @@ export type PassReason =
   | "unverified"
   | "closed";
 
-/** Whether `comment` has anything to say: a body or an inline comment that isn't blank. */
 const hasWords = (comment: FetchedComment): boolean =>
   comment.body.trim() !== "" || comment.inline.some((each) => each.body.trim() !== "");
 
@@ -39,7 +35,6 @@ export const passOver = (
   comment: FetchedComment,
   bots: ReadonlyArray<ReviewBot>,
 ): PassReason | undefined => {
-  // An app account only: a person whose login a bot pattern matches is a person, asked about as one.
   if (comment.authorIsBot || /\[bot\]$/i.test(comment.author)) return "bot";
   if (comment.author === "") return "bot";
   if (comment.kind === "review" && comment.state !== "COMMENTED") return "verdict";
@@ -134,10 +129,8 @@ const cut = (text: string): string =>
     ? text
     : `${text.slice(0, COMMENT_NOTICE_CHARS)}\n… [cut: ${text.length - COMMENT_NOTICE_CHARS} more characters; read the rest on GitHub]`;
 
-// Moved to contracts, which marks review bodies in notices the same way.
 export { markHidden };
 
-/** What `comment` says, as the fence carries it: the body, then each inline comment by place. */
 const commentText = (comment: FetchedComment): string => {
   const parts: Array<string> = [];
   if (comment.body.trim() !== "") parts.push(comment.body.trim());
@@ -149,7 +142,6 @@ const commentText = (comment: FetchedComment): string => {
   return cut(markHidden(parts.join("\n\n")));
 };
 
-/** A login as GitHub allows one; anything else is shown as `someone`. */
 const safeLogin = (login: string): string =>
   /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login) ? login : "someone";
 

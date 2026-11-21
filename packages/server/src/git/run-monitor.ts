@@ -1,15 +1,3 @@
-// The workflow-run monitor (`run_monitor`): a thread names a GitHub Actions run it waits on, a
-// release candidate's build or a deploy, and is sent one message when the run completes. The PR
-// monitors wake an agent for a PR's checks; nothing did for a run that belongs to no PR, so agents
-// followed one with `gh run watch` inside a turn, where nothing reaches them and a watcher that
-// died went unnoticed for hours.
-//
-// Watches live on the thread (`Thread.runWatches`), so a restart picks them up and a run that
-// completed while the app was down is told at the first look. Every lookup is one bounded REST
-// `gh api` through `Proc`, whose headers keep the allowance's count true, made once a poll for each
-// run however many threads watch it, and the polls are paced to the background share of it like the
-// PR sweeps. With nothing watched the loop waits for a watch rather than reading every thread.
-
 import {
   agentOwnsPrEvents,
   AppToolError,
@@ -41,22 +29,17 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { GitServerConfig } from "./platform.ts";
 import { makeKeyedLock } from "./keyed-lock.ts";
 
-/** Whether `list` watches `watch`'s run. */
 const has = (list: ReadonlyArray<RunWatch>, watch: RunWatch) =>
   list.some((w) => w.runId === watch.runId && w.repo === watch.repo);
 
-/** How often watched runs are looked up when the config doesn't say. */
 const RUN_POLL_INTERVAL = Duration.minutes(1);
 
-/** How many sent completions are remembered for an archive to put their watches back. */
 const TOLD_KEPT = 200;
 
-/** The failed jobs a completion message names before it counts the rest. */
 const FAILED_JOBS_NAMED = 5;
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 
-/** A run as the REST API gives it; only what a message says is read. */
 const RestRun = Schema.Struct({
   id: Schema.Int,
   status: Schema.NullOr(Schema.String),
@@ -123,19 +106,16 @@ export const parseRunRef = (
   return /^\d+$/.test(trimmed) ? { runId: Number(trimmed) } : undefined;
 };
 
-/** The run as a message names it: its workflow and title. */
 const runName = (run: Pick<RunView, "workflowName" | "displayTitle" | "databaseId">) =>
   [run.workflowName, run.displayTitle]
     .filter((part) => part !== undefined && part !== "")
     .join(": ") || `run ${run.databaseId}`;
 
-/** What a thread is sent when a run it watches completes. */
 const runDoneText = (
   watch: Pick<RunWatch, "repo" | "runId">,
   run: RunView,
   failedJobs: ReadonlyArray<string>,
 ): string => {
-  // GitHub's own word, kept to it: anything else is a name someone chose.
   const conclusion = /^[a-z_]{1,30}$/.test(run.conclusion ?? "") ? run.conclusion! : "done";
   const named = [run.workflowName, run.displayTitle].filter(
     (part): part is string => part !== undefined && part !== "",
@@ -156,11 +136,9 @@ const runDoneText = (
 
 const refuse = (message: string) => new AppToolError({ tool: "run_monitor", message });
 
-/** GitHub no longer has the run: deleted, or never in that repo. */
 const GONE = /not found|could not find|HTTP 404/i;
 
 interface RunWatchInput {
-  /** The run's id or its page's URL; without it, the latest run of `workflow`. */
   readonly run?: string | undefined;
   readonly repo?: string | undefined;
   readonly workflow?: string | undefined;
@@ -186,7 +164,6 @@ export class RunMonitor extends Context.Service<RunMonitor, RunMonitorShape>()(
   "@gram/server/RunMonitor",
 ) {}
 
-/** A thread waiting on a run, with its own watch of it. */
 interface Watcher {
   readonly thread: Thread;
   readonly watched: RunWatch;
@@ -207,15 +184,8 @@ export const RunMonitorLive = Layer.effect(
     const budget = yield* GhBudget;
     const config = yield* GitServerConfig;
 
-    /**
-     * Threads that may have a watch, each with the mark count it was last marked at. A thread is
-     * marked by an upsert that shows it watching, or by a watch set here, and let go only by a poll
-     * that read it unwatched before it was marked again: upserts can be published out of order, so
-     * one can add a thread but never lose one.
-     */
     const candidates = new Map<ThreadId, number>();
     let marks = 0;
-    /** Open while any thread may have a watch; the poll loop waits on it otherwise. */
     const anyWatched = Latch.makeUnsafe(false);
     const mark = (threadId: ThreadId) => {
       candidates.set(threadId, ++marks);
@@ -228,10 +198,6 @@ export const RunMonitorLive = Layer.effect(
     const view = (cwd: string, repo: string, runId: number) =>
       api(cwd, `repos/${repo}/actions/runs/${runId}`);
 
-    /**
-     * What the REST API takes for `workflow`: a file name or an id as it is; a workflow's own name,
-     * as `gh run list --workflow` takes it, looked up among the repo's workflows.
-     */
     const workflowId = (cwd: string, repo: string, workflow: string) =>
       Effect.gen(function* () {
         if (/^\d+$/.test(workflow) || /\.ya?ml$/i.test(workflow)) return workflow;
@@ -365,10 +331,8 @@ export const RunMonitorLive = Layer.effect(
         return dropped;
       });
 
-    /** The watch each sent completion was for, by thread and notice key, for an archive to put back. */
     const told = new Map<string, RunWatch>();
 
-    /** One per thread: a stop and a completion's check-and-send never interleave. */
     const locks = makeKeyedLock<ThreadId>();
     const serial = locks.withLock;
 
@@ -378,12 +342,6 @@ export const RunMonitorLive = Layer.effect(
         drop(threadId, (w) => runId === undefined || w.runId === runId),
       );
 
-    /**
-     * Tells `thread` its run is over, or gone, then stops watching it: only while the watch is still
-     * there and the thread isn't archived, read just before, so a lookup that outlived a stop or an
-     * archive delivers nothing. The notice goes before the watch does, so a restart between them
-     * tells it twice rather than never.
-     */
     const finish = (thread: Thread, watched: RunWatch, text: string, failed: boolean) =>
       serial(
         thread.id,
@@ -393,8 +351,6 @@ export const RunMonitorLive = Layer.effect(
           const current = yield* store.getThread(thread.id).pipe(Effect.option);
           if (Option.isNone(current) || current.value.parked) return;
           if (!(current.value.runWatches ?? []).some(same)) return;
-          // An agent that can't start fails the send with the notice already queued, which counts
-          // as told; any other failure took nothing, and the watch stays for the next poll.
           const accepted = yield* runtimes.sendNotice(thread.id, key, { text }).pipe(
             Effect.as(true),
             Effect.catch((e) =>
@@ -405,17 +361,13 @@ export const RunMonitorLive = Layer.effect(
             ),
           );
           if (!accepted) return;
-          // Archived just after the send was taken: a notice still queued is taken back, as the
-          // archive's own sweep does below, and the watch stays for the thread's return.
           const after = yield* store.getThread(thread.id).pipe(Effect.option);
           if (Option.isSome(after) && after.value.parked) {
             return yield* runtimes.dropNotices(thread.id, (queued) => queued === key);
           }
           told.set(`${thread.id}|${key}`, watched);
-          // Only a completion still queued is ever put back, so the oldest are let go.
           if (told.size > TOLD_KEPT) told.delete(told.keys().next().value!);
           yield* drop(thread.id, same);
-          // The agent was just told; a worker's run isn't the user's to hear about.
           if (agentOwnsPrEvents(thread)) return;
           yield* hub.publish({
             type: "notify",
@@ -427,18 +379,13 @@ export const RunMonitorLive = Layer.effect(
         }),
       );
 
-    /** Tells each watcher in turn, each under its own thread's lock and checks. */
     const tell = (watchers: ReadonlyArray<Watcher>, text: string, failed: boolean) =>
       Effect.forEach(watchers, ({ thread, watched }) => finish(thread, watched, text, failed), {
         discard: true,
       });
 
-    /** One lookup of a run, and of its failed jobs, for every thread that watches it. */
     const look = (repo: string, runId: number, watchers: ReadonlyArray<Watcher>) =>
       Effect.gen(function* () {
-        // The API path names the repo, so any watcher's checkout does as the directory gh runs in,
-        // as long as it is there: `gh` can't start in a folder that was deleted under its thread.
-        // A watcher on another machine has no folder here, so gh starts in the temp folder.
         const there = yield* Effect.findFirst(watchers, ({ thread }) =>
           isLocalHost(thread.checkout) ? folderExists(thread.checkout.path) : Effect.succeed(true),
         );
@@ -460,7 +407,6 @@ export const RunMonitorLive = Layer.effect(
         const jobs = failed ? yield* failedJobs(cwd, repo, runId) : [];
         yield* tell(watchers, runDoneText({ repo, runId }, ended, jobs), failed);
       }).pipe(
-        // A lookup gh couldn't make is tried at the next poll.
         Effect.catch((e) =>
           Effect.logDebug("run monitor lookup failed").pipe(
             Effect.annotateLogs({ repo, runId, watchers: watchers.length, error: e.message }),
@@ -468,7 +414,6 @@ export const RunMonitorLive = Layer.effect(
         ),
       );
 
-    /** How many runs the last poll found watched, which paces the next. */
     let looked = 0;
 
     const poll: RunMonitorShape["poll"] = Effect.gen(function* () {
@@ -477,14 +422,12 @@ export const RunMonitorLive = Layer.effect(
       const runs = new Map<string, Array<Watcher>>();
       for (const threadId of candidates.keys()) {
         const read = yield* store.getThread(threadId).pipe(Effect.option);
-        // An archived thread's watches wait for it to come back, and its upsert marks it again.
         const thread = Option.isSome(read) && !read.value.parked ? read.value : undefined;
         const watches = thread?.runWatches ?? [];
         if (thread === undefined || watches.length === 0) {
           if ((candidates.get(threadId) ?? 0) <= readAt) candidates.delete(threadId);
           continue;
         }
-        // One look a run for each caller (`GhCallEnv`): the same for all but behind a relay.
         const caller = ghCallerKey(threadCaller(thread.id));
         for (const watched of watches) {
           const key = `${caller}\u0000${watched.repo}#${watched.runId}`;
@@ -506,10 +449,6 @@ export const RunMonitorLive = Layer.effect(
       );
     });
 
-    // A completion still queued when its thread is archived isn't for an agent anyone woke: it is
-    // taken back and its watch put back, so the thread is told again once it returns. The thread
-    // is read again rather than taken from the event, which may be older than the queue. Only an
-    // archived thread's upsert, and once more each time its watches change, which may free room.
     yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(
       Stream.filter(
         upsertsChanging((t) => (t.parked ? JSON.stringify(t.runWatches ?? []) : "open")),
@@ -520,7 +459,6 @@ export const RunMonitorLive = Layer.effect(
           : Effect.gen(function* () {
               const threadId = event.thread.id;
               if (!(yield* store.getThread(threadId)).parked) return;
-              // Read without taking anything: the predicate keeps every item.
               const queued: Array<string> = [];
               yield* runtimes.dropNotices(threadId, (key) => {
                 if (key.startsWith("run:")) queued.push(key);
@@ -536,11 +474,6 @@ export const RunMonitorLive = Layer.effect(
                   ? []
                   : [[key, { repo: parsed[1]!, runId: Number(parsed[2]), since: now }]];
               });
-              // In one turn of the thread's lock, so no completion lands between them: the watch goes
-              // back first, durably, then the completion is taken back; an exit between them leaves
-              // the run watched, never neither. The archive is asked again inside it. Only those
-              // whose watch is there afterwards are taken: one that didn't fit under the cap stays
-              // queued, held while the thread is archived and sent once it is back.
               yield* serial(
                 threadId,
                 Effect.gen(function* () {
@@ -549,8 +482,6 @@ export const RunMonitorLive = Layer.effect(
                   const watches = parked.runWatches ?? [];
                   const missing = back.map(([, w]) => w).filter((w) => !has(watches, w));
                   const next = [...watches, ...missing].slice(0, MAX_RUN_WATCHES);
-                  // Only when one fits: every write is an upsert this sweep hears again, and a full
-                  // list would have it write the same thread for as long as it stays archived.
                   let kept = watches;
                   if (next.length > watches.length) {
                     const updated = yield* runtimes
@@ -574,9 +505,6 @@ export const RunMonitorLive = Layer.effect(
       Effect.forkScoped,
     );
 
-    // Marked as their upserts are published, and from the store once for the watches a restart
-    // finds. Started at once, so the stream has subscribed before the store is read and no write
-    // falls between them.
     yield* hub
       .internalEvents(
         (event) =>
@@ -603,7 +531,6 @@ export const RunMonitorLive = Layer.effect(
         anyWatched.closeUnsafe();
         return anyWatched.await;
       });
-      // Stretched as the allowance runs low, by what a poll of this many runs costs.
       const cost = looked === 0 ? candidates.size : looked;
       yield* Effect.sleep(yield* budget.paceBackground("core", base, cost));
       yield* poll;

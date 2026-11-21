@@ -16,14 +16,9 @@ import { useViewStore } from "@/views/view-store";
 
 import { shownIn, trayMenuOf, type BuiltTrayMenu } from "./menu-bar-model";
 
-// The menu bar's (tray's) asks and workspaces. The window
-// sends its menu to the shell whenever the asks change; what the user picks comes back here and is
-// answered through the stack's own path, and only the very ask that was shown.
-
 const toast = (title: string, body: string) =>
   useThreadsStore.getState().applyEvent({ type: "notify", kind: "info", title, body });
 
-/** Whether the shell keeps the tray (on macOS, the menu bar item), following changes. */
 function useTrayOn(): boolean {
   const keep = window.gram?.keepInTray;
   const [on, setOn] = useState(false);
@@ -46,17 +41,12 @@ function useTrayOn(): boolean {
   return on;
 }
 
-/** Sends the menu and answers its picks; only while the tray is on, so off it costs nothing. */
 function MenuBarAsks() {
   const all = useWorkspaceAsks();
   const strip = useQuietStrip(all);
   const api = useApi();
   const queryClient = useQueryClient();
   const openThread = useOpenThread();
-  /**
-   * The last two menus sent, newest last: a pick from a menu opened just before an update still
-   * finds what it showed, and only that (`shownIn`, `trayAskToken`).
-   */
   const sent = useRef<BuiltTrayMenu[]>([]);
 
   const states = useWorkspaces();
@@ -67,14 +57,12 @@ function MenuBarAsks() {
   );
   const text = useRef("");
   useExternalSync(() => {
-    // A new object with the same menu sends nothing.
     const next = JSON.stringify(built.menu);
     if (next === text.current) return;
     text.current = next;
     sent.current = [...sent.current.slice(-1), built];
     window.gram?.tray?.show(built.menu);
   });
-  // Off, or this window gone: nothing of it is left in the menu.
   useMountEffect(() => () => window.gram?.tray?.show(EMPTY_TRAY_MENU));
 
   const openWorkspace = async (workspaceId: WorkspaceId, orchestrator: ThreadId | undefined) => {
@@ -84,12 +72,10 @@ function MenuBarAsks() {
 
   const onAction = useEffectEvent((action: TrayAction) => {
     if (action.kind === "asks") {
-      // The rest, one at a time.
       useViewStore.getState().setQuiet(true);
       return;
     }
     if (action.kind === "pauseAll") {
-      // Quiet's own Pause all, doing what the item said.
       void setAllWorkspacesPaused(api, queryClient, states, action.paused);
       return;
     }
@@ -109,13 +95,11 @@ function MenuBarAsks() {
     }
     if (action.kind === "open") {
       if (shown.openThreadId === undefined) return;
-      // The Inbox shows that ask over its thread, as a notification's Open does.
       openThread(shown.openThreadId);
       showInboxAsk(shown.askKey);
       return;
     }
     const allow = checkAwayAction(all, shown);
-    // Only the very ask that was shown, still waiting: anything else sends nothing.
     if (allow === undefined) {
       toast("Nothing sent", "That ask changed or was answered. Open Gram to see it.");
       return;

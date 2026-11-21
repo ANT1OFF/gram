@@ -51,7 +51,6 @@ export function RunScriptMenu({
   if (onlyWithScripts && scripts.length === 0) return null;
 
   return (
-    // Read again on open, so a hand edit of the file is in the menu.
     <Menu.Root onOpenChange={(open) => open && void refetch()}>
       <Hint
         label="Run script"
@@ -68,7 +67,6 @@ export function RunScriptMenu({
             data-testid="run-script-menu"
             className={cn(
               "shrink-0 text-subtle hover:text-foreground focus-visible:text-foreground aria-expanded:text-foreground",
-              // As wide as the header's status glyph: every chip keeps its room.
               size === "glyph" && "size-4 rounded-sm",
               className,
             )}

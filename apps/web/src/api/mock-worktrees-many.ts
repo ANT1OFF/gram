@@ -1,6 +1,3 @@
-// e2e specs set this sessionStorage flag so every project lists several thread-less worktrees, for
-// bulk selection; by default only the one experiment worktree is removable.
-
 /** `"many"`: more removable worktrees next to the experiment one. */
 export const MOCK_WORKTREES_KEY = "gram.mock.worktrees";
 

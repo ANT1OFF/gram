@@ -1,24 +1,3 @@
-// `POST /embed/v1/thread-starts`: a thread a person starts in one or more repositories, asked for
-// by the platform the server is embedded in on behalf of a person it signed in. It is how a
-// person's own API or MCP client starts work in code without a browser, as New task would: a new
-// worktree in the first repository, one on the same branch in each other, and the person's first
-// message.
-//
-//   { "person": { "id", "name"? }, "key", "repositories": ["owner/name" | git URL, ...],
-//     "text", "title"?, "branch"?, "model"?: { "agent", "model" }, "mode"?: PermissionMode }
-//     → 200 { "threadId", "created", "branch" }   made now, or the thread this key made before
-//       409 { "error" } one that can't start now (no machine, a repository that refuses)
-//       400 a body that isn't one
-//
-// The repositories are cloned as `projects.clone` clones them: on a server that runs no work
-// itself, filed as origins the person's machine clones. The thread is placed as one the person
-// started: on their own machine where machines are started for one person, and refused, saying
-// so, while they have none running. It is recorded as theirs. `key` names the start: sent again,
-// it answers the thread it made.
-//
-// The platform is trusted to say who the person is, as for `thread-messages`: it proves itself
-// with the embed token, never a cookie.
-
 import {
   cloneFolderOf,
   type CheckoutRequest,
@@ -58,7 +37,6 @@ export const THREAD_START_REPOSITORIES_MAX = 8;
 
 const KEY = /^[A-Za-z0-9_-]{1,128}$/;
 const PERSON = /^[A-Za-z0-9_.:@|-]{1,200}$/;
-/** A branch name git takes, without the spellings that read as an option or a range. */
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/-]{1,200}(?<![./])$/;
 
 const decodeModel = Schema.decodeUnknownOption(ModelRef);
@@ -92,20 +70,17 @@ export const personOf = (value: unknown): Actor | string => {
  */
 export const threadIdOfStart = (person: string, key: string): ThreadId => {
   const hex = createHash("sha256").update(`thread-start\0${person}\0${key}`).digest("hex");
-  // A version 4 shaped UUID, as every other thread id is.
   const variant = ((parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
   return Schema.decodeSync(ThreadId)(
     `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`,
   );
 };
 
-/** The person's id a body names, or an empty one that routes to nobody's machine. */
 const person0 = (body: Record<string, unknown> | undefined): string => {
   const person = personOf(body?.["person"]);
   return typeof person === "string" ? "" : person.id;
 };
 
-/** A GitHub repository's https address: the spelling a profile's repositories use. */
 const originUrl = (remote: RepoRemote): string =>
   remote.kind === "github" ? `https://github.com/${remote.owner}/${remote.repo}` : remote.url;
 
@@ -121,7 +96,6 @@ export const ThreadStartsInboundLive = Layer.effectDiscard(
     const creator = makeThreadCreator({ store, checkouts, runtimes });
     const hosts = yield* AgentHosts;
 
-    /** The project a repository is worked in here, cloned (or filed) the first time. */
     const projectOf = (remote: RepoRemote): Effect.Effect<Project, { readonly message: string }> =>
       config?.headless === true
         ? fileOrigin(proc, config.dataDir, originUrl(remote)).pipe(
@@ -185,7 +159,6 @@ export const ThreadStartsInboundLive = Layer.effectDiscard(
         }
 
         const id = threadIdOfStart(person.id, key);
-        // Sent again, it answers the thread it made.
         const before = yield* store.getThread(id).pipe(Effect.option);
         if (Option.isSome(before))
           return answer({
@@ -255,10 +228,6 @@ export const ThreadStartsInboundLive = Layer.effectDiscard(
       }),
     );
 
-    // `POST /embed/v1/thread-start-model`: the model a thread this person starts without naming
-    // one would open on, as `thread-starts` would pick it now, so whoever sends work can say so
-    // before it goes. Changes nothing.
-    //   { "person": { "id", "name"? } } → 200 { "model": { "agent", "model" } }
     yield* inbound.route("POST", "thread-start-model", (body) =>
       Effect.gen(function* () {
         const person = personOf(body?.["person"]);

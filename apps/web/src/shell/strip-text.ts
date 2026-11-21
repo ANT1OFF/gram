@@ -1,7 +1,3 @@
-// What the Focus review strip makes of a message's Markdown: its inline marks (links, code, bold,
-// italics) as marks, never as their syntax, and its block marks (headings, list bullets, code
-// fences) reduced to the line's words. Links read as their text, a long URL shortened. No React.
-
 export type StripMark =
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "code"; readonly text: string }
@@ -11,14 +7,10 @@ export type StripMark =
 
 /** Link text past this many characters ends in an ellipsis. */
 export const LINK_TEXT_MAX = 36;
-/** A URL shown as text past this many characters keeps only its host and last part. */
 const URL_TEXT_MAX = 28;
 
-/** Only these open from the strip; any other link reads as its text. */
 const OPENS = /^(?:https?:|mailto:)/i;
 
-// In order of precedence at one position: a link, inline code, bold, italics, a bare URL. A bare
-// URL leaves off the punctuation that ends a sentence around it.
 const INLINE =
   /\[([^\]\n]+)\]\(([^)\s]+)\)|`([^`\n]+)`|\*\*([^\n]+?)\*\*|(?<![*\w])\*([^*\s](?:[^*\n]*?[^*\s])?)\*(?![*\w])|(https?:\/\/[^\s<>()]*[^\s<>().,;:!?'"])/g;
 

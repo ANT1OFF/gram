@@ -43,10 +43,6 @@ export interface WaitDraft {
   readonly anchor?: MessageId | undefined;
 }
 
-/**
- * Where items draw their chips: the runtimes' transcript writer, bound once they are built, since
- * they read this service and can't be read by it.
- */
 interface WaitTranscript {
   emitChunk(
     threadId: ThreadId,
@@ -59,14 +55,11 @@ interface WaitTranscript {
   ): Effect.Effect<void, ThreadNotFound>;
 }
 
-/** A thread already has `MAX_OPEN_WAITS` open items. */
 class WaitsFull extends Data.TaggedError("WaitsFull")<{ readonly open: number }> {}
 
-/** What `put` did: the item as stored, and the one it replaced when it updated in place. */
 interface WaitPut {
   readonly item: WaitItem;
   readonly previous?: WaitItem | undefined;
-  /** The thread's open items after it. */
   readonly open: number;
 }
 
@@ -144,12 +137,10 @@ export interface ThreadWaitsShape {
 /** Which version of an item this is: any change to it, Done and Undo included, moves it on. */
 export const waitRevision = (item: Pick<WaitItem, "revision">): number => item.revision ?? 0;
 
-/** How many of `open` count against `MAX_OPEN_WAITS`: suggestions don't. */
 const fullAt = (open: ReadonlyArray<WaitItem>) => open.filter(waitIsKept).length;
 
 const newWaitId = (): WaitId => Schema.decodeSync(WaitId)(`w-${randomUUID().slice(0, 8)}`);
 
-/** The `data-wait` part an item draws where it was added, in its state or `revised`. */
 const waitChunk = (item: WaitItem, state?: "revised"): GramUIMessageChunk => ({
   type: "data-wait",
   id: item.id,
@@ -173,10 +164,6 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
       const writes = yield* Semaphore.make(1);
       let transcript: WaitTranscript | undefined;
 
-      /**
-       * The item's chip in `state`; the item is stored either way, so a chip out of reach is logged.
-       * A suggestion has none: restyling one would append it to the reply.
-       */
       const restyle = (threadId: ThreadId, item: WaitItem, state?: "revised") =>
         item.messageId === undefined || transcript === undefined || item.suggested === true
           ? Effect.void
@@ -230,7 +217,6 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                 });
               }
               const kept = fullAt(open);
-              // Updating a suggestion keeps it, so it counts as an item added.
               const adds = previous === undefined || previous.suggested === true;
               if (adds && kept >= MAX_OPEN_WAITS) return yield* new WaitsFull({ open: kept });
               const now = Date.now();
@@ -310,7 +296,6 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                 (item) => item.source === "helper" && item.messageId === messageId,
               );
               if (seen || fullAt(all) >= MAX_OPEN_WAITS) return false;
-              // Suggested from a reply to whoever typed last: theirs to keep.
               const person = yield* store.lastSender(threadId);
               const item: WaitItem = {
                 id: newWaitId(),
@@ -358,7 +343,6 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
               const lapsed = open.filter((item) => item.suggested === true);
               const at = Date.now();
               for (const item of lapsed) {
-                // Read under the same permit, so only a row gone since could be missing.
                 yield* store
                   .resolveWait(threadId, item.id, { by: "helper", at, note: "lapsed" })
                   .pipe(Effect.ignore);
@@ -367,12 +351,9 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
               return lapsed.length;
             }),
           ),
-        // Not under `writes`: the runtimes ask with a thread's lock held, which `put` and `resolve`
-        // take under `writes` to draw a chip. A row changed since it was read stays news instead.
         draftNote: (threadId, pending) =>
           Effect.gen(function* () {
             const told = new Set(pending.map((item) => `${item.id}:${item.resolvedAt ?? ""}`));
-            // A suggestion is the helper's, not the user's, until kept, and goes untold dismissed.
             const news = (yield* store.listWaitNews(threadId)).filter(
               (item) => item.suggested !== true && !told.has(`${item.id}:${item.resolvedAt ?? ""}`),
             );

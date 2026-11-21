@@ -1,12 +1,3 @@
-// Whether anyone is around to see a poll's result. The sweep is server-side and outlives every
-// window, so without this it keeps asking GitHub at full pace through a closed laptop lid and a
-// minimised app.
-//
-// Two inputs: the OS power state, forwarded by the desktop shell over the utility-process port, and
-// what each connected window says about itself. A server with no window attached (headless runs,
-// the e2e harness, a browser tab that hasn't reported yet) is treated as active — polling must
-// never depend on a window existing.
-
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -104,7 +95,6 @@ export class AppActivity extends Context.Service<
 
       const awaitLevel = (accept: (level: ActivityLevel) => boolean) =>
         Effect.gen(function* () {
-          // Subscribed before the level is read, so a change between the two isn't missed.
           const wakes = yield* PubSub.subscribe(resumes);
           if (accept(level)) return level;
           const next = yield* Stream.fromSubscription(wakes).pipe(
@@ -201,7 +191,6 @@ export const pollWhileShown = <E, R>(
     const level = Option.isNone(activity) ? "active" : yield* activity.value.awaitLevel(onScreen);
     yield* pass;
     if (Option.isNone(activity) || level !== "idle") return yield* Effect.sleep(base);
-    // Focus coming back cuts the stretched wait short.
     yield* Effect.raceFirst(
       Effect.sleep(Duration.times(base, IDLE_MULTIPLIER)),
       activity.value.awaitLevel((next) => next === "active"),

@@ -10,8 +10,6 @@ import type {
 
 import { MockInvalidState } from "./mock-fs";
 
-// Review-bot fixtures for MockApi: one bot review on t-flaky's PR, mutated by the review actions.
-
 const BOT = "example-code-review[bot]";
 const PR_URL = "https://github.com/example/api/pull/412";
 export const MOCK_HEAD_OID = "9a1e77c0d2f4b6a8c0e2d4f6a8b0c2d4e6f8a0b2";

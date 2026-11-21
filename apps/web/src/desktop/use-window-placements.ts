@@ -13,13 +13,11 @@ import { openInNewWindow } from "./open-in-new-window";
 import { currentWindow } from "./window-identity";
 import { useWindowPlacements } from "./window-placements";
 
-/** The worker the right panel's Thread tab shows, while the panel is on screen. */
 const besideOnScreen = (): ThreadId | undefined =>
   fitShell(useLayoutStore.getState()).panel === "none"
     ? undefined
     : besideShown(useBesideStore.getState());
 
-/** The thread in front of the user: a worker beside the chat while it has the focus, else a pane's. */
 const focusedThreadId = (): ThreadId | undefined => {
   const beside = besideOnScreen();
   if (beside !== undefined && useBesideStore.getState().focused) return beside;
@@ -27,7 +25,6 @@ const focusedThreadId = (): ThreadId | undefined => {
   return grid.panes[grid.focused] ?? undefined;
 };
 
-/** The panes' threads, and a worker shown beside the chat. */
 const shownThreads = (): ThreadId[] => {
   const beside = besideOnScreen();
   return [
@@ -73,7 +70,6 @@ export function useWindowPlacementsSync() {
     };
     const unsubscribe = useLayoutStore.subscribe(() => report(false));
     const unsubscribeBeside = useBesideStore.subscribe(() => report(false));
-    // A minimised or backgrounded window is one the server needn't poll GitHub for.
     const onPresence = () => report(false);
     document.addEventListener("visibilitychange", onPresence);
     window.addEventListener("focus", onPresence);
@@ -83,7 +79,6 @@ export function useWindowPlacementsSync() {
         const watch = api.watchWindows({ windowId: self.id, name: self.name }, abort.signal);
         for await (const placements of watch) {
           useWindowPlacements.getState().setWindows(placements.windows);
-          // A fresh registration (or a reconnect) starts with no threads: report them again.
           const mine = placements.windows.find((w) => w.windowId === self.id);
           if (mine && mine.threadIds.join(",") !== reportedThreads) report(true);
         }
@@ -124,7 +119,6 @@ export function useWindowPlacementsSync() {
     },
   });
 
-  // The desktop menu owns ⌘⇧N there.
   useShortcut({
     id: "window.new",
     keys: "mod+shift+n",

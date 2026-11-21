@@ -52,12 +52,7 @@ export const isThreadRemoved = (
  * is whole, or a thread whose stored messages were all written at once.
  */
 export type OwnEvent =
-  /**
-   * `messageId` was stored and isn't streaming: a person's message or another written whole, or a
-   * reply once it finished (`runtime/feed-writer.ts`).
-   */
   | { readonly type: "message.settled"; readonly threadId: ThreadId; readonly messageId: string }
-  /** Every message the thread holds was put there together: a fork's copies, a reopened history. */
   | { readonly type: "messages.replaced"; readonly threadId: ThreadId };
 
 const OWN_TYPES: ReadonlySet<string> = new Set(["message.settled", "messages.replaced"]);
@@ -82,7 +77,6 @@ export interface EventHubShape {
    */
   serverEvents(
     snapshot: Effect.Effect<ServerEvent | ReadonlyArray<ServerEvent>>,
-    /** Whose connection this is, for `publishTo`. */
     person?: string,
   ): Stream.Stream<ServerEvent>;
   /**
@@ -126,13 +120,8 @@ export interface EventHubOptions {
 
 interface Client<I> {
   readonly accept: (item: I) => boolean;
-  /** Whose connection this is, where the subscriber said. */
   readonly person?: string | undefined;
   readonly buffer: ClientBuffer<I>;
-  /**
-   * Tells the client's stream its buffer has something to take. A PubSub, not a Queue, so a waiting
-   * stream sees the item on the publisher's turn; sliding at 1, since only the latest wake matters.
-   */
   readonly wake: PubSub.PubSub<true>;
 }
 
@@ -203,11 +192,6 @@ export const readableEventFor = (
   return event;
 };
 
-/**
- * Publishing writes straight into each client's bounded buffer, so there's no per-client backlog
- * anywhere else. Suspended, so a publish effect built ahead of time reaches the clients registered
- * when it runs rather than when it was built.
- */
 const deliver = <I>(
   clients: ReadonlySet<Client<I>>,
   item: I,
@@ -226,11 +210,6 @@ const deliver = <I>(
     ),
   );
 
-/**
- * A client registered for the stream's lifetime before `start` runs, so nothing published meanwhile
- * is missed. Emits `start`'s events, then whatever each wake finds buffered, with `resync`'s events
- * in place of a backlog an overflow dropped.
- */
 const clientStream = <I, A, E>(
   clients: Set<Client<I>>,
   options: {
@@ -238,7 +217,6 @@ const clientStream = <I, A, E>(
     readonly accept: (item: I) => boolean;
     readonly person?: string | undefined;
     readonly start: Effect.Effect<Iterable<A>, E>;
-    /** The event to send for `item`, or `undefined` to skip it; applied when it's taken. */
     readonly emit: (item: I) => A | undefined;
     readonly resync: Effect.Effect<Iterable<A>, E>;
   },
@@ -279,10 +257,6 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
   static readonly layerWith = (options: EventHubOptions = {}): Layer.Layer<EventHub> =>
     Layer.sync(EventHub, () => {
       const eventClients = new Set<Client<ServerEvent>>();
-      /**
-       * Each `internalEvents` stream's offer, which queues only what it selects, and returns the log
-       * line its backlog is owed, if any.
-       */
       const internalClients = new Set<
         (event: ServerEvent | OwnEvent) => Effect.Effect<void> | undefined
       >();
@@ -307,8 +281,6 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
               Effect.sync(() => internalClients.add(offer)),
               () => Effect.sync(() => internalClients.delete(offer)),
             );
-            // One at a time rather than `fromQueue`'s batches, so the depth read after a take is what
-            // the consumer has yet to handle, and a backlog's drain is logged as it happens.
             return Stream.fromEffectRepeat(
               Queue.take(queue).pipe(
                 Effect.tap(() => gauge.observe(Queue.sizeUnsafe(queue)) ?? Effect.void),
@@ -317,7 +289,6 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
           }),
         );
 
-      /** Offers `event` to every internal stream; the log lines their backlogs are owed. */
       const offerInternal = (event: ServerEvent | OwnEvent) => {
         const logs: Array<Effect.Effect<void>> = [];
         for (const offer of internalClients) {
@@ -341,7 +312,6 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
         publishFeed: (item) => deliver(feedClients, item),
 
         serverEvents: (snapshot, person) => {
-          // A connection says whose it is; the server's own consumers, which say nothing, hear all.
           const shown = (event: ServerEvent) => {
             const readable = person === undefined ? event : readableEventFor(event, person);
             return readable === undefined ? undefined : eventFor(readable, person);
@@ -364,7 +334,6 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
           });
         },
 
-        // One body for both overloads: what reaches the queue passed `select`, guard or not.
         internalEvents: ((select: (event: ServerEvent) => boolean, name?: string) =>
           ownEvents(
             (event) => !isOwnEvent(event) && select(event),

@@ -96,10 +96,6 @@ export function DocsStrip({
   );
 }
 
-/**
- * One doc on one line, as a worker's row is drawn but without a second line: its title, cut at its
- * end, and its age. Who saved it last, and when, is on its hover.
- */
 function DocLine({ doc, now, onOpen }: { doc: DocMeta; now: number; onOpen: () => void }) {
   const who = doc.updatedBy === "user" ? "You" : doc.authorTitle;
   return (

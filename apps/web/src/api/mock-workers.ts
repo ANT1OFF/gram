@@ -12,11 +12,6 @@ import {
 
 import type { MockFinishedSimulation, MockOrchestrationHost } from "./mock-orchestration";
 
-// The ⌘J Workers list scenario: the finished-work board with workers in both of the list's sections.
-// A worker running live with a long transcript to scroll, one that asked a question, one merged
-// today, and three finished on earlier days. Two of them carry reports the user hasn't seen, one
-// with the helper's catch-up armed and one without, which falls back to its report's summary.
-
 /** What the orchestration mock lends the scenario. */
 export interface MockWorkersDeps {
   readonly host: MockOrchestrationHost;
@@ -63,7 +58,6 @@ const STEPS = [
   "Waiting on the last integration tests.",
 ];
 
-/** The live worker's one edit: the ack moved after the handler, with the retry around it. */
 const CONSUMER_EDIT = {
   file_path: "queue/consumer.py",
   old_string: ["    ack(message)", "    handle(message)"].join("\n"),
@@ -81,7 +75,6 @@ const CONSUMER_EDIT = {
 export async function simulateWorkersList(
   deps: MockWorkersDeps,
   board: MockFinishedSimulation,
-  /** The live worker's edit and running suite as tool calls, for its peek (One thread only). */
   { liveTools = false }: { readonly liveTools?: boolean } = {},
 ): Promise<MockWorkersSimulation> {
   const { host } = deps;
@@ -123,7 +116,6 @@ export async function simulateWorkersList(
       metadata: { createdAt: at },
       parts: [{ type: "text", text, ...(role === "assistant" ? { state: "done" as const } : {}) }],
     } as GramUIMessage);
-  /** The orchestrator's brief, as Gram delivers one: the user's role, under the orchestrator. */
   const brief = (threadId: ThreadId, text: string, at: number) => {
     const id = host.ids();
     const orchestrator = host.threads().find((thread) => thread.id === orchestratorThreadId);
@@ -146,7 +138,6 @@ export async function simulateWorkersList(
       ],
     } as GramUIMessage);
   };
-  /** A tool call of its own: finished, or still running. */
   const tool = (threadId: ThreadId, name: string, input: unknown, at: number, running = false) =>
     host.putMessage(threadId, {
       id: host.ids(),
@@ -193,8 +184,6 @@ export async function simulateWorkersList(
     host.replace({ ...worker, completedAt: at, completedReason: "prMerged", lastActivityAt: at });
   };
 
-  // Live: running the suite, with a transcript taller than any pane and a report you haven't seen,
-  // last looked at partway through it.
   const live = await spawn("mail-retry-policy", "Retry with backoff", "mail-retry-policy", {
     lastViewedAt: now - 25 * MINUTE,
   });
@@ -202,7 +191,6 @@ export async function simulateWorkersList(
   STEPS.forEach((step, i) => {
     const at = now - (45 - i * 3) * MINUTE;
     say(live.id, step, at);
-    // Its edit and the suite it is running, for its terminal and its peek.
     if (liveTools && i === 2) tool(live.id, "Edit", CONSUMER_EDIT, at);
     if (liveTools && i === 7)
       tool(live.id, "Bash", { command: "uv run pytest tests/queue" }, at, true);
@@ -217,7 +205,6 @@ export async function simulateWorkersList(
   deps.fileReport(liveReport);
   deps.catchUp({ threadId: live.id, text: MOCK_LIVE_CATCH_UP, reportAt: liveReport.at });
 
-  // Waiting: asked the orchestrator a question; no catch-up is armed, so its report stands in.
   const asking = await spawn("rate-headers", "Rate limit headers", "rate-headers", {
     lastViewedAt: now - 2 * 60 * MINUTE,
   });
@@ -234,7 +221,6 @@ export async function simulateWorkersList(
     at: now - 20 * MINUTE,
   });
 
-  // Today: merged within the hour, or just after midnight when it is earlier than that.
   const midnight = new Date(now);
   midnight.setHours(0, 0, 0, 0);
   const todayAt = Math.max(now - 40 * MINUTE, midnight.getTime() + MINUTE);
@@ -247,7 +233,6 @@ export async function simulateWorkersList(
     at: Math.min(todayAt, now) - 5 * MINUTE,
   });
 
-  // Earlier days: one in the overview's week, two before it that only ⌘J lists.
   const uv = await spawn("tooling", "Migrate to uv", "migrate-uv");
   merged(uv, 377, now - 3 * DAY);
   const py39 = await spawn("tooling", "Drop Python 3.9", "drop-py39");

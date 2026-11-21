@@ -5,16 +5,8 @@ import type {
   BrowserViewportPreset,
 } from "./browser-inspection.ts";
 
-// Where an agent may browse in the Preview pane, and what the server and a shell say to each other
-// about it (docs/features/agents.md, "Browsing"). Loopback is free; a public https host needs the
-// user's approval; private networks and the Microsoft and AWS sign-in pages are
-// never browsed, since the pane holds no device identity and must never hold the user's. The
-// server, the shell and the web app read this one rule, so none of them can be talked into a
-// host another would refuse. Schema-free, for the shell's main process.
-
 import { LOOPBACK_HOSTS } from "./preview.ts";
 
-/** Names that only resolve inside a private network. */
 const PRIVATE_SUFFIXES: readonly string[] = [
   "local",
   "localhost",
@@ -51,21 +43,13 @@ export const SIGN_IN_SUFFIXES: readonly string[] = [
 
 /** Why an agent may not browse a URL at all, so no approval can let it. */
 export type BrowseRefusal =
-  /** Not http(s): `file:`, `data:`, `javascript:`, `chrome:`, `devtools:`. */
   | "scheme"
-  /** A user name or password before the host, which is how a look-alike hides. */
   | "userinfo"
-  /** A private address, or a name that only resolves on a private network. */
   | "private"
-  /** A Microsoft or AWS sign-in page. */
   | "signIn"
-  /** Plain http off loopback. */
   | "http"
-  /** A port of its own off loopback. */
   | "port"
-  /** One of Gram's own loopback listeners, such as the one serving files to preview. */
   | "app"
-  /** This computer's own addresses, asked for by a page that isn't on them. */
   | "fromPublic";
 
 /** What an agent's URL is to the pane. */
@@ -103,7 +87,6 @@ export function originOf(url: string): string | undefined {
   }
 }
 
-/** A host without its trailing dot, which the URL parser keeps and DNS ignores. */
 const bare = (host: string) => (host.endsWith(".") ? host.slice(0, -1) : host);
 
 const under = (host: string, suffixes: readonly string[]) =>
@@ -116,7 +99,6 @@ const ipv4 = (host: string): readonly number[] | undefined => {
   return octets.every((n) => n <= 255) ? octets : undefined;
 };
 
-/** Whether an IPv4 address is anything but a public unicast one. */
 const privateIpv4 = ([a = 0, b = 0, c = 0]: readonly number[]): boolean =>
   a === 0 ||
   a === 10 ||
@@ -129,7 +111,6 @@ const privateIpv4 = ([a = 0, b = 0, c = 0]: readonly number[]): boolean =>
   (a === 198 && (b === 18 || b === 19)) ||
   a >= 224;
 
-/** Whether a bracketed IPv6 literal, as the URL parser compresses it, isn't public unicast. */
 const privateIpv6 = (literal: string): boolean => {
   const address = literal.slice(1, -1);
   if (address === "::" || address === "::1") return true;
@@ -137,12 +118,10 @@ const privateIpv6 = (literal: string): boolean => {
   if (mapped !== undefined) {
     const v4 = ipv4(mapped);
     if (v4 !== undefined) return privateIpv4(v4);
-    // The parser writes a mapped address in hex (`::ffff:a00:1`); any such is refused.
     return true;
   }
   const first = Number.parseInt(address.split(":", 1)[0] ?? "", 16);
   if (Number.isNaN(first)) return true;
-  // fc00::/7 unique local, fe80::/10 link-local, ff00::/8 multicast.
   return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || first >= 0xff00;
 };
 
@@ -204,12 +183,7 @@ export function browseHostsOf(raw: unknown): string[] {
   return [...new Set(hosts)].toSorted();
 }
 
-// ---------------------------------------------------------------------------------------------
-// Page content as a tool result
-
-/** Bidirectional overrides, isolates and invisible spaces, which can reorder or hide text. */
 const INVISIBLE = /[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/gu;
-/** Control characters but the tab and newline. */
 const CONTROL = /[^\P{Cc}\t\n]/gu;
 
 /** `text` with nothing in it that can hide or reorder what a reader sees. */
@@ -236,20 +210,11 @@ export function pageContent(
   ].join("\n");
 }
 
-// ---------------------------------------------------------------------------------------------
-// The server ↔ shell pane protocol
-
 /** Who drives a thread's page: its agent, or the user, who took over by clicking into it. */
 export type PaneDriver = "agent" | "user";
 
 /** How the page on screen came to be allowed. */
-export type PaneAccess =
-  /** On loopback, or a blank page. */
-  | "loopback"
-  /** On a host in the "Agent may browse" list. */
-  | "approved"
-  /** On a host the user allowed once for this thread's page. */
-  | "once";
+export type PaneAccess = "loopback" | "approved" | "once";
 
 /** The page in a thread's pane, as a command's result names it. */
 export interface PanePage {
@@ -352,9 +317,7 @@ export const PANE_EVALUATE_MAX = 20_000;
 export const PANE_RECORDING_MAX_FRAMES = 120;
 export const PANE_RECORDING_MAX_MS = 30_000;
 
-/** What an input command is for, as the agent says it, shown to the user as it runs. */
 interface Labelled {
-  /** "Opens the Filters menu": plain text, at most `PANE_ACTION_SUMMARY_MAX`. */
   readonly actionSummary?: string | undefined;
 }
 
@@ -458,7 +421,6 @@ export type PaneCommand =
       readonly to: PanePoint;
       readonly confirmToken?: string | undefined;
     })
-  /** Waits up to `ms` for `text` to show on the page or `ref` to be shown; neither waits `ms`. */
   | {
       readonly op: "wait";
       readonly ms: number;
@@ -466,28 +428,20 @@ export type PaneCommand =
       readonly ref?: string | undefined;
     }
   | { readonly op: "console"; readonly onlyErrors?: boolean | undefined }
-  /** Loopback pages only: runs `expression` in the page and returns its value as JSON. */
   | (Labelled & {
       readonly op: "evaluate";
       readonly expression: string;
       /** Releases writes a public request it made was held for, without running it again. */
       readonly confirmToken?: string | undefined;
     })
-  /**
-   * Loopback pages only: the requests the page made since it loaded, or with `requestId` one
-   * request's response body.
-   */
   | {
       readonly op: "network";
       readonly requestId?: string | undefined;
       /** Keeps requests whose URL contains it. */
       readonly filter?: string | undefined;
     }
-  /** Starts keeping frames of the page, to stop as an animated GIF. */
   | { readonly op: "recordStart"; readonly scale?: number | undefined }
-  /** Stops recording and returns the GIF in `file`; `discard` drops it. */
   | { readonly op: "recordStop"; readonly discard?: boolean | undefined }
-  /** The user answered an approval card for `host`: once for this page, or always. */
   | { readonly op: "grant"; readonly host: string; readonly scope: "once" | "always" };
 
 /** The commands that put input into the page, which wait while the user drives it. */
@@ -526,24 +480,13 @@ export interface PaneConsoleEntry {
 
 /** Why a command didn't run. */
 export type PaneErrorCode =
-  /** No shell or no Preview pane here: a browser build. */
   | "noPane"
-  /** The user took over the page; acting waits until they hand it back. */
   | "userHasControl"
-  /** The host isn't approved yet: the server raises a card for `host`. */
   | "needsApproval"
-  /**
-   * The action submits a form, or sent a request other than a read, off loopback: the server
-   * raises a card and sends the action again with the result's `confirm.token`.
-   */
   | "needsConfirmation"
-  /** Never browsable (`reason`), or otherwise refused, as the message says. */
   | "refused"
-  /** The caller's autonomy lets it act on loopback pages only. */
   | "loopbackOnly"
-  /** Nothing is loaded yet. */
   | "noPage"
-  /** A ref the page no longer has. */
   | "staleRef"
   | "failed";
 

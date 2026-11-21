@@ -1,11 +1,5 @@
 import { loopbackUrl } from "./preview.ts";
 
-// Where a pinned page loads from, for the server, the shell and the web app. Schema-free, for the
-// shell's main process. A pinned page is a folder the user pinned from the Preview tab, copied into
-// Gram's own state (`pages.ts`), served by a listener of its own on loopback (`PageFiles` in the
-// server) and shown in a session of its own (`gram-pages`, the shell's `modules/pages`), which no
-// agent tool reaches.
-
 /**
  * The first path segment of every URL the page listener serves:
  * `http://127.0.0.1:<port>/gram-pages/<token>/<file>`. Its port is picked at start.
@@ -29,7 +23,6 @@ export function pagesOriginFromMessage(message: unknown): unknown {
 /** The partition of the session pinned pages run in: in memory, no `persist:` prefix. */
 export const PAGES_PARTITION = "gram-pages";
 
-/** A page's token in its URLs: unguessable, minted by the listener for one pinned version. */
 const PAGE_TOKEN = /^[A-Za-z0-9_-]{24,64}$/;
 
 /**
@@ -45,7 +38,6 @@ export function isPinnedPageUrl(raw: string): boolean {
   try {
     decoded = decodeURIComponent(first);
   } catch {
-    // An escape that doesn't decode is not a name the listener answers, but refuse it anyway.
     return true;
   }
   return decoded.toLowerCase() === PAGES_SEGMENT;

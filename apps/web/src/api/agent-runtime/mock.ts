@@ -7,9 +7,7 @@ import type { AgentRuntimeApi } from "./types";
  * `agentRuntime` and `cliUpdates`.
  */
 export function createAgentRuntimeMock(world: MockWorld) {
-  /** The managed store; specs reach it through `window.gramMock`. */
   const agentRuntime = new MockAgentRuntime();
-  /** Updates of the user's own CLIs; specs reach it through `window.gramMock`. */
   const cliUpdates = new MockCliUpdates(() => world.threads());
   const listing = () => cliUpdates.applyTo(agentRuntime.applyTo(mockAgentRuntimes()));
   return {
@@ -23,7 +21,6 @@ export function createAgentRuntimeMock(world: MockWorld) {
     rollbackRuntime: (agent) => agentRuntime.rollback(agent),
     setRuntimeSource: async (agent, source) => {
       await agentRuntime.useSource(agent, source);
-      // Like the server, which keeps the choice in Settings.
       await world.setCodexRuntime(source);
     },
     updateCli: (agent, command) => cliUpdates.start(agent, command, listing()),

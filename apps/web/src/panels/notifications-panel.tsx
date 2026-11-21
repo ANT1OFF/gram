@@ -28,10 +28,6 @@ const KINDS = {
   error: { icon: CircleAlert, label: "Error", tone: "text-destructive" },
 };
 
-/**
- * What opens the Inbox, whose header opens the history, and takes focus back when it closes: the
- * sidebar's pill, the compact rail's, or with no sidebar the title bar's Inbox button.
- */
 const OPENER =
   '[data-testid="overview-needs-you"], [data-testid="overview-rail-needs-you"], [data-testid="inbox-button"]';
 
@@ -188,7 +184,6 @@ export function NotificationsPanel() {
                             className="max-w-full truncate rounded-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                             onClick={() => {
                               markRead(entry.id);
-                              // Recheck at activation: a thread may have been deleted while this row was focused.
                               if (useThreadsStore.getState().byId[id])
                                 void navigate({ to: "/t/$threadId", params: { threadId: id } });
                             }}

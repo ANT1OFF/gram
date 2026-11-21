@@ -17,7 +17,6 @@ export interface PreviewableFile {
   readonly kind: PreviewFileKind;
 }
 
-/** The tool calls that leave a file behind, by their part's type. */
 const WRITERS = new Set(["tool-Write", "tool-Edit", "tool-MultiEdit"]);
 
 /**
@@ -43,7 +42,6 @@ export function previewableFiles(parts: readonly unknown[]): PreviewableFile[] {
     for (const path of paths) {
       if (typeof path !== "string") continue;
       const kind = previewFileKind(path);
-      // The server never previews these, so no card offers to.
       if (kind === undefined || isCredentialPath(path)) continue;
       seen.delete(path);
       seen.set(path, { path, kind });

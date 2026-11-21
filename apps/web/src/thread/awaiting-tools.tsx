@@ -5,18 +5,12 @@ import { useThreadsStore } from "@/stores/threads";
 
 import type { ToolPhase } from "./parts";
 
-/**
- * The tool calls of a thread held at an approval card, by call id. The agent reports such a call as
- * started (`input-available`) before it asks, so without this its row said Running while nothing
- * had run. Empty outside a transcript.
- */
 const AwaitingToolsContext = createContext<ReadonlySet<string>>(new Set());
 
 const NONE: ReadonlySet<string> = new Set();
 
 /** The ids of a thread's calls held at an approval card, for a view outside its transcript. */
 export function useAwaitingToolIds(threadId: ThreadId): ReadonlySet<string> {
-  // Keyed by the ids alone, so a card's other changes don't re-render every tool row.
   const key = useThreadsStore((s) =>
     (s.byId[threadId]?.pendingRequests ?? [])
       .flatMap((request) =>

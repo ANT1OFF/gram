@@ -1,6 +1,3 @@
-// The one profile starter a server has, for the RPC (`thread.createFromProfile`) and the HTTP route
-// a fronting platform's own service calls (`routes.ts`): one, so a start asked for twice under one
-// id, by either way in, makes one thread.
 import { Proc } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -18,7 +15,6 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { makeProfileRepositories } from "./repositories.ts";
 import { makeProfileStarter, type ProfileStarter } from "./start.ts";
 
-/** How often the threads waiting for a machine are looked at for one that waited too long. */
 const WAITS_LOOK = "15 seconds";
 
 /**
@@ -66,8 +62,6 @@ export class ProfileStarters extends Context.Service<ProfileStarters, ProfileSta
     ProfileStarters,
     Effect.gen(function* () {
       const starter = yield* profileStarterHere;
-      // For the server's life: a thread that waited too long for its machine says none came. Read
-      // from the store each time, so it holds across a restart with nothing to arm again.
       yield* Effect.forkScoped(
         starter.expireWaits.pipe(
           Effect.catchCause((cause) =>

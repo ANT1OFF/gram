@@ -14,12 +14,9 @@ const CHIP =
 const FOCUS = "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 interface FolderPickerProps {
-  /** The chosen folder; empty until one resolves. */
   folder: string;
-  /** The known projects: the menu lists the bookmarked ones, then the recent ones. */
   projects: readonly Project[];
   onPickFolder: (root: string) => void;
-  /** Hands over to the path field and browser for a folder that isn't listed. */
   onBrowse: () => void;
 }
 
@@ -42,7 +39,6 @@ export function FolderPicker({
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       {inline ? (
-        // Read as part of the headline ("…build in api?"), so its name is the folder's.
         <Popover.Trigger
           data-testid="where-folder"
           aria-description="Folder"

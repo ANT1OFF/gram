@@ -1,7 +1,3 @@
-// The seams an embedding deployment uses (`config.ts`), and the one switch over all of them: the
-// hosted features setting. With it off every seam is inert, whatever the environment configured,
-// and the server behaves as the desktop app's own does.
-
 import { embeddingOn } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

@@ -49,7 +49,6 @@ export const startHold = (facts: StartFacts): StartHold | undefined => {
   if (facts.dream) {
     return { reason: "A memory update's session is open only while it runs.", button: false };
   }
-  // Opening would send it: that is the user's message to send, not this tab's.
   if (facts.queued) {
     return { reason: "A message waits to be sent; sending it starts the session.", button: false };
   }
@@ -77,7 +76,6 @@ export const startHold = (facts: StartFacts): StartHold | undefined => {
   return undefined;
 };
 
-/** The threads whose tab started their session, per connection: never twice in one window. */
 const startedByApi = new WeakMap<Api, Set<ThreadId>>();
 
 const startedFor = (api: Api) => {
@@ -92,7 +90,6 @@ const startedFor = (api: Api) => {
 const OPEN: ConnectionState = { status: "open" };
 const noop = () => () => {};
 
-/** The socket's state; a test's API without a monitor counts as connected. */
 const useConnected = (api: Api) => {
   const connection = api.connection as Api["connection"] | undefined;
   const state = useSyncExternalStore(
@@ -132,7 +129,6 @@ export function useSessionStart(threadId: ThreadId): SessionStart {
   const queued = useThreadsStore((s) => (s.byId[threadId]?.queue?.length ?? 0) > 0);
   const lastError = useThreadsStore((s) => s.byId[threadId]?.thread.lastError?.text);
   const workspaceId = useThreadsStore((s) => s.byId[threadId]?.thread.workspaceId);
-  // Read whether or not Settings → Workspaces shows them: a pause holds the thread either way.
   const workspaces = useQuery({
     queryKey: ["workspaces"],
     queryFn: () => api.listWorkspaces(),
@@ -187,8 +183,7 @@ export function useSessionStart(threadId: ThreadId): SessionStart {
     problem:
       mutation.error !== null
         ? errorMessage(mutation.error)
-        : // The open itself runs on after the call answers: an agent that can't start says so here.
-          status === "error"
+        : status === "error"
           ? lastError
           : undefined,
     start: () => mutate(),

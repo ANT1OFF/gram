@@ -1,4 +1,3 @@
-// Update-specific completion: ordinary quit's forced-recovery policy cannot authorize it.
 const UPDATE_NATIVE_DEADLINE_MS = 10_000;
 export interface UpdateFinalization {
   readonly speech: () => Promise<void>;
@@ -8,7 +7,6 @@ export interface UpdateFinalization {
 export function createUpdateFinalizer() {
   let controller: AbortController | undefined;
   const pending = new Set<Promise<void>>();
-  /** Set by a quit asked for during a restart, recovery included: its retry must not start. */
   let quitAsked = false;
   return {
     active: () => controller !== undefined,

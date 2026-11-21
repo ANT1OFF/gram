@@ -1,11 +1,3 @@
-// The server's shutdown, which the desktop shell asks for with a `{ type: "shutdown" }` message
-// rather than a signal. A server no shell runs (in a container, or a terminal) takes SIGTERM and
-// SIGINT as the same request, and bounds it itself (`SIGNAL_STOP_DEADLINE_MS`). Electron's `utilityProcess.kill()` sends SIGTERM and then SIGKILL two seconds
-// later on POSIX, and calls TerminateProcess on Windows, so a signal leaves the server no time to
-// end its agents. `stopForShutdown` stops the sessions. When the program then returns, the layers
-// close the terminals, the agent servers and the database in turn, and the process exits. Main's
-// stop timeout bounds all of it: past it, main kills the server with everything under it.
-
 import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -17,10 +9,6 @@ import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 /** How long the agent sessions get to stop before the teardown goes on without them. */
 export const SESSIONS_TIMEOUT_MS = 4_000;
-/**
- * How long counting the threads a quit interrupts may take: it waits on each thread's lock, which
- * a turn's git checkpoint can hold for minutes, and it is only for the progress window.
- */
 const WORKING_TIMEOUT_MS = 500;
 /**
  * When a shutdown still running is logged as overrun, before main's stop timeout (10 s) kills the
@@ -145,7 +133,6 @@ export interface KeptRunningNotice {
 export const stopForShutdown = (post: (progress: ShutdownProgress | KeptRunningNotice) => void) =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
-    // Before anything that takes a thread's lock, so nothing starts while the rest waits.
     yield* runtimes.stopAccepting;
     const agents = yield* runtimes.openSessions;
     yield* Effect.sync(() => post({ type: "shutdown", phase: "sessions", agents, working: 0 }));
@@ -165,7 +152,6 @@ export const stopForShutdown = (post: (progress: ShutdownProgress | KeptRunningN
         : Effect.logWarning("shutdown: agent sessions didn't stop in time; going on")
     ).pipe(Effect.annotateLogs({ agents, working, ms }));
     const complete = Option.isSome(stopped) && (yield* runtimes.openSessions) === 0;
-    // Those left running in the host kept running after Gram quits go on: the shell says so once.
     const kept = Option.getOrUndefined(yield* Effect.serviceOption(KeptSessions));
     const left = kept?.on === true ? kept.recorded() : 0;
     if (left > 0) yield* Effect.sync(() => post({ type: "keptRunning", agents: left }));
@@ -183,8 +169,6 @@ export const attestShutdown = (
 ): number => {
   if (Exit.isFailure(exit)) return 1;
   if (exit.value && ownedChildrenOrderly) post({ type: "shutdownComplete", success: true });
-  // Normal quit retains its bounded fallback after an incomplete session stop. Update also
-  // requires the attestation, so a zero exit alone cannot authorize installation.
   return 0;
 };
 

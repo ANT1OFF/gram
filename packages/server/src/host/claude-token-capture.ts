@@ -1,11 +1,3 @@
-// Running `claude setup-token` on this machine for the joined machines the user picked, with their
-// consent, and sending each the token it prints. See docs/design/machine-setup-token.md.
-//
-// The token is the one credential Gram ever handles, and only here: it is read from the output of
-// the `claude setup-token` process itself, held as `Redacted` until each machine has answered, and
-// dropped. The command's output never leaves this module: the page sees only Claude's own sign-in
-// link, whether a code is asked for, and each machine's result.
-
 import { homedir } from "node:os";
 import { resolveClaudeCli, tokenChildEnv } from "@gram/agents/claude";
 import { type HostFailed, redactText } from "@gram/contracts";
@@ -27,7 +19,6 @@ export interface SetupTokenProcess {
 
 export type StartSetupToken = () => SetupTokenProcess;
 
-/** Wide enough that the token, and the sign-in link, print on one line each. */
 const COLUMNS = 1000;
 
 /**
@@ -59,39 +50,25 @@ export const launchSetupToken: Effect.Effect<SetupTokenProcess, unknown> = Effec
       kill: () => {
         try {
           pty.kill();
-        } catch {
-          // Already gone.
-        }
+        } catch (_alreadyGone) {}
       },
     } satisfies SetupTokenProcess;
   });
 });
 
-/** How much of the command's output is kept to scan, at most. */
 const OUTPUT_KEPT = 64 * 1024;
 
-/** A token as `claude setup-token` prints it, ended by something that can't be part of it. */
 const TOKEN_ENDED = /sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,1000}(?=[^A-Za-z0-9_-])/;
-/** The same, at the very end of the output, once the command has exited. */
 const TOKEN_AT_END = /sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,1000}$/;
-/** Each https link in the output that is whole: followed by a space, a quote or an escape. */
 // oxlint-disable-next-line no-control-regex -- the link ends at a terminal escape
 const LINKS = /https:\/\/[^\s"'<>\u0007\u001b]+(?=[\s"'<>\u0007\u001b])/g;
-/** Where Claude Code sends a sign-in: Claude's own authorization page, and nowhere else. */
 const SIGN_IN_HOSTS = new Set(["claude.ai", "claude.com"]);
 const SIGN_IN_PATHS = new Set(["/oauth/authorize", "/cai/oauth/authorize"]);
-/**
- * The query an OAuth authorization request carries, each parameter with the only values it can
- * have, checked once decoded. No grammar admits `%`, so a value can't hide anything behind a second
- * encoding, and none is long enough to carry a setup-token token (about 100 characters) even
- * without its prefix: a redirect's path is at most 64 characters.
- */
 const SIGN_IN_QUERY: ReadonlyMap<string, RegExp> = new Map([
   ["code", /^true$/],
   ["response_type", /^code$/],
   ["code_challenge_method", /^S256$/],
   ["client_id", /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i],
-  // PKCE challenges and states are 43 base64url characters; a little room either way.
   ["code_challenge", /^[A-Za-z0-9_-]{32,64}$/],
   ["state", /^[A-Za-z0-9_-]{16,64}$/],
   ["scope", /^[a-z][a-z:_.-]{0,63}(?: [a-z][a-z:_.-]{0,63}){0,15}$/],
@@ -112,7 +89,6 @@ export const signInLinkOf = (link: string): string | undefined => {
   let query: Array<[string, string]>;
   try {
     url = new URL(link);
-    // `URLSearchParams` decodes once, and stands in a replacement character for a bad escape.
     query = [...url.searchParams];
   } catch {
     return undefined;
@@ -130,7 +106,6 @@ export const signInLinkOf = (link: string): string | undefined => {
   const seen = new Set<string>();
   for (const [key, value] of query) {
     const grammar = SIGN_IN_QUERY.get(key);
-    // Checked decoded too: a token behind one escaped character (`%73k-ant-`) passes the raw check.
     if (grammar === undefined || seen.has(key) || /sk-ant-/i.test(value) || !grammar.test(value))
       return undefined;
     seen.add(key);
@@ -138,10 +113,8 @@ export const signInLinkOf = (link: string): string | undefined => {
   return url.href;
 };
 
-/** Its prompt for the code a browser shows when it can't redirect back. */
 const CODE_PROMPT = /paste\s+(?:the\s+)?code/i;
 
-/** Cursor moves stand for space between words; every other escape is dropped. */
 // oxlint-disable-next-line no-control-regex -- matching escape sequences is the point
 const MOVES = /\u001b\[[0-9;?]*[ABCDGHJKf]/g;
 const ESCAPES =
@@ -240,14 +213,7 @@ export const makeClaudeTokenCapture = Effect.fnUntraced(function* (deps: ClaudeT
     /** Machines removed since consent: nothing more is sent to them in this run. */
     readonly dropped: Set<string>;
   }
-  /**
-   * Sends not yet answered, by machine, whichever run made them, so a delete waits for all of them.
-   */
   const inFlight = new Map<string, Set<Deferred.Deferred<void>>>();
-  /**
-   * Machines a Remove or Forget token is working on, with how many: no run starts for them and no
-   * send to them begins until it is done, so its delete is the last thing the machine gets.
-   */
   const held = new Map<string, number>();
   const isHeld = (id: string) => (held.get(id) ?? 0) > 0;
   let run: Run | undefined;
@@ -281,7 +247,6 @@ export const makeClaudeTokenCapture = Effect.fnUntraced(function* (deps: ClaudeT
           dropped: new Set(),
         };
         run = r;
-        // Consent is for these joins: one removed and joined again since gets nothing.
         const targets = machineIds.map((id) => ({ id, join: deps.joinOf(id) }));
         let output = "";
         const finish = (view: CaptureView) => {
@@ -362,7 +327,6 @@ export const makeClaudeTokenCapture = Effect.fnUntraced(function* (deps: ClaudeT
           };
         };
         const attach = (process: SetupTokenProcess) => {
-          // Cancelled or timed out while it was starting.
           if (r.view.state !== "waiting") return process.kill();
           r.process = process;
           process.onData((data) => {

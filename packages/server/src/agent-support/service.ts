@@ -17,7 +17,6 @@ import { installedDreamSupport } from "./dream.ts";
 
 const unknown = (reason: string): FeatureSupport => ({ state: "unknown", reason });
 
-/** Pure local account classification; a gateway never inherits a subscription's sign-out. */
 const localAvailability = (model: ModelRef, checks: LaunchChecks): HarnessAvailability => {
   const tool = checks.tools.find((row) => row.tool === model.agent);
   if (tool?.found === false)
@@ -106,7 +105,6 @@ export const makeAgentSupport = (deps: {
         const profile = (yield* deps.store.listProfiles).find(
           (each) => each.id === model.profileId,
         );
-        // Configured credentials are not proof that a gateway will accept this account/model.
         if (availability.state !== "missing" && availability.state !== "temporarilyUnavailable")
           availability =
             profile === undefined || profile.keyRef === ""

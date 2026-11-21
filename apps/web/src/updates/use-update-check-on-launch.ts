@@ -19,7 +19,6 @@ export function useUpdateCheckOnLaunch() {
   const automaticChecks = useServerSettings((s) => s.settings?.updates.automaticChecks === true);
   const save = useSaveSettings();
 
-  // A signed install's updater runs in main; this window follows its state.
   useEffect(() => (shown ? followNativeUpdates() : undefined), [shown]);
 
   useEffect(() => {

@@ -32,7 +32,6 @@ const WorkspaceSettingsPage = lazy(() =>
 
 interface WorkspaceSheetState {
   readonly open: boolean;
-  /** Kept after closing, so the sheet keeps its content while it slides away. */
   readonly workspaceId: WorkspaceId | undefined;
   readonly show: (workspaceId: WorkspaceId) => void;
   readonly close: () => void;
@@ -77,7 +76,6 @@ export function WorkspaceSheet() {
           data-surface="overlay"
           aria-labelledby={titleId}
           finalFocus={returnFocusTo(opener)}
-          // A dialog opened from the sheet, a routine's editor say, dims the sheet under it.
           className={cn(SHEET_POPUP, SHEET_WIDE)}
         >
           <OverlayContent>

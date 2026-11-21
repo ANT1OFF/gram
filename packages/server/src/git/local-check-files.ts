@@ -1,4 +1,3 @@
-// What retention reads of the files and folders local checks leave, links never followed.
 import { lstatSync, readdirSync } from "node:fs";
 
 /** A file's size and when it last changed, or undefined when it isn't a regular file. */

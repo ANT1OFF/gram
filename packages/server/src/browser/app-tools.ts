@@ -17,11 +17,6 @@ import { loopbackProxies } from "./loopback-proxy.ts";
 import { PanePort, unsandboxedLocalOnly } from "./pane-port.ts";
 import { browserTools } from "./tools.ts";
 
-/**
- * Proxies to threads' own machines' loopback, for the headless browser, the one that takes them;
- * none in the desktop app, whose Preview pane reaches this machine's loopback alone, nor where no
- * other machine's host is reachable.
- */
 const loopbackProxiesHere = Effect.gen(function* () {
   const pane = yield* PanePort;
   const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
@@ -41,13 +36,10 @@ const loopbackProxiesHere = Effect.gen(function* () {
   return proxies;
 });
 
-/** Registers the browser tools with the app tool registry. */
 const BrowserAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* AppToolRegistry;
-    // Absent in tool-only test layers, which serve no previewed files.
     const previewFiles = Option.getOrUndefined(yield* Effect.serviceOption(PreviewFiles));
-    // Pinned pages' listener too: no agent reads or drives a page the user pinned.
     const pageFiles = Option.getOrUndefined(yield* Effect.serviceOption(PageFiles));
     const pane = yield* PanePort;
     yield* registry.register(

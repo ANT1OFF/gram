@@ -1,6 +1,4 @@
-/** How long a card a jump lands on stays ringed. */
 const FLASH_MS = 1_600;
-/** How long a jump looks for a card that isn't drawn yet before it gives up. */
 const FIND_MS = 3_000;
 
 /**
@@ -12,7 +10,6 @@ const FIND_MS = 3_000;
 export const ringWhenDrawn = (selector: string) => {
   const until = performance.now() + FIND_MS;
   const look = () => {
-    // Drawn and shown: an approval queue keeps the others hidden until it shows this one.
     const found = [...document.querySelectorAll<HTMLElement>(selector)].find(
       (element) => element.offsetParent !== null,
     );
@@ -23,8 +20,6 @@ export const ringWhenDrawn = (selector: string) => {
     found.scrollIntoView({ block: "center" });
     found.setAttribute("data-needs-you-flash", "true");
     if (!found.hasAttribute("tabindex")) found.tabIndex = -1;
-    // The dialog that closed for this jump (the Inbox) holds focus until it has left the page,
-    // and takes back any it loses meanwhile: the card takes focus once the dialog has let go.
     const take = () => {
       if (!found.isConnected || performance.now() >= until) return;
       if (document.activeElement?.closest('[role="dialog"]') != null) {

@@ -1,17 +1,3 @@
-// The event sink: what happens on this server, numbered and sent in order to a configured
-// endpoint, at least once, picking up after a restart from where the receiver left off.
-//
-// Off unless an endpoint is configured (`ServerConfigShape.eventSink`) and hosted features are on
-// in the settings; while off nothing is recorded, so nothing is sent later about that time.
-//
-// Events are written to the outbox (`outbox.ts`) as the hub publishes them, then sent from it in
-// batches. The receiver's answer says what it holds, and sending goes on from there, forward or
-// back. What the outbox holds is never skipped. What a crash kept from reaching the outbox is
-// not: each start, and each time the feature is turned on, opens with `sink.started` and every
-// open thread, which a receiver reconciles against.
-//
-// With messages sent, the ones stored before they were are sent too, once: the backfill, below.
-
 import type { AnswerProof } from "./answer-proof.ts";
 import { errorDetailData, threadData } from "./thread-data.ts";
 import {
@@ -99,7 +85,6 @@ export interface AnswerNote {
   readonly proof?: AnswerProof;
 }
 
-/** Answers kept for an `ask.resolved` that never came: the oldest go past this many. */
 const ANSWER_NOTES_KEPT = 1000;
 
 export interface EventSinkShape {
@@ -152,7 +137,6 @@ export interface SinkOrchestrator {
   readonly questions: ReadonlyArray<MemoryQuestion>;
 }
 
-/** An orchestrator's pause as its `thread.upsert` carries it. */
 const pauseData = (pause: OrchestrationPause): Record<string, unknown> => ({
   reason: pause.reason,
   at: pause.at,
@@ -227,7 +211,6 @@ export const SINK_BATCH_BYTES = 1024 * 1024;
 
 const noneStreaming = (): ReadonlySet<string> => new Set();
 
-/** How many messages a thread's stored messages are read and recorded at a time. */
 const MESSAGES_PAGE = 50;
 
 /**
@@ -237,7 +220,6 @@ const MESSAGES_PAGE = 50;
  */
 export const SINK_BACKFILL_PAUSE = Duration.millis(500);
 
-/** How many messages' last-sent content is remembered, to leave an unchanged rewrite unsent. */
 const SENT_MESSAGES_KEPT = 5000;
 
 const askTitle = (request: PendingRequest): string => {
@@ -305,12 +287,10 @@ export const askContent = (
   };
 };
 
-/** Statuses in which a thread has no turn running: what `thread.status` calls idle. */
 const IDLE_STATUSES: ReadonlySet<string> = new Set(["idle", "cold"]);
 
 const decodeAck = Schema.decodeUnknownOption(SinkAck);
 
-/** A note's key: a card's id within its thread, a question's ask id as it is. */
 const noteKey = (id: string, threadId?: ThreadId) =>
   threadId === undefined ? id : JSON.stringify([threadId, id]);
 
@@ -334,23 +314,17 @@ export const makeEventSink = (
       Effect.sync(() => openOutbox(options.file, options.keepsConfirmed)),
       (opened) => Effect.sync(() => opened.close()),
     );
-    /** One permit: a recorded event wakes the sender, and any number of them wake it once. */
     const wake = yield* Queue.sliding<true>(1);
-    /** Each thread's workspace, as its upserts said, for the events that name only the thread. */
     const workspaces = new Map<string, string>();
     const models = new Map<string, string>();
-    /** Each paused orchestrator's pause, as its `thread.upsert`s last carried it, by thread. */
     const pauses = new Map<string, string>();
-    /** The thread each workspace's pause is on, so one left by a replaced orchestrator goes. */
     const pausedThreads = new Map<WorkspaceId, string>();
-    /** What an orchestrator's `thread.upsert` adds: its pause, while it is paused. */
     const pausedOf = (threadId: string): Record<string, unknown> => {
       const pause = pauses.get(threadId);
       return pause === undefined ? {} : { paused: JSON.parse(pause) };
     };
     const askNotes = new Map<string, AskNote>();
     const answerNotes = new Map<string, AnswerNote>();
-    /** Who started each thread, as far as anyone was signed in to say. */
     const creators = yield* Effect.try(() => outbox.creators()).pipe(
       Effect.catch(() => Effect.succeed(new Map<string, string>())),
     );
@@ -358,7 +332,6 @@ export const makeEventSink = (
       const person = creators.get(threadId);
       return person === undefined ? {} : { createdBy: person };
     };
-    /** True while the sink is being made: a `sink.started` then is the server's own start. */
     let booting = true;
     let refreshCards: ((workspaceId: WorkspaceId) => Effect.Effect<void>) | undefined;
     let streaming: (threadId: ThreadId) => ReadonlySet<string> = noneStreaming;
@@ -386,8 +359,6 @@ export const makeEventSink = (
         if (events.length === 0) return;
         const unsent = yield* append(events);
         if (unsent > maxUnsent) {
-          // The receiver has taken nothing for this long: what waits is given up rather than
-          // kept without end, and a new source opens with every thread as it is now.
           yield* Effect.logError("event sink: too many events unsent; new source").pipe(
             Effect.annotateLogs({ unsent }),
           );
@@ -396,24 +367,17 @@ export const makeEventSink = (
         yield* Queue.offer(wake, true);
       });
 
-    /** The orchestrator questions whose asks are open at the receiver, by ask id. */
     const openOrchestratorAsks = new Map<
       string,
       { readonly threadId: ThreadId; readonly workspaceId: WorkspaceId }
     >();
 
-    /**
-     * What changed of `workspaceId`'s orchestrator (every workspace's without one): an ask opened
-     * for each open question and resolved for each that closed or went, and a `thread.upsert` when
-     * its pause began, changed or ended.
-     */
     const orchestratorEvents = (workspaceId?: WorkspaceId) =>
       Effect.gen(function* () {
         if (options.orchestrators === undefined) return [];
         const orchestrators = yield* options.orchestrators(workspaceId);
         const events: Array<SinkRecord> = [];
         const waiting = new Set<string>();
-        /** Workspaces whose orchestrator couldn't be read: their asks stay as they are. */
         const unread = new Set<string>();
         for (const {
           workspaceId: id,
@@ -426,7 +390,6 @@ export const makeEventSink = (
             unread.add(id);
             continue;
           }
-          // A pause left on a thread that is no longer the orchestrator goes with it.
           const before = pausedThreads.get(id);
           if (before !== undefined && before !== thread?.id) {
             pauses.delete(before);
@@ -456,7 +419,6 @@ export const makeEventSink = (
             waiting.add(askId);
             const open = openOrchestratorAsks.get(askId);
             if (open !== undefined && open.threadId === thread.id) continue;
-            // Asked on a thread that is no longer the orchestrator: withdrawn there first.
             if (open !== undefined)
               events.push({
                 type: "ask.resolved",
@@ -484,7 +446,6 @@ export const makeEventSink = (
         );
         for (const [askId, where] of openOrchestratorAsks) {
           if (waiting.has(askId)) continue;
-          // A workspace not asked about now, or whose orchestrator couldn't be read, keeps its asks.
           if (workspaceId !== undefined && where.workspaceId !== workspaceId) continue;
           if (unread.has(where.workspaceId)) continue;
           openOrchestratorAsks.delete(askId);
@@ -514,16 +475,11 @@ export const makeEventSink = (
         ),
       );
 
-    /** The worker questions whose asks are open at the receiver, by ask id. */
     const openQuestions = new Map<
       string,
       { readonly threadId: ThreadId; readonly workspaceId: WorkspaceId }
     >();
 
-    /**
-     * The asks of `workspaceId`'s worker questions (every workspace's without one) that changed:
-     * opened for one now waiting on the user, resolved for one that waited and no longer does.
-     */
     const questionEvents = (workspaceId?: WorkspaceId) =>
       Effect.gen(function* () {
         const events: Array<SinkRecord> = [];
@@ -581,14 +537,11 @@ export const makeEventSink = (
         ),
       );
 
-    /** `sink.started`, then an `ask.opened` for each worker question waiting on the user. */
     const opening = Effect.gen(function* () {
       openQuestions.clear();
       openOrchestratorAsks.clear();
       pauses.clear();
       pausedThreads.clear();
-      // Read before the snapshot: its threads carry the pauses this finds, so the
-      // `thread.upsert`s it made for them are dropped, the snapshot saying the same.
       const asks = (yield* questionEvents()).filter((event) => event.type !== "thread.upsert");
       const first = yield* started;
       return [
@@ -612,7 +565,6 @@ export const makeEventSink = (
         if (thread.workspaceId !== undefined) workspaces.set(thread.id, thread.workspaceId);
         models.set(thread.id, thread.model.model);
       }
-      // A server drops every card when it starts, whatever its store still lists at this point.
       const openAsks = booting ? [] : yield* options.openAsks ?? Effect.succeed([]);
       return {
         type: "sink.started",
@@ -630,17 +582,10 @@ export const makeEventSink = (
       } satisfies SinkRecord;
     });
 
-    /**
-     * Drops what the outbox holds and starts a source at 1 with the opening snapshot. The
-     * snapshot puts the threads and cards right; the messages are the backfill's to put right,
-     * and `forget` says how many are owed (`Outbox.restart`).
-     */
     const newSource = (forget: "unsent" | "all"): Effect.Effect<void> =>
       Effect.gen(function* () {
-        // Cleared first, then the snapshot: what is recorded while the threads are read is kept.
         const cleared = yield* Effect.try(() => {
           outbox.restart(forget);
-          // What was sent under the old source may not have arrived: nothing counts as sent.
           sentMessages.clear();
         }).pipe(
           Effect.as(true),
@@ -654,11 +599,8 @@ export const makeEventSink = (
         if (cleared) yield* append(yield* opening);
       });
 
-    /** Whether the sink is on; turning on opens with a snapshot. */
     const isOn = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
-      // Off is asked again every time, so turning on loses nothing to the wait; on is asked at
-      // most once per `recheck`, which only makes turning off take that long.
       if (on && now - checkedAt < Duration.toMillis(recheck)) return on;
       checkedAt = now;
       const next = yield* options.on;
@@ -680,9 +622,7 @@ export const makeEventSink = (
       return { threadId, ...(workspaceId === undefined ? {} : { workspaceId }) };
     };
 
-    /** What a server event is to the sink; most are for windows alone and are nothing. */
     const eventsOf = (event: ServerEvent): ReadonlyArray<SinkRecord> => {
-      // A removed thread's messages went with it: a thread reopened under its id starts over.
       if (event.type === "thread.removed") {
         for (const key of sentMessages.keys()) {
           if (key.startsWith(`${event.threadId} `)) sentMessages.delete(key);
@@ -710,9 +650,7 @@ export const makeEventSink = (
           if (creators.delete(event.threadId)) {
             try {
               outbox.setCreator(event.threadId, undefined);
-            } catch {
-              // Left in the file: it names a thread that no longer is, and nothing reads it.
-            }
+            } catch (_leftInTheFileItNamesAThreadThat) {}
           }
           return [{ type: "thread.removed", ...where, data: { id: event.threadId } }];
         }
@@ -763,7 +701,6 @@ export const makeEventSink = (
                 : { actor: { kind: "person" as const, id: answer.answeredBy } }),
               data: {
                 id: event.requestId,
-                // Resolved with no answer on record: nobody answered it.
                 how: answer === undefined ? "withdrawn" : "answered",
                 ...(answer?.decision === undefined ? {} : { decision: answer.decision }),
                 ...(answer?.answeredBy === undefined ? {} : { answeredBy: answer.answeredBy }),
@@ -800,13 +737,9 @@ export const makeEventSink = (
       }
     };
 
-    /** True while the backfill has threads left; `removed` is kept only then. */
     let backfilling = false;
-    /** Threads removed while the backfill ran: it sends nothing of them after their removal. */
     const removed = new Set<string>();
-    /** What each message last sent held, so a save that changed nothing isn't sent again. */
     const sentMessages = new Map<string, string>();
-    /** Whether `stored` is to be sent: it is, unless it last went holding what it holds now. */
     const owed = (threadId: ThreadId, stored: StoredMessage, again: boolean): boolean => {
       const key = `${threadId} ${stored.message.id}`;
       const held = createHash("sha256")
@@ -827,14 +760,12 @@ export const makeEventSink = (
       again: boolean,
     ) => (owed(threadId, stored, again) ? [messageEvent(scoped(threadId), stored, now)] : []);
 
-    /** Records what a stored message, or a thread's every stored message, is now. */
     const recordMessages = (event: OwnEvent): Effect.Effect<void> =>
       Effect.gen(function* () {
         const read = options.messages;
         if (read === undefined) return;
         if (event.type === "message.settled") {
           const now = yield* Clock.currentTimeMillis;
-          // Gone already (a rewind, a send taken back): there is nothing of it to send.
           const stored = yield* read(event.threadId, { messageId: event.messageId });
           yield* write(stored.flatMap((one) => messageRecord(event.threadId, one, now, false)));
           return;
@@ -849,8 +780,6 @@ export const makeEventSink = (
         }
       });
 
-    // With no window watching, nothing else reconciles a workspace's feature cards. A ledger
-    // moves in bursts, so the workspaces that moved collect for a moment and are each read once.
     const movedWorkspaces = new Set<WorkspaceId>();
     const cardsWake = yield* Queue.sliding<true>(1);
     yield* Effect.gen(function* () {
@@ -869,7 +798,6 @@ export const makeEventSink = (
       }
     }).pipe(Effect.forkScoped);
 
-    // Asked once before anything is recorded, so the first events don't race the first answer.
     yield* isOn;
     booting = false;
 
@@ -889,7 +817,6 @@ export const makeEventSink = (
               yield* Queue.offer(cardsWake, true);
             }
           }).pipe(
-            // One event that can't be read must not end the recording of the ones after it.
             Effect.catchCause((cause) =>
               Effect.logError("event sink: an event could not be read", cause),
             ),
@@ -899,7 +826,6 @@ export const makeEventSink = (
       );
     }
 
-    /** Sends one batch: `sent` when the receiver took something, `empty` with nothing to send. */
     const sendOnce = Effect.gen(function* () {
       const confirmed = outbox.confirmed();
       const held: ReadonlyArray<SinkEvent> = outbox.after(confirmed, batchSize);
@@ -925,25 +851,18 @@ export const makeEventSink = (
       );
       if (Option.isNone(answer)) return "failed" as const;
       const { ack } = answer.value;
-      // A new source began while this was in flight: the ack is for the old one's numbers.
       if (outbox.source() !== source) return "failed" as const;
       const sentTo = events.at(-1)!.seq;
       if (ack > sentTo) {
-        // An ack past what this batch carried confirms events the receiver was never sent. It is
-        // not believed, and nothing is dropped for it: the same batch goes again after a wait.
         yield* Effect.logWarning("event sink: the receiver acked past what it was sent").pipe(
           Effect.annotateLogs({ ack, sentTo }),
         );
         return "failed" as const;
       }
       if (!outbox.confirm(ack)) {
-        // The receiver wants what is no longer here: its sequence and this one can't be joined,
-        // so a new one starts, opening with every thread.
         yield* Effect.logError("event sink: the receiver's ack can't be answered; new source").pipe(
           Effect.annotateLogs({ ack, last: outbox.last(), confirmed }),
         );
-        // By its own word it no longer holds events it had confirmed, and those are no longer
-        // here to send again. Any of them may have been a message, so every message is owed.
         yield* newSource("all");
         return "failed" as const;
       }
@@ -953,8 +872,6 @@ export const makeEventSink = (
     yield* Effect.gen(function* () {
       let wait = retryBase;
       while (true) {
-        // The outbox is a file: a read or write of it that throws is a failed send, tried again
-        // after the wait, never the end of sending.
         const outcome = yield* Effect.gen(function* () {
           if (!(yield* isOn)) return "off" as const;
           return yield* sendOnce;
@@ -968,7 +885,6 @@ export const makeEventSink = (
           ),
         );
         if (outcome === "off") {
-          // Turning on records the opening snapshot, which wakes this: what it sends goes at once.
           yield* Queue.take(wake).pipe(Effect.timeoutOption(recheck));
         } else if (outcome === "sent") {
           wait = retryBase;
@@ -985,11 +901,6 @@ export const makeEventSink = (
       Effect.forkScoped,
     );
 
-    // The backfill: the messages stored before any were sent, each open thread's once, oldest
-    // thread first. The outbox keeps which threads are left and how far the first has got, moved
-    // in the transaction that records a page, so a restart reads on from the last page recorded.
-    // A page is recorded only once the receiver holds everything before it, so what happens
-    // meanwhile waits behind one page at most, and a receiver that is down is owed no more.
     const read = options.messages;
     if (read !== undefined) {
       const step = Effect.gen(function* () {
@@ -998,8 +909,6 @@ export const makeEventSink = (
           const threads = yield* options.threads;
           outbox.planBackfill(
             threads
-              // A thread this sink has yet to hear of is new, and its messages are sent as they
-              // settle, after its `thread.upsert`.
               .filter((thread) => models.has(thread.id))
               .toSorted((a, b) => a.createdAt - b.createdAt)
               .map((thread) => thread.id),
@@ -1017,8 +926,6 @@ export const makeEventSink = (
         const page = yield* read(threadId, { afterSeq: next.afterSeq, limit: MESSAGES_PAGE });
         const now = yield* Clock.currentTimeMillis;
         yield* Effect.sync(() => {
-          // Removed since the page was read: its `thread.removed` is recorded or about to be,
-          // and a receiver that deleted its messages is sent none after.
           if (removed.has(threadId)) return outbox.appendBackfill(threadId, [], "done");
           const streamingNow = streaming(threadId);
           const taken = backfillPage(
@@ -1050,8 +957,6 @@ export const makeEventSink = (
                   ),
             ),
           );
-          // Done until a new source owes the receiver messages again, which is rare: asked at
-          // the pace the setting is.
           yield* Effect.sleep(
             outcome === "done" ? recheck : outcome === "failed" ? retryMax : backfillPause,
           );
@@ -1068,9 +973,7 @@ export const makeEventSink = (
           creators.set(threadId, person);
           try {
             outbox.setCreator(threadId, person);
-          } catch {
-            // Known for this run of the server, and not after it.
-          }
+          } catch (_knownForThisRunOfTheServerAndNot) {}
         }),
       noteAnswer: (requestId, note, threadId) =>
         Effect.sync(() => {
@@ -1111,7 +1014,6 @@ export const makeEventSink = (
     };
   });
 
-/** The server events the sink records something of. */
 const recorded = (event: ServerEvent): boolean =>
   event.type === "thread.upsert" ||
   event.type === "thread.removed" ||
@@ -1154,7 +1056,6 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
         }
         const store = yield* ThreadStore;
         const hub = yield* EventHub;
-        // Read only, for the orchestrators' questions: the server's own memory folder.
         const memory = yield* Effect.gen(function* () {
           return yield* OrchestrationMemory;
         }).pipe(Effect.provide(OrchestrationMemory.layerAt(join(config.dataDir, "orchestration"))));
@@ -1188,7 +1089,6 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
             }),
           orchestrators: (workspaceId) =>
             Effect.gen(function* () {
-              // A workspace that is gone is left out; any other failure fails the whole read.
               const states =
                 workspaceId === undefined
                   ? yield* store.listWorkspaces
@@ -1221,7 +1121,6 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
                     ];
                     return one;
                   }).pipe(
-                    // One workspace that can't be read leaves the others, and keeps its asks.
                     Effect.catchCause((cause) =>
                       Effect.logError("event sink: an orchestrator could not be read", cause).pipe(
                         Effect.as([
@@ -1234,8 +1133,6 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
               );
               return found.flat();
             }),
-          // Messages are sent only where the deployment asked: otherwise the hub's word of them
-          // is never queued here, and the sink records what it did before there was any.
           events:
             config.eventSinkMessages === true
               ? hub.ownEvents((event) => isOwnEvent(event) || recorded(event), "event sink")

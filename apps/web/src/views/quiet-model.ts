@@ -6,11 +6,7 @@ import { WAIT_LABELS, type WorkerActivity } from "@/orchestration/wait-model";
 import type { RailTone } from "@/orchestration/rail-model";
 import type { WorkerRow } from "@/orchestration/workers-model";
 
-/** How the summary says a wait on automation: the Board's word for it. */
 const WAITING = WAIT_LABELS.checks.toLowerCase();
-
-// Quiet's deck and strip: every workspace's asks, then the solo threads', one card at a time, and a
-// dot per worker. No React.
 
 /** How long the window must sit untouched, with nothing asked, before it drops into Quiet by itself. */
 export const QUIET_IDLE_MS = 5 * 60_000;
@@ -32,7 +28,6 @@ export interface DeckSource {
   readonly asks: readonly Ask[];
 }
 
-/** The thread an ask is best read in: the first asker's, else the orchestrator's. */
 const askThread = (ask: Ask, orchestrator: ThreadId | undefined): ThreadId | undefined =>
   ask.group?.entries[0]?.threadId ?? orchestrator;
 
@@ -103,7 +98,6 @@ export const sendLater = (
  */
 export type DotTone = "working" | "waiting" | "needs" | "error" | "idle";
 
-/** A tone as a strip dot: asks and attention alike need somebody, merged is at rest. */
 const DOT_TONE: Readonly<Record<RailTone, DotTone>> = {
   needs: "needs",
   attention: "needs",

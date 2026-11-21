@@ -1,10 +1,3 @@
-/**
- * The only unpacker for downloaded agent runtimes: a streaming `.tar.gz` reader that writes regular
- * files and directories under one destination and refuses everything else. It exists so that what a
- * vendor archive may contain is decided here, by one reviewed list, rather than by whichever `tar`
- * the machine has (bsdtar on macOS and Windows 10+, GNU tar elsewhere, each with its own defaults
- * for links, absolute paths and `..`). Run it only on bytes whose digest has been checked.
- */
 import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -41,7 +34,6 @@ export const safeArchivePath = (raw: string): string => {
     if (segment === "" || segment === "." || segment === "..") {
       throw new UnsafeArchive(`unsafe path segment: ${raw}`);
     }
-    // Windows strips trailing dots and spaces, so `bin. ` and `bin` would collide there.
     if (/[. ]$/.test(segment)) throw new UnsafeArchive(`trailing dot or space: ${raw}`);
   }
   return trimmed;
@@ -55,7 +47,6 @@ const readString = (block: Buffer, offset: number, length: number): string => {
 
 const readNumber = (block: Buffer, offset: number, length: number): number => {
   const field = block.subarray(offset, offset + length);
-  // GNU base-256 for values that don't fit in octal; only positive ones are meaningful here.
   if ((field[0]! & 0x80) !== 0) {
     let value = field[0]! & 0x7f;
     for (let i = 1; i < field.length; i++) value = value * 256 + field[i]!;
@@ -74,7 +65,6 @@ const checksumOk = (block: Buffer): boolean => {
   return sum === stored;
 };
 
-/** PAX records, `"<len> <key>=<value>\n"` repeated. */
 const parsePax = (data: Buffer): Map<string, string> => {
   const records = new Map<string, string>();
   let offset = 0;
@@ -95,7 +85,6 @@ const parsePax = (data: Buffer): Map<string, string> => {
 
 const padded = (size: number) => Math.ceil(size / BLOCK) * BLOCK;
 
-/** What to do with the bytes of the entry being read. */
 type Sink =
   | { readonly kind: "header" }
   | { readonly kind: "meta"; readonly type: "pax" | "longname"; readonly size: number }
@@ -130,15 +119,12 @@ export const extractTarGz = async (
   let total = 0;
   let pending: Buffer = Buffer.alloc(0);
   let sink: Sink = { kind: "header" };
-  // `sink` changes inside the callbacks below, which TypeScript's narrowing can't see.
   const sinkNow = (): Sink => sink;
-  /** Bytes still to consume for the current non-header sink, padding included. */
   let remaining = 0;
   let meta: Array<Buffer> = [];
   let paxPath: string | undefined;
   let paxSize: number | undefined;
   let longName: string | undefined;
-  /** Set by `startEntry` at the end-of-archive blocks; an object, as the loops read it after awaits. */
   const end = { reached: false };
   let zeroBlocks = 0;
 
@@ -160,7 +146,6 @@ export const extractTarGz = async (
       return;
     }
     if (typeflag === "g") {
-      // Global PAX defaults (comments, mtimes): nothing here that changes where a file goes.
       sink = { kind: "skip", size: headerSize };
       remaining = padded(headerSize);
       return;
@@ -195,7 +180,6 @@ export const extractTarGz = async (
     const fileMode = (mode & 0o111) !== 0 ? 0o755 : 0o644;
     const target = join(dest, path);
     await mkdir(join(target, ".."), { recursive: true });
-    // `wx`: never follow or replace something already there.
     const out = createWriteStream(target, { flags: "wx", mode: fileMode });
     await new Promise<void>((resolve, reject) => {
       out.once("open", () => resolve());
@@ -210,7 +194,6 @@ export const extractTarGz = async (
     }
   };
 
-  /** Consumes the current sink's bytes from `chunk`, returning what is left over. */
   const feedSink = async (chunk: Buffer): Promise<Buffer> => {
     if (sink.kind === "header") return chunk;
     const take = Math.min(remaining, chunk.length);
@@ -243,8 +226,6 @@ export const extractTarGz = async (
 
   const source = createReadStream(archive);
   const input = source.pipe(createGunzip());
-  // `pipe` forwards bytes, not errors: a read failure has to reach the stream being iterated, or
-  // it would be an unhandled error that takes the server down.
   source.once("error", (error) => input.destroy(error));
   const abort = () => input.destroy(new UnsafeArchive("cancelled"));
   signal?.addEventListener("abort", abort, { once: true });

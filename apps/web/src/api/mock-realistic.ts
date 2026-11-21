@@ -19,18 +19,8 @@ import {
 import { seedMergedPr, seedMockBranch, seedMockPr } from "./mock-git";
 import type { MockScenes } from "./mock-orchestration";
 
-// The realistic scenario: Gram on an ordinary working morning, modelled on a real window rather
-// than on a stress test. Four orchestrators, five live workers with plain status lines and one PR
-// waiting on checks, a long calm orchestrator transcript (prose with bold lead-ins, PR links, a
-// folded tool row, digest lines and merged rows, "Since you left"), merged work in Done under each
-// workspace, and a single ask. The worker "Search in Settings" has a real-looking transcript: a
-// reply, three commands folded into one row, edits with their diff, and a turn that changed files.
-// Every name is invented; nothing is any user's own.
-
 const MINUTE = 60_000;
 
-/** What the realistic scenario made, for a shot or a spec to navigate by. */
-/** The release-notes worker's merged PR: a new page, the changelog, and the shortcuts list. */
 const RELEASE_NOTES_FILES: readonly DiffFile[] = [
   {
     path: "docs/releases/0.9.md",
@@ -84,7 +74,6 @@ const RELEASE_NOTES_FILES: readonly DiffFile[] = [
   },
 ];
 
-/** A file a merged PR changed, by its counts; its patch says no more than that. */
 const touched = (path: string, additions: number, deletions: number): DiffFile => ({
   path,
   status: deletions === 0 ? "added" : "modified",
@@ -95,7 +84,6 @@ const touched = (path: string, additions: number, deletions: number): DiffFile =
   tooLarge: false,
 });
 
-/** What each merged worker's PR changed, by its feature, for its Changes in the pane. */
 const MERGED_FILES: Readonly<Record<string, readonly DiffFile[]>> = {
   "undo-turn": [
     touched("apps/web/src/thread/turn-files-chip.tsx", 48, 6),
@@ -176,7 +164,6 @@ const tool = (name: string, input: unknown, output: unknown = ""): Part =>
 
 const prUrl = (repo: string, number: number) => `https://github.com/${repo}/pull/${number}`;
 
-/** A worker's merge, as a digest's change says it. */
 const mergedChange = (worker: Thread, feature: string): DigestChange => ({
   threadId: worker.id,
   feature,
@@ -195,8 +182,6 @@ export async function simulateRealistic(
   const at = (minutesAgo: number) => now - minutesAgo * MINUTE;
   const { gram, docs, api, web, infra } = deps.projects;
 
-  // Each orchestrator's last activity is fixed, Gram's the newest, so the launch (which opens the
-  // newest orchestrator) always lands on Gram, never on one of the idle workspaces.
   const workspace = async (
     name: string,
     projectIds: readonly [ProjectId, ...ProjectId[]],
@@ -244,7 +229,6 @@ export async function simulateRealistic(
       lastActivityAt: at(Math.max(createdMinutesAgo - 20, 1)),
     };
     host.replace(worker);
-    // Its Diff names its own branch, as its worktree's does.
     seedMockBranch(worker.id, `feat/${feature}`);
     return worker;
   };
@@ -293,7 +277,6 @@ export async function simulateRealistic(
 
   const merged = (worker: Thread, repo: string, number: number, minutesAgo: number) => {
     host.setGit(worker.id, gitOf(worker, repo, { number, state: "MERGED", checks: "passing" }));
-    // Its PR, with what it changed: what its Changes shows once it is done.
     seedMergedPr(worker.id, {
       number,
       repo,
@@ -333,7 +316,6 @@ export async function simulateRealistic(
       costUsd,
     });
 
-  // --- Gram: four live workers, six merged today. ---------------------------------------------
   const gramRepo = "example/gram";
   const comments = await spawn(
     gramSpace,
@@ -357,7 +339,6 @@ export async function simulateRealistic(
   merged(empty, gramRepo, 137, 119);
   merged(hitAreas, gramRepo, 138, 41);
   merged(notes, "example/docs", 61, 40);
-  // Its worktree is gone, so its outcome lists the PR's files.
   seedMergedPr(notes.id, {
     number: 61,
     repo: "example/docs",
@@ -407,7 +388,6 @@ export async function simulateRealistic(
     lastActivityAt: at(14),
     boundPr: { repo: gramRepo, number: 142, monitor: true },
   });
-  // Its PR is the one its tool names, and its branch holds the same three files.
   seedMockPr(search.id, {
     number: 142,
     repo: gramRepo,
@@ -420,7 +400,6 @@ export async function simulateRealistic(
   report(search, "progress", "Opened #142; waiting on checks.", 14, prUrl(gramRepo, 142));
   seedSearchTranscript(host, search.id, at, deps);
 
-  // --- billing-api: one worker that asks, two merged. -----------------------------------------
   const apiRepo = "example/billing-api";
   const refunds = await spawn(billing, api, "refund-webhooks", "Idempotent refund webhooks", 90);
   const footer = await spawn(billing, api, "invoice-footer", "Invoice PDF footer", 260);
@@ -469,13 +448,11 @@ export async function simulateRealistic(
     });
   });
 
-  // --- web and infra: at rest, with something merged earlier today. ----------------------------
   const checkout = await spawn(webSpace, web, "checkout-states", "Checkout button states", 330);
   merged(checkout, "example/web", 884, 150);
   const certs = await spawn(infraSpace, infra, "staging-certs", "Rotate staging certificates", 400);
   merged(certs, "example/infra", 57, 190);
 
-  // --- The Gram orchestrator's morning, oldest first. ------------------------------------------
   const orchestratorId = gramSpace.orchestrator.id;
   let generation = 780;
   const putAt = (message: GramUIMessage, minutesAgo: number) =>
@@ -575,7 +552,6 @@ export async function simulateRealistic(
       "**Cold start:** the worker profiled a launch at 1.6 s. Most of it is the settings read and the font load, both on the first paint. It is moving the settings read behind the first frame and preloading the font, then it measures again.",
     ),
   );
-  // A memory change among the calls, as an orchestrator makes one between checks.
   const decisions = "# Decisions\n\n- One worker per feature.\n";
   const rule = "- Merge each PR once its checks and the review bot pass.";
   say(
@@ -641,7 +617,6 @@ export async function simulateRealistic(
       `Nothing is needed from you. [#138](${prUrl(gramRepo, 138)}) cleared every check on its final head 4be1c09:\n\n**Review:** the review bot said GO.\n\n**Tests:** 2,184 passed, 0 failed.\n\n**Lint and types:** clean.\n\nThe 0.9 release notes merged beside it, so the docs site picks them up on its next build.`,
     ),
   );
-  // The user last looked twelve minutes ago, so the last digest is "Since you left".
   const current = host.threads().find((thread) => thread.id === orchestratorId)!;
   host.replace({ ...current, lastViewedAt: at(12), lastActivityAt: at(7) });
   digest(
@@ -656,7 +631,6 @@ export async function simulateRealistic(
     ),
   );
 
-  // --- The quieter orchestrators each have a short exchange. -----------------------------------
   const brief = (space: { orchestrator: Thread }, minutesAgo: number, said: string) =>
     host.putMessage(space.orchestrator.id, {
       id: host.ids(),
@@ -702,7 +676,6 @@ export async function simulateRealistic(
     `**[#57](${prUrl("example/infra", 57)}) merged.** Staging serves the new certificates; they renew on their own from now on.`,
   );
 
-  // Memory and Dreams have something to show for the main workspace.
   await host.seedMemory(gramSpace.workspaceId, [gram, docs]);
 
   for (const space of [gramSpace, billing, webSpace, infraSpace]) {
@@ -731,7 +704,6 @@ export async function simulateRealistic(
   };
 }
 
-/** The search worker's two turns: the feature with its edits and tests, then the PR. */
 function seedSearchTranscript(
   host: MockScenes["host"],
   threadId: ThreadId,
@@ -941,8 +913,6 @@ export function simulateDigestStream(
   ];
   const mergedAfter = 5;
   let generation = 900;
-  // Half a minute apart, after the morning's last reply and ending just now: the newest is the one
-  // the update's line reads.
   const total = steps.length + 1;
   const at = (index: number) => now - (total - index) * 30_000;
   let index = 0;

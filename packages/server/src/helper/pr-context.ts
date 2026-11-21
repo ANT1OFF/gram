@@ -1,7 +1,3 @@
-// The PR context (`@gram/contracts` `threadPrContexts`) a helper prompt carries, read from
-// what the server already holds: the published badge, the binding, and check names `Pr.seenChecks`
-// kept from another caller's read. Never a GitHub request of its own.
-
 import {
   prContextBadges,
   renderPrContext,

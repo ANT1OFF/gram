@@ -104,7 +104,6 @@ export function fileIcon(
   const extension = dot > 0 ? lower.slice(dot + 1) : undefined;
   const known = extension === undefined ? undefined : extensions.get(extension);
   if (known) return known;
-  // `.npmrc`, `.editorconfig`, `.node-version`: a dotfile with no other extension is config.
   if (dot === 0) return { icon: FileCog, tone: MUTED };
   return { icon: File, tone: MUTED };
 }

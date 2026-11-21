@@ -37,8 +37,6 @@ export function ArtifactCard({
     </>
   );
   return (
-    // The actions take a row of their own where the card is too narrow to hold them beside the
-    // title, as on a phone, so the title is never cut to make room for two buttons.
     <div
       data-testid="artifact-card"
       data-url={artifact.url}
@@ -53,7 +51,6 @@ export function ArtifactCard({
             {words}
           </div>
         ) : (
-          // The title opens the preview too, as a written file's card does.
           <button
             type="button"
             tabIndex={-1}

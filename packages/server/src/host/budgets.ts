@@ -1,7 +1,3 @@
-// How long each long step on a joined machine may take, and how long whoever waits on it waits:
-// the one list, so each caller's deadline is longer than the step it waits on
-// (`docs/design/long-steps-as-jobs.md`). `budgets.test.ts` holds them to that.
-
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
 

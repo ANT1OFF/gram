@@ -9,7 +9,6 @@ import {
 } from "@gram/contracts";
 import { PRESET_PALETTES } from "@gram/themes";
 
-/** The seeded presets, as the server lists them: flagged builtin so they can't be removed. */
 const BUILTIN_PALETTES: Palette[] = PRESET_PALETTES.map((preset) => ({
   id: preset.id as PaletteId,
   name: preset.name,
@@ -21,7 +20,6 @@ const BUILTIN_PALETTES: Palette[] = PRESET_PALETTES.map((preset) => ({
 
 const STORAGE_KEY = "gram.mock.settings";
 
-/** The e2e mock build keeps settings across reloads within a tab, so layout restore is testable. */
 const persistence = (): Storage | undefined =>
   import.meta.env["VITE_API"] === "mock" && typeof sessionStorage !== "undefined"
     ? sessionStorage
@@ -31,7 +29,6 @@ const persistence = (): Storage | undefined =>
 export function createMockSettings() {
   const storage = persistence();
   const saved = storage?.getItem(STORAGE_KEY);
-  // A partial save (an e2e seed) fills in from the defaults.
   let settings: Settings = saved
     ? applySettingsPatch(DEFAULT_SETTINGS, JSON.parse(saved) as SettingsPatch)
     : DEFAULT_SETTINGS;

@@ -1,9 +1,3 @@
-// When a routine next comes due. Daily, weekday and weekly times are wall-clock times in a time
-// zone (the machine's, `localZone()`, when the engine reckons), so a daylight-saving change moves
-// the instant and never the time it reads: a 09:00 routine runs at 09:00 on both sides of the
-// change. A time the change skips (02:30 the night clocks go forward) runs once, at the instant
-// `zoned` settles on; a time it repeats runs once too, since the next run is always looked for
-// after the one that ran. An interval counts real hours from the last run.
 import type { RoutineSchedule } from "@gram/contracts";
 import { formatterOf, plusDays, wallDate, zoned, type Wall } from "../zone-time.ts";
 
@@ -29,15 +23,12 @@ export const nextRunAfter = (schedule: RoutineSchedule, after: number, zone: str
   if (format === undefined) throw new RangeError(`Unknown time zone ${zone}`);
   const [hour = 0, minute = 0] = schedule.at.split(":").map(Number);
   const today = wallDate(format, after);
-  // `today` is `after`'s date in the zone, so an earlier date's time is never after it; eight days
-  // cover a weekly routine whose day is today but whose time has passed.
   for (let offset = 0; offset <= 8; offset++) {
     const date = plusDays(today, offset);
     if (!runsOn(schedule, weekdayOf(date))) continue;
     const at = zoned(format, date, hour, minute);
     if (at > after) return at;
   }
-  // Unreachable: every kind runs at least once in any eight days, at a time after `after`.
   throw new RangeError("No next run found");
 };
 

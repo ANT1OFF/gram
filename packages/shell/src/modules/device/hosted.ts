@@ -77,7 +77,6 @@ export const UNREADABLE = "The server's answer isn't one Gram reads.";
 
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
-/** Reads an answer's body, no more than `most` bytes; undefined when it is longer. */
 const readBounded = async (response: Response, most: number): Promise<string | undefined> => {
   if (response.body === null) return "";
   const reader = response.body.getReader();
@@ -95,7 +94,6 @@ const readBounded = async (response: Response, most: number): Promise<string | u
       parts.push(value);
     }
   } catch {
-    // The body broke off, or the call's deadline passed partway through it.
     return undefined;
   }
   return Buffer.concat(parts).toString("utf8");
@@ -111,7 +109,6 @@ export const jsonOf = async (response: Response): Promise<unknown> => {
   }
 };
 
-/** One call: no redirects followed, a deadline, and a refusal rather than a throw. */
 const call = async (
   fetch: Fetch,
   url: string,
@@ -171,22 +168,15 @@ interface TokenCallOptions {
   readonly key: KeyObject;
   readonly fetch: Fetch;
   readonly now: () => number;
-  /** The server's last `DPoP-Nonce`, kept between calls. */
   readonly nonce: { value?: string };
-  /** Ends the call early. */
   readonly signal?: AbortSignal;
 }
-// `now` above is a clock that only goes forward, for when a token ends.
 
 const nonceFrom = (response: Response): string | undefined => {
   const nonce = response.headers.get("dpop-nonce");
   return nonce !== null && /^[\x21-\x7e]{1,256}$/.test(nonce) ? nonce : undefined;
 };
 
-/**
- * A call to the token endpoint, with a proof of the device key, once more if the server asks
- * for a nonce first.
- */
 const tokenCall = async (
   options: TokenCallOptions,
   form: Record<string, string>,
@@ -201,7 +191,6 @@ const tokenCall = async (
         dpop: dpopProof(options.key, {
           method: "POST",
           url: options.discovery.token_endpoint,
-          // A proof's time is the wall clock's, as the server reads it.
           now: Date.now(),
           ...(options.nonce.value === undefined ? {} : { nonce: options.nonce.value }),
         }),
@@ -218,7 +207,6 @@ const tokenCall = async (
       if (error === "use_dpop_nonce" && nonce !== undefined && attempt === 0) continue;
       if (error === "invalid_grant")
         return { ...failed("The sign-in has ended."), signedOut: true };
-      // A scope the sign-in never had, or the organisation turned off since.
       if (error === "invalid_scope")
         return failed("Your sign-in there doesn't cover this. Sign in to the server again.");
       return failed("The server refused the sign-in.");
@@ -226,7 +214,6 @@ const tokenCall = async (
     const decoded = Schema.decodeUnknownOption(HostedTokenAnswer)(answer);
     if (decoded._tag === "None") return failed(UNREADABLE);
     const token = decoded.value;
-    // Every token a device holds is bound to its key, so a copy is no use without the key.
     if (token.token_type.toLowerCase() !== "dpop")
       return failed("The server didn't bind the sign-in to this machine.");
     const lasts = Math.min(Math.max(0, Math.floor(token.expires_in)) * 1000, HOSTED_TOKEN_MOST_MS);
@@ -293,7 +280,6 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       return;
     }
     const given = url.searchParams.get("state") ?? "";
-    // Another page on this machine can find the port; without the state it ends nothing.
     if (!sameText(given, state)) {
       page(response, 400, "This sign-in isn't Gram's.");
       return;
@@ -317,7 +303,6 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
     try {
       answerCallback(request, response);
     } catch {
-      // Whatever another program on this machine sends, it ends nothing and throws nothing.
       if (!response.headersSent) page(response, 400, "Not a sign-in.");
       else response.destroy();
     }
@@ -346,7 +331,6 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       response_type: "code",
       client_id: discovery.client_id,
       redirect_uri: redirectUri,
-      // Moving work is asked for only of a server that takes it: another may refuse the scope.
       scope: HOSTED_SCOPES.filter(
         (scope) =>
           (scope !== "workspaces:import" || discovery.thread_import_endpoint !== undefined) &&
@@ -361,7 +345,6 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       ...(deviceName === undefined ? {} : { device_name: deviceName }),
     }).toString();
     if (stopped()) return failed("The sign-in was stopped.");
-    // Not waited for: a browser that never says it opened still can't hold the sign-in open.
     void Promise.resolve()
       .then(() => options.openBrowser(authorize.href))
       .catch(() => {
@@ -454,14 +437,9 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
   let ended = false;
   const tokens = new Map<HostedScope, HostedToken>();
   const nonce: { value?: string } = {};
-  /** The token endpoint's own nonce: a server may give its calls and its tokens different ones. */
   const tokenNonce: { value?: string } = {};
   let queue: Promise<unknown> = Promise.resolve();
   const pending = new Map<HostedScope, Promise<TokenFor>>();
-  /**
-   * Which refresh token the keychain holds. Each rotation is a new generation, and writes go one
-   * at a time, newest last, so a write the keychain was slow with never lands over a newer one.
-   */
   let generation = 0;
   let savedGeneration = 0;
   let saving: Promise<void> | undefined;
@@ -485,7 +463,6 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
     return saving;
   };
 
-  /** Saves the newest refresh token, waiting no longer than the keychain is given. */
   const save = async (): Promise<void> => {
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([
@@ -512,7 +489,6 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
         },
         { grant_type: "refresh_token", refresh_token: refreshToken, scope },
       );
-      // Signed out while it was asked: nothing it brought back is kept.
       if (ended) return signedOutNow();
       if (!answer.ok) {
         if (answer.signedOut === true) {
@@ -522,7 +498,6 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
         }
         return answer;
       }
-      // Someone else's tokens can't stand in for this person's.
       if (answer.tokens.subject !== options.subject) {
         ended = true;
         tokens.clear();
@@ -530,8 +505,6 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
         return { ...failed("The server signed in someone else."), signedOut: true };
       }
       if (answer.tokens.refreshToken !== undefined && answer.tokens.refreshToken !== refreshToken) {
-        // The server has let the old one go: this one is used from now on, saved or not, and
-        // saved again before the next renewal if the keychain didn't take it.
         refreshToken = answer.tokens.refreshToken;
         generation += 1;
         await save();
@@ -540,7 +513,6 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
       await options.renewed?.(answer.tokens);
       if (ended) return signedOutNow();
       const { refreshToken: _rotated, ...token } = answer.tokens;
-      // A fresh token is for one use alone, so it is never handed out again.
       if (keep) tokens.set(scope, token);
       return { ok: true, token };
     });
@@ -558,7 +530,6 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
         held.expiresAt - HOSTED_TOKEN_RENEW_BEFORE_MS > options.now()
       )
         return { ok: true, token: held };
-      // Callers that find the same token near its end share one renewal.
       const waiting = pending.get(scope);
       if (waiting !== undefined) return waiting;
       const renewal = renew(scope, true).finally(() => pending.delete(scope));
@@ -572,7 +543,6 @@ export const makeTokenKeeper = (options: TokenKeeperOptions): TokenKeeper => {
     signOut: async () => {
       ended = true;
       tokens.clear();
-      // Whatever was asked or written before is over before the caller clears the keychain.
       await queue;
       await saving;
     },
@@ -705,7 +675,6 @@ export const importHostedThread = async (
     HOSTED_THREAD_IMPORT_MS,
   );
   if ("why" in response) {
-    // No answer may be one that never came back: the server may have the thread.
     return response.why === UNREACHABLE ? { ...response, unknown: true } : response;
   }
   if (response.status === 413) {
@@ -713,13 +682,11 @@ export const importHostedThread = async (
     return failed("The thread is larger than the server takes.");
   }
   const answer = await jsonOf(response);
-  // A server fault, or a yes it can't read, may still have made the thread there.
   if (response.status >= 500) return { ...failed(refusalOf(answer) ?? UNREACHABLE), unknown: true };
   if (response.status !== 200) return failed(refusalOf(answer) ?? "The server refused the thread.");
   const decoded = Schema.decodeUnknownOption(HostedThreadImported)(answer);
   if (decoded._tag === "None") return { ...failed(UNREADABLE), unknown: true };
   const { threadId, notes = [], url } = decoded.value;
-  // Opened only where the server is: never an address it sends elsewhere.
   const opens = url !== undefined && sameOrigin(url, calls.discovery.issuer) ? url : undefined;
   return { ok: true, threadId, notes, ...(opens === undefined ? {} : { url: opens }) };
 };
@@ -954,7 +921,6 @@ export const waitHostedThread = async (
       ...(calls.until === undefined ? {} : { until: calls.until }),
       timeoutSeconds: seconds,
     },
-    // The wait itself, and a call's time beside it.
     seconds * 1000 + HOSTED_CALL_MS,
   );
   if ("why" in response) return response;

@@ -27,24 +27,13 @@ export interface SuggestionEntry {
 
 interface SuggestionsState {
   readonly byThread: Readonly<Record<string, SuggestionEntry>>;
-  /** Moves on each `reset`, so a composer that asked before it asks again. */
   readonly generation: number;
-  /**
-   * Takes a turn's suggestions. The same turn's again keeps where the user had got to; with other
-   * replies (made again for an edited plan) they replace the old, still dismissed or counted. A
-   * `stale` offer takes the turn's back.
-   */
   offer(suggestions: ThreadSuggestions): void;
-  /** A new turn or message: the suggestions answered the one before. */
   clear(threadId: string): void;
-  /** Every thread's, for a snapshot that may have skipped turns. */
   reset(): void;
-  /** Moves to `chosen`, or back to the first that fits with `undefined`. */
   choose(threadId: string, chosen: string | undefined): void;
   dismiss(threadId: string): void;
-  /** Marks the turn's suggestions shown; true the first time. */
   count(threadId: string): boolean;
-  /** Marks the turn's suggestions taken; true the first time. */
   take(threadId: string): boolean;
 }
 
@@ -67,7 +56,6 @@ export const useSuggestionsStore = create<SuggestionsState>()((set, get) => ({
     set((s) => {
       const known = s.byThread[threadId];
       const same = known?.turnId === turnId;
-      // Taking back another turn's, or none, takes nothing: the composer asks for a turn it lacks.
       if (stale === true) {
         if (!same) return s;
         const entry = {

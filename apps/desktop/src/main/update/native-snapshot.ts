@@ -1,7 +1,3 @@
-// The verified update's own bytes. electron-updater's cache is a shared path anything running as
-// the user can replace, so the download is copied once into a private directory, held open by
-// descriptor, verified there, and served to Squirrel.Mac from that descriptor alone, with its
-// SHA-256 checked again on the very bytes served.
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import {
@@ -43,13 +39,9 @@ export async function sweepStaleCandidateDirs(temp: string, now = Date.now()): P
           continue;
         await rm(path, { recursive: true, force: true });
         removed++;
-      } catch {
-        // Keep unreadable/locked entries for a later launch.
-      }
+      } catch (_keepUnreadableLockedEntriesForALaterLaunch) {}
     }
-  } catch {
-    // The temp root may already have gone away.
-  }
+  } catch (_theTempRootMayAlreadyHaveGoneAway) {}
   return removed;
 }
 

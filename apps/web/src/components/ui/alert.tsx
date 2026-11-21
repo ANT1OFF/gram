@@ -10,8 +10,6 @@ const alertVariants = cva(
         default: "bg-card text-card-foreground",
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
-        // The tone on the edge and the glyph, the words in the card's own colours, as Gram's own
-        // cautions are drawn (a thread that still waits, Bypass): readable in every palette.
         success: "border-success/50 bg-card text-card-foreground *:[svg]:text-success",
         warning: "border-warning/50 bg-card text-card-foreground *:[svg]:text-warning",
       },

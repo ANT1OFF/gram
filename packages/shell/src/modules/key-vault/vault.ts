@@ -73,7 +73,6 @@ const isVaultRequest = (message: unknown): message is VaultRequest => {
   );
 };
 
-/** Error codes Windows gives a rename over a file another process (antivirus, backup) holds open. */
 const LOCKED = new Set(["EPERM", "EBUSY", "EACCES"]);
 const RENAME_ATTEMPTS = 5;
 
@@ -122,11 +121,9 @@ const openFileVaultStore = (file: string): VaultStore => ({
     await mkdir(dirname(file), { recursive: true });
     const temp = join(dirname(file), `.${basename(file)}.${randomUUID()}.tmp`);
     try {
-      // `wx` creates the file fresh, so it is 0600 from before its first byte.
       const handle = await open(temp, "wx", 0o600);
       try {
         await writeFile(handle, `${JSON.stringify(entries)}\n`);
-        // Without the flush, a power cut after the rename can leave the new name on an empty file.
         await handle.sync();
       } finally {
         await handle.close();
@@ -141,7 +138,6 @@ const openFileVaultStore = (file: string): VaultStore => ({
 
 const mutations = new WeakMap<VaultStore, Promise<unknown>>();
 
-/** Runs `mutate` once every earlier mutation of `store` has settled, so no two interleave. */
 const serialised = <A>(store: VaultStore, mutate: () => Promise<A>): Promise<A> => {
   const run = (mutations.get(store) ?? Promise.resolve()).then(mutate);
   mutations.set(
@@ -151,20 +147,11 @@ const serialised = <A>(store: VaultStore, mutate: () => Promise<A>): Promise<A> 
   return run;
 };
 
-/**
- * Chromium's prefix for ciphertext under a key from the Linux keyring. `v10` is its hard-coded
- * fallback key, which is no secret: on Linux a key is written only as `v11`, and anything else in
- * the store is dropped (`weakEntries`) rather than decrypted.
- */
 const LINUX_KEYRING_PREFIX = "v11";
 
 const linuxKeyringCiphertext = (encrypted: Buffer): boolean =>
   encrypted.subarray(0, 3).toString("latin1") === LINUX_KEYRING_PREFIX;
 
-/**
- * The refs whose ciphertext isn't under the Linux keyring: `v10`, anything else, and any value that
- * isn't a base64 string at all, which would otherwise make every write fail.
- */
 const weakEntries = (entries: Record<string, unknown>): string[] =>
   Object.entries(entries)
     .filter(
@@ -177,7 +164,6 @@ const without = (
   entries: Record<string, unknown>,
   refs: readonly string[],
 ): Record<string, string> =>
-  // What's left after `weakEntries` is only base64 strings.
   Object.fromEntries(Object.entries(entries).filter(([ref]) => !refs.includes(ref))) as Record<
     string,
     string
@@ -192,7 +178,6 @@ export async function handleVaultRequest(
   message: unknown,
   crypto: VaultCrypto,
   store: VaultStore,
-  /** Which rules apply; Linux's are a real keyring and `v11` ciphertext. */
   platform: NodeJS.Platform,
 ): Promise<VaultResponse | undefined> {
   const linux = platform === "linux";
@@ -225,9 +210,6 @@ export async function handleVaultRequest(
     } catch {
       return fail("couldn't read the key store's backend");
     }
-    // Before availability, so a Linux desktop without a keyring daemon gets the reason. Removing a
-    // key needs no encryption, so there it goes ahead without one. Elsewhere `safeStorage` names no
-    // backend and the OS store is always the platform's own.
     const keyring = !linux || keyringBackendOk(backend);
     if (!keyring && message.op !== "delete") return fail(NO_KEYRING_MESSAGE);
     if (keyring) {
@@ -235,14 +217,12 @@ export async function handleVaultRequest(
         if (!(await crypto.available()))
           return fail("OS encryption isn't available, so keys can't be stored");
       } catch {
-        // Backend selection can fail before a read; report its stage without the OS exception.
         return fail("couldn't access OS encryption for the key store");
       }
     }
     switch (message.op) {
       case "set": {
         const encrypted = await crypto.encrypt(message.value);
-        // A keyring that said yes and still encrypted with the fallback key stores nothing.
         if (linux && !linuxKeyringCiphertext(encrypted)) return fail(NO_KEYRING_MESSAGE);
         const entries = await store.read();
         await store.write({
@@ -256,7 +236,6 @@ export async function handleVaultRequest(
         try {
           encrypted = (await store.read())[message.ref];
         } catch {
-          // JSON/parser and filesystem errors may carry file contents: expose only the stage.
           return fail("couldn't read the key store");
         }
         if (encrypted === undefined) return { type: "vault.response", id, ok: true };
@@ -265,8 +244,6 @@ export async function handleVaultRequest(
           (typeof encrypted !== "string" ||
             !linuxKeyringCiphertext(Buffer.from(encrypted, "base64")))
         ) {
-          // Readable by anyone with the file: dropped unread, with every other such entry, and the
-          // key reads as missing, so Settings asks for it again.
           await serialised(store, async () => {
             const entries = await store.read();
             await store.write(without(entries, weakEntries(entries)));
@@ -281,7 +258,6 @@ export async function handleVaultRequest(
             value: await crypto.decrypt(Buffer.from(encrypted, "base64")),
           };
         } catch {
-          // OS errors are opaque and may contain credentials; the stage is enough to diagnose.
           return fail("couldn't decrypt the key in the key store");
         }
       }
@@ -293,7 +269,6 @@ export async function handleVaultRequest(
     }
   };
   try {
-    // Reserve the mutation's position before selection or encryption can yield to a later delete.
     return await (message.op === "get" ? run() : serialised(store, run));
   } catch {
     return fail("couldn't read or write the key store");

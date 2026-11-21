@@ -21,12 +21,6 @@ import { formatWakeTime } from "@/lib/time";
 import { wakeWhenText } from "./board-model";
 import { openPrs, prWait, type WaitInput, type WorkerBusy } from "./wait-model";
 
-// What a worker or an orchestrator at rest is waiting on, in one short label and a hover that
-// lists every wait: the one model the sidebar's rows, the Board's chips and ⌘J's Workers list
-// read, so the three say the same thing. Read from the ledger (PRs, wakes, watched runs, limit
-// waits) and nothing else; no React, so it is tested without a browser. Waiting is calm: nothing
-// here makes a worker need you, which only an ask, a failure or a person's wait does.
-
 /**
  * Why it waits, one kind per wait. `frozen` is the base branch frozen for merges, which the merge
  * freeze will report; `condition` is a wake on a condition other than a time or a PR.
@@ -128,20 +122,10 @@ export interface WaitingOn {
   readonly hint: string;
 }
 
-/**
- * Which wait the label names when several apply: what holds everything else first (a limit, a
- * frozen base, the user's hold), then what clears soonest by its nature (CI, the review bot, the
- * merge Gram makes), then the longer waits (another PR, a watched run, a condition), and a timed
- * wake last, as it is mostly the fallback beside the others. Within a kind, the soonest first.
- */
 const RANK: Readonly<Record<WaitKind, number>> = Object.fromEntries(
   WAIT_KINDS.map((kind, i) => [kind, i]),
 ) as Record<WaitKind, number>;
 
-/**
- * The words a row's line starts with: a limit pauses it, the user's hold puts it under their
- * control (never "Paused": that is the workspace's pause action), and the rest waits.
- */
 const WORD: Readonly<Partial<Record<WaitKind, string>>> = {
   limit: "Paused",
   held: "Under your control",
@@ -194,11 +178,9 @@ export const waitClock =
   (at) =>
     formatWakeTime(at, now, intl);
 
-/** "#102", or "acme/api#102" for one in another repo than `repo`. */
 const prName = (pr: PrRef, repo?: string): string =>
   pr.repo === repo ? `#${pr.number}` : `${pr.repo}#${pr.number}`;
 
-/** What a wake on another PR waits for, by the first event it names. */
 const PR_EVENT_SHORT: Readonly<Record<PrWakeEvent, (name: string) => string>> = {
   merged: (name) => `${name} to merge`,
   closed: (name) => `${name} to close`,
@@ -207,7 +189,6 @@ const PR_EVENT_SHORT: Readonly<Record<PrWakeEvent, (name: string) => string>> = 
   verdict: (name) => `review on ${name}`,
 };
 
-/** The glyph of a wake on another PR, by the first event it names. */
 const PR_EVENT_GLYPH: Readonly<Record<PrWakeEvent, WaitGlyph>> = {
   merged: "dependency",
   closed: "dependency",
@@ -235,7 +216,6 @@ export const conditionShort = (condition: WakeCondition): string => {
     case "versionChanged":
       return `${VERSION_TARGET_NAMES[condition.target]} update`;
     default:
-      // A kind this build's contracts don't know yet still says something.
       return wakeConditionLabel(condition) ?? (condition as { kind: string }).kind;
   }
 };
@@ -343,7 +323,6 @@ export interface LimitWaitFacts {
 /** A provider limit waited out, which resumes the thread on its own. */
 export const limitReason = (wait: LimitWaitFacts, now: number, clock: WaitClock): WaitReason => {
   const what = wait.kind === "limit" ? "usage limit" : "rate limit";
-  // "limit until 08:10", "retry at 07:05": short enough that a narrow row keeps the time.
   const due = now < wait.resumeAt;
   const short =
     wait.kind === "limit"
@@ -364,7 +343,6 @@ export const limitReason = (wait: LimitWaitFacts, now: number, clock: WaitClock)
   };
 };
 
-/** What one open PR of a worker's waits on that moves by itself. */
 const prReasons = (pr: WorkerPr): WaitReason[] => {
   const name = `#${pr.number}`;
   const where = `${name} in ${pr.repo}`;
@@ -429,7 +407,6 @@ const prReasons = (pr: WorkerPr): WaitReason[] => {
         `Gram merges ${where} once it is ready${after === "" ? "" : `, after ${after}`}.`,
     });
   }
-  // Watched with nothing above: what GitHub last said of it, which the monitor waits on.
   if (reasons.length === 0 && pr.monitored === true) {
     const wait = prWait(pr);
     reasons.push({

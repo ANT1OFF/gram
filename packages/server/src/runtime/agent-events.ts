@@ -1,6 +1,3 @@
-// What a thread makes of its agent session's events: the transcript, status and activity they
-// change, the turns they open and end, and the limits, tasks and connectors they report.
-
 import { randomUUID } from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Clock from "effect/Clock";
@@ -145,7 +142,6 @@ export interface AgentEventsDeps {
  */
 export const UNASKED_MODES: ReadonlySet<PermissionMode> = new Set(["bypassPermissions"]);
 
-/** How much each mode lets run unasked, least first. */
 const LATITUDE: Record<PermissionMode, number> = {
   plan: 0,
   default: 1,
@@ -233,12 +229,6 @@ export const makeAgentEvents = ({
   beginBoundaryStop,
   setCurrentCheckout,
 }: AgentEventsDeps) => {
-  /**
-   * Called with the runtime lock held. A queue waits only on something running or on a hold, and
-   * an idle session with input queued and nothing holding it is a path that forgot to drain it (a
-   * card that closed with no turn, once): this says so, without the input, and sends it as
-   * `becomeIdle` would.
-   */
   const healQueue = (rt: Runtime) =>
     Effect.gen(function* () {
       if (
@@ -253,7 +243,6 @@ export const makeAgentEvents = ({
       ) {
         return;
       }
-      // `becomeIdle` holds a monitor's notice back from an archived thread on purpose.
       if (rt.noticeKeys.has(rt.queue[0]!.id)) {
         const parked = yield* store.getThread(rt.threadId).pipe(
           Effect.map((thread) => thread.parked),
@@ -261,9 +250,6 @@ export const makeAgentEvents = ({
         );
         if (parked) return;
       }
-      // A switch under way, a limit's wait and a queue hold each keep the queue on purpose, and
-      // send it when they let go: nothing forgot it, so there is nothing to warn about. Only the
-      // warning depends on this, so a failed read warns rather than keeping the input from going.
       const held =
         (yield* switchHold(rt).pipe(Effect.orElseSucceed(() => undefined))) !== undefined ||
         rt.limitWait !== undefined ||
@@ -284,12 +270,6 @@ export const makeAgentEvents = ({
     setStatus,
   });
 
-  /**
-   * A message steered in while the reply streamed is stored after it, so the reply closes at its
-   * next new part (once no tool call, text or reasoning in it is still open) and the agent's later
-   * chunks stream into a new message below the steered one, so the transcript reads in the order
-   * it was sent. Returns the event as the runtime should take it, under the message it goes to now.
-   */
   const splitAfterSteer = (rt: Runtime, sent: AgentEvent) =>
     Effect.gen(function* () {
       const original = "messageId" in sent ? (sent.messageId as MessageId) : undefined;
@@ -317,7 +297,6 @@ export const makeAgentEvents = ({
       if (!startsPart || !reply.accumulator.settled()) return event;
       rt.steerSplit = undefined;
       const said = reply.accumulator.snapshot().metadata;
-      // A step under way closes with its message; one the agent just closed opens again below.
       if (chunk.type !== "start-step")
         yield* appendChunk(rt, reply.messageId, { type: "finish-step" });
       yield* appendChunk(rt, reply.messageId, { type: "finish" });
@@ -342,7 +321,6 @@ export const makeAgentEvents = ({
       Effect.gen(function* () {
         const event = yield* splitAfterSteer(rt, sent);
         const lane = event.type === "chunk" ? rt.open.get(event.messageId) : undefined;
-        // Whether the agent natively began a turn that carries a delivery, from either adapter.
         yield* noteDeliveryStart(
           rt,
           event,
@@ -352,8 +330,6 @@ export const makeAgentEvents = ({
                 event.chunk.messageMetadata?.parentToolUseId === undefined
               : lane.nested !== true && lane.turnId === rt.turn?.id),
         );
-        // Foreground delegation is progress on its parent's outstanding tool; an older or
-        // background lane must not hide a silent command in this turn.
         const foregroundProgress =
           lane?.parentToolUseId !== undefined &&
           lane.turnId === rt.turn?.id &&
@@ -393,20 +369,14 @@ export const makeAgentEvents = ({
         }
         const subagentsRunning = rt.activity.subagentsRunning;
         const tasksRunning = rt.background.length > 0;
-        // Before the event, so a status change it causes already carries the new line.
         const changed = rt.activity.apply(event, rt.cwd);
         yield* applyEvent(rt, event);
-        // The old session of a switch began something while it stopped: the switch rolls back.
-        // Read from the runtime after every event, not from chosen event types, and latched, as
-        // the stop's teardown clears the turn and activity before the switch looks.
         if (rt.switchFence !== undefined) rt.switchFence.arrived ??= startedDuringStop(rt, event);
         if (changed) yield* scheduleActivity(rt);
         const tasksDone = tasksRunning && rt.background.length === 0;
         if ((subagentsRunning || tasksDone) && evictable(rt)) yield* startIdleTimer(rt);
         yield* healQueue(rt);
         if (tasksDone && rt.pendingRestart !== undefined) {
-          // Looked at again once the agent has had the time to start its report-back turn; if it
-          // did, that turn's end is the point of rest.
           rt.tasksEndedAt = yield* Clock.currentTimeMillis;
           yield* FiberMap.run(
             restartChecks,
@@ -414,17 +384,10 @@ export const makeAgentEvents = ({
             Effect.sleep(BACKGROUND_SETTLE).pipe(Effect.andThen(locked(rt, restartIfPending(rt)))),
           );
         }
-        // A failed turn's end, with no idle after it, can be the point of rest.
         yield* restartIfPending(rt);
       }),
     );
 
-  /**
-   * Notes when a tool call starts and ends on the message it streams in, as `toolTimes` metadata the
-   * run timeline reads: the whole map again each time, which merges over the one before. Only while
-   * the message is open, since a chunk after its finish would read as it streaming again; a late
-   * output keeps no end.
-   */
   const stampToolTime = (rt: Runtime, messageId: MessageId, chunk: GramUIMessageChunk) =>
     Effect.gen(function* () {
       if (chunk.type === "finish" || chunk.type === "abort") {
@@ -457,7 +420,6 @@ export const makeAgentEvents = ({
       });
     });
 
-  /** Called with the runtime lock held. */
   const applyEvent = (rt: Runtime, event: AgentEvent) =>
     Effect.gen(function* () {
       switch (event.type) {
@@ -473,7 +435,6 @@ export const makeAgentEvents = ({
             const next = yield* store
               .updateThread(rt.threadId, (t) => ({
                 ...t,
-                // A new id has no transcript until its first message.
                 ...(newId
                   ? { agentSessionId: event.agentSessionId, agentSessionUnused: true }
                   : {}),
@@ -499,7 +460,6 @@ export const makeAgentEvents = ({
           return;
         }
         case "status": {
-          // Between turns there is no turn end to clear it, and nothing is being retried.
           if (event.status === "retrying" && rt.turn !== undefined) {
             yield* setRetrying(rt, true, event.detail);
           } else if (event.status !== "retrying") {
@@ -510,13 +470,10 @@ export const makeAgentEvents = ({
           const errorAtRest = rt.errorAtRest;
           rt.errorAtRest = undefined;
           if (status === "idle") {
-            // `idle` after `turnEnd` is the previous turn's tail; `turnEnd` already settled it. So
-            // is one after a deadline's stop that already failed the turn: the error stays.
             if (errorAtRest?.session === rt.session && rt.status === "error") return;
             if (rt.turn === undefined && rt.status !== "idle") yield* becomeIdle(rt);
             return;
           }
-          // A status from an ended turn must not flip a thread that is between turns.
           if (rt.turn === undefined && status === "running") return;
           const compaction =
             event.status === "compacting"
@@ -526,9 +483,6 @@ export const makeAgentEvents = ({
                 : undefined;
           const compactionChanged = !sameCompaction(rt.compaction, compaction);
           const compactionStartedAt = compaction?.startedAt ?? rt.compaction?.startedAt;
-          // Compacting is the agent at work, however little it streams: its start and end count as
-          // progress, so the silent-tool watch measures from them. So does the agent saying again
-          // that its turn runs, as Claude does while a long hook holds a tool call.
           if (compactionChanged || (event.status === "running" && rt.status === "running")) {
             rt.lastProgressAt = yield* Clock.currentTimeMillis;
             yield* clearQuiet(rt);
@@ -556,8 +510,6 @@ export const makeAgentEvents = ({
             chunk.type === "start" &&
             chunk.messageMetadata?.parentToolUseId === undefined
           ) {
-            // A reply outside a turn opens one only when the agent says it started it (e.g. to
-            // report back from a background subagent) or while a background subagent still runs.
             const subagentOpen = [...rt.open.values()].some((m) => m.nested && !m.finished);
             if (chunk.messageMetadata?.initiator === "agent" || subagentOpen) {
               const { turn } = yield* openTurn(rt);
@@ -579,8 +531,6 @@ export const makeAgentEvents = ({
           }
           yield* appendChunk(rt, event.messageId, idleCompactionMarker(rt, chunk));
           yield* stampToolTime(rt, event.messageId, chunk);
-          // A background subagent from an earlier turn streams on its own lane whatever this turn
-          // was sent, so only the turn's own reply shows the agent has the input.
           if (
             rt.turn !== undefined &&
             rt.open.get(event.messageId)?.nested === false &&
@@ -591,8 +541,6 @@ export const makeAgentEvents = ({
             }
             yield* settleNote(rt, rt.turn.id, true);
           }
-          // Only actual main-turn content proves that this model can answer. Empty starts, error
-          // parts and nested/background lanes cannot reset the spawn circuit breaker.
           if (
             rt.turn !== undefined &&
             (((chunk.type === "text-delta" || chunk.type === "reasoning-delta") &&
@@ -608,8 +556,6 @@ export const makeAgentEvents = ({
               observer.onTurnProgress?.(rt.threadId, model, turnId),
             );
           }
-          // The adapters report a retry but not its recovery, so the reply's output is the sign. A
-          // background subagent streams on whether or not its parent is being rate limited.
           if (
             rt.retrying &&
             showsProgress(chunk) &&
@@ -618,8 +564,6 @@ export const makeAgentEvents = ({
           ) {
             yield* setRetrying(rt, false);
           }
-          // Each tool call is a cheap look at the folder: deleted outside Gram, every tool
-          // the agent runs in it would fail.
           if (
             chunk.type === "tool-input-available" &&
             rt.cwd !== undefined &&
@@ -673,7 +617,6 @@ export const makeAgentEvents = ({
               )
                 return;
               if (event.type === "toolImageRead") {
-                // First admission owns the path. A later event cannot replace its capability.
                 if (!lane.imageReads.has(event.toolCallId))
                   lane.imageReads.set(event.toolCallId, event.path);
                 return;
@@ -684,11 +627,8 @@ export const makeAgentEvents = ({
               const isCurrent = () =>
                 rt.turn === turn && rt.open.get(event.messageId) === lane && !lane.finished;
               const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
-              // The image is read from this disk: a session on another machine names a path of
-              // that machine's, and its word never opens a file here.
               if (sessionHostOf(thread) !== LOCAL_HOST_ID) return;
               const messages = [
-                // Only `file` and stored tool-image parts name attachments.
                 ...(yield* store.messagesWithParts(rt.threadId, ["file", "data-tool-image"])),
                 ...[...rt.open.values()].map((reply) => reply.accumulator.snapshot()),
               ];
@@ -728,14 +668,12 @@ export const makeAgentEvents = ({
         }
         case "request": {
           const { request } = event;
-          // A card the server raised is the server's alone: a session naming its id changes nothing.
           if (serverRaised(request.id)) {
             yield* Effect.logWarning("an agent's request reused a server-raised card's id").pipe(
               Effect.annotateLogs({ threadId: rt.threadId, requestId: request.id }),
             );
             return;
           }
-          // Under an id already in hand, another request (`replaceAsked`), unless it is the same.
           if (yield* replayed(rt, request)) return;
           const key = yield* replaceAsked(rt, request.id);
           if (
@@ -745,7 +683,6 @@ export const makeAgentEvents = ({
           ) {
             const actions = requestActions(request);
             if (actions.length > 0) {
-              // Asked off this loop: the card, if there is to be one, goes up when it answers.
               const deciding = { threadId: rt.threadId, request };
               hooked.deciding.set(key, deciding);
               yield* forkDecision(decideRequest(rt, rt.session, decisions, deciding, actions));
@@ -780,8 +717,6 @@ export const makeAgentEvents = ({
             ...bookCost(rt.cost, event),
             ...(event.cacheWrites === undefined ? {} : { cacheWrites: event.cacheWrites }),
           };
-          // Agents repeat a reading between turns, and through a tool call; one that reads the
-          // same is no news to clients, or to the orchestrator's context watch.
           const unchanged =
             rt.usage !== undefined && JSON.stringify(rt.usage) === JSON.stringify(usage);
           if (rt.turn !== undefined) rt.turn.usage = usage;
@@ -797,8 +732,6 @@ export const makeAgentEvents = ({
           return;
         }
         case "subagentUsage": {
-          // The snapshot rides its own lane's transcript, so a backgrounded subagent reporting back
-          // between turns updates its Task card instead of minting a stray message.
           const target = openLane(rt, event.usage.toolCallId) ?? openReply(rt);
           if (target === undefined) return;
           yield* appendChunk(rt, target.messageId, {
@@ -825,10 +758,6 @@ export const makeAgentEvents = ({
           }
           return;
         case "mode": {
-          // A session reports the mode it runs in, but it never raises the thread into one that
-          // lets Gram's own cards go unasked (`makeApprovalGate`): only the user picks those
-          // (`setMode`). A session on another machine is that machine's word, and so is a
-          // compromised agent's; leaving a mode, or moving between lesser ones, is taken as said.
           const current = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
           if (current.mode === event.mode) return;
           if (
@@ -849,8 +778,6 @@ export const makeAgentEvents = ({
         case "model": {
           const current = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
           if (current.model.model === event.model) return;
-          // As the picker does on a switch: an effort the new model doesn't take is dropped, or a
-          // reopen would hand it to the agent. A model nobody lists has no efforts there either.
           const capabilities = yield* selectableModels(
             store,
             hosts,
@@ -863,8 +790,6 @@ export const makeAgentEvents = ({
           const efforts = capabilities?.efforts ?? [];
           const disableFast =
             current.model.speed === "fast" && !capabilities?.speeds.includes("fast");
-          // The session already runs this model. Only an unsupported Fast preference needs a
-          // control update, so the CLI flag cannot reactivate it or promote a later selection.
           const thread = yield* store
             .updateThread(rt.threadId, (t) => {
               const { variant, ...rest } = t.model;
@@ -881,7 +806,6 @@ export const makeAgentEvents = ({
             .pipe(Effect.orDie);
           if (rt.turn !== undefined) rt.turn.model = thread.model;
           yield* publishUpsert(thread);
-          // Unless it can't run it as started: then it reopens on the new record once idle.
           if (rt.session?.needsReopenFor?.(event.model) === true) yield* reopenWhenIdle(rt);
           else if (disableFast && rt.session !== undefined)
             yield* rt.session.setModel(thread.model);
@@ -909,7 +833,6 @@ export const makeAgentEvents = ({
         case "rateLimit": {
           const { type: _, ...limit } = event;
           const now = yield* Clock.currentTimeMillis;
-          // Every reading feeds the usage meter; only the gated warnings notify.
           if (rt.agent !== undefined) {
             const reading: Extract<ServerEvent, { type: "usageLimit" }> = {
               type: "usageLimit",
@@ -922,9 +845,6 @@ export const makeAgentEvents = ({
               ...limit,
             };
             yield* hub.publish(reading);
-            // A rejection's reset is when the account takes turns again, which a thread on it
-            // failing in this very turn waits for (`limitedUntil`): recorded now, not when the
-            // hub's consumer gets to it, which a second record of the same report leaves as is.
             if (limit.status === "rejected" && Option.isSome(limitReadings)) {
               yield* limitReadings.value.record(reading);
             }
@@ -936,8 +856,6 @@ export const makeAgentEvents = ({
         case "turnEnd": {
           const turnId = rt.turn?.id;
           const replyId = replyOf(rt, turnId);
-          // A provider limit is waited out, not failed on: the thread rests until it resumes. A
-          // turn someone stopped is never resumed on its own: its limit stands as an error.
           const stopped = turnId !== undefined && rt.stopAsked === turnId;
           const wait =
             event.reason === "error" &&
@@ -953,7 +871,6 @@ export const makeAgentEvents = ({
           if (event.reason === "completed") {
             yield* keepError(rt, undefined);
             rt.resumedFrom = undefined;
-            // A turn the account took after its limit says the limit no longer applies.
             const account = rt.quota;
             if (rt.agent !== undefined && rt.turn !== undefined && Option.isSome(limitReadings)) {
               yield* limitReadings.value.admitted(
@@ -973,7 +890,6 @@ export const makeAgentEvents = ({
               const anyWaiting = [...runtimes.values()].some(
                 (each) => each.limitWait?.account === account && each.limitWait.kind === "limit",
               );
-              // The spacing starts over once nothing on the account waits.
               if (!anyWaiting) earlyReleases.delete(account);
               else {
                 const { model } = (yield* store.getThread(rt.threadId).pipe(Effect.orDie)).model;
@@ -981,7 +897,6 @@ export const makeAgentEvents = ({
               }
             }
           }
-          // Before the turn ends, so its observers see the thread waiting rather than failed.
           if (wait !== undefined) yield* enterWait(rt, wait, true);
           yield* finishTurn(rt, event.reason, "adapter", wait !== undefined);
           if (wait !== undefined) {
@@ -992,8 +907,6 @@ export const makeAgentEvents = ({
           } else if (failed !== undefined) {
             if (turnId !== undefined) yield* publishFailure(rt, failed, turnId, replyId);
             yield* setStatus(rt, "error", failed.text);
-            // A reopen waiting on the turn (a restart, a move) goes now: Codex can end a failed turn
-            // with no idle after it, so `becomeIdle` would never get to it.
             if (rt.reopenOnIdle && rt.session !== undefined) yield* reopenNow(rt);
             else yield* startIdleTimer(rt);
           } else {
@@ -1017,11 +930,7 @@ export const makeAgentEvents = ({
           return;
         case "cwd": {
           const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
-          // While a moved session waits to reopen, the agent still reports the folder it's leaving.
           if (rt.cwd === undefined || !samePath(rt.cwd, thread.checkout.path)) return;
-          // An orchestrator or a worker stays in the folder it was made for: an orchestrator that
-          // `cd`s into a worker's worktree to read it isn't working there, and a worker's other
-          // worktrees are its own extras, not a move. A worker carries `spawnedBy`, not a role.
           const follow =
             (yield* store.getSettings).agents.followWorktreeMoves &&
             thread.role === undefined &&
@@ -1037,7 +946,6 @@ export const makeAgentEvents = ({
       }
     });
 
-  /** Called with the runtime lock held. */
   const setBackground = (rt: Runtime, tasks: ReadonlyArray<BackgroundTask>) =>
     Effect.suspend(() => {
       if (tasks.length === 0 && rt.background.length === 0) return Effect.void;
@@ -1047,10 +955,6 @@ export const makeAgentEvents = ({
       return hub.publish({ type: "thread.background", threadId: rt.threadId, tasks });
     });
 
-  /**
-   * Called with the runtime lock held. Only for a task `background` lists, and at most the last
-   * `BACKGROUND_OUTPUT_CHARS` of it, so what is kept stays bounded by the tasks running.
-   */
   const setBackgroundOutput = (
     rt: Runtime,
     event: Extract<AgentEvent, { type: "backgroundOutput" }>,
@@ -1067,7 +971,6 @@ export const makeAgentEvents = ({
       return hub.publish({ type: "thread.backgroundOutput", threadId: rt.threadId, ...output });
     });
 
-  /** Called with the runtime lock held. */
   const setLapsedConnectors = (rt: Runtime, names: ReadonlyArray<string>) =>
     Effect.suspend(() => {
       if (names.length === 0 && rt.lapsedConnectors.length === 0) return Effect.void;

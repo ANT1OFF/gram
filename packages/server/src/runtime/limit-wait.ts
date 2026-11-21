@@ -1,6 +1,3 @@
-// Waiting out a provider limit (`Thread.limitWait`): when a limit resets according to the agent's own
-// words, when each waiting thread resumes, and how long a bare 429 waits before its next try.
-
 import {
   LIMIT_SAME_WINDOW_MS,
   type AgentFailure,
@@ -16,7 +13,6 @@ export const LIMIT_RESUME_DELAY_MS = 20_000;
 /** The most extra delay one thread's resume takes on, so threads never resume in lockstep. */
 export const LIMIT_RESUME_JITTER_MS = 10_000;
 
-/** Workers resumed together after the orchestrator, per batch. */
 const LIMIT_RESUME_BATCH = 3;
 
 /** How long each batch of workers waits behind the one before it (the orchestrator's included). */
@@ -34,13 +30,8 @@ export const BACKOFF_MAX_DELAY_MS = 8 * 60_000;
 /** Retries a bare 429 gets before it stands as an ordinary error. */
 export const BACKOFF_MAX_ATTEMPTS = 5;
 
-/**
- * A clock time this recently past is the reset that just went by, not tomorrow's: the limit
- * outlasted it, which a backoff waits out rather than a day.
- */
 const JUST_PAST_MS = 10 * 60_000;
 
-/** A reset further off than this is a misread, never a wait. */
 const RESET_HORIZON_MS = 8 * DAY_MS;
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -52,8 +43,6 @@ const hour24 = (hour: number, meridiem: string | undefined): number => {
   return hour;
 };
 
-// "resets 12:50pm (Europe/Oslo)", "resets Oct 9, 10am", "Try again at 3:05 PM.",
-// "Try again at Oct 16th, 2026 3:05 PM."
 const AT_TIME = new RegExp(
   String.raw`(?:\breset(?:s|ting)?(?:\s+at)?|\btry again at)\s+` +
     String.raw`(?:(?:on\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(?:(\d{4}),?\s+)?(?:at\s+)?)?` +
@@ -62,7 +51,6 @@ const AT_TIME = new RegExp(
   "i",
 );
 
-// "try again in 2 hours 5 minutes", "try again in 4 days 1 hour", "resets in 3h 20m".
 const IN_DURATION =
   /\b(?:try again|resets?)\s+in\s+((?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b[\s,]*(?:and\s+)?)+)/i;
 
@@ -73,7 +61,6 @@ const UNIT_MS: ReadonlyArray<readonly [RegExp, number]> = [
   [/^s/i, 1000],
 ];
 
-// Claude Code's older form: "Claude AI usage limit reached|1760000000".
 const EPOCH = /limit reached\|(\d{10})\b/i;
 
 /**
@@ -90,11 +77,6 @@ export const limitResetAt = (
   localZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
 ): number | undefined => readReset(text, now, localZone).at;
 
-/**
- * `limitResetAt`'s reading, with `rolledFrom`: the time a clock time or yearless date named before
- * it was taken as the next one (tomorrow's, next year's), since that one had passed. A thread that
- * has already waited out that very time is reading the same reset again, not a new one.
- */
 const readReset = (
   text: string,
   now: number,
@@ -119,7 +101,6 @@ const readReset = (
   const match = AT_TIME.exec(text);
   if (match === null) return sane(undefined);
   const [, monthName, dayText, yearText, hourText, minuteText, meridiem, zoneName] = match;
-  // A bare number with no minutes and no am/pm is a count, not a clock time.
   if (minuteText === undefined && meridiem === undefined) return sane(undefined);
   const hour = hour24(Number(hourText), meridiem);
   const minute = minuteText === undefined ? 0 : Number(minuteText);
@@ -133,14 +114,12 @@ const readReset = (
     const day = Number(dayText);
     const named = (year: number) => zoned(format, { year, month, day }, hour, minute);
     if (yearText !== undefined) return sane(named(Number(yearText)));
-    // A date with no year is the next one: December's "Jan 2" is next year's.
     const thisYear = named(today.year);
     return thisYear > now - JUST_PAST_MS
       ? sane(thisYear)
       : { at: saneAt(named(today.year + 1)), rolledFrom: thisYear };
   }
   const at = zoned(format, today, hour, minute);
-  // A time well past today is tomorrow's; one just past is a reset that came and went.
   return at > now - JUST_PAST_MS
     ? sane(at)
     : { at: saneAt(zoned(format, plusDays(today, 1), hour, minute)), rolledFrom: at };
@@ -188,7 +167,6 @@ export const classifyLimit = (
   return { kind: "limit", resetsAt: undefined };
 };
 
-/** A small spread from the thread's id, the same on every plan, so a re-plan never reshuffles it. */
 const jitterOf = (threadId: string, span: number = LIMIT_RESUME_JITTER_MS): number => {
   let hash = 0;
   for (let i = 0; i < threadId.length; i++) hash = (hash * 31 + threadId.charCodeAt(i)) | 0;
@@ -225,7 +203,6 @@ export const resumePlan = (
       a.threadId.localeCompare(b.threadId),
   );
   const plan = new Map<ThreadId, number>();
-  // With no orchestrator waiting, the first batch of workers goes first.
   const lead = ordered.some((each) => each.orchestrator) ? 1 : 0;
   let worker = 0;
   for (const each of ordered) {
@@ -264,7 +241,6 @@ export const pauseResumePlan = (
 export const releaseBatchAt = (index: number, now: number): number =>
   now + Math.floor(index / LIMIT_RESUME_BATCH) * LIMIT_RESUME_BATCH_GAP_MS;
 
-/** Which release batch, from 1, the `count`th worker let go in a wave takes. */
 const batchOf = (count: number) => Math.floor(count / LIMIT_RESUME_BATCH) + 1;
 
 /** Workers let go from a hold together: when the first went, and how many have since. */

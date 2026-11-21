@@ -198,7 +198,6 @@ export interface SearchThreadsOptions {
   limit?: number;
 }
 
-/** `expired`: the server rejects this window's session (its launch token changed); retrying can't help. */
 type ConnectionStatus = "connecting" | "open" | "reconnecting" | "expired";
 
 /**

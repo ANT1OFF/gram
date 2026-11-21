@@ -8,14 +8,11 @@ export interface PagePick extends PickedElement {
 
 interface PagePicksState {
   byThread: Readonly<Record<string, readonly PagePick[]>>;
-  /** Whether the thread's Preview is picking now. */
   picking: Readonly<Record<string, boolean>>;
   add(threadId: ThreadId, pick: PagePick): void;
   remove(threadId: ThreadId, id: string): void;
   setPicking(threadId: ThreadId, on: boolean): void;
-  /** The thread's picks, cleared from the store for the message about to carry them. */
   take(threadId: ThreadId): readonly PagePick[];
-  /** Puts taken picks back, ahead of any added since, when their message didn't go. */
   restore(threadId: ThreadId, picks: readonly PagePick[]): void;
 }
 
@@ -53,7 +50,6 @@ export const usePagePicks = (threadId: ThreadId): readonly PagePick[] =>
 /** "Pay now", else its selector: what its chip says. */
 export const pickLabel = (pick: PickedElement): string => pick.text || `<${pick.tag}>`;
 
-/** A code fence longer than any run of backticks in `text`, so the HTML can't close it early. */
 const fenceFor = (text: string) =>
   "`".repeat(Math.max(3, ...Array.from(text.matchAll(/`+/g), (m) => m[0].length + 1)));
 

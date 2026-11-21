@@ -1,13 +1,3 @@
-/**
- * A thread profile: everything a thread is started with when something other than a person at the
- * composer starts it (`thread.createFromProfile`). Its charter, the files and skills laid into its
- * folder, its agent and model, its one MCP server, how much it does without asking, and where it
- * works. A profile is supplied whole and applied once; what the thread keeps of it is its
- * `ThreadProfileBinding`.
- *
- * A profile never carries a credential. The model's key is a gateway profile's, named by id, and
- * the MCP server is an address alone.
- */
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
@@ -179,7 +169,6 @@ export const PROFILE_SKILLS_DIR: Readonly<Record<AgentKind, string>> = {
 
 const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/i;
 
-/** Server names a profile can't take: Gram's own app tools go by it in every session. */
 const RESERVED_SERVER_NAMES: ReadonlySet<string> = new Set(["gram"]);
 
 /**
@@ -188,35 +177,27 @@ const RESERVED_SERVER_NAMES: ReadonlySet<string> = new Set(["gram"]);
  */
 export const profilePathProblem = (path: string): string | undefined => {
   if (path === "" || path.length > 300) return "A file's path is 1 to 300 characters.";
-  // Control characters and a backslash have no place in a name that is the same on every system.
   // oxlint-disable-next-line no-control-regex -- control characters are what it refuses
   if (/[\u0000-\u001f\u007f\\]/.test(path))
     return `${JSON.stringify(path)} has a backslash or a control character in it.`;
-  // Invisible and direction characters make one name read as another (`.g\u200cit` is `.git` on
-  // some disks).
   if (/\p{Cf}/u.test(path)) return `${JSON.stringify(path)} has an invisible character in it.`;
   if (path.startsWith("/") || /^[A-Za-z]:/.test(path))
     return `${path} is absolute; a file's path is relative to the thread's folder.`;
-  // What names a drive, a stream or a wildcard somewhere: a path means one file everywhere.
   if (/[:<>"|?*]/.test(path)) return `${path} has one of : < > " | ? * in it.`;
   const segments = path.split("/");
   if (segments.some((segment) => segment === "" || segment === "." || segment === ".."))
     return `${path} has an empty, "." or ".." name in it.`;
-  // A trailing dot or space is dropped by some disks, so `.git.` and `a.` would be other names.
   if (segments.some((segment) => /^\s|[.\s]$/.test(segment)))
     return `${path} has a name that starts with a space or ends with a dot or a space.`;
   if (segments.some((segment) => WINDOWS_DEVICE.test(segment)))
     return `${path} has a name some systems keep for a device.`;
-  // `.git` itself, and the short name a disk may give it.
   if (segments.some((segment) => /^(?:\.git|git~\d+)$/i.test(segment)))
     return `${path} is inside a .git folder, which is the repository's own.`;
   return undefined;
 };
 
-/** One file on every disk: composed the same way and compared without case. */
 const pathKey = (path: string): string => path.normalize("NFC").toLowerCase();
 
-/** `---`-fenced front matter Claude Code and Codex both read a skill's name and description from. */
 const skillDocument = (skill: ProfileSkill): string =>
   `---\nname: ${skill.name}\ndescription: ${JSON.stringify(skill.description)}\n---\n\n${skill.body}${
     skill.body.endsWith("\n") ? "" : "\n"
@@ -265,7 +246,6 @@ export const profileProblems = (profile: ThreadProfile): ReadonlyArray<string> =
   for (const file of files) {
     const problem = profilePathProblem(file.path);
     if (problem !== undefined) problems.push(problem);
-    // Two names that differ only by case or composition are one file on some disks.
     const key = pathKey(file.path);
     if (paths.has(key)) problems.push(`Two files are laid at ${file.path}.`);
     paths.add(key);
@@ -314,7 +294,6 @@ export const profileProblems = (profile: ThreadProfile): ReadonlyArray<string> =
   return problems;
 };
 
-/** The start of a decode failure as one line: what was expected and where, never the value. */
 const firstLines = (message: string) =>
   message.split("\n").slice(0, 3).join(" ").replace(/\s+/g, " ").trim();
 

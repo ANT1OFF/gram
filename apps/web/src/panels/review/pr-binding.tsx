@@ -26,7 +26,6 @@ export function usePrBinding(threadId: ThreadId) {
   const action = useReviewAction();
   const boundUrl = targetBadge({ pr: branchPr, origin }, boundPr)?.url;
 
-  /** Binds the PR `value` names, then calls `onBound`; a failure stays in `action.notice`. */
   const bind = (value: string, onBound: () => void) =>
     action.run(async () => {
       await bindPrFromInput(api, threadId, value, origin);
@@ -197,7 +196,6 @@ export function PrBinding({ threadId }: { threadId: ThreadId }) {
         <BindPrForm
           binding={binding}
           onDone={() => setFormOpen(false)}
-          // Bind a PR… back again, or once bound what the row offers instead.
           returnFocus={() => rootRef.current?.querySelector("button")}
         />
       )}

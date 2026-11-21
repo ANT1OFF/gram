@@ -9,7 +9,6 @@ import { authenticodeScript, type ProcessResult } from "@gram/shell/modules/upda
 
 let loginPath: Promise<string> | undefined;
 
-/** The login-shell PATH, probed once: the same probe the server's launch checks use. */
 const probedPath = () =>
   (loginPath ??= Effect.runPromise(
     Effect.gen(function* () {
@@ -63,9 +62,7 @@ function runProcess(
             stderr: "Update download exceeded its byte bound",
           });
         if (!error) return resolve({ status: 0, stdout, stderr });
-        // A numeric code is the exit status; otherwise it didn't start (ENOENT) or was killed.
         const status = typeof error.code === "number" ? error.code : null;
-        // Killed for its timeout, it says nothing itself; say so, so the failure can be explained.
         const timedOut = error.killed ? `timed out after ${options.timeoutMs / 1000} s` : "";
         resolve({
           status,
@@ -110,9 +107,6 @@ export async function runGh(
 
 /** Runs the Authenticode probe under Windows PowerShell 5.1. */
 export function probeSignature(installer: string): Promise<ProcessResult> {
-  // Launched from a pwsh 7 terminal, the inherited PSModulePath points at PowerShell 7's modules and
-  // 5.1 then fails to load Microsoft.PowerShell.Security, refusing a valid installer. pwsh strips
-  // it when it starts powershell.exe; do the same.
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => key.toUpperCase() !== "PSMODULEPATH"),
   );

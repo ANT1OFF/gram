@@ -1,7 +1,3 @@
-// The sites a session opened with the user's browser is limited to
-// (`OpenSessionOptions.browserScope`): which host an address is on, and whether a call opens one
-// outside the list. Pure, so both adapters and their tests read the same rule.
-
 /** The host an address is on, in lower case, with its port when it names one; none if it has none. */
 export const siteOf = (address: string): string | undefined => {
   const trimmed = address.trim();

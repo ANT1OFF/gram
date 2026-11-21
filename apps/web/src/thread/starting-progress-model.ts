@@ -11,7 +11,6 @@ export interface StartStep {
   readonly state: StartStepState;
 }
 
-/** A part that is the agent's output, not the bookkeeping a turn opens with. */
 const isOutput = (part: GramUIMessage["parts"][number]): boolean => part.type !== "step-start";
 
 /** Whether the agent has said or done anything yet: any assistant part beyond a step's start. */
@@ -35,7 +34,6 @@ export function startingSteps(input: {
   const { status, checkout, agent, activity, messages } = input;
   if (status !== "starting" && status !== "running") return undefined;
   if (agentHasOutput(messages)) return undefined;
-  // A thread that answered before (its output since compacted away, say) isn't starting fresh.
   if (!messages.some((message) => message.role === "user")) return undefined;
   const launching = status === "starting";
   const steps: StartStep[] = [];

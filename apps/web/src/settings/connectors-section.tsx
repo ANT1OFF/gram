@@ -59,17 +59,11 @@ import { useFeature } from "./use-diagnostics";
 
 const EVERY_PROJECT = "user-wide";
 
-/** A removal confirmation belongs to the agents' configuration table. */
 type Shelf = "table";
 
-/**
- * How long the page keeps looking for a sign-in the user started, and how often: longer than
- * `claude mcp login` may run (six minutes), so its outcome still arrives.
- */
 const SIGN_IN_WAIT_MS = 7 * 60_000;
 const SIGN_IN_POLL_MS = 2_000;
 
-/** What each agent's column says about how its sign-ins are known. */
 const SIGN_IN_NOTE: Readonly<Record<AgentConfiguredServers["signIn"], string | undefined>> = {
   reported: undefined,
   onRequest: "Codex learns its sign-ins only by starting every server, so it checks when you ask.",
@@ -77,7 +71,6 @@ const SIGN_IN_NOTE: Readonly<Record<AgentConfiguredServers["signIn"], string | u
     "Claude Code's sign-ins show while a Claude thread is running, and it signs in through that thread.",
 };
 
-/** `liveOnly`'s note when Claude Code can sign in with no thread running. */
 const LIVE_ONLY_THREADLESS_NOTE =
   "Claude Code's sign-ins show while a Claude thread is running. Sign in works without one.";
 
@@ -86,7 +79,6 @@ const signInNote = (agent: AgentConfiguredServers) =>
     ? LIVE_ONLY_THREADLESS_NOTE
     : SIGN_IN_NOTE[agent.signIn];
 
-/** Where the claude.ai connectors listed come from, when no running Claude thread has them. */
 const claudeAiNote = (agent: AgentConfiguredServers, now: number): string | undefined => {
   if (agent.claudeAiFrom === "lastSeen") {
     const latest = agent.servers
@@ -104,15 +96,12 @@ const claudeAiNote = (agent: AgentConfiguredServers, now: number): string | unde
 
 const signInKey = (target: McpTarget, name: string) => `${target}:${name}`;
 
-/** A claude.ai connector's cell when claude.ai turned down Claude Code's own sign-in. */
 const CLAUDE_SIGN_IN_AGAIN = "Sign in to Claude again. Run `claude /login`.";
 
-/** A sign-in under way: its page again in case the browser tab got lost. */
 interface SignIn {
   readonly url?: string;
 }
 
-/** The form, open: blank from "Add server…", or started from another agent's copy of a server. */
 interface Adding {
   readonly target?: McpTarget;
   readonly draft?: Partial<McpDraft>;
@@ -138,7 +127,6 @@ export function ConnectorsSettings() {
   const [signIns, setSignIns] = useState<Readonly<Record<string, SignIn>>>({});
   const [notice, setNotice] = useState<string | undefined>();
   const [adding, setAdding] = useState<Adding | undefined>();
-  /** The server a Remove was asked for, confirmed under its row before anything is removed. */
   const [removing, setRemoving] = useState<{
     target: McpTarget;
     server: ConfiguredServer;
@@ -155,7 +143,6 @@ export function ConnectorsSettings() {
   useEffect(() => {
     signInsRef.current = signIns;
   }, [signIns]);
-  /** A sign-in is over once the agent says it holds one, or that the one started here failed. */
   const settleSignIns = (listed: ReadonlyArray<AgentConfiguredServers>) => {
     const over = listed.flatMap(({ target, servers }) =>
       servers.flatMap((server) =>
@@ -182,14 +169,8 @@ export function ConnectorsSettings() {
 
   const waitingOn = (target: McpTarget) =>
     Object.keys(signIns).some((key) => key.startsWith(`${target}:`));
-  /**
-   * The next read is to be fresh: the user asked to refresh, or acted. Otherwise the server answers
-   * with its last read at once and reads again behind it.
-   */
   const freshNext = useRef(false);
   const read = async (checkSignIn?: ReadonlyArray<McpTarget>) => {
-    // A sign-in under way is watched as it lands, not as of the last read. Asking for sign-ins
-    // reads afresh anyway.
     const fresh =
       checkSignIn === undefined &&
       (freshNext.current || Object.keys(signInsRef.current).length > 0);
@@ -206,14 +187,9 @@ export function ConnectorsSettings() {
     queryKey: ["connectors-configured", cwd],
     queryFn: () => read(),
     retry: false,
-    // Codex's sign-in is requested explicitly and Claude Code's comes from a running thread, so both
-    // can be watched; asking Codex never is polled. Otherwise the page asks again for the read
-    // behind an answer.
     refetchInterval: (current) =>
       waitingOn("claude") ? SIGN_IN_POLL_MS : nextConfiguredRead(current.state.data),
   });
-  // Answering makes Codex start and connect every server it has, so this never runs on its own:
-  // not on mount, not on a refresh or a project switch, only from `checkCodex`.
   const codexSignIns = useQuery({
     queryKey: ["connectors-codex-sign-ins", cwd],
     queryFn: () => read(["codex"]),
@@ -227,7 +203,6 @@ export function ConnectorsSettings() {
   };
 
   const agents = withSignIns(query.data?.agents ?? [], codexSignIns.data?.agents);
-  // Ticks only while a row is as of some time, so its age moves on without a read.
   const now = useNow(
     agents.some((agent) => agent.claudeAiFrom === "lastSeen"),
     undefined,
@@ -235,7 +210,6 @@ export function ConnectorsSettings() {
   );
   const agentOf = (target: McpTarget) => agents.find((agent) => agent.target === target);
 
-  // Codex can't be watched, so it's asked once when the user comes back from the browser.
   const waitingOnCodex = waitingOn("codex");
   useEffect(() => {
     if (!waitingOnCodex) return;
@@ -249,23 +223,19 @@ export function ConnectorsSettings() {
     onSettled: refresh,
   });
 
-  /** Starts `target`'s own sign-in to its server `name` and opens the page it hands back. */
   const startSignIn = async (target: McpTarget, name: string, scope: string) => {
     const started = await api.signInConnector({
       target,
       name,
-      // Picks the Claude session whose server this is, when another of the name shadows it.
       scope,
       ...(cwd === undefined ? {} : { cwd }),
     });
-    // claude.ai tells nobody when the user finishes there, so that one isn't waited for.
     if (started.kind !== "onClaudeAi") {
       const key = signInKey(target, name);
       setSignIns((current) => ({
         ...current,
         [key]: started.kind === "open" ? { url: started.authorizationUrl } : {},
       }));
-      // The user may never finish; the cell goes back to offering a sign-in.
       setTimeout(
         () =>
           setSignIns((current) =>
@@ -300,10 +270,6 @@ export function ConnectorsSettings() {
       setNotice(`Removed ${server.name} from ${MCP_TARGET_LABEL[target]}.`);
     });
 
-  /**
-   * Copies a server to `target` after reading afresh what it has: the table may be a last read,
-   * and a name it has since taken would be replaced, credentials and all.
-   */
   const addTo = (row: ConnectorMatrixRow, target: McpTarget) =>
     action.mutate(async () => {
       setNotice(undefined);
@@ -370,7 +336,6 @@ export function ConnectorsSettings() {
     />
   );
 
-  /** The confirmation of a Remove asked for from `row` in `from`; nothing for any other row. */
   const confirmFor = (row: ConnectorMatrixRow, from: Shelf) =>
     removing !== undefined &&
     removing.from === from &&
@@ -639,18 +604,10 @@ function Cell({
   target: McpTarget;
   row: ConnectorMatrixRow;
   busy: boolean;
-  /**
-   * The agent can sign in to a server whose state it hasn't said: Codex until it's asked, Claude
-   * Code with no thread running. "Unknown" may well mean "not signed in" there.
-   */
   signInsUnknown: boolean;
-  /** Present while the user is signing this agent in to the server in their browser. */
   signIn: SignIn | undefined;
-  /** Where the agent's claude.ai connectors come from (`AgentConfiguredServers.claudeAiFrom`). */
   claudeAiFrom: ClaudeAiSource | undefined;
-  /** A claude.ai connector can be signed in to with no Claude thread running. */
   connectorSignIn: boolean;
-  /** The time a row's "as of" is counted from (`useNow`). */
   now: number;
   onSignIn: (server: ConfiguredServer) => void;
   onOpenSignIn: (url: string) => void;
@@ -677,9 +634,7 @@ function Cell({
   }
 
   const hosted = server.scope === "claudeai";
-  // No running Claude thread has it: the row is what one last said, or that it was used before.
   const threadless = hosted && claudeAiFrom !== undefined && claudeAiFrom !== "thread";
-  // A connector sign-in cannot fix the agent's login or the server's access policy.
   const signInWontHelp =
     server.claudeAi?.claudeSignInRejected === true || server.claudeAi?.blocked !== undefined;
   const waiting = signIn !== undefined && server.signedIn !== true;
@@ -693,7 +648,6 @@ function Cell({
         server.url !== undefined &&
         !server.carriesValues));
   const signInHere = !threadless || connectorSignIn;
-  // Glyph and words together, and "not signed in" in the same muted tone as everything else here.
   const signedIn = server.signedIn === true;
   const state = server.disabled
     ? { icon: CircleOff, text: "Disabled", tone: "text-muted-foreground" }
@@ -702,7 +656,6 @@ function Cell({
       : server.signedIn === false
         ? {
             icon: KeyRound,
-            // Signed in once, so its sign-in lapsed, rather than one never used.
             text: hosted && server.everConnected === true ? "Signed out" : "Not signed in",
             tone: "text-muted-foreground",
           }

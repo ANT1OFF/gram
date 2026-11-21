@@ -1,6 +1,3 @@
-// `reply` and `take_conversation`: a thread answering an embedding host's conversation it owns,
-// and an orchestrator taking one back from its worker (`embedding/conversations.ts`). Bound only
-// where the server has an event sink to send replies through; with no host, the tools are absent.
 import {
   AppToolError,
   autonomyOf,
@@ -19,10 +16,6 @@ import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.
 import { defineAppTool } from "./definition.ts";
 import { AppToolRegistry } from "./registry.ts";
 
-/**
- * Whether `threadId` works at `supervised`, by its profile or its workspace: then every reply is
- * the user's to approve, as everything outward is at that level.
- */
 const supervised = (store: ThreadStoreShape, threadId: ThreadId) =>
   Effect.gen(function* () {
     const thread = yield* store.getThread(threadId);

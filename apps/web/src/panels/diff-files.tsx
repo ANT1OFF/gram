@@ -27,12 +27,7 @@ import { quoteShellPath, type ShellKind, typablePath } from "./terminal/shell-qu
 
 const SHELL_KINDS: ReadonlyArray<ShellKind> = ["posix", "git-bash", "powershell", "cmd"];
 
-/**
- * Changed lines past which a file starts collapsed, however few files there are; a diff with fewer in
- * all starts with every file open, however many there are.
- */
 const LARGE_FILE_LINES = 400;
-/** Files a diff may have and still start open, whatever their size in all (each under the cap). */
 const FEW_FILES = 3;
 
 /** A request to open a file, and bring it (or one of its hunks) into view; `key` tells requests apart. */
@@ -62,19 +57,12 @@ export const FILE_STATUS: Record<
   },
 };
 
-/**
- * A file's own actions, in place of its status and counts while the row is hovered or one of them
- * has focus. The panel is translucent, so they are never drawn over text: the counts give way
- * (`ROW_FACTS`) to a gap as wide as the actions (`ACTIONS_ROOM`), which the path ends before.
- */
 const ROW_ACTIONS =
   "absolute inset-y-0 right-0 flex items-center opacity-0 focus-within:opacity-100 group-hover/file:opacity-100";
 const ROW_ACTION =
   "me-2 shrink-0 rounded-sm p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
-/** A row's status letter and counts, gone while its actions show in their place. */
 const ROW_FACTS =
   "flex shrink-0 items-center gap-2 group-hover/file:hidden group-has-[[data-row-actions]:focus-within]/file:hidden";
-/** The gap under the actions while they show: one, two or three of them (`ROW_ACTION` is 2 rem). */
 const ACTIONS_ROOM = ["", "w-6", "w-14", "w-22"] as const;
 const ROOM_SHOWN =
   "hidden shrink-0 group-hover/file:block group-has-[[data-row-actions]:focus-within]/file:block";
@@ -92,7 +80,6 @@ export function pathParts(file: Pick<DiffFile, "path" | "oldPath">): {
   return { folders: shown.slice(0, cut), name: shown.slice(cut) };
 }
 
-/** ↑ / ↓ on a file header move to the previous / next file's header, past any open patch. */
 function moveBetweenHeaders(event: KeyboardEvent<HTMLButtonElement>) {
   if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
   const list = event.currentTarget.closest("ul");
@@ -152,7 +139,6 @@ export function DiffFileList({
   onRevealInFileManager?: (path: string) => void;
   focus?: DiffFocus | undefined;
 }) {
-  // A file asked for as the list opens (an agent's target) is what opens, alone.
   const targeted = focus !== undefined && files.some((file) => file.path === focus.path);
   const open = initiallyOpen(files);
   return (
@@ -194,7 +180,6 @@ function DiffFileRow({
   layout: DiffLayout;
   wrap: boolean;
   defaultOpen: boolean;
-  /** Files in the list whose patch shows here, for a too-large file's note. */
   reviewable: number;
   onReveal?: (path: string) => void;
   onOpenInEditor?: (path: string) => void;
@@ -203,8 +188,6 @@ function DiffFileRow({
   focusHunk?: number | undefined;
 }) {
   const [open, setOpen] = useState(defaultOpen || focusKey !== undefined);
-  // A patch renders while open, and until its collapse has animated: a closed row costs nothing,
-  // which matters for a lockfile's thousands of lines.
   const [rendered, setRendered] = useState(open);
   const [focusedKey, setFocusedKey] = useState(focusKey);
   const bodyId = useId();
@@ -224,7 +207,6 @@ function DiffFileRow({
   useEffect(() => {
     const body = rowRef.current?.querySelector<HTMLElement>(".gram-expand");
     if (open || !rendered || !body) return;
-    // Only the height transition ends the collapse: Reduced motion still fades, but at once.
     const style = getComputedStyle(body);
     const properties = style.transitionProperty.split(",").map((p) => p.trim());
     const durations = style.transitionDuration.split(",");
@@ -247,8 +229,6 @@ function DiffFileRow({
         : row.querySelector(`[data-hunk="${focusHunk}"]`)
       )?.scrollIntoView({ block: "start" });
     reveal();
-    // A row that was closed is still growing, and the list may be too short to scroll that far until
-    // it has: look again once it has opened.
     const body = row.querySelector<HTMLElement>(".gram-expand");
     if (!body || body.getBoundingClientRect().height >= body.scrollHeight - 1) return;
     const grown = (event: TransitionEvent) => {
@@ -278,10 +258,6 @@ function DiffFileRow({
             )}
           />
           <status.icon aria-hidden className={cn("size-icon-row shrink-0", status.tone)} />
-          {/* Short of room the folders are cut, never the name: the name shrinks only once they
-              are down to their ellipsis. Their share of the shrinking is a million to one, so the
-              name's rounds to nothing; at a thousand to one it lost a fraction of a pixel, which
-              is enough to cut its last letters. */}
           <span className="flex min-w-0 flex-1 font-mono" title={file.path}>
             {path.folders !== "" && (
               <span data-testid="diff-file-folders" className="min-w-4 shrink-[1000000] truncate">
@@ -297,8 +273,6 @@ function DiffFileRow({
               <span aria-hidden>{status.letter}</span>
               <span className="sr-only">{status.label}</span>
             </span>
-            {/* A count of nothing is left out, as the file tree leaves it: "+52", never "+52 −0",
-                and a binary file, which has no lines to count, shows its letter alone. */}
             {(file.additions > 0 || file.deletions > 0) && (
               <span data-testid="diff-file-counts" className="font-mono tabular-nums">
                 {file.additions > 0 && (
@@ -396,11 +370,6 @@ export const diffCommand = (file: DiffFile): string | undefined => {
     : `git diff -- ${path}`;
 };
 
-/**
- * A patch past the view limit: what it changed, what is still reviewable here, and the ways to read
- * it: here a chunk of hunks at a time (or summarized, when generated) where the list knows its
- * source, else in the editor, Files, or with the `git diff` command for a terminal.
- */
 function TooLargeNote({
   file,
   reviewable,

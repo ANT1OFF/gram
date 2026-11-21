@@ -8,7 +8,6 @@ import * as Stream from "effect/Stream";
 
 import { RECONNECT_WAIT_MS, resubscribing, type ConnectionControl } from "./connection";
 
-/** The Effect RPC client over the whole `GramRpcs` surface. */
 type GramClient = RpcClient.FromGroup<typeof GramRpcs, RpcClientError>;
 
 /** What a domain's RPC factory builds its slice of the `Api` from. */
@@ -73,7 +72,6 @@ export async function* iterate<A, E>(
   }
 }
 
-/** Errors that reopening a stream can't mend: its subject is gone, or this server doesn't serve it. */
 const FINAL_TAGS: readonly unknown[] = ["NotFound", "NotImplemented"];
 
 /**
@@ -85,7 +83,6 @@ export async function* untilGone<T>(
   open: (signal: AbortSignal) => AsyncIterable<T>,
   monitor: Parameters<typeof resubscribing>[1],
   signal: AbortSignal,
-  /** Errors for the consumer: thrown to it rather than retried as a dropped connection. */
   final?: (error: unknown) => boolean,
 ): AsyncGenerator<T> {
   const gone = new AbortController();

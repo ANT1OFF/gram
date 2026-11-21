@@ -1,5 +1,3 @@
-// A worker's PR under the solo merge review policy, for tests of merge_when_ready and local_check
-// with Gram's own check: the world, the worker, its PR and what it was told.
 import * as Effect from "effect/Effect";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -67,7 +65,6 @@ export const soloPr = (world: World, configured = true) =>
     run(checkout, "add", "feature.txt");
     run(checkout, "commit", "-q", "-m", "feature");
     const head = run(checkout, "rev-parse", "HEAD").trim();
-    // Nothing outside the commit may reach the check: untracked, excluded or not.
     writeFileSync(join(checkout, "scratch.txt"), "uncommitted\n");
     const moveBase = (name: string) => {
       writeFileSync(join(world.repo, name), `${name}\n`);
@@ -94,7 +91,6 @@ export const soloPr = (world: World, configured = true) =>
           }),
         ),
       );
-    /** A new commit on the branch, pushed: GitHub's head moves to it. */
     const pushNext = (name: string) => {
       writeFileSync(join(checkout, name), `${name}\n`);
       run(checkout, "add", name);
@@ -103,7 +99,6 @@ export const soloPr = (world: World, configured = true) =>
       world.prHeads.set(12, { headRefName: worker.thread.checkout.branch!, headRefOid: next });
       return next;
     };
-    /** `main` moved by an empty commit: the head merges onto it into the very same tree. */
     const moveBaseEmpty = (name: string) => {
       run(world.repo, "commit", "-q", "--allow-empty", "-m", name);
       return run(world.repo, "rev-parse", "HEAD").trim();
@@ -142,8 +137,6 @@ export const soloPr = (world: World, configured = true) =>
         return yield* waitReal(
           text,
           Effect.gen(function* () {
-            // Sent as a turn, or steered into the one an earlier notice opened, or queued when
-            // that turn can't take it.
             const agent = fake.sessions.findLast((s) => s.options.threadId === worker.thread.id);
             const queued = (yield* store.listQueue(worker.thread.id)).map((item) => item.input);
             return [...(agent?.sent ?? []), ...(agent?.steered ?? []), ...queued].some((input) =>

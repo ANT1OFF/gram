@@ -13,7 +13,6 @@ import {
 } from "@/keyboard/registry";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 
-/** Shortcuts macOS keeps for itself, so the app may never see them. */
 const MAC_SYSTEM_KEYS: Readonly<Record<string, string>> = {
   "mod+shift+3": "takes a screenshot",
   "mod+shift+4": "takes a screenshot of a selection",
@@ -24,7 +23,6 @@ const MAC_SYSTEM_KEYS: Readonly<Record<string, string>> = {
 
 const MODIFIERS = new Set(["Meta", "Control", "Alt", "AltGraph", "Shift", "CapsLock", "Fn"]);
 
-/** Why a press recorded nothing; a lone modifier is still being held, so it says nothing. */
 function unusableReason(event: KeyboardEvent, mac: boolean): string | undefined {
   if (MODIFIERS.has(event.key)) return undefined;
   if (isAltGraphText(event, mac)) return "AltGr keys type characters and can't be shortcuts.";
@@ -74,11 +72,9 @@ export function KeyCaptureDialog({
 
   useEffect(() => {
     if (!recording) return;
-    /** A modifier down on its own, which its key-up records where the shortcut takes one alone. */
     let lone: string | undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       lone = row.loneModifier && !event.repeat ? loneModifierFromEvent(event) : undefined;
-      // Escape still reaches the dialog, which closes.
       if (event.key === "Escape") return;
       event.preventDefault();
       event.stopPropagation();

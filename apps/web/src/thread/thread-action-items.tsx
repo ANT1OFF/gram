@@ -26,11 +26,9 @@ import { useThreadActions } from "./use-thread-actions";
 export const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
 export const DANGER = "text-destructive data-[highlighted]:text-destructive";
 
-/** Mark done's words: a disabled item shows no tooltip, so they say why it is off while it works. */
 const doneWord = (done: boolean, held: boolean) =>
   done ? "Reopen" : held ? "Mark done after it stops" : "Mark done";
 
-/** Mark done's tick, or Reopen's arrow back for a thread already done. */
 const DoneIcon = ({ done }: { done: boolean }) =>
   done ? (
     <RotateCcw aria-hidden className="size-icon-row" />
@@ -46,7 +44,6 @@ export function MoreContextMenuItem({ scope }: { scope: PaletteScope }) {
   return (
     <ContextMenuItem
       data-testid="menu-more"
-      // After the menu has closed and given focus back, so the palette's field keeps it.
       onClick={() => setTimeout(() => useLayoutStore.getState().openPalette("", scope))}
     >
       <Ellipsis aria-hidden className="size-icon-row" />
@@ -82,7 +79,6 @@ export function ThreadContextMenuItems({
           {shortcutHint("thread.rename")}
         </kbd>
       </ContextMenuItem>
-      {/* The orchestrator's row stays in its workspace's tree, so pinning it moves nothing. */}
       {!orchestrator && (
         <ContextMenuItem onClick={actions.togglePin}>
           {thread.pinned ? (
@@ -93,8 +89,6 @@ export function ThreadContextMenuItems({
           {thread.pinned ? "Unpin" : "Pin"}
         </ContextMenuItem>
       )}
-      {/* A worker's row is at the cap with its own group; More… marks it unread or snoozes it. A
-          solo row's Mark unread shares a submenu with Snooze, which keeps the row at the cap. */}
       {thread.spawnedBy === undefined && !orchestrator && (
         <LaterContextMenuItems threadId={threadId} />
       )}
@@ -126,7 +120,6 @@ export function ThreadContextMenuItems({
           {doneWord(thread.completedAt !== undefined, actions.doneHeld)}
         </ContextMenuItem>
       )}
-      {/* An orchestrator follows no PR of its own; its workers carry theirs. */}
       {!orchestrator && <PrContextMenuItems threadId={threadId} />}
       <ContextMenuItem className={DANGER} onClick={actions.close}>
         <X aria-hidden className="size-icon-row" />
@@ -198,7 +191,6 @@ export function ThreadMenuItems({
       <Menu.Item
         data-testid="menu-more"
         className={itemClassName}
-        // After the menu has closed and given focus back, so the palette's field keeps it.
         onClick={() => setTimeout(() => useLayoutStore.getState().openPalette("", scope))}
       >
         <Ellipsis aria-hidden className="size-icon-row" />

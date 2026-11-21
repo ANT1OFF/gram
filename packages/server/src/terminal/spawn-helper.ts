@@ -14,16 +14,16 @@ export const ensureSpawnHelperExecutable = (): void => {
   if (checked || process.platform === "win32") return;
   checked = true;
   try {
-    // `require` exists in the CommonJS desktop bundle; plain Node runs this file as ESM.
     const resolve =
       typeof require === "function" ? require.resolve : createRequire(import.meta.url).resolve;
     const root = dirname(resolve("node-pty/package.json"));
-    const helper = join(root, "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper")
-      // node-pty runs the helper from the unpacked copy of an asar-packed app.
-      .replace(`app.asar${"/"}`, `app.asar.unpacked${"/"}`);
+    const helper = join(
+      root,
+      "prebuilds",
+      `${process.platform}-${process.arch}`,
+      "spawn-helper",
+    ).replace(`app.asar${"/"}`, `app.asar.unpacked${"/"}`);
     const mode = statSync(helper).mode;
     if ((mode & 0o111) !== 0o111) chmodSync(helper, mode | 0o755);
-  } catch {
-    // No prebuild for this platform, or a read-only install.
-  }
+  } catch (_noPrebuildForThisPlatformOrAReadOnly) {}
 };

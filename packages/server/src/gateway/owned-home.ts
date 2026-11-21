@@ -1,6 +1,3 @@
-// A home of Gram's own for an agent CLI: a private folder that holds only what Gram writes, apart
-// from the person's own, and the environment the CLI starts with beside it.
-
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { realPathOrOwned } from "@gram/git";

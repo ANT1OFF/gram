@@ -8,7 +8,6 @@ export interface ReviewBotDraft {
   readonly canApprove: boolean;
 }
 
-/** A GitHub login with `*` wildcards, optionally ending in `[bot]`. */
 const LOGIN_PATTERN = /^[A-Za-z0-9*][A-Za-z0-9*-]*(\[bot\])?$/;
 const MAX_COMMAND_LENGTH = 200;
 

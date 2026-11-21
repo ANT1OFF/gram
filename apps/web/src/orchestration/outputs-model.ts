@@ -1,5 +1,3 @@
-// The workspace Files view's grouping, labels and how each entry opens. No React here.
-
 import { outputPreviewable, type OutputKind, type WorkspaceOutput } from "@gram/contracts";
 
 import { dateTimeFormat } from "@/lib/intl";
@@ -56,7 +54,6 @@ const dayKey = (at: number, timeZone: string | undefined) =>
     ...(timeZone === undefined ? {} : { timeZone }),
   }).format(at);
 
-/** The calendar date before `key` (`YYYY-MM-DD`): date arithmetic alone, with no zone or clock. */
 const dayBefore = (key: string): string => {
   const [year, month, day] = key.split("-").map(Number) as [number, number, number];
   return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);

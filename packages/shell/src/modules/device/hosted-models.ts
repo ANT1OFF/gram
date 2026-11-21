@@ -21,7 +21,6 @@ export const HOSTED_MODEL_CALL_MOST_BYTES = 32 * 1024 * 1024;
 /** How long the server has to start answering a call. A streamed answer then takes as long as it takes. */
 export const HOSTED_MODEL_ANSWER_MS = 10 * 60_000;
 
-/** Headers a CLI's call carries on: what the provider's API reads, and nothing that signs in. */
 const ASKED = [
   "accept",
   "content-type",
@@ -30,7 +29,6 @@ const ASKED = [
   "openai-beta",
   "user-agent",
 ] as const;
-/** Headers an answer carries back to the CLI. */
 const ANSWERED = [
   "content-type",
   "retry-after",
@@ -60,13 +58,11 @@ const refuse = (response: ServerResponse, status: number, type: string, message:
     response.destroy();
     return;
   }
-  // Anthropic's error shape, which an OpenAI client also reads as an error with a message.
   response
     .writeHead(status, { "content-type": "application/json", "cache-control": "no-store" })
     .end(JSON.stringify({ type: "error", error: { type, message } }));
 };
 
-/** The key the call presents, as an Anthropic client (`x-api-key`) or an OpenAI one sends it. */
 const presented = (request: IncomingMessage): string | undefined => {
   const key = request.headers["x-api-key"];
   if (typeof key === "string") return key;
@@ -80,7 +76,6 @@ const same = (a: string, b: string): boolean => {
   return left.length === right.length && timingSafeEqual(left, right);
 };
 
-/** Reads a body, no more than `most` bytes; undefined when it is longer or breaks off. */
 const bodyOf = async (request: IncomingMessage, most: number): Promise<Buffer | undefined> => {
   const parts: Buffer[] = [];
   let length = 0;
@@ -109,7 +104,6 @@ export const startHostedModelRoute = async (
     const method = request.method ?? "GET";
     if (method !== "GET" && method !== "POST")
       return refuse(response, 405, "invalid_request_error", "Only GET and POST are taken.");
-    // A page in a browser could reach loopback; it would send its origin, or another name for it.
     if (request.headers.origin !== undefined || request.headers.host !== host)
       return refuse(
         response,
@@ -138,7 +132,6 @@ export const startHostedModelRoute = async (
       if (typeof value === "string") headers[name] = value;
     }
 
-    // The CLI gave up: so does the call.
     const stopped = new AbortController();
     response.once("close", () => {
       if (!response.writableFinished) stopped.abort();
@@ -184,7 +177,6 @@ export const startHostedModelRoute = async (
     }
     if (answer === undefined)
       return refuse(response, 502, "api_error", "The server didn't answer.");
-    // A redirect is never followed, nor shown to the CLI as somewhere to go.
     if (answer.status >= 300 && answer.status < 400) {
       await answer.body?.cancel().catch(() => undefined);
       return refuse(response, 502, "api_error", "The server sent the call elsewhere.");

@@ -50,7 +50,6 @@ function SelectContent({
   sideOffset = 4,
   align = "start",
   alignOffset = 0,
-  // Below the trigger, not over it: a list laid over a pill in a row of pills covers its neighbours.
   alignItemWithTrigger = false,
   anchor,
   ...props
@@ -94,12 +93,10 @@ function SelectItem({
   description,
   ...props
 }: SelectPrimitive.Item.Props & {
-  /** One muted line under the label, such as what a mode lets an agent do. */
   description?: string | undefined;
 }) {
   const text = (
     <SelectPrimitive.ItemText className="flex min-w-0 flex-1 gap-2 whitespace-nowrap">
-      {/* A long label, such as a gateway's model alias, ends in an ellipsis inside the list's width. */}
       {typeof children === "string" ? (
         <span className="min-w-0 truncate">{children}</span>
       ) : (
@@ -114,7 +111,6 @@ function SelectItem({
         "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-body outline-hidden select-none data-highlighted:row-cursor data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-icon-row *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className,
       )}
-      // Named by its label alone; the line under it is its description.
       {...(description !== undefined && typeof children === "string"
         ? { "aria-label": children, "aria-description": description }
         : {})}
@@ -135,7 +131,6 @@ function SelectItem({
           <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center" />
         }
       >
-        {/* A menu's check is an inline glyph, as in the context menu (DESIGN.md, Icons). */}
         <CheckIcon className="pointer-events-none size-icon-row" />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>

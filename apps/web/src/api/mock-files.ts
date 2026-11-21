@@ -16,7 +16,6 @@ type MockNode =
   | { kind: "file"; content?: string; size?: number; binary?: boolean; image?: string }
   | { kind: "symlink"; target: string };
 
-/** A 160×96 PNG: big enough that a preview or a transcript thumbnail of it can be judged. */
 const LOGO_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAAKAAAABgCAIAAAAVRe7OAAABf0lEQVR42u3dMQoCURAE0b2JR/S+HsDETAwEE28gLux0f+VBxxVMxcVs98fT/nibExBsBBvBRrARbAQbwQQbwUawEWwEG8FGMMFf7nS+7drl+to1/M9bSzC7h/MXEszuBH8VwewO8ZcQzO4cvy+Y3VF+WTC70/ymYNcP8GuCXT/D7wh2/Ri/INj1k/y0YNcP86OCXT/Pzwl2/Qo/JNj1W/yEYNcv8scFu36Xv5Zgdg/nLySY3Qn+KoLZHeIvIZjdOX5fMLuj/LJgdqf5TcGuH+DXBLt+ht8R7PoxfkGw6yf5acGuH+ZHBbt+np8T7PoVfkiw67f4CcGuX+Trg/XB+mB9sD5YH+z6+mB29cHs6oPx9cH6YH2wPlgfrA/WB+uD2dUHs6sPxtcH64P1wfpgfbA+WB+sD3Z9fTC7+mB29cH4+mB9sD5YH6wP1ge7vj6YXX0wu/pgfH2wPlgfrA/WB+uDzQdwI9gINoKNYCOYYCPYCDaCjWAj2Agm2Ai239obh0qQnmukN0EAAAAASUVORK5CYII=";
 
@@ -31,7 +30,6 @@ export const MOCK_TOOL_IMAGE = {
   base64: LOGO_PNG,
 };
 
-/** Carries a script, which must never run: previews render SVG through `<img>`. */
 const DIAGRAM_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><script>window.__svgScriptRan = true</script><rect width="120" height="40" fill="#7aa2f7"/></svg>';
 
@@ -82,7 +80,6 @@ describe("retry", () => {
 });
 `;
 
-/** Every seeded checkout (and its worktrees) shows this tree. */
 const CHECKOUT = dir({
   ".git": dir({ HEAD: text("ref: refs/heads/main\n") }),
   ".github": dir({
@@ -142,7 +139,6 @@ Three of the five sites block automation; details below.
 | a    | yes    |
 `;
 
-/** Files outside every checkout, named by absolute path, for links to paths an agent wrote. */
 const ELSEWHERE = dir({
   tmp: dir({
     "browser-research": dir({
@@ -158,17 +154,14 @@ const ELSEWHERE = dir({
   }),
 });
 
-/** The mock's home folder, which `~` stands for. */
 const MOCK_HOME = "/Users/dev";
 
 /** `path` with a leading `~` spelled out as the mock's home. */
 export const expandMockHome = (path: string) =>
   path === "~" || path.startsWith("~/") ? `${MOCK_HOME}${path.slice(1)}` : path;
 
-/** Top-level names the checkout's `.gitignore` matches. */
 const IGNORED = new Set(["dist"]);
 
-// The fixtures' projects, and the realistic morning's (`mock-scenarios.ts`), with their worktrees.
 const CHECKOUT_RE =
   /^\/Users\/dev\/(?:code\/(?:api|web|docs)|Documents\/code\/(?:gram|infra))(?:\/\.worktrees\/[^/]+)?((?:\/[^/]+)*)$/;
 const MODIFIED_AT = Date.UTC(2026, 8, 16, 9, 30);
@@ -308,7 +301,6 @@ export function readMockImage(input: string, options: { maxBytes?: number } = {}
   return { path, mediaType, size, tooLarge: false, base64: node.image };
 }
 
-/** Decoded bytes of a base64 payload, which inflates by a third. */
 const base64Size = (base64: string) =>
   (base64.length * 3) / 4 - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0);
 
@@ -408,13 +400,11 @@ export function listMockFileNames(root: string): FsFilesResult {
   };
 }
 
-/** `path` as a file in `root`, or none. */
 const mockFileIn = (path: string, root: string): string[] => {
   try {
     const target = resolveInCheckout(path, root);
     return locate(target)?.kind === "file" ? [target] : [];
   } catch {
-    // Outside the root: never a link.
     return [];
   }
 };
@@ -432,7 +422,6 @@ export function resolveMockFileRefs(
       ? roots.filter((root) => expanded.startsWith(`${root}/`)).slice(0, 1)
       : roots;
     if (absolute && candidates.length === 0) {
-      // In no checkout: only checked to be a file, and only when the thread wrote it.
       if (!mentioned(path)) return [];
       return locate(expanded)?.kind === "file" ? [{ path, resolved: trimSlash(expanded) }] : [];
     }

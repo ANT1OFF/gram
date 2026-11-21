@@ -32,7 +32,6 @@ function ContextMenuContent({ className, ...props }: ContextMenuPrimitive.Popup.
   );
 }
 
-/** One row; `onClick` is its action. `danger` for one that removes something. */
 function ContextMenuItem({
   className,
   danger = false,
@@ -47,10 +46,8 @@ function ContextMenuItem({
   );
 }
 
-/** The tick a checked checkbox or radio item shows; it keeps its width unchecked so labels line up. */
 const INDICATOR = "flex size-3.5 shrink-0 items-center justify-center";
 
-/** A setting toggled from the menu. The menu stays open, so several can be changed in one visit. */
 function ContextMenuCheckboxItem({
   className,
   children,

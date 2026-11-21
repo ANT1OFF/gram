@@ -1,7 +1,6 @@
 import * as Schema from "effect/Schema";
 import { ThreadId } from "./ids.ts";
 
-/** A base branch name as GitHub knows it: `main`, not `origin/main`. */
 const BaseBranch = Schema.String.check(
   Schema.isPattern(/^(?!origin\/)(?!.*\.\.)[A-Za-z0-9._/-]+$/),
 );

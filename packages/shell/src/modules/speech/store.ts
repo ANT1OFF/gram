@@ -25,7 +25,6 @@ import {
 } from "./download.ts";
 import { SPEECH_MODELS, speechManifest } from "./manifest.ts";
 
-/** Progress reaches watchers at most this often; a 660 MB download would otherwise flood them. */
 const PROGRESS_INTERVAL_MS = 250;
 
 export interface SpeechStoreOptions {
@@ -54,13 +53,10 @@ export const makeSpeechStore = (options: SpeechStoreOptions) =>
     const freeBytes = options.freeBytes ?? freeBytesAt;
     const installs = new Map<string, SpeechInstallState>();
     const running = new Map<string, Running>();
-    /** Models being removed, which an install must wait out rather than write into. */
     const removing = new Set<string>();
     const listeners = new Map<string, Set<() => void>>();
     const fibers = yield* FiberMap.make<string>();
     const models = options.models ?? SPEECH_MODELS;
-    // Puts back a model an update moved aside when the app quit mid-move. Here, before any RPC can
-    // run, so it never races a removal; an install does it again under its own reservation.
     for (const manifest of models)
       yield* Effect.promise(() => recoverReplaced(root, manifest.id).catch(() => undefined));
 
@@ -93,7 +89,6 @@ export const makeSpeechStore = (options: SpeechStoreOptions) =>
         ]);
         let install = installs.get(manifest.id);
         if (install === undefined && installed === undefined) {
-          // A download a restart cut off still resumes from what it left.
           const resumableBytes = await bytesOnDisk(root, manifest).catch(() => 0);
           install = resumableBytes > 0 ? { state: "idle", resumableBytes } : { state: "idle" };
         }
@@ -123,31 +118,23 @@ export const makeSpeechStore = (options: SpeechStoreOptions) =>
                   () => Effect.sync(() => listeners.get(manifest.id)?.delete(listener)),
                 );
               },
-              // Only the latest change matters: each tick reads the whole status again.
               { bufferSize: 1, strategy: "sliding" },
             ).pipe(Stream.mapEffect(() => statusOf(manifest))),
           ),
         ),
       );
 
-    /** The same upstream checkpoint exported for other chunks: one is installed at a time. */
     const variantsOf = (manifest: SpeechModelManifest) =>
       models.filter(
         (other) => other.id !== manifest.id && other.source.repo === manifest.source.repo,
       );
 
-    /**
-     * Deletes the other variants of `manifest`'s model (the same upstream checkpoint, exported for
-     * another chunk) once it is in, so one is on disk at a time whoever started the download. A
-     * variant downloading or being removed is left alone.
-     */
     const removeSuperseded = (manifest: SpeechModelManifest) =>
       Effect.forEach(
         variantsOf(manifest),
         (other) =>
           Effect.suspend(() => {
             if (running.has(other.id) || removing.has(other.id)) return Effect.succeed(false);
-            // Reserved before the first await, so an install or removal can't start under it.
             removing.add(other.id);
             return Effect.promise(async () => {
               try {
@@ -186,7 +173,6 @@ export const makeSpeechStore = (options: SpeechStoreOptions) =>
               ? "The model is already downloading."
               : "The model is being removed.",
           });
-        // One variant downloads at a time, so the one that finishes is the one kept.
         const sibling = variantsOf(manifest).find((other) => running.has(other.id));
         if (sibling !== undefined)
           return yield* new SpeechRefused({
@@ -224,7 +210,6 @@ export const makeSpeechStore = (options: SpeechStoreOptions) =>
               if (trailing !== undefined) return;
               const wait = lastProgress + PROGRESS_INTERVAL_MS - Date.now();
               if (wait <= 0) return flush();
-              // The latest count still goes out if the transfer stalls right after it.
               trailing = setTimeout(flush, wait);
             },
             onVerifying: () => setInstall(id, { state: "verifying" }),
@@ -256,7 +241,6 @@ export const makeSpeechStore = (options: SpeechStoreOptions) =>
               message: outcome.message,
             });
           }),
-          // A shutdown mid-download stops the transfer too, rather than leaving it to finish unseen.
           Effect.onInterrupt(() => Effect.sync(() => controller.abort())),
           Effect.ensuring(
             Effect.sync(() => {
@@ -296,7 +280,6 @@ export const makeSpeechStore = (options: SpeechStoreOptions) =>
               ? "Cancel the download before removing the model."
               : "The model is already being removed.",
           });
-        // Reserved before the first await, so an install can't start writing what this deletes.
         removing.add(manifest.id);
         yield* Effect.tryPromise({
           try: () => removeModel(root, manifest.id),

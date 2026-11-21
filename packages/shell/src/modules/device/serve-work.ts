@@ -1,8 +1,3 @@
-// This machine's server asks the app to send work to a hosted server, and to follow, answer and
-// stop what it sent (`packages/server/src/embedding/sent-work-port.ts`). The app holds the sign-in,
-// so it makes the calls, with the same checks as a window's: a server signed in to that runs work,
-// a workspace it listed, no pause but for a stop, and every part of the request as a server takes it.
-
 import type { SentWorkResult, SentWorkTarget } from "@gram/contracts";
 
 import type { HostedDevice } from "./hosted-device.ts";

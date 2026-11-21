@@ -60,8 +60,6 @@ export const makeMessageReceipts = (
                 message:
                   "Too many unfinished message requests; inspect the thread before sending again.",
               });
-            // Drop payloads only: forgetting the identity would make a late retry a new delivery.
-            // Tombstones and uncertain reservations live until the thread is truly deleted.
             yield* sql`UPDATE message_receipts SET outcome = NULL, retired = 1 WHERE seq IN (
             SELECT seq FROM message_receipts WHERE thread_id = ${threadId} AND outcome IS NOT NULL
             ORDER BY seq DESC LIMIT -1 OFFSET ${room})`;
@@ -87,7 +85,6 @@ export const makeMessageReceipts = (
             ? Schema.decodeUnknownSync(success)(outcome.value)
             : yield* Effect.fail(Schema.decodeUnknownSync(error)(outcome.value));
         }
-        // Typed failures are replayed too; a defect leaves the durable reservation uncertain.
         const outcome = yield* action.pipe(
           Effect.match({
             onSuccess: (value) => ({ ok: true, value: Schema.encodeSync(success)(value) }),
