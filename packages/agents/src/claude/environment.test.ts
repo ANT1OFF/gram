@@ -10,6 +10,7 @@ import {
   ClaudeEnvironmentLive,
   OAUTH_TOKEN_VAR,
   type PreparedClaude,
+  signedInAccount,
   withOAuthToken,
 } from "./environment.ts";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -212,7 +213,10 @@ const countingFixture = () => {
   const runs = join(base.root, "runs");
   const status = join(base.root, "status");
   writeFileSync(runs, "");
-  writeFileSync(status, JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }));
+  writeFileSync(
+    status,
+    JSON.stringify({ loggedIn: true, authMethod: "claude.ai", email: "someone@example.test" }),
+  );
   writeFileSync(
     base.binary,
     `#!${process.execPath}\nconst fs = require("node:fs");\nif (process.argv[2] === "auth") { fs.appendFileSync(${JSON.stringify(runs)}, "x"); console.log(fs.readFileSync(${JSON.stringify(status)}, "utf8")); }\nelse console.log("2.1.311 (Claude Code)");\n`,
@@ -222,29 +226,21 @@ const countingFixture = () => {
 
 describe("claude auth status", () => {
   it.effect(
-    "runs once for checks asked while it runs, and afresh for every later one, so a sign-out counts at once",
+    "runs once for a launch's sign-in and account, and afresh for every check, so a sign-out counts at once",
     () => {
       const { binary, shell, done, runs, status } = countingFixture();
       return Effect.gen(function* () {
         yield* Effect.addFinalizer(() => Effect.sync(done));
         const environment = yield* ClaudeEnvironment;
         const prepared = yield* environment.prepare;
-        yield* Effect.all(
-          [
-            environment.checkAuth(prepared),
-            environment.checkAuth(prepared),
-            environment.accountScope!(prepared),
-          ],
-          { concurrency: "unbounded" },
-        );
+        expect(yield* signedInAccount(environment, prepared)).toBeTypeOf("string");
         expect(runs()).toBe(1);
         writeFileSync(status, JSON.stringify({ loggedIn: false }));
-        const signedOut = yield* Effect.exit(environment.checkAuth(prepared));
-        expect(signedOut._tag).toBe("Failure");
+        expect((yield* Effect.exit(signedInAccount(environment, prepared)))._tag).toBe("Failure");
+        expect((yield* Effect.exit(environment.checkAuth(prepared)))._tag).toBe("Failure");
         writeFileSync(status, JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }));
-        const signedIn = yield* Effect.exit(environment.checkAuth(prepared));
-        expect(signedIn._tag).toBe("Success");
-        expect(runs()).toBe(3);
+        expect((yield* Effect.exit(environment.checkAuth(prepared)))._tag).toBe("Success");
+        expect(runs()).toBe(4);
       }).pipe(
         Effect.scoped,
         Effect.provide(

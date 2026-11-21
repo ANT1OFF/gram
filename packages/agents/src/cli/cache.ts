@@ -1,4 +1,3 @@
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 
@@ -31,31 +30,3 @@ export const resettableOnSuccess = <A, E>(
       ),
     };
   });
-
-/**
- * Runs shared by key while they run: an ask made while one with its key runs waits for that run's
- * result (success, failure or interruption), so a burst of asks (a machine's status check, a
- * session's sign-in and account) runs it once. A finished run is never reused: the next ask runs
- * afresh.
- */
-export const sharedWhileRunning = <A, E>(): {
-  readonly run: (key: string, effect: Effect.Effect<A, E>) => Effect.Effect<A, E>;
-} => {
-  const running = new Map<string, Deferred.Deferred<A, E>>();
-  return {
-    run: (key, effect) =>
-      Effect.suspend(() => {
-        const joined = running.get(key);
-        if (joined !== undefined) return Deferred.await(joined);
-        const deferred = Deferred.makeUnsafe<A, E>();
-        running.set(key, deferred);
-        return effect.pipe(
-          Effect.onExit((exit) =>
-            Effect.sync(() => running.delete(key)).pipe(
-              Effect.andThen(Deferred.done(deferred, exit)),
-            ),
-          ),
-        );
-      }),
-  };
-};

@@ -17,10 +17,9 @@ import {
   type VersionNotice,
 } from "./binary.ts";
 import { buildChildEnv, tokenChildEnv } from "./env.ts";
-import { type CommandError, type CommandOutput, runCommand } from "../cli/process.ts";
+import { runCommand } from "../cli/process.ts";
 import { nodeFs } from "../cli/discovery.ts";
-import { resettableOnSuccess, sharedWhileRunning } from "../cli/cache.ts";
-import { createHash } from "node:crypto";
+import { resettableOnSuccess } from "../cli/cache.ts";
 
 import { ClaudeSdk } from "./sdk.ts";
 
@@ -49,6 +48,10 @@ export interface ClaudeEnvironmentShape {
   /** `claude auth status --json` must report a subscription login. */
   readonly checkAuth: (prepared: PreparedClaude) => Effect.Effect<void, AgentUnavailable>;
   readonly accountScope?: (
+    prepared: PreparedClaude,
+  ) => Effect.Effect<string | undefined, AgentUnavailable>;
+  /** `checkAuth` and `accountScope` from one fresh run of `claude auth status --json`. */
+  readonly signIn?: (
     prepared: PreparedClaude,
   ) => Effect.Effect<string | undefined, AgentUnavailable>;
   /**
@@ -192,13 +195,6 @@ export const claudeSdkExecutable = (
 ): Effect.Effect<string | undefined, AgentUnavailable> =>
   requireSdkExecutable(binaryPath, process.platform, nodeFs, hasBundledCli);
 
-const authStatusKey = (ready: Pick<PreparedClaude, "binaryPath" | "env">): string =>
-  createHash("sha256")
-    .update(ready.binaryPath)
-    .update("\0")
-    .update(JSON.stringify(Object.entries(ready.env).toSorted(([a], [b]) => (a < b ? -1 : 1))))
-    .digest("hex");
-
 export const ClaudeEnvironmentLive = (
   config: ClaudeEnvironmentConfig = {},
 ): Layer.Layer<ClaudeEnvironment, never, ClaudeSdk> =>
@@ -242,17 +238,13 @@ export const ClaudeEnvironmentLive = (
         } satisfies PreparedClaude;
       });
 
-      const statusRuns = sharedWhileRunning<CommandOutput, CommandError>();
       const authStatus = (ready: Pick<PreparedClaude, "binaryPath" | "env">) =>
-        statusRuns.run(
-          authStatusKey(ready),
-          runCommand(ready.binaryPath, ["auth", "status", "--json"], {
-            env: ready.env,
-            timeoutMs,
-          }),
-        );
+        runCommand(ready.binaryPath, ["auth", "status", "--json"], {
+          env: ready.env,
+          timeoutMs,
+        });
 
-      const checkAuth = (prepared: PreparedClaude) =>
+      const checked = (prepared: PreparedClaude) =>
         authStatus(prepared).pipe(
           Effect.mapError(
             (error) =>
@@ -265,10 +257,11 @@ export const ClaudeEnvironmentLive = (
           Effect.flatMap((output) => {
             const problem = checkAuthStatus(output.stdout);
             return problem === undefined || (problem === "api-key-auth" && config.keyAuth === true)
-              ? Effect.void
+              ? Effect.succeed(output.stdout)
               : Effect.fail(authUnavailable(problem));
           }),
         );
+      const checkAuth = (prepared: PreparedClaude) => Effect.asVoid(checked(prepared));
 
       const prepared = yield* resettableOnSuccess(prepare);
       // Read after the cache, so a token set or forgotten applies to the next session.
@@ -287,6 +280,7 @@ export const ClaudeEnvironmentLive = (
               ),
         invalidate: prepared.reset,
         checkAuth,
+        signIn: (ready) => Effect.map(checked(ready), accountScopeFromStatus),
         accountScope: (ready) =>
           authStatus(ready).pipe(
             Effect.map((output) => accountScopeFromStatus(output.stdout)),
@@ -305,20 +299,22 @@ export const ClaudeEnvironmentLive = (
   );
 
 /**
- * The subscription guard and the account it signs in as, asked side by side so one run of
- * `claude auth status` answers both: fails as `checkAuth` does, and the account is undefined
- * where it can't be read.
+ * The subscription guard and the account it signs in as, from one fresh run of
+ * `claude auth status` where the environment reads both at once (`signIn`): fails as `checkAuth`
+ * does, and the account is undefined where it can't be read.
  */
 export const signedInAccount = (
   environment: ClaudeEnvironmentShape,
   prepared: PreparedClaude,
 ): Effect.Effect<string | undefined, AgentUnavailable> =>
-  Effect.all(
-    [
-      environment.checkAuth(prepared),
-      environment.accountScope === undefined
-        ? Effect.succeed(undefined)
-        : environment.accountScope(prepared).pipe(Effect.orElseSucceed(() => undefined)),
-    ],
-    { concurrency: "unbounded" },
-  ).pipe(Effect.map(([, account]) => account));
+  environment.signIn !== undefined
+    ? environment.signIn(prepared)
+    : environment
+        .checkAuth(prepared)
+        .pipe(
+          Effect.andThen(
+            environment.accountScope === undefined
+              ? Effect.succeed(undefined)
+              : environment.accountScope(prepared).pipe(Effect.orElseSucceed(() => undefined)),
+          ),
+        );
