@@ -27,6 +27,8 @@ describe("isCredentialPath", () => {
       "/Users/me/.codex/auth.json",
       "/Users/me/.grok/auth.json",
       "C:\\Users\\me\\.grok\\auth.json",
+      "/home/me/.config/antigravity/plugin-secrets.json",
+      "/home/me/.gemini/antigravity-cli/mcp_oauth_tokens.json",
       "C:\\Users\\me\\.codex\\auth.json",
       "/Users/me/.local/share/opencode/auth.json",
       "/tmp/report/secrets.yaml",

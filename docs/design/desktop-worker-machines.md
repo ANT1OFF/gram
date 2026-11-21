@@ -308,9 +308,16 @@ subscription token reaches a machine, with its own consent.
   owed stays owed, and one `superseded` is asked again with `notAfter` alone, held to the run
   the name is now (under its name's lock no start of this Gram's can have made it). A release
   answered `expired` is asked again at once; one `superseded`, or `applied: false`, is not taken
-  as told, and the next pass decides it afresh. After a restart no run is known until a start or
-  a status names one, and each call carries `notAfter` alone. A server from before fences ignores
-  them on a stop. The app, which sends every call,
+  as told, its status is read again, and the next pass decides it afresh. A release carries the
+  run its name was known to be when it was decided, on every ask: once the name is known as
+  another run, nothing more of it is sent, its status is read again, and the next pass decides it
+  afresh. After a restart no run is known until a start or a status names one, and each call
+  carries `notAfter` alone. A server from before fences ignores them on a stop, and refuses a
+  release that carries them (`400`). Such a release is never sent without them, since one
+  without could land on a newer run of its name: it stays to be told, and is sent again only
+  after twenty minutes, twice that after a second refusal, and so on to an hour. A stop or a
+  release answered `expired` is logged, since a clock here behind the server's by more than the
+  margin would have every one answered so. The app, which sends every call,
   fences them by name where they leave it (`worker-machine-fence.ts`): a start it has received
   drops any stop of that name still waiting to go out (behind a token renewal, say); a start goes
   out only once no stop of the name is on its way, nor for half a minute after one that got no

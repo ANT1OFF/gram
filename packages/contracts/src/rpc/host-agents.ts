@@ -1,5 +1,5 @@
 // What a host reports of the agent CLIs on its machine: their models, and Codex's, OpenCode's and
-// Grok Build's own status.
+// Grok Build's and Antigravity's own status.
 
 import * as Schema from "effect/Schema";
 import { ReasoningVariant } from "../domain.ts";
@@ -71,3 +71,10 @@ export const HostGrokStatus = Schema.Struct({
   models: Schema.optionalKey(Schema.Array(HostModel).check(Schema.isMaxLength(64))),
 });
 export type HostGrokStatus = typeof HostGrokStatus.Type;
+
+/**
+ * The machine's Antigravity as its host finds it: whether `agy` is there, its version, and the
+ * models it lists. Nothing of a login.
+ */
+export const HostAntigravityStatus = HostGrokStatus;
+export type HostAntigravityStatus = typeof HostAntigravityStatus.Type;

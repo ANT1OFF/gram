@@ -7,6 +7,7 @@ import {
 } from "@gram/agents";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
 import { CodexHost, CodexHostLive } from "@gram/agents/codex";
+import { AntigravityHost, AntigravityHostLive } from "@gram/agents/antigravity";
 import { GrokHost, GrokHostLive } from "@gram/agents/grok";
 import { OpenCodeHost, OpenCodeHostLive } from "@gram/agents/opencode";
 import * as Cause from "effect/Cause";
@@ -26,6 +27,10 @@ import {
   syncCodexInstructions,
 } from "./gateway/codex-home.ts";
 import { ownedCodexProvider, prepareOwnedCodexHome } from "./gateway/codex-owned-home.ts";
+import {
+  antigravityGeminiDir,
+  prepareOwnedAntigravityHome,
+} from "./gateway/antigravity-owned-home.ts";
 import { prepareOwnedGrokHome } from "./gateway/grok-owned-home.ts";
 import { GatewayCredentials } from "./gateway/credentials.ts";
 import { GitPlatformLive } from "./git/platform.ts";
@@ -122,6 +127,7 @@ const ClaudeAgents: Layer.Layer<AgentHosts, never, AgentNeeds> = Layer.effect(
       yield* CodexHost,
       yield* OpenCodeHost,
       yield* GrokHost,
+      yield* AntigravityHost,
     ]);
   }),
 ).pipe(
@@ -131,6 +137,12 @@ const ClaudeAgents: Layer.Layer<AgentHosts, never, AgentNeeds> = Layer.effect(
   Layer.provide(
     GrokHostLive({
       ownedHome: (userEnv) => prepareOwnedGrokHome(config.dataDir, homedir(), userEnv),
+    }),
+  ),
+  Layer.provide(
+    AntigravityHostLive({
+      ownedHome: (userEnv) => prepareOwnedAntigravityHome(config.dataDir, homedir(), userEnv),
+      geminiDir: antigravityGeminiDir(config.dataDir),
     }),
   ),
   Layer.provide(GatewayCredentials.layerProvider),

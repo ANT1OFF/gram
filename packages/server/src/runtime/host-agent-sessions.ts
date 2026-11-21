@@ -101,9 +101,9 @@ const crossesAsData = (options: OpenSessionOptions): boolean =>
   (options.appTools === undefined || options.mcp !== undefined);
 
 /**
- * Whether a session can open on a joined machine's host. As `opensOnHost`, and Codex, OpenCode and
- * Grok Build too (OpenCode's `opencode serve` and config, and Grok's sign-in, are that machine's
- * own). Codex: its
+ * Whether a session can open on a joined machine's host. As `opensOnHost`, and Codex, OpenCode,
+ * Grok Build and Antigravity too (OpenCode's `opencode serve` and config, and Grok's and
+ * Antigravity's sign-ins, are that machine's own). Codex: its
  * homes there are that machine's own, and so is the app-server a restart waits for, so the wait
  * goes to the host with the open (`HostSessionOpen.waitForPrevious`). And a memory update, as
  * `dreamOpensOnMachine` admits it.
@@ -111,7 +111,7 @@ const crossesAsData = (options: OpenSessionOptions): boolean =>
 export const opensOnMachine = (agent: AgentKind, options: OpenSessionOptions): boolean =>
   options.audience === "dream" || options.dreamFilesOnly === true || options.dreamGuided === true
     ? dreamOpensOnMachine(agent, options)
-    : agent === "codex" || agent === "opencode" || agent === "grok"
+    : agent === "codex" || agent === "opencode" || agent === "grok" || agent === "antigravity"
       ? crossesAsData(options)
       : opensOnHost(agent, options);
 

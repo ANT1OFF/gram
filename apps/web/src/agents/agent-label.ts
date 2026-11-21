@@ -10,6 +10,7 @@ export const AGENT_LABEL: Readonly<Record<AgentKind, string>> = {
   codex: "Codex",
   opencode: "OpenCode",
   grok: "Grok Build",
+  antigravity: "Antigravity",
 };
 
 /** An agent's name; a kind this build doesn't know shows as itself. */

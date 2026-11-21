@@ -20,6 +20,7 @@ import {
   type PermissionMode,
   type ReasoningVariant,
   type ThreadSummary,
+  isTierAgent,
 } from "@gram/contracts";
 
 import { AGENT_LABEL } from "@/agents/agent-label";
@@ -36,6 +37,7 @@ export const AGENT_SHORT: Readonly<Record<AgentKind, string>> = {
   codex: "Codex",
   opencode: "OpenCode",
   grok: "Grok Build",
+  antigravity: "Antigravity",
 };
 
 export const otherAgent = (agent: AgentKind): AgentKind =>
@@ -87,6 +89,8 @@ const noCarryOver = (
   const name = AGENT_NAMES[to];
   if (thread.model.agent === "opencode") return "OpenCode can't hand a session to another agent.";
   if (thread.model.agent === "grok") return "Grok Build can't hand a session to another agent.";
+  if (thread.model.agent === "antigravity")
+    return "Antigravity can't hand a session to another agent.";
   if (platform === "win32") return "A session can't be handed over on Windows.";
   if (thread.model.profileId !== undefined)
     return "This session runs on a gateway account, which a switch doesn't move.";
@@ -321,14 +325,12 @@ export const defaultTarget = (input: {
     const row = findListed(current.agent, input.currentModels ?? [], id);
     return row !== undefined && (row.id === current.model || row.resolvedId === current.model);
   };
-  // The table names no OpenCode or Grok models, so a switch to or from one starts at the target's default.
   const from = current.agent;
-  const tier =
-    from === "opencode" || from === "grok"
-      ? undefined
-      : TIERS.find((each) => RECOMMENDED.tiers[each][from].models.some(runs));
+  const tier = !isTierAgent(from)
+    ? undefined
+    : TIERS.find((each) => RECOMMENDED.tiers[each][from].models.some(runs));
   const resolved =
-    tier === undefined || to === "opencode" || to === "grok"
+    tier === undefined || !isTierAgent(to)
       ? undefined
       : resolveTier(RECOMMENDED, { tier, agent: to }, { [to]: models });
   const chosen = input.picked === undefined ? undefined : models.find((m) => m.id === input.picked);
