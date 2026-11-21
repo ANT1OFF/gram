@@ -535,6 +535,9 @@ jobs:
         run: |
           sudo apt-get install -y -qq --no-install-recommends xdotool
           timeout 300 xvfb-run -a bun apps/desktop/scripts/verify-hosted-journey.ts /opt/Gram/gram
+      # Kept a day, for a person to try a pull request's packages: no job downloads them, and at
+      # about 265 MB a run a week of them fills the account's Actions storage, which every
+      # repository's uploads then fail on. Releases build their own (release-linux.yml).
       - name: Upload the AppImage and .deb
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -542,7 +545,7 @@ jobs:
           path: |
             apps/desktop/release/gram_*_x86_64.AppImage
             apps/desktop/release/gram_*_amd64.deb
-          retention-days: 7
+          retention-days: 1
           if-no-files-found: error
 
   qualification:
