@@ -90,6 +90,7 @@ describe("an armed merge after Gram's own check fails", () => {
       } as unknown as Pr["Service"]);
       const done: Array<(check: LocalCheck) => Effect.Effect<void>> = [];
       const checks = Layer.succeed(LocalChecks, {
+        cancel: () => Effect.succeed([]),
         configuration: () =>
           Effect.succeed({
             project: "invented",

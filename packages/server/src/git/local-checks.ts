@@ -85,6 +85,8 @@ import { DAY_MS } from "../zone-time.ts";
 import { evidenceBytes, removeEvidence } from "./check-evidence.ts";
 import { isolatedGitOptions, ranOn } from "./isolated-git.ts";
 import { makeAdmission } from "./keyed-lock.ts";
+import { makeCheckCancel, type CheckPr } from "./local-check-cancel.ts";
+import { dirStat, entries, fileStat } from "./local-check-files.ts";
 
 export {
   diagnoseExit,
@@ -259,6 +261,10 @@ export const LocalCheck = Schema.Struct({
    * process gone; `kept` found it still running, or ended, and kept its result.
    */
   afterQuit: Schema.optionalKey(Schema.Literals(["restarted", "kept"])),
+  /** The pull request it was run for, whose end cancels it (`local-check-cancel.ts`). */
+  pr: Schema.optionalKey(Schema.Struct({ repo: Schema.String, number: Schema.Number })),
+  /** Why Gram cancelled it, its result no longer counting; such a failure says nothing of the code. */
+  cancelled: Schema.optionalKey(Schema.String),
   /** What a running check needs to be taken back after a quit; dropped once it ends. */
   job: Schema.optionalKey(
     Schema.Struct({
@@ -567,9 +573,20 @@ export interface LocalChecksShape {
       readonly after?: number;
       /** A run of its own in place of the project's configured one, as `lookup` takes it. */
       readonly run?: LocalCheckRun;
+      /** The pull request it is for, which `cancel` names it by. */
+      readonly pr?: CheckPr;
       readonly onDone: (check: LocalCheck) => Effect.Effect<void>;
     },
   ) => Effect.Effect<LocalCheck | undefined>;
+  /**
+   * Cancels this machine's running checks of `pr` that `keep` doesn't keep, saying `why`: their
+   * processes stopped, their worktrees removed, each failed with `cancelled`. Those it cancelled.
+   */
+  readonly cancel: (
+    pr: CheckPr,
+    why: string,
+    keep?: (check: LocalCheck) => boolean,
+  ) => Effect.Effect<ReadonlyArray<LocalCheck>>;
   /**
    * The latest check of `head` on `base` with `repoDir`'s current command that Gram ran or runs,
    * from memory alone, for showing where it stands (the ledger). Never a merge's evidence: that is
@@ -639,35 +656,6 @@ export const logsOverBudget = (
     sizeOf: (log) => log.size,
     pinned: (log) => log.check.status === "running",
   }).map((log) => log.key);
-
-/** A file's size and when it last changed, or undefined when it isn't a regular file. */
-const fileStat = (path: string) => {
-  try {
-    const stat = lstatSync(path);
-    return stat.isFile() ? stat : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-/** A folder's stat, links not followed, or undefined when it isn't a folder. */
-const dirStat = (path: string) => {
-  try {
-    const stat = lstatSync(path);
-    return stat.isDirectory() ? stat : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-/** The names in `dir`, or none when it can't be read. */
-const entries = (dir: string): ReadonlyArray<string> => {
-  try {
-    return readdirSync(dir);
-  } catch {
-    return [];
-  }
-};
 
 export class LocalChecks extends Context.Service<LocalChecks, LocalChecksShape>()(
   "@gram/server/LocalChecks",
@@ -978,7 +966,6 @@ export const LocalChecksLive = Layer.effect(
     };
     const waiters = new Map<string, Array<(check: LocalCheck) => Effect.Effect<void>>>();
     const fibers = yield* FiberMap.make<number>();
-    let runs = 0;
     /**
      * Set as Gram's scope closes, before the checks' fibers are interrupted: a check whose process
      * was recorded is then left running (`DurableCheck`), and taken back on the next start.
@@ -1315,6 +1302,8 @@ export const LocalChecksLive = Layer.effect(
         ...(result.ok || result.failure === undefined ? {} : { failure: result.failure }),
       };
     };
+
+    const cancels = makeCheckCancel({ records, remember, fibers, removeWork, finish, endedAs });
 
     const check = (own: string, key: string, started: LocalCheck, wanted: LocalCheckRun) => {
       let retain = false;
@@ -1731,6 +1720,7 @@ export const LocalChecksLive = Layer.effect(
       options: {
         readonly since: number;
         readonly after?: number | undefined;
+        readonly pr?: CheckPr | undefined;
         readonly onDone: (check: LocalCheck) => Effect.Effect<void>;
       },
     ) =>
@@ -1755,6 +1745,9 @@ export const LocalChecksLive = Layer.effect(
           tree: "",
           status: "running",
           ...wanted,
+          ...(options.pr === undefined
+            ? {}
+            : { pr: { repo: options.pr.repo, number: options.pr.number } }),
           machine: site.hostId,
           startedAt: yield* Clock.currentTimeMillis,
           host: machineName(site.hostId),
@@ -1765,7 +1758,7 @@ export const LocalChecksLive = Layer.effect(
         };
         yield* save(key, started);
         waiters.set(key, [options.onDone]);
-        yield* FiberMap.run(fibers, ++runs, machineCheck(site, key, started, wanted));
+        yield* cancels.fork(undefined, machineCheck(site, key, started, wanted));
         return started;
       });
 
@@ -1773,14 +1766,14 @@ export const LocalChecksLive = Layer.effect(
       repoDir,
       head,
       base,
-      { since, onDone, projectId, after, run: override },
+      { since, onDone, projectId, after, run: override, pr },
     ) =>
       Effect.gen(function* () {
         if (!SHA.test(head) || !SHA.test(base)) return undefined;
         const wanted = override ?? (yield* configuration(repoDir, projectId)).config;
         if (wanted === undefined) return undefined;
         if (typeof repoDir !== "string")
-          return yield* machineEnsure(repoDir, head, base, wanted, { since, onDone, after });
+          return yield* machineEnsure(repoDir, head, base, wanted, { since, onDone, after, pr });
         const own = yield* ownRepoOf(repoDir, wanted);
         const tree = yield* treeOf(own, repoDir, head, base, true, wanted);
         const startedAt = yield* Clock.currentTimeMillis;
@@ -1825,35 +1818,62 @@ export const LocalChecksLive = Layer.effect(
           return failed;
         }
         const key = keyOf(head, base, tree, wanted);
-        const known = records.get(key);
-        if (known?.status === "passed" && (after === undefined || known.startedAt > after))
-          return known;
-        if (known?.status === "running") {
-          waiters.set(key, [...(waiters.get(key) ?? []), onDone]);
-          return known;
-        }
-        if (known?.status === "failed" && (known.finishedAt ?? 0) >= since) return known;
-        const logs = nodePath.join(dataDir, "local-checks");
-        yield* Effect.sync(() => mkdirSync(logs, { recursive: true }));
-        const started: LocalCheck = {
+        // One decision at a time per head: two asks never start two checks of it side by side.
+        return yield* cancels.deciding(
+          own,
           head,
-          base,
-          tree,
-          status: "running",
-          ...wanted,
-          startedAt,
-          host: hostname(),
-          log: nodePath.join(
-            logs,
-            `${head.slice(0, 12)}-${base.slice(0, 12)}-${tree.slice(0, 12)}-${runIdOf(wanted)}.log`,
-          ),
-          job: { own, repoDir },
-        };
-        yield* save(key, started);
-        waiters.set(key, [onDone]);
-        // Each run under its own id: the last one may still be telling its listeners.
-        yield* FiberMap.run(fibers, ++runs, check(own, key, started, wanted));
-        return started;
+          Effect.gen(function* () {
+            const known = records.get(key);
+            if (known?.status === "passed" && (after === undefined || known.startedAt > after))
+              return known;
+            const joined =
+              known?.status === "running"
+                ? { key, check: known }
+                : yield* cancels.makeWay(
+                    own,
+                    head,
+                    base,
+                    (other) => runIdOf(other) === runIdOf(wanted),
+                    (older) =>
+                      g(own, ["merge-base", "--is-ancestor", older, base]).pipe(
+                        Effect.map((out) => out?.status === 0),
+                      ),
+                  );
+            if (joined !== undefined) {
+              waiters.set(joined.key, [...(waiters.get(joined.key) ?? []), onDone]);
+              return joined.check;
+            }
+            // A cancelled check says nothing of the code: asked again, it runs again.
+            if (
+              known?.status === "failed" &&
+              known.cancelled === undefined &&
+              (known.finishedAt ?? 0) >= since
+            )
+              return known;
+            const logs = nodePath.join(dataDir, "local-checks");
+            yield* Effect.sync(() => mkdirSync(logs, { recursive: true }));
+            const started: LocalCheck = {
+              head,
+              base,
+              tree,
+              status: "running",
+              ...wanted,
+              ...(pr === undefined ? {} : { pr: { repo: pr.repo, number: pr.number } }),
+              startedAt,
+              host: hostname(),
+              log: nodePath.join(
+                logs,
+                `${head.slice(0, 12)}-${base.slice(0, 12)}-${tree.slice(0, 12)}-${runIdOf(wanted)}.log`,
+              ),
+              job: { own, repoDir },
+            };
+            yield* save(key, started);
+            waiters.set(key, [onDone]);
+            // Each run under its own id: the last one may still be telling its listeners.
+            yield* cancels.fork(key, check(own, key, started, wanted));
+            return started;
+          }),
+        );
       });
 
     // Running checks a previous run of Gram left. One still running, verifiably the process it
@@ -1956,7 +1976,7 @@ export const LocalChecksLive = Layer.effect(
       const state = recorded === undefined ? "gone" : recordedGroup(recorded);
       const ending = (outcome: LocalCheckOutcome, keep = false) => {
         remember(key, running);
-        return FiberMap.run(fibers, ++runs, endLeft(key, running, outcome, keep));
+        return cancels.fork(undefined, endLeft(key, running, outcome, keep));
       };
       if (
         recorded !== undefined &&
@@ -1968,7 +1988,7 @@ export const LocalChecksLive = Layer.effect(
         remember(key, kept);
         // Already running: it takes a slot at once, whatever the cap, and frees it as it ends.
         const held = yield* admission.takeSlot(follow(key, kept, recorded, state === "ours"));
-        yield* FiberMap.run(fibers, ++runs, held);
+        yield* cancels.fork(key, held);
         continue;
       }
       // Its start time matches but its folder can't be shown to: never a second run beside it.
@@ -2005,7 +2025,7 @@ export const LocalChecksLive = Layer.effect(
         job: { own: job.own, repoDir: job.repoDir },
       };
       yield* save(key, again);
-      yield* FiberMap.run(fibers, ++runs, restart(key, again, job));
+      yield* cancels.fork(key, restart(key, again, job));
     }
 
     // Retention: what checks leave grows with every head, base and run, so it is bounded by age and
@@ -2221,6 +2241,6 @@ export const LocalChecksLive = Layer.effect(
         : latestByPair.get(`${head}:${base}:${runIdOf(wanted)}`);
     };
 
-    return { lookup, ensure, latest, configuration, sweep };
+    return { lookup, ensure, latest, configuration, sweep, cancel: cancels.cancel };
   }),
 );

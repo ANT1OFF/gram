@@ -204,6 +204,7 @@ const scenario = <E, R>(
     const ensured: Array<readonly [string, string]> = [];
     let mostAtOnce = 0;
     const checks = Layer.succeed(LocalChecks, {
+      cancel: () => Effect.succeed([]),
       configuration: () =>
         Effect.succeed({
           project: "invented",
@@ -234,14 +235,7 @@ const scenario = <E, R>(
           return running;
         }),
       latest: () => undefined,
-      sweep: Effect.succeed({
-        records: 0,
-        logs: 0,
-        logBytes: 0,
-        work: 0,
-        collected: 0,
-        repos: 0,
-      }),
+      sweep: Effect.succeed({ records: 0, logs: 0, logBytes: 0, work: 0, collected: 0, repos: 0 }),
     });
     const publisher = Layer.succeed(GitStatePublisher, {
       // Caught up: merge-base-lock.test.ts has a publisher that hasn't.
