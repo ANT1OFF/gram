@@ -320,6 +320,12 @@ export const Project = Schema.Struct({
   name: Schema.String,
   /** `git rev-parse --show-toplevel` of `root`; absent outside a repo. */
   repoRoot: Schema.optionalKey(Schema.String),
+  /**
+   * The identity of the repository's `origin` (as `Checkout.cloneIdentity`) when the project was
+   * added, or when a project added before it was recorded was first loaded. Which repository the
+   * project is goes by it, never by the origin its git config names later. Absent outside a repo.
+   */
+  originIdentity: Schema.optionalKey(Schema.String),
   localCheck: Schema.optionalKey(ProjectLocalCheck),
   /** Opaque identity of the complete stored recipe, including unreadable contents. */
   localCheckRevision: Schema.optionalKey(Schema.String),

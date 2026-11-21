@@ -632,6 +632,17 @@ const workspaceHolders = Effect.gen(function* () {
   yield* sql`CREATE TABLE workspace_holders (workspace_id TEXT PRIMARY KEY, data TEXT NOT NULL)`;
 });
 
+/**
+ * The identity (`host/repos.ts` `cloneIdentityOf`) of each project's `origin` as it was when the
+ * project was added: what a repository's reach is decided by (`git/repo-reach.ts`), never the
+ * origin its git config names later, which an agent working in the folder can rewrite. Projects
+ * already known have theirs read once when the store next loads.
+ */
+const projectOrigins = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE projects ADD COLUMN origin_identity TEXT`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -649,6 +660,7 @@ export const migrations = {
   "0014_folder_trust": folderTrust,
   "0015_private_readers": privateReaders,
   "0016_workspace_holders": workspaceHolders,
+  "0017_project_origins": projectOrigins,
 };
 
 /**

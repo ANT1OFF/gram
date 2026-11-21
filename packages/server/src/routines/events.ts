@@ -22,10 +22,12 @@ import {
   reviewRequestReady,
   reviewRequestsOn,
   type ReleasePublishedCondition,
+  type Project,
   type RoutineEvent,
   type RoutineTrigger,
 } from "@gram/contracts";
-import { ghApi, originOwnerRepo, Proc, Tools } from "@gram/git";
+import { ghApi, Proc, Tools } from "@gram/git";
+import { projectRepo } from "../git/repo-reach.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -50,9 +52,24 @@ import { type UpstreamRelease, UpstreamReleases } from "../wakes/upstream-releas
 export interface EventLookContext {
   /** The routine's project folder, for a source that reads its repo; absent when it has none. */
   readonly projectRoot: string | undefined;
+  /**
+   * The project's GitHub repo, by the origin it was added with (`Project.originIdentity`), never
+   * the one its git config names now; absent when it has none.
+   */
+  readonly projectRepo?: string | undefined;
   /** What the last look left to compare against (a release routine's last version). */
   readonly baseline: string | undefined;
 }
+
+/** The look context of a routine on `project`, absent when it is no longer one of the workspace's. */
+export const lookContextOf = (
+  project: Project | undefined,
+  baseline: string | undefined,
+): EventLookContext => ({
+  projectRoot: project?.root,
+  projectRepo: project === undefined ? undefined : projectRepo(project),
+  baseline,
+});
 
 /**
  * What one look found: the occurrences there now (and the baseline to keep), why it can't look
@@ -317,7 +334,7 @@ export const RoutineEventSourcesLive = Layer.effect(
       });
 
     /** The routine's project's GitHub repo, or why there is none to watch. */
-    const repoOf = (projectRoot: string | undefined) =>
+    const repoOf = (projectRoot: string | undefined, repo: string | undefined) =>
       Effect.gen(function* () {
         if (projectRoot === undefined) {
           return { problem: "Its project is no longer one of the workspace's." } as const;
@@ -325,7 +342,6 @@ export const RoutineEventSourcesLive = Layer.effect(
         if (!(yield* tools.ghReady)) {
           return { problem: "GitHub's gh isn't installed or signed in on this computer." } as const;
         }
-        const repo = yield* provide(originOwnerRepo(projectRoot));
         if (repo === undefined) {
           return { problem: "Its project has no GitHub origin to watch." } as const;
         }
@@ -397,7 +413,7 @@ export const RoutineEventSourcesLive = Layer.effect(
             };
           }
           case "prReady": {
-            const found = yield* repoOf(context.projectRoot);
+            const found = yield* repoOf(context.projectRoot, context.projectRepo);
             if (found.repo === undefined) return { problem: found.problem };
             const [owner, name] = found.repo.split("/");
             const out = yield* api(context.projectRoot!, "graphql", [
@@ -417,7 +433,7 @@ export const RoutineEventSourcesLive = Layer.effect(
             return prs === undefined ? undefined : { items: prs, target: found.repo.toLowerCase() };
           }
           case "ciFailed": {
-            const found = yield* repoOf(context.projectRoot);
+            const found = yield* repoOf(context.projectRoot, context.projectRepo);
             if (found.repo === undefined) return { problem: found.problem };
             const cwd = context.projectRoot!;
             const branch = on.branch ?? (yield* heads.defaultBranch(cwd, found.repo));

@@ -89,7 +89,12 @@ const TestLayer = GitStatePublisherLive.pipe(
   Layer.provideMerge(
     gitPlatformTest({
       pr: MockPr,
-      proc: Layer.succeed(Proc, { run: () => Effect.die("unexpected subprocess") }),
+      proc: Layer.succeed(Proc, {
+        run: (bin, args) =>
+          bin === "git" && args.includes("remote.origin.url")
+            ? Effect.succeed({ status: 1, stdout: "", stderr: "", truncated: false })
+            : Effect.die("unexpected subprocess"),
+      }),
       config: { reviewRoundDebounce: Duration.seconds(3) },
     }),
   ),

@@ -60,6 +60,7 @@ import { WorkerHosts } from "../host/worker-host.ts";
 import { AutoMerges } from "./auto-merges.ts";
 import { GitStatePublisher } from "./publisher.ts";
 import { makeKeyedLock } from "./keyed-lock.ts";
+import { projectRepo } from "./repo-reach.ts";
 import { withMachines, workerOwnsPr } from "./worker-pr.ts";
 
 /** What `merge_freeze` asks for. */
@@ -493,7 +494,8 @@ export const MergeFreezesLive = Layer.effect(
         for (const project of yield* store.listProjects) {
           if (!ids.has(project.id)) continue;
           if (!(yield* folderExists(project.root))) continue;
-          const origin = yield* autoMerges.repoOf(project.root);
+          // The origin it recorded when it was added, never the one its git config names now.
+          const origin = projectRepo(project);
           if (origin !== undefined && sameRepo(origin, repo)) return true;
         }
         return false;
