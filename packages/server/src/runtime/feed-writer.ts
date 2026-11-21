@@ -78,6 +78,20 @@ export const mergedDelta = (
   return { ...chunk, delta: `${previous.delta}${chunk.delta}` };
 };
 
+/**
+ * The ids of a thread's messages stored only in part as they stream (`InFlight.settled`), which
+ * the event sink's backfill leaves to be sent when they settle.
+ */
+export const unsettledIn =
+  (runtimes: ReadonlyMap<ThreadId, Runtime>) =>
+  (threadId: ThreadId): ReadonlySet<string> => {
+    const streaming = new Set<string>();
+    for (const inFlight of runtimes.get(threadId)?.open.values() ?? []) {
+      if (!inFlight.settled) streaming.add(inFlight.messageId);
+    }
+    return streaming;
+  };
+
 /** The transcript writer `ThreadRuntimes` streams every thread's messages through. */
 /** A reply let go of in its turn, never to go on again. */
 const closeIn = (rt: Runtime, messageId: MessageId) => {
@@ -198,10 +212,12 @@ export const makeFeedWriter = ({
       const last = searchIndexedAt.get(inFlight);
       const refresh = whole || last === undefined || now - last >= SEARCH_REFRESH_MS;
       const key = `${rt.threadId} ${inFlight.messageId}`;
+      const tells = whole || (turnOver && inFlight.finished);
       if (refresh) {
         searchIndexedAt.set(inFlight, now);
         yield* FiberMap.remove(searchRefreshes, key);
       }
+      if (!tells) inFlight.settled = false;
       const rev = yield* store.upsertMessage(
         rt.threadId,
         inFlight.accumulator.snapshot(),
@@ -216,7 +232,10 @@ export const makeFeedWriter = ({
           { onlyIfMissing: true },
         );
       }
-      if (whole || (turnOver && inFlight.finished)) yield* settled(rt, inFlight.messageId);
+      if (tells) {
+        inFlight.settled = true;
+        yield* settled(rt, inFlight.messageId);
+      }
       return rev;
     });
 
@@ -300,6 +319,7 @@ export const makeFeedWriter = ({
           parentToolUseId,
           nested: parentToolUseId !== undefined,
           finished: false,
+          settled: false,
           nextPersistAt: 0,
           unsaved: false,
         };

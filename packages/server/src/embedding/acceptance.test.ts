@@ -35,6 +35,7 @@ import {
   endpoint,
   eventually,
   serverLayer,
+  sentTurnEnd,
   sessionOf,
   setHosted,
   settledAt,
@@ -810,6 +811,8 @@ describe("event sink", () => {
         const store = yield* ThreadStore;
         const stored = yield* store.storedMessages(thread.id, { afterSeq: 0, limit: 100 });
         expect(stored.map((one) => one.role)).toEqual(["user", "assistant", "assistant"]);
+        // The last to send is the reply with its turn's end: the quiet after it, that's all.
+        yield* sentTurnEnd(to, stored.at(-1)!.message.id);
         const held = yield* settledAt(to);
         const sent = held.filter((event) => event.type === "message");
         // The thread is known before its first message.
@@ -871,7 +874,8 @@ describe("event sink", () => {
         }
         expect(sent.length).toBeLessThanOrEqual(4);
         expect(held.map((event) => event.seq)).toEqual(held.map((_, i) => i + 1));
-      }).pipe(Effect.provide(serverLayer(undefined, to.url, true)));
+        // Slow steps: the reply still streams when the backfill, a pause after turning on, reads.
+      }).pipe(Effect.provide(serverLayer(undefined, to.url, true, undefined, "300 millis")));
     }),
   );
 

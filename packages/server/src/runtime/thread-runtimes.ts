@@ -4,9 +4,7 @@ import {
   type QueueItemId,
   type ThreadId,
   type TurnId,
-  effectiveCheckout,
   fastSelectionProblem,
-  isLocalHost,
   InterruptHung,
   InvalidState,
   NotFound,
@@ -60,7 +58,8 @@ import { makeAccountScopes } from "./account-scopes.ts";
 import { ephemeralAccountScope } from "../usage/account-scope.ts";
 import { ownedRuntimes } from "./owned-runtimes.ts";
 import { asRecorded, fromStored, mayReachThread, type StoredActor } from "../host/ownership.ts";
-import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
+import { type CheckoutService, TurnHooks } from "./hooks.ts";
+import { turnsHere } from "./turns-here.ts";
 import { accountOf, type EarlyReleases, type ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
@@ -98,7 +97,7 @@ import {
   replyOf,
   type GetRuntime,
 } from "./runtime-state.ts";
-import { makeFeedWriter, makeFeedMethods } from "./feed-writer.ts";
+import { makeFeedWriter, makeFeedMethods, unsettledIn } from "./feed-writer.ts";
 import { makeLimitResume, makeLimitMethods } from "./limit-resume.ts";
 import { makeTurnLifecycle } from "./turn-lifecycle.ts";
 import { makeMessageQueue, makeQueueMethods } from "./message-queue.ts";
@@ -201,38 +200,6 @@ interface Handover<E> {
    */
   readonly refused?: true;
 }
-
-/**
- * The turn hooks, with a thread on another machine's turns taking no checkpoints here: this
- * machine's git can't reach its checkout, and a folder of the same name here isn't it. Its turn
- * end still asks for a git-state refresh, which reads the machine's checkout there.
- */
-const turnsHere = (
-  hooks: TurnHooksShape,
-  store: Pick<ThreadStore["Service"], "getThread">,
-): TurnHooksShape => {
-  const here = (threadId: ThreadId) =>
-    store.getThread(threadId).pipe(
-      Effect.map((thread) => isLocalHost(effectiveCheckout(thread))),
-      Effect.orElseSucceed(() => true),
-    );
-  return {
-    ...hooks,
-    onTurnStart: (threadId, turnId, cwd) =>
-      Effect.flatMap(here(threadId), (local) =>
-        local ? hooks.onTurnStart(threadId, turnId, cwd) : Effect.void,
-      ),
-    onTurnEnd: (threadId, turnId, cwd, reason, touchedRemote) =>
-      Effect.flatMap(here(threadId), (local) =>
-        local
-          ? hooks.onTurnEnd(threadId, turnId, cwd, reason, touchedRemote)
-          : // No checkpoint, but its git state (read on its machine) is still refreshed.
-            touchedRemote
-            ? hooks.onRemoteCommand(threadId, cwd)
-            : hooks.onFilesChanged(threadId, cwd),
-      ),
-  };
-};
 
 /**
  * A model pick stays on the thread's own agent: its session, `agentSessionId` and `codexHome`
@@ -359,6 +326,7 @@ const make = Effect.gen(function* () {
   const releasing = yield* FiberMap.make<string>();
   const releaseLock = yield* Semaphore.make(1);
   const runtimes = new Map<ThreadId, Runtime>();
+  if (eventSink !== undefined) yield* eventSink.setStreaming(unsettledIn(runtimes));
   const registryLock = yield* Semaphore.make(1);
   let appTools: AppToolRegistryPort | undefined;
   const observers = new Set<RuntimeObserver>();
