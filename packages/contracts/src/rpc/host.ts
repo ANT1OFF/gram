@@ -35,7 +35,13 @@ import { FileImage } from "../thread-ui.ts";
 import { SavedDiff } from "../saved-work.ts";
 import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
-import { HostCodexStatus, HostGrokStatus, HostModel, HostOpenCodeStatus } from "./host-agents.ts";
+import {
+  HostAntigravityStatus,
+  HostCodexStatus,
+  HostGrokStatus,
+  HostModel,
+  HostOpenCodeStatus,
+} from "./host-agents.ts";
 
 export * from "./host-app-tools.ts";
 
@@ -213,6 +219,12 @@ export const HostFeature = Schema.Literals([
    * without it, and leaves a Grok worker's agent out of what it sends that host.
    */
   "agent-grok",
+  /**
+   * Runs Antigravity sessions on the machine's own `agy` and its sign-in, or the Gemini API key its
+   * environment holds (`HostStatus.antigravity`). A control plane opens no Antigravity session on a
+   * host without it, and leaves an Antigravity worker's agent out of what it sends that host.
+   */
+  "agent-antigravity",
   /** Fresh non-credential subscription identity before a cold worker's limit preflight. */
   "account-scope",
   /**
@@ -339,6 +351,11 @@ export const HostStatus = Schema.Struct({
    * before it ignores it.
    */
   grok: Schema.optionalKey(HostGrokStatus),
+  /**
+   * Its Antigravity, from a host that runs Antigravity sessions (`agent-antigravity`). A control
+   * plane built before it ignores it.
+   */
+  antigravity: Schema.optionalKey(HostAntigravityStatus),
 });
 export type HostStatus = typeof HostStatus.Type;
 

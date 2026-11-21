@@ -187,7 +187,7 @@ export const openAcpSession = (
         return yield* Effect.fail(unavailable(`${name} didn't name its session.`));
     }
     const id = sessionId;
-    mapper = spec.mapper(id, config.newMessageId);
+    mapper = spec.mapper(id, config.newMessageId, appToolsServer);
     const current = mapper;
     const controls = yield* spec.setUp({
       connection,

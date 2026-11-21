@@ -32,6 +32,15 @@ describe("agent harness admission", () => {
     expect(() => Schema.decodeUnknownSync(RuntimeAgent)("grok")).toThrow();
     expect(() => Schema.decodeUnknownSync(McpTarget)("grok")).toThrow();
   });
+  it("runs Antigravity on its own sign-in, with no managed runtime and no MCP config of Gram's", () => {
+    expect(Schema.decodeUnknownSync(AgentKind)("antigravity")).toBe("antigravity");
+    expect(Schema.decodeUnknownSync(ModelRef)({ agent: "antigravity", model: "m" })).toEqual({
+      agent: "antigravity",
+      model: "m",
+    });
+    expect(() => Schema.decodeUnknownSync(RuntimeAgent)("antigravity")).toThrow();
+    expect(() => Schema.decodeUnknownSync(McpTarget)("antigravity")).toThrow();
+  });
   it("malformed and unknown harness values fail closed", () => {
     for (const value of ["unknown-agent", "", null, {}, 42])
       expect(() => Schema.decodeUnknownSync(AgentKind)(value)).toThrow();

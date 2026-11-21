@@ -77,7 +77,12 @@ export interface AcpAgentSpec {
   /** Notifications that carry `session/update`s. */
   readonly updateMethods: ReadonlyArray<string>;
   readonly commandsOf: (update: Json) => ReadonlyArray<SlashCommand>;
-  readonly mapper: (sessionId: string, newMessageId: () => MessageId) => AcpMapper;
+  /** The session's mapper, given the name Gram's app tools server took in it. */
+  readonly mapper: (
+    sessionId: string,
+    newMessageId: () => MessageId,
+    appToolsServer: string,
+  ) => AcpMapper;
   /** The name Gram's app tools server takes in a session the agent runs. */
   readonly appToolsServer: () => string;
   /** Gram's own answer to a permission request, or `undefined` for a card. */
