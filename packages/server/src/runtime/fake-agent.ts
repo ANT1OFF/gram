@@ -573,7 +573,9 @@ export const makeFakeAgentAdapter = (
             end: (...events) => emit(...events).pipe(Effect.andThen(Queue.end(queue))),
             callTool,
             completeTurn: (text = "done") => {
-              const messageId = `reply-${++replies}` as MessageId;
+              // Unique across adapters too, as real agents mint theirs: a server started again on
+              // the same store never streams a new reply under a stored one's id.
+              const messageId = `reply-${++replies}-${randomUUID().slice(0, 8)}` as MessageId;
               return emit(
                 {
                   type: "chunk",
