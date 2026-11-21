@@ -17,6 +17,7 @@ import { NOT_YOUR_MACHINE, OWNERS_DIFFER, RoutedFor, ServerWork } from "../host/
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { closedThreadHandlers } from "../rpc/handlers/closed-threads.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { SqlClient } from "../platform/unstable.ts";
 import type { FakeSession } from "../runtime/fake-agent.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -402,6 +403,51 @@ describe("round v2's edges, through the same two choke points", () => {
             orchestration.saveWorkspace({ ...edit, name: "Renamed by Grace" }),
           );
           expect(saved.workspace.name).toBe("Renamed by Grace");
+        }),
+      );
+    }),
+  );
+
+  it.effect("still saves a workspace only for its owner once its orchestrator has closed", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      gracesHere(world);
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const orchestration = yield* Orchestration;
+          const runtimes = yield* ThreadRuntimes;
+          const { thread, workspaceId } = yield* openOrchestrator(world);
+          yield* runtimes.close(thread.id);
+          const before = yield* store.getWorkspace(workspaceId);
+          expect(before.workspace.orchestratorThreadId).toBeUndefined();
+          const edit = {
+            id: workspaceId,
+            name: "Renamed by Ada",
+            projectIds: before.workspace.projectIds,
+            homeProjectId: before.workspace.homeProjectId,
+          };
+          const refused = yield* as("ada")(orchestration.saveWorkspace(edit)).pipe(Effect.flip);
+          expect(refused.message).toBe(NOT_YOUR_MACHINE);
+          expect((yield* store.getWorkspace(workspaceId)).workspace.name).toBe(
+            before.workspace.name,
+          );
+          // Pushed off the closed list, where it ran is still known.
+          yield* store.forgetClosed(thread.id);
+          const again = yield* as("ada")(orchestration.saveWorkspace(edit)).pipe(Effect.flip);
+          expect(again.message).toBe(NOT_YOUR_MACHINE);
+          const saved = yield* as("grace")(
+            orchestration.saveWorkspace({ ...edit, name: "Renamed by Grace" }),
+          );
+          expect(saved.workspace.name).toBe("Renamed by Grace");
+          // A kept record that can't be read establishes no owner: refused for everyone.
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE workspace_holders SET data = 'not json' WHERE workspace_id = ${workspaceId}`;
+          const unreadable = yield* as("grace")(
+            orchestration.saveWorkspace({ ...edit, name: "Again by Grace" }),
+          ).pipe(Effect.flip);
+          expect(unreadable.message).toBe(NOT_YOUR_MACHINE);
         }),
       );
     }),

@@ -49,6 +49,8 @@ export const fakeServer = () => {
     askNonceOnce: true,
     issuer: "",
     sub: "person-ada",
+    /** The organisation each grant is for, named in the token answer when set. */
+    organization: undefined as string | undefined,
     expiresIn: 900,
     registeredKey: undefined as string | undefined,
     lieAboutId: false,
@@ -86,6 +88,8 @@ export const fakeServer = () => {
     runsWork: true,
     /** Grants `machines:workers` (its discovery doesn't name the addresses; a test calls directly). */
     workerMachinesScope: false,
+    /** Names worker-machine addresses in discovery, so the device offers them (never called here). */
+    namesWorkerMachines: false,
     /** What was sent, waited on, said and stopped, as the bodies came. */
     started: [] as Array<Record<string, unknown>>,
     waited: [] as Array<Record<string, unknown>>,
@@ -143,6 +147,12 @@ export const fakeServer = () => {
                 : {}),
             }
           : {}),
+        ...(state.namesWorkerMachines
+          ? {
+              worker_machines_endpoint: `${origin}/api/workers`,
+              worker_machine_connect: `${origin.replace("http:", "ws:")}/workers/relay`,
+            }
+          : {}),
       });
     if (url.pathname === "/oauth/authorize") {
       state.askedScope = url.searchParams.get("scope") ?? "";
@@ -195,6 +205,7 @@ export const fakeServer = () => {
         ...(state.giveRefresh ? { refresh_token: refresh } : {}),
         scope,
         sub: state.sub,
+        ...(state.organization === undefined ? {} : { organization: state.organization }),
       });
     }
     // Everything else needs a token bound to the key that proves the call.
