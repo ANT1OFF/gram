@@ -130,7 +130,9 @@ describe("worker machines from a signed-in hosted server", () => {
         let started = false;
         let host: ReturnType<typeof relayedHost> | undefined;
         const serving: Array<Effect.Effect<void, never, Scope.Scope>> = [];
+        const logo = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg"/>')}`;
         const app = fakeApp({
+          server: { server: { ...SERVER, logo } },
           answer: ({ call }) => {
             if (call === "start") {
               started = true;
@@ -216,6 +218,11 @@ describe("worker machines from a signed-in hosted server", () => {
         });
         expect(machine.onlineSince).toBeDefined();
         expect(machine).not.toHaveProperty("owner");
+        // Every client names it by the server it came through, with the server's own mark.
+        expect(hosts.states().find((each) => each.id === hostId)?.hosted).toEqual({
+          name: SERVER.server,
+          logo,
+        });
         expect(source.theirs(machine)).toBe(true);
         // The desktop's own, like a joined machine: open here, and a worker of an orchestrator on
         // this machine may go on it.

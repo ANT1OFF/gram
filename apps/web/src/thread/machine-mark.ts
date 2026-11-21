@@ -34,6 +34,11 @@ export interface MachineMark {
   /** Set for a worker sent to a server: it runs there, and this app holds none of its files. */
   readonly sent?: true;
   /**
+   * The hosted server a worker's machine came through (`MachineState.hosted`): its mark stands in
+   * the machine's place, and the machine's own name is on the hover.
+   */
+  readonly hosted?: { readonly name: string; readonly logo?: string };
+  /**
    * Epoch ms since a thread has waited on it to be started (`MachineState.starting`): it stopped,
    * and whoever runs the machines is bringing it back. Set only with `state` "starting".
    */
@@ -91,12 +96,18 @@ export function machineMark(
     { protocol: HOST_PROTOCOL_VERSION },
     now,
   );
-  const head = `Runs on ${machine.name}`;
+  const hosted = machine.hosted;
+  const where = hosted === undefined ? machine.name : `${hosted.name}'s machine`;
+  const head = `Runs on ${where}`;
+  const kind =
+    hosted === undefined ? KIND[machine.kind] : `${machine.name} · ${KIND[machine.kind]}`;
+  const from = hosted === undefined ? {} : { hosted };
   if (health.tone === "online")
     return {
       name: machine.name,
-      words: `on ${machine.name}`,
-      hint: `${head}\n${KIND[machine.kind]} · ${health.label}`,
+      ...from,
+      words: `on ${where}`,
+      hint: `${head}\n${kind} · ${health.label}`,
     };
   // A host this Gram can't talk to: the older of the two needs the update. When that is this Gram,
   // the machine is offline with the reason on its hover, never told to update itself.
@@ -110,13 +121,14 @@ export function machineMark(
   return {
     name: machine.name,
     state,
+    ...from,
     ...(state === "starting" && machine.starting !== undefined
       ? { startingSince: machine.starting }
       : {}),
-    words: `on ${machine.name}, ${state}`,
+    words: `on ${where}, ${state}`,
     hint: [
       head,
-      `${KIND[machine.kind]} · ${newer ? "newer than this Gram" : state}`,
+      `${kind} · ${newer ? "newer than this Gram" : state}`,
       // Being brought back: why it went and how to bring it back are not the person's to act on.
       state === "starting" ? STARTING_WHY : health.why,
       // A provisioned host is replaced by whoever started it; the fixes are a joined machine's.

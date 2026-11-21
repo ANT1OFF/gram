@@ -313,6 +313,27 @@ describe("checkHostedDiscovery", () => {
     expect(checkHostedDiscovery(origin, "nope")).toMatchObject({ ok: false });
     expect(checkHostedDiscovery("http://gram.example.com", document)).toMatchObject({ ok: false });
   });
+
+  it("keeps a mark on the server's origin or a data: image, and drops any other without refusing", () => {
+    const svg = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg"/>')}`;
+    for (const logo_uri of [`${origin}/favicon.svg`, svg]) {
+      const checked = checkHostedDiscovery(origin, { ...document, logo_uri });
+      expect(checked.ok && checked.discovery.logo_uri, logo_uri).toBe(logo_uri);
+    }
+    for (const logo_uri of [
+      "https://cdn.example.net/favicon.svg",
+      "http://gram.example.com/favicon.svg",
+      `${origin}/favicon.svg?track=1`,
+      "javascript:alert(1)",
+      `data:text/html;base64,${btoa("<script>alert(1)</script>")}`,
+      `data:image/svg+xml;base64,${btoa("<html><script>alert(1)</script></html>")}`,
+      `data:image/png;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg"/>')}`,
+    ]) {
+      const checked = checkHostedDiscovery(origin, { ...document, logo_uri });
+      expect(checked.ok, logo_uri).toBe(true);
+      expect(checked.ok && "logo_uri" in checked.discovery, logo_uri).toBe(false);
+    }
+  });
 });
 
 describe("the device's service", () => {

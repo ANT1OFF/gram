@@ -25,8 +25,51 @@ export function useMachineMark(
 export const useThreadSent = (threadId: ThreadId | undefined): SentTo | undefined =>
   useThreadsStore((s) => (threadId === undefined ? undefined : s.byId[threadId]?.thread.sentTo));
 
-/** The glyph of a mark: a machine, or a server's cloud for a sent worker; struck when out of reach. */
+/**
+ * A hosted server's mark in a glyph's place: the image it gave (`MachineState.hosted`), or the first
+ * letter of its name on a tile the size of a glyph.
+ */
+export function HostedMark({
+  hosted,
+  className,
+}: {
+  hosted: NonNullable<MachineMark["hosted"]>;
+  className?: string | undefined;
+}) {
+  if (hosted.logo?.startsWith("data:image/") === true)
+    return (
+      <img
+        data-testid="hosted-mark"
+        data-mark="logo"
+        src={hosted.logo}
+        alt=""
+        aria-hidden
+        draggable={false}
+        className={cn("size-icon-chip shrink-0 rounded-2xs object-contain", className)}
+      />
+    );
+  return (
+    <span
+      data-testid="hosted-mark"
+      data-mark="letter"
+      aria-hidden
+      className={cn(
+        "flex size-icon-chip shrink-0 items-center justify-center rounded-2xs bg-muted text-caption leading-none font-semibold text-foreground",
+        className,
+      )}
+    >
+      {[...hosted.name.trim()][0]?.toLocaleUpperCase() ?? "?"}
+    </span>
+  );
+}
+
+/**
+ * The glyph of a mark: a machine, a server's cloud for a sent worker, or the hosted server's own
+ * mark for a worker's machine it gave; struck when out of reach.
+ */
 export function MarkGlyph({ mark, className }: { mark: MachineMark; className?: string }) {
+  if (mark.hosted !== undefined && mark.state === undefined)
+    return <HostedMark hosted={mark.hosted} className={className} />;
   if (mark.sent === true)
     return mark.state === "signed out" || mark.state === "not heard" ? (
       <CloudOff aria-hidden className={className} />
@@ -84,7 +127,9 @@ export function MachineMarker({
   const body = (
     <>
       <MarkGlyph mark={mark} className="size-icon-chip shrink-0" />
-      {words && mark.name !== undefined && <span className="min-w-0 truncate">{mark.name}</span>}
+      {words && mark.hosted === undefined && mark.name !== undefined && (
+        <span className="min-w-0 truncate">{mark.name}</span>
+      )}
       {words && mark.state !== undefined && <span className="shrink-0">{mark.state}</span>}
     </>
   );

@@ -1,5 +1,3 @@
-import { copyFileSync, existsSync, lstatSync } from "node:fs";
-import { join } from "node:path";
 import {
   type HostHello,
   HostUnavailable,
@@ -15,7 +13,6 @@ import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import { ServerConfig } from "../config.ts";
-import { privateJsonFile } from "../http/remote-sessions.ts";
 import { Socket } from "../platform/unstable.ts";
 import {
   createPairedMachines,
@@ -43,15 +40,22 @@ import { makeMachineUpdates, RETRY_MS, type UpdateRequest } from "./machine-upda
 import * as Schedule from "effect/Schedule";
 import * as FiberSet from "effect/FiberSet";
 import { watchedSocket } from "./socket-end.ts";
-import * as Schema from "effect/Schema";
 import {
-  MachineMarks,
   type MachineMarksByHost,
   makeStopMarks,
   type StopMarks,
   UNKNOWN_MARKS,
 } from "./stop-marks.ts";
 import { releaseOf, releaseOfConfig } from "./releases.ts";
+import {
+  type AutomaticStore,
+  fileAutomaticStore,
+  fileMarksStore,
+  lazyFileStore,
+  type MarksStore,
+} from "./remote-hosts-stores.ts";
+
+export type { AutomaticStore, MarksStore } from "./remote-hosts-stores.ts";
 
 /** A joined machine's host while it is dialled in. */
 interface Online {
@@ -67,154 +71,17 @@ interface Online {
   checking?: Promise<HostStatus | undefined> | undefined;
 }
 
+const hostedOf = (
+  machine: PairedMachine,
+  logos: ReadonlyMap<string, string>,
+): Pick<MachineState, "hosted"> => {
+  if (machine.via === undefined || machine.viaName === undefined) return {};
+  const logo = logos.get(machine.via);
+  return { hosted: { name: machine.viaName, ...(logo === undefined ? {} : { logo }) } };
+};
+
 /** How old a status check may be before a listing asks the machine again. */
 export const SIGN_IN_FRESH_MS = 60_000;
-
-/** A store, made on first write: a Gram no machine joined never makes the file or its folder. */
-const lazyFileStore = <R, W>(
-  dataDir: string,
-  name: string,
-  make: (dataDir: string) => { readonly read: () => R; readonly write: (value: W) => void },
-  empty: () => R,
-  /** Other files the store keeps, any of which being there means it was made. */
-  beside: ReadonlyArray<string> = [],
-) => {
-  let store: ReturnType<typeof make> | undefined;
-  const real = () => (store ??= make(dataDir));
-  return {
-    read: (): R =>
-      store === undefined &&
-      ![name, ...beside].some((file) => existsSync(join(dataDir, "remote-access", file)))
-        ? empty()
-        : real().read(),
-    write: (value: W) => real().write(value),
-  };
-};
-
-/** The automatic-updates switch, as kept: undefined until it is first set. */
-export interface AutomaticStore {
-  readonly read: () => boolean | undefined;
-  readonly write: (on: boolean) => void;
-}
-
-/**
- * The switch in `remote-access/machine-updates.json`, owner-only like the machines beside it. Only
- * a file that is genuinely not there reads as never set (on): anything else that stops it being
- * read (a folder it can't look into, a link, a file not its own or not a switch) throws, and
- * `automaticUpdates` reads that as off. Never `existsSync`, which says "absent" for all of those.
- */
-export const fileAutomaticStore = (dataDir: string): AutomaticStore => {
-  const name = "machine-updates.json";
-  const file = () => privateJsonFile(dataDir, name, 1024);
-  return {
-    read: () => {
-      // Each step without following a link: the folder, then the file in it.
-      for (const [path, folder] of [
-        [join(dataDir, "remote-access"), true],
-        [join(dataDir, "remote-access", name), false],
-      ] as const) {
-        let stat;
-        try {
-          stat = lstatSync(path);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-          throw error;
-        }
-        if (folder ? !stat.isDirectory() : !stat.isFile())
-          throw new Error(`${path} isn't a ${folder ? "folder" : "file"} of its own.`);
-      }
-      const value = file().read() as { version?: unknown; automatic?: unknown } | undefined;
-      if (value === undefined) throw new Error(`${name} went away while it was read.`);
-      if (value.version !== 1 || typeof value.automatic !== "boolean")
-        throw new Error(`${name} isn't a machine updates file.`);
-      return value.automatic;
-    },
-    write: (on) => file().write({ version: 1, automatic: on }),
-  };
-};
-
-/** The machines' stop marks and disks (`stop-marks.ts`), as kept across a restart. */
-export interface MarksStore {
-  /**
-   * Every machine's marks, and how many machines' marks were left out for not reading as marks;
-   * throws when what is kept can't be read at all.
-   */
-  readonly read: () => {
-    readonly machines: MachineMarksByHost;
-    readonly dropped: ReadonlyArray<string>;
-  };
-  /** Keeps a copy of what can't be read aside, for a person to look at. */
-  readonly quarantine?: () => void;
-  /** Throws when they couldn't be kept. */
-  readonly write: (all: MachineMarksByHost) => void;
-}
-
-/** The largest marks file read: a few machines' folders, never their diffs. */
-const MARKS_MAX_BYTES = 4 * 1024 * 1024;
-
-/**
- * The marks in `remote-access/machine-marks.json`, owner-only beside the machines, each write a
- * whole new file renamed over the old (`privateJsonFile`). A machine whose marks don't read as
- * marks is left out, so one bad entry costs only its own; a file that isn't marks at all throws.
- * A write that would come to more than is read back leaves out what stops kept of folders, which
- * only holds a resume to a commit, before the disks and what is owed; past that it throws.
- */
-export const fileMarksStore = (dataDir: string): MarksStore => {
-  const file = privateJsonFile(dataDir, "machine-marks.json", MARKS_MAX_BYTES);
-  const decode = Schema.decodeUnknownOption(MachineMarks);
-  const fits = (value: unknown) =>
-    Buffer.byteLength(JSON.stringify(value), "utf8") <= MARKS_MAX_BYTES;
-  return {
-    read: () => {
-      const value = file.read() as { version?: unknown; machines?: unknown } | undefined;
-      if (value === undefined) return { machines: {}, dropped: [] };
-      if (
-        value === null ||
-        typeof value !== "object" ||
-        Array.isArray(value) ||
-        value.version !== 1 ||
-        typeof value.machines !== "object" ||
-        value.machines === null ||
-        Array.isArray(value.machines)
-      )
-        throw new Error("machine-marks.json isn't a machine marks file.");
-      const machines: Record<string, MachineMarks> = {};
-      const dropped: Array<string> = [];
-      for (const [id, marks] of Object.entries(value.machines)) {
-        const decoded = decode(marks);
-        if (decoded._tag === "Some") machines[id] = decoded.value;
-        else dropped.push(id);
-      }
-      return { machines, dropped };
-    },
-    quarantine: () => {
-      const path = join(dataDir, "remote-access", "machine-marks.json");
-      try {
-        copyFileSync(path, `${path}.unreadable-${Date.now()}`);
-      } catch {
-        // Nothing to move, or it couldn't be: the next write replaces it.
-      }
-    },
-    write: (all) => {
-      const whole = { version: 1, machines: all };
-      if (fits(whole)) return file.write(whole);
-      // What only helps goes first: what stops kept (a resume then takes the remote's ref as it
-      // is), the threads to reopen, and those already back (which then wait for the resume). The
-      // disks, what is owed and the threads blocked are never left out.
-      const lean = {
-        version: 1,
-        machines: Object.fromEntries(
-          Object.entries(all).map(([id, marks]) => {
-            const { kept: _, rested: __, back: ___, ...rest } = marks;
-            return [id, rest];
-          }),
-        ),
-      };
-      if (!fits(lean)) throw new Error("The machines' marks don't fit in machine-marks.json.");
-      file.write(lean);
-    },
-  };
-};
 
 /**
  * A dial the route let through, pinned to the access it was let through under: the machine's
@@ -248,6 +115,12 @@ export interface RemoteHostsShape {
    * connected or dropped, or a dial of one was refused. Returns the unwatch.
    */
   readonly watch: (listener: () => void) => () => void;
+  /**
+   * Keeps the mark the hosted server at `origin` gave last (`WorkerMachineServer.logo`), for the
+   * machines that came through it to show in `states`; undefined forgets it. Kept in memory only:
+   * it is told again each time the server is asked for.
+   */
+  readonly hostedLogo?: (origin: string, logo: string | undefined) => void;
   /**
    * Runs `ready` when a machine's host says it is about to be taken away (`host.stop.going`), with
    * how long it waits: the host holds its exit until every `ready` has ended, or that time has
@@ -350,6 +223,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       };
       const machines = createPairedMachines(store, now, nonces, changed);
       const online = new Map<HostId, Online>();
+      const logos = new Map<string, string>();
       let readAccess: (() => DialAccess) | undefined;
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
@@ -788,8 +662,15 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 ...(live === undefined ? {} : { onlineSince: live.since }),
                 ...(offline === undefined ? {} : { offline }),
                 ...(live !== undefined || starting === undefined ? {} : { starting }),
+                ...hostedOf(machine, logos),
               };
             }),
+        hostedLogo: (origin, logo) => {
+          if (logos.get(origin) === logo) return;
+          if (logo === undefined) logos.delete(origin);
+          else logos.set(origin, logo);
+          changed();
+        },
         watch: (listener) => {
           watchers.add(listener);
           return () => {

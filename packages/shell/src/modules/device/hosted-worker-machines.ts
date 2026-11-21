@@ -14,6 +14,7 @@ import {
   type WorkerMachineServer,
 } from "@gram/contracts";
 import { dpopProof } from "./dpop.ts";
+import { hostedLogos } from "./hosted-logo.ts";
 import { type FencedCall, makeWorkerMachineFence } from "./worker-machine-fence.ts";
 import {
   authorizedCall,
@@ -225,6 +226,11 @@ export interface HostedWorkerMachines {
    */
   readonly workerMachineMarks: () => ReadonlyArray<WorkerMachineMarks>;
   /**
+   * The mark of the server signed in at `origin` (`WorkerMachineServer.logo`), fetched once for
+   * the app's run; undefined when it names none, or none the app could read.
+   */
+  readonly workerMachineLogo: (origin: string) => Promise<string | undefined>;
+  /**
    * One call about a worker's machine, with the person's sign-in. A pause holds back a start, never
    * a status, a release or a stop, which only look or give back.
    */
@@ -295,6 +301,7 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
   const { servers, known, callsOf } = deps;
   // One fence for every server's names: a stop never lands on what a newer start made.
   const fence = makeWorkerMachineFence();
+  const logos = hostedLogos();
   return {
     workerMachineServer: () => {
       const signedIn = [...servers()].filter(
@@ -344,6 +351,12 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
               },
             ],
       ),
+
+    workerMachineLogo: async (origin) => {
+      const server = known(origin);
+      if (server === undefined || server.keeper.signedOut()) return undefined;
+      return logos(origin, server.discovery, callsOf(server).fetch);
+    },
 
     workerMachineCall: async (origin, call, body, sendBy, account) => {
       const server = known(origin);

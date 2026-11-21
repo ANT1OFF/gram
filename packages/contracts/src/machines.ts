@@ -64,5 +64,13 @@ export const MachineState = Schema.Struct({
    * stopped one when it is wanted; set only while it is offline and something waits.
    */
   starting: Schema.optionalKey(Schema.Number),
+  /**
+   * The hosted server a provisioned host came through, for a worker's machine a desktop asked one
+   * for: the server's own name for itself, and its mark as a `data:` image where it gave one
+   * (`hosted-logo.ts`). A thread on it is said to run on that server's machine.
+   */
+  hosted: Schema.optionalKey(
+    Schema.Struct({ name: Schema.String, logo: Schema.optionalKey(Schema.String) }),
+  ),
 });
 export type MachineState = typeof MachineState.Type;

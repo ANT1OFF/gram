@@ -396,7 +396,11 @@ the server pairs the two only for the machine's owner. Its first frame to the ap
 frame after it is the host's, both ways, unchanged. `/status` answers `{ phase, message?,
 publicKey?, platform? }`: once it carries the host's key, the desktop registers the machine itself,
 as a worker host that came through that server, and takes its dial only from that server's relay.
-A machine that isn't online in five minutes is stopped with `/stop`. Release is the same pass as
+A machine that isn't online in five minutes is stopped with `/stop`. A thread on such a machine is
+shown as running on the server's machine, by the server's `name` and its optional `logo_uri`: an
+image on its own origin, which the app fetches without the sign-in and keeps only when its bytes
+are an SVG, PNG, WebP or JPEG of at most 16 KiB, or a `data:` image of the same. Without one the
+app draws the first letter of `name`. Release is the same pass as
 above, through the app. Its sessions' app tools never go to the server: they are carried over the
 host's own connection (`app-tools-tunnel`), to the desktop that placed them.
 

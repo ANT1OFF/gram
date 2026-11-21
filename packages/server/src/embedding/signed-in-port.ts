@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  isHostedLogo,
   WORKER_MACHINE_NAME,
   type WorkerMachineCall,
   type WorkerMachineMarks,
@@ -331,6 +332,7 @@ export const bridgeWorkerMachines = (
               server: {
                 origin: server.origin,
                 server: server.server,
+                ...(isHostedLogo(server.logo) ? { logo: server.logo } : {}),
                 ...(typeof server.account === "string" && server.account.length <= 64
                   ? { account: server.account }
                   : {}),

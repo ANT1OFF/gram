@@ -103,7 +103,15 @@ export interface PairedMachine {
    * after, released and stopped only under that sign-in. Absent on one registered before.
    */
   readonly viaAccount?: string;
+  /**
+   * The server at `via` as it named itself when the host was asked for (`MachineState.hosted`):
+   * only with `via`. Absent on one registered before.
+   */
+  readonly viaName?: string;
 }
+
+const isViaName = (name: unknown): name is string =>
+  typeof name === "string" && name.trim() !== "" && name.length <= 128;
 
 /** What an embedder started a host on demand for. */
 export type OnDemandKind = "personal" | "thread" | "worker";
@@ -200,6 +208,8 @@ export interface ProvisionRequest {
   readonly via?: string;
   /** The sign-in there it was asked for under (`PairedMachine.viaAccount`): only with `via`. */
   readonly viaAccount?: string;
+  /** The server at `via`, by its own name (`PairedMachine.viaName`): only with `via`. */
+  readonly viaName?: string;
 }
 
 export type ProvisionResult =
@@ -291,7 +301,8 @@ const isMachine = (value: unknown): value is PairedMachine => {
         isRelayOrigin(m["via"]) &&
         m["onDemand"] === "worker" &&
         m["owner"] === undefined)) &&
-    (m["viaAccount"] === undefined || (m["via"] !== undefined && isAccountMark(m["viaAccount"])))
+    (m["viaAccount"] === undefined || (m["via"] !== undefined && isAccountMark(m["viaAccount"]))) &&
+    (m["viaName"] === undefined || (m["via"] !== undefined && isViaName(m["viaName"])))
   );
 };
 
@@ -633,6 +644,11 @@ export const createPairedMachines = (
       // except a worker host a desktop asked a hosted server for: the desktop's, like a joined one.
       if (request.viaAccount !== undefined && !isAccountMark(request.viaAccount))
         return { kind: "refused", status: 400, message: "That sign-in mark isn't valid." };
+      if (
+        request.viaName !== undefined &&
+        (request.via === undefined || !isViaName(request.viaName))
+      )
+        return { kind: "refused", status: 400, message: "That server's name isn't valid." };
       if (request.via !== undefined) {
         if (
           !isRelayOrigin(request.via) ||
@@ -713,6 +729,7 @@ export const createPairedMachines = (
         ...(request.via === undefined || request.viaAccount === undefined
           ? {}
           : { viaAccount: request.viaAccount }),
+        ...(request.viaName === undefined ? {} : { viaName: request.viaName }),
       };
       save([...machines, machine]);
       return { kind: "provisioned", machine, created: true };

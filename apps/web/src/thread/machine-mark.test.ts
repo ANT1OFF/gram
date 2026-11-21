@@ -61,6 +61,31 @@ describe("a machine's mark", () => {
     );
   });
 
+  it("names a hosted server's worker machine by the server, its own name second", () => {
+    const WORKER = HostId.make("m-fedcba987654321001234567");
+    const hosted = { name: "Example Cloud" };
+    const online: MachineState = {
+      id: WORKER,
+      name: "worker-827d7eaf1e",
+      kind: "provisioned",
+      onlineSince: NOW - 12 * 60_000,
+      hosted,
+    };
+    expect(machineMark(WORKER, [online], NOW)).toEqual({
+      name: "worker-827d7eaf1e",
+      hosted,
+      words: "on Example Cloud's machine",
+      hint: "Runs on Example Cloud's machine\nworker-827d7eaf1e · Provisioned host · online for 12 minutes",
+    });
+    const { onlineSince: _, ...gone } = online;
+    const offline = machineMark(WORKER, [{ ...gone, offline: { kind: "lost", at: AT } }], NOW);
+    expect(offline.words).toBe("on Example Cloud's machine, offline");
+    expect(offline.hint.split("\n").slice(0, 2)).toEqual([
+      "Runs on Example Cloud's machine",
+      "worker-827d7eaf1e · Provisioned host · offline",
+    ]);
+  });
+
   it("says a machine is offline, why, and the fix, as Settings → Machines does", () => {
     expect(machineMark(STUDIO, machines, NOW)).toEqual({
       name: "studio",

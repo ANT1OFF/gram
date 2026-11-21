@@ -10,6 +10,7 @@ import {
   type RelaySocket,
 } from "./serve-machines.ts";
 
+const LOGO = `data:image/svg+xml;base64,${btoa("<svg/>")}`;
 const ORIGIN = "https://hosted.example.test";
 const NAME = "worker-0123456789";
 const HEADERS = {
@@ -65,6 +66,7 @@ const deviceFor = (
       };
     },
     workerMachineServer: () => ({ ok: true, server: { origin: ORIGIN, server: "Example" } }),
+    workerMachineLogo: async (origin: string) => (origin === ORIGIN ? LOGO : undefined),
     workerMachineMarks: () => [],
     workerMachineCall: async () => ({ ok: true, status: 202, body: answer }),
   }) as unknown as HostedDevice;
@@ -173,7 +175,7 @@ describe("the server's worker machine requests", () => {
     ).toEqual({
       type: "machines.response",
       id: "1",
-      result: { ok: true, server: { origin: ORIGIN, server: "Example" } },
+      result: { ok: true, server: { origin: ORIGIN, server: "Example", logo: LOGO } },
     });
     expect(
       await answerWorkerMachines(

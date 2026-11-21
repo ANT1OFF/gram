@@ -85,6 +85,9 @@ import {
   UNANSWERED_STOP_HOLD_MS,
   withName,
 } from "./worker-machine-stops.ts";
+import { plainName } from "./server-name.ts";
+
+export { plainName } from "./server-name.ts";
 
 export * from "./signed-in-fences.ts";
 export * from "./signed-in-port.ts";
@@ -107,20 +110,6 @@ export const WAKE_RETRY_MS = 5_000;
 /** How long a desktop waits for a hosted machine to join before it stops it. */
 export const ARRIVE_TIMEOUT_MS = 5 * 60_000;
 const ARRIVE_EVERY_MS = 2_000;
-
-/**
- * A server's name as an orchestrator reads it, in its prompt and its tools' words: one line of
- * printable text, at most 60 characters, so a name can't pass for instructions.
- */
-export const plainName = (name: string): string => {
-  const flat = [...name]
-    .map((char) => (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(char) ? " " : char))
-    .join("")
-    .replace(/\s+/g, " ")
-    .trim();
-  const cut = [...flat].slice(0, 60).join("");
-  return cut === "" ? "The hosted server" : cut;
-};
 
 /** What an orchestrator is told when the signed-in server's answer stops a machine joining. */
 const failedWords = (name: string, why: string) => `The machine ${name} didn't join: ${why}`;
@@ -599,6 +588,7 @@ export const signedInSource = (
                 onDemand: "worker",
                 via: origin,
                 ...viaField(),
+                viaName: plainName(server.server),
               });
               if (result.kind === "refused") return { failed: failedWords(name, result.message) };
               // Registered here: the release pass looks after it from now on.
@@ -829,8 +819,12 @@ export const SignedInWorkersLive = Layer.effect(
     // forgotten here, so its relay stops and its name is free.
     const misses = new Map<string, number>();
     const stopMisses = new Map<string, number>();
+    const heardFrom = (server: WorkerMachineServer) => {
+      hosts.hostedLogo?.(server.origin, server.logo);
+      return adopt(server);
+    };
     yield* port.server().pipe(
-      Effect.tap((answered) => Effect.sync(() => answered.ok && adopt(answered.server))),
+      Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
       Effect.andThen(forgetReclaimed(port, hosts, misses, asleep, sent)),
       // One the pass found stopped or failed is no longer among the relays told.
       Effect.tap(() => Effect.sync(() => sync(false))),
@@ -854,7 +848,7 @@ export const SignedInWorkersLive = Layer.effect(
       source: port.server().pipe(
         // What this sign-in made under its former marks is moved to its mark first, in one step,
         // before any source asks under it.
-        Effect.tap((answered) => Effect.sync(() => answered.ok && adopt(answered.server))),
+        Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
         Effect.map((answered) =>
           answered.ok
             ? {
