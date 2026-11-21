@@ -2,16 +2,11 @@
 // machine and which run of it the call is for (`sandboxId`, `generation`), as a start or a status
 // last named them, and the latest time the server may act on it (`notAfter`). Past either, the
 // server does nothing and says so (`superseded`, `expired`), so a call that came late never lands
-// on a newer start of its name. A server from before fences ignores them on a stop.
+// on a newer start of its name. A server from before fences ignores them on a stop, and refuses
+// a release that carries them (`400`): see `tellSignedInRelease`.
 
 import * as Effect from "effect/Effect";
-import type { WorkerMachinePortShape } from "./signed-in-port.ts";
-
-/** One run of a machine there, as `…/start` (202) and `…/status` (200) name it. */
-export interface MachineRun {
-  readonly sandboxId: string;
-  readonly generation: number;
-}
+import type { MachineRun, WorkerMachinePortShape } from "./signed-in-port.ts";
 
 /** A sandbox id as the server makes them: an opaque id of letters, digits and `_ . : -`. */
 const SANDBOX_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
@@ -53,6 +48,19 @@ export const fenceRefusalOf = (
  */
 export const RELEASE_ACTS_WITHIN_MS = 60_000;
 
+/** Whether two runs, either of them none (`null` or undefined), are the same one. */
+export const sameRun = (a: MachineRun | null | undefined, b: MachineRun | null | undefined) =>
+  a === undefined || a === null
+    ? b === undefined || b === null
+    : b !== undefined && b !== null && a.sandboxId === b.sandboxId && a.generation === b.generation;
+
+/** The answer a call given a run (`run`) gets here, unsent, once its name is known as another. */
+export const SUPERSEDED_HERE = { ok: true, status: 200, body: { code: "superseded" } } as const;
+
+/** A run is known by server, name and sign-in. */
+const keyOf = (origin: string, name: string, account: string | undefined) =>
+  JSON.stringify([origin, name, account ?? null]);
+
 /** The most runs kept: one per machine name a server named lately. */
 const RUNS_MOST = 512;
 
@@ -61,45 +69,64 @@ const RUNS_MOST = 512;
  * the run each start and status names. A run is known by server, name and sign-in: what one
  * sign-in was told is never another's. One said `superseded` is forgotten, so the call is asked
  * again with its `notAfter` alone, held to the run the name is now; one stopped is forgotten too.
- * After a restart none is known until a start or a status names it.
+ * After a restart none is known until a start or a status names it. A call given its run (`run`,
+ * a release's as it was decided) carries that one on every ask, and goes only while its name is
+ * still known as that run: otherwise it is answered `superseded` here (`SUPERSEDED_HERE`) and
+ * never sent, so it never lands on a newer run. A stop or a release answered `expired` is logged:
+ * a clock here behind the server's would have every one so.
  */
 export const fencedCalls = (port: WorkerMachinePortShape): WorkerMachinePortShape => {
   const runs = new Map<string, MachineRun>();
   return {
     ...port,
+    knownRun: (origin, name, account) => runs.get(keyOf(origin, name, account)) ?? null,
     call: (origin, call, body, options) => {
       const name = body["name"];
       if (typeof name !== "string") return port.call(origin, call, body, options);
-      const key = JSON.stringify([origin, name, options?.account ?? null]);
-      const run = call === "stop" || call === "release" ? runs.get(key) : undefined;
+      const key = keyOf(origin, name, options?.account);
+      const fenced = call === "stop" || call === "release";
+      const pinned = fenced ? options?.run : undefined;
+      // Decided for a run its name is no longer known as: nothing is sent.
+      if (pinned !== undefined && !sameRun(runs.get(key), pinned))
+        return Effect.succeed(SUPERSEDED_HERE);
+      const run = !fenced
+        ? undefined
+        : pinned !== undefined
+          ? (pinned ?? undefined)
+          : runs.get(key);
       const sent = run === undefined ? body : { ...body, ...run };
       return port.call(origin, call, sent, options).pipe(
-        Effect.tap((answered) =>
-          Effect.sync(() => {
-            if (!answered.ok) return;
-            if (
-              (call === "start" && answered.status === 202) ||
-              (call === "status" && answered.status === 200)
-            ) {
-              const named = runOf(answered.body);
-              if (named === undefined) return;
-              runs.delete(key);
-              runs.set(key, named);
-              if (runs.size > RUNS_MOST) runs.delete(runs.keys().next().value!);
-              return;
-            }
-            const refused = fenceRefusalOf(answered);
-            // The run it named is no more: forgotten, unless a newer one was told meanwhile.
-            if (refused === "superseded" && run !== undefined && runs.get(key) === run)
-              runs.delete(key);
-            const stopped =
-              call === "stop" &&
-              answered.status < 300 &&
-              refused === undefined &&
-              (answered.body as { stopped?: unknown } | null)?.stopped === true;
-            if (stopped && runs.get(key) === run) runs.delete(key);
-          }),
-        ),
+        Effect.tap((answered) => {
+          if (!answered.ok) return Effect.void;
+          if (
+            (call === "start" && answered.status === 202) ||
+            (call === "status" && answered.status === 200)
+          ) {
+            const named = runOf(answered.body);
+            if (named === undefined) return Effect.void;
+            runs.delete(key);
+            runs.set(key, named);
+            if (runs.size > RUNS_MOST) runs.delete(runs.keys().next().value!);
+            return Effect.void;
+          }
+          const refused = fenceRefusalOf(answered);
+          // The run it named is no more: forgotten, unless a newer one was told meanwhile.
+          if (refused === "superseded" && run !== undefined && sameRun(runs.get(key), run))
+            runs.delete(key);
+          const stopped =
+            call === "stop" &&
+            answered.status < 300 &&
+            refused === undefined &&
+            (answered.body as { stopped?: unknown } | null)?.stopped === true;
+          if (stopped && sameRun(runs.get(key), run)) runs.delete(key);
+          // Its `notAfter` had passed by the server's clock: one now and then is a slow call, every
+          // one a clock here behind the server's by more than the margin left for it.
+          return fenced && refused === "expired"
+            ? Effect.logWarning(
+                "a worker machine's call came after its time there: this machine's clock may be behind the server's",
+              ).pipe(Effect.annotateLogs({ machine: name, call }))
+            : Effect.void;
+        }),
       );
     },
   };

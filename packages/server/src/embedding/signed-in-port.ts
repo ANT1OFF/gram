@@ -26,6 +26,12 @@ export const NO_SIGNED_IN_SERVER =
 
 export type Refused = { readonly ok: false; readonly why: string; readonly signIn?: true };
 
+/** One run of a machine there, as `…/start` (202) and `…/status` (200) name it. */
+export interface MachineRun {
+  readonly sandboxId: string;
+  readonly generation: number;
+}
+
 export interface WorkerMachinePortShape {
   /** Whether there is an app to ask at all. */
   readonly available: boolean;
@@ -45,11 +51,24 @@ export interface WorkerMachinePortShape {
     origin: string,
     call: WorkerMachineCall,
     body: Readonly<Record<string, unknown>>,
-    /** The latest time the app may send it (`WorkerMachineOp`'s `sendBy`). */
-    options?: { readonly sendBy?: number; readonly account?: string | undefined },
+    options?: {
+      /** The latest time the app may send it (`WorkerMachineOp`'s `sendBy`). */
+      readonly sendBy?: number;
+      readonly account?: string | undefined;
+      /**
+       * A release's run as it was when the release was decided (`knownRun`), `null` for none
+       * known: sent as it is, on every ask. Read only where calls are fenced (`fencedCalls`).
+       */
+      readonly run?: MachineRun | null | undefined;
+    },
   ) => Effect.Effect<
     { readonly ok: true; readonly status: number; readonly body: unknown } | Refused
   >;
+  /**
+   * The run a name was last known to be under a sign-in there, `null` for none: only where calls
+   * are fenced (`fencedCalls`).
+   */
+  readonly knownRun?: (origin: string, name: string, account?: string) => MachineRun | null;
   /**
    * Asks the app to carry this machine's connection, dialling its relay again whenever it ends:
    * under the sign-in `account` alone, where one is given.

@@ -4,7 +4,7 @@
 
 import * as Effect from "effect/Effect";
 import { fenceRefusalOf, RELEASE_ACTS_WITHIN_MS } from "./signed-in-fences.ts";
-import type { Refused, WorkerMachinePortShape } from "./signed-in-port.ts";
+import type { MachineRun, Refused, WorkerMachinePortShape } from "./signed-in-port.ts";
 import { codeOf, isNotFound, type NameLocks, withName } from "./worker-machine-stops.ts";
 
 /** How many times a start the server is unavailable for (`503`) is asked, and the first wait. */
@@ -253,19 +253,39 @@ export const wakeSignedIn = (
   });
 
 /**
+ * A release the server refused as malformed (`400`), as a server from before fences answers one
+ * that carries them. Not told: it stays to be told, and is never sent without its fences, since
+ * one without could land on a newer run of the name (`releaseTeller` waits longer each time).
+ */
+export class ReleaseRefused extends Error {}
+
+/**
  * Tells a signed-in server a worker machine's work is over, or going on again. `missing`: answered
  * `404 not_found`, which a server says of a machine it reclaimed, but also for a while of every
  * machine while it has no backend or the workspace no backend: never taken as the machine gone
- * (`isNotFound`). Any other 404 is asked again, as a busy server is.
+ * (`isNotFound`). Any other 404 is asked again, as a busy server is. `run`: the machine's run as
+ * it was when the release was decided (`knownRun`), read here first when not given; every ask
+ * carries that run, and none goes once the name is known as another. Then, or when the server
+ * says the name is another run now, its status is read again, so what it is now is known, and the
+ * release isn't told: the next pass decides it afresh, for that run.
  */
 export const tellSignedInRelease = (
   port: WorkerMachinePortShape,
   machine: { readonly name: string; readonly via: string; readonly account?: string | undefined },
   released: boolean,
-  options: { readonly retryMs?: number; readonly attempts?: number } = {},
+  options: {
+    readonly retryMs?: number;
+    readonly attempts?: number;
+    readonly run?: MachineRun | null | undefined;
+  } = {},
 ): Effect.Effect<"applied" | "missing", Error> =>
   Effect.gen(function* () {
     const attempts = options.attempts ?? RELEASE_ATTEMPTS;
+    // Taken once, never again at a retry: a run started since is never this release's.
+    const run =
+      options.run !== undefined
+        ? options.run
+        : port.knownRun?.(machine.via, machine.name, machine.account);
     let last = "no answer";
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       // A server too busy, or no answer: asked again after a wait that doubles.
@@ -281,7 +301,7 @@ export const tellSignedInRelease = (
           // Reached later, it does nothing, and is told again: never on a newer start of the name.
           notAfter: Date.now() + RELEASE_ACTS_WITHIN_MS,
         },
-        { account: machine.account },
+        { account: machine.account, ...(run === undefined ? {} : { run }) },
       );
       if (!answered.ok) {
         last = "no answer";
@@ -292,6 +312,8 @@ export const tellSignedInRelease = (
         last = answered.status === 503 ? "the server is busy" : "the server answered 404";
         continue;
       }
+      if (answered.status === 400)
+        return yield* Effect.fail(new ReleaseRefused("the server refused it as malformed"));
       if (answered.status >= 300)
         return yield* Effect.fail(new Error(`the server answered ${answered.status}`));
       // A 2xx that says it knows no such machine changed nothing there: told again next pass.
@@ -301,7 +323,8 @@ export const tellSignedInRelease = (
           : undefined;
       if (known === false) return yield* Effect.fail(new Error("the server knows no such machine"));
       // Its fence held it back, so nothing changed there. Late: asked again now, in time. The
-      // name another run now: told again next pass, decided afresh, for the run it is then.
+      // name another run now: its status read again, and told again next pass, decided afresh,
+      // for the run it is then.
       const fenced = fenceRefusalOf(answered);
       if (fenced === "expired") {
         last = "it came after its time";
@@ -311,8 +334,15 @@ export const tellSignedInRelease = (
         typeof answered.body === "object" && answered.body !== null
           ? (answered.body as { applied?: unknown }).applied
           : undefined;
-      if (fenced === "superseded" || applied === false)
+      if (fenced === "superseded" || applied === false) {
+        yield* port.call(
+          machine.via,
+          "status",
+          { name: machine.name },
+          { account: machine.account },
+        );
         return yield* Effect.fail(new Error("the server applied it to no run of the machine"));
+      }
       return "applied" as const;
     }
     // Only what went wrong, in a few words: what a server answers isn't written to the log.
