@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.35.0](https://github.com/ANT1OFF/gram/compare/v1.34.0...v1.35.0) (2026-11-21)
+
+
+### Features
+
+* **embed:** the title bar and tab say Not found on an address with no page ([#956](https://github.com/ANT1OFF/gram/issues/956)) ([ee9b3f0](https://github.com/ANT1OFF/gram/commit/ee9b3f04bb0a7ce48357abed81ee51fe510f8a7c))
+
+
+### Bug Fixes
+
+* **git:** pin checked origin URLs and neutralise repository HTTP transport keys ([#951](https://github.com/ANT1OFF/gram/issues/951)) ([9534a5b](https://github.com/ANT1OFF/gram/commit/9534a5b58c1e594ce1c9341a0aa74e7fb939df9c))
+* **server:** say a hosted PR waits for its base's declared CI ([#953](https://github.com/ANT1OFF/gram/issues/953)) ([449f7a3](https://github.com/ANT1OFF/gram/commit/449f7a3af2259768b580ed5257047ab14ec612bf))
+* **server:** the event sink's backfill never sends a reply still streaming ([#957](https://github.com/ANT1OFF/gram/issues/957)) ([1a4cbf6](https://github.com/ANT1OFF/gram/commit/1a4cbf6e3386d2f83f423e3eebdfb73110c255df))
+
+
+### Performance Improvements
+
+* **host:** a host for one agent starts its first session sooner ([#955](https://github.com/ANT1OFF/gram/issues/955)) ([c0ad1be](https://github.com/ANT1OFF/gram/commit/c0ad1be243c8de993485a6457943cae067ebdd15))
+
 ## [1.34.0](https://github.com/ANT1OFF/gram/compare/v1.33.0...v1.34.0) (2026-11-21)
 
 
