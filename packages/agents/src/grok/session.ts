@@ -80,8 +80,23 @@ export const GROK_AGENT_ARGS = [
 
 const unavailable = (message: string) => new AgentUnavailable({ agent: "grok", message });
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+const DETAIL_LIMIT = 500;
+
+const detailOf = (error: unknown): string | undefined => {
+  if (!(error instanceof AcpError)) return undefined;
+  const data = error.data;
+  const raw = typeof data === "string" ? data : record(data)["message"];
+  if (typeof raw !== "string") return undefined;
+  const detail = raw.trim().slice(0, DETAIL_LIMIT);
+  return detail === "" || detail === error.message ? undefined : detail;
+};
+
+const baseOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const messageOf = (error: unknown): string => {
+  const detail = detailOf(error);
+  return detail === undefined ? baseOf(error) : `${baseOf(error)}: ${detail}`;
+};
 
 /** What a failed start or session says when the CLI has no usable sign-in. */
 export const SIGN_IN_MESSAGE =
@@ -90,10 +105,8 @@ export const SIGN_IN_MESSAGE =
 const signInProblem = (message: string): boolean =>
   /auth|sign[ -]?in|log ?in|unauthori[sz]ed|credential|token expired/i.test(message);
 
-const failure = (what: string, error: unknown) => {
-  const message = messageOf(error);
-  return unavailable(signInProblem(message) ? SIGN_IN_MESSAGE : `${what}: ${message}`);
-};
+const failure = (what: string, error: unknown) =>
+  unavailable(signInProblem(baseOf(error)) ? SIGN_IN_MESSAGE : `${what}: ${messageOf(error)}`);
 
 export interface GrokHostConfig {
   /** The `grok` executable; fails when it isn't installed. */
@@ -469,10 +482,13 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
           )
           .then(
             (result) => emit(current.ended(text(record(result)["stopReason"]))),
-            (error: unknown) => {
-              const message = messageOf(error);
-              emit(current.ended(undefined, signInProblem(message) ? SIGN_IN_MESSAGE : message));
-            },
+            (error: unknown) =>
+              emit(
+                current.ended(
+                  undefined,
+                  signInProblem(baseOf(error)) ? SIGN_IN_MESSAGE : messageOf(error),
+                ),
+              ),
           );
         turn = running;
         void running.finally(() => {
@@ -599,16 +615,14 @@ export const makeGrokHost = (config: GrokHostConfig): Effect.Effect<AgentHost> =
             await connection.stop();
           }
         },
-        catch: (error) => {
-          const message = messageOf(error);
-          return signInProblem(message)
+        catch: (error) =>
+          signInProblem(baseOf(error))
             ? new AgentUnavailable({
                 agent: "grok",
                 reason: "not-logged-in",
                 message: SIGN_IN_MESSAGE,
               })
-            : failure("Couldn't read Grok Build's plan usage", error);
-        },
+            : failure("Couldn't read Grok Build's plan usage", error),
       });
     }),
     readSession: ({ cwd, agentSessionId, limit }) =>

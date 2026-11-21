@@ -141,13 +141,13 @@ const StubFreezes = Layer.succeed(MergeFreezes, {
         ? freeze
         : undefined;
     }),
-  holding: (repo, branch, number) =>
+  holding: (repo, branch, number, workspaceId) =>
     Effect.sync(() => {
       const freeze = standingFreeze.current;
       return freeze !== undefined &&
         freeze.repo === repo &&
         (branch === undefined || freeze.branch === branch) &&
-        mergeFreezeHolds(freeze, number)
+        mergeFreezeHolds(freeze, number, workspaceId)
         ? freeze
         : undefined;
     }),
