@@ -21,7 +21,7 @@ export const makeMergeFreezeTool = Effect.gen(function* () {
     descriptor: {
       name: "merge_freeze",
       class: "self",
-      description: `Freeze your workspace's Gram merges (\`acrossWorkspaces: true\`, on the user's yes: every workspace's) onto a branch of a workspace \`repo\` (default: your PR's; \`branch\`: its default) for a \`reason\`, up to ${MERGE_FREEZE_MAX_MINUTES} \`minutes\`; call again to renew, 4 h at most. merge_when_ready waits and set_auto_merge refuses, except PRs in \`allow\`; GitHub auto-merge on Gram's PRs is off meanwhile, then restored on the head it stood on (a PR pushed meanwhile stays off; its thread is told). A person, a merge queue or other PRs' auto-merge can still merge. \`lift: true\` ends it (its thread or orchestrator). Wait with schedule_wake's freezeLifted.`,
+      description: `Freeze your workspace's Gram merges (\`acrossWorkspaces: true\`, on the user's yes: all) onto a branch of a workspace \`repo\` (default: your PR's; \`branch\`: its default) for a \`reason\`, up to ${MERGE_FREEZE_MAX_MINUTES} \`minutes\`; call again to renew, 4 h at most. merge_when_ready waits and set_auto_merge refuses, except PRs in \`allow\`; GitHub auto-merge on Gram's PRs is off meanwhile, then restored on the head it stood on (a PR pushed meanwhile stays off; its thread is told). A person, a merge queue or other PRs' auto-merge can still merge. \`lift: true\` ends it (its thread or orchestrator). Wait with schedule_wake's freezeLifted.`,
     },
     audience: ["orchestrator", "worker"],
     input: Schema.Struct({
