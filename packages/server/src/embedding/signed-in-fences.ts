@@ -1,4 +1,4 @@
-// The fences a desktop's late stop or release carries to a hosted server (RunHeim#2160): which
+// The fences a desktop's late stop or release carries to a hosted server: which
 // machine and which run of it the call is for (`sandboxId`, `generation`), as a start or a status
 // last named them, and the latest time the server may act on it (`notAfter`). Past either, the
 // server does nothing and says so (`superseded`, `expired`), so a call that came late never lands

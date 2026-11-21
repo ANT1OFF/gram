@@ -1,4 +1,4 @@
-// The fences a desktop's late stop or release carries to a hosted server (RunHeim#2160), through
+// The fences a desktop's late stop or release carries to a hosted server, through
 // the port this Gram asks the app over: a fake app and server, no network, no real machine.
 
 import { describe, expect, it } from "@effect/vitest";
