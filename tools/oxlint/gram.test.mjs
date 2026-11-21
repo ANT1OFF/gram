@@ -971,6 +971,39 @@ describe("settings-entry", () => {
   });
 });
 
+describe("remote-git-only", () => {
+  const rule = "gram/remote-git-only";
+
+  it("refuses git that reaches a remote spelled outside remoteGit", () => {
+    const found = lint(
+      `git(cwd, ["fetch", "--quiet", "origin", branch]);
+      g(own, ["-c", "protocol.file.allow=always", "fetch", url, sha]);
+      const args = ok ? ["push", "--quiet"] : ["push", "-u", "origin", branch];
+      proc.run("git", ["ls-remote", "origin"], options);
+      git(cwd, [...globals, "submodule", "update", "--init"]);
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 2, 3, 3, 4, 5]);
+  });
+
+  it("allows remoteGit, a remote… wrapper of it, and git that stays local", () => {
+    expect(
+      lint(
+        `remoteGit(cwd, ["fetch", "--quiet", "origin", branch]);
+        remoteG(own, ["-c", "protocol.file.allow=always", "fetch", url, sha]);
+        remoteGit(cwd, ok ? ["push", "--quiet"] : ["push", "-u", "origin", branch]);
+        git(cwd, ["remote", "get-url", "origin"]);
+        git(cwd, ["submodule", "status"]);
+        const action = ["push"];
+        Schema.Literals(["push", "create_pr", "merge"]);
+      `,
+        rule,
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("no-raw-git", () => {
   const rule = "gram/no-raw-git";
 

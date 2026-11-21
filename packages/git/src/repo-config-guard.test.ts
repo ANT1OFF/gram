@@ -421,6 +421,21 @@ describe("guardFor", () => {
     ]);
   });
 
+  it("runs no LFS transfer agent or extension a repository names", () => {
+    const guard = guardFor([
+      { scope: "local", key: "lfs.customtransfer.planted.path", value: "/tmp/planted" },
+      { scope: "local", key: "lfs.standalonetransferagent", value: "planted" },
+      { scope: "worktree", key: "lfs.extension.planted.smudge", value: "/tmp/planted %f" },
+    ]);
+    expect(guard.pairs).toEqual(
+      expect.arrayContaining([
+        ["lfs.customtransfer.planted.path", "false"],
+        ["lfs.standalonetransferagent", ""],
+        ["lfs.extension.planted.smudge", "cat"],
+      ]),
+    );
+  });
+
   it("rebuilds a credential helper list from the user's helpers alone", () => {
     const guard = guardFor([
       { scope: "global", key: "credential.helper", value: "osxkeychain" },

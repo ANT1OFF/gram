@@ -1,6 +1,7 @@
 import {
   git,
   isValidGitRefCharset,
+  remoteGit,
   Proc,
   type ProcShape,
   WorktreeError,
@@ -66,7 +67,7 @@ export const cloneWorktrees = (
       const name = remote ?? base;
       const valid = yield* git(repo, ["check-ref-format", `refs/heads/${name}`]);
       if (valid.status !== 0) return yield* unavailable();
-      const fetched = yield* git(
+      const fetched = yield* remoteGit(
         repo,
         [
           "-c",

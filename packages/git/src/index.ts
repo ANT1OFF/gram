@@ -40,6 +40,7 @@ export * from "./rate-limit.ts";
 export * from "./rate-limit-headers.ts";
 export * from "./rate-limit-probe.ts";
 export * from "./refs.ts";
+export * from "./remote-git.ts";
 export * from "./repo-facts.ts";
 export * from "./review-actions.ts";
 export * from "./review-bots.ts";

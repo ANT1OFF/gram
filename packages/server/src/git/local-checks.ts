@@ -28,6 +28,7 @@ import {
   PathProbe,
   Proc,
   realPathSync,
+  remoteGit,
   type ProcOutput,
 } from "@gram/git";
 import * as Cause from "effect/Cause";
@@ -63,7 +64,6 @@ import {
   verifySelectedWorktree,
 } from "./selected-source.ts";
 import {
-  isGitControl,
   LEADERLESS_WAITS,
   LocalCheckFailure,
   markRetained,
@@ -85,6 +85,7 @@ import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { dropOldest } from "../bounded.ts";
 import { DAY_MS } from "../zone-time.ts";
 import { evidenceBytes, removeEvidence } from "./check-evidence.ts";
+import { isolatedGitOptions, ranOn } from "./isolated-git.ts";
 import { makeAdmission } from "./keyed-lock.ts";
 
 export {
@@ -442,24 +443,7 @@ export const materializeSelectedPublisher = (
     const selection = selectedSourceManifest(preparation, head, base, tree).entries;
     const proc = yield* Proc;
     const g: SelectedGit = (args, env, more) =>
-      git(dir, args, {
-        ...more,
-        omitEnv: isGitControl,
-        env: {
-          GIT_TERMINAL_PROMPT: "0",
-          GIT_NO_REPLACE_OBJECTS: "1",
-          GIT_GRAFT_FILE: "/dev/null",
-          GIT_CONFIG_NOSYSTEM: "1",
-          GIT_CONFIG_GLOBAL: "/dev/null",
-          GIT_NO_LAZY_FETCH: "1",
-          GIT_ATTR_NOSYSTEM: "1",
-          ...env,
-        },
-      }).pipe(
-        Effect.provideService(Proc, proc),
-        Effect.option,
-        Effect.map((out) => (out._tag === "Some" ? out.value : undefined)),
-      );
+      ranOn(proc)(git(dir, args, isolatedGitOptions({ ...PRIVATE_GIT_ENV, ...env }, more)));
     const identity = requiredPublisherGit(yield* g(["rev-parse", "HEAD", "HEAD^{tree}"]))
       .trim()
       .split("\n");
@@ -744,6 +728,13 @@ const fixedIdentity = {
   GIT_COMMITTER_DATE: "1970-01-01T00:00:00Z",
 };
 
+const PRIVATE_TREE_ENV = {
+  GIT_CONFIG_NOSYSTEM: "1",
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_NO_LAZY_FETCH: "1",
+};
+const PRIVATE_GIT_ENV = { ...PRIVATE_TREE_ENV, GIT_ATTR_NOSYSTEM: "1" };
+
 // Shared native metadata-first selected tree preparation; both LocalChecks
 // and the explicit private-publisher entry use this identical path.
 type SelectedTreeGit = (
@@ -760,6 +751,7 @@ const selectedTreeOf = (
   fetch: boolean,
   preparation: NonNullable<ProjectLocalCheck["preparation"]>,
   g: SelectedTreeGit,
+  remoteG: SelectedTreeGit,
   hasCommit: (dir: string, sha: string, noLazy?: boolean) => Effect.Effect<boolean>,
   trees: Map<string, string | null>,
 ) =>
@@ -784,7 +776,7 @@ const selectedTreeOf = (
     // Git otherwise silently falls back to a full fetch if the server
     // does not advertise filtering. Check the local upload-pack's v2
     // capability before requesting any candidate objects.
-    const advertise = yield* g(
+    const advertise = yield* remoteG(
       own,
       [
         "-c",
@@ -807,7 +799,7 @@ const selectedTreeOf = (
       return undefined;
     for (const sha of [head, base]) {
       if (yield* hasCommit(own, sha, true)) continue;
-      const result = yield* g(
+      const result = yield* remoteG(
         own,
         [
           "-c",
@@ -884,7 +876,7 @@ const selectedTreeOf = (
     if (fetch) {
       const blobs = [...needed];
       for (let offset = 0; offset < blobs.length; offset += 128) {
-        const result = yield* g(
+        const result = yield* remoteG(
           own,
           [
             "-c",
@@ -939,24 +931,12 @@ export const prepareSelectedPrivatePublisher = (
       throw new Error("private selected publisher paths are not fresh and owned");
     selectedSourceManifest(preparation, head, base, tree);
     const proc = yield* Proc;
-    const g: SelectedTreeGit = (cwd, args, env, more) =>
-      git(cwd, args, {
-        ...more,
-        omitEnv: isGitControl,
-        env: {
-          GIT_TERMINAL_PROMPT: "0",
-          GIT_NO_REPLACE_OBJECTS: "1",
-          GIT_GRAFT_FILE: "/dev/null",
-          GIT_CONFIG_NOSYSTEM: "1",
-          GIT_CONFIG_GLOBAL: "/dev/null",
-          GIT_NO_LAZY_FETCH: "1",
-          ...env,
-        },
-      }).pipe(
-        Effect.provideService(Proc, proc),
-        Effect.option,
-        Effect.map((out) => (out._tag === "Some" ? out.value : undefined)),
-      );
+    const via =
+      (spawn: typeof git): SelectedTreeGit =>
+      (cwd, args, env, more) =>
+        ranOn(proc)(spawn(cwd, args, isolatedGitOptions({ ...PRIVATE_TREE_ENV, ...env }, more)));
+    const g = via(git);
+    const remoteG = via(remoteGit);
     requirePreparedGit(yield* g(own, ["init", "--quiet", "--bare", "--template=", own]));
     const hasCommit = (dir: string, sha: string, noLazy = false) =>
       g(
@@ -972,6 +952,7 @@ export const prepareSelectedPrivatePublisher = (
       true,
       preparation,
       g,
+      remoteG,
       hasCommit,
       new Map(),
     );
@@ -1119,26 +1100,13 @@ export const LocalChecksLive = Layer.effect(
     // names. Replace refs and grafts are ignored besides, no hook runs, and no git variable Gram
     // inherited points it elsewhere (`isGitControl`); what the user's own global and system git
     // config do (LFS, say) still applies, as it does for any git they run.
-    const g = (
-      cwd: string,
-      args: ReadonlyArray<string>,
-      env?: Record<string, string>,
-      more?: { readonly stdin?: string; readonly tier?: "local" | "slow" },
-    ) =>
-      git(cwd, args, {
-        ...more,
-        omitEnv: isGitControl,
-        env: {
-          GIT_TERMINAL_PROMPT: "0",
-          GIT_NO_REPLACE_OBJECTS: "1",
-          GIT_GRAFT_FILE: "/dev/null",
-          ...env,
-        },
-      }).pipe(
-        Effect.provideService(Proc, proc),
-        Effect.option,
-        Effect.map((out) => (out._tag === "Some" ? out.value : undefined)),
-      );
+    const ran = ranOn(proc);
+    const via =
+      (spawn: typeof git): SelectedTreeGit =>
+      (cwd, args, env, more) =>
+        ran(spawn(cwd, args, isolatedGitOptions(env, more)));
+    const g = via(git);
+    const remoteG = via(remoteGit);
     const configuration: LocalChecksShape["configuration"] = (repoDir, projectId) =>
       Effect.gen(function* () {
         if (typeof repoDir !== "string") return yield* machineConfiguration(repoDir, projectId);
@@ -1221,18 +1189,30 @@ export const LocalChecksLive = Layer.effect(
     /** Fetches `sha` into Gram's repository from `repoDir`'s, after fetching it there if need be. */
     const fetchInto = (own: string, repoDir: string, sha: string) =>
       Effect.gen(function* () {
-        const take = g(own, [
-          "-c",
-          "protocol.file.allow=always",
-          "fetch",
-          "--no-tags",
-          "--quiet",
-          pathToFileURL(repoDir).href,
-          sha,
-        ]);
+        const take = ran(
+          remoteGit(
+            own,
+            [
+              "-c",
+              "protocol.file.allow=always",
+              "fetch",
+              "--no-tags",
+              "--quiet",
+              pathToFileURL(repoDir).href,
+              sha,
+            ],
+            isolatedGitOptions(),
+          ),
+        );
         yield* take;
         if (yield* hasCommit(own, sha)) return true;
-        yield* g(repoDir, ["fetch", "--no-tags", "--quiet", "origin", sha]);
+        yield* ran(
+          remoteGit(
+            repoDir,
+            ["fetch", "--no-tags", "--quiet", "origin", sha],
+            isolatedGitOptions(),
+          ),
+        );
         yield* take;
         return yield* hasCommit(own, sha);
       });
@@ -1259,6 +1239,7 @@ export const LocalChecksLive = Layer.effect(
             fetch,
             wanted.preparation,
             g,
+            remoteG,
             hasCommit,
             trees,
           );

@@ -33,6 +33,7 @@ import {
 import { expandHome, fromGitPath, isDir, mtimeMs, samePathKey, tryRealPathSync } from "./paths.ts";
 import { Proc } from "./proc.ts";
 import { listBaseRefs, localBaseRef, originBaseRef } from "./refs.ts";
+import { remoteGit } from "./remote-git.ts";
 import { copyWorktreeIncludes } from "./worktree-include.ts";
 import {
   isUntrustedWorktree,
@@ -552,7 +553,7 @@ const originBranch = (repoTop: string, branch: string) =>
       Effect.mapError(toFailed),
     );
     if (url.status !== 0) return "absent" as const;
-    const out = yield* git(
+    const out = yield* remoteGit(
       repoTop,
       [
         "-c",
@@ -635,7 +636,7 @@ export const restoreWorktree = (request: RestoreWorktreeRequest) =>
       // Asked of origin itself: a remote-tracking ref can outlive the branch GitHub deleted.
       const remote = yield* originBranch(repoTop, branch);
       if (remote === "present") {
-        const fetched = yield* git(
+        const fetched = yield* remoteGit(
           repoTop,
           ["fetch", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`],
           { tier: "network" },
@@ -651,7 +652,7 @@ export const restoreWorktree = (request: RestoreWorktreeRequest) =>
         // A ref of its own rather than the shared `FETCH_HEAD`, which a sibling worktree's
         // background fetch can overwrite between the fetch and the read.
         const ref = `refs/gram/restore/pr-${request.fromPr}-${process.pid}-${Date.now()}`;
-        const fetched = yield* git(
+        const fetched = yield* remoteGit(
           repoTop,
           ["fetch", "origin", `+refs/pull/${request.fromPr}/head:${ref}`],
           { tier: "network" },

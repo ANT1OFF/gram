@@ -2,8 +2,9 @@
 // another transport is the project's own, and only behind a GitHub route is another one refused.
 import { describe, expect, it } from "@effect/vitest";
 import type { Project } from "@gram/contracts";
-import { ProcLive } from "@gram/git";
+import { Proc, ProcLive, ProcTimeout } from "@gram/git";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { vi } from "vitest";
 import { cloneIdentityOf } from "../host/repos.ts";
 import { effectiveOriginsChecked, recordedCloneIdentity } from "./recorded-clone.ts";
@@ -94,6 +95,89 @@ describe.skipIf(!hasGit)("where a project folder's git fetches and pushes origin
       relay.on = true;
       const ssh = yield* folder(["remote.origin.pushurl", "git@github.com:acme/web.git"]);
       expect((yield* checked(ssh.repo))._tag).toBe("Success");
+    }).pipe(Effect.scoped),
+  );
+});
+
+/** A Proc whose `git remote get-url` fails as `failing` says; every other git answers nothing. */
+const getUrlFails = (failing: "status" | "timeout") =>
+  Layer.succeed(Proc, {
+    run: (_bin, args) =>
+      args.includes("get-url")
+        ? failing === "timeout"
+          ? Effect.fail(new ProcTimeout({ bin: "git", message: "git timed out" }))
+          : Effect.succeed({
+              status: 128,
+              stdout: "",
+              stderr: "fatal: bad config",
+              truncated: false,
+            })
+        : Effect.succeed({ status: 1, stdout: "", stderr: "", truncated: false }),
+  });
+
+describe("where a folder's git goes, when git can't say", () => {
+  it.effect.each(["status", "timeout"] as const)(
+    "is refused behind a GitHub route when get-url fails (%s)",
+    (failing) =>
+      Effect.gen(function* () {
+        relay.on = true;
+        const out = yield* effectiveOriginsChecked(project, "/work/web").pipe(
+          Effect.provide(getUrlFails(failing)),
+          Effect.result,
+        );
+        expect(out._tag).toBe("Failure");
+      }),
+  );
+
+  it.effect("is only logged, and goes ahead, without a GitHub route", () =>
+    Effect.gen(function* () {
+      relay.on = false;
+      const out = yield* effectiveOriginsChecked(project, "/work/web").pipe(
+        Effect.provide(getUrlFails("timeout")),
+        Effect.result,
+      );
+      expect(out._tag).toBe("Success");
+    }),
+  );
+});
+
+describe.skipIf(!hasGit)("where a project folder's large files go", () => {
+  it.effect("is refused behind a GitHub route when LFS is sent to another repository", () =>
+    Effect.gen(function* () {
+      relay.on = true;
+      const config = yield* folder([
+        "remote.origin.lfsurl",
+        "https://github.com/someone/private.git/info/lfs",
+      ]);
+      expect((yield* checked(config.repo))._tag).toBe("Failure");
+      const committed = yield* folder();
+      run(
+        committed.repo,
+        "config",
+        "-f",
+        ".lfsconfig",
+        "lfs.url",
+        "https://github.com/someone/private.git/info/lfs",
+      );
+      expect((yield* checked(committed.repo))._tag).toBe("Failure");
+      const same = yield* folder();
+      run(
+        same.repo,
+        "config",
+        "-f",
+        ".lfsconfig",
+        "lfs.url",
+        "https://github.com/acme/web.git/info/lfs",
+      );
+      expect((yield* checked(same.repo))._tag).toBe("Success");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("is refused behind a GitHub route when an insteadOf sends origin to a local path", () =>
+    Effect.gen(function* () {
+      relay.on = true;
+      const local = yield* folder(["url./tmp/elsewhere/.insteadOf", "https://github.com/acme/"]);
+      expect((yield* checked(local.repo))._tag).toBe("Failure");
     }).pipe(Effect.scoped),
   );
 });

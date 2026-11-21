@@ -77,6 +77,9 @@ export const neutralValue = (key: string, value: string | undefined): string | u
   // `commit --trailer` and `interpret-trailers` run a trailer's command; `true` adds nothing.
   if (/^trailer\..+\.(?:cmd|command)$/.test(k)) return "true";
   if (/^(?:difftool|mergetool)\..+\.cmd$/.test(k)) return "false";
+  if (/^lfs\.customtransfer\..+\.path$/.test(k)) return "false";
+  if (k === "lfs.standalonetransferagent") return "";
+  if (/^lfs\.extension\..+\.(?:clean|smudge)$/.test(k)) return "cat";
   if (/^submodule\..+\.update$/.test(k))
     return value !== undefined && value.startsWith("!") ? "checkout" : undefined;
   return undefined;
