@@ -50,11 +50,13 @@ import * as Queue from "effect/Queue";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { embeddingOption } from "../embedding/embedding.ts";
+import { forThread, threadCaller } from "../embedding/gh-thread.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { besidesActivity, upsertsChanging } from "../events/upsert-changes.ts";
 import { branchPrOf, completionStep, type CompletionStep } from "./completion.ts";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { isBadgeOf, markOf, prunedMarks, withMonitorMark, type PrRef } from "./extra-prs.ts";
+import { pushedEventTouches, type PushedRepoEvent } from "./pushed-event-touches.ts";
 import { activityMultiplier, makePollBackoff } from "../github/poll-backoff.ts";
 import { affordsExtras, asBackground, GhBudget, GhPriority } from "../github/budget.ts";
 import { OpenPrs } from "../github/open-prs.ts";
@@ -160,53 +162,7 @@ export interface GitStatePublisherShape {
   ) => Effect.Effect<void>;
 }
 
-/** Something that happened to a repository on GitHub, as whoever received its webhook retells it. */
-export interface PushedRepoEvent {
-  /** `owner/name`. */
-  readonly repo: string;
-  /** The pull request it is about, when it is about one. */
-  readonly number?: number | undefined;
-  /** The head branch it is about: a pull request just opened has no number any checkout knows. */
-  readonly branch?: string | undefined;
-}
-
-const isRepo = (left: string | undefined, right: string) =>
-  left !== undefined && left.toLowerCase() === right.toLowerCase();
-
-/**
- * Whether `event` touches a checkout in `state` whose threads are `threads`, with the PRs they
- * wait on in `waited`: its own PR or branch, or a PR one of them is bound to, follows or waits on.
- * An event naming neither a PR nor a branch touches every checkout of its repository. A checkout's
- * repositories are its `origin` and the one its PR is in, which a fork's differ in; GitHub ignores
- * a repository's case.
- */
-export const pushedEventTouches = (
-  event: PushedRepoEvent,
-  state: Pick<GitState, "origin" | "branch" | "pr"> | undefined,
-  threads: ReadonlyArray<{
-    readonly boundPr?: PrRef | undefined;
-    readonly extraPrs?: ReadonlyArray<PrRef> | undefined;
-  }>,
-  waited: ReadonlyArray<PrRef> = [],
-): boolean => {
-  const prRepo = state?.pr === undefined ? undefined : repoFromPrUrl(state.pr.url);
-  const here = isRepo(state?.origin, event.repo) || isRepo(prRepo, event.repo);
-  const whole = event.number === undefined && event.branch === undefined;
-  if (here && whole) return true;
-  if (event.number !== undefined && state?.pr?.number === event.number) {
-    if (isRepo(prRepo ?? state.origin, event.repo)) return true;
-  }
-  if (here && event.branch !== undefined && state?.branch === event.branch) return true;
-  const names = (ref: PrRef) =>
-    isRepo(ref.repo, event.repo) && (whole || ref.number === event.number);
-  return (
-    threads.some(
-      (thread) =>
-        (thread.boundPr !== undefined && names(thread.boundPr)) ||
-        (thread.extraPrs ?? []).some(names),
-    ) || waited.some(names)
-  );
-};
+export { pushedEventTouches, type PushedRepoEvent };
 
 /**
  * How long after a pushed event its checkout is read: GitHub sends a check suite's events in a
@@ -730,7 +686,7 @@ export const GitStatePublisherLive = Layer.effectContext(
                   number: bound.number,
                   reviews: extras && wantsReviews(thread),
                 })
-                .pipe(Effect.option);
+                .pipe(forThread(thread.id), Effect.option);
               if (Option.isNone(next)) return;
               changed = noteMissing(thread, bound, next.value === undefined) || changed;
               // GitHub has no such PR: its last badge goes, as an extra PR's does.
@@ -751,7 +707,7 @@ export const GitStatePublisherLive = Layer.effectContext(
             Effect.gen(function* () {
               const next = yield* pr
                 .status(cwd, { repo: extra.repo, number: extra.number })
-                .pipe(Effect.option);
+                .pipe(forThread(thread.id), Effect.option);
               // A failed lookup carries the last badge, as the branch badge does; a lookup that
               // succeeds with no PR means GitHub no longer has it, and its badge goes.
               if (Option.isNone(next)) return;
@@ -772,10 +728,10 @@ export const GitStatePublisherLive = Layer.effectContext(
         );
         // The PRs these threads wait on ride the same document. A failed lookup, or one finding
         // no such PR, leaves the last badge: the wait times out by its own fallback.
-        // One lookup per PR across these threads, with the reviews if any of them wants them.
-        const waited = prWatches.forThreads(
-          mine.filter((thread) => !thread.parked).map((thread) => thread.id),
-        );
+        // One lookup per PR a thread waits on, made for that thread.
+        const waited = mine
+          .filter((thread) => !thread.parked)
+          .flatMap((thread) => prWatches.forThread(thread.id));
         yield* Effect.forEach(
           waited,
           (watch) =>
@@ -786,6 +742,7 @@ export const GitStatePublisherLive = Layer.effectContext(
                 reviews: extras && watch.reviews === true,
               })
               .pipe(
+                forThread(watch.threadId),
                 Effect.option,
                 Effect.flatMap((next) =>
                   Option.isSome(next) && next.value !== undefined
@@ -1223,9 +1180,11 @@ export const GitStatePublisherLive = Layer.effectContext(
         // An archived thread's badge is kept true for the user; nobody is told what its CI or
         // review did, and its agent isn't woken over them.
         if (!thread.parked) {
-          yield* monitor(thread, state);
-          yield* notifyCi(thread, state);
-          yield* detectRound(thread, state);
+          yield* Effect.all([
+            monitor(thread, state),
+            notifyCi(thread, state),
+            detectRound(thread, state),
+          ]).pipe(forThread(thread.id));
         }
         for (const observer of observers) yield* observer.onState(thread, state);
         // A PR some other thread waits on may be this one's: its badge serves them too.
@@ -1749,11 +1708,11 @@ export const GitStatePublisherLive = Layer.effectContext(
                   number: watch.number,
                   reviews: extras && watch.reviews === true,
                 })),
-              ];
+              ].map((ref) => ({ ref, caller: threadCaller(thread.id) }));
             });
             return [
               ...(here ? [{ cwd: path }] : []),
-              ...numbered.map((bound) => ({ cwd: path, bound })),
+              ...numbered.map(({ ref, caller }) => ({ cwd: path, bound: ref, caller })),
             ];
           }),
         );
@@ -2166,7 +2125,7 @@ export const GitStatePublisherLive = Layer.effectContext(
         if (Option.isSome(tools) && !(yield* tools.value.ghReady)) return Option.none();
         const found = yield* pr
           .status(cwd, { repo: ref.repo, number: ref.number, reviews: ref.reviews === true })
-          .pipe(Effect.option);
+          .pipe(forThread(thread.id), Effect.option);
         // Through the watchers' own door when it is watched already: an answer cached here unheard
         // would make the sweep's same answer no news, and those waiting on it would never be told.
         if (Option.isSome(found) && found.value !== undefined) {

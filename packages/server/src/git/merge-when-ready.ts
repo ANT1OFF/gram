@@ -48,7 +48,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Cause from "effect/Cause";
-import { ghThreadEnv } from "../embedding/github-relay.ts";
+import { forThread } from "../embedding/gh-thread.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { mergeDelegationStands } from "../orchestration/rules.ts";
@@ -508,10 +508,9 @@ export const MergeWhenReadyLive = Layer.effect(
       turns.delete(key);
     };
 
-    const run = (cwd: string, args: ReadonlyArray<string>, threadId?: ThreadId) =>
-      gh(cwd, args, threadId === undefined ? {} : { env: ghThreadEnv(threadId) }).pipe(
-        Effect.provideService(Proc, proc),
-      );
+    /** `gh` for the caller (`GhCallEnv`): an attempt's runs are made for its thread. */
+    const run = (cwd: string, args: ReadonlyArray<string>) =>
+      gh(cwd, args).pipe(Effect.provideService(Proc, proc));
 
     /** Explicit reconciliation and every later launch verify the branch independently of PR lag. */
     const readBase = (cwd: string, repo: string, branch: string) =>
@@ -1216,8 +1215,7 @@ export const MergeWhenReadyLive = Layer.effect(
                           "--repo",
                           bound.repo,
                         ],
-                        // Made for this thread: a deployment's GitHub route acts for its person.
-                        threadId,
+                        // Made for this thread (`attempt` runs for it): its route acts for its person.
                       ).pipe(
                         Effect.map((out) => ({ out })),
                         Effect.catch((e) => Effect.succeed({ lost: e.message })),
@@ -1415,6 +1413,8 @@ export const MergeWhenReadyLive = Layer.effect(
             Effect.annotateLogs({ threadId, error: e.message }),
           ),
         ),
+        // Every run of the attempt, its merge too, is made for its thread.
+        forThread(threadId),
       );
 
     /**
@@ -1436,7 +1436,7 @@ export const MergeWhenReadyLive = Layer.effect(
           .pipe(Effect.orElseSucceed(() => undefined));
         yield* stop(threadId);
         yield* evaluate(thread.value, read ?? (yield* publisher.badgeFor(thread.value)));
-      });
+      }).pipe(forThread(threadId));
 
     /**
      * A merge moved its base: every other armed merge in the repository looks again, on a fresh

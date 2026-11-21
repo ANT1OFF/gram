@@ -16,7 +16,7 @@ import {
   type CiStuckCondition,
   type WakeConditionSeen,
 } from "@gram/contracts";
-import { ghApi, Pr, Proc } from "@gram/git";
+import { currentGhCaller, ghApi, Pr, Proc } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -158,7 +158,8 @@ export const CiJobsLive = Layer.effect(
 
     const run: CiJobsShape["run"] = (cwd, repo, runId) =>
       Effect.gen(function* () {
-        const key = `${repo.toLowerCase()}#${runId}`;
+        // Per caller (`GhCallEnv`): a run read for one thread is never another's answer.
+        const key = `${yield* currentGhCaller}\u0000${repo.toLowerCase()}#${runId}`;
         const now = yield* Clock.currentTimeMillis;
         const kept = runReads.get(key);
         if (kept !== undefined && now - kept.at < RUN_READ_REUSE_MS) return kept.state;

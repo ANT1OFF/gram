@@ -36,6 +36,7 @@ import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
+import { forThread } from "../embedding/gh-thread.ts";
 
 /** The member of `WakeCondition` of kind `K`. */
 export type ConditionOf<K extends WakeConditionKind> = Extract<WakeCondition, { readonly kind: K }>;
@@ -192,7 +193,8 @@ export const WakeConditionsLive = Layer.effect(
 
     const lookAt = (source: AnyWakeConditionSource, host: WakeConditionHost, wake: ConditionWake) =>
       Effect.gen(function* () {
-        const look = yield* source.look(wake);
+        // Read for the thread that set it, as its notice goes to that thread.
+        const look = yield* source.look(wake).pipe(forThread(wake.threadId));
         if (look === undefined) return;
         if (!look.met) {
           metSince.delete(wake.id);

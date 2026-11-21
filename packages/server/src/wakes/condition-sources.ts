@@ -11,6 +11,7 @@ import {
   type ThreadId,
   type ThreadStatus,
 } from "@gram/contracts";
+import { currentGhCaller } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -62,7 +63,8 @@ export const branchMovedSource = Effect.gen(function* () {
 
   const headOf = (cwd: string, repo: string, branch: string) =>
     Effect.gen(function* () {
-      const key = `${repo.toLowerCase()}\u0000${branch}`;
+      // Per caller (`GhCallEnv`): a head read for one thread is never another's answer.
+      const key = `${yield* currentGhCaller}\u0000${repo.toLowerCase()}\u0000${branch}`;
       const now = yield* Clock.currentTimeMillis;
       const kept = reads.get(key);
       if (kept !== undefined && now - kept.at < HEAD_READ_REUSE_MS) return kept.head;
@@ -297,7 +299,9 @@ export const releasePublishedSource = Effect.gen(function* () {
   /** The package's releases: the kept answer while it is due no read, else a new one. */
   const releasesOf = (spec: ReleasePublishedCondition, reuseMs?: number) =>
     Effect.gen(function* () {
-      const key = `${spec.source}\u0000${spec.name.toLowerCase()}`;
+      // A GitHub repo's releases per caller (`GhCallEnv`), as its heads are.
+      const caller = spec.source === "github" ? yield* currentGhCaller : "";
+      const key = `${caller}\u0000${spec.source}\u0000${spec.name.toLowerCase()}`;
       const now = yield* Clock.currentTimeMillis;
       const kept = reads.get(key);
       if (
