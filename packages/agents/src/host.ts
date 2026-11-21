@@ -131,8 +131,8 @@ export interface OpenSessionOptions {
   /**
    * `cwd` holds someone else's code, such as a fork's pull request head: the agent loads none of
    * the folder's own settings (Claude Code's project and local settings, with their hooks, env,
-   * permission rules and MCP servers), only the user's. A host that loads no folder settings
-   * unasked ignores it.
+   * permission rules and MCP servers), only the user's. A host that can't leave them out refuses to
+   * open rather than load them; one that loads no folder settings unasked ignores it.
    */
   readonly untrustedTree?: boolean;
   /** Prompt-guided Dream using normal native permissions; never a file-only guarantee. */

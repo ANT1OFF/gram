@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { BROWSER_INSPECTION_CAPABILITIES } from "@gram/contracts";
+import { BROWSER_INSPECTION_CAPABILITIES, HostId } from "@gram/contracts";
 import type {
   ApprovalAnswer,
   ApprovalRequest,
@@ -13,12 +13,19 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
-import { mkdtempSync, readFileSync, realpathSync, symlinkSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { AppToolDefinition } from "../app-tools/definition.ts";
-import { bridgePane, PanePort, type PaneMessagePort } from "./pane-port.ts";
+import { bridgePane, PanePort, unsandboxedLocalOnly, type PaneMessagePort } from "./pane-port.ts";
 import { browserTools } from "./tools.ts";
 
 const THREAD = "t-browse" as ThreadId;
@@ -43,6 +50,7 @@ const harness = (options: {
   readonly answers?: ReadonlyArray<ApprovalAnswer>;
   readonly thread?: Partial<Thread>;
   readonly appOrigins?: ReadonlyArray<string>;
+  readonly localOnly?: boolean;
 }) => {
   const world: World = { sent: [], cards: [], published: [], recorded: [] };
   const replies = [...options.replies];
@@ -71,6 +79,7 @@ const harness = (options: {
         }),
     },
     appOrigins: Effect.succeed(options.appOrigins ?? []),
+    localOnly: options.localOnly,
     outputs: {
       record: (_threadId, output) => Effect.sync(() => void world.recorded.push({ ...output })),
     },
@@ -100,6 +109,33 @@ describe("browser tools", () => {
       expect(world.cards).toEqual([]);
     }),
   );
+  it.effect("an unsandboxed browser opens no page for a thread on another machine", () =>
+    Effect.gen(function* () {
+      const elsewhere = { checkout: { hostId: "machine-b" } } as Partial<Thread>;
+      const refused = harness({ replies: [], thread: elsewhere, localOnly: true });
+      const error = yield* Effect.flip(
+        refused.call("browser_navigate", { url: "http://localhost:3000/" }),
+      );
+      expect(error.message).toContain("GRAM_BROWSER_UNSANDBOXED_ELSEWHERE");
+      expect(refused.world.sent).toEqual([]);
+      const here = harness({
+        replies: [],
+        thread: { checkout: {} } as Partial<Thread>,
+        localOnly: true,
+      });
+      yield* here.call("browser_navigate", { url: "http://localhost:3000/" });
+      expect(here.world.sent).toHaveLength(1);
+    }),
+  );
+
+  it("refuses other machines' threads only when the host runs without its sandbox and no opt-in", () => {
+    expect(unsandboxedLocalOnly({ GRAM_BROWSER_SANDBOX: "0" })).toBe(true);
+    expect(
+      unsandboxedLocalOnly({ GRAM_BROWSER_SANDBOX: "0", GRAM_BROWSER_UNSANDBOXED_ELSEWHERE: "1" }),
+    ).toBe(false);
+    expect(unsandboxedLocalOnly({})).toBe(false);
+  });
+
   it("are the toolset's members, read or acting as the guardrails class them", () => {
     const { tools } = harness({ replies: [] });
     expect(Object.fromEntries(tools.map((t) => [t.descriptor.name, t.descriptor.class]))).toEqual({
@@ -756,6 +792,48 @@ describe("labels, local-only debugging and evidence files", () => {
           { op: "recordStop", discard: true },
         ]);
       }),
+  );
+
+  it.effect("saves nothing on this disk for a thread whose session runs on another machine", () =>
+    Effect.gen(function* () {
+      const root = checkout();
+      const capture: PaneResult = {
+        ok: true,
+        page: PAGE,
+        image: { data: PNG_HEAD, mimeType: "image/png" },
+      };
+      for (const thread of [
+        { checkout: { kind: "worktree", path: root, hostId: HostId.make("their-machine") } },
+        { checkout: { kind: "main", path: root }, dreamHost: HostId.make("their-machine") },
+      ] as Partial<Thread>[]) {
+        const { call, world } = harness({ replies: [capture], thread });
+        const shot = yield* Effect.flip(call("browser_save_screenshot", { path: "shots/x.png" }));
+        expect(shot.message).toContain("another machine");
+        expect(shot.message).not.toContain(root);
+        const clip = yield* Effect.flip(
+          call("browser_record", { action: "stop", path: "clips/x.gif" }),
+        );
+        expect(clip.message).toContain("another machine");
+        const start = yield* Effect.flip(call("browser_record", { action: "start" }));
+        expect(start.message).toContain("another machine");
+        expect(world.sent.map((each) => each.command.op)).not.toContain("recordStart");
+        expect(world.recorded).toEqual([]);
+      }
+      expect(readdirSync(root)).toEqual([]);
+    }),
+  );
+
+  it.effect("names only the agent's own path when a write fails", () =>
+    Effect.gen(function* () {
+      const root = checkout();
+      writeFileSync(join(root, "blocker"), "a file, not a folder");
+      const { call } = harness({
+        replies: [{ ok: true, page: PAGE, image: { data: PNG_HEAD, mimeType: "image/png" } }],
+        thread: { checkout: { kind: "worktree", path: root } } as Partial<Thread>,
+      });
+      const failed = yield* Effect.flip(call("browser_save_screenshot", { path: "blocker/x.png" }));
+      expect(failed.message).toBe("Couldn't write blocker/x.png.");
+    }),
   );
 });
 

@@ -27,20 +27,9 @@ import type { ServerNotification } from "./protocol/ServerNotification.ts";
 import type { ServerRequest } from "./protocol/ServerRequest.ts";
 import { CodexRpcError, type CodexMethods, type CodexRpc } from "./rpc.ts";
 import { CodexServers, type CodexListener } from "./servers.ts";
-import {
-  CodexHost,
-  CodexHostLayer,
-  COMPUTER_USE_PLUGINS,
-  computerUseOff,
-  confinedConfig,
-  leftOutConfig,
-  gatedHomeIsOwned,
-  gateHoldsInMode,
-  policyFor,
-  autoAvailable,
-  unconfinedServers,
-} from "./session.ts";
+import { CodexHost, CodexHostLayer, COMPUTER_USE_PLUGINS, computerUseOff } from "./session.ts";
 import { startupDiagnostic } from "./startup-diagnostic.ts";
+import { confinedConfig, leftOutConfig, unconfinedServers } from "./thread-config.ts";
 import { codexFixture, serverMessages } from "./testing.ts";
 import { toCodexTranscript } from "./transcript.ts";
 
@@ -75,6 +64,8 @@ interface StoredThread {
 const harness = (
   options: {
     readonly homes?: ReadonlyArray<CodexHome>;
+    /** The host's ids, "id-1" each by default. */
+    readonly newId?: () => string;
     readonly cliVersion?: string | null;
     readonly gateReady?: boolean;
     readonly nativeGateReady?: boolean;
@@ -90,6 +81,8 @@ const harness = (
     readonly statuses?: ReadonlyArray<unknown>;
     /** What `config/read` answers with as `config`, in place of the default servers. */
     readonly config?: Record<string, unknown>;
+    /** What `config/read` answers with as `layers` when asked for them. */
+    readonly layers?: ReadonlyArray<unknown> | null;
     readonly reload?: Effect.Effect<void, CodexRpcError>;
     readonly account?: "signedOut" | "chatgpt" | "apiKey" | "localProvider";
     readonly modelPages?: ReadonlyArray<ReadonlyArray<Record<string, unknown>>>;
@@ -267,7 +260,7 @@ const harness = (
       return { authorizationUrl: `https://idp.example/authorize?server=${p.name}` };
     },
     "config/mcpServer/reload": () => ({}),
-    "config/read": () => ({
+    "config/read": (p) => ({
       config: options.config ?? {
         mcp_servers: {
           docs: { url: "https://docs.example/mcp", enabled: false },
@@ -283,7 +276,7 @@ const harness = (
           version: "v",
         },
       },
-      layers: null,
+      layers: p.includeLayers === true && options.layers !== null ? (options.layers ?? []) : null,
     }),
     "config/batchWrite": () => ({
       status: "ok",
@@ -309,7 +302,7 @@ const harness = (
       ),
     messages: Stream.empty,
   };
-  const layer = CodexHostLayer({ newId: () => "id-1" }).pipe(
+  const layer = CodexHostLayer({ newId: options.newId ?? (() => "id-1") }).pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(CodexServers)({
@@ -416,6 +409,13 @@ const harness = (
     push: (message: ServerNotification | ServerRequest) => listener?.message(message),
   };
 };
+
+const project = (dotCodexFolder: string, disabledReason: string | null) => ({
+  name: { type: "project", dotCodexFolder },
+  version: "v",
+  config: {},
+  disabledReason,
+});
 
 const openSession = (overrides: Partial<OpenSessionOptions> = {}) =>
   Effect.gen(function* () {
@@ -835,12 +835,12 @@ describe("CodexSession", () => {
         type: "request",
         request: { kind: "approval", toolName: "Bash" },
       });
-      yield* session.respond(RequestId.make("codex-0"), {
+      yield* session.respond(RequestId.make("codex-id-1-0"), {
         kind: "approval",
         decision: "allow",
         scope: "always",
       });
-      yield* session.respond(RequestId.make("codex-0"), {
+      yield* session.respond(RequestId.make("codex-id-1-0"), {
         kind: "approval",
         decision: "deny",
         scope: "once",
@@ -906,6 +906,29 @@ const drain = (session: AgentSession, n: number) =>
   take(session, 3 + n).pipe(Effect.map((events) => events.slice(3)));
 
 describe("Codex approval delivery", () => {
+  it.effect("never raises a card under an id an earlier session of the thread used", () =>
+    Effect.gen(function* () {
+      let ids = 0;
+      const h = harness({ newId: () => `id-${++ids}` });
+      const cardOf = Effect.gen(function* () {
+        const session = yield* openSession().pipe(Effect.provide(h.layer));
+        // The app-server counts its requests from zero again, as a restarted one does.
+        h.push(commandRequest(0, "echo hello"));
+        const [raised] = yield* Stream.runCollect(
+          Stream.take(
+            Stream.filter(session.events, (event) => event.type === "request"),
+            1,
+          ),
+        );
+        return raised?.type === "request" ? raised.request.id : undefined;
+      });
+      const first = yield* cardOf;
+      const second = yield* cardOf;
+      expect(first).toBeDefined();
+      expect(second).not.toBe(first);
+    }),
+  );
+
   it.effect("keeps an undelivered answer pending for a successful retry", () =>
     Effect.gen(function* () {
       let attempts = 0;
@@ -916,7 +939,7 @@ describe("Codex approval delivery", () => {
       });
       const session = yield* openSession().pipe(Effect.provide(h.layer));
       h.push(commandRequest(73, "echo hello"));
-      const requestId = RequestId.make("codex-73");
+      const requestId = RequestId.make("codex-id-1-73");
       const failure = yield* Effect.flip(session.respond(requestId, allowOnce));
       expect(failure._tag).toBe("AnswerUndelivered");
       expect(h.responses).toEqual([]);
@@ -926,57 +949,6 @@ describe("Codex approval delivery", () => {
       expect(attempts).toBe(2);
     }),
   );
-});
-
-describe("policyFor and the outward gate's helpers", () => {
-  it("maps each mode to a policy, and only bypass changes under the gate", () => {
-    const sandboxed = { approvalPolicy: "on-request", sandbox: "workspace-write" };
-    const table = [
-      ["bypassPermissions", { approvalPolicy: "never", sandbox: "danger-full-access" }],
-      ["dontAsk", { approvalPolicy: "never", sandbox: "workspace-write" }],
-      ["default", sandboxed],
-      ["acceptEdits", sandboxed],
-      ["auto", sandboxed],
-      ["plan", sandboxed],
-    ] as const;
-    for (const [mode, policy] of table) {
-      // A CLI with no automatic reviewer is given no reviewer ungated, as before it existed.
-      expect(policyFor(mode)).toEqual(policy);
-      expect(policyFor(mode, false)).toEqual(policy);
-      expect(policyFor(mode, false, false)).toEqual(policy);
-      // Gated, the user reviews whatever the CLI, and only bypass changes its policy.
-      for (const autoReviewer of [false, true])
-        expect(policyFor(mode, true, autoReviewer)).toEqual({
-          ...(mode === "bypassPermissions"
-            ? { approvalPolicy: "untrusted", sandbox: "danger-full-access" }
-            : policy),
-          approvalsReviewer: "user",
-        });
-      // Ungated on a CLI with the reviewer: Auto is its automatic reviewer, every other mode the user.
-      expect(policyFor(mode, false, true)).toEqual({
-        ...policy,
-        approvalsReviewer: mode === "auto" ? "auto_review" : "user",
-      });
-      expect(gateHoldsInMode(mode)).toBe(mode !== "dontAsk");
-    }
-  });
-
-  it("has Auto only ungated, on a CLI with the automatic reviewer", () => {
-    expect(autoAvailable(false, true)).toBe(true);
-    expect(autoAvailable(false, false)).toBe(false);
-    for (const gate of [true, "all", "irreversible"] as const) {
-      expect(autoAvailable(gate, true)).toBe(false);
-      expect(autoAvailable(gate, false)).toBe(false);
-    }
-  });
-
-  it("lets a gated session run only on Gram's home, with its rules available", () => {
-    expect(gatedHomeIsOwned("owned", true)).toBe(true);
-    expect(gatedHomeIsOwned("owned", false)).toBe(false);
-    expect(gatedHomeIsOwned("gateway", true)).toBe(true);
-    expect(gatedHomeIsOwned("gateway", false)).toBe(false);
-    expect(gatedHomeIsOwned("user", true)).toBe(false);
-  });
 });
 
 const autoReview = (
@@ -1266,7 +1238,7 @@ describe("CodexSession under the outward gate", () => {
             type: "request",
             request: expect.objectContaining({
               kind: "approval",
-              id: "codex-2",
+              id: "codex-id-1-2",
               toolName: "Bash",
               input: {
                 command: "/bin/zsh -lc 'git push origin HEAD:main'",
@@ -1281,12 +1253,12 @@ describe("CodexSession under the outward gate", () => {
         ]);
 
         // "Always" can't be asked for, and a stale client that sends it still gets one run.
-        yield* session.respond(RequestId.make("codex-2"), allowAlways);
+        yield* session.respond(RequestId.make("codex-id-1-2"), allowAlways);
         expect(h.responses[2]).toEqual([2, { decision: "accept" }]);
 
         // A denied push goes back to the model; `cancel` would end the turn.
         h.push(commandRequest(3, "cd sub && gh pr create --fill"));
-        yield* session.respond(RequestId.make("codex-3"), deny);
+        yield* session.respond(RequestId.make("codex-id-1-3"), deny);
         expect(h.responses[3]).toEqual([3, { decision: "decline" }]);
       }),
   );
@@ -1322,12 +1294,12 @@ describe("CodexSession under the outward gate", () => {
               : [],
           ),
         ).toEqual([
-          ["codex-2", ["once"]],
-          ["codex-3", ["once"]],
-          ["codex-4", ["once"]],
+          ["codex-id-1-2", ["once"]],
+          ["codex-id-1-3", ["once"]],
+          ["codex-id-1-4", ["once"]],
         ]);
-        yield* session.respond(RequestId.make("codex-2"), allowAlways);
-        yield* session.respond(RequestId.make("codex-4"), deny);
+        yield* session.respond(RequestId.make("codex-id-1-2"), allowAlways);
+        yield* session.respond(RequestId.make("codex-id-1-4"), deny);
         expect(h.responses.slice(2)).toEqual([
           [2, { decision: "accept" }],
           [4, { decision: "decline" }],
@@ -1360,7 +1332,7 @@ describe("CodexSession under the outward gate", () => {
             e.type === "request" && e.request.kind === "approval" ? [e.request.scopes] : [],
           ),
         ).toEqual([["once", "always"], ["once", "session"], ["once"]]);
-        yield* session.respond(RequestId.make("codex-1"), allowAlways);
+        yield* session.respond(RequestId.make("codex-id-1-1"), allowAlways);
         expect(h.responses).toEqual([[1, { decision: "acceptForSession" }]]);
       }),
   );
@@ -1405,8 +1377,8 @@ describe("CodexSession under the outward gate", () => {
           e.type === "request" && e.request.kind === "approval" ? [e.request.scopes] : [],
         ),
       ).toEqual([["once", "always"], ["once"], ["once", "session"]]);
-      yield* session.respond(RequestId.make("codex-0"), deny);
-      yield* session.respond(RequestId.make("codex-1"), allowOnce);
+      yield* session.respond(RequestId.make("codex-id-1-0"), deny);
+      yield* session.respond(RequestId.make("codex-id-1-1"), allowOnce);
       expect(h.responses).toEqual([
         [0, { decision: "decline" }],
         [1, { decision: "accept" }],
@@ -1477,7 +1449,7 @@ describe("CodexSession under the outward gate", () => {
       expect(yield* drain(session, 1)).toEqual([
         { type: "request", request: expect.objectContaining({ scopes: ["once", "always"] }) },
       ]);
-      yield* session.respond(RequestId.make("codex-0"), deny);
+      yield* session.respond(RequestId.make("codex-id-1-0"), deny);
       expect(h.responses).toEqual([[0, { decision: "cancel" }]]);
     }),
   );
@@ -1653,6 +1625,29 @@ describe("CodexHost confined sessions", () => {
     );
 
   const appTools = { url: "http://127.0.0.1:4317/mcp", headers: { authorization: "Bearer tok" } };
+
+  it.effect("opens no session on someone else's tree whose project layer Codex trusts", () =>
+    Effect.gen(function* () {
+      const trusted = harness({ layers: [project("/repo/.codex", null)] });
+      const refused = yield* openSession({ untrustedTree: true }).pipe(
+        Effect.provide(trusted.layer),
+        Effect.flip,
+      );
+      expect(refused.message).toContain("/repo/.codex");
+      expect(trusted.calls.some(([method]) => method === "thread/start")).toBe(false);
+      const unlisted = harness({ layers: null });
+      const unknown = yield* openSession({ untrustedTree: true }).pipe(
+        Effect.provide(unlisted.layer),
+        Effect.flip,
+      );
+      expect(unknown.message).toContain("doesn't say which project settings");
+
+      const untrusted = harness({ layers: [project("/repo/.codex", "project is not trusted")] });
+      yield* openSession({ untrustedTree: true }).pipe(Effect.provide(untrusted.layer));
+      expect(untrusted.calls[0]).toEqual(["config/read", { includeLayers: true, cwd: "/repo" }]);
+      expect(untrusted.calls.some(([method]) => method === "thread/start")).toBe(true);
+    }),
+  );
 
   it.effect("switches off every MCP server and app the config names, keeping Gram's", () =>
     Effect.gen(function* () {

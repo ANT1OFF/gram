@@ -134,6 +134,19 @@ export interface SpawnWorkerInput {
    */
   readonly unattended?: true | undefined;
   /**
+   * The approval gate let the call through with no card, on a count it read before the spawn lock:
+   * the cap and the workspace's repos are checked again under the lock, and what would have needed
+   * the user's card is refused, so a burst of calls never starts more workers than the cap. Set by
+   * the tool's handler alone, never by the agent.
+   */
+  readonly uncarded?: true | undefined;
+  /**
+   * The user's card let the call through: the live workers its card counted when it asked for one
+   * past the cap, or -1 when it asked about something else. Counted again under the spawn lock, so
+   * a yes given for a count since passed starts no worker. Set by the tool's handler alone.
+   */
+  readonly carded?: number | undefined;
+  /**
    * Where `sandbox` put it, kept on the worker's `spawnedBy` for its row; set by the tool's
    * `resolve`, never by the agent directly.
    */
@@ -707,9 +720,11 @@ export interface OrchestrationShape {
    * A worker for the orchestrator's brief; a low-priority one at a subscription limit is held
    * instead (`HeldSpawn`), and spawned when the limit resets or a turn on its agent goes through.
    */
+  /** `carded`, as the approval gate told the tool's handler: false marks the input `uncarded`, true `carded`. */
   spawnWorker(
     callerId: ThreadId,
     input: SpawnWorkerInput,
+    carded?: boolean,
   ): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError>;
   /**
    * The caller's workspace's worker brief footer (`briefFooterOf`), for `spawn_worker` to append

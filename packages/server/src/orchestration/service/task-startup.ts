@@ -25,6 +25,7 @@ import {
   workerModelLabel,
 } from "../rules.ts";
 import { type OrchestrationKit, underKeysOf, projectKey, startupKeysOf } from "./kit.ts";
+import { admitWorkspaceReader, projectWorkspaceOf } from "./reader-workspaces.ts";
 import { type OrchestrationShape } from "./shape.ts";
 
 /** Planning and starting a user's task, and the model a thread opens on. */
@@ -86,12 +87,12 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
       const state =
         "workspaceId" in input.target
           ? yield* store.getWorkspace(input.target.workspaceId)
-          : (yield* store.listWorkspaces).find(
-              (row) =>
-                row.workspace.projectIds.length === 1 &&
-                row.workspace.projectIds[0] ===
-                  (input.target as { projectId: ProjectId }).projectId,
+          : yield* projectWorkspaceOf(
+              yield* store.listWorkspaces,
+              (input.target as { projectId: ProjectId }).projectId,
+              yield* store.listProjects,
             );
+      if (state !== undefined) yield* admitWorkspaceReader(state);
       const projectIds = state?.workspace.projectIds ?? [
         (input.target as { projectId: ProjectId }).projectId,
       ];
@@ -201,9 +202,10 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
     Effect.gen(function* () {
       const target = input.target;
       if ("workspaceId" in target) return yield* workspaceStartupKeys(target.workspaceId);
-      const state = (yield* store.listWorkspaces).find(
-        (row) =>
-          row.workspace.projectIds.length === 1 && row.workspace.projectIds[0] === target.projectId,
+      const state = yield* projectWorkspaceOf(
+        yield* store.listWorkspaces,
+        target.projectId,
+        yield* store.listProjects,
       );
       return state === undefined
         ? [projectKey(target.projectId)]

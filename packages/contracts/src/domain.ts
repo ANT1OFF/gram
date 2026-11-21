@@ -328,8 +328,9 @@ export const Project = Schema.Struct({
   bookmarked: Schema.Boolean,
   /**
    * Whether the user trusts the folder's own agent settings and scripts (`.claude/`, `.mcp.json`,
-   * `.gram/scripts.json`). Asked once, when the folder is added; absent when it never was. An
-   * absent answer for a folder that brings any of them reads as `untrusted`.
+   * `.gram/scripts.json`). Asked once, when the folder is added, or on its row the first time it
+   * brings any; absent when it never was. An absent answer for a folder that brings any of them
+   * reads as `untrusted`.
    */
   folderTrust: Schema.optionalKey(Schema.Literals(["trusted", "untrusted"])),
   /** Epoch ms; absent if never opened (e.g. bookmarked only). Drives the recents list. */

@@ -787,6 +787,8 @@
       "purpose": "Palettes, fonts and radii by theme name, the design tokens and the kit every screen draws with.",
       "code": [
         "packages/themes/src/**",
+        "packages/themes/scripts/**",
+        "packages/themes/palette.json",
         "apps/web/src/theme/**",
         "apps/web/src/styles/**",
         "apps/web/src/components/**",
