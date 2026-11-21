@@ -75,12 +75,15 @@ export const localCheckOnHead = (
  * GitHub remains authoritative in both policies. Solo needs actual passing CI, or Gram's own check
  * of the exact head: then pending or absent CI doesn't hold the merge, failing CI still does, and
  * so do pending jobs the repo's merge policy declares a local check can't stand in for.
+ * `declaredCi` (solo, a thread on a provisioned machine): only the CI the base declares counts,
+ * read at the launch (`mergeCiDeclared`); before it, GitHub's checks need only be done and not red.
  */
 export const mergePolicyReady = (
   badge: PrStatus,
   policy: "solo" | "bot",
   bots?: ReadonlyArray<ReviewBot>,
   localCheck?: LocalCheckPass,
+  declaredCi?: boolean,
 ): boolean => {
   if (
     badge.state !== "OPEN" ||
@@ -102,7 +105,14 @@ export const mergePolicyReady = (
   )
     return false;
   const checks = requiredChecksOf(badge);
-  if (policy === "solo" && localCheckOnHead(badge, localCheck)) {
+  if (policy === "solo" && declaredCi === true) {
+    if (checks !== "passing" && checks !== "none") return false;
+    if (
+      badge.mergeCiDeclared !== undefined &&
+      (badge.mergeCiDeclared !== true || badge.mergeChecks !== "passing")
+    )
+      return false;
+  } else if (policy === "solo" && localCheckOnHead(badge, localCheck)) {
     if (badge.mergeChecks === "failing" || badge.mergeChecks === "pending") return false;
     if (checks === "failing") return false;
   } else {

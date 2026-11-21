@@ -257,6 +257,7 @@ const github = (
   calls: string[][] = [],
   changed?: string,
   runConclusion?: string,
+  latest: { readonly head?: string; readonly baseRef?: string; readonly tip?: string } = {},
 ) =>
   Layer.succeed(Proc, {
     run: (bin, args) => {
@@ -277,6 +278,14 @@ const github = (
             },
           ],
         };
+      else if (args[1]?.endsWith("/pulls/1"))
+        body = {
+          number: 1,
+          state: "open",
+          head: { sha: latest.head ?? head, ref: "prose" },
+          base: { ref: latest.baseRef ?? "main", sha: base },
+        };
+      else if (args[1]?.includes("/commits/heads%2F")) body = { sha: latest.tip ?? base };
       else body = { total_count: jobs.length, jobs };
       return Effect.succeed({
         status: 0,
@@ -609,7 +618,10 @@ describe("a run counts only when it is the PR's own", () => {
   );
 });
 
-const declaredOnly = (layer: Layer.Layer<Proc>, launched: PrStatus = badge) =>
+const declaredOnly = (
+  layer: Layer.Layer<Proc>,
+  launched: PrStatus = { ...badge, baseRef: "main" },
+) =>
   withLaunchCi("/repo", "example/project", launched, {
     declaredCi: true,
     localCheckHead: head,
@@ -690,6 +702,23 @@ describe("a merge that needs the CI its base declares", () => {
           ),
         ),
       ).toMatchObject({ mergeChecks: "failing", mergeCiDeclared: true });
+    }),
+  );
+
+  it.effect("refuses a pass once the PR was retargeted, pushed or its base moved meanwhile", () =>
+    Effect.gen(function* () {
+      const all = policy.workflows[0]!.jobs.map((name) => job(name));
+      const moved = [
+        { head: "d".repeat(40) },
+        { baseRef: "release" },
+        { tip: "e".repeat(40) },
+      ] as const;
+      for (const latest of moved) {
+        const result = yield* declaredOnly(
+          github(policy, all, "completed", [], undefined, undefined, latest),
+        ).pipe(Effect.result);
+        expect(result).toMatchObject({ _tag: "Failure" });
+      }
     }),
   );
 });

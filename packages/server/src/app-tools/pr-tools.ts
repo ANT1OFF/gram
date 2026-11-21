@@ -1423,6 +1423,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
                   badge,
                   yield* reviewPolicyFor(updated, pr.repo),
                   reviewBotsOf(yield* store.getSettings),
+                  undefined,
+                  configuration?.declaredCiOnly,
                 );
           return {
             ...(byOrchestrator ? { threadId: thread.id } : {}),

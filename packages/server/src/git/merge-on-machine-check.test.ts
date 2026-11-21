@@ -80,6 +80,9 @@ const passed = (request: HostCheckRequest): HostCheckResult => ({
   host: "cachyos",
 });
 
+/** A repository whose PRs report no check contexts at all. */
+const noContexts: PrStatus = { ...badge, checks: "none", mergeState: "CLEAN" };
+
 /** The badge once CI has passed on the head. */
 const green: PrStatus = {
   ...badge,
@@ -553,20 +556,44 @@ describe("a thread on a provisioned machine", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("is refused on a base that declares no CI, whatever GitHub's checks say", () =>
+  for (const [shown, label] of [
+    [green, "green checks"],
+    [noContexts, "no check contexts"],
+  ] as const)
+    it.live(`is refused on a base that declares no CI, with ${label} on GitHub`, () =>
+      Effect.gen(function* () {
+        const host = provisioned();
+        const { dir, merged, layer } = yield* armed(
+          host.layer,
+          () => shown,
+          () => ({ ...shown, mergeChecks: "pending", mergeCiDeclared: false }),
+        );
+        yield* Effect.gen(function* () {
+          const { thread } = yield* placed(dir);
+          yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+          yield* waitReal("the refusal", refusedOnHead(thread.id as ThreadId));
+          expect(merged).toEqual([]);
+          expect(host.asked).toEqual([]);
+        }).pipe(Effect.scoped, Effect.provide(layer));
+      }).pipe(Effect.scoped),
+    );
+
+  it.live("merges on its base's declared CI where GitHub shows no check contexts", () =>
     Effect.gen(function* () {
       const host = provisioned();
       const { dir, merged, layer } = yield* armed(
         host.layer,
-        () => green,
-        () => ({ ...green, mergeChecks: "pending", mergeCiDeclared: false }),
+        () => noContexts,
+        () => ({ ...noContexts, mergeChecks: "passing", mergeCiDeclared: true }),
       );
       yield* Effect.gen(function* () {
         const { thread } = yield* placed(dir);
         yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
-        yield* waitReal("the refusal", refusedOnHead(thread.id as ThreadId));
-        expect(merged).toEqual([]);
-        expect(host.asked).toEqual([]);
+        yield* waitReal(
+          "the merge",
+          Effect.sync(() => merged.length > 0),
+        );
+        expect(merged).toEqual([MERGE_ARGS]);
       }).pipe(Effect.scoped, Effect.provide(layer));
     }).pipe(Effect.scoped),
   );

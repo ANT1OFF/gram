@@ -143,6 +143,7 @@ export const mergeBlocker = (
   policy: "solo" | "bot" = "bot",
   bots?: ReadonlyArray<ReviewBot>,
   localCheck?: LocalCheckPass,
+  declaredCi?: boolean,
 ): string | undefined => {
   if (intent.hold !== undefined) return `held: ${intent.hold}`;
   if (badge.state !== "OPEN") return `it is ${badge.state.toLowerCase()}`;
@@ -151,14 +152,16 @@ export const mergeBlocker = (
   const drift = approvalBlocker(intent, badge);
   if (drift !== undefined) return drift;
   if (badge.reviewUnread === true) return "its reviews weren't read";
-  if (!mergePolicyReady(badge, policy, bots, localCheck))
+  if (!mergePolicyReady(badge, policy, bots, localCheck, declaredCi))
     return policy === "bot"
       ? "not approved on its head, green and clean yet"
-      : localCheckOnHead(badge, localCheck)
-        ? badge.mergeChecks === "pending"
-          ? "locally checked, waiting on the CI jobs its merge policy always requires"
-          : "locally checked, but not fresh, free of failing checks and allowed by GitHub yet"
-        : "not fresh, green (or locally checked on its head) and allowed by GitHub yet";
+      : declaredCi === true
+        ? "not fresh, its base's declared CI not passing on its head, or not allowed by GitHub yet"
+        : localCheckOnHead(badge, localCheck)
+          ? badge.mergeChecks === "pending"
+            ? "locally checked, waiting on the CI jobs its merge policy always requires"
+            : "locally checked, but not fresh, free of failing checks and allowed by GitHub yet"
+          : "not fresh, green (or locally checked on its head) and allowed by GitHub yet";
   return undefined;
 };
 
@@ -377,7 +380,8 @@ export const MergeWhenReadyLive = Layer.effect(
             : known !== undefined
               ? known.localCheck
               : yield* localCheckFor(thread, badge);
-        return mergeBlocker(intent, badge, policy, bots, localCheck);
+        const declaredCi = policy === "solo" && (yield* declaredCiOnlyFor(thread));
+        return mergeBlocker(intent, badge, policy, bots, localCheck, declaredCi);
       });
 
     // Verify identity before the fresh CI/review fetch, then use an atomic authority snapshot
@@ -1061,6 +1065,7 @@ export const MergeWhenReadyLive = Layer.effect(
                           ),
                           reviewBotsOf(final.context.settings),
                           localCheck,
+                          declaredCi,
                         ) !== undefined
                       )
                         return undefined;

@@ -344,17 +344,45 @@ export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
     return yield* verifyAgainst(cwd, repo, badge, policy);
   }).pipe(Effect.catchDefect((error) => Effect.fail(new Error(String(error)))));
 
+const confirmUnmoved = (cwd: string, repo: string, badge: ExactBadge) =>
+  Effect.gen(function* () {
+    const prOut = yield* ghApi(cwd, [`repos/${repo}/pulls/${badge.number}`]);
+    if (prOut.status !== 0 || prOut.truncated)
+      throw new Error("Merge CI PR freshness lookup failed");
+    const pr = json(prOut.stdout);
+    const prHead = record(pr["head"]);
+    const prBase = record(pr["base"]);
+    if (
+      pr["number"] !== badge.number ||
+      pr["state"] !== "open" ||
+      prHead["sha"] !== badge.headRefOid ||
+      prHead["ref"] !== badge.headRef ||
+      badge.baseRef === undefined ||
+      prBase["ref"] !== badge.baseRef
+    )
+      throw new Error("Merge CI PR head or base branch changed");
+    const tipOut = yield* ghApi(cwd, [
+      `repos/${repo}/commits/${encodeURIComponent(`heads/${badge.baseRef}`)}`,
+    ]);
+    if (tipOut.status !== 0 || tipOut.truncated) throw new Error("Merge CI base tip lookup failed");
+    if (json(tipOut.stdout)["sha"] !== (currentBaseOf(badge) ?? badge.baseRefOid))
+      throw new Error("Merge CI base moved during its verification");
+  });
+
 /**
  * The CI the base branch's tip declares, on exactly `badge`'s head, with no other evidence in its
  * place: neither GitHub's check contexts nor a local check. `declared: false` when the base
- * declares none, which never qualifies a merge that needs a declaration.
+ * declares none, which never qualifies a merge that needs a declaration. A pass is confirmed
+ * against a last read of the PR and its base's tip: a retarget, a push or a moved base refuses it.
  */
 export const verifyDeclaredMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
   Effect.gen(function* () {
     if (!exact(badge)) throw new Error("Merge CI needs the exact base, head and branch");
     const policy = yield* readPolicy(cwd, repo, currentBaseOf(badge) ?? badge.baseRefOid);
     if (policy === undefined) return { declared: false } as const;
-    return { declared: true, checks: yield* verifyAgainst(cwd, repo, badge, policy) } as const;
+    const checks = yield* verifyAgainst(cwd, repo, badge, policy);
+    if (checks === "passing") yield* confirmUnmoved(cwd, repo, badge);
+    return { declared: true, checks } as const;
   }).pipe(Effect.catchDefect((error) => Effect.fail(new Error(String(error)))));
 
 /**
