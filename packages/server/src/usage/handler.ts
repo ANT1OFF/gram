@@ -7,7 +7,7 @@ import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 import { usageHistoryEnabled } from "@gram/contracts";
 import { type ThreadId } from "@gram/contracts";
-import { readableOnly } from "../embedding/readable-by.ts";
+import { readableOnly, readableWorkspacesOnly } from "../embedding/readable-by.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import type { Handlers } from "../rpc/handlers/common.ts";
 import { UsageHistoryRoots } from "./history-roots.ts";
@@ -51,14 +51,22 @@ export const usageHandlers = Effect.gen(function* () {
                 }),
               ),
         ),
-        // The breakdown names no thread the caller may not see (`embedding/readable-by.ts`).
+        // The breakdown names no thread or workspace the caller may not see
+        // (`embedding/readable-by.ts`). Their tokens still count in the totals, which name none.
         Effect.flatMap((overview) =>
           overview.breakdown === undefined
             ? Effect.succeed(overview)
-            : Effect.map(
-                readableOnly(overview.breakdown.threads, (row) => row.threadId as ThreadId),
-                (threads) => ({ ...overview, breakdown: { ...overview.breakdown!, threads } }),
-              ),
+            : Effect.gen(function* () {
+                const breakdown = overview.breakdown!;
+                const threads = yield* readableOnly(
+                  breakdown.threads,
+                  (row) => row.threadId as ThreadId,
+                );
+                const workspaces = yield* readableWorkspacesOnly(breakdown.workspaces, (row) => ({
+                  id: row.workspaceId,
+                }));
+                return { ...overview, breakdown: { ...breakdown, threads, workspaces } };
+              }),
         ),
       ),
   } satisfies Partial<Handlers>;

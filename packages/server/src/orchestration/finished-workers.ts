@@ -29,6 +29,7 @@ import * as Effect from "effect/Effect";
 
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadArchiveShape } from "./archive.ts";
+import { readableWorkspacesOnly } from "../embedding/readable-by.ts";
 
 /** The most archive-only workers the list reads the headings of, newest first. */
 const FINISHED_ARCHIVE_LIST_MAX = 50;
@@ -237,13 +238,19 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
       return yield* archivedDetail(threadId);
     });
 
-  /** A worker only the archive has: found through the workspaces' archives by its id. */
+  /**
+   * A worker only the archive has: found through the archives of the workspaces the caller may
+   * see, by its id. One in a workspace the caller may not see is answered as no such thread.
+   */
   const archivedDetail = (
     threadId: ThreadId,
   ): Effect.Effect<FinishedWorkerDetail, ThreadNotFound> =>
     Effect.gen(function* () {
       if (archive !== undefined) {
-        const workspaces = (yield* store.listWorkspaces).map((state) => state.workspace.id);
+        const workspaces = (yield* readableWorkspacesOnly(
+          yield* store.listWorkspaces,
+          (state) => state.workspace,
+        )).map((state) => state.workspace.id);
         for (const workspaceId of workspaces) {
           const text = yield* archive.read(workspaceId, threadId).pipe(Effect.option);
           if (text._tag === "None") continue;
