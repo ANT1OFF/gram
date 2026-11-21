@@ -24,28 +24,6 @@ const GLOBAL = [
 const NO_TESTS = [/\.md$/, /^docs\//, /^\.github\//, /^\.gram\//, /^\.agents\//, /^\.claude\//];
 
 /** Every workspace: its directory, package name, Vitest project and the workspaces it uses. */
-/** JSON with tsconfig's comments and trailing commas, as TypeScript reads it. */
-export const parseJsonc = (text) => {
-  let out = "";
-  for (let at = 0; at < text.length; at++) {
-    const char = text[at];
-    if (char === '"') {
-      const end = /"(?:[^"\\]|\\.)*"/y;
-      end.lastIndex = at;
-      const string = end.exec(text)?.[0] ?? text.slice(at);
-      out += string;
-      at += string.length - 1;
-    } else if (char === "/" && text[at + 1] === "/") {
-      while (at < text.length && text[at] !== "\n") at++;
-      out += "\n";
-    } else if (char === "/" && text[at + 1] === "*") {
-      const close = text.indexOf("*/", at + 2);
-      at = close === -1 ? text.length : close + 1;
-    } else out += char;
-  }
-  return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
-};
-
 export function workspaces(root) {
   const list = [];
   for (const group of ["apps", "packages"]) {
@@ -61,7 +39,17 @@ export function workspaces(root) {
       let references = [];
       const tsconfigPath = join(root, dir, "tsconfig.json");
       if (existsSync(tsconfigPath)) {
-        const tsconfig = parseJsonc(readFileSync(tsconfigPath, "utf8"));
+        let tsconfig;
+        try {
+          tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8"));
+        } catch (error) {
+          // Read silently, a comment would drop the project references and with them the
+          // workspaces a change reaches.
+          throw new Error(
+            `${relative(root, tsconfigPath)} must be plain JSON, without comments or trailing commas, so the affected-projects graph can read its references: ${error instanceof Error ? error.message : error}`,
+            { cause: error },
+          );
+        }
         references = (tsconfig.references ?? []).map((ref) =>
           relative(root, join(root, dir, ref.path)),
         );

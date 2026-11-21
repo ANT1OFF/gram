@@ -17,7 +17,7 @@ import {
   type MockPrWrites,
 } from "../mock-git";
 import { MockReviews } from "../mock-review";
-import { mockVerifyState } from "../mock-verify";
+import { mockVerifyEvidence, mockVerifyState } from "../mock-verify";
 import type { MockWorld } from "../mock-world";
 import type { PullRequestsApi } from "./types";
 
@@ -135,6 +135,7 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
       ],
     }),
     verifyState: async (threadId) => mockVerifyState(world.summary(threadId)),
+    verifyEvidence: async (_threadId, driver, file) => mockVerifyEvidence(driver, file),
     prChecks: async (threadId) => ({
       checks: (await prDetail(threadId)).detail?.checkRuns ?? [],
     }),

@@ -970,3 +970,28 @@ describe("settings-entry", () => {
     expect(probeConfig("packages/server/src", source)).not.toContain("gram(settings-entry)");
   });
 });
+
+describe("no-raw-git", () => {
+  const rule = "gram/no-raw-git";
+
+  it("refuses git, gh and npm started past Proc", () => {
+    const found = lint(
+      `import { execFileSync, spawn } from "node:child_process";
+      execFileSync("git", ["status"]);
+      spawn("gh", ["pr", "create"]);
+      ChildProcess.make("npm", ["view", name]);
+      execSync(\`git -C \${dir} log\`);
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([2, 3, 4, 5]);
+  });
+
+  it("allows other programs", () => {
+    expect(lint(`spawn("ssh", ["host"]); execFileSync("github-thing", []);`, rule)).toEqual([]);
+  });
+
+  it.each(ALLOWLISTS["no-raw-git"].pending)("still has an unmoved site in %s", (file) => {
+    expect(lint(readFileSync(join(root, file), "utf8"), rule).length).toBeGreaterThan(0);
+  });
+});

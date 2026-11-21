@@ -35,8 +35,9 @@ import {
   SignedInWorkersLive,
   signedInSource,
   WorkerMachinePort,
+  type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
-import { fakeApp, NAME, ORIGIN, provisionRelayed, SERVER } from "./signed-in-fixtures.ts";
+import { ACCOUNT, fakeApp, NAME, ORIGIN, provisionRelayed, SERVER } from "./signed-in-fixtures.ts";
 
 const none = () => Effect.die(new Error("not in this test"));
 
@@ -355,7 +356,10 @@ describe("worker machines from a signed-in hosted server", () => {
         expect(arrived).toEqual({ failed: noAppToolsTunnel(NAME) });
         // As a spawn does with an arrival that failed: given back.
         yield* source.abandon(NAME);
-        expect(app.calls.at(-1)).toEqual({ call: "stop", body: { name: NAME } });
+        expect(app.calls.at(-1)).toEqual({
+          call: "stop",
+          body: { name: NAME, notAfter: expect.any(Number) },
+        });
         expect(hosts.list().some((each) => each.name === NAME)).toBe(false);
       }).pipe(Effect.scoped),
   );
@@ -588,7 +592,10 @@ describe("worker machines from a signed-in hosted server", () => {
       const words = yield* source.timedOut(NAME);
       expect(words).toMatch(/didn't join within \d+ minutes, so it was stopped/);
       expect(app.calls.map((each) => each.call)).toContain("stop");
-      expect(app.calls.find((each) => each.call === "stop")?.body).toEqual({ name: NAME });
+      expect(app.calls.find((each) => each.call === "stop")?.body).toEqual({
+        name: NAME,
+        notAfter: expect.any(Number),
+      });
       expect(unrelayed).toEqual([NAME]);
       expect(hosts.list().some((each) => each.name === NAME)).toBe(false);
     }),
@@ -728,7 +735,10 @@ describe("worker machines from a signed-in hosted server", () => {
       const tell = releaseTeller(undefined, port)!;
       yield* tell(machine, true);
       expect(app.calls).toEqual([
-        { call: "release", body: { name: NAME, released: true, reason: "finished" } },
+        {
+          call: "release",
+          body: { name: NAME, released: true, reason: "finished", notAfter: expect.any(Number) },
+        },
       ]);
     }),
   );
@@ -746,9 +756,9 @@ describe("worker machines from a signed-in hosted server", () => {
         via: ORIGIN,
       };
       expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
-      // A 404 is a machine reclaimed there: gone, nothing to tell again.
+      // Nor a 404: the server answers it for every machine while its backend is out of reach.
       answer = { status: 404, body: { code: "not_found" } };
-      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Success");
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
       answer = { status: 200, body: { known: true, released: false } };
       expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Success");
     }),
@@ -774,6 +784,8 @@ describe("worker machines from a signed-in hosted server", () => {
           timeoutMs: 100,
           everyMs: 20,
           stopRetryMs: 10,
+          // Its stops are answered 503, which settles nothing: held, but not for this test.
+          unansweredHoldMs: 0,
         });
         expect(yield* source.arrive(NAME)).toEqual({ failed: "timeout" });
         const words = yield* source.timedOut(NAME);
@@ -804,7 +816,10 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
           Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
         ),
       );
-      expect(told).toEqual([{ machines: [{ origin: ORIGIN, name: NAME }], fresh: true }]);
+      // Each carried under the sign-in it was asked for under alone.
+      expect(told).toEqual([
+        { machines: [{ origin: ORIGIN, name: NAME, account: ACCOUNT }], fresh: true },
+      ]);
       // Removed by hand under Settings → Machines: the app is told to stop carrying it.
       hosts.remove(hosts.list()[0]!.id);
       expect(told.at(-1)).toEqual({ machines: [] });
@@ -872,17 +887,69 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
     }),
   );
 
-  it.live("keep a machine the server says is stopped, for work here to start again", () =>
+  it.live("forget nothing of one sign-in's machine on what another sign-in is told", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
       provisionRelayed(hosts, NAME);
-      const unrelayed: string[] = [];
-      const app = fakeApp({ answer: () => ({ status: 200, body: { phase: "stopped" } }) });
-      const port = bridgeWorkerMachines(app.port);
-      const pass = forgetReclaimed({ ...port, unrelay: (name) => unrelayed.push(name) }, hosts);
+      // Signed in there as someone else now: the app sends nothing asked under the first
+      // sign-in, and the server would answer the second that it knows no such machine.
+      const base = bridgeWorkerMachines(
+        fakeApp({ answer: () => ({ status: 404, body: { code: "not_found" } }) }).port,
+      );
+      const asked: Array<string | undefined> = [];
+      const port: WorkerMachinePortShape = {
+        ...base,
+        call: (origin, call, body, options) => {
+          asked.push(options?.account);
+          return options?.account === ACCOUNT
+            ? Effect.succeed({ ok: false as const, why: "signed in as someone else" })
+            : base.call(origin, call, body, options);
+        },
+      };
+      const pass = forgetReclaimed(port, hosts, new Map());
       for (let each = 0; each < 4; each += 1) yield* pass;
-      expect(unrelayed).toEqual([]);
-      expect(hosts.list()).toHaveLength(1);
+      // Asked after under its own sign-in, which the app refused: still registered.
+      expect(asked).toEqual([ACCOUNT, ACCOUNT, ACCOUNT, ACCOUNT]);
+      expect(hosts.list().map((each) => each.name)).toEqual([NAME]);
+    }),
+  );
+
+  it.live("forget no machine registered before sign-ins were kept on a not_found", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const key = generateHostKey();
+      // As registered before: no sign-in kept with it, so whose it is there isn't known.
+      hosts.machines.provision({
+        name: NAME,
+        publicKey: key.publicKey,
+        platform: "linux",
+        onDemand: "worker",
+        via: ORIGIN,
+      });
+      const app = fakeApp({ answer: () => ({ status: 404, body: { code: "not_found" } }) });
+      const pass = forgetReclaimed(bridgeWorkerMachines(app.port), hosts, new Map());
+      for (let each = 0; each < 4; each += 1) yield* pass;
+      expect(hosts.list().map((each) => each.name)).toEqual([NAME]);
+    }),
+  );
+
+  it.live("keep a machine the server says is stopped, or answers a 404 not not_found", () =>
+    Effect.gen(function* () {
+      // Stopped: for work here to start again. A 404 of no machine's: a route not there now.
+      for (const answer of [
+        { status: 200, body: { phase: "stopped" } },
+        { status: 404, body: {} },
+      ]) {
+        const hosts = yield* RemoteHosts.make(memoryMachineStore());
+        provisionRelayed(hosts, NAME);
+        const unrelayed: string[] = [];
+        const app = fakeApp({ answer: () => answer });
+        const port = bridgeWorkerMachines(app.port);
+        const pass = forgetReclaimed({ ...port, unrelay: (name) => unrelayed.push(name) }, hosts);
+        for (let each = 0; each < 4; each += 1) yield* pass;
+        expect(unrelayed).toEqual([]);
+        expect(hosts.list()).toHaveLength(1);
+      }
     }),
   );
 

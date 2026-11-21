@@ -1,12 +1,22 @@
+// Before anything else: the replayable mock replaces timers and randomness that later modules keep.
+// oxlint-disable-next-line import/no-unassigned-import -- it must run before any other module
+import "./api/mock-modes/install";
+// oxlint-disable-next-line import/no-unassigned-import -- Motion's switch, apart from install's
+import "./api/mock-modes/still-motion";
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { ApiProvider, createApi } from "./api/context";
+import { takeOriginKey } from "./api/origin-key";
 import { installKeyboard } from "./keyboard/registry";
 import { createAppRouter } from "./router";
 import "./styles/globals.css";
+
+// Before the router reads the address: the boot redirect's fragment is the server's key.
+takeOriginKey(window.location, window.history);
 
 const queryClient = new QueryClient();
 

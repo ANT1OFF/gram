@@ -39,7 +39,15 @@ The orchestrator's `sandbox` code stops talking to `OnDemandHosts` directly. It 
 for which joined machines are its own. There are two:
 
 - **Embedded** (unchanged): `OnDemandHosts` over `GRAM_HOST_PROVIDER_URL`, naming the orchestrator
-  host's owner in each call, as now.
+  host's owner in each call, as now, and behaving as it did before this feature:
+  - A machine of its own is started and waited for as the call is resolved, so its machine and
+    model are admitted before any approval card.
+  - A machine shared by `shareWith` goes to the spawn by name, online or not: nothing waits for it
+    first.
+  - Every `409` from `/hosts/start` is over the total, whatever its `code`.
+  - The release pass judges a machine by the workers the ledger reads finished, keeps what it told
+    by machine name, and tells a take-back that failed again on the next pass.
+  - The orchestrator's prompt says nothing of `sandbox`; the tool's description does.
 - **Signed in** (new): the desktop app, over the same `parentPort` door `send_worker` uses. The
   server asks; the app makes the call to the hosted server with the person's sign-in and answers.
   The server never holds a token, and names no owner: the hosted server takes the person from the
@@ -173,12 +181,21 @@ that start itself whenever work here needs the machine:
 - **A spawn reusing it** does the same as it waits: started once; failed again after that start,
   the spawn is told at once in the server's words.
 - Each wake is the spawn's start: the name's lock, a release taken back first, a `503` asked again
-  a few times. Nothing else starts a machine: never a dial, a relay, or a pass.
+  a few times. Nothing else starts a machine: never a dial, a relay, or a pass. A wake answered
+  `404` (its `…/status`, its start, or the take-back of its release) is tried again while the
+  machine is wanted and still registered here, as one that met a passing error is: the server
+  answers so while the workspace has no backend. A want stops after three `not_found` wakes in a
+  row; only the three-pass rule below forgets the machine. A spawn waiting for a machine it asked
+  for fails on `not_found` only after three answers in a row (one that got no answer starts the
+  count afresh), and otherwise waits to its deadline. A spawn reusing a machine whose release
+  take-back is answered `not_found` asks again, a little apart, and gives up on it only after
+  three in a row.
 - Whether work still wants the machine is read under the name's lock as each start would go, not
   when the wake was queued: once the last session waiting has gone, no start is sent. One already
   sent is left to the server's idle stop.
 - A machine still wanted and still offline here is looked at again every five seconds, whatever
-  the last look found, until it joins, is no longer wanted, or is gone or refused there: one up
+  the last look found, until it joins, is no longer wanted, is refused there, is answered
+  `not_found` three times in a row, or is forgotten here as gone (`forgetReclaimed`): one up
   there may be stopped while idle before its host dials, and only a start wakes it.
 - Only an answered `stopped` or `failed` uses up a wake. A `…/status` with no answer or a `5xx`,
   or a start answered so (a `502` while the machine is still being stopped there), is tried again
@@ -228,7 +245,8 @@ subscription token reaches a machine, with its own consent.
   restarted is dialled again), on every change of its machines (a removal under Settings stops its
   relay), and every minute besides. The app keeps that list even while its sign-in is still being
   restored, and dials each once the sign-in covers it. A machine the server no longer knows
-  (`…/status` 404, reclaimed after its release) is forgotten, so relays never pile up; past 32
+  (`…/status` `404 not_found` three passes in a row, reclaimed after its release) is forgotten,
+  so relays never pile up; past 32
   relayed machines a new one is refused with what to remove.
 - **Revocation.** Signing out, the sign-in ending, or hosted features turning off closes every live
   relay the sign-in no longer covers, at once and in a check every 30 seconds; none dials again
@@ -253,16 +271,57 @@ subscription token reaches a machine, with its own consent.
   only once its owing is on disk: one that can't be written is refused, and nothing is sent. A
   start stopped before it was admitted sent nothing, so it gives nothing back and owes nothing. A
   `429` from the server is passing: a start is asked again after a wait, and a wake is tried
-  again while it is wanted. A start answered `503` once stays of unknown outcome, whatever is
-  answered after it, so its owing is kept until a stop settles it. All of a name's owings go once its
-  machine is registered here or confirmed stopped under its name's lock.
+  again while it is wanted. A start answered `503`, or any other 5xx (a `502` can come from a start
+  that failed after its machine was written), stays of unknown outcome, whatever is answered after
+  it (over the total, a release whose take-back is answered `404`) and whether or not it is asked
+  again, so its owing is kept and it is given back. All of a name's owings go once its machine is
+  registered here or confirmed stopped under its name's lock.
 - **Stops owed.** A stop the server never confirmed, for a machine never registered here, is kept
   (`worker-machine-stops.json`, beside the machines) and asked again every ten minutes until it is.
-  When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way), the
-  server's "no such machine" (a 404, or a 2xx with `stopped: false`) settles nothing for fifteen
-  minutes, since the start may still make it. A start and a stop of one name never overlap here:
-  a give-back keeps the name through every attempt of its stop, and half a minute more after one
-  no one answered, so a retry's start of that name goes out only after it.
+  The server's "no such machine" is a 2xx with `stopped: false`, or `404 { code: "not_found" }` on
+  three passes in a row: one such 404 is no proof, since the server answers it for every machine
+  while it has no backend or the workspace no backend, and any other 404 is a passing error.
+  When the start's outcome wasn't known (no answer, or a spawn stopped while it was on its way),
+  "no such machine" settles nothing for fifteen minutes, since the start may still make it. A
+  start and a stop of one name never overlap here: a give-back keeps the name through every
+  attempt of its stop, and half a minute more if any attempt went unanswered, whatever later ones
+  were answered, so a retry's start of that name goes out only after it. A give-back is never cut
+  short once begun, whoever stops waiting for it. Each stop sent is held besides, in the stops
+  owed file, from before it is sent until its own answer comes, or until the time it may still
+  act has passed: its send-by, its request, the two minutes and more the hosted server may take
+  to act on a stop it took, and half a minute more. Only an answer below 500 lets a hold go: a
+  5xx (a `503` included, as the server's own call down may have broken after it went out) is no
+  answer here, nor to the app's fence. No start of the name, after a restart
+  included, goes out before. A stop whose hold can't be written down isn't sent; it is owed.
+  Holds whose time is up are pruned before every write, and nothing is written past what a
+  restart reads back; a file grown past that before is still read, its owings kept, and one that
+  can't be read at all is set aside beside it, never written over. A hold read back is never
+  further off than one stop's whole hold from now, so a clock stepped back since it was written
+  keeps no start of its name waiting longer. The hosted server bounds what a stop or a release
+  may still do itself (`signed-in-fences.ts`): each stop carries `notAfter`, 175 s after it was
+  asked (its send-by, its request and the server's own time to act), which leaves the hold's last
+  half-minute for the two clocks to differ, and each release a minute; and both carry the machine
+  and run their name was last known to be (`sandboxId`, `generation`, from a start's 202 or a
+  status's 200, kept in memory by server, name and sign-in), so one that comes late does nothing
+  to a newer start of its name. A fenced call the server held back changed nothing there: a stop
+  answered `expired` or `superseded` is neither stopped nor taken as no such machine, so a stop
+  owed stays owed, and one `superseded` is asked again with `notAfter` alone, held to the run
+  the name is now (under its name's lock no start of this Gram's can have made it). A release
+  answered `expired` is asked again at once; one `superseded`, or `applied: false`, is not taken
+  as told, its status is read again, and the next pass decides it afresh. A release carries the
+  run its name was known to be when it was decided, on every ask: once the name is known as
+  another run, nothing more of it is sent, its status is read again, and the next pass decides it
+  afresh. After a restart no run is known until a start or a status names one, and each call
+  carries `notAfter` alone. A server from before fences ignores them on a stop, and refuses a
+  release that carries them (`400`). Such a release is never sent without them, since one
+  without could land on a newer run of its name: it stays to be told, and is sent again only
+  after twenty minutes, twice that after a second refusal, and so on to an hour. A stop or a
+  release answered `expired` is logged, since a clock here behind the server's by more than the
+  margin would have every one answered so. The app, which sends every call,
+  fences them by name where they leave it (`worker-machine-fence.ts`): a start it has received
+  drops any stop of that name still waiting to go out (behind a token renewal, say); a start goes
+  out only once no stop of the name is on its way, nor for half a minute after one that got no
+  answer; and a stop isn't sent past the `sendBy` this Gram gave it.
 - **A machine in use is never given back.** A spawn that fails or is interrupted after its machine
   came gives the machine back only if no open thread is placed on it: not its own worker made
   before the failure, and not another worker sharing it. A name a later start takes, or one registered here since, is that start's: no stop owed for
@@ -271,18 +330,55 @@ subscription token reaches a machine, with its own consent.
   restart it tells each machine at work that it is working, once, in case the server still holds
   a release from before; a machine just back online is told so at once, and only a verdict that
   its work is over waits for it to settle. A release counts as told only once the server applied
-  it (not a 404, nor a 2xx saying it knows no such machine), so one that wasn't is told again.
-- **A machine the server no longer knows** is forgotten here after three passes in a row answer
-  404, since the same answer comes while its workspace is out of reach for a while.
+  it (not a 404, nor a 2xx saying it knows no such machine), so one that wasn't is told again. A
+  release answered 404 forgets nothing: a `404 not_found` is told again next pass, any other 404
+  is asked again at once, as a busy server is.
+- **One sign-in's machines are its own.** The app hands this Gram an opaque mark of the sign-in
+  it asks under, set once as the person signs in and kept with the sign-in
+  (`StoredSignIn.machineMark`). Where the server's token answer names the organisation the grant
+  is for, the mark is the server, that organisation and the person, hashed: the same for every
+  sign-in as that person there, so signing in again reaches what was made before. Where it
+  doesn't, each sign-in has a mark of its own, so a later sign-in leaves what an earlier one made
+  alone. When a renewal of that same sign-in first names its organisation, the sign-in takes the
+  organisation's mark, and keeps its own as a former mark: this Gram moves the machines and stops
+  made under the former mark to the new one, and touches no other sign-in's. It does so for every
+  sign-in the app holds, paused or not, whichever one new machines are asked of: the app answers
+  `marks` with each one's mark and former marks, which this Gram asks for at start, with each
+  relays resync (every minute), and whenever the app says its sign-ins changed
+  (`machines.signins`, sent as a renewal gives one a new mark), besides before any source asks
+  under one. Each ledger's move is whole or not at all, and asked for again each time, so one that a
+  failed write or a restart cut short is finished by the next; until then the app still answers
+  what is asked under a sign-in's own former marks, as that sign-in's. One kept from before marks
+  were takes its mark from its first renewal; until then nothing is asked for under it. A new
+  mark, of its own or its organisation's, is used only once the keychain took it, in the same
+  record as the refresh token: one whose write failed is not used, and the next renewal tries
+  again, so nothing is made under a mark a restart would lose. Everything made under a sign-in carries its mark: every start, the machine registered
+  (`PairedMachine.viaAccount`) and every stop owed. Each call about one carries it, and the app
+  sends nothing for a mark that isn't its sign-in's now. A stop owed is let go of, settled or
+  skipped only by its own sign-in's answers and registrations: while another sign-in's machine
+  has its name, it is neither sent nor let go of. A machine registered under another sign-in is
+  frozen for this one: a start of its name (a retry of the same request after signing in again,
+  say) is refused in words before anything is sent, no give-back of the name sends a stop, and its
+  relay is carried, dialled and leased only under the sign-in it was asked for under, so it is
+  never kept awake by another. A name's bring-up is shared only within the sign-in that began
+  it: a retry under another is refused while it is under way, never joined. A relay's dial is
+  checked against the sign-in again as it opens, after any wait to prepare it. What a server
+  offers (its choices and models) is kept a short while for the sign-in it was asked under alone. So signing in there as someone else, or in another organisation,
+  neither forgets, reuses nor deletes the first sign-in's machines, nor settles their stops.
+  A machine or a stop owed from before marks were kept is never forgotten or settled on a "no such
+  machine", which another sign-in may be answering; only a stop answered done settles one.
+- **A machine the server no longer knows** is forgotten here only after three passes in a row
+  answer its `…/status` `404 { code: "not_found" }`, since the same answer comes while its
+  workspace is out of reach for a while. Nothing else forgets a machine a server started.
 - **Reusing a machine.** A machine a spawn reuses (one an earlier spawn of the same id left
   registered, or one it shares that is offline) is told it is working (`released: false`) before
   it is waited for: one released once its work was over sleeps until then.
 - **A machine still released.** A start answered `409 { code: "released" }` takes the release
-  back (`released: false`) and asks once more, never again. A take-back answered `404` (the
-  release is already due for reclaim) spends the name as a reclaimed one, below, and asks
-  nothing again under it. A release answered
-  `404 { code: "not_found" }`, a take-back's too, is a machine reclaimed there, forgotten here; a
-  `503` is asked again after a wait.
+  back (`released: false`) and asks once more, never again. A take-back answered
+  `404 { code: "not_found" }` (the release is already due for reclaim) refuses that start as a
+  reclaimed name, below, and asks nothing more under it; a spawn that reuses a machine and is
+  answered so is refused without waiting for it. Neither forgets the machine: that is the
+  three-pass rule's. A `503`, or any other 404, is asked again after a wait.
 - **A reclaimed name.** A start answered `409 { code: "name_in_use" }` (the name was a machine's
   the server has since reclaimed) is refused once, saying to spawn with another
   `clientRequestId`; it is never asked again, nor read as being over the total.
@@ -377,15 +473,15 @@ server's to relax for a desktop's ask or not. Until it does, the desktop refuses
 
 ## 8. Where it is built
 
-| Piece                                     | Where                                                                  |
-| ----------------------------------------- | ---------------------------------------------------------------------- |
-| Discovery fields, the scope, the calls    | `contracts/src/device.ts`, `shell/modules/device/hosted.ts`            |
-| The app's answers and the relay           | `shell/modules/device/serve-machines.ts`, wired in `apps/desktop`      |
-| The server's door, the provider, the dial | `server/src/embedding/signed-in-workers.ts`                            |
-| One provider shape for both sources       | `server/src/embedding/worker-machines.ts` (`WorkerMachineSource`)      |
-| A relayed host                            | `PairedMachine.via`, `DialRoute` `relayed` (`host/paired-machines.ts`) |
-| Release                                   | `embedding/worker-machine-release.ts` (`releaseTeller`)                |
-| The orchestrator's prompt                 | One line on `sandbox`, only where a provider offers it (`prompt.ts`)   |
+| Piece                                     | Where                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| Discovery fields, the scope, the calls    | `contracts/src/device.ts`, `shell/modules/device/hosted.ts`               |
+| The app's answers and the relay           | `shell/modules/device/serve-machines.ts`, wired in `apps/desktop`         |
+| The server's door, the provider, the dial | `server/src/embedding/signed-in-workers.ts`                               |
+| One provider shape for both sources       | `server/src/embedding/worker-machines.ts` (`WorkerMachineSource`)         |
+| A relayed host                            | `PairedMachine.via`, `DialRoute` `relayed` (`host/paired-machines.ts`)    |
+| Release                                   | `embedding/worker-machine-release.ts` (`releaseTeller`)                   |
+| The orchestrator's prompt                 | One line on `sandbox`, only where a hosted server offers it (`prompt.ts`) |
 
 ## 9. Tests
 

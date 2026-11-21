@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import {
   WORKER_MACHINE_NAME,
   type WorkerMachineCall,
+  type WorkerMachineMarks,
   type WorkerMachineOp,
   type WorkerMachineRelayMessage,
   type WorkerMachineRequestMessage,
@@ -25,6 +26,12 @@ export const NO_SIGNED_IN_SERVER =
 
 export type Refused = { readonly ok: false; readonly why: string; readonly signIn?: true };
 
+/** One run of a machine there, as `…/start` (202) and `…/status` (200) name it. */
+export interface MachineRun {
+  readonly sandboxId: string;
+  readonly generation: number;
+}
+
 export interface WorkerMachinePortShape {
   /** Whether there is an app to ask at all. */
   readonly available: boolean;
@@ -32,23 +39,52 @@ export interface WorkerMachinePortShape {
   readonly server: () => Effect.Effect<
     { readonly ok: true; readonly server: WorkerMachineServer } | Refused
   >;
+  /**
+   * The mark of every sign-in the app holds, paused or not, with the marks each had before; none
+   * when the app can't say.
+   */
+  readonly marks: () => Effect.Effect<ReadonlyArray<WorkerMachineMarks>>;
+  /** Where the app's word that its sign-ins changed is handed: one handler, the latest set. */
+  readonly onSignIns: (handler: () => void) => void;
   /** One call to it, answered with its status and JSON body as received. */
   readonly call: (
     origin: string,
     call: WorkerMachineCall,
     body: Readonly<Record<string, unknown>>,
+    options?: {
+      /** The latest time the app may send it (`WorkerMachineOp`'s `sendBy`). */
+      readonly sendBy?: number;
+      readonly account?: string | undefined;
+      /**
+       * A release's run as it was when the release was decided (`knownRun`), `null` for none
+       * known: sent as it is, on every ask. Read only where calls are fenced (`fencedCalls`).
+       */
+      readonly run?: MachineRun | null | undefined;
+    },
   ) => Effect.Effect<
     { readonly ok: true; readonly status: number; readonly body: unknown } | Refused
   >;
-  /** Asks the app to carry this machine's connection, dialling its relay again whenever it ends. */
-  readonly relay: (origin: string, name: string) => void;
+  /**
+   * The run a name was last known to be under a sign-in there, `null` for none: only where calls
+   * are fenced (`fencedCalls`).
+   */
+  readonly knownRun?: (origin: string, name: string, account?: string) => MachineRun | null;
+  /**
+   * Asks the app to carry this machine's connection, dialling its relay again whenever it ends:
+   * under the sign-in `account` alone, where one is given.
+   */
+  readonly relay: (origin: string, name: string, account?: string) => void;
   readonly unrelay: (name: string) => void;
   /**
    * Tells the app to carry exactly these and no others; `fresh` from a server just started, so
    * every connection the app carried for the one before is dialled again.
    */
   readonly relays: (
-    machines: ReadonlyArray<{ readonly origin: string; readonly name: string }>,
+    machines: ReadonlyArray<{
+      readonly origin: string;
+      readonly name: string;
+      readonly account?: string;
+    }>,
     fresh?: boolean,
   ) => void;
   /** Where each relayed connection the app opens is handed: one handler, the latest set. */
@@ -84,6 +120,31 @@ const isResponse = (message: unknown): message is WorkerMachineResponseMessage =
   Reflect.get(message, "result") !== null;
 
 const CONN = /^[A-Za-z0-9_-]{8,64}$/;
+/** A sign-in's mark (`WorkerMachineServer.account`), as the app makes them. */
+const MARK = /^[A-Za-z0-9_-]{8,64}$/;
+/** The most sign-ins the app keeps, and so the most marks it tells. */
+const MARKS_MOST = 64;
+
+const isMark = (value: unknown): value is string => typeof value === "string" && MARK.test(value);
+
+/** The `marks` answer's list, read entry by entry: one malformed entry is left out alone. */
+const marksOf = (value: unknown): ReadonlyArray<WorkerMachineMarks> => {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MARKS_MOST).flatMap((each: unknown): WorkerMachineMarks[] => {
+    if (typeof each !== "object" || each === null) return [];
+    const origin = Reflect.get(each, "origin");
+    const account = Reflect.get(each, "account");
+    const former = Reflect.get(each, "formerAccounts");
+    return typeof origin === "string" &&
+      origin.length <= 512 &&
+      isMark(account) &&
+      Array.isArray(former) &&
+      former.length <= 8 &&
+      former.every(isMark)
+      ? [{ origin, account, formerAccounts: former as ReadonlyArray<string> }]
+      : [];
+  });
+};
 const HEADER = /^x-gram-host-[a-z]{2,16}$/;
 
 /** A relay message from the app, read field by field; anything else is no relay message. */
@@ -195,10 +256,19 @@ export const bridgeWorkerMachines = (
   const pending = new Map<string, (result: WorkerMachineResult) => void>();
   const conns = new Map<string, ReturnType<typeof portWebSocket>>();
   let handler: ((dial: RelayedDial) => void) | undefined;
+  let signIns: (() => void) | undefined;
   const post = (message: unknown) => port.postMessage(message);
   port.on("message", ({ data }) => {
     if (isResponse(data)) {
       pending.get(data.id)?.(data.result);
+      return;
+    }
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      Reflect.get(data, "type") === "machines.signins"
+    ) {
+      signIns?.();
       return;
     }
     const relayed = relayMessageOf(data);
@@ -256,21 +326,58 @@ export const bridgeWorkerMachines = (
             typeof server.origin === "string" &&
             typeof server.server === "string"
           )
-            return { ok: true as const, server: { origin: server.origin, server: server.server } };
+            return {
+              ok: true as const,
+              server: {
+                origin: server.origin,
+                server: server.server,
+                ...(typeof server.account === "string" && server.account.length <= 64
+                  ? { account: server.account }
+                  : {}),
+                ...(Array.isArray(server.formerAccounts) &&
+                server.formerAccounts.length <= 8 &&
+                server.formerAccounts.every(
+                  (each: unknown) => typeof each === "string" && each.length <= 64,
+                )
+                  ? { formerAccounts: server.formerAccounts as ReadonlyArray<string> }
+                  : {}),
+              },
+            };
           const why = "why" in result && typeof result.why === "string" ? result.why : undefined;
           return { ok: false as const, why: why ?? NO_SIGNED_IN_SERVER };
         }),
       ),
-    call: (origin, call, body) =>
-      ask({ op: "call", origin, call, body }).pipe(
+    marks: () =>
+      ask({ op: "marks" }).pipe(
+        Effect.map((result) => (result.ok && "marks" in result ? marksOf(result.marks) : [])),
+      ),
+    onSignIns: (next) => {
+      signIns = next;
+    },
+    call: (origin, call, body, options) =>
+      ask({
+        op: "call",
+        origin,
+        call,
+        body,
+        ...(options?.sendBy === undefined ? {} : { sendBy: options.sendBy }),
+        ...(options?.account === undefined ? {} : { account: options.account }),
+      }).pipe(
         Effect.map((result) =>
           result.ok && "status" in result && typeof result.status === "number"
             ? { ok: true as const, status: result.status, body: result.body }
             : refusedOf(result),
         ),
       ),
-    relay: (origin, name) =>
-      post({ type: "machines.request", id: randomUUID(), op: "relay", origin, name }),
+    relay: (origin, name, account) =>
+      post({
+        type: "machines.request",
+        id: randomUUID(),
+        op: "relay",
+        origin,
+        name,
+        ...(account === undefined ? {} : { account }),
+      }),
     unrelay: (name) => post({ type: "machines.request", id: randomUUID(), op: "unrelay", name }),
     relays: (machines, fresh) =>
       post({
@@ -292,6 +399,8 @@ const refusedHere = Effect.succeed({ ok: false as const, why: NO_APP });
 export const NO_WORKER_MACHINES: WorkerMachinePortShape = {
   available: false,
   server: () => refusedHere,
+  marks: () => Effect.succeed([]),
+  onSignIns: () => undefined,
   call: () => refusedHere,
   relay: () => undefined,
   unrelay: () => undefined,

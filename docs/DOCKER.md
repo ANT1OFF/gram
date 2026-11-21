@@ -20,6 +20,12 @@ Open the `boot http://127.0.0.1:4317/?boot=…` address the server printed. It s
 The address holds the launch token: anyone who has it can use this Gram, so don't paste it into a
 chat or a ticket. A restart prints a new one.
 
+Opening it hands the page a second key, in the part of the address after `#`, which no server is
+sent. The page keeps it in this browser's storage for Gram's address, and sends it with every
+request. Your browser also sends Gram's cookie to other servers on this computer's other ports. The
+cookie alone opens nothing but the app's own files, so such a server can't use it. A tab opened in
+another browser profile, or after a restart, needs the address again.
+
 The compose file maps the port to this machine's loopback only (`127.0.0.1:4317`), on the same
 port the server listens on inside the container, so the printed address works as it is. Other
 machines on your network can't reach it.
@@ -59,7 +65,7 @@ are much slower across that boundary.
 - The image sets `GRAM_CONTAINER=1` and `GRAM_LISTEN_HOST=0.0.0.0`, so the server listens on the
   container's own network, which only the port mapping reaches. Without `GRAM_CONTAINER=1` the
   server ignores `GRAM_LISTEN_HOST` and listens on loopback, and the desktop app drops both. Every
-  request still needs a loopback `Host` and the launch cookie.
+  request still needs a loopback `Host`, the launch cookie and the page's key.
 - To use another port, change the mapping's two sides and `GRAM_PORT` together. A `Host` that
   doesn't match the server's port is refused.
 - Phone access, the desktop app's tray and native notifications aren't part of the container.
@@ -78,16 +84,23 @@ are much slower across that boundary.
 
 ## The agent browser
 
-Agents' `browser_*` tools work in the container: the image has Debian's Chromium, and the server
-runs it headless for them ([how](AGENTS_AND_FEATURES.md#the-agent-browser-without-the-desktop-app)).
+Agents' `browser_*` tools work in the container that `compose.yaml` starts: the image has Debian's
+Chromium, and the compose file switches the server's headless browser on for them
+([how](AGENTS_AND_FEATURES.md#the-agent-browser-without-the-desktop-app)). The image alone leaves
+it off: a container started from it without `GRAM_HEADLESS_BROWSER` has no browser, and the tools
+say so.
 It reaches the container's loopback only, so an agent can open and test the dev server it started
 there, and nothing on the internet or your network. The thread's Preview tab shows its page live
 in your browser, and a click or a key in it takes the page over until you hand it back.
 
-Chromium runs without its own sandbox here (`GRAM_BROWSER_SANDBOX=0`), since the container's user
-can't make the namespaces it needs. The container is the boundary, as it is for the agents, which
-run as the same user. Build with `--build-arg CHROMIUM=` to leave Chromium out; the tools then say
-the server's browser couldn't open a page.
+Chromium runs without its own sandbox here (`GRAM_BROWSER_SANDBOX=0` in `compose.yaml`), since the
+container's user can't make the namespaces it needs. The container is the boundary, as it is for
+the agents, which run as the same user. That holds only for threads in this container, so a
+browser without its sandbox opens no page for a thread whose session runs on another machine, a
+[headless control plane](#a-headless-control-plane)'s threads among them: the tools say why. An
+operator who accepts that risk sets `GRAM_BROWSER_UNSANDBOXED_ELSEWHERE=1`; otherwise run the
+browser with its sandbox, or leave it off. Build with `--build-arg CHROMIUM=` to leave Chromium
+out; the tools then say the server's browser couldn't open a page.
 
 ## Hosted features
 

@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "@effect/vitest";
 import { type ThreadId } from "@gram/contracts";
+import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -60,6 +61,8 @@ const setup = (gates: {
       unrelay: () => undefined,
       relays: () => undefined,
       onDial: () => undefined,
+      marks: () => Effect.succeed([]),
+      onSignIns: () => undefined,
     };
     const hosts = {
       list: () => (online ? [machine] : []),
@@ -182,6 +185,28 @@ describe("a worker's machine brought up for a spawn", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("puts a worker shared onto an embedder's offline machine straight to the spawn", () =>
+    Effect.gen(function* () {
+      // An embedder's machine of Grace's workers, offline here (paused while idle, say).
+      const machine = { id: "m-0123456789abcdef01234567", name: NAME, onDemand: "worker" };
+      const plan = yield* makeWorkerSandbox({
+        orchestration: {} as never,
+        store: {
+          getThread: () => Effect.succeed({ checkout: { kind: "main", path: "/repo" } }),
+        } as never,
+        // Never reached: a share asks the provider nothing.
+        onDemand: {} as never,
+        signedIn: undefined,
+        workerHosts: { ownerOf: () => "grace" } as never,
+        joined: () => [{ ...machine, owner: "grace" }] as never,
+      });
+      const planned = yield* plan(CALLER, INPUT, { shareWith: NAME, reason: "Same build." });
+      // By name alone, as before hosted machines: no wait for it to join ahead of the spawn,
+      // which would stall up to five minutes and then refuse it, a retry of a made spawn too.
+      expect(planned).toEqual({ name: NAME, givesBack: false });
+    }).pipe(Effect.scoped),
+  );
+
   for (const [during, gate] of [
     ["reads which threads are placed on it", "threads"],
     ["waits for its stop", "stop"],
@@ -209,4 +234,71 @@ describe("a worker's machine brought up for a spawn", () => {
         yield* Scope.close(retry.scope, Exit.void);
       }).pipe(Effect.scoped),
     );
+
+  it.effect("never lets a retry under another sign-in join a bring-up still under way", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ call: string; account: string | undefined }> = [];
+      // The machine is accepted, and never joins while this test runs.
+      const port: WorkerMachinePortShape = {
+        available: true,
+        server: () => Effect.succeed({ ok: true as const, server: SERVER }),
+        call: (_origin, call, _body, options) =>
+          Effect.sync(() => {
+            calls.push({ call, account: options?.account });
+            return {
+              ok: true as const,
+              status: call === "start" ? 202 : call === "choices" ? 404 : 200,
+              body: call === "status" ? { phase: "starting" } : {},
+            };
+          }),
+        relay: () => undefined,
+        unrelay: () => undefined,
+        relays: () => undefined,
+        onDial: () => undefined,
+        marks: () => Effect.succeed([]),
+        onSignIns: () => undefined,
+      };
+      const hosts = {
+        list: () => [],
+        remove: () => false,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      // Signed in as one sign-in, then as another (the same person after signing in again).
+      let current = signedInSource(
+        { ...SERVER, account: "mark-before-0123456789" },
+        { port, hosts },
+      );
+      const plan = yield* makeWorkerSandbox({
+        orchestration: {} as never,
+        store: {
+          getThread: () => Effect.succeed({ checkout: { kind: "main", path: "/repo" } }),
+          listThreads: Effect.succeed([]),
+        } as never,
+        onDemand: undefined,
+        signedIn: {
+          port,
+          source: Effect.sync(() => ({ source: current, server: SERVER })),
+        } as never,
+        workerHosts: undefined,
+        joined: () => [] as never,
+      });
+      const first = yield* plan(CALLER, INPUT, SANDBOX);
+      const scope = yield* Scope.make();
+      yield* Effect.forkScoped(first!.prepare!.pipe(Scope.provide(scope)));
+      while (!calls.some((each) => each.call === "status")) yield* Effect.yieldNow;
+      current = signedInSource({ ...SERVER, account: "mark-after-0123456789" }, { port, hosts });
+      // A retry of the same request under the new sign-in: refused at once, never joined.
+      const retry = yield* plan(CALLER, INPUT, SANDBOX);
+      const exit = yield* Effect.exit(retry!.prepare!.pipe(Scope.provide(yield* Scope.make())));
+      expect(Exit.isFailure(exit) && String(Cause.squash(exit.cause))).toMatch(/another sign-in/);
+      expect(calls.filter((each) => each.call === "start").map((each) => each.account)).toEqual([
+        "mark-before-0123456789",
+      ]);
+      yield* Scope.close(scope, Exit.void);
+    }).pipe(Effect.scoped),
+  );
 });

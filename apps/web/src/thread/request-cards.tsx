@@ -5,7 +5,6 @@ import type {
   PermissionMode,
   PlanRequest,
   QuestionRequest,
-  RequestAnswer,
   SettingsDiffRow,
   SettingsProposalCard,
   Thread,
@@ -39,7 +38,6 @@ import {
 import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 
-import { useApi } from "@/api/context";
 import { HighlightedCommand } from "@/components/ai-elements/code-block";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { RecommendedTag } from "@/components/recommended-tag";
@@ -84,12 +82,12 @@ import {
   settingsProposal,
   workspaceProposal,
   type AlwaysRule,
-  type ApprovalReceipt,
   type ApprovalDetailField,
   type ApprovalDetails,
 } from "./request-model";
 import { ApprovalReceiptLine, useApprovalReceipts } from "./approval-receipt";
 import { useApprovalSlots } from "./approval-slots";
+import { useRespond } from "./use-respond";
 import { RoleChip } from "./role-chip";
 
 type RoleFields = Pick<Thread, "role" | "spawnedBy">;
@@ -612,27 +610,6 @@ function ApprovalQueue({
       ))}
     </div>
   );
-}
-
-function useRespond(threadId: ThreadId, request: PendingRequest) {
-  const api = useApi();
-  const [pending, setPending] = useState(false);
-  const respond = async (answer: RequestAnswer, receipt?: ApprovalReceipt) => {
-    if (pending) return;
-    setPending(true);
-    try {
-      await api.respond(threadId, request.id, answer);
-      if (receipt !== undefined)
-        useApprovalReceipts.getState().show(threadId, receipt, {
-          requestId: request.id,
-          toolUseId: request.kind === "approval" ? request.toolUseId : undefined,
-        });
-    } catch (error) {
-      console.error("respond", error);
-      setPending(false);
-    }
-  };
-  return { respond, pending };
 }
 
 function CardShell({

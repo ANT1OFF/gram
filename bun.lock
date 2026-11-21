@@ -14,7 +14,7 @@
     },
     "apps/desktop": {
       "name": "@gram/desktop",
-      "version": "1.31.0",
+      "version": "1.32.0",
       "dependencies": {
         "node-pty": "catalog:",
         "sherpa-onnx-node": "catalog:",
@@ -189,6 +189,7 @@
       "name": "@gram/themes",
       "version": "0.0.0",
       "devDependencies": {
+        "@types/node": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
       },

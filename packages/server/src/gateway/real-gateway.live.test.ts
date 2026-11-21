@@ -30,6 +30,7 @@ import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { prepareCodexHome } from "./codex-home.ts";
 import { GatewayCredentials } from "./credentials.ts";
 import { readOpenCodeKey } from "./seed.ts";
+import { ORIGIN_KEY_HEADER } from "../http/auth.ts";
 
 // `GRAM_LIVE_REAL_GATEWAY=1`, approved for a run and kept short: the real gateway from the user's
 // OpenCode config, its key taken only through the product's import (never printed or copied), one
@@ -82,7 +83,7 @@ const TestServer = ServerLayer.pipe(
 
 const makeClient = Effect.gen(function* () {
   const server = yield* HttpServer.HttpServer;
-  const { token } = yield* LaunchToken;
+  const { token, originKey } = yield* LaunchToken;
   const port = serverPort(server);
   const setCookie = yield* Effect.promise(
     () =>
@@ -108,7 +109,9 @@ const makeClient = Effect.gen(function* () {
             new (globalThis.WebSocket as unknown as new (
               url: string,
               init: { headers: Record<string, string> },
-            ) => globalThis.WebSocket)(url, { headers: { cookie } }),
+            ) => globalThis.WebSocket)(url, {
+              headers: { cookie, [ORIGIN_KEY_HEADER]: originKey },
+            }),
         ),
       ),
       Layer.provide(RpcSerialization.layerJson),

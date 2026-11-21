@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { contrastRatio } from "./color.ts";
+import { contrastRatio, luminance } from "./color.ts";
 import {
   ANSI_KEYS,
   derivePalette,
@@ -78,6 +78,29 @@ describe("presets", () => {
         contrastRatio(palette.seeds.bg, palette.seeds.surface),
         `${palette.id}: page ${palette.seeds.bg}, chrome ${palette.seeds.surface}`,
       ).toBeGreaterThanOrEqual(1.08);
+    }
+  });
+
+  it("sets a light preset's chrome behind its page, as dark's is", () => {
+    // Chrome lighter than the page reads as in front of it: the sidebar comes forward and joins
+    // the white cards, the layers running backwards.
+    for (const palette of PRESET_PALETTES.filter((p) => p.mode === "light")) {
+      expect(
+        luminance(palette.seeds.surface),
+        `${palette.id}: put the chrome ${palette.seeds.surface} a step under the page ${palette.seeds.bg}`,
+      ).toBeLessThan(luminance(palette.seeds.bg));
+    }
+  });
+
+  it("raises a light preset's cards a visible step off its page", () => {
+    // A card, a settings group or a menu is white in light; a page at white or a shade under it
+    // left the cards flat on it, where dark's cards sit clearly off their page.
+    for (const palette of PRESET_PALETTES.filter((p) => p.mode === "light")) {
+      const { colors } = derivePalette(palette);
+      expect(
+        contrastRatio(colors["surface-3"], colors["surface-2"]),
+        `${palette.id}: lower the page ${palette.seeds.bg} a step under white`,
+      ).toBeGreaterThanOrEqual(1.1);
     }
   });
 });

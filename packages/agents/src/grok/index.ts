@@ -4,7 +4,7 @@ export {
   startAcpAgent,
   type AcpConnection,
   type AcpHandlers,
-} from "./acp.ts";
+} from "../acp/connection.ts";
 export { makeGrokMapper, outputText, toolFor, turnUsage, type GrokMapper } from "./mapper.ts";
 export {
   autoAnswer,

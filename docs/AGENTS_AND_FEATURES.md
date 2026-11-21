@@ -366,8 +366,8 @@ at every armed merge in the repo, and fires `freezeLifted` wakes.
 
 ## Accounts, models and speed
 
-Claude Code and Codex run every role; OpenCode and Grok Build run chat threads (see
-[Grok Build](#grok-build)). Select one when starting a thread. Signed-out agents remain selectable and
+Claude Code and Codex run every role; OpenCode, Grok Build and Antigravity run chat threads (see
+[Grok Build](#grok-build) and [Antigravity](#antigravity)). Select one when starting a thread. Signed-out agents remain selectable and
 explain login/retry. New defaults come from CLI discovery; an explicit saved model,
 effort, speed or gateway profile remains authoritative. **Retry models** and
 **Re-check** refresh discovery after login changes without interrupting held Codex
@@ -425,7 +425,9 @@ over the [Agent Client Protocol](https://agentclientprotocol.com). It runs in a 
 in Gram's data folder, whose `.grok` shares only your `auth.json`, by path. So none of your own
 setup reaches a Gram thread: not your `~/.grok` config, MCP servers, plugins, hooks or memory, and
 not the Claude Code and Cursor settings, allow rules, MCP servers, skills and rules Grok would
-otherwise read. Commands it runs still see your `HOME`. The session takes the thread's permission
+otherwise read. A repository's own `.grok` hooks and MCP servers, and its `.mcp.json`, wait for
+folder trust, which that home holds none of, and Gram drops `GROK_FOLDER_TRUST` from the
+environment so trust can't be switched off. Commands it runs still see your `HOME`. The session takes the thread's permission
 mode, as Claude Code and Codex do, never a default of Grok's own. How the composer's modes map:
 
 | Mode         | Grok Build                                                                      |
@@ -456,6 +458,61 @@ Codex and OpenCode are offered its models there (Claude Code isn't: xAI no longe
 Anthropic API), with the prices xAI lists, which OpenCode threads show as cost.
 
 Source: [Grok Build adapter](../packages/agents/src/grok/index.ts).
+
+## Antigravity
+
+Antigravity is Google's coding CLI (`agy`). Gram runs the one on your login-shell `PATH`, on the
+sign-in it already has, so a thread on it spends your Google AI plan, not an API key. The sign-in
+lives in your OS keyring, which Gram never reads or touches; sign in by running `agy` in a
+terminal. A thread that starts while the CLI is signed out fails with that instruction in the
+Inbox.
+
+Each thread runs its own `agy acp` and drives it over the
+[Agent Client Protocol](https://agentclientprotocol.com), as Grok Build's threads do (both sit on
+one shared ACP harness). It runs on a config folder of Gram's own (`--gemini-dir`, in Gram's data
+folder), holding only the settings Gram writes. So none of your own setup reaches a Gram thread:
+not your `~/.gemini` settings, permission rules, hooks, MCP servers, plugins, skills or global
+rules. `HOME` stays yours, so the commands it runs see your home as usual. The session is always
+put in the thread's mode, never a default of Antigravity's own:
+
+| Mode         | Antigravity                                                                             |
+| ------------ | --------------------------------------------------------------------------------------- |
+| Ask          | `default`: every write, command, web and MCP call comes to you as an approval card      |
+| Accept edits | `accept-edits`, with Gram also allowing edits inside the thread's folders               |
+| Plan         | Antigravity's plan mode                                                                 |
+| Auto         | Antigravity's `auto` mode; what its classifier won't run comes to you as a card         |
+| Bypass       | `default`, with Gram allowing every call itself, so leaving Bypass takes effect at once |
+
+Under the outward gate (a supervised orchestrator's push, PR and merge checks) Auto runs in
+`default` too, so every command asks, and Gram lets through what the gate doesn't stop; any call
+carrying a command line counts as a command, whatever kind Antigravity gives it. An approval card
+offers once, the only grant Antigravity offers over ACP.
+
+A repository can carry Antigravity customizations of its own: `.agents/hooks.json`,
+`.agents/mcp_config.json` and `.agents/plugins/`. `agy acp` runs them with no trust prompt, in
+every mode, whatever config folder it is given. So Gram won't open an Antigravity thread, or list
+its models or past sessions, where the folder, a parent up to its repository's root, or one of the
+thread's extra folders holds one of them: the thread fails with that reason in the Inbox. Move
+them aside or use another agent for that folder. Gram looks again before every turn, and a file
+that appeared during the session (from a command, say) ends the turn unprompted with the same
+reason. A write or edit to anything under `.agents` always comes to you as a card, in Bypass and
+under the outward gate too.
+
+When a desktop has no keyring sign-in and Gram falls back on the `GEMINI_API_KEY` in its
+environment (below), the thread says so: it runs on that key and is billed to it.
+
+Antigravity keeps the conversation; Gram resumes it by id after a restart. Models and their
+thinking levels are the ones the CLI lists. Each turn reports its tokens, cached and thinking
+tokens and the context it fills; Antigravity reports no price and no plan quota over ACP, so the
+Usage page shows no limits for it. Like Grok Build, it runs plain threads on the desktop, can't
+hand its session to another agent, and runs on no gateway profile; a deployment can admit it as
+orchestrator and worker with `GRAM_ROLE_AGENTS=antigravity`. A role's standing instructions reach
+it through its system prompt (`_meta.antigravity.systemPrompt.append`). A sandbox that holds no
+keyring sign-in runs it on the `GEMINI_API_KEY` in its environment: Gram signs in with that key
+only once a session finds no sign-in, so a key you keep for other tools never replaces your plan.
+
+Source: [Antigravity adapter](../packages/agents/src/antigravity/index.ts),
+[shared ACP harness](../packages/agents/src/acp/session.ts).
 
 ## Orchestration context
 
@@ -1521,6 +1578,17 @@ required, how long it took, and whether it covers the change. Its count, "3/4", 
 that cover the change. Uncommitted files are named as left out of every run. The tab reads
 `git.verifyState`; a repository without a recipe has no Proof tool at all.
 
+Each driver's run gets an empty folder of its own in `GRAM_VERIFY_EVIDENCE_DIR`, beside the run's
+log under Gram's data folder and outside any checkout, for the screenshots, videos, snapshots and
+logs it wants a reader to see. It may list them in a `manifest.json` there,
+`{"items": [{"file", "caption", "kind"}]}` with `kind` one of `screenshot`, `video`, `snapshot` or
+`log`; without one, the folder's pictures and videos show by name. Proof shows the screenshots
+under their driver, opening at full size, and names the rest. Only files directly in the folder
+count, never through a link, at most 24 of them; a picture is read through `git.verifyEvidence` by
+the name Proof listed, up to 5 MiB. The folder is emptied when the driver runs again and goes with
+its log when retention removes that, and the budget counts both. Nothing in it goes in git, and it
+shows what the driver chose to keep, never that it passed. A run on a joined machine shows none.
+
 ## Agents after Gram quits
 
 Off by default. **Settings → General → Running work → Run agents after quit** runs this machine's
@@ -1686,7 +1754,21 @@ nothing with the app's session, its launch cookie or your browser, sandboxed and
 every permission, download, client certificate and external-app launch refused:
 
 - **Local**: loopback pages and every page an agent drives. It loads nothing off loopback but what
-  an agent was allowed (below).
+  an agent was allowed (below). Its pages have no WebRTC, in any of their frames: WebRTC looks up
+  the names a page hands it past every other control here, which would let a page send data out in
+  DNS queries. The Preview tab's WebRTC switch gives it back to a page at an address you typed in
+  the address strip, for that address's origin only. It is not offered on a page an agent or a port
+  chip opened, a file preview, Gram's own origins, a page an agent drives or was handed, or while
+  the thread's agent works. The page is made again in a session of its own, empty each time, so
+  nothing another local page left there (a service worker, storage, cache) is served into it.
+  Anything else opening in the thread, an agent taking the page, the page leaving that origin, or
+  a turn of any agent working in that folder (the thread's own, another thread's or a worker's on
+  the same folder, a folder inside it or one around it) makes it again without, and the switch
+  stays off while one works. While it is on, every script that origin serves has WebRTC, including
+  code any agent working in that folder wrote into your app (a hot reload, a restarted dev server,
+  or another server an agent bound to that port) and whatever a process an agent left running
+  serves there, which starts no turn and doesn't end the switch. Turn it on only for an app you
+  are testing yourself.
 - **Web**: the pages you open anywhere else. No agent ever reads or drives one; when an agent
   starts browsing in that thread, your page there closes for a fresh one of its own, so what you
   sign in to on the web stays yours. Pages on the internet share one web session, which never
@@ -1757,7 +1839,9 @@ rules; a worker's requests get the local-session rules. A page's script can't op
 before any card, and a navigation the page itself starts off loopback ends where it began.
 
 A thread whose session runs on another machine reaches that machine's loopback instead, so
-`localhost:3000` is the dev server the thread started where it runs. This needs the machine's
+`localhost:3000` is the dev server the thread started where it runs. A browser started without its
+sandbox (`GRAM_BROWSER_SANDBOX=0`) opens no page for such a thread, since its pages are less trusted
+than the server's own agents', unless `GRAM_BROWSER_UNSANDBOXED_ELSEWHERE=1`. This needs the machine's
 host to name the `loopback-tunnels` feature; with an older host the page reaches the server's
 loopback, as before. The server keeps one SOCKS5 listener on its own `127.0.0.1` for each such
 thread (32 at most), and the thread's browser context sends every request there, loopback's
@@ -1802,11 +1886,12 @@ checks before it reaches Chromium. Only a member calls these, never a viewer. A 
 connected to a server that runs its own browser still shows its own Preview pane, not the server's
 page.
 
-| Variable                  | What it sets                                                                 |
-| ------------------------- | ---------------------------------------------------------------------------- |
-| `GRAM_HEADLESS_BROWSER`   | The browser host the server forks; unset, there is no browser                |
-| `GRAM_BROWSER_EXECUTABLE` | The Chromium or Chrome the host starts                                       |
-| `GRAM_BROWSER_SANDBOX`    | `0` starts it without Chromium's sandbox, which a container's user can't use |
+| Variable                             | What it sets                                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `GRAM_HEADLESS_BROWSER`              | The browser host the server forks; unset, there is no browser                                               |
+| `GRAM_BROWSER_EXECUTABLE`            | The Chromium or Chrome the host starts                                                                      |
+| `GRAM_BROWSER_SANDBOX`               | `0` starts it without Chromium's sandbox, which a container's user can't use                                |
+| `GRAM_BROWSER_UNSANDBOXED_ELSEWHERE` | `1` lets a browser without its sandbox open pages for threads on other machines, which it otherwise refuses |
 
 ### Pinned pages
 

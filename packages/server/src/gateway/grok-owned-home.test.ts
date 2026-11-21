@@ -68,6 +68,7 @@ describe("Gram's own Grok Build home", () => {
           GROK_CONFIG: '{"compat":{"claude":{"mcps":true}}}',
           GROK_CONFIG_PATH: join(home, "overlay.toml"),
           GROK_CLAUDE_MCPS_ENABLED: "1",
+          GROK_FOLDER_TRUST: "0",
           CLAUDE_CONFIG_DIR: join(home, ".claude"),
         });
         const owned = join(data, "grok-owned-home");
@@ -78,6 +79,7 @@ describe("Gram's own Grok Build home", () => {
           "GROK_CONFIG",
           "GROK_CONFIG_PATH",
           "GROK_CLAUDE_MCPS_ENABLED",
+          "GROK_FOLDER_TRUST",
           "CLAUDE_CONFIG_DIR",
         ])
           expect(env, name).not.toHaveProperty(name);

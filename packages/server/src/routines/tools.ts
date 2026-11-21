@@ -38,6 +38,8 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
+import { refuseOutOfReach } from "../git/repo-reach.ts";
+import { triggerRepo } from "./events.ts";
 import { workerModelLabel } from "../orchestration/rules.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -276,6 +278,9 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           const state = yield* callerWorkspace(tool, caller);
           const parsed = whenOf(input);
           if ("error" in parsed) return yield* toolError(tool, parsed.error);
+          // A repository the routine would read on GitHub is one the asking thread works in.
+          const on = "on" in parsed ? parsed.on : undefined;
+          yield* refuseOutOfReach(tool, store, caller, { repos: [triggerRepo(on)] });
           const project =
             input.target === "orchestrator" || input.project === undefined
               ? undefined
@@ -342,6 +347,9 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           if (parsed !== undefined && "error" in parsed) {
             return yield* toolError(tool, parsed.error);
           }
+          // Any change, to it or of what it reads: the repository it reads afterwards is checked.
+          const on = parsed === undefined ? before.on : "on" in parsed ? parsed.on : undefined;
+          yield* refuseOutOfReach(tool, store, caller, { repos: [triggerRepo(on)] });
           const project =
             input.project === undefined ? undefined : yield* projectOf(tool, state, input.project);
           const model =

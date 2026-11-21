@@ -431,6 +431,164 @@ describe("this machine as a personal device", () => {
     ).toMatchObject({ ok: false });
   });
 
+  it("marks a sign-in's worker machines for that sign-in, the same mark across a restart", async () => {
+    const markOf = (store: Map<string, string>) =>
+      (JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark?: string })
+        .machineMark;
+    // A server that names no organisation: the sign-in's own mark, kept with it.
+    const first = await setUp();
+    await first.device.signIn(origin);
+    const own = markOf(first.store);
+    expect(own).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    await first.device.close();
+    const again = await setUp({}, first.store);
+    await again.waitFor(() => again.device.state().servers[0]?.problem === undefined);
+    expect(markOf(first.store)).toBe(own);
+    await again.device.close();
+    // One kept from before marks were: given its own as it is restored, and that one kept.
+    const stored = JSON.parse(first.store.get(`device-sign-in ${origin}`) ?? "{}") as object;
+    const { machineMark: _gone, ...before } = stored as { machineMark?: string };
+    first.store.set(`device-sign-in ${origin}`, JSON.stringify(before));
+    const restored = await setUp({}, first.store);
+    await restored.waitFor(() => restored.device.state().servers[0]?.problem === undefined);
+    const given = markOf(first.store);
+    expect(given).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    await restored.device.close();
+    expect(markOf((await setUp({}, first.store)).store)).toBe(given);
+  });
+
+  it("marks the same person's sign-ins alike in one organisation, apart in another", async () => {
+    const marks: Array<string | undefined> = [];
+    for (const organization of ["org-a", "org-a", "org-b"]) {
+      fake.state.organization = organization;
+      const { device, store } = await setUp();
+      await device.signIn(origin);
+      marks.push(
+        (JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark?: string })
+          .machineMark,
+      );
+      await device.close();
+    }
+    // Signing in again to the same organisation reaches what was made before; another doesn't.
+    expect(marks[0]).toBe(marks[1]);
+    expect(marks[2]).not.toBe(marks[0]);
+  });
+
+  it("takes a sign-in's organisation mark from its renewal, its own records moving with it", async () => {
+    const stored = (store: Map<string, string>) =>
+      JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as {
+        machineMark?: string;
+        formerMarks?: string[];
+      };
+    // The organisation's mark, as signing in there gives it.
+    // One keychain throughout, as one computer's.
+    const keychain = new Map<string, string>();
+    fake.state.organization = "org-a";
+    const fresh = await setUp({}, keychain);
+    await fresh.device.signIn(origin);
+    const orgMark = stored(fresh.store).machineMark;
+    await fresh.device.signOut(origin);
+    await fresh.device.close();
+    for (const before of ["kept from before marks", "marked as its own"] as const) {
+      // Signed in where the server named no organisation: one of its own, or none yet.
+      fake.state.organization = undefined;
+      const first = await setUp({}, keychain);
+      await first.device.signIn(origin);
+      const own = stored(first.store).machineMark;
+      if (before === "kept from before marks") {
+        const { machineMark: _gone, ...kept } = stored(first.store);
+        first.store.set(`device-sign-in ${origin}`, JSON.stringify(kept));
+      }
+      await first.device.close();
+      // Restored after the server began naming it: its renewal gives the organisation's mark.
+      fake.state.organization = "org-a";
+      const restored = await setUp({}, first.store);
+      await restored.waitFor(() => restored.device.state().servers[0]?.problem === undefined);
+      await vi.waitFor(() => expect(stored(first.store).machineMark).toBe(orgMark));
+      // What was made under its own mark is its own, and moves with it.
+      expect(stored(first.store).formerMarks).toEqual(
+        before === "marked as its own" ? [own] : undefined,
+      );
+      await restored.device.signOut(origin);
+      await restored.device.close();
+    }
+  });
+
+  it("uses a restored sign-in's new mark only once it is kept, so a restart loses nothing", async () => {
+    fake.state.namesWorkerMachines = true;
+    const markOf = (store: Map<string, string>) =>
+      (JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark?: string })
+        .machineMark;
+    // Signed in where the server names no organisation, and kept from before marks were.
+    const keychain = new Map<string, string>();
+    const first = await setUp({}, keychain);
+    await first.device.signIn(origin);
+    const { machineMark: _gone, ...before } = JSON.parse(
+      keychain.get(`device-sign-in ${origin}`) ?? "{}",
+    ) as { machineMark?: string };
+    keychain.set(`device-sign-in ${origin}`, JSON.stringify(before));
+    await first.device.close();
+    const renewals = fake.state.refreshes;
+    // Restored with a keychain that takes the rotated refresh token but not the mark: the write
+    // of the mark its renewal gives it fails.
+    const failing = secretsIn(keychain);
+    const restored = await setUp(
+      {
+        secrets: {
+          ...failing,
+          set: async (name, value) => {
+            if ((JSON.parse(value) as { machineMark?: string }).machineMark !== undefined)
+              throw new Error("The keychain didn't take it.");
+            return failing.set(name, value);
+          },
+        },
+      },
+      keychain,
+    );
+    // Its first renewal came, and the workspaces it lists after it.
+    await restored.waitFor(
+      () =>
+        fake.state.refreshes > renewals &&
+        (restored.device.state().servers[0]?.workspaces.length ?? 0) > 0,
+    );
+    // No mark was kept, so none is used: nothing is made under a mark a restart would lose.
+    expect(markOf(keychain)).toBeUndefined();
+    expect(restored.device.workerMachineMarks()).toEqual([]);
+    expect(restored.device.workerMachineServer().ok).toBe(false);
+    await restored.device.close();
+    // Restored again with a keychain that takes it: the mark used is the one kept.
+    const again = await setUp({}, keychain);
+    await again.waitFor(() => again.device.workerMachineMarks().length > 0);
+    const kept = markOf(keychain);
+    expect(kept).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    expect(again.device.workerMachineMarks()).toEqual([
+      { origin, account: kept, formerAccounts: [] },
+    ]);
+    await again.device.close();
+  });
+
+  it("takes the organisation's mark from a renewal of a sign-in made in this run, not only at restart", async () => {
+    fake.state.namesWorkerMachines = true;
+    const { device, store } = await setUp();
+    await device.signIn(origin);
+    const own = (
+      JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark: string }
+    ).machineMark;
+    expect(device.workerMachineMarks()).toEqual([{ origin, account: own, formerAccounts: [] }]);
+    // The server begins naming the organisation; the next renewal brings it.
+    fake.state.organization = "org-a";
+    clock += 3_600_000;
+    await device.refresh(origin);
+    const [marks] = device.workerMachineMarks();
+    expect(marks?.account).not.toBe(own);
+    expect(marks?.formerAccounts).toEqual([own]);
+    expect(
+      (JSON.parse(store.get(`device-sign-in ${origin}`) ?? "{}") as { machineMark: string })
+        .machineMark,
+    ).toBe(marks?.account);
+    await device.close();
+  });
+
   it("keeps a pause across a restart until the person lifts it", async () => {
     const first = await setUp();
     await first.device.signIn(origin);

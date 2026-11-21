@@ -29,6 +29,7 @@ import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { prepareCodexHome } from "./codex-home.ts";
 import { GatewayCredentials } from "./credentials.ts";
+import { ORIGIN_KEY_HEADER } from "../http/auth.ts";
 
 // `GRAM_LIVE_GATEWAY_KEY=1`: the real server with the installed `opencode` and `codex`, a gateway
 // profile on a local fake OpenAI-compatible API, and a sentinel key set through the RPC. Temp HOME,
@@ -185,7 +186,7 @@ const TestServer = ServerLayer.pipe(
 /** Performs the boot navigation and returns an RPC client with the session cookie. */
 const makeClient = Effect.gen(function* () {
   const server = yield* HttpServer.HttpServer;
-  const { token } = yield* LaunchToken;
+  const { token, originKey } = yield* LaunchToken;
   const port = serverPort(server);
   const setCookie = yield* Effect.promise(
     () =>
@@ -211,7 +212,9 @@ const makeClient = Effect.gen(function* () {
             new (globalThis.WebSocket as unknown as new (
               url: string,
               init: { headers: Record<string, string> },
-            ) => globalThis.WebSocket)(url, { headers: { cookie } }),
+            ) => globalThis.WebSocket)(url, {
+              headers: { cookie, [ORIGIN_KEY_HEADER]: originKey },
+            }),
         ),
       ),
       Layer.provide(RpcSerialization.layerJson),

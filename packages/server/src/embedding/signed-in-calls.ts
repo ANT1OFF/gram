@@ -3,8 +3,9 @@
 // stopped or failed there, and a release told.
 
 import * as Effect from "effect/Effect";
-import type { Refused, WorkerMachinePortShape } from "./signed-in-port.ts";
-import { codeOf, type NameLocks, withName } from "./worker-machine-stops.ts";
+import { fenceRefusalOf, RELEASE_ACTS_WITHIN_MS } from "./signed-in-fences.ts";
+import type { MachineRun, Refused, WorkerMachinePortShape } from "./signed-in-port.ts";
+import { codeOf, isNotFound, type NameLocks, withName } from "./worker-machine-stops.ts";
 
 /** How many times a start the server is unavailable for (`503`) is asked, and the first wait. */
 export const START_ATTEMPTS = 3;
@@ -64,12 +65,13 @@ export const settledSince = (sent: StartsSent | undefined, name: string, before:
 
 /**
  * One start of `name` there, its name's alone (`withName`) from its first ask to its last. A `503`
- * started nothing, so it is asked again after a wait that doubles, `START_ATTEMPTS` asks in all
- * across the whole start, and is never read as over the total or gone. A `409 released` takes the
- * release back and asks once more, never again; a take-back the server answers `404` (the release
- * is due for reclaim) spends the name, answered as `409 name_in_use`, and nothing is asked again
- * under it. `go`, read under the lock before each ask: whether it is still wanted; when it isn't,
- * nothing more is sent (`skipped`).
+ * is asked again after a wait that doubles, `START_ATTEMPTS` asks in all across the whole start,
+ * and is never read as over the total or gone; it, and any other 5xx, leaves the start's outcome
+ * unknown (`unavailable`). A `409 released` takes the release back and asks once more, never
+ * again; a take-back the server answers `404 not_found` (the release is due for reclaim) spends
+ * the name for this start, answered as `409 name_in_use`, and nothing more is asked under it.
+ * Nothing here forgets the machine: once is no proof. `go`, read under the lock before each ask:
+ * whether it is still wanted; when it isn't, nothing more is sent (`skipped`).
  */
 export const sendSignedInStart = (
   port: WorkerMachinePortShape,
@@ -81,6 +83,10 @@ export const sendSignedInStart = (
     readonly startRetryMs?: number | undefined;
     readonly sent?: StartsSent | undefined;
     readonly go?: (() => boolean) | undefined;
+    /** How long a stop of the name may still land there (`StopHolds`): waited out before each ask. */
+    readonly heldFor?: ((name: string) => number) | undefined;
+    /** The sign-in it is asked under (`WorkerMachineServer.account`). */
+    readonly account?: string | undefined;
     /**
      * Run once the name is this start's alone, before anything is sent: an answer it gives is
      * the start's, and nothing is sent.
@@ -91,6 +97,8 @@ export const sendSignedInStart = (
   readonly answered: Answered;
   readonly unavailable: boolean;
   readonly skipped?: true;
+  /** The take-back was answered `404 not_found`: proof of nothing alone (`isNotFound`). */
+  readonly missing?: true;
 }> =>
   withName(
     options.locks,
@@ -107,15 +115,27 @@ export const sendSignedInStart = (
       };
       const send = Effect.gen(function* () {
         for (;;) {
+          // A stop sent of the name, here or before a restart, that may still land: waited out,
+          // so it never deletes what this start makes.
+          for (
+            let wait = options.heldFor?.(name) ?? 0;
+            wait > 0;
+            wait = options.heldFor?.(name) ?? 0
+          )
+            yield* Effect.sleep(wait);
           if (options.go !== undefined && !options.go()) return undefined;
           asks += 1;
           const bump = Effect.sync(() => options.sent?.set(name, sentOf(options.sent, name) + 1));
           yield* bump;
-          const answered = yield* port.call(origin, "start", body).pipe(Effect.ensuring(bump));
-          // Busy (503) or throttled (429) there: asked again after a wait. A 503 may have reached
-          // its machines, so the start's outcome stays unknown, whatever is answered after it.
+          const answered = yield* port
+            .call(origin, "start", body, { account: options.account })
+            .pipe(Effect.ensuring(bump));
+          // Busy (503) or throttled (429) there: asked again after a wait. Any 5xx may have reached
+          // its machines (a 502 comes from a start that failed after its machine was written), so
+          // the start's outcome stays unknown, whatever is answered after it, and asked again or
+          // not: its owing is kept, and it is given back.
           const busy = answered.ok && (answered.status === 503 || answered.status === 429);
-          if (answered.ok && answered.status === 503) unavailable = true;
+          if (answered.ok && answered.status >= 500) unavailable = true;
           if (!busy || asks >= START_ATTEMPTS) return answered;
           yield* Effect.sleep((options.startRetryMs ?? START_RETRY_MS) * 2 ** (asks - 1));
         }
@@ -124,16 +144,18 @@ export const sendSignedInStart = (
       if (first === undefined) return skipped;
       if (!first.ok || first.status !== 409 || codeOf(first.body) !== "released")
         return { answered: first, unavailable };
-      const told = yield* tellSignedInRelease(port, { name, via: origin }, false).pipe(
-        Effect.option,
-      );
-      if (told._tag === "Some" && told.value === "gone") {
-        port.unrelay(name);
+      const told = yield* tellSignedInRelease(
+        port,
+        { name, via: origin, account: options.account },
+        false,
+      ).pipe(Effect.option);
+      // What came before stays: a 503 first leaves the start's outcome unknown all the same.
+      if (told._tag === "Some" && told.value === "missing")
         return {
           answered: { ok: true as const, status: 409, body: { code: "name_in_use" } },
-          unavailable: false,
+          unavailable,
+          missing: true as const,
         };
-      }
       // Asked once more, within what is left of the asks.
       if (asks >= START_ATTEMPTS) asks = START_ATTEMPTS - 1;
       const second = yield* send;
@@ -143,10 +165,11 @@ export const sendSignedInStart = (
   );
 
 /**
- * What a wake did. `started`, `awake` (the server says it is up, or starting), `gone` (it knows it
- * no more), `unwanted` (no one wants it by the time the start would go) and `refused` (an answered
- * refusal) are settled; `retry` isn't: no answer, or a passing error, before or from the start, so
- * it may be woken again while it is still wanted.
+ * What a wake did. `started`, `awake` (the server says it is up, or starting), `unwanted` (no one
+ * wants it by the time the start would go) and `refused` (an answered refusal) are settled;
+ * `retry` isn't: no answer, or a passing error, before or from the start, so it may be woken again
+ * while it is still wanted. Nor is `gone` (a `404 not_found`, which proves nothing alone): a want
+ * goes on asking while the machine is registered, until `forgetReclaimed` confirms it gone.
  */
 export type WakeOutcome = "started" | "awake" | "gone" | "unwanted" | "refused" | "retry";
 
@@ -160,7 +183,7 @@ export type WakeOutcome = "started" | "awake" | "gone" | "unwanted" | "refused" 
  */
 export const wakeSignedIn = (
   port: WorkerMachinePortShape,
-  machine: { readonly name: string; readonly via: string },
+  machine: { readonly name: string; readonly via: string; readonly account?: string | undefined },
   options: {
     readonly locks?: NameLocks | undefined;
     readonly startRetryMs?: number | undefined;
@@ -169,19 +192,27 @@ export const wakeSignedIn = (
     readonly sent?: StartsSent | undefined;
     /** Whether work here still wants it, read as the start would go: none is sent once not. */
     readonly wanted?: (() => boolean) | undefined;
+    readonly heldFor?: ((name: string) => number) | undefined;
   } = {},
 ): Effect.Effect<WakeOutcome> =>
   Effect.gen(function* () {
     if (!isHostedWorkerName(machine.name)) return "refused" as const;
     const before = sentOf(options.sent, machine.name);
-    const read = yield* port.call(machine.via, "status", { name: machine.name });
+    const read = yield* port.call(
+      machine.via,
+      "status",
+      { name: machine.name },
+      { account: machine.account },
+    );
     // Passing errors settle nothing: asked again while it is still wanted.
     if (!read.ok || read.status >= 500 || read.status === 429) return "retry" as const;
-    if (read.status === 404) return "gone" as const;
-    if (read.status >= 300) return "refused" as const;
     // A start of it was on its way, or went, while this was asked: the answer is older than it,
     // and says nothing, so the wake is left to be tried again rather than spent.
     if (!settledSince(options.sent, machine.name, before)) return "retry" as const;
+    if (isNotFound(read)) return "gone" as const;
+    // Any other 404 (a route or a backend not there for now) says nothing of the machine.
+    if (read.status === 404) return "retry" as const;
+    if (read.status >= 300) return "refused" as const;
     const phase = parseMachineStatus(read.body).phase;
     if (phase !== "stopped" && phase !== "failed") {
       options.asleep?.delete(machine.name);
@@ -192,7 +223,7 @@ export const wakeSignedIn = (
       machine.via,
       machine.name,
       { name: machine.name },
-      { ...options, go: options.wanted },
+      { ...options, go: options.wanted, account: machine.account },
     );
     if (sent.skipped === true) return "unwanted" as const;
     const answered = sent.answered;
@@ -200,7 +231,17 @@ export const wakeSignedIn = (
       options.asleep?.delete(machine.name);
       return "started" as const;
     }
-    if (!answered.ok || answered.status >= 500 || answered.status === 429) return "retry" as const;
+    // Passing, as the status read's are: no answer, busy or throttled, and a 404 (the server says
+    // so while its backend is out of reach), the start's own or its take-back's. Woken later, while
+    // it is still wanted; only the three-pass rule forgets it.
+    if (
+      !answered.ok ||
+      answered.status >= 500 ||
+      answered.status === 429 ||
+      answered.status === 404 ||
+      sent.missing === true
+    )
+      return "retry" as const;
     // Only the status: what a server answers isn't written to the log.
     yield* Effect.logWarning("a worker machine work wants could not be woken").pipe(
       Effect.annotateLogs({
@@ -211,35 +252,68 @@ export const wakeSignedIn = (
     return "refused" as const;
   });
 
-/** Tells a signed-in server a worker machine's work is over, or going on again. */
+/**
+ * A release the server refused as malformed (`400`), as a server from before fences answers one
+ * that carries them. Not told: it stays to be told, and is never sent without its fences, since
+ * one without could land on a newer run of the name (`releaseTeller` waits longer each time).
+ */
+export class ReleaseRefused extends Error {}
+
+/**
+ * Tells a signed-in server a worker machine's work is over, or going on again. `missing`: answered
+ * `404 not_found`, which a server says of a machine it reclaimed, but also for a while of every
+ * machine while it has no backend or the workspace no backend: never taken as the machine gone
+ * (`isNotFound`). Any other 404 is asked again, as a busy server is. `run`: the machine's run as
+ * it was when the release was decided (`knownRun`), read here first when not given; every ask
+ * carries that run, and none goes once the name is known as another. Then, or when the server
+ * says the name is another run now, its status is read again, so what it is now is known, and the
+ * release isn't told: the next pass decides it afresh, for that run.
+ */
 export const tellSignedInRelease = (
   port: WorkerMachinePortShape,
-  machine: { readonly name: string; readonly via: string },
+  machine: { readonly name: string; readonly via: string; readonly account?: string | undefined },
   released: boolean,
-  options: { readonly retryMs?: number; readonly attempts?: number } = {},
-): Effect.Effect<"applied" | "gone", Error> =>
+  options: {
+    readonly retryMs?: number;
+    readonly attempts?: number;
+    readonly run?: MachineRun | null | undefined;
+  } = {},
+): Effect.Effect<"applied" | "missing", Error> =>
   Effect.gen(function* () {
     const attempts = options.attempts ?? RELEASE_ATTEMPTS;
+    // Taken once, never again at a retry: a run started since is never this release's.
+    const run =
+      options.run !== undefined
+        ? options.run
+        : port.knownRun?.(machine.via, machine.name, machine.account);
     let last = "no answer";
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       // A server too busy, or no answer: asked again after a wait that doubles.
       if (attempt > 0)
         yield* Effect.sleep((options.retryMs ?? RELEASE_RETRY_MS) * 2 ** (attempt - 1));
-      const answered = yield* port.call(machine.via, "release", {
-        name: machine.name,
-        released,
-        reason: released ? "finished" : "working",
-      });
+      const answered = yield* port.call(
+        machine.via,
+        "release",
+        {
+          name: machine.name,
+          released,
+          reason: released ? "finished" : "working",
+          // Reached later, it does nothing, and is told again: never on a newer start of the name.
+          notAfter: Date.now() + RELEASE_ACTS_WITHIN_MS,
+        },
+        { account: machine.account, ...(run === undefined ? {} : { run }) },
+      );
       if (!answered.ok) {
         last = "no answer";
         continue;
       }
-      // Reclaimed there first (a take-back included): there is nothing left to tell.
-      if (answered.status === 404) return "gone" as const;
-      if (answered.status === 503) {
-        last = "the server is busy";
+      if (isNotFound(answered)) return "missing" as const;
+      if (answered.status === 503 || answered.status === 404) {
+        last = answered.status === 503 ? "the server is busy" : "the server answered 404";
         continue;
       }
+      if (answered.status === 400)
+        return yield* Effect.fail(new ReleaseRefused("the server refused it as malformed"));
       if (answered.status >= 300)
         return yield* Effect.fail(new Error(`the server answered ${answered.status}`));
       // A 2xx that says it knows no such machine changed nothing there: told again next pass.
@@ -248,6 +322,27 @@ export const tellSignedInRelease = (
           ? (answered.body as { known?: unknown }).known
           : undefined;
       if (known === false) return yield* Effect.fail(new Error("the server knows no such machine"));
+      // Its fence held it back, so nothing changed there. Late: asked again now, in time. The
+      // name another run now: its status read again, and told again next pass, decided afresh,
+      // for the run it is then.
+      const fenced = fenceRefusalOf(answered);
+      if (fenced === "expired") {
+        last = "it came after its time";
+        continue;
+      }
+      const applied =
+        typeof answered.body === "object" && answered.body !== null
+          ? (answered.body as { applied?: unknown }).applied
+          : undefined;
+      if (fenced === "superseded" || applied === false) {
+        yield* port.call(
+          machine.via,
+          "status",
+          { name: machine.name },
+          { account: machine.account },
+        );
+        return yield* Effect.fail(new Error("the server applied it to no run of the machine"));
+      }
       return "applied" as const;
     }
     // Only what went wrong, in a few words: what a server answers isn't written to the log.

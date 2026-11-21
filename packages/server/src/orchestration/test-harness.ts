@@ -105,6 +105,8 @@ export interface World {
   readonly ghCalls: Array<ReadonlyArray<string>>;
   /** The folder each of `ghCalls` ran in. */
   readonly ghDirs: Array<string>;
+  /** The `GH_TOKEN` each of `ghCalls` carried: a thread's handle behind a relay (`ghThreadEnv`). */
+  readonly ghTokens: Array<string | undefined>;
   /** What `gh pr list --head` finds open, by head branch, in whichever repo it is asked about. */
   readonly openPrs: Map<string, number>;
   /** The desktop app work is sent to a server through (`send_worker`); none when unset. */
@@ -266,6 +268,7 @@ export const makeWorld = Effect.gen(function* () {
     observers: [],
     ghCalls: [],
     ghDirs: [],
+    ghTokens: [],
     prHeads: new Map(),
     openPrs: new Map(),
     stall: undefined,
@@ -360,7 +363,7 @@ const fakePublisher = (world: World) =>
 // The PR tools' own `Proc`, so `set_auto_merge` can be run to the end without a `gh` to answer it.
 // Every checkout's `origin` is acme/app.
 const fakeGh = (world: World) => {
-  const fakeRun = (bin: string, args: ReadonlyArray<string>, cwd: string) => {
+  const fakeRun = (bin: string, args: ReadonlyArray<string>, cwd: string, token?: string) => {
     if (bin === "git") {
       if (args[0] === "symbolic-ref" || (args[0] === "worktree" && args[1] === "list")) {
         const out = spawnSync(bin, args, { cwd, encoding: "utf8", timeout: 2_000 });
@@ -371,15 +374,12 @@ const fakeGh = (world: World) => {
           truncated: false,
         };
       }
-      return {
-        status: 0,
-        stdout: `${world.origin ?? "https://github.com/acme/app.git"}\n`,
-        stderr: "",
-        truncated: false,
-      };
+      const origin = `${world.origin ?? "https://github.com/acme/app.git"}\n`;
+      return { status: 0, stdout: origin, stderr: "", truncated: false };
     }
     world.ghCalls.push([bin, ...args]);
     world.ghDirs.push(cwd);
+    world.ghTokens.push(token);
     if (args[0] === "pr" && args[1] === "list") {
       const branch = args.find((arg) => arg.startsWith("--head="))?.slice("--head=".length);
       const number = branch === undefined ? undefined : world.openPrs.get(branch);
@@ -407,7 +407,7 @@ const fakeGh = (world: World) => {
     return { status: 0, stdout: "", stderr: "", truncated: false };
   };
   return Layer.succeed(Proc, {
-    run: (bin, args, { cwd }) =>
+    run: (bin, args, { cwd, env }) =>
       (bin === "gh" && args[0] === "pr" && args[1] === "merge"
         ? (world.mergeLaunch ?? Effect.void)
         : Effect.void
@@ -416,7 +416,7 @@ const fakeGh = (world: World) => {
           Effect.suspend(() =>
             // As a real spawn does: nothing starts in a folder that isn't there.
             existsSync(cwd)
-              ? Effect.succeed(fakeRun(bin, args, cwd))
+              ? Effect.succeed(fakeRun(bin, args, cwd, env?.["GH_TOKEN"]))
               : Effect.fail(new ProcSpawnError({ bin, message: `spawn ${bin} ENOENT` })),
           ).pipe(
             Effect.tap(() =>
@@ -438,10 +438,7 @@ const gitActivity = { running: 0, started: 0 };
 
 /** Whether `args` read a repository's stored `origin` URL. */
 const readsOrigin = (args: ReadonlyArray<string>) =>
-  args.length === 3 &&
-  args[0] === "config" &&
-  args[1] === "--get" &&
-  args[2] === "remote.origin.url";
+  args.length === 3 && args.join(" ") === "config --get remote.origin.url";
 
 // Every git process of the server, the service's and the worktrees' alike, counted while it runs.
 // A repository with no `origin` of its own (`world.repo`) has the one the PR tools see
@@ -490,6 +487,8 @@ const conditionsOf = (world: World) =>
       fakeCiJobs(world),
       fakeMachine(world),
       fakeAutoMerges(world),
+      // Whose PR a freeze may take auto-merge down from is asked of `gh` as the PR tools ask it.
+      fakeGh(world),
       fakeReleases(world),
       fakeInstalled(world),
     ),

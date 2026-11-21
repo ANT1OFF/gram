@@ -4,6 +4,7 @@
 // event, search, another thread's tools or a write, while Ada gets all of it. What it spawns keeps
 // its reader, nothing clears it, and a thread started for nobody in particular is everyone's.
 import { randomBytes } from "node:crypto";
+import { forgetForeignPathsForTest, noteForeignPath } from "@gram/git";
 import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -40,6 +41,7 @@ import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { WORKSPACE_EXPORT_PATH } from "../transfer/routes.ts";
 import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
+import { ORIGIN_KEY_HEADER } from "./auth.ts";
 
 const proxy = makeTestProxy();
 
@@ -74,8 +76,8 @@ const server = (embedding: boolean, fronted = true) =>
   );
 
 const info = Effect.gen(function* () {
-  const { token } = yield* LaunchToken;
-  return { port: serverPort(yield* HttpServer.HttpServer), token };
+  const { token, originKey } = yield* LaunchToken;
+  return { port: serverPort(yield* HttpServer.HttpServer), token, originKey };
 });
 
 const send = (
@@ -441,6 +443,29 @@ describe("threads readable by one person", () => {
       }),
     );
 
+    it.effect("keep their folders behind a link in a folder a machine once held", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const store = yield* ThreadStore;
+        const privateFolder = (yield* store.getThread(PRIVATE)).checkout.path;
+        const linkDir = folder();
+        const link = join(linkDir, "shortcut");
+        symlinkSync(privateFolder, link);
+        // A machine since removed recorded this folder: its mark stays, and the path is this
+        // machine's again, where a call follows the link.
+        noteForeignPath(linkDir);
+        try {
+          const moClient = yield* as(port, mo);
+          for (const path of [link, join(link, "AGENTS.md")])
+            expect(yield* outcome(moClient["worktree.status"]({ path })), path).toContain(
+              NOT_READABLE,
+            );
+        } finally {
+          forgetForeignPathsForTest();
+        }
+      }),
+    );
+
     it.effect("keep their content off the routes outside the socket too", () =>
       Effect.gen(function* () {
         const { port } = yield* info;
@@ -730,9 +755,9 @@ describe("threads readable by one person", () => {
   layer(server(false), { excludeTestServices: true })("with no signed-in person", (it) => {
     it.effect("are shown to no one, failing closed", () =>
       Effect.gen(function* () {
-        const { port, token } = yield* info;
+        const { port, token, originKey } = yield* info;
         const runtimes = yield* ThreadRuntimes;
-        const host = { host: `127.0.0.1:${port}` };
+        const host = { host: `127.0.0.1:${port}`, [ORIGIN_KEY_HEADER]: originKey };
         const boot = yield* send(port, "GET", `/?boot=${token}`, undefined, host);
         const app = yield* client(port, { ...host, cookie: boot.setCookie.split(";")[0] ?? "" });
         const hidden = yield* runtimes.create({
@@ -767,9 +792,9 @@ describe("threads readable by one person", () => {
     (it) => {
       it.effect("are no one's to take out over a route of the local app's", () =>
         Effect.gen(function* () {
-          const { port, token } = yield* info;
+          const { port, token, originKey } = yield* info;
           const runtimes = yield* ThreadRuntimes;
-          const host = { host: `127.0.0.1:${port}` };
+          const host = { host: `127.0.0.1:${port}`, [ORIGIN_KEY_HEADER]: originKey };
           const boot = yield* send(port, "GET", `/?boot=${token}`, undefined, host);
           const local = {
             ...host,

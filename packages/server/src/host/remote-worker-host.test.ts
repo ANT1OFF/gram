@@ -124,6 +124,7 @@ const deps = (threads: ReadonlyArray<Thread> = []): Effect.Effect<MachineDeps, n
     return {
       store: {
         listThreads: Effect.succeed(threads),
+        listProjects: Effect.succeed([]),
         getThread: () => Effect.die(new Error("no thread in this test")),
       } as unknown as ThreadStoreTag["Service"],
       hub: { internalEvents: () => Stream.never } as unknown as EventHubTag["Service"],
@@ -150,6 +151,7 @@ describe("a joined machine's worker host", () => {
     "other records",
     "the root folder",
     "a relative folder",
+    "a long relative folder",
   ] as const) {
     it.live(`records only its own values for a worktree made there, given ${lie}`, () =>
       Effect.gen(function* () {
@@ -164,8 +166,18 @@ describe("a joined machine's worker host", () => {
               Effect.map((created) => ({
                 ...created,
                 checkout:
-                  lie === "the root folder" || lie === "a relative folder"
-                    ? { ...created.checkout, path: lie === "the root folder" ? "/" : "repo" }
+                  lie === "the root folder" ||
+                  lie === "a relative folder" ||
+                  lie === "a long relative folder"
+                    ? {
+                        ...created.checkout,
+                        path:
+                          lie === "the root folder"
+                            ? "/"
+                            : lie === "a relative folder"
+                              ? "repo"
+                              : "r".repeat(100_000),
+                      }
                     : lie === "another branch"
                       ? { ...created.checkout, branch: "feat/by-another-thread" }
                       : {
@@ -187,10 +199,15 @@ describe("a joined machine's worker host", () => {
         );
         // A folder that isn't one Gram records (the root, which would claim every path of the
         // machine, or a relative one) fails the placement, and nothing is recorded.
-        if (lie === "the root folder" || lie === "a relative folder") {
-          expect((yield* prepared.pipe(Effect.flip)).message).toContain(
-            "which isn't one Gram uses",
-          );
+        if (
+          lie === "the root folder" ||
+          lie === "a relative folder" ||
+          lie === "a long relative folder"
+        ) {
+          const { message } = yield* prepared.pipe(Effect.flip);
+          expect(message).toContain("which isn't one Gram uses");
+          // The machine's path is its own words, held to a size in the message.
+          expect(message.length).toBeLessThan(1024);
           return;
         }
         if (lie === "another branch") {
@@ -564,6 +581,45 @@ const closeOnMachine = (get: (id: HostId) => Effect.Effect<WorkerHost, HostUnava
     return { closed, refused: Option.getOrUndefined(result) };
   });
 
+describe("a joined machine's own folders for threads", () => {
+  const OWN = "/home/dev/repos/.threads/t-own";
+  for (const answer of [
+    "/",
+    "repo/.threads/t-own",
+    "/home/dev/repos/.threads/../t-own",
+    "/home/dev/repos/.threads/t-other",
+    OWN,
+  ])
+    it.live(`records the folder a host answers only when it is the thread's own: ${answer}`, () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        const { connection } = yield* machine(join(dir, "repos"), {});
+        const removed: Array<string> = [];
+        const host = yield* machineWorkerHost(
+          MACHINE,
+          {
+            ...connection,
+            threadPlaces: {
+              make: () => Effect.succeed({ path: answer }),
+              lay: () => Effect.succeed({ laid: [] }),
+              remove: (threadId) => Effect.sync(() => void removed.push(threadId)),
+            },
+          },
+          yield* deps(),
+        );
+        const made = yield* host.threadPlaces!.make(ThreadId.make("t-own"), []).pipe(Effect.result);
+        if (answer === OWN) {
+          expect(made).toMatchObject({ _tag: "Success", success: { path: OWN } });
+          expect(removed).toEqual([]);
+        } else {
+          expect(made._tag).toBe("Failure");
+          expect(removed).toEqual(["t-own"]);
+        }
+      }).pipe(Effect.scoped, Effect.provide(Live)),
+    );
+});
+
 describe("a joined machine's git state", () => {
   const POISON = {
     origin: "elsewhere/other",
@@ -658,6 +714,7 @@ describe("a joined machine's terminals at rest", () => {
         ...(yield* deps([worker])),
         store: {
           listThreads: Effect.succeed([worker]),
+          listProjects: Effect.succeed([]),
           getThread: () => Effect.succeed(worker),
         } as unknown as ThreadStoreTag["Service"],
       });

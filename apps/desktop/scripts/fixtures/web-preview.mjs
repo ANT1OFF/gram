@@ -32,6 +32,8 @@ const rtcDone = async (contents) => {
   }
   return contents?.getTitle();
 };
+/** The title the WebRTC probe ends on in a page with no WebRTC. */
+const NO_RTC = "rtc-error:ReferenceError";
 /** A synthetic private address; nothing is ever sent to it, the proxy's dial maps it home. */
 const LAN = "10.77.0.9";
 /** A second, which no page the user opened ever names. */
@@ -634,9 +636,9 @@ const probe = (name, url, init = {}) =>
 
   // An agent never gets the user's web page: asking without making one gets nothing, and making
   // one closes it for a page of its own in the local session.
-  check("an agent can't take the user's web page", host.contentsFor(T, false) === undefined);
+  check("an agent can't take the user's web page", !(await host.contentsFor(T, false)));
   const before = contentsAt(`http://site.example:${site.port}`);
-  const agentPage = host.contentsFor(T, true);
+  const agentPage = await host.contentsFor(T, true);
   check(
     "an agent's page is a new one, in the local session",
     agentPage !== undefined &&
@@ -909,7 +911,7 @@ const probe = (name, url, init = {}) =>
   });
   await delay(800);
   const tokenB = (await invoke(Channels.previewStateGet, { threadId: "t-agent-takes" }))?.webView;
-  const agentView = host.contentsFor("t-agent-takes", true);
+  const agentView = await host.contentsFor("t-agent-takes", true);
   await agentView?.loadURL(`http://127.0.0.1:${dev.port}/`).catch(() => {});
   const agentState = await invoke(Channels.previewStateGet, { threadId: "t-agent-takes" });
   check(
@@ -955,8 +957,8 @@ const probe = (name, url, init = {}) =>
     }
     return (await invoke(Channels.previewStateGet, { threadId }))?.title;
   };
-  // A loopback page, a dev app's or a previewed file's: WebRTC to a host on the internet, by STUN
-  // over UDP or TURN over TCP, and to a private address, reaches nothing.
+  // A loopback page, a dev app's or a previewed file's, has no WebRTC: none of it reaches a host on
+  // the internet or a private address, and no name it gives is looked up.
   const exfilBefore = exfil.connections;
   const lanBefore = rtc.connections.length;
   await invoke(Channels.previewOpen, {
@@ -965,19 +967,18 @@ const probe = (name, url, init = {}) =>
   });
   host.contentsOf("t-rtc-local")?.setBackgroundThrottling(false);
   const localRtc = await titled("t-rtc-local", "rtc-");
-  check("the loopback page ran its WebRTC probe", localRtc === "rtc-done", localRtc);
-  check(
-    "a loopback page's WebRTC reaches no host on the internet and no private address",
-    exfil.connections === exfilBefore && rtc.connections.length === lanBefore,
-    { exfil: exfil.connections - exfilBefore, lan: rtc.connections.length - lanBefore },
-  );
+  const leaked = exfil.connections - exfilBefore + rtc.connections.length - lanBefore;
+  check("a loopback page has no WebRTC, so it reaches nothing", localRtc === NO_RTC && !leaked, {
+    localRtc,
+    leaked,
+  });
   check(
     "a loopback page's WebRTC policy sends no UDP",
     host.contentsOf("t-rtc-local")?.getWebRTCIPHandlingPolicy() === "disable_non_proxied_udp",
   );
-  // The control, in the same session: once the request check let the page reach that host (as
-  // the agent browser would for a page it drives), the same probe's TURN reaches it.
-  const doorPage = host.contentsFor("t-door", true);
+  // In the same session, once the request check let the page reach that host (as the agent browser
+  // would for a page it drives), the probe still has no WebRTC to reach it by.
+  const doorPage = await host.contentsFor("t-door", true);
   agentDriven.add(doorPage);
   doorPage?.setBackgroundThrottling(false);
   await doorPage?.loadURL(`http://127.0.0.1:${dev.port}/door-then-rtc`).catch(() => {});
@@ -987,12 +988,12 @@ const probe = (name, url, init = {}) =>
   await doorPage?.loadURL(`http://127.0.0.1:${dev.port}/rtc-local`).catch(() => {});
   const doorRtc = await titled("t-door", "rtc-");
   check(
-    "control: once the check let a page reach the host, the same TURN probe reaches it",
-    doorBefore > exfilBefore && doorRtc === "rtc-done" && exfil.connections > doorBefore,
+    "once the check let a page reach the host, its WebRTC probe still can't",
+    doorBefore > exfilBefore && doorRtc === NO_RTC && exfil.connections === doorBefore,
     { door: doorBefore - exfilBefore, turn: exfil.connections - doorBefore, title: doorRtc },
   );
   // An agent's page on a public host still loads in the local session, through its proxy.
-  const agentWeb = host.contentsFor("t-agent-web", true);
+  const agentWeb = await host.contentsFor("t-agent-web", true);
   agentDriven.add(agentWeb);
   agentWeb?.setBackgroundThrottling(false);
   const gramBeforeWorkers = gram.seen.length;

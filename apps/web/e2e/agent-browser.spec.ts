@@ -222,10 +222,11 @@ test("the driver reads and acts on a static page on loopback the way a person wo
 
   expect(driver.console(false)).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ level: "log", text: "2 console argument(s); contents omitted." }),
+      // A local page's own lines keep their words.
+      expect.objectContaining({ level: "log", text: "checked 2" }),
       expect.objectContaining({
         level: "error",
-        text: "Uncaught page exception; contents omitted.",
+        text: expect.stringContaining("Error: late failure"),
       }),
     ]),
   );
@@ -392,6 +393,10 @@ test("real page console and HTTP/transport failures never expose raw payloads or
   const serialized = JSON.stringify(diagnostics);
   expect(serialized).not.toMatch(/invented-|Authorization|Bearer|cookie|body|opaque/);
   expect(diagnostics.console.some((line) => line.level === "error")).toBe(true);
+  // The console tool reads a local page's words, with the credential redacted and objects unopened.
+  const read = JSON.stringify(driver.console(true));
+  expect(read).toContain("Authorization: Bearer [redacted]");
+  expect(read).not.toMatch(/invented-/);
   driver.holdConsole(Date.now() - 10000);
   expect(driver.inspection(true).diagnostics!.network).toEqual([]);
   expect(driver.console(false)).toEqual([]);

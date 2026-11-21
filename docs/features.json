@@ -527,17 +527,20 @@
     },
     {
       "name": "Verify recipes and Proof",
-      "purpose": "A repository's .gram/verify.json drivers, the verify tool that runs them, Gram's record of them on a done report, and a worker's Proof tool.",
+      "purpose": "A repository's .gram/verify.json drivers, the verify tool that runs them, Gram's record of them on a done report, and a worker's Proof tool with the screenshots each run kept.",
       "code": [
         "packages/server/src/verify/**",
         "packages/contracts/src/verify-recipe.ts",
         "packages/server/src/rpc/handlers/checks.ts",
         "apps/web/src/panels/proof-panel.tsx",
+        "packages/server/src/git/check-evidence.ts",
         ".gram/verify.json"
       ],
       "tests": [
         "packages/server/src/verify/**/*.test.ts",
-        "packages/server/src/orchestration/report-verify.test.ts"
+        "packages/server/src/orchestration/report-verify.test.ts",
+        "packages/server/src/git/check-evidence.test.ts",
+        "apps/web/src/panels/proof-panel.test.tsx"
       ],
       "docs": ["docs/AGENTS_AND_FEATURES.md#verify-recipes"]
     },
@@ -557,7 +560,7 @@
         "docs/AGENTS_AND_FEATURES.md#events-instead-of-polling"
       ],
       "ui": {
-        "where": "Settings → Routines",
+        "where": "Settings → Workspaces & merging → Routines",
         "route": "/settings/routines",
         "landmark": {
           "role": "region",
@@ -585,7 +588,7 @@
         "docs/AGENTS_AND_FEATURES.md#project-scripts"
       ],
       "ui": {
-        "where": "The right panel's Terminal tab",
+        "where": "The right panel's More tabs → Terminal, a tab of its own once opened",
         "route": "/",
         "steps": [
           {
@@ -656,7 +659,7 @@
       ],
       "docs": ["docs/AGENTS_AND_FEATURES.md#overview"],
       "ui": {
-        "where": "Settings → Connectors",
+        "where": "Settings → Agents & models → Connectors",
         "route": "/settings/connectors",
         "landmark": {
           "role": "region",
@@ -741,7 +744,7 @@
       "tests": ["apps/web/src/settings/phone-access-page.test.tsx"],
       "docs": ["docs/REMOTE_ACCESS.md"],
       "ui": {
-        "where": "Settings → Phones and browsers",
+        "where": "Settings → Machines → Phones and browsers",
         "route": "/settings/phones",
         "landmark": {
           "role": "region",
@@ -751,7 +754,7 @@
     },
     {
       "name": "Settings",
-      "purpose": "Every setting page: General, Agents, Appearance, Notifications, Storage, Updates, Voice input and the rest.",
+      "purpose": "Every setting page: General, Agents & models, Usage, Workspaces & merging, Machines, Appearance, Notifications, Keyboard, Voice and About, and the pages under them.",
       "code": [
         "apps/web/src/settings/**",
         "apps/web/src/routes/settings*.tsx",
@@ -784,6 +787,8 @@
       "purpose": "Palettes, fonts and radii by theme name, the design tokens and the kit every screen draws with.",
       "code": [
         "packages/themes/src/**",
+        "packages/themes/scripts/**",
+        "packages/themes/palette.json",
         "apps/web/src/theme/**",
         "apps/web/src/styles/**",
         "apps/web/src/components/**",

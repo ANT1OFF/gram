@@ -25,6 +25,7 @@ import {
   type WorkerModel,
   type WorkspaceId,
   type WorkspaceState,
+  isTierAgent,
 } from "@gram/contracts";
 
 import { agentLabel } from "@/agents/agent-label";
@@ -110,9 +111,8 @@ const isPastOrchestratorDefault = (model: ModelRef) =>
  * to, keeping its note and its default mark.
  */
 const tierOfPinned = (entry: ModelRef, available: AvailableModels): Tier | undefined => {
-  // The table names no OpenCode or Grok models.
   const agent = entry.agent;
-  if (agent === "opencode" || agent === "grok") return undefined;
+  if (!isTierAgent(agent)) return undefined;
   return TIERS.find((tier) => {
     const resolved = resolveTier(RECOMMENDED, { tier, agent }, available);
     return (
@@ -188,7 +188,7 @@ export const turnOnRows = (
         change:
           tier === undefined
             ? `${pinnedText(entry)}: yours, kept`
-            : `${pinnedText(entry)} → ${followText({ tier, ...(entry.agent === "opencode" || entry.agent === "grok" ? {} : { agent: entry.agent }) }, available)}`,
+            : `${pinnedText(entry)} → ${followText({ tier, ...(isTierAgent(entry.agent) ? { agent: entry.agent } : {}) }, available)}`,
         ticked: false,
         canFollow: tier !== undefined,
       });

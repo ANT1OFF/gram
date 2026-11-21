@@ -22,13 +22,7 @@ import * as Stream from "effect/Stream";
 import pino from "pino";
 import { randomBytes } from "node:crypto";
 import { createReadStream, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import {
-  Agent,
-  createServer,
-  request as httpRequest,
-  Server,
-  type IncomingHttpHeaders,
-} from "node:http";
+import { Agent, createServer, request as httpRequest, Server } from "node:http";
 import type { Socket as NetSocket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
@@ -60,118 +54,17 @@ import { attestShutdown, stopForShutdown } from "../runtime/shutdown.ts";
 import { remoteCookieName } from "./remote-access.ts";
 import { Tailscale, type TailscaleShape } from "./remote-control.ts";
 import { tokenCookieName } from "./auth.ts";
+import { bootLine, rpcRoutes, serverPort, ServerLayer } from "./server.ts";
+import { guardFileBody, GuardedHttpPlatform } from "./app-shell.ts";
 import {
-  bootLine,
-  guardFileBody,
-  GuardedHttpPlatform,
-  LaunchToken,
-  rpcRoutes,
-  serverPort,
-  ServerLayer,
-} from "./server.ts";
-
-interface RawResponse {
-  readonly status: number;
-  readonly headers: IncomingHttpHeaders;
-  readonly body: string;
-}
-
-const raw = (
-  port: number,
-  options: { path?: string; method?: string; headers?: Record<string, string>; body?: string } = {},
-) =>
-  Effect.promise(
-    () =>
-      new Promise<RawResponse>((resolve, reject) => {
-        const req = httpRequest(
-          {
-            host: "127.0.0.1",
-            port,
-            path: options.path ?? "/",
-            method: options.method ?? "GET",
-            headers: options.headers,
-            // A fresh connection per request: a rejected upgrade leaves its socket unusable.
-            agent: false,
-          },
-          (res) => {
-            let body = "";
-            res.setEncoding("utf8");
-            res.on("data", (chunk: string) => (body += chunk));
-            res.on("end", () =>
-              resolve({ status: res.statusCode ?? 0, headers: res.headers, body }),
-            );
-          },
-        );
-        req.on("error", reject);
-        req.end(options.body);
-      }),
-  );
-
-/** The status a WebSocket upgrade of `/ws` gets: 101 when accepted. */
-const upgradeStatus = (port: number, headers: Record<string, string>, path = "/ws") =>
-  Effect.promise(
-    () =>
-      new Promise<number>((resolve, reject) => {
-        const req = httpRequest({
-          host: "127.0.0.1",
-          port,
-          path,
-          agent: false,
-          headers: {
-            connection: "Upgrade",
-            upgrade: "websocket",
-            "sec-websocket-version": "13",
-            "sec-websocket-key": randomBytes(16).toString("base64"),
-            ...headers,
-          },
-        });
-        req.on("upgrade", (_res, socket) => {
-          socket.destroy();
-          resolve(101);
-        });
-        req.on("response", (res) => {
-          res.resume();
-          resolve(res.statusCode ?? 0);
-        });
-        req.on("error", reject);
-        req.end();
-      }),
-  );
-
-/** A remote `/ws` upgrade held open, with a promise for when the server closes it. */
-const openSocket = (port: number, headers: Record<string, string>, path = "/ws") =>
-  Effect.promise(
-    () =>
-      new Promise<{ closed: Promise<void>; isOpen: () => boolean }>((resolve, reject) => {
-        const req = httpRequest({
-          host: "127.0.0.1",
-          port,
-          path,
-          agent: false,
-          headers: {
-            connection: "Upgrade",
-            upgrade: "websocket",
-            "sec-websocket-version": "13",
-            "sec-websocket-key": randomBytes(16).toString("base64"),
-            ...headers,
-          },
-        });
-        req.on("upgrade", (_res, socket) => {
-          let open = true;
-          socket.resume();
-          const closed = new Promise<void>((done) =>
-            socket.once("close", () => {
-              open = false;
-              done();
-            }),
-          );
-          resolve({ closed, isOpen: () => open });
-        });
-        req.on("response", (res) => reject(new Error(`upgrade refused: ${res.statusCode}`)));
-        req.on("error", reject);
-        req.end();
-      }),
-  );
+  bootCookie,
+  keyed,
+  openSocket,
+  raw,
+  type RawResponse,
+  serverInfo,
+  upgradeStatus,
+} from "./server.testing.ts";
 
 const remoteDataDir = mkdtempSync(join(tmpdir(), "gram-remote-http-"));
 afterAll(() => rmSync(remoteDataDir, { recursive: true, force: true }));
@@ -202,27 +95,13 @@ const testServer = (remoteOrigin?: string) =>
 
 const TestServer = testServer();
 
-const serverInfo = Effect.gen(function* () {
-  const server = yield* HttpServer.HttpServer;
-  const { token } = yield* LaunchToken;
-  return { port: serverPort(server), token };
-});
-
-/** Performs the boot navigation and returns the resulting `Cookie` header value. */
-const bootCookie = Effect.gen(function* () {
-  const { port, token } = yield* serverInfo;
-  const response = yield* raw(port, { path: `/?boot=${token}` });
-  const setCookie = response.headers["set-cookie"]?.[0] ?? "";
-  return setCookie.split(";")[0] ?? "";
-});
-
 const CookieWebSocket = (cookie: string) =>
   Layer.succeed(Socket.WebSocketConstructor)(
     (url) =>
       new (globalThis.WebSocket as unknown as new (
         url: string,
         init: { headers: Record<string, string> },
-      ) => globalThis.WebSocket)(url, { headers: { cookie } }),
+      ) => globalThis.WebSocket)(url, { headers: keyed({ cookie }) }),
   );
 
 /** A client whose socket lives in the caller's scope; `Effect.provide` would close it at once. */
@@ -259,7 +138,7 @@ test("completes shutdown with an independently held renderer WebSocket", async (
           () =>
             new Promise<NetSocket>((resolve, reject) => {
               const req = httpRequest(
-                { host: "127.0.0.1", port, path: "/", agent, headers: { cookie } },
+                { host: "127.0.0.1", port, path: "/", agent, headers: keyed({ cookie }) },
                 (res) => {
                   const connection = res.socket;
                   res.resume();
@@ -277,7 +156,7 @@ test("completes shutdown with an independently held renderer WebSocket", async (
         const socket = new (globalThis.WebSocket as unknown as new (
           url: string,
           init: { headers: Record<string, string> },
-        ) => globalThis.WebSocket)(`ws://127.0.0.1:${port}/ws`, { headers: { cookie } });
+        ) => globalThis.WebSocket)(`ws://127.0.0.1:${port}/ws`, { headers: keyed({ cookie }) });
         const closed = new Promise<void>((resolve) =>
           socket.addEventListener("close", () => resolve(), { once: true }),
         );
@@ -448,13 +327,13 @@ test("completes shutdown when a renderer never answers the WebSocket close frame
         port,
         path: "/ws",
         agent: false,
-        headers: {
+        headers: keyed({
           cookie,
           connection: "Upgrade",
           upgrade: "websocket",
           "sec-websocket-version": "13",
           "sec-websocket-key": randomBytes(16).toString("base64"),
-        },
+        }),
       });
       req.on("upgrade", (_res, connection) => {
         // A raw owned renderer consumes frames but deliberately sends no close acknowledgement.
@@ -527,12 +406,14 @@ layer(TestServer, { excludeTestServices: true })("server over a real socket", (i
 
     it.effect("exchanges the boot token for an HttpOnly, SameSite=Strict per-port cookie", () =>
       Effect.gen(function* () {
-        const { port, token } = yield* serverInfo;
+        const { port, token, cookie, originKey } = yield* serverInfo;
         const response = yield* raw(port, { path: `/?boot=${token}` });
         expect(response.status).toBe(302);
-        expect(response.headers.location).toBe("/");
+        // The origin key, in the fragment: the page reads it, and no server is ever sent it.
+        expect(response.headers.location).toBe(`/#gram-key=${originKey}`);
         const setCookie = response.headers["set-cookie"]?.[0] ?? "";
-        expect(setCookie).toContain(`${tokenCookieName(port)}=${token}`);
+        expect(setCookie).toContain(`${tokenCookieName(port)}=${cookie}`);
+        expect(cookie).not.toBe(token);
         expect(setCookie).toMatch(/HttpOnly/i);
         expect(setCookie).toMatch(/SameSite=Strict/i);
         expect(setCookie).toMatch(/Path=\//i);
@@ -546,14 +427,15 @@ layer(TestServer, { excludeTestServices: true })("server over a real socket", (i
 
     it.effect("enforces the cookie on static assets and the WebSocket upgrade", () =>
       Effect.gen(function* () {
-        const { port, token } = yield* serverInfo;
+        const { port } = yield* serverInfo;
         const cookie = yield* bootCookie;
+        const value = cookie.slice(cookie.indexOf("=") + 1);
         expect((yield* raw(port, { path: "/app.js" })).status).toBe(401);
         expect((yield* raw(port, { path: "/app.js", headers: { cookie } })).status).toBe(200);
 
         expect(yield* upgradeStatus(port, {})).toBe(401);
         expect(
-          yield* upgradeStatus(port, { cookie: `${tokenCookieName(port + 1)}=${token}` }),
+          yield* upgradeStatus(port, { cookie: `${tokenCookieName(port + 1)}=${value}` }),
         ).toBe(401);
         expect(yield* upgradeStatus(port, { cookie })).toBe(101);
       }),
@@ -1634,11 +1516,11 @@ layer(
         path: "/remote/revoke",
         method: "POST",
         agent: false,
-        headers: {
+        headers: keyed({
           ...local,
           "content-type": "application/json",
           "content-length": String(body.length),
-        },
+        }),
       });
       const removed = new Promise<number>((resolve, reject) => {
         removal.on("response", (res) => {

@@ -3,6 +3,7 @@ import { Proc, pushCurrentBranch } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { actionGuard } from "../../embedding/guard.ts";
 import { GitRefresh } from "../../git/platform.ts";
+import { effectiveOriginsChecked } from "../../git/recorded-clone.ts";
 import { threadFolder } from "../../git/thread-pr.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import type { Handlers } from "./common.ts";
@@ -33,6 +34,12 @@ export const pushHandlers = Effect.gen(function* () {
             input: {},
           }),
         ).pipe(Effect.mapError((e) => new InvalidState({ message: e.message, threadId })));
+        // Where this push goes must be the repository the thread's project was added with.
+        const project = (yield* store.listProjects).find((each) => each.id === thread.projectId);
+        yield* effectiveOriginsChecked(project, cwd).pipe(
+          Effect.provideService(Proc, proc),
+          Effect.mapError((e) => new InvalidState({ message: e.message, threadId })),
+        );
         const result = yield* pushCurrentBranch(cwd).pipe(
           Effect.provideService(Proc, proc),
           Effect.mapError((e) => new InvalidState({ message: e.message, threadId })),

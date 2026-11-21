@@ -1,7 +1,6 @@
 import { createHmac, type KeyObject, randomBytes } from "node:crypto";
 import { join } from "node:path";
 import {
-  type DeviceCapability,
   type DeviceId,
   type HostedDiscovery,
   type HostedMachine,
@@ -25,7 +24,6 @@ import {
   importHostedThread,
   settleHostedThread,
   listHostedWorkspaces,
-  makeTokenKeeper,
   messageHostedThread,
   startHostedThread,
   checkHostedRepositories,
@@ -36,7 +34,9 @@ import {
   type TokenKeeper,
 } from "./hosted.ts";
 import { forgetHostedDevice, registerHostedDevice } from "./hosted-registration.ts";
-import { parseSignIn, type StoredSignIn } from "./stored-sign-in.ts";
+import { capabilitiesOf, folderId, hostOf, markTaker } from "./hosted-device-parts.ts";
+import { signInKeeper } from "./sign-in-keeper.ts";
+import { machineMarkFor, parseSignIn, type StoredSignIn } from "./stored-sign-in.ts";
 import {
   type HostedWorkerMachines,
   hostedWorkerMachines,
@@ -382,6 +382,14 @@ interface Server {
   readonly deviceId: DeviceId;
   readonly deviceRegistered: boolean;
   readonly keeper: TokenKeeper;
+  /**
+   * The mark worker machines asked for under this sign-in carry (`StoredSignIn.machineMark`);
+   * undefined for one restored from before marks were, until its first renewal says its
+   * organisation (`keeperFor`).
+   */
+  machineMark: string | undefined;
+  /** The marks it had before (`StoredSignIn.formerMarks`). */
+  formerMarks: ReadonlyArray<string>;
   readonly limits: AskLimits;
   readonly grants: GrantLedger;
   workspaces: ReadonlyArray<HostedWorkspace>;
@@ -400,19 +408,6 @@ interface Retained {
   readonly problem: string;
 }
 
-/** What a workspace's lent machine may do; a workspace whose policy isn't known gets nothing. */
-const capabilitiesOf = (
-  policy: HostedWorkspace["devices"] | undefined,
-  readOnly: boolean,
-): ReadonlyArray<DeviceCapability> =>
-  policy === undefined || policy === "off"
-    ? []
-    : policy === "on" && !readOnly
-      ? ["read", "exec"]
-      : ["read"];
-
-const folderId = () => `f-${randomBytes(8).toString("hex")}`;
-
 const savedOf = (server: Server): SavedServer => ({
   origin: server.origin,
   paused: server.limits.paused(),
@@ -430,14 +425,6 @@ const savedOf = (server: Server): SavedServer => ({
     })),
   })),
 });
-
-const hostOf = (origin: string) => {
-  try {
-    return new URL(origin).host;
-  } catch {
-    return origin;
-  }
-};
 
 const CLOSING: Done = { ok: false, why: "Gram is closing." };
 
@@ -646,17 +633,18 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     key: KeyObject,
     signIn: StoredSignIn,
     ended: () => void,
+    marked?: (mark: string, formerMarks: ReadonlyArray<string>) => void,
   ): TokenKeeper =>
-    makeTokenKeeper({
+    signInKeeper({
+      origin,
       discovery,
       key,
-      subject: signIn.subject,
-      refreshToken: signIn.refreshToken,
-      saveRefreshToken: (refreshToken) =>
-        secrets.set(signInName(origin), JSON.stringify({ ...signIn, refreshToken })),
+      signIn,
+      keep: (stored) => secrets.set(signInName(origin), JSON.stringify(stored)),
       fetch: options.fetch,
       now: options.elapsed,
       ended,
+      ...(marked === undefined ? {} : { marked }),
     });
 
   const makeServer = (
@@ -667,13 +655,18 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
     saved?: SavedServer,
     keeper?: TokenKeeper,
   ): Server => {
+    const marks = markTaker<Server>(changed);
     const server: Server = {
       origin,
       discovery,
       key,
       deviceId: signIn.deviceId,
       deviceRegistered: signIn.deviceRegistered !== false,
-      keeper: keeper ?? keeperFor(origin, discovery, key, signIn, () => endedByServer(server)),
+      keeper:
+        keeper ??
+        keeperFor(origin, discovery, key, signIn, () => endedByServer(server), marks.marked),
+      machineMark: signIn.machineMark,
+      formerMarks: signIn.formerMarks ?? [],
       limits: makeAskLimits(options.elapsed, { paused: saved?.paused ?? false }, () => {
         // Paused: everything waiting on the person goes, as paused, and the pause is kept.
         void server.lending?.stop("paused");
@@ -685,6 +678,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       lent: new Map(),
       connected: new Set(),
     };
+    marks.take(server);
     for (const workspace of saved?.workspaces ?? [])
       server.lent.set(workspace.id, {
         state: "resume",
@@ -877,6 +871,8 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         refreshToken: signed.tokens.refreshToken,
         deviceId: deviceIdOf(devicePublicKeyText(key)),
         ...(registerDevice ? {} : { deviceRegistered: false }),
+        machineMark: machineMarkFor(origin, signed.tokens.subject, signed.tokens.organization),
+        ...(signed.tokens.organization === undefined ? {} : { machineMarkOrg: true as const }),
       };
       // A sign-in kept from before goes back if this one doesn't finish.
       const previous = await secrets.get(signInName(origin));
@@ -886,10 +882,10 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           ? secrets.remove(signInName(origin))
           : secrets.set(signInName(origin), previous),
       );
-      const holder: { server?: Server } = {};
-      const keeper = keeperFor(origin, found.discovery, key, first, () => {
-        if (holder.server !== undefined) endedByServer(holder.server);
-      });
+      // The server below, once made: a renewal may end the sign-in, or mark it, before it is.
+      const marks = markTaker<Server>(changed);
+      const ended = () => marks.with(endedByServer);
+      const keeper = keeperFor(origin, found.discovery, key, first, ended, marks.marked);
       undo.push(() => keeper.signOut());
       if (closed) return await giveUp(CLOSING);
       if (registerDevice) {
@@ -933,7 +929,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           why: `Gram keeps at most ${SERVERS_MOST} servers. Sign out of one first.`,
         });
       }
-      holder.server = server;
+      marks.take(server);
       // The old one, signed out by the server, goes for the new one.
       if (current !== undefined) await stopLending(current);
       accepted.add(origin);

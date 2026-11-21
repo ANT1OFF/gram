@@ -139,9 +139,15 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   is its bar alone, the station's name on its hover, beside a Now cell that says the state.
 - **Separate by surface and space before lines.** A group of rows is a raised card whose fill is
   the step off the page; in dark it takes no outline (`border-edge-group` is transparent there),
-  and light, whose raised step is faint, keeps a hairline. Inside it a hairline between rows is
+  and light keeps a hairline round its white card. Inside it a hairline between rows is
   the only line. Don't add a rule, a card edge or a glyph where space or the surface step already
-  says it.
+  says it. A rail beside a list (a column of sections or folders that narrows it) is the one
+  sunk region: `bg-rail` with a `border-rail-edge` outline, a clear step darker than the page in
+  both modes and edged at the 3:1 non-text floor, so it never fades into the page as a faint
+  `bg-muted/40` did. Its current row is `bg-rail-row-active`, the unsunk surface (the page in dark
+  and at more contrast, the raised step in light), so the choice reads off the sunk fill and its
+  words keep the floor they have on the page. An embedding app's theme may set `--rail-bg`,
+  `--rail-edge` and `--rail-row-active`.
 - **Settings descriptions** (a setting's line under its name, and a group's line beside its
   title) are one short line of `text-meta` in `text-description` (`--fg-description`, the
   secondary `fg-muted`, so the name and what it does read as two levels), no wider than
@@ -388,7 +394,12 @@ and `rounded-xl` 16, `rounded-full` for pills and dots, and `--composer-radius` 
 (`surface-3`). In dark the raised step is a clear one on near-black palettes (5.5% lightness over
 the lighter of the other two, 3.5% on mid-tone ones that already separate), so a card reads by its
 fill; Neutral Dark is near-black (`#131313` page, `#0b0b0b`
-chrome), not black. Hover sits a shade past the raised step. One step for every secondary
+chrome), not black. Light has the same order: the chrome is furthest back, the page a step under
+white (Neutral is `#e9e9e9` chrome, `#f3f3f4` page) and the raised step is white, so a card clears
+its page by about 1.1:1, as dark's do (`palette.test.ts` holds every light preset to both:
+chrome under the page, card off it). A modest chrome step reads best; a heavy slate or grey band
+does not, and the settings groups keep their hairline, which blind rounds preferred to a softer
+one or none. Hover sits a shade past the raised step. One step for every secondary
 surface: a card, a panel's block, a popover and a menu
 take `bg-card` or `bg-popover` (both `--surface-raised`, which is `surface-3`: the palettes hold
 muted text at AA there) and the edge `border-edge`, which carries the step in dark where a shadow

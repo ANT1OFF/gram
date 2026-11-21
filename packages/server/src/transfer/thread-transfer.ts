@@ -45,7 +45,6 @@ import {
   THREAD_BUNDLE_FORMAT,
 } from "@gram/contracts/thread-transfer";
 import {
-  cachedOriginUrl,
   copyWorktreeIncludes,
   excludeWorktreesFolder,
   fetchBranchTip,
@@ -80,7 +79,7 @@ import { cloneRepo } from "../fs/clone.ts";
 import { registerRepo } from "../fs/folders.ts";
 import { ReadingAs, SERVER } from "../embedding/readable-by.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
-import { cloneIdentityOf, cloneUrlOf, originIdentityAt } from "../host/repos.ts";
+import { cloneUrlOf } from "../host/repos.ts";
 import { keepThreadWork } from "../host/stop-resume.ts";
 import { migrations } from "../persistence/migrations.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -88,6 +87,7 @@ import { makeClosedReopener } from "../rpc/handlers/closed-threads.ts";
 import { CheckoutService } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { fileOrigin } from "../thread-profiles/repositories.ts";
+import { recordedCloneOf, recordedOriginAt, recordedOriginUrl } from "./recorded-remote.ts";
 import { cut, portableThread, scrubbed, shareableRemote } from "./workspace-transfer.ts";
 
 /** Why nothing here runs while the hosted features setting is off. */
@@ -252,10 +252,11 @@ const make = (options: ThreadTransferOptions) =>
             ),
           );
 
+    /** The remote `root` is a clone of, by its project's recorded origin (`recordedOriginUrl`). */
     const remoteOf = (root: string) =>
       withGit(
         "The repository's origin couldn't be read",
-        cachedOriginUrl(root).pipe(
+        recordedOriginUrl(store, root).pipe(
           Effect.map((url) => (url === undefined ? undefined : shareableRemote(url))),
         ),
       );
@@ -727,7 +728,7 @@ const make = (options: ThreadTransferOptions) =>
         let checkout: Checkout;
         let undo: Effect.Effect<void> = Effect.void;
         // Recorded before its agent runs here again: what its ownership of a PR goes by.
-        const cloneIdentity = yield* withGit("", originIdentityAt(top));
+        const cloneIdentity = yield* withGit("", recordedOriginAt(store, top));
         const recorded = cloneIdentity === undefined ? {} : { cloneIdentity };
         if (inPlace) {
           const stamp = new Date(now).toISOString().slice(0, 16).replace(/[-:T]/g, "");
@@ -809,7 +810,7 @@ const make = (options: ThreadTransferOptions) =>
         const top = project.root;
         const placed = yield* placeWork(top, bundle);
         const { dir } = placed;
-        const cloneIdentity = yield* withGit("", originIdentityAt(top));
+        const cloneIdentity = yield* withGit("", recordedOriginAt(store, top));
         const more: Array<string> = [];
         if (placed.detached && bundle.branch !== undefined) {
           more.push(
@@ -949,7 +950,7 @@ const make = (options: ThreadTransferOptions) =>
             "The thread's branch at the remote moved since it was exported. Move it again from the other server.",
           );
         }
-        const cloneIdentity = cloneIdentityOf(url);
+        const cloneIdentity = yield* recordedCloneOf(project, url);
         const thread = yield* stage(
           bundle,
           input.from,

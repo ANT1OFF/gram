@@ -2,18 +2,32 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { authTarget } from "./auth-target.ts";
 
 /**
- * Two independent layers: a loopback Host/Origin allowlist, then a per-launch
- * token exchanged for an HttpOnly per-port cookie.
+ * Three independent layers: a loopback Host/Origin allowlist, a per-launch token exchanged for an
+ * HttpOnly per-port cookie, and a per-launch key only Gram's own origin holds.
  *
  * A foreign page can't be stopped from *sending* a cross-origin request or WebSocket upgrade to our
  * port (CORS only blocks reading the response), and DNS rebinding can forge same-origin reads. So
  * `Host` must be our loopback host:port and any `Origin` must be our own. Same-origin GETs omit
  * `Origin`, which is fine; the Host check still applies. The token then means loopback reachability
  * alone grants nothing.
+ *
+ * A cookie isn't kept to its port: a browser sends it to every port of the host, so a server on
+ * another loopback port the browser visits reads it. So everything but the web app's own files also
+ * takes the origin key, which the boot redirect hands the page in its URL fragment (never sent to a
+ * server) and the page keeps in its origin's own storage: the page sends it as a header on a request
+ * (`ORIGIN_KEY_HEADER`) and as a subprotocol on `/ws` (`ORIGIN_KEY_PROTOCOL`), which a browser can
+ * give a socket where it can't give a header.
  */
 export interface AuthOptions {
   readonly port: number;
   readonly token: string;
+  /**
+   * The launch cookie's value: its own random value, never the boot token, since every port of this
+   * host is sent the cookie and a boot answers with the origin key.
+   */
+  readonly cookie: string;
+  /** The per-launch key only Gram's own origin holds. */
+  readonly originKey: string;
   readonly extraOrigins?: ReadonlyArray<string>;
 }
 
@@ -27,6 +41,8 @@ export interface AuthRequest {
 
 export type AuthDecision =
   | { readonly kind: "pass" }
+  /** Signed in, without the origin key: the web app's own files, and nothing else. */
+  | { readonly kind: "shell" }
   /** A valid `/?boot=<token>` navigation: set the cookie and redirect to strip the token. */
   | { readonly kind: "boot" }
   /** An `/mcp` request with a bearer token; the caller must still check it against `McpTokens`. */
@@ -41,8 +57,45 @@ export const bearerToken = (
   headers: Readonly<Record<string, string | undefined>>,
 ): string | undefined => /^Bearer\s+(\S+)\s*$/i.exec(headers["authorization"] ?? "")?.[1];
 
+/** The request header that carries the origin key. */
+export const ORIGIN_KEY_HEADER = "x-gram-key";
+/** The `/ws` subprotocol that carries the origin key: this, then the key. */
+export const ORIGIN_KEY_PROTOCOL = "gram-key.";
+/** The boot redirect's fragment that hands the page the origin key: this, then the key. */
+export const ORIGIN_KEY_FRAGMENT = "gram-key=";
+
+/** The origin key a request carries, as a header or as one of its WebSocket subprotocols. */
+export const originKeyOf = (
+  headers: Readonly<Record<string, string | undefined>>,
+): string | undefined =>
+  headers[ORIGIN_KEY_HEADER] ??
+  (headers["sec-websocket-protocol"] ?? "")
+    .split(",")
+    .map((protocol) => protocol.trim())
+    .find((protocol) => protocol.startsWith(ORIGIN_KEY_PROTOCOL))
+    ?.slice(ORIGIN_KEY_PROTOCOL.length);
+
 /** 256 random bits, hex-encoded. */
 export const makeLaunchToken = (): string => randomBytes(32).toString("hex");
+
+/** A launch's secrets, each its own random value. */
+export interface LaunchSecrets {
+  /** Carried by the boot URL; exchanged for the cookie and the key. */
+  readonly token: string;
+  /**
+   * The launch cookie's value. Every port of this host is sent the cookie and a boot answers with
+   * the key, so it must never also be the boot token.
+   */
+  readonly cookie: string;
+  /** Handed to the page in the boot redirect's fragment. */
+  readonly originKey: string;
+}
+
+export const makeLaunchSecrets = (): LaunchSecrets => ({
+  token: makeLaunchToken(),
+  cookie: makeLaunchToken(),
+  originKey: makeLaunchToken(),
+});
 
 /** Cookies are host-scoped, not port-scoped: another instance's cookie must not shadow ours. */
 export const tokenCookieName = (port: number): string => `sb_token_${port}`;
@@ -135,6 +188,17 @@ export const authorize = (options: AuthOptions, request: AuthRequest): AuthDecis
   }
 
   const cookie = request.cookies[tokenCookieName(options.port)];
-  if (cookie !== undefined && tokensEqual(cookie, options.token)) return { kind: "pass" };
-  return { kind: "reject", status: 401, message: "unauthorized: launch token required" };
+  if (cookie === undefined || !tokensEqual(cookie, options.cookie))
+    return { kind: "reject", status: 401, message: "unauthorized: launch token required" };
+  const key = originKeyOf(request.headers);
+  if (key !== undefined && tokensEqual(key, options.originKey)) return { kind: "pass" };
+  // A page load with the cookie alone: the web app's files, which hold nothing of this launch's.
+  // The socket, every route and the session probe (`/?boot=0`) take the key.
+  if (
+    (request.method === "GET" || request.method === "HEAD") &&
+    target.path !== "/ws" &&
+    boot === null
+  )
+    return { kind: "shell" };
+  return { kind: "reject", status: 401, message: "unauthorized: this page's key is missing" };
 };

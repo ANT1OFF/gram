@@ -8,6 +8,7 @@
  * the name asked about; neither's error text is kept or logged, since npm's can name its registry.
  */
 import { homedir } from "node:os";
+import { isNpmPackageName } from "@gram/contracts";
 import { ghApi, Proc } from "@gram/git";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -131,20 +132,23 @@ export const UpstreamReleasesLive = Layer.effect(
     const budget = yield* GhBudget;
     const cwd = homedir();
     const npm = (name: string) =>
-      proc
-        .run("npm", ["view", "--json", name, "time", "versions"], {
-          cwd,
-          timeoutMs: READ_TIMEOUT_MS,
-          maxOutputBytes: MAX_OUTPUT_BYTES,
-        })
-        .pipe(
-          Effect.map((out) => {
-            if (out.status !== 0) return NOT_FOUND.test(out.stderr) ? null : undefined;
-            if (out.truncated) return undefined;
-            return npmReleases(name, out.stdout);
-          }),
-          Effect.orElseSucceed(() => undefined),
-        );
+      // Anything but a registry name is a spec npm would fetch (a git repo, a URL, a path).
+      !isNpmPackageName(name)
+        ? Effect.succeed(null)
+        : proc
+            .run("npm", ["view", "--json", "--", name, "time", "versions"], {
+              cwd,
+              timeoutMs: READ_TIMEOUT_MS,
+              maxOutputBytes: MAX_OUTPUT_BYTES,
+            })
+            .pipe(
+              Effect.map((out) => {
+                if (out.status !== 0) return NOT_FOUND.test(out.stderr) ? null : undefined;
+                if (out.truncated) return undefined;
+                return npmReleases(name, out.stdout);
+              }),
+              Effect.orElseSucceed(() => undefined),
+            );
     const github = (repo: string) =>
       Effect.gen(function* () {
         if (!(yield* budget.admit("core", "background")).allowed) return undefined;

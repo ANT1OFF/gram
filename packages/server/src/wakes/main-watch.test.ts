@@ -14,6 +14,8 @@ import { Proc, ProcSpawnError } from "@gram/git";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { vi } from "vitest";
+import { cloneIdentityOf } from "../host/repos.ts";
 import { GhBudget } from "../github/budget.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -28,6 +30,14 @@ import {
   prNumberOfMessage,
   readBranch,
 } from "./main-watch.ts";
+
+// Off unless a test turns it on: behind a GitHub route, each `gh` run carries a thread's handle.
+const relay = vi.hoisted(() => ({ on: false }));
+vi.mock("../embedding/github-relay.ts", async (actual) => ({
+  ...(await actual<Record<string, unknown>>()),
+  githubRelayed: () => relay.on,
+  ghThreadEnv: (threadId: string) => (relay.on ? { GH_TOKEN: `gram-thread:${threadId}` } : {}),
+}));
 
 const run = (
   id: number,
@@ -106,6 +116,9 @@ describe("mainRedText", () => {
 interface Fake {
   readonly api: Map<string, string>;
   readonly calls: Array<string>;
+  /** The handle each `gh` run carried, `""` for none. */
+  readonly tokens?: Array<string>;
+  readonly orchestrator?: string;
   readonly notes: Array<{ readonly note: string; readonly key?: string | undefined }>;
   charter: WorkspaceState["charter"];
 }
@@ -121,18 +134,24 @@ const layerOf = (f: Fake) =>
         GhBudget.layer,
         Layer.succeed(MainWatchConfig, { interval: Duration.hours(24) }),
         Layer.succeed(Proc, {
-          run: (bin: string, args: ReadonlyArray<string>) =>
+          run: (
+            bin: string,
+            args: ReadonlyArray<string>,
+            options?: { readonly env?: Readonly<Record<string, string>> },
+          ) =>
             Effect.suspend(() => {
+              // The folder's origin rewritten since the project was added: never what is read.
               if (bin === "git") {
                 return Effect.succeed({
                   status: 0,
-                  stdout: "https://github.com/acme/shop.git\n",
+                  stdout: "https://github.com/someone/private.git\n",
                   stderr: "",
                   truncated: false,
                 });
               }
               const path = args[1] ?? "";
               f.calls.push(path);
+              f.tokens?.push(options?.env?.["GH_TOKEN"] ?? "");
               const body = f.api.get(path);
               if (body === undefined) {
                 return Effect.fail(new ProcSpawnError({ bin: "gh", message: "gh: not found" }));
@@ -146,7 +165,13 @@ const layerOf = (f: Fake) =>
         }),
         Layer.succeed(ThreadStore, {
           listProjects: Effect.succeed([
-            { id: PROJECT, root: "/repos/shop", name: "shop", bookmarked: false } as Project,
+            {
+              id: PROJECT,
+              root: "/repos/shop",
+              name: "shop",
+              bookmarked: false,
+              originIdentity: cloneIdentityOf("https://github.com/acme/shop.git"),
+            } as Project,
           ]),
           listThreads: Effect.succeed([
             {
@@ -160,7 +185,12 @@ const layerOf = (f: Fake) =>
         Layer.succeed(Orchestration, {
           listWorkspaces: Effect.sync(() => [
             {
-              workspace: { id: WORKSPACE, name: "shop", projectIds: [PROJECT] },
+              workspace: {
+                id: WORKSPACE,
+                name: "shop",
+                projectIds: [PROJECT],
+                ...(f.orchestrator === undefined ? {} : { orchestratorThreadId: f.orchestrator }),
+              },
               charter: f.charter,
             } as unknown as WorkspaceState,
           ]),
@@ -228,5 +258,28 @@ describe("MainWatchLive", () => {
       expect(f.calls).toEqual([]);
       expect(f.notes).toEqual([]);
     }).pipe(Effect.provide(layerOf(f)), Effect.scoped);
+  });
+
+  it.effect("reads behind a GitHub route as the workspace's orchestrator, or not at all", () => {
+    const on = { ...DEFAULT_CHARTER, watchDefaultBranch: true };
+    const f: Fake = { api: new Map(), calls: [], tokens: [], notes: [], charter: on };
+    f.api.set(RUNS, runsBody([run(1, "b".repeat(40), "2026-11-15T10:02:00Z", "success")]));
+    const orphan: Fake = { ...f, calls: [], tokens: [] };
+    const led: Fake = { ...f, calls: [], tokens: [], orchestrator: "t-orch" };
+    return Effect.gen(function* () {
+      relay.on = true;
+      yield* Effect.addFinalizer(() => Effect.sync(() => void (relay.on = false)));
+      yield* MainWatch.pipe(
+        Effect.flatMap((watch) => watch.poll),
+        Effect.provide(layerOf(led)),
+      );
+      expect(led.calls).toContain(RUNS);
+      expect(new Set(led.tokens)).toEqual(new Set(["gram-thread:t-orch"]));
+      yield* MainWatch.pipe(
+        Effect.flatMap((watch) => watch.poll),
+        Effect.provide(layerOf(orphan)),
+      );
+      expect(orphan.calls).toEqual([]);
+    }).pipe(Effect.scoped);
   });
 });

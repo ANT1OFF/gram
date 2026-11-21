@@ -3,22 +3,37 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
+import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type { AcpConnection, AcpHandlers, StartAcpAgent } from "./acp.ts";
+import {
+  AcpError,
+  type AcpConnection,
+  type AcpHandlers,
+  type StartAcpAgent,
+} from "../acp/connection.ts";
 import {
   autoAnswer,
   billingLimits,
   connectorOf,
   grokCommands,
   grokPermission,
+  type Json,
   permissionParams,
   promptOf,
   transcriptOf,
 } from "./extensions.ts";
-import { makeGrokHost, withHeadlessSignIn } from "./session.ts";
+import { makeGrokHost, SIGN_IN_MESSAGE, withHeadlessSignIn } from "./session.ts";
 
 const command = (text: string) => ({ kind: "execute", rawInput: { command: text } });
+const ROOTS = [tmpdir()];
+const edit = (rawInput: Json, locations?: ReadonlyArray<Json>): Json => ({
+  kind: "edit",
+  rawInput,
+  ...(locations === undefined ? {} : { locations }),
+});
 
 describe("Grok Build permissions", () => {
   it("asks under an outward gate whatever the mode, so Gram sees every command", () => {
@@ -31,28 +46,62 @@ describe("Grok Build permissions", () => {
   });
 
   it("lets through what a gated bypass session would run, except what the gate asks about", () => {
-    expect(autoAnswer("bypassPermissions", "all", command("ls -la"))).toBe("allow");
-    expect(autoAnswer("bypassPermissions", "all", command("git push origin main"))).toBeUndefined();
+    expect(autoAnswer("bypassPermissions", "all", command("ls -la"), ROOTS)).toBe("allow");
     expect(
-      autoAnswer("bypassPermissions", "irreversible", command("gh pr merge 12")),
+      autoAnswer("bypassPermissions", "all", command("git push origin main"), ROOTS),
     ).toBeUndefined();
-    expect(autoAnswer("auto", "all", { kind: "edit", rawInput: {} })).toBe("allow");
+    expect(
+      autoAnswer("bypassPermissions", "irreversible", command("gh pr merge 12"), ROOTS),
+    ).toBeUndefined();
+    expect(autoAnswer("auto", "all", { kind: "edit", rawInput: {} }, ROOTS)).toBe("allow");
   });
 
   it("lets Gram's own app tools through in every mode, and no other server's", () => {
     const gram = { kind: "other", rawInput: { tool_name: "gram__list_open_prs", tool_input: {} } };
     const other = { kind: "other", rawInput: { tool_name: "github__merge_pr", tool_input: {} } };
     for (const mode of ["default", "dontAsk", "plan"] as const)
-      expect(autoAnswer(mode, "all", gram)).toBe("allow");
-    expect(autoAnswer("default", "all", other)).toBeUndefined();
-    expect(autoAnswer("dontAsk", undefined, other)).toBe("deny");
+      expect(autoAnswer(mode, "all", gram, ROOTS)).toBe("allow");
+    expect(autoAnswer("default", "all", other, ROOTS)).toBeUndefined();
+    expect(autoAnswer("dontAsk", undefined, other, ROOTS)).toBe("deny");
+  });
+
+  it("shows the card in acceptEdits for an edit outside the thread's folders, or naming none", () => {
+    const top = mkdtempSync(join(tmpdir(), "grok-edit-"));
+    const cwd = join(top, "thread");
+    const granted = join(top, "granted");
+    mkdirSync(cwd);
+    mkdirSync(granted);
+    symlinkSync(top, join(cwd, "up"));
+    const answer = (call: Json) => autoAnswer("acceptEdits", undefined, call, [cwd, granted]);
+    expect(answer(edit({ file_path: "a.ts" }))).toBe("allow");
+    expect(answer(edit({ file_path: join(granted, "b.ts") }))).toBe("allow");
+    expect(answer(edit({ file_path: "../.bashrc" }))).toBeUndefined();
+    expect(answer(edit({ file_path: "/home/me/.ssh/authorized_keys" }))).toBeUndefined();
+    expect(answer(edit({ file_path: "up/.bashrc" }))).toBeUndefined();
+    // A link's `..` goes from where the link points, and a dangling link's write creates its target.
+    expect(answer(edit({ file_path: "up/thread/../.bashrc" }))).toBeUndefined();
+    symlinkSync(join(top, "made-outside.sh"), join(cwd, "notes.sh"));
+    expect(answer(edit({ file_path: "notes.sh" }))).toBeUndefined();
+    expect(answer(edit({ file_path: "new/dir/c.ts" }))).toBe("allow");
+    symlinkSync(join(top, "missing"), join(cwd, "gone"));
+    expect(answer(edit({ file_path: "gone/x.ts" }))).toBeUndefined();
+    // A root that is itself a link counts as where it points.
+    symlinkSync(cwd, join(top, "linked-thread"));
+    const viaLink = join(top, "linked-thread");
+    expect(autoAnswer("acceptEdits", undefined, edit({ file_path: "a.ts" }), [viaLink])).toBe(
+      "allow",
+    );
+    expect(answer(edit({ file_path: "a.ts" }, [{ path: "/etc/profile" }]))).toBeUndefined();
+    expect(answer(edit({}))).toBeUndefined();
+    expect(answer(edit({ file_path: 7 }))).toBeUndefined();
   });
 
   it("refuses in dontAsk, passes edits in acceptEdits, and shows the rest", () => {
-    expect(autoAnswer("dontAsk", undefined, command("ls"))).toBe("deny");
-    expect(autoAnswer("acceptEdits", undefined, { kind: "edit", rawInput: {} })).toBe("allow");
-    expect(autoAnswer("acceptEdits", undefined, command("ls"))).toBeUndefined();
-    expect(autoAnswer("default", undefined, command("ls"))).toBeUndefined();
+    expect(autoAnswer("dontAsk", undefined, command("ls"), ROOTS)).toBe("deny");
+    const inside = edit({ file_path: join(tmpdir(), "src/a.ts") });
+    expect(autoAnswer("acceptEdits", undefined, inside, ROOTS)).toBe("allow");
+    expect(autoAnswer("acceptEdits", undefined, command("ls"), ROOTS)).toBeUndefined();
+    expect(autoAnswer("default", undefined, command("ls"), ROOTS)).toBeUndefined();
   });
 });
 
@@ -167,7 +216,7 @@ describe("Grok Build session content", () => {
 });
 
 /** A stand-in Grok Build: records what Gram sends and answers like the CLI does. */
-const fakeAgent = () => {
+const fakeAgent = (options: { readonly promptFails?: AcpError } = {}) => {
   const started: Array<StartAcpAgent> = [];
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const notes: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -199,6 +248,7 @@ const fakeAgent = () => {
               },
             } as T;
           case "session/prompt": {
+            if (options.promptFails !== undefined) throw options.promptFails;
             const answer = (await handlers!.request("session/request_permission", {
               sessionId: params["sessionId"],
               toolCall: { toolCallId: "call-1", kind: "execute", rawInput: { command: "curl x" } },
@@ -232,7 +282,59 @@ const hostWith = (agent: ReturnType<typeof fakeAgent>) =>
     newMessageId: () => MessageId.make("m1"),
   });
 
+const failedTurn = async (error: AcpError) => {
+  const agent = fakeAgent({ promptFails: error });
+  let ended: AgentEvent | undefined;
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const host = yield* hostWith(agent);
+        const session = yield* host.open({
+          threadId: ThreadId.make("t"),
+          cwd: "/work",
+          permissionMode: "default",
+        });
+        const turnEnded = yield* Deferred.make<void>();
+        const fiber = yield* Stream.runForEach(session.events, (event) =>
+          event.type === "turnEnd"
+            ? Effect.andThen(
+                Effect.sync(() => (ended = event)),
+                Deferred.succeed(turnEnded, undefined),
+              )
+            : Effect.void,
+        ).pipe(Effect.forkScoped);
+        yield* session.send({ text: "go" });
+        yield* Deferred.await(turnEnded);
+        yield* Fiber.interrupt(fiber);
+      }),
+    ),
+  );
+  return ended;
+};
+
 describe("Grok Build host", () => {
+  it("says what the provider refused when a turn fails, not only the CLI's internal error", async () => {
+    const ended = await failedTurn(
+      new AcpError(-32603, "Internal error", {
+        message: "API error (status 400 Bad Request): Failed to parse the request body as JSON",
+        http_status: 400,
+      }),
+    );
+    expect(ended).toMatchObject({
+      type: "turnEnd",
+      reason: "error",
+      error:
+        "Internal error: API error (status 400 Bad Request): Failed to parse the request body as JSON",
+    });
+  });
+
+  it("still tells a CLI that isn't signed in to sign in", async () => {
+    const ended = await failedTurn(
+      new AcpError(-32000, "Authentication required", "no auth method id provided"),
+    );
+    expect(ended).toMatchObject({ type: "turnEnd", reason: "error", error: SIGN_IN_MESSAGE });
+  });
+
   it("starts in Gram's mode, never the user's own default, and asks before a command", async () => {
     const agent = fakeAgent();
     const events: Array<AgentEvent> = [];

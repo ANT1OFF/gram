@@ -12,6 +12,7 @@ import {
   InvalidState,
   NotFound,
   type TerminalId,
+  type Project,
   type Thread,
   type HostSessionOpen,
   type ThreadId,
@@ -56,8 +57,11 @@ import { noAppToolsTunnel } from "./app-tools-tunnel.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
 import { olderHost } from "./folders.ts";
+import { recordedCloneIdentity } from "../git/recorded-clone.ts";
 import { cloneFolderOf, cloneIdentityOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
+import { HOST_THREADS_DIR, type HostThreadPlaces } from "./thread-places.ts";
+import { cutHostText } from "./stop.ts";
 
 /**
  * The fewest folders a clone or worktree a host made sits below its root by: never the root, nor
@@ -85,9 +89,43 @@ export const plausibleFolder = (path: string, depth: number): boolean => {
   return false;
 };
 
-/** What a placement is told when the machine answered with a folder Gram doesn't record. */
+/**
+ * Whether a host's answer for `threadId`'s own folder is one: plausible, and its clones'
+ * `.threads/<thread id>`, never another thread's folder nor one of the machine's broad folders.
+ */
+export const ownThreadFolder = (path: string, threadId: string): boolean => {
+  if (!plausibleFolder(path, CLONE_DEPTH + 1)) return false;
+  const parts = path.split(posix.isAbsolute(path) ? "/" : /[\\/]/).filter((part) => part !== "");
+  return parts.at(-1) === threadId && parts.at(-2) === HOST_THREADS_DIR;
+};
+
+/** The machine's thread places, a folder it made that isn't the thread's own taken back and refused. */
+const checkedPlaces = (machine: Machine, places: HostThreadPlaces): HostThreadPlaces => ({
+  ...places,
+  make: (threadId, files) =>
+    places
+      .make(threadId, files)
+      .pipe(
+        Effect.flatMap((made) =>
+          ownThreadFolder(made.path, threadId)
+            ? Effect.succeed(made)
+            : places
+                .remove(threadId)
+                .pipe(
+                  Effect.andThen(
+                    Effect.fail(new InvalidState({ message: implausible(machine, made.path) })),
+                  ),
+                ),
+        ),
+      ),
+});
+
+/**
+ * What a placement is told when the machine answered with a folder Gram doesn't record. The path
+ * is the machine's own words, so it is held to a size (`cutHostText`).
+ */
 const implausible = (machine: Machine, path: string) =>
-  `${machine.name} answered with ${path} for the thread's folder, which isn't one Gram uses, so the thread isn't placed there.`;
+  `${machine.name} answered with ${cutHostText(path, 512)} for the thread's folder, which isn't one Gram uses, so the thread isn't placed there.`;
 
 /** A joined machine as its worker host is named and reached. */
 export interface Machine {
@@ -168,7 +206,11 @@ const onMachine = (threads: ReadonlyArray<Thread>, machine: Machine) =>
 export const machineCheckouts = (
   machine: Machine,
   connection: HostConnection,
-  deps: { readonly proc: ProcShape; readonly threads: Effect.Effect<ReadonlyArray<Thread>> },
+  deps: {
+    readonly proc: ProcShape;
+    readonly threads: Effect.Effect<ReadonlyArray<Thread>>;
+    readonly projects: Effect.Effect<ReadonlyArray<Project>>;
+  },
 ): CheckoutServiceShape => {
   const others = (thread: Thread | undefined) =>
     Effect.map(deps.threads, (threads) =>
@@ -240,6 +282,9 @@ export const machineCheckouts = (
             message: `A worker on ${machine.name} works in a new worktree there.`,
           });
         const url = yield* originOf(projectRoot);
+        // The clone it is handed is of the origin its project recorded when it was added, never
+        // one rewritten since.
+        yield* recordedCloneIdentity(yield* deps.projects, projectRoot, cloneIdentityOf(url));
         const { path: repoPath } = yield* connection.repos
           .ensure(url)
           .pipe(
@@ -491,6 +536,9 @@ export const machineWorkerHost = (
 ): Effect.Effect<WorkerHost, never, Scope.Scope> =>
   Effect.gen(function* () {
     const threads = store.listThreads.pipe(Effect.orElseSucceed((): ReadonlyArray<Thread> => []));
+    const projects = store.listProjects.pipe(
+      Effect.orElseSucceed((): ReadonlyArray<Project> => []),
+    );
     /** The machine's shells by terminal, with their process ids there. */
     const shells = new Map<TerminalId, number>();
     const terminals = yield* terminalsThroughHost(
@@ -567,7 +615,7 @@ export const machineWorkerHost = (
             return through;
           }),
       }),
-      checkouts: machineCheckouts(machine, connection, { proc, threads }),
+      checkouts: machineCheckouts(machine, connection, { proc, threads, projects }),
       worktrees: machineWorktrees(connection),
       git: machineGit(connection),
       files: connection.files,
@@ -578,7 +626,10 @@ export const machineWorkerHost = (
       name: machine.name,
       reads: connection.reads,
       attachments: connection.attachments,
-      threadPlaces: connection.threadPlaces,
+      threadPlaces:
+        connection.threadPlaces === undefined
+          ? undefined
+          : checkedPlaces(machine, connection.threadPlaces),
       identify: connection.repos.identify,
       shared: connection.shared,
       loopback: connection.loopback,

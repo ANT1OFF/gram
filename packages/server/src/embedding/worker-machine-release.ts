@@ -16,7 +16,6 @@
 import {
   effectiveCheckout,
   type FeatureLedgerEntry,
-  HostId,
   hostOf,
   type Thread,
   type ThreadId,
@@ -27,11 +26,13 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import { RemoteHosts } from "../host/remote-hosts.ts";
-import { isLiveWorker } from "../orchestration/ledger.ts";
+import { finishedWorkers, isLiveWorker } from "../orchestration/ledger.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand, type OnDemandHosts } from "./on-demand.ts";
 import {
+  type MachineRun,
+  ReleaseRefused,
   SignedInWorkers,
   tellSignedInRelease,
   type WorkerMachinePortShape,
@@ -66,6 +67,8 @@ export interface ReleaseMachine {
   readonly onDemand?: string | undefined;
   /** The hosted server a desktop's worker host came through (`signed-in-workers.ts`). */
   readonly via?: string | undefined;
+  /** The sign-in there it was asked for under: told only under it. */
+  readonly viaAccount?: string | undefined;
   readonly onlineSince?: number | undefined;
 }
 
@@ -106,7 +109,9 @@ export const workerMachineWork = (
  * unless that was told this run already: after a restart nothing is kept of what was told, and a
  * release the provider still holds would have it reclaim a machine its worker came back to. One
  * whose work is over is told it is released once it has settled (`WORKER_RELEASE_SETTLE_MS`, so
- * its first worker is placed first), unless that was told already. `told` is by machine id.
+ * its first worker is placed first), unless that was told already. `told` is by `toldKey`.
+ * `finished`: the workers whose machine may be released (`releasableWorkers`); an embedder's
+ * machine is judged by `embeddedFinished` (`finishedWorkers`), as it always was.
  */
 export const releaseDecisions = (
   machines: ReadonlyArray<ReleaseMachine>,
@@ -116,6 +121,7 @@ export const releaseDecisions = (
   finished: ReadonlySet<ThreadId>,
   now: number,
   told: ReadonlyMap<string, { readonly released: boolean; readonly at: number }>,
+  embeddedFinished: ReadonlySet<ThreadId> = finished,
 ): ReadonlyArray<{ readonly machine: ReleaseMachine; readonly released: boolean }> =>
   machines
     .filter(
@@ -123,13 +129,14 @@ export const releaseDecisions = (
         machine.onDemand === "worker" && (machine.owner !== undefined || machine.via !== undefined),
     )
     .flatMap((machine): ReadonlyArray<{ machine: ReleaseMachine; released: boolean }> => {
+      const over = machine.via === undefined ? embeddedFinished : finished;
       const atWork = threads.some(
         (thread) =>
           hostOf(effectiveCheckout(thread)) === machine.id &&
-          !finished.has(thread.id) &&
+          !over.has(thread.id) &&
           !(thread.spawnedBy === undefined && thread.parked === true),
       );
-      const said = told.get(machine.id);
+      const said = told.get(toldKey(machine));
       // An embedder's provider: told only what changed, once the machine has settled, and never
       // that one it hasn't been told is released is working (as it always has been).
       if (machine.via === undefined) {
@@ -150,6 +157,31 @@ export const releaseDecisions = (
         machine.onlineSince !== undefined && now - machine.onlineSince < WORKER_RELEASE_SETTLE_MS;
       return settling || fresh(true) ? [] : [{ machine, released: true }];
     });
+
+/**
+ * What the provider was last told of a machine is kept by: an embedder's by name, as it always
+ * was, so one whose host came back with another key is still told its release is taken back; a
+ * hosted server's by id, since one that takes the name of one reclaimed before has another key,
+ * and so another id, and is told afresh.
+ */
+export const toldKey = (machine: ReleaseMachine) =>
+  machine.via === undefined ? machine.name : machine.id;
+
+/**
+ * Keeps what a tell did. Taken: kept. Not: a hosted server's is forgotten, as it may have been
+ * taken with the answer lost; an embedder's keeps what it was told before, so a take-back that
+ * failed is told again next pass, as it always was.
+ */
+export const recordTold = (
+  told: Map<string, { readonly released: boolean; readonly at: number }>,
+  machine: ReleaseMachine,
+  released: boolean,
+  taken: boolean,
+  now: number,
+) => {
+  if (taken) told.set(toldKey(machine), { released, at: now });
+  else if (machine.via !== undefined) told.delete(toldKey(machine));
+};
 
 /** How long what was told of a machine is trusted before it is told again. */
 export const TOLD_FOR_MS = 60 * 60_000;
@@ -175,23 +207,86 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
   );
 
 /**
+ * A hosted server's release not sent this pass: it refused it as malformed (`ReleaseRefused`)
+ * lately, so a server from before fences isn't asked every pass. Not told, all the same.
+ */
+export class ReleaseHeldOff extends Error {}
+
+/**
+ * How long after a hosted server first refuses a machine's release it is sent again; twice that
+ * after each refusal more, to `TOLD_FOR_MS`.
+ */
+export const RELEASE_REFUSED_WAIT_MS = 2 * Duration.toMillis(WORKER_RELEASE_EVERY);
+
+/**
  * How a machine's release is told: to the hosted server a desktop's worker host came through, or
- * to the embedder's provider. Undefined: there is no one to tell.
+ * to the embedder's provider. Undefined: there is no one to tell. A signed-in server's `404
+ * not_found` is a release not applied, told again next pass, and forgets nothing here: a server
+ * answers it for every machine while its backend is out of reach, and only `forgetReclaimed`, a few
+ * passes in a row, forgets one. `run`: a hosted machine's run as the release was decided
+ * (`knownRun`), the only one it is told for. One a hosted server refused as malformed (`400`, as
+ * one from before fences answers a release that carries them) is never sent without them: it
+ * stays to be told, and isn't sent again until `RELEASE_REFUSED_WAIT_MS` has passed, twice that
+ * after a second refusal, and so on to `TOLD_FOR_MS`.
  */
 export const releaseTeller = (
   hosts: OnDemandHosts | undefined,
   signedIn: WorkerMachinePortShape | undefined,
-  /** A machine the signed-in server reclaimed first: forgotten here. */
-  gone: (machine: ReleaseMachine) => Effect.Effect<void> = () => Effect.void,
+  now: () => number = Date.now,
 ) => {
   if (hosts === undefined && signedIn === undefined) return undefined;
-  return (machine: ReleaseMachine, released: boolean): Effect.Effect<void, Error> =>
+  /** By `toldKey`: when a hosted machine refused may be told again, and the wait that was. */
+  const refused = new Map<string, { readonly until: number; readonly waitMs: number }>();
+  const tellSignedIn = (
+    port: WorkerMachinePortShape,
+    machine: ReleaseMachine & { readonly via: string },
+    released: boolean,
+    run: MachineRun | null | undefined,
+  ): Effect.Effect<void, Error> =>
+    Effect.suspend(() => {
+      const at = now();
+      // One not asked again within the longest wait after its own is no longer being told (told
+      // since, or forgotten): let go.
+      for (const [each, entry] of refused) if (at - entry.until > TOLD_FOR_MS) refused.delete(each);
+      const key = toldKey(machine);
+      const before = refused.get(key);
+      // Held off until its time, but never longer than its own wait from now: a clock stepped
+      // back since keeps it no longer.
+      if (before !== undefined && at < before.until && before.until - at <= before.waitMs)
+        return Effect.fail(new ReleaseHeldOff("the server refused it before; told again later"));
+      return tellSignedInRelease(
+        port,
+        { name: machine.name, via: machine.via, account: machine.viaAccount },
+        released,
+        run === undefined ? {} : { run },
+      ).pipe(
+        Effect.tapError((error) =>
+          Effect.sync(() => {
+            if (!(error instanceof ReleaseRefused)) return;
+            const waitMs =
+              before === undefined
+                ? RELEASE_REFUSED_WAIT_MS
+                : Math.min(before.waitMs * 2, TOLD_FOR_MS);
+            refused.set(key, { until: now() + waitMs, waitMs });
+          }),
+        ),
+        Effect.tap(() => Effect.sync(() => refused.delete(key))),
+        Effect.flatMap((told) =>
+          told === "missing"
+            ? Effect.fail(new Error("the server answered that it holds no such machine"))
+            : Effect.void,
+        ),
+      );
+    });
+  return (
+    machine: ReleaseMachine,
+    released: boolean,
+    run?: MachineRun | null,
+  ): Effect.Effect<void, Error> =>
     machine.via !== undefined
       ? signedIn === undefined
         ? Effect.fail(new Error("no desktop app to tell"))
-        : tellSignedInRelease(signedIn, { name: machine.name, via: machine.via }, released).pipe(
-            Effect.flatMap((told) => (told === "gone" ? gone(machine) : Effect.void)),
-          )
+        : tellSignedIn(signedIn, { ...machine, via: machine.via }, released, run)
       : hosts === undefined
         ? Effect.fail(new Error("no host provider to tell"))
         : tellRelease(hosts, machine, released);
@@ -204,43 +299,51 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
     const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const relayed = signedIn?.port.available === true ? signedIn.port : undefined;
-    const tell = releaseTeller(hosts, relayed, (machine) =>
-      Effect.sync(() => {
-        relayed?.unrelay(machine.name);
-        remote?.remove(HostId.make(machine.id));
-      }),
-    );
+    const tell = releaseTeller(hosts, relayed);
     if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
-    /**
-     * What the provider was last told of each machine, by its id: a machine that takes the name of
-     * one reclaimed before it has another key, and so another id, and is told afresh.
-     */
+    /** What the provider was last told of each machine (`toldKey`). */
     const told = new Map<string, { readonly released: boolean; readonly at: number }>();
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
       if (machines.length === 0) return;
+      // Each hosted machine's run, taken before anything the decision reads: a start of it in
+      // between (a wake) is a newer run, which its release is then never told for.
+      const runs = new Map<string, MachineRun | null | undefined>(
+        machines.flatMap((machine) =>
+          machine.via === undefined
+            ? []
+            : [
+                [
+                  machine.id,
+                  relayed?.knownRun?.(machine.via, machine.name, machine.viaAccount),
+                ] as const,
+              ],
+        ),
+      );
       const threads = yield* store.listThreads;
       const finished = new Set<ThreadId>();
+      const embeddedFinished = new Set<ThreadId>();
       for (const workspace of yield* store.listWorkspaces) {
         const ledger = yield* orchestration.ledger(workspace.workspace.id).pipe(Effect.option);
-        if (Option.isSome(ledger))
-          for (const id of releasableWorkers(ledger.value.features)) finished.add(id);
+        if (Option.isNone(ledger)) continue;
+        for (const id of releasableWorkers(ledger.value.features)) finished.add(id);
+        for (const id of finishedWorkers(ledger.value.features)) embeddedFinished.add(id);
       }
-      for (const { machine, released } of releaseDecisions(
+      const decided = releaseDecisions(
         machines,
         threads,
         finished,
         Date.now(),
         told,
-      )) {
-        const sent = yield* tell(machine, released).pipe(Effect.result);
+        embeddedFinished,
+      ).map((decision) => ({ ...decision, run: runs.get(decision.machine.id) }));
+      for (const { machine, released, run } of decided) {
+        const sent = yield* tell(machine, released, run).pipe(Effect.result);
         // Kept only once the provider took it: one it didn't apply is told again next pass.
-        if (sent._tag === "Success") told.set(machine.id, { released, at: Date.now() });
-        else {
-          // Not known to have been taken, or taken with the answer lost: nothing kept of it.
-          told.delete(machine.id);
+        recordTold(told, machine, released, sent._tag === "Success", Date.now());
+        if (sent._tag === "Failure" && !(sent.failure instanceof ReleaseHeldOff)) {
           yield* Effect.logWarning("a worker machine's release could not be told").pipe(
             Effect.annotateLogs({ machine: machine.name, reason: sent.failure.message }),
           );

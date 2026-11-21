@@ -153,6 +153,12 @@ function failures(vars: CssVariables, mode: Mode, contrast: Contrast): string[] 
     }
   }
   check("surface-2", { "status-needs": v("status-needs") }, target.text);
+  const rail =
+    contrast === "more"
+      ? v("surface-3")
+      : mix(v("surface-3"), v("fg"), mode === "dark" ? 0.04 : 0.08);
+  for (const fg of ["fg", "fg-muted", "fg-subtle"]) check(fg, { rail }, target.text);
+  check("border-strong", { "surface-2": v("surface-2") }, target.ui);
   for (const fg of [
     "focus-ring",
     "accent",

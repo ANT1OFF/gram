@@ -33,6 +33,7 @@ import { FakeAgentAdapter, FakeAgentControl } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { ORIGIN_KEY_HEADER } from "../http/auth.ts";
 
 const TOKEN = "embed-acceptance-token-0123456789abcdef";
 
@@ -98,7 +99,7 @@ const port = Effect.map(HttpServer.HttpServer, serverPort);
 /** The app's own connection: the launch cookie from loopback, over `/ws`. */
 const appClient = Effect.gen(function* () {
   const at = yield* port;
-  const { token } = yield* LaunchToken;
+  const { token, originKey } = yield* LaunchToken;
   const boot = yield* call(at, `/?boot=${token}`, { method: "GET", host: `127.0.0.1:${at}` });
   expect(boot.status).toBe(302);
   const cookie = boot.cookie.split(";")[0] ?? "";
@@ -111,7 +112,9 @@ const appClient = Effect.gen(function* () {
             new (globalThis.WebSocket as unknown as new (
               url: string,
               init: { headers: Record<string, string> },
-            ) => globalThis.WebSocket)(url, { headers: { cookie } }),
+            ) => globalThis.WebSocket)(url, {
+              headers: { cookie, [ORIGIN_KEY_HEADER]: originKey },
+            }),
         ),
       ),
       Layer.provide(RpcSerialization.layerJson),

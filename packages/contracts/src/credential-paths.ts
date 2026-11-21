@@ -63,10 +63,16 @@ const CREDENTIAL_FOLDERS = [
   [".pki", "nssdb"],
 ] as const;
 
-/** Files that hold an agent's login only in their own folder: Codex's and OpenCode's. */
+/**
+ * Files that hold an agent's login only in their own folder: Codex's, Grok Build's and OpenCode's,
+ * and the plugin and MCP server tokens Antigravity keeps beside its keyring sign-in.
+ */
 const CREDENTIAL_FILES = [
   [".codex", "auth.json"],
   [".grok", "auth.json"],
+  [".config", "antigravity", "plugin-secrets.json"],
+  [".gemini", "antigravity", "mcp_oauth_tokens.json"],
+  [".gemini", "antigravity-cli", "mcp_oauth_tokens.json"],
   [".local", "share", "opencode", "auth.json"],
 ] as const;
 

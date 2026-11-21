@@ -1,5 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
-import { RECAP_IDLE_MS, type ThreadRecap, type WaitId } from "@gram/contracts";
+import {
+  DEFAULT_CHARTER,
+  RECAP_IDLE_MS,
+  type ThreadId,
+  type ThreadRecap,
+  type WaitId,
+  type WorkspaceId,
+} from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import { Pr } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -9,6 +16,8 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { GitStatePublisher, type GitStatePublisherShape } from "../git/publisher.ts";
 import { ThreadVisibility } from "../git/visibility.ts";
+import { notePrivacy, ReadingAs } from "../embedding/readable-by.ts";
+import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadPlans } from "../plans/service.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { RuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
@@ -204,6 +213,44 @@ describe("ThreadAssistLive", () => {
       );
       // The turn after says nothing to suggest, and its "sent" was already asked about.
       expect(waitJobs()).toHaveLength(2);
+    }).pipe(Effect.provide(AssistTestLayer)),
+  );
+
+  it.effect("offers the palette helper only workspaces the caller may see", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const project = yield* store.ensureProject({ root: "/synthetic/palette", name: "palette" });
+      for (const [id, name] of [
+        ["w-palette-open", "shared-platform"],
+        ["w-palette-private", "ada-secret-plans"],
+      ] as const)
+        yield* store.putWorkspace({
+          workspace: {
+            id: id as WorkspaceId,
+            name,
+            projectIds: [project.id],
+            homeProjectId: project.id,
+            createdAt: 0,
+          },
+          charter: DEFAULT_CHARTER,
+        });
+      notePrivacy({
+        id: "t-palette-ada" as ThreadId,
+        readableBy: "ada",
+        workspaceId: "w-palette-private",
+      });
+      const assist = yield* ThreadAssist;
+      const before = jobs.length;
+      yield* assist
+        .paletteFilters("t-palette" as ThreadId, "show the secret plans workspace")
+        .pipe(Effect.provideService(ReadingAs, { subject: "bob" }));
+      const prompt = jobs
+        .slice(before)
+        .map((entry) => entry.prompt)
+        .join("\n");
+      expect(prompt).toContain("shared-platform");
+      expect(prompt).not.toContain("ada-secret-plans");
+      expect(prompt).not.toContain("w-palette-private");
     }).pipe(Effect.provide(AssistTestLayer)),
   );
 });

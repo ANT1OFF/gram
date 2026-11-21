@@ -578,7 +578,10 @@ const machine = (bounds: FolderBounds, capabilities: ReadonlyArray<HostCapabilit
       machines: { get: () => ({ name: MACHINE.name }) },
     } as unknown as RemoteHostsShape;
     const get = yield* machineHosts(remote, {
-      store: { listThreads: Effect.succeed([]) } as unknown as ThreadStore["Service"],
+      store: {
+        listThreads: Effect.succeed([]),
+        listProjects: Effect.succeed([]),
+      } as unknown as ThreadStore["Service"],
       hub: { internalEvents: () => Stream.never } as unknown as EventHub["Service"],
       agents: AgentHosts.of({
         get: () => Effect.succeed({ kind: "claude" } as unknown as AgentHost),

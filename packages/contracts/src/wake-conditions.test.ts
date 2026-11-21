@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 import {
+  isNpmPackageName,
   WakeCondition,
   WakeConditionInput,
   wakeConditionLabel,
@@ -92,5 +93,26 @@ describe("wake condition words", () => {
     expect(new Set(WakeConditionInput.fields.kind.literals)).toEqual(kinds);
     const fields = new Set(WakeCondition.members.flatMap((member) => Object.keys(member.fields)));
     expect(new Set(Object.keys(WakeConditionInput.fields))).toEqual(fields);
+  });
+});
+
+describe("isNpmPackageName", () => {
+  it("takes registry names and refuses every other spec npm would fetch", () => {
+    for (const name of ["react", "@openai/codex", "@anthropic-ai/claude-code", "lodash.merge"])
+      expect(isNpmPackageName(name)).toBe(true);
+    for (const name of [
+      "owner/repo",
+      "github:owner/repo",
+      "git+https://example.com/x.git",
+      "https://example.com/x.tgz",
+      "../x",
+      "./x",
+      "-x",
+      "--registry=https://example.com",
+      "React",
+      "@scope/",
+      "x@1.0.0",
+    ])
+      expect(isNpmPackageName(name)).toBe(false);
   });
 });

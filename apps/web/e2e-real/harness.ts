@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { BrowserContext, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 const webDir = fileURLToPath(new URL("..", import.meta.url));
 /** Explicit isolated build inputs keep an already-running example on its sealed old outputs. */
@@ -263,17 +263,18 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   let server = await startServer(env, logFile);
 
   const originUrl = () => `http://127.0.0.1:${server.port}`;
-  const boot = async (context: BrowserContext) => {
-    await context.clearCookies();
-    await context.addCookies([
-      {
-        name: `sb_token_${server.port}`,
-        value: server.token,
-        url: originUrl(),
-        httpOnly: true,
-        sameSite: "Strict",
-      },
-    ]);
+  // As a person's browser boots: the boot address sets the launch cookie (its own value, not the
+  // token) and its redirect hands the page the origin key, which every request then carries.
+  // A cookie set by hand carries no key, so the app past its own files would be refused.
+  const boot = async (page: Page) => {
+    await page.context().clearCookies();
+    await page.goto(`${originUrl()}/?boot=${server.token}`);
+    // The page takes the fragment off the address once it has kept the key.
+    await page.waitForFunction(
+      () =>
+        globalThis.location.hash === "" &&
+        globalThis.localStorage.getItem("gram-origin-key") !== null,
+    );
   };
 
   return {
@@ -282,8 +283,8 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     origin,
     origin_url: originUrl,
     open: async (page, path = "/") => {
-      await boot(page.context());
-      await page.goto(`${originUrl()}${path}`);
+      await boot(page);
+      if (path !== "/") await page.goto(`${originUrl()}${path}`);
     },
     git: (cwd, ...args) => run(cwd, env, ...args),
     prs: () => (JSON.parse(readFileSync(ghState, "utf8")) as GhState).prs,

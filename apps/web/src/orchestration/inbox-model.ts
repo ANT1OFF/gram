@@ -127,6 +127,7 @@ export const answerGroup = async (
         threadId: entry.threadId,
         requestId: entry.request.id,
         answer,
+        ...(entry.request.shown === undefined ? {} : { shown: entry.request.shown }),
       })),
     );
   } catch (error) {

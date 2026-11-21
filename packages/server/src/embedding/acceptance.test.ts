@@ -3,10 +3,9 @@
 
 import { describe, expect, it } from "@effect/vitest";
 import {
-  applySettingsPatch,
   type DecisionRequest,
   type DecisionResponse,
-  type ServerEvent,
+  type RequestId,
   type SinkBatch,
   type SinkEvent,
   type Thread,
@@ -19,166 +18,28 @@ import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ServerConfig } from "../config.ts";
-import { EventHub, type OwnEvent } from "../events/event-hub.ts";
+import type { OwnEvent } from "../events/event-hub.ts";
 import { type StoredMessage, ThreadStore } from "../persistence/thread-store.ts";
-import { FakeAgentControl, makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
-import { CheckoutService, TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { UsageLimitReadings } from "../usage/limit-readings.ts";
-import { DecisionHook, REFUSAL_FOR_AGENT } from "./decision-hook.ts";
-import { EventSink, makeEventSink, type EventSinkShape } from "./event-sink.ts";
+import { DECISION_UNAVAILABLE, DecisionHook, REFUSAL_FOR_AGENT } from "./decision-hook.ts";
+import { makeEventSink, type EventSinkShape } from "./event-sink.ts";
 import { ActingPerson } from "./person.ts";
 import { makeActionGuard } from "./guard.ts";
 import { openOutbox } from "./outbox.ts";
-
-/** A JSON endpoint on loopback that answers each POST with what `answer` makes of its body. */
-const endpoint = <Body>(answer: (body: Body) => { status?: number; json: unknown }) =>
-  Effect.acquireRelease(
-    Effect.promise(
-      () =>
-        new Promise<{ server: Server; url: string; tokens: Array<string | undefined> }>(
-          (resolve) => {
-            const tokens: Array<string | undefined> = [];
-            const server = createServer((request, response) => {
-              const chunks: Array<Buffer> = [];
-              request.on("data", (chunk: Buffer) => chunks.push(chunk));
-              request.on("end", () => {
-                tokens.push(request.headers.authorization);
-                const { status = 200, json } = answer(
-                  JSON.parse(Buffer.concat(chunks).toString("utf8")) as Body,
-                );
-                response.writeHead(status, { "content-type": "application/json" });
-                response.end(JSON.stringify(json));
-              });
-            });
-            server.listen(0, "127.0.0.1", () =>
-              resolve({
-                server,
-                url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/`,
-                tokens,
-              }),
-            );
-          },
-        ),
-    ),
-    ({ server }) =>
-      Effect.promise(
-        () =>
-          new Promise<void>((resolve) => {
-            server.closeAllConnections();
-            server.close(() => resolve());
-          }),
-      ),
-  );
-
-/** Polls in real time: the endpoints answer over real sockets. */
-const eventually = <A, E, R>(label: string, check: Effect.Effect<A | undefined | false, E, R>) =>
-  Effect.gen(function* () {
-    for (let i = 0; i < 1000; i++) {
-      const value = yield* check;
-      if (value !== undefined && value !== false) return value;
-      yield* Effect.sleep("5 millis");
-    }
-    return yield* Effect.die(new Error(`timed out waiting for ${label}`));
-  });
-
-const serverLayer = (
-  decisionUrl: string | undefined,
-  sinkUrl?: string,
-  sinkMessages = false,
-  /** A data folder for a server that is started again; absent, nothing outlives the layer. */
-  dir?: string,
-) =>
-  AppToolRegistry.layer.pipe(
-    Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
-    Layer.provideMerge(UsageLimitReadings.layer),
-    Layer.provideMerge(DecisionHook.layer.pipe(Layer.provideMerge(EventSink.layer))),
-    Layer.provideMerge(EventHub.layer),
-    Layer.provideMerge(
-      ThreadStore.layerSqlite(dir === undefined ? ":memory:" : join(dir, "gram.db")),
-    ),
-    Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo", toolStepDelay: "20 millis" })),
-    Layer.provideMerge(TurnHooks.layerNoop),
-    Layer.provideMerge(CheckoutService.layerNoGit),
-    Layer.provideMerge(
-      ServerConfig.layer({
-        ...TEST_CONFIG,
-        ...(dir === undefined ? {} : { dataDir: dir, databaseFile: join(dir, "gram.db") }),
-        ...(decisionUrl === undefined
-          ? {}
-          : {
-              decisionHook:
-                decisionUrl === "unusable"
-                  ? ("unusable" as const)
-                  : { url: decisionUrl, token: "hook-token" },
-            }),
-        ...(sinkUrl === undefined ? {} : { eventSink: { url: sinkUrl, token: "sink-token" } }),
-        ...(sinkMessages ? { eventSinkMessages: true } : {}),
-      }),
-    ),
-    Layer.orDie,
-  );
-
-const setHosted = (on: boolean) =>
-  Effect.gen(function* () {
-    const store = yield* ThreadStore;
-    yield* store.updateSettings(
-      (settings) => applySettingsPatch(settings, { experimental: { embedding: on } }),
-      [["experimental", "embedding"]],
-    );
-  });
-
-const collectEvents = Effect.gen(function* () {
-  const hub = yield* EventHub;
-  const events: Array<ServerEvent> = [];
-  yield* Effect.forkScoped(
-    Stream.runForEach(
-      hub.internalEvents(() => true),
-      (event) => Effect.sync(() => void events.push(event)),
-    ),
-  );
-  return events;
-});
-
-const startThread = (text: string) =>
-  Effect.gen(function* () {
-    const runtimes = yield* ThreadRuntimes;
-    return yield* runtimes.create({
-      projectRoot: "/work/repo",
-      checkout: { kind: "main", path: "/work/repo" },
-      input: { text },
-    });
-  });
-
-const sessionOf = (threadId: ThreadId) =>
-  Effect.gen(function* () {
-    const control = yield* FakeAgentControl;
-    return yield* control.latest(threadId);
-  });
-
-/** What the receiver holds once the sink has nothing more to send it. */
-const settledAt = (to: { readonly held: ReadonlyArray<SinkEvent> }) =>
-  Effect.gen(function* () {
-    let before = -1;
-    yield* eventually(
-      "the sink to go quiet",
-      Effect.sleep("150 millis").pipe(
-        Effect.map(() => {
-          const quiet = to.held.length === before;
-          before = to.held.length;
-          return quiet;
-        }),
-      ),
-    );
-    return [...to.held];
-  });
+import {
+  collectEvents,
+  endpoint,
+  eventually,
+  serverLayer,
+  sessionOf,
+  setHosted,
+  settledAt,
+  startThread,
+} from "./acceptance-harness.ts";
 
 /** One person's thread whose reply streams in many deltas, run to its end. */
 const streamedTurn = (text = "say a lot /stream{400}") =>
@@ -364,6 +225,64 @@ describe("decision hook: an agent's outward command", () => {
     }),
   );
 
+  it.live("another thread's request of the same id leaves a card's second call to the hook", () =>
+    Effect.gen(function* () {
+      const asked: Array<DecisionRequest> = [];
+      const hook = yield* endpoint<DecisionRequest>((body) => {
+        asked.push(body);
+        return {
+          json:
+            body.approval === undefined
+              ? ({ decision: "ask" } as const)
+              : ({ decision: "refuse", reason: "Not an approver." } as const),
+        };
+      });
+      yield* Effect.gen(function* () {
+        yield* setHosted(true);
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        const first = yield* startThread("ship it /approve{gh pr merge 12}");
+        const session = yield* sessionOf(first.id);
+        const card = yield* eventually(
+          "the card",
+          store.listRequests(first.id).pipe(Effect.map((requests) => requests[0])),
+        );
+        // A thread whose agent waits on a card of its own, so its session stays up meanwhile.
+        const other = yield* startThread("look /approve{echo hi}");
+        yield* eventually(
+          "the other thread's card",
+          store.listRequests(other.id).pipe(Effect.map((requests) => requests.length === 1)),
+        );
+        const otherSession = yield* sessionOf(other.id);
+        // Its agent numbers its requests as the first's does, and one of them is resolved.
+        yield* otherSession.emit(
+          { type: "requestResolved", requestId: card.id },
+          {
+            type: "request",
+            request: {
+              kind: "approval",
+              id: "after" as RequestId,
+              toolName: "Bash",
+              displayName: "Bash",
+              input: { command: "echo after" },
+              suggestions: [],
+            },
+          },
+        );
+        yield* eventually(
+          "the other thread's events",
+          store.listRequests(other.id).pipe(Effect.map((requests) => requests.length === 2)),
+        );
+        yield* runtimes
+          .respond(first.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
+          .pipe(Effect.provideService(ActingPerson, "person-7"));
+        expect(asked).toHaveLength(2);
+        expect(asked[1]).toMatchObject({ approval: { askId: card.id } });
+        expect(session.responses[0]!.answer).toMatchObject({ decision: "deny" });
+      }).pipe(Effect.provide(serverLayer(hook.url)));
+    }),
+  );
+
   it.live("with hosted features off, nothing is asked and the card is the one it always was", () =>
     Effect.gen(function* () {
       const asked: Array<DecisionRequest> = [];
@@ -385,6 +304,35 @@ describe("decision hook: an agent's outward command", () => {
         });
         expect(session.options).not.toHaveProperty("gateConnectors");
         expect(session.options).not.toHaveProperty("outwardGate");
+        expect(asked).toEqual([]);
+      }).pipe(Effect.provide(serverLayer(hook.url)));
+    }),
+  );
+
+  it.live("a card the hook now governs, with nothing kept of its word, is denied, not run", () =>
+    Effect.gen(function* () {
+      const asked: Array<DecisionRequest> = [];
+      const hook = yield* endpoint<DecisionRequest>((body) => {
+        asked.push(body);
+        return { json: { decision: "allow" } };
+      });
+      yield* Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        // Raised while hosted features were off, so the hook never said anything of it.
+        const thread = yield* startThread("ship it /approve{gh pr merge 12}");
+        const session = yield* sessionOf(thread.id);
+        const card = yield* eventually(
+          "the card",
+          store.listRequests(thread.id).pipe(Effect.map((requests) => requests[0])),
+        );
+        yield* setHosted(true);
+        yield* runtimes
+          .respond(thread.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
+          .pipe(Effect.provideService(ActingPerson, "person-7"));
+        expect(session.responses.map((response) => response.answer)).toEqual([
+          { kind: "approval", decision: "deny", scope: "once", message: DECISION_UNAVAILABLE },
+        ]);
         expect(asked).toEqual([]);
       }).pipe(Effect.provide(serverLayer(hook.url)));
     }),
@@ -717,7 +665,7 @@ describe("event sink", () => {
           file,
           on: Effect.sync(() => on),
           threads: Effect.succeed([thread]),
-          openAsks: Effect.succeed(["card-4"]),
+          openAsks: Effect.succeed([{ id: "card-4", shown: "key-4" }]),
           retryBase: Duration.millis(5),
           recheck: Duration.millis(5),
         });
@@ -733,7 +681,7 @@ describe("event sink", () => {
         const latest = to.held.findLast((event) => event.type === "sink.started")!;
         expect(turnedOn.type).toBe("sink.started");
         expect(latest.data).toMatchObject({
-          openAsks: ["card-4"],
+          openAsks: [{ id: "card-4", shown: "key-4" }],
           threads: [{ id: "thread-9", createdBy: "person-3" }],
         });
         expect(latest.data["restarted"]).toBeUndefined();

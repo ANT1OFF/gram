@@ -33,6 +33,7 @@ const AGENT: Readonly<Record<AgentKind, { readonly name: string; readonly short:
   codex: { name: "Codex", short: "Codex" },
   opencode: { name: "OpenCode", short: "OpenCode" },
   grok: { name: "Grok Build", short: "Grok" },
+  antigravity: { name: "Antigravity", short: "Antigravity" },
 };
 
 /** The recent turns' budget, in tokens (characters over four). */

@@ -222,10 +222,13 @@ export const choicesOfAsk = (ask: Omit<WorkerMachineAsk, "owner">): Record<strin
 /**
  * A start, from whichever provider is asked (`send`). 409 is over the person's total; 403 or 404
  * is not allowed (the person or their organisation turned it off, or the provider starts none).
+ * `codes`: a 409's `code` is read (a hosted server's `name_in_use`, `released` and others); an
+ * embedder's provider's every 409 is over the total, as it always was.
  */
 export const askWorkerMachine = <R>(
   ask: Omit<WorkerMachineAsk, "owner">,
   send: Effect.Effect<StartAnswer, never, R>,
+  codes = true,
 ): Effect.Effect<WorkerMachineStart, never, R> =>
   Effect.gen(function* () {
     if (!askIsWellFormed(ask))
@@ -241,6 +244,7 @@ export const askWorkerMachine = <R>(
         unknown: true,
       } as const;
     const { status, body } = answered;
+    if (status === 409 && !codes) return parseOverTotal(body);
     // The name was a machine's the server has since reclaimed: it isn't given out again. Asked
     // once, never again under the same name, so the orchestrator picks another request id.
     if (
@@ -321,6 +325,7 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
       ),
       Effect.catch((failure) => Effect.succeed({ failed: failure.message })),
     ),
+    false,
   );
 
 /** A joined machine as waiting for a worker's own reads it. */
@@ -425,6 +430,8 @@ export interface ProvidedMachine {
   readonly owner?: string | undefined;
   readonly onDemand?: string | undefined;
   readonly via?: string | undefined;
+  /** The sign-in there it was asked for under (`PairedMachine.viaAccount`). */
+  readonly viaAccount?: string | undefined;
   readonly onlineSince?: number | undefined;
 }
 
@@ -462,8 +469,15 @@ export interface WorkerMachineSource {
    */
   readonly givesBack: boolean;
   /**
+   * Whose machines these are, as a bring-up of one is shared by name (`worker-sandbox.ts`): a
+   * hosted server's, the server and the sign-in they are asked for under
+   * (`workerMachineIdentity`). A try under another sign-in never joins a bring-up of this one's.
+   */
+  readonly identity?: string;
+  /**
    * Tells the provider a machine this spawn reuses is working again, before it is waited on: one
-   * released once its work was over sleeps until it is told so. Never fails.
+   * released once its work was over sleeps until it is told so. Never fails. `gone`: the server
+   * says it holds no such machine, so this spawn isn't placed there; nothing is forgotten of it.
    */
   readonly unrelease: (name: string) => Effect.Effect<"gone" | undefined>;
   /** The id of the machine registered here under `name`, when there is one. */
@@ -478,6 +492,10 @@ export interface WorkerMachineSource {
     options?: { readonly unsettled?: boolean },
   ) => Effect.Effect<void>;
 }
+
+/** A hosted server's machines' `WorkerMachineSource.identity`: its origin and the sign-in's mark. */
+export const workerMachineIdentity = (origin: string, account: string | undefined) =>
+  JSON.stringify([origin, account ?? null]);
 
 /** A model a provider's machines run, as its choices list it: `opus` running `claude-opus-…`. */
 export interface OfferedModel {

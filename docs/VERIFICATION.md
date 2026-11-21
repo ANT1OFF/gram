@@ -375,12 +375,41 @@ and reports it as flaky.
 app at random and checks the properties in [spec.ts](../apps/web/bombadil/spec.ts) on every state
 it captures: its own (no console errors, HTTP errors, uncaught exceptions or unhandled
 rejections), the Inbox count agreeing with its rows, no click adding two history entries, Back
-leaving the page it started from, and no `undefined`, `NaN` or `[object Object]` outside code. It
+leaving the page it started from, and no `undefined`, `NaN` or `[object Object]` outside code.
+Further properties check that nothing says "Loading…" or stays `aria-busy` for more than 10 s, that
+at 360, 768, 1024 and 1440 px wide (it resizes the window now and then) the page never scrolls
+sideways and no drawn titlebar or dock controls overlap for a second (a folded button's hidden,
+inert copy doesn't count), that Escape closes the topmost
+dialog or menu and returns focus to its opener, and that no list shows one item's row twice. It
 serves the e2e preview bundle on 127.0.0.1 with synthetic mock state, in Playwright's Chromium,
 with coverage instrumentation off (with it on, the app never renders). From the root:
 
 ```sh
 bun run --filter @gram/web bombadil -- --time-limit 90s
+```
+
+Two opt-in mock modes, built only for these runs ([mock-modes](../apps/web/src/api/mock-modes)),
+change what a run sees. On the ordinary mock a run can't be replayed (below); on the replayable
+one it can:
+
+- **Replayable** (`--seed <n>`, or `--replayable` for a seed drawn and printed): a seeded random,
+  a clock that moves one step per input instead of with the wall clock (timers, `Date`,
+  `performance.now`, idle callbacks), no animation, the app in one file, and Bombadil's look held
+  until the page is still. The same seed and inputs reach the same states, so `--reproduce <trace>`
+  and `--shrink <trace>` replay a run, taking its modes from the `run.json` beside the trace. Replays
+  hold often but not always: a 389-step run reached its violation again in 2 of 3 replays and
+  in 2 of 3 of the shrinker's calibrations, and a 1,700-step run replayed 900 to 1,100 steps
+  before parting. Downloads, the clipboard and scrolling still run in wall-clock time.
+- **Faults** (`--faults <rate>`, with `--fault-seed <n>`): that share of the app's api calls is
+  slowed, by at most 4 s, or fails as a 503, a lost socket or a timeout. Run it with
+  [faults.ts](../apps/web/bombadil/faults.ts), whose properties say the app stays usable: never
+  without a control for long, no uncaught exception or unhandled rejection, a failure the person
+  asked for shown on the page, and a retry it offers enabled.
+
+```sh
+bun run --filter @gram/web bombadil -- --replayable --time-limit 3m
+bun run --filter @gram/web bombadil -- --reproduce bombadil-out/trace.bin   # from apps/web
+bun run --filter @gram/web bombadil -- --spec bombadil/faults.ts --faults 0.15 --replayable
 ```
 
 It exits 0 when the time runs out with every property holding, 2 on a violation and 1 on an
@@ -398,7 +427,8 @@ nobody has fixed, each with its reason. They still show in the trace's `flicker.
 known entry with its fix.
 
 [bombadil.yml](../.github/workflows/bombadil.yml) runs it for ten minutes nightly and by hand,
-writes a violation to the job summary and uploads its trace. **It is not a gate**: it never runs
+once on the ordinary mock and once under faults on the replayable mock, writes a violation to the
+job summary and uploads its trace with its `run.json`. **It is not a gate**: it never runs
 on a pull request and is in no lane, required check or `merge-ci.json`. The four-week trial is
 reviewed around 2026-12-18 for real bugs found, false positives, upgrade churn and whether
 instrumentation works upstream. Pin upgrades are deliberate: each 0.x release can break the spec
@@ -443,6 +473,8 @@ proxy would be seen. It checks that a remote page loads in a session apart from 
 agents', gets no Gram cookie, bridge or Node, and reaches nothing on loopback or a private network
 by fetch, socket, script, redirect, rebound or failing lookup, or WebRTC STUN and TURN over TCP to
 loopback or a private address (with a control session showing the same probe does reach them),
+that a loopback page in the local session has no WebRTC at all, even where its request check let
+it reach the host,
 even with the user's private page open at that very address in another thread; that a private
 page loads in its own session, where its public frame doesn't load, its link to the internet opens
 in the shared session, and an opaque sandboxed child (`data:` and `srcdoc`) that runs has its fetch
@@ -459,6 +491,25 @@ rule it would meet.
 
 ```sh
 node apps/desktop/scripts/verify-web-preview.mjs /tmp/new-evidence-directory
+```
+
+### WebRTC guard
+
+`apps/desktop/scripts/verify-webrtc-guard.mjs` runs the installed pinned Electron in an owned
+temporary profile with the real preview module and no outside network. Every `.leak.test` name
+resolves to loopback, where a listener stands for a TURN server. It checks that a local page has no
+WebRTC in itself, in a child it makes by script at `about:blank` (which no preload reaches) or in an
+out-of-process frame, and reaches no TURN server it names; that after something else detaches the
+page's debugger, the guard is attached again and the same holds; that the user's WebRTC switch
+gives a page at an address they typed WebRTC, and that anything else opening in the thread, the
+page leaving that origin, or an agent taking the page makes it again without, while an agent's
+peek leaves it as it was and the switch is refused on a page the user didn't type and while an
+agent drives; and, as the control, that the same
+page in a session without the guard makes a peer connection in each frame and reaches the listener.
+On Linux it needs a display (`DISPLAY`), which is all of the environment it passes on.
+
+```sh
+node apps/desktop/scripts/verify-webrtc-guard.mjs /tmp/new-evidence-directory
 ```
 
 ### Pinned pages session

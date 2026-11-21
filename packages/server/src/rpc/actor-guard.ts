@@ -2,6 +2,7 @@ import {
   type DreamId,
   effectiveCheckout,
   isPersonalSetting,
+  LOCAL_HOST_ID,
   settingsPatchPaths,
   type SettingsPatch,
   type ThreadId,
@@ -37,6 +38,15 @@ import {
   RoutedFor,
 } from "../host/ownership.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
+import {
+  namesServerDisk,
+  RUNS_IN_FOLDER,
+  SERVER_DISK,
+  SERVER_DISK_REFUSAL,
+  SERVER_DISK_UNLESS_THREAD,
+  readsServerDisk,
+} from "./server-disk.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -142,56 +152,7 @@ export const VIEWER_RPCS: ReadonlySet<string> = new Set([
   "app.usageLimitHistory",
 ]);
 
-/**
- * What only the deployment sets up on a server people sign in to: a member's call is refused, and
- * the deployment supplies these from outside (`docs/EMBEDDING.md`, settings supplied from outside)
- * instead. Each acts on the server itself rather than on a person's work: the agent CLIs it
- * installs, its gateway keys and connectors, its own settings, keybindings and palettes, the agent
- * sessions in its own accounts, its diagnostics and logs, and programs it would start for a local
- * user. A headless server's disk holds nobody's work either ({@link memberMay}).
- */
-export const DEPLOYMENT_RPCS: ReadonlySet<string> = new Set([
-  "agentRuntime.cancel",
-  "agentRuntime.cancelUpdate",
-  "agentRuntime.install",
-  "agentRuntime.rollback",
-  "agentRuntime.update",
-  "agentRuntime.useSource",
-  "app.diagnostics",
-  "app.diagnosticsReport",
-  "app.keptHostStop",
-  "app.openExternal",
-  "app.openLogsFolder",
-  "connectors.add",
-  "connectors.authenticate",
-  "connectors.reconnect",
-  "connectors.remove",
-  "connectors.setEnabled",
-  "connectors.signIn",
-  "editor.open",
-  "fs.reveal",
-  "issues.file",
-  "issues.preview",
-  "keybindings.set",
-  "palettes.remove",
-  "palettes.upsert",
-  "profiles.discoverModels",
-  "profiles.importKey",
-  "profiles.openRouterFinish",
-  "profiles.openRouterSignIn",
-  "profiles.remove",
-  "profiles.seed",
-  "profiles.setKey",
-  "profiles.upsert",
-  "profiles.vaultInfo",
-  // Trusting a folder lets its own settings and CLAUDE.md run for every session in it.
-  "projects.setFolderTrust",
-  "sessions.delete",
-  "sessions.list",
-  "sessions.preview",
-  // Its personal settings, a person's own view, are theirs to set (`setsOnlyOwnView`).
-  "settings.set",
-]);
+export { DEPLOYMENT_RPCS } from "./deployment-rpcs.ts";
 
 /**
  * What a member may call beyond a viewer's reads: their work in threads, workspaces, pull requests
@@ -250,6 +211,7 @@ export const MEMBER_RPCS: ReadonlySet<string> = new Set([
   "git.refresh",
   "git.upstreamStatus",
   "git.upstreamSync",
+  "git.verifyEvidence",
   "git.verifyState",
   "helper.presence",
   "helper.recordEvent",
@@ -410,16 +372,6 @@ export const MEMBER_RPCS: ReadonlySet<string> = new Set([
   "worktree.status",
   "worktree.storage",
 ]);
-
-/**
- * What reaches this server's own disk rather than a thread's folder. Not `projects.clone`: on a
- * headless server it clones nothing and takes no path, only files the repository's origin under
- * the data folder (`fileOrigin`), and the machine a thread is placed on clones it with its own
- * credentials. That is how New project adds a repository there.
- */
-const SERVER_DISK: ReadonlySet<string> = new Set(["fs.browse", "fs.tree", "projects.add"]);
-/** The listings that reach this server's own disk when they name no thread. */
-const SERVER_DISK_UNLESS_THREAD: ReadonlySet<string> = new Set(["fs.list", "fs.files"]);
 
 /**
  * Whether a member may make this call on a server people sign in to: one of theirs or a viewer's.
@@ -676,6 +628,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
         Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig))?.headless === true;
       // Who each joined machine was started for, where one was. Absent in tests with no machines.
       const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts))?.machines;
+      const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
       const ownerOf = ownersOf(machines);
       /**
        * Whether a thread the call acts on is on a machine `person` may not reach: the threads it
@@ -746,6 +699,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
        */
       const pathsUnreadable = (
         reader: Reader,
+        action: string,
         payload: unknown,
         sharedToo = false,
         level: Level = "act",
@@ -764,11 +718,31 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           const paths = pathsMentioned(payload, bases);
           // Behind a proxy, nor a repository such a thread has a checkout of: another checkout
           // of it, a branch list, a worktree list share that thread's `.git` and its commits.
+          // A path read on this disk follows its links here, whoever else holds or once held it:
+          // a call that reads this disk, and any path placed on this machine.
+          const here: Array<string> = [];
+          const elsewhere: Array<string> = [];
+          for (const path of paths) {
+            if (yield* readsHere(action, payload, path)) here.push(path);
+            else elsewhere.push(path);
+          }
           return (
-            touchesUnreadable(reader, paths, level) ||
-            (sharedToo && sharesRepoWithUnreadable(reader, paths, level))
+            touchesUnreadable(reader, here, level, true) ||
+            touchesUnreadable(reader, elsewhere, level) ||
+            (sharedToo &&
+              (sharesRepoWithUnreadable(reader, here, level, true) ||
+                sharesRepoWithUnreadable(reader, elsewhere, level)))
           );
         });
+      /**
+       * Whether `path` of a call is read on this server's own disk: the call reads this disk
+       * (`readsServerDisk`), or the path is placed on this machine (`WorkerHosts.placeOf`), as
+       * every path is where no other machine works.
+       */
+      const readsHere = (action: string, payload: unknown, path: string) =>
+        readsServerDisk(action, payload) || workerHosts === undefined
+          ? Effect.succeed(true)
+          : Effect.map(workerHosts.placeOf(path), (host) => host === LOCAL_HOST_ID);
       /** The folder a listing's relative entries are under: its own path, or its thread's. */
       const listedUnder = (payload: unknown) =>
         Effect.gen(function* () {
@@ -799,10 +773,14 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           ? effect
           : Effect.flatMap(effect, (result) =>
               anyPrivate()
-                ? Effect.map(
-                    listedUnder(payload),
-                    (base) => withoutUnreadable(reader, result, base, level) as A,
-                  )
+                ? Effect.gen(function* () {
+                    const base = yield* listedUnder(payload);
+                    const onDisk =
+                      base === undefined
+                        ? readsServerDisk(action, payload)
+                        : yield* readsHere(action, payload, base);
+                    return withoutUnreadable(reader, result, base, level, onDisk) as A;
+                  })
                 : Effect.succeed(result),
             );
       return ActorGuard.of((call, { rpc, payload, headers }) =>
@@ -814,7 +792,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
             const nobody: Reader = { subject: undefined };
             if (
               (yield* namesUnreadable(nobody, payload)) ||
-              (yield* pathsUnreadable(nobody, payload))
+              (yield* pathsUnreadable(nobody, rpc._tag, payload))
             )
               return yield* Effect.die(new Error(NOT_READABLE));
             if (!VIEWER_RPCS.has(rpc._tag) && (yield* onAnothersMachine(undefined, payload)))
@@ -839,13 +817,13 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           const reads = VIEWER_RPCS.has(action) || setsOnlyOwnView(action, payload);
           if (
             (yield* namesUnreadable(reader, payload, "read")) ||
-            (yield* pathsUnreadable(reader, payload, true, "read"))
+            (yield* pathsUnreadable(reader, action, payload, true, "read"))
           )
             return yield* Effect.die(new Error(NOT_READABLE));
           if (
             !reads &&
             ((yield* namesUnreadable(reader, payload, "act")) ||
-              (yield* pathsUnreadable(reader, payload, true, "act")))
+              (yield* pathsUnreadable(reader, action, payload, true, "act")))
           )
             return yield* Effect.die(new Error(ONLY_READS));
           // The call runs as this person, for what asks who acted (`embedding/person.ts`).
@@ -860,6 +838,12 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
             ),
             reads ? "read" : "act",
           );
+          if (
+            headless &&
+            RUNS_IN_FOLDER.has(action) &&
+            (yield* namesServerDisk(payload, workerHosts?.placeOf))
+          )
+            return yield* Effect.die(new Error(SERVER_DISK_REFUSAL));
           if (reads) return yield* effect;
           if (actor.role !== "member") return yield* Effect.die(new Error(VIEWER_REFUSAL));
           // A member works in threads and workspaces; the server's own setup is its deployment's.

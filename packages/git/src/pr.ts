@@ -27,18 +27,27 @@ import * as Request from "effect/Request";
 import * as RequestResolver from "effect/RequestResolver";
 import { parseGitDiffCapped, type DiffFile } from "./diff.ts";
 import { gh, ghApi, git, repoTop, tryRepoTop } from "./exec.ts";
+import { asGhCaller, ghCallEnvOf, ghCallerKey } from "./gh-caller.ts";
 import { fromGitPath } from "./paths.ts";
 import { makeTtlCache, PR_POLL_TTL_MS, trackBadgeCache } from "./pr-cache.ts";
+import { type CallerPrMemo, makePrMemo, type PrMemo, THREADS_MAX_AGE_MS } from "./pr-memo.ts";
 import { Proc } from "./proc.ts";
 import { detectRateLimit, type RateLimitSignal } from "./rate-limit.ts";
 import { originTips } from "./refs.ts";
-import { cachedCheckoutHead, cachedOriginUrl, type CheckoutHead } from "./repo-facts.ts";
 import {
-  BADGE_COMMENTS_READ,
-  BADGE_REVIEWS_READ,
+  CheckoutRepos,
+  originOwnerRepo,
+  parseOwnerRepo,
+  resolveRepoNwo,
+  withCheckoutRepos,
+} from "./checkout-repos.ts";
+import { cachedCheckoutHead, type CheckoutHead } from "./repo-facts.ts";
+import {
   buildReviewState,
   personCommentsFromOf,
+  verdictsCutOff,
   personCommentsOf,
+  REVIEW_GQL_FIELDS,
 } from "./review.ts";
 import { ReviewBots } from "./review-bots.ts";
 import { mergeCiForLaunch } from "./merge-ci.ts";
@@ -459,7 +468,7 @@ const toPrStatus = (
     ...Object.fromEntries(Object.entries(optional).filter(([, v]) => v !== undefined)),
     ...(requested.length === 0 ? {} : { reviewRequests: requested }),
     ...(review === undefined ? {} : { review }),
-    ...(isJson(read) ? {} : { reviewUnread: true }),
+    ...(isJson(read) && !verdictsCutOff(read) ? {} : { reviewUnread: true }),
     ...(personComments.length === 0 ? {} : { personComments }),
     ...(personCommentsFrom === undefined ? {} : { personCommentsFrom }),
   };
@@ -577,12 +586,6 @@ const badgeGqlFields = (number: string) =>
  */
 const DISCOVERY_GQL_FIELDS = "number state headRefOid isCrossRepository";
 
-// Review-bot state: summary reviews and progress comments, and bot-started threads.
-// The reviews and comments are everyone's, so people's verdicts and the ids of their comments come
-// from the same connections at no extra cost: scalar fields add nothing to a document's price.
-const REVIEW_GQL_FIELDS =
-  `reviews(last:${BADGE_REVIEWS_READ}){nodes{id author{login __typename} authorAssociation state submittedAt commit{oid} body}} ` +
-  `comments(last:${BADGE_COMMENTS_READ}){nodes{id author{login __typename} createdAt body}}`;
 const THREADS_GQL_FIELD =
   "reviewThreads(first:50){nodes{isResolved isOutdated comments(first:3){nodes{author{login __typename} body}}}}";
 
@@ -688,6 +691,7 @@ export const reshapePrNode = (
   review: {
     headRefOid: node["headRefOid"],
     reviews: node["reviews"],
+    latestOpinionatedReviews: node["latestOpinionatedReviews"],
     reviewThreads,
     comments: node["comments"],
   },
@@ -890,38 +894,6 @@ const restFallback = (
         node === undefined ? undefined : toPrStatus(node, NOT_ANCHORED, bots),
       );
 
-/**
- * How long a PR's review threads are reused before they ride a sweep again. A thread someone opens
- * or replies to moves the PR's `updatedAt`, which refetches them at once; resolving one on
- * github.com may not, and this is how long that can go unseen.
- */
-export const THREADS_MAX_AGE_MS = 120_000;
-
-interface CarriedThreads {
-  /** The `reviewThreads` connection as GitHub returned it. */
-  readonly threads: unknown;
-  /** `headRefOid|updatedAt` of the PR when they were read. */
-  readonly stamp: string;
-  readonly at: number;
-}
-
-/**
- * What one resolver remembers between documents: the PR each branch last resolved to, so its full
- * fields can ride the same document as the candidates it is chosen from, and each PR's review
- * threads, so they needn't.
- */
-export interface PrMemo {
-  readonly known: Map<string, number>;
-  readonly threads: Map<string, CarriedThreads>;
-  /** Forgets the threads, for a write that may have resolved or added one. */
-  readonly clear: () => void;
-}
-
-export const makePrMemo = (): PrMemo => {
-  const threads = new Map<string, CarriedThreads>();
-  return { known: new Map(), threads, clear: () => threads.clear() };
-};
-
 const branchKey = (repo: string, branch: string) => `${repo.toLowerCase()}#${branch}`;
 const prKey = (repo: string, number: number) => `${repo.toLowerCase()}#${number}`;
 
@@ -934,7 +906,7 @@ const reviewedBadge = (
   block: { readonly repo: string; readonly number: number; readonly fields: PrFieldSet },
   anchoring: Pick<ChosenPr, "headMatches" | "aheadOfPr">,
   bots: ReadonlyArray<ReviewBot>,
-  memo: PrMemo,
+  memo: CallerPrMemo,
   now: number,
 ): PrStatus | undefined => {
   const key = prKey(block.repo, block.number);
@@ -952,7 +924,7 @@ type Entry = Request.Entry<GetPrStatus>;
 const resolveChunk = (
   chunk: ReadonlyArray<Entry>,
   bots: ReadonlyArray<ReviewBot>,
-  memo: PrMemo,
+  memo: CallerPrMemo,
 ): Effect.Effect<void, never, Proc> =>
   Effect.gen(function* () {
     const first = chunk[0];
@@ -1112,13 +1084,19 @@ export const makePrResolver = (
   reviewBots: Effect.Effect<ReadonlyArray<ReviewBot>> = Effect.succeed(DEFAULT_REVIEW_BOTS),
   memo: PrMemo = makePrMemo(),
 ): RequestResolver.RequestResolver<GetPrStatus> =>
-  RequestResolver.make<GetPrStatus>((entries) =>
-    Effect.gen(function* () {
-      const bots = yield* reviewBots;
-      for (let start = 0; start < entries.length; start += GQL_BRANCHES_PER_QUERY) {
-        yield* resolveChunk(entries.slice(start, start + GQL_BRANCHES_PER_QUERY), bots, memo);
-      }
-    }).pipe(Effect.provideService(Proc, proc)),
+  RequestResolver.grouped(
+    RequestResolver.make<GetPrStatus>((entries) => {
+      // One caller a batch (`grouped`), each read under its own `GhCallEnv`.
+      const env = ghCallEnvOf(entries[0].context);
+      const mine = memo.forCaller(ghCallerKey(env));
+      return Effect.gen(function* () {
+        const bots = yield* reviewBots;
+        for (let start = 0; start < entries.length; start += GQL_BRANCHES_PER_QUERY) {
+          yield* resolveChunk(entries.slice(start, start + GQL_BRANCHES_PER_QUERY), bots, mine);
+        }
+      }).pipe(Effect.provideService(Proc, proc), asGhCaller(env));
+    }),
+    (entry) => ghCallerKey(ghCallEnvOf(entry.context)),
   );
 
 const sharedResolvers = new WeakMap<
@@ -1138,39 +1116,7 @@ const sharedPrResolver = (proc: Proc["Service"]): RequestResolver.RequestResolve
 // ---------------------------------------------------------------------------------------------
 // Inputs
 
-/** `owner/repo` from a remote URL (scp-style, https, ssh); `undefined` when not shaped like one. */
-export const parseOwnerRepo = (url: string): string | undefined => {
-  const match =
-    /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@/]+@)?[^/:]+[:/](?:\d+\/)?([^/]+)\/([^/]+?)(?:\.git)?\/?$/i.exec(
-      url.trim(),
-    );
-  return match ? `${match[1]}/${match[2]}` : undefined;
-};
-
-/** `owner/repo` of the checkout's `origin`, kept while the repo's config is unchanged. */
-export const originOwnerRepo = (cwd: string): Effect.Effect<string | undefined, never, Proc> =>
-  cachedOriginUrl(cwd).pipe(
-    Effect.map((url) => (url === undefined ? undefined : parseOwnerRepo(url))),
-    Effect.orElseSucceed(() => undefined),
-  );
-
-/**
- * The repo for `--repo`, preferring the local origin URL over `gh repo view`: instant, and right on a
- * fork, where gh's default repo can be the upstream.
- */
-const resolveRepoNwo = (workTree: string) =>
-  Effect.gen(function* () {
-    const origin = yield* originOwnerRepo(workTree);
-    if (origin !== undefined) return origin;
-    const out = yield* gh(
-      workTree,
-      ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-      { timeoutMs: 8_000 },
-    ).pipe(Effect.option);
-    return Option.isSome(out) && out.value.status === 0
-      ? out.value.stdout.trim() || undefined
-      : undefined;
-  });
+export { originOwnerRepo, parseOwnerRepo };
 
 /**
  * The checkout's toplevel, HEAD, upstream tip, branch and upstream name, as one `rev-parse` prints
@@ -1233,7 +1179,7 @@ export const resolvePrInputs = (
         : ((yield* originTips(workTree, [branch]).pipe(
             Effect.orElseSucceed(() => new Map<string, string>()),
           )).get(branch) ?? "");
-    const repo = yield* resolveRepoNwo(workTree);
+    const repo = yield* resolveRepoNwo(cwd, workTree);
     if (repo === undefined) return undefined;
     return { workTree, branch, localTip, remoteTip: tip, repo } satisfies PrInputs;
   }).pipe(Effect.mapError((e) => new PrLookupError({ message: e.message })));
@@ -1296,7 +1242,12 @@ export class Pr extends Context.Service<
      * fails: a lookup that can't be answered now is simply asked again by `status`.
      */
     readonly prime: (
-      lookups: ReadonlyArray<{ readonly cwd: string; readonly bound?: BoundPrRef | undefined }>,
+      lookups: ReadonlyArray<{
+        readonly cwd: string;
+        readonly bound?: BoundPrRef | undefined;
+        /** Whom a bound lookup is made for (`GhCallEnv`); the caller's own when absent. */
+        readonly caller?: Readonly<Record<string, string>> | undefined;
+      }>,
     ) => Effect.Effect<void>;
   }
 >()("@gram/git/Pr") {}
@@ -1396,7 +1347,9 @@ export const PrLive = Layer.effect(
     const ttlMs = yield* PrBadgeTtlMs;
     const memo = makePrMemo();
     const resolver = makePrResolver(proc, reviewBots.get, memo);
-    const provide = Effect.provideService(Proc, proc);
+    const repos = yield* Effect.serviceOption(CheckoutRepos);
+    const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      withCheckoutRepos(repos, Effect.provideService(effect, Proc, proc));
 
     // Keyed on the tips the badge is anchored against, so a commit, push or fetch is a new entry
     // and can never be answered from the one before it.
@@ -1567,7 +1520,8 @@ export const PrLive = Layer.effect(
           }
           const workTree = yield* repoTop(cwd);
           const repo =
-            explicitRepo ?? (workTree === undefined ? undefined : yield* resolveRepoNwo(workTree));
+            explicitRepo ??
+            (workTree === undefined ? undefined : yield* resolveRepoNwo(cwd, workTree));
           if (workTree === undefined || repo === undefined)
             return { available: true } satisfies PrDetailResponse;
           const view = yield* attempt(
@@ -1639,7 +1593,9 @@ export const PrLive = Layer.effect(
           )) ?? cwd;
         const repo =
           explicitRepo ??
-          (yield* provide(resolveRepoNwo(workTree)).pipe(Effect.orElseSucceed(() => undefined)));
+          (yield* provide(resolveRepoNwo(cwd, workTree)).pipe(
+            Effect.orElseSucceed(() => undefined),
+          ));
         if (repo === undefined || !OWNER_REPO.test(repo)) {
           return yield* new PrLookupError({ message: "no GitHub repo for this checkout" });
         }
@@ -1654,9 +1610,13 @@ export const PrLive = Layer.effect(
         // and a request issued as each checkout's `git` runs finish is a turn of its own.
         const ready = yield* Effect.forEach(
           lookups,
-          ({ cwd, bound }) =>
+          ({ cwd, bound, caller }) =>
             bound !== undefined
-              ? Effect.succeed(boundBadges.get({ cwd, bound }))
+              ? Effect.succeed(
+                  caller === undefined
+                    ? boundBadges.get({ cwd, bound })
+                    : asGhCaller(caller)(boundBadges.get({ cwd, bound })),
+                )
               : provide(resolvePrInputs(cwd)).pipe(
                   Effect.flatMap((inputs) =>
                     Effect.map(Clock.currentTimeMillis, (now) => {

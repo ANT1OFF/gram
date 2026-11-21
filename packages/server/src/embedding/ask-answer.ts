@@ -58,6 +58,8 @@ const AnswerBody = Schema.Struct({
   threadId: ThreadId,
   requestId: RequestId,
   answer: RequestAnswer,
+  /** The card's key as `ask.opened` carried it: only that card takes the answer. */
+  shown: Schema.optionalKey(Schema.String),
 });
 const decodeBody = Schema.decodeUnknownOption(Schema.fromJsonString(AnswerBody));
 
@@ -153,7 +155,7 @@ export const answerAsk = (
     const parsed = decodeBody(body);
     if (parsed._tag === "None")
       return refusal(400, "BadRequest", "expected {threadId, requestId, answer}");
-    const { threadId, requestId, answer } = parsed.value;
+    const { threadId, requestId, answer, shown } = parsed.value;
     // A thread readable by one person is answered by them alone (`embedding/readable-by.ts`).
     if (!readerMay({ subject: actor.id }, readableByOf(threadId as ThreadId)))
       return refusal(404, "NotFound", NOT_READABLE);
@@ -198,7 +200,7 @@ export const answerAsk = (
     // As the signed person: the runtimes refuse it, before the request is taken, on a machine
     // they may not reach (`runtime/owned-runtimes.ts`). The statement says who answered, never
     // that they may answer here.
-    const failed = yield* asActor(deps.runtimes.respond(threadId, requestId, answer)).pipe(
+    const failed = yield* asActor(deps.runtimes.respond(threadId, requestId, answer, shown)).pipe(
       Effect.provideService(AnswerProofRef, proof),
       Effect.as(undefined),
       Effect.catch((error) => Effect.succeed(error)),

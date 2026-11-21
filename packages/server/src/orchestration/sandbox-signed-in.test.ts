@@ -55,6 +55,8 @@ const fakePort = (
     unrelay: () => undefined,
     relays: () => undefined,
     onDial: () => undefined,
+    marks: () => Effect.succeed([]),
+    onSignIns: () => undefined,
   };
   return { port, calls };
 };
@@ -137,7 +139,7 @@ describe("sandbox from a signed-in hosted server", () => {
         expect(asked).toContain("start");
         expect(asked.at(-1)).toBe("stop");
         const started = calls.find((each) => each.call === "start")!.body as { name: string };
-        expect(calls.at(-1)!.body).toEqual({ name: started.name });
+        expect(calls.at(-1)!.body).toEqual({ name: started.name, notAfter: expect.any(Number) });
         expect(yield* store.listThreads).toEqual(before);
         expect(existsSync(join(world.repo, ".worktrees"))).toBe(false);
       }).pipe(Effect.provide(context));
@@ -242,7 +244,7 @@ describe("sandbox from a signed-in hosted server", () => {
         const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
         expect(result._tag).toBe("Failure");
         expect(calls.map((each) => each.call)).toEqual(["choices", "start", "stop"]);
-        expect(calls.at(-1)!.body).toEqual({ name: machine.name });
+        expect(calls.at(-1)!.body).toEqual({ name: machine.name, notAfter: expect.any(Number) });
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );
@@ -916,6 +918,7 @@ describe("sandbox from a signed-in hosted server", () => {
           name: machine.name,
           released: false,
           reason: "working",
+          notAfter: expect.any(Number),
         });
         // It came back: nothing timed out, and nothing of it was stopped or started anew.
         expect(calls.map((each) => each.call)).not.toContain("stop");
@@ -924,7 +927,69 @@ describe("sandbox from a signed-in hosted server", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("refuses a reused machine the server says it reclaimed, and forgets it", () =>
+  it.live("reuses a machine whose release met one not_found, once the server answers again", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const machine = {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "",
+        confirmed: true,
+        onDemand: "worker",
+        via: SERVER.origin,
+        onlineSince: undefined as number | undefined,
+      };
+      // Its take-back first meets a workspace out of reach; then it is told, and wakes.
+      let releases = 0;
+      const { port, calls } = fakePort((call) => {
+        if (call === "choices") return { status: 404, body: {} };
+        if (call !== "release") return { status: 200, body: {} };
+        releases += 1;
+        if (releases === 1)
+          return {
+            status: 404,
+            body: { code: "not_found", message: "The workspace has no backend." },
+          };
+        machine.onlineSince = 1;
+        return { status: 200, body: { known: true, released: false } };
+      });
+      const remote = Layer.succeed(RemoteHosts, {
+        machines: { list: () => [], get: () => undefined },
+        stops: makeStopMarks(),
+        watch: () => () => undefined,
+        list: () => [machine],
+      } as unknown as RemoteHostsShape);
+      const hosts = {
+        list: () => [machine],
+        remove: () => true,
+        machines: {
+          provision: () => {
+            throw new Error("not registered here");
+          },
+        },
+      };
+      const source = signedInSource(SERVER, { port, hosts, timeoutMs: 1_000, everyMs: 10 });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(remote),
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session, thread } = yield* openOrchestrator(world);
+        machine.name = workerMachineName(thread.id, SANDBOX.clientRequestId);
+        const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
+        // One not_found is no proof it is gone: asked again, and the spawn goes on.
+        expect(calls.filter((each) => each.call === "release")).toHaveLength(2);
+        expect(result).not.toMatchObject({
+          _tag: "Failure",
+          failure: { message: expect.stringMatching(/no longer holds/) },
+        });
+        expect(calls.map((each) => each.call)).not.toContain("stop");
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("refuses a reused machine the server says it holds no more, and forgets nothing", () =>
     Effect.gen(function* () {
       const world = yield* makeWorld;
       const { port, calls } = fakePort((call) =>
@@ -976,9 +1041,16 @@ describe("sandbox from a signed-in hosted server", () => {
           _tag: "Failure",
           failure: { message: expect.stringMatching(/reclaimed/) },
         });
-        // Told at once, not after the wait; nothing stopped, and the registration let go.
-        expect(calls.map((each) => each.call)).toEqual(["choices", "release"]);
-        expect(registered).toBe(false);
+        // Told at once, not after the wait; nothing stopped. One 404 is no proof it is gone (a
+        // server answers it while its backend is out of reach): it stays, for `forgetReclaimed`.
+        // Asked three times in a row, a little apart, before the spawn gives up on it.
+        expect(calls.map((each) => each.call)).toEqual([
+          "choices",
+          "release",
+          "release",
+          "release",
+        ]);
+        expect(registered).toBe(true);
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );

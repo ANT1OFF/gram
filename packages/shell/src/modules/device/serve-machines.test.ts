@@ -65,6 +65,7 @@ const deviceFor = (
       };
     },
     workerMachineServer: () => ({ ok: true, server: { origin: ORIGIN, server: "Example" } }),
+    workerMachineMarks: () => [],
     workerMachineCall: async () => ({ ok: true, status: 202, body: answer }),
   }) as unknown as HostedDevice;
 
@@ -83,7 +84,7 @@ describe("a worker machine's relay", () => {
     const relays = makeWorkerMachineRelays({
       watch: false,
       device: () => deviceFor(dials),
-      post: (message) => posted.push(message),
+      post: (message) => message.type === "machines.signins" || posted.push(message),
       open: (url, headers) => {
         const made = fakeSocket();
         opened.push({ url, headers, ...made });
@@ -135,7 +136,7 @@ describe("a worker machine's relay", () => {
     const relays = makeWorkerMachineRelays({
       watch: false,
       device: () => deviceFor([]),
-      post: (message) => posted.push(message),
+      post: (message) => message.type === "machines.signins" || posted.push(message),
       open: () => {
         const made = fakeSocket();
         opened.push(made);
@@ -218,7 +219,7 @@ const harness = (device: () => HostedDevice | undefined) => {
   const relays = makeWorkerMachineRelays({
     watch: false,
     device,
-    post: (message) => posted.push(message),
+    post: (message) => message.type === "machines.signins" || posted.push(message),
     open: () => {
       const made = fakeSocket();
       opened.push(made);
@@ -312,6 +313,31 @@ describe("the relays the app keeps", () => {
     relays.close();
   });
 
+  it("tells the server each time the sign-ins' marks change, and only then", () => {
+    const marks = [
+      { origin: ORIGIN, account: "mark-own-0123456789", formerAccounts: [] as string[] },
+    ];
+    const told: unknown[] = [];
+    const relays = makeWorkerMachineRelays({
+      watch: false,
+      device: () => ({ ...deviceFor([]), workerMachineMarks: () => marks }) as HostedDevice,
+      post: (message) => told.push(message),
+    });
+    relays.revalidate();
+    relays.revalidate();
+    expect(told).toEqual([{ type: "machines.signins" }]);
+    // A renewal gives the sign-in its organisation's mark: the server is told, so it moves
+    // what the former one holds now, not at its next pass.
+    marks[0] = {
+      origin: ORIGIN,
+      account: "mark-org-0123456789",
+      formerAccounts: ["mark-own-0123456789"],
+    };
+    relays.revalidate();
+    expect(told).toHaveLength(2);
+    relays.close();
+  });
+
   it("ends a live relay whose sign-in can no longer be renewed, at its next lease", async () => {
     vi.useFakeTimers();
     const dials: Array<{ origin: string; name: string }> = [];
@@ -396,6 +422,13 @@ describe("the codes a server's answers carry", () => {
       ["start", { code: "name_in_use", message: "Used." }],
       ["release", { code: "not_found" }],
       ["stop", { code: "not_found", stopped: false }],
+      // The run a start made, and a status saw, for a later stop or release to be fenced to.
+      ["start", { name: NAME, sandboxId: "sbx_1", generation: 2 }],
+      ["status", { phase: "running", sandboxId: "sbx_1", generation: 2 }],
+      // A fence that held a call back, and a release that so changed nothing.
+      ["stop", { code: "superseded", stopped: false }],
+      ["stop", { code: "expired", stopped: false }],
+      ["release", { code: "superseded", known: true, applied: false }],
     ] as const) {
       const device = deviceFor([], { on: true }, body);
       expect(

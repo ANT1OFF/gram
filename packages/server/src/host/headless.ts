@@ -5,6 +5,7 @@
 import type { AgentHost } from "@gram/agents";
 import { CLAUDE_CAPABILITIES } from "@gram/agents/claude";
 import { CODEX_CAPABILITIES } from "@gram/agents/codex";
+import { ANTIGRAVITY_CAPABILITIES } from "@gram/agents/antigravity";
 import { GROK_CAPABILITIES } from "@gram/agents/grok";
 import { OPENCODE_CAPABILITIES } from "@gram/agents/opencode";
 import {
@@ -58,6 +59,8 @@ export interface PlaceableMachine {
   readonly opencode?: MachineOpenCode | undefined;
   /** Its Grok Build, from a host that runs Grok Build sessions (`HostStatus.grok`). */
   readonly grok?: MachineOpenCode | undefined;
+  /** Its Antigravity, from a host that runs Antigravity sessions (`HostStatus.antigravity`). */
+  readonly antigravity?: MachineOpenCode | undefined;
   /** A host an embedder started on demand for one person (`embedding/on-demand.ts`). */
   readonly owner?: string | undefined;
   readonly onDemand?: "personal" | "thread" | "worker" | undefined;
@@ -79,7 +82,7 @@ export interface MachineOpenCode {
 }
 
 /** The agents a headless Gram offers as its machines run them. */
-export type MachineAgent = "claude" | "codex" | "opencode" | "grok";
+export type MachineAgent = "claude" | "codex" | "opencode" | "grok" | "antigravity";
 
 /** What `machine` lists for `agent`, when it has said. */
 const listOf = (machine: PlaceableMachine, agent: MachineAgent) =>
@@ -89,19 +92,24 @@ const listOf = (machine: PlaceableMachine, agent: MachineAgent) =>
       ? machine.codex?.models
       : agent === "opencode"
         ? machine.opencode?.models
-        : machine.grok?.models;
+        : agent === "grok"
+          ? machine.grok?.models
+          : machine.antigravity?.models;
 
 /** Why `machine` lists nothing for `agent`, in words about that machine. */
 const notListing = (machine: PlaceableMachine, agent: MachineAgent): string => {
   if (agent === "claude")
     return `${machine.name} hasn't said which models its Claude Code offers yet.`;
-  if (agent === "grok") {
-    const grok = machine.grok;
-    if (grok === undefined)
-      return `${machine.name} hasn't said which models its Grok Build offers yet. If its Gram is older than this one, update it there (Settings → Machines).`;
-    if (!grok.found)
-      return `Grok Build isn't installed on ${machine.name}. Install it there, then re-check.`;
-    return `${machine.name}'s Grok Build couldn't list its models. Run \`grok login\` there, then re-check.`;
+  if (agent === "grok" || agent === "antigravity") {
+    const [cli, name, signIn] =
+      agent === "grok"
+        ? [machine.grok, "Grok Build", "Run `grok login` there"]
+        : [machine.antigravity, "Antigravity", "Run `agy` there and sign in"];
+    if (cli === undefined)
+      return `${machine.name} hasn't said which models its ${name} offers yet. If its Gram is older than this one, update it there (Settings → Machines).`;
+    if (!cli.found)
+      return `${name} isn't installed on ${machine.name}. Install it there, then re-check.`;
+    return `${machine.name}'s ${name} couldn't list its models. ${signIn}, then re-check.`;
   }
   if (agent === "opencode") {
     const opencode = machine.opencode;
@@ -325,6 +333,7 @@ export const headlessAgentHosts = (
     codex: new Map<string, ReadonlyArray<AgentModel>>(),
     opencode: new Map<string, ReadonlyArray<AgentModel>>(),
     grok: new Map<string, ReadonlyArray<AgentModel>>(),
+    antigravity: new Map<string, ReadonlyArray<AgentModel>>(),
   };
   const listModels = (agent: MachineAgent) =>
     Effect.gen(function* () {
@@ -391,6 +400,15 @@ export const headlessAgentHosts = (
         ? listModels("grok")
         : Effect.fail(unavailable("grok", GATEWAY_STAYS_HERE)),
   };
+  const antigravity: AgentHost = {
+    kind: "antigravity",
+    capabilities: ANTIGRAVITY_CAPABILITIES,
+    open: () => Effect.fail(unavailable("antigravity", RUNS_NOTHING_HERE)),
+    listModels: (options) =>
+      options?.profileId === undefined
+        ? listModels("antigravity")
+        : Effect.fail(unavailable("antigravity", GATEWAY_STAYS_HERE)),
+  };
   return AgentHosts.of({
     elsewhere: true,
     get: (agent) =>
@@ -402,12 +420,14 @@ export const headlessAgentHosts = (
             ? Effect.succeed(opencode)
             : agent === "grok"
               ? Effect.succeed(grok)
-              : Effect.fail(
-                  new AgentUnavailable({
-                    agent,
-                    message: `${agent} sessions don't run on a joined machine yet, and this Gram runs none itself.`,
-                  }),
-                ),
+              : agent === "antigravity"
+                ? Effect.succeed(antigravity)
+                : Effect.fail(
+                    new AgentUnavailable({
+                      agent,
+                      message: `${agent} sessions don't run on a joined machine yet, and this Gram runs none itself.`,
+                    }),
+                  ),
   });
 };
 

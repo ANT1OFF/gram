@@ -21,25 +21,32 @@ import {
   pinRefusal,
   resolveWorkerPicks,
   type WorkerMachineSource,
+  workerMachineIdentity,
   workerMachineName,
 } from "../embedding/worker-machines.ts";
 import { refusal } from "./rules.ts";
 import type { Orchestration } from "./service.ts";
 import type { WorkerSandbox } from "./tool-inputs.ts";
 
-/** Why a spawn can't reuse a machine the server reclaimed since: its name isn't given out again. */
+/** Why a spawn can't reuse a machine the server says it doesn't hold (reclaimed, most likely). */
 const reclaimedWords = (name: string) =>
-  `The machine ${name} was reclaimed by the server since its work was over, so it isn't there to reuse, and its name isn't given out again. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`;
+  `The server says it no longer holds the machine ${name}: most likely it was reclaimed once its work was over, so the worker wasn't placed on it. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`;
 
 /**
  * One machine name's bring-up (`makeWorkerSandbox`): how many tries of its spawn hold it, and,
  * while one gives it back, what the rest wait for before they join it or begin again.
  */
 interface Flight {
+  /** The machine's name, and the sign-in it is brought up under (`WorkerMachineSource.identity`). */
+  readonly name: string;
+  readonly identity: string;
   readonly fiber: Fiber.Fiber<{ readonly startedHere: boolean }, AppToolError>;
   holders: number;
   closing?: Deferred.Deferred<void> | undefined;
 }
+
+/** A bring-up's key: the sign-in it is under (`WorkerMachineSource.identity`) and the name. */
+const flightKey = (identity: string, name: string) => JSON.stringify([identity, name]);
 
 /** What the sandbox planner reads: the tools' own services, as `tools.ts` has them. */
 export interface WorkerSandboxDeps {
@@ -66,9 +73,16 @@ export const makeWorkerSandbox = ({
   Effect.gen(function* () {
     /**
      * Each machine name's bring-up under way (`workerSandbox`), with how many tries of its spawn
-     * hold it. Run in the tools' own scope, so it outlives the try that began it.
+     * hold it, by the sign-in it is brought up under and the name (`flightKey`): a try under
+     * another sign-in never joins it. Run in the tools' own scope, so it outlives the try that
+     * began it.
      */
     const machineFlights = new Map<string, Flight>();
+    /** A bring-up of `name` under another sign-in than `identity`, still under way. */
+    const otherFlight = (identity: string, name: string) =>
+      [...machineFlights.values()].some(
+        (flight) => flight.name === name && flight.identity !== identity,
+      );
     const flightScope = yield* Effect.scope;
     /**
      * Holds `name`'s bring-up for this try, in its scope: waits out one being given back (its stop
@@ -78,22 +92,29 @@ export const makeWorkerSandbox = ({
      */
     const holdFlight = (
       name: string,
+      identity: string,
       start?: Effect.Effect<{ readonly startedHere: boolean }, AppToolError>,
     ) =>
       Effect.gen(function* () {
+        const key = flightKey(identity, name);
         let waited = false;
         for (;;) {
           const taken = yield* Effect.acquireRelease(
             Effect.gen(function* () {
-              const joining = machineFlights.get(name);
+              const joining = machineFlights.get(key);
               if (joining?.closing !== undefined) return { wait: joining.closing };
               if (joining !== undefined) {
                 joining.holders += 1;
                 return { held: joining };
               }
               if (start === undefined) return { none: true as const };
-              const made: Flight = { fiber: yield* Effect.forkIn(start, flightScope), holders: 1 };
-              machineFlights.set(name, made);
+              const made: Flight = {
+                name,
+                identity,
+                fiber: yield* Effect.forkIn(start, flightScope),
+                holders: 1,
+              };
+              machineFlights.set(key, made);
               return { held: made };
             }),
             (got) =>
@@ -109,7 +130,7 @@ export const makeWorkerSandbox = ({
                 yield* Fiber.interrupt(held.fiber).pipe(
                   Effect.ensuring(
                     Effect.suspend(() => {
-                      if (machineFlights.get(name) === held) machineFlights.delete(name);
+                      if (machineFlights.get(key) === held) machineFlights.delete(key);
                       held.closing = undefined;
                       return Deferred.succeed(closing, undefined);
                     }),
@@ -130,13 +151,14 @@ export const makeWorkerSandbox = ({
      */
     const fence = (
       name: string,
+      identity: string,
     ): Effect.Effect<
       { readonly abandon?: Effect.Effect<void> | undefined },
       AppToolError,
       Scope.Scope
     > =>
       Effect.gen(function* () {
-        const { waited } = yield* holdFlight(name);
+        const { waited } = yield* holdFlight(name, identity);
         if (waited && !joined().some((each) => each.name === name))
           return yield* new AppToolError({
             tool: "spawn_worker",
@@ -209,7 +231,10 @@ export const makeWorkerSandbox = ({
               : undefined;
         if (found === undefined || "refused" in found)
           return yield* fail(
-            `Workers can't have machines of their own here${found === undefined ? "" : `: ${found.refused}`}. Leave out sandbox, and the worker runs on your machine.`,
+            found === undefined
+              ? // As it always was, word for word: an embedded Gram's orchestrators read it.
+                "Workers can't have machines of their own here: leave out sandbox, and the worker runs on your machine."
+              : `Workers can't have machines of their own here: ${found.refused}. Leave out sandbox, and the worker runs on your machine.`,
           );
         const source = found;
         const theirs = source.theirs;
@@ -229,22 +254,21 @@ export const makeWorkerSandbox = ({
           if (refused !== undefined) return yield* fail(refused);
         }
         /**
-         * A machine of its workers it shares: online, as it is; offline (it may be released once
-         * its work was over, and sleeps until told otherwise), told it is working and waited for
-         * as the spawn goes ahead. Never given back: it is the other workers' too.
+         * A machine of its workers it shares. An embedder's (`givesBack: false`): by name alone,
+         * online or not, straight to the spawn, as it always was: its provider wakes it, and a
+         * retry of a spawn already made returns that worker without reaching the machine. A hosted
+         * server's, offline (it may be released once its work was over, and sleeps until told
+         * otherwise): told it is working and waited for as the spawn goes ahead, once any
+         * give-back of it is waited out. Never given back: it is the other workers' too.
          */
-        const shared = (machine: {
-          readonly name: string;
-          readonly onlineSince?: number | undefined;
-        }) =>
-          machine.onlineSince !== undefined && !source.givesBack
-            ? { name: machine.name, givesBack: source.givesBack }
+        const shared = (machine: { readonly name: string }) =>
+          !source.givesBack
+            ? { name: machine.name, givesBack: false }
             : {
                 name: machine.name,
-                givesBack: source.givesBack,
+                givesBack: true,
                 prepare: Effect.gen(function* () {
-                  // Its give-back, from a spawn that brought it up, is waited out first.
-                  if (source.givesBack) yield* fence(machine.name);
+                  yield* fence(machine.name, source.identity ?? "");
                   if (
                     joined().find((each) => each.name === machine.name)?.onlineSince !== undefined
                   )
@@ -291,11 +315,16 @@ export const makeWorkerSandbox = ({
         );
         // Online already (a retry): nothing to start, unless a try that brought it up is still
         // placing its worker, which this one then joins (`machineFlights`), so that try's
-        // cancellation never gives it back under this one. Otherwise it is started only once the
-        // spawn goes ahead, after any approval (`handle`), so a refused or denied spawn starts
-        // nothing.
+        // cancellation never gives it back under this one. Otherwise a hosted server's is started
+        // only once the spawn goes ahead, after any approval (`handle`), so a refused or denied
+        // spawn starts nothing; an embedder's is started and waited for here, before any card, so
+        // the spawn's machine and model are admitted before it asks, as they always were.
         const seen = joined().find((each) => each.name === name && theirs(each));
-        if (seen?.onlineSince !== undefined && !(source.givesBack && machineFlights.has(name)))
+        const identity = source.identity ?? "";
+        if (
+          seen?.onlineSince !== undefined &&
+          !(source.givesBack && machineFlights.has(flightKey(identity, name)))
+        )
           return { name, givesBack: source.givesBack };
         // Brings the machine up: started (or, registered from an earlier spawn, told it is
         // working) and waited for. Whether this bring-up started it, and so may give it back.
@@ -363,22 +392,27 @@ export const makeWorkerSandbox = ({
           }
           return { startedHere: already === undefined };
         });
+        // An embedder's provider keeps its machines and gives none back: brought up now, as the
+        // call is resolved, and placed by name.
+        if (!source.givesBack) {
+          yield* bringUp;
+          return { name, givesBack: false };
+        }
         // Given back if the spawn is refused after it came, so none is left running for nothing:
         // never while another try of the same request still holds it, nor while a thread is
         // placed on it (the spawn's own worker made before it failed included), nor when that
         // can't be read.
-        const giveBack = (flight?: Flight) =>
+        const giveBack = (flight: Flight) =>
           Effect.gen(function* () {
-            if (flight !== undefined && (flight.holders > 1 || flight.closing !== undefined))
-              return;
+            if (flight.holders > 1 || flight.closing !== undefined) return;
             // No try joins it from here on (`closing`), so none takes a machine being given back.
             const closing = yield* Deferred.make<void>();
-            if (flight !== undefined) flight.closing = closing;
+            flight.closing = closing;
             let stopped = false;
             const open = Effect.suspend(() => {
-              if (flight === undefined) return Effect.void;
               // Given back: the next try brings one up afresh. Kept: tries join it again.
-              if (stopped && machineFlights.get(name) === flight) machineFlights.delete(name);
+              const key = flightKey(identity, name);
+              if (stopped && machineFlights.get(key) === flight) machineFlights.delete(key);
               flight.closing = undefined;
               return Deferred.succeed(closing, undefined);
             });
@@ -404,16 +438,6 @@ export const makeWorkerSandbox = ({
               yield* source.abandon(name);
             }).pipe(Effect.ensuring(open));
           });
-        // An embedder's provider keeps its machines and gives none back: each try brings up its
-        // own, as it always has.
-        if (!source.givesBack)
-          return {
-            name,
-            givesBack: false,
-            prepare: Effect.map(bringUp, (brought) =>
-              brought.startedHere ? { abandon: giveBack() } : {},
-            ),
-          };
         // One bring-up of a name at a time (`machineFlights`): a try of the same request while
         // one is under way (a reconnect, a tool call tried again) joins it rather than starting,
         // waiting and giving back on its own. The bring-up outlives any one try, and is stopped,
@@ -421,12 +445,18 @@ export const makeWorkerSandbox = ({
         const prepare = Effect.gen(function* () {
           // One being given back takes no one: waited out, then joined if it was kept, or begun
           // afresh once it is gone.
-          const { flight } = yield* holdFlight(name, bringUp);
+          // One under another sign-in is never joined, nor raced: its machine may be the same
+          // disk there, and this sign-in neither reuses nor stops another's.
+          if (otherFlight(identity, name))
+            return yield* fail(
+              `The machine ${name} for this request is being brought up under another sign-in to ${source.label}, so this one leaves it alone. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
+            );
+          const { flight } = yield* holdFlight(name, identity, bringUp);
           if (flight === undefined) return {};
           const brought = yield* Fiber.join(flight.fiber);
           return brought.startedHere ? { abandon: giveBack(flight) } : {};
         });
-        return { name, givesBack: source.givesBack, prepare };
+        return { name, givesBack: true, prepare };
       });
     /**
      * The plan for a worker `spawn_worker` places by `machine` on one a hosted server started: it
@@ -443,7 +473,12 @@ export const makeWorkerSandbox = ({
                 each.onDemand === "worker" &&
                 (each.name === named || each.id === named),
             );
-      return relayed === undefined ? undefined : { givesBack: true, prepare: fence(relayed.name) };
+      return relayed === undefined
+        ? undefined
+        : {
+            givesBack: true,
+            prepare: fence(relayed.name, workerMachineIdentity(relayed.via!, relayed.viaAccount)),
+          };
     };
     return Object.assign(workerSandbox, { fence, byName });
   });

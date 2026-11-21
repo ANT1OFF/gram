@@ -66,20 +66,34 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
     startSession: (threadId) => run(client["thread.startSession"]({ threadId })),
     stopTask: (threadId, taskId) => run(client["thread.stopTask"]({ threadId, taskId })),
     // Behind a fronting proxy the server takes answers only over HTTP, and says so the first time.
-    respond: async (threadId, requestId, answer) => {
-      if (answers.overHttp) return postAnswer(threadId, requestId, answer);
+    respond: async (threadId, requestId, answer, shown) => {
+      if (answers.overHttp) return postAnswer(threadId, requestId, answer, shown);
       try {
-        return await run(client["thread.respond"]({ threadId, requestId, answer }));
+        return await run(
+          client["thread.respond"]({
+            threadId,
+            requestId,
+            answer,
+            ...(shown === undefined ? {} : { shown }),
+          }),
+        );
       } catch (error) {
         if (!isAnswerOverHttp(error)) throw error;
         answers.overHttp = true;
-        return postAnswer(threadId, requestId, answer);
+        return postAnswer(threadId, requestId, answer, shown);
       }
     },
     respondMany: async (many) => {
       if (answers.overHttp) return postAnswers(many);
       try {
-        return await run(client["thread.respondMany"]({ answers: [...many] }));
+        return await run(
+          client["thread.respondMany"]({
+            answers: many.map(({ shown, ...each }) => ({
+              ...each,
+              ...(shown === undefined ? {} : { shown }),
+            })),
+          }),
+        );
       } catch (error) {
         if (!isAnswerOverHttp(error)) throw error;
         answers.overHttp = true;

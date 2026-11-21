@@ -1,12 +1,8 @@
 import {
   currentBaseOf,
   AppToolError,
-  BranchName,
   isLocalHost,
   MERGE_AFTER_MAX,
-  MERGE_FREEZE_ALLOW_MAX,
-  MERGE_FREEZE_MAX_MINUTES,
-  MERGE_FREEZE_REASON_MAX,
   mergeFreezeText,
   mergeReviewPolicyOf,
   reviewBotsOf,
@@ -61,7 +57,9 @@ import {
   soloGateCantPass,
 } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
-import { parseRunRef, RunMonitor } from "../git/run-monitor.ts";
+import { makeMergeFreezeTool } from "./merge-freeze-tool.ts";
+import { makeRunMonitorTool } from "./run-monitor-tool.ts";
+import { refuseOutOfReach, repoOutOfReach } from "../git/repo-reach.ts";
 import {
   withOwnedBranch,
   endedPrText,
@@ -190,7 +188,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
     const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
     // Absent in layers without orchestration, where no outward call is ever delegated.
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
-    const runMonitor = Option.getOrUndefined(yield* Effect.serviceOption(RunMonitor));
     const mergeWhenReady = Option.getOrUndefined(yield* Effect.serviceOption(MergeWhenReady));
     const freezes = yield* MergeFreezes;
     /**
@@ -199,11 +196,12 @@ export const PrAppToolsLive = Layer.effectDiscard(
      */
     const refuseWhileFrozen = (
       tool: string,
+      thread: Thread,
       repo: string,
       base: string | undefined,
       number: number,
     ) =>
-      freezes.holding(repo, base, number).pipe(
+      freezes.holding(repo, base, number, thread.workspaceId).pipe(
         Effect.flatMap((frozen) =>
           frozen === undefined
             ? Effect.void
@@ -284,12 +282,11 @@ export const PrAppToolsLive = Layer.effectDiscard(
             message: "No pull request found for this branch; pass repo and number.",
           });
         }
-        if (!REPO.test(repo) || number <= 0) {
-          return yield* new AppToolError({
-            tool,
-            message: `invalid pull request ${repo}#${number}`,
-          });
-        }
+        const refusal =
+          !REPO.test(repo) || number <= 0
+            ? `invalid pull request ${repo}#${number}`
+            : yield* repoOutOfReach(store, thread, repo).pipe(Effect.provideService(Proc, proc));
+        if (refusal !== undefined) return yield* new AppToolError({ tool, message: refusal });
         if (input.add === true && thread.boundPr !== undefined) {
           const added = yield* applyPrEdit(runtimes.updateThread, threadId, (t) =>
             // Without a main PR by the time this runs, there is nothing to follow it beside.
@@ -603,7 +600,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
               ),
           );
           if (enabled) {
-            yield* refuseWhileFrozen(tool, repo, seen?.baseRef, target);
+            yield* refuseWhileFrozen(tool, thread, repo, seen?.baseRef, target);
             yield* requireGitHubAutoPolicy(thread, repo);
           }
           return {
@@ -671,9 +668,9 @@ export const PrAppToolsLive = Layer.effectDiscard(
               // badge's may be from before a retarget.
               if ((yield* freezes.active(repo, undefined)) !== undefined) {
                 const fresh = yield* view("baseRefName");
-                yield* refuseWhileFrozen(tool, repo, fresh === "" ? undefined : fresh, number);
+                yield* refuseWhileFrozen(tool, latest, repo, fresh || undefined, number);
               } else {
-                yield* refuseWhileFrozen(tool, repo, base, number);
+                yield* refuseWhileFrozen(tool, latest, repo, base, number);
               }
             }
             if (call.carded !== false) return;
@@ -755,46 +752,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         }).pipe(Effect.mapError(failed("set_auto_merge"))),
     });
 
-    const runMonitorTool = defineAppTool({
-      descriptor: {
-        name: "run_monitor",
-        class: "self",
-        description:
-          "Watch a GitHub Actions run, such as a release build or a deploy, and end your turn: when it completes, Gram sends one message here with its conclusion, failed jobs and link. Name it by `run` (id or page URL) or by `workflow` (file name or name; `branch` narrows it) for its latest run; `repo` defaults to the thread's PR's, else origin's. A completed run is answered at once. It survives a restart. enabled: false stops watching `run`, or every run. Use it instead of `gh run watch`, which holds your turn and dies with it; for a PR's own checks, use pr_review_monitor.",
-      },
-      input: Schema.Struct({
-        run: Schema.optionalKey(Schema.String),
-        workflow: Schema.optionalKey(Schema.String),
-        branch: Schema.optionalKey(Schema.String),
-        repo: Schema.optionalKey(Schema.String),
-        enabled: Schema.optionalKey(Schema.Boolean),
-      }),
-      audience: OWN_PR_AUDIENCE,
-      handle: (threadId, { enabled = true, ...input }) =>
-        Effect.gen(function* () {
-          if (runMonitor === undefined) {
-            return yield* new AppToolError({
-              tool: "run_monitor",
-              message: "Run monitoring isn't available here.",
-            });
-          }
-          if (!enabled) {
-            const ref = input.run === undefined ? undefined : parseRunRef(input.run);
-            // Only a call that names no run stops them all; a typo mustn't.
-            if (input.run !== undefined && ref === undefined) {
-              return yield* new AppToolError({
-                tool: "run_monitor",
-                message: `"${input.run}" is neither a run id nor a run's URL.`,
-              });
-            }
-            return { stopped: yield* runMonitor.unwatch(threadId, ref?.runId) };
-          }
-          const result = yield* runMonitor.watch(threadId, input);
-          return result.watch === undefined
-            ? { watching: false, completed: result.completed }
-            : { watching: true, run: result.watch };
-        }),
-    });
+    const runMonitorTool = yield* makeRunMonitorTool;
 
     /** Whether a launch of `pr` by a thread other than `threadId` is outstanding (a pending fence). */
     const reservedElsewhere = (
@@ -986,6 +944,10 @@ export const PrAppToolsLive = Layer.effectDiscard(
               message: `"${input.pr}" isn't a pull request; write owner/repo#N or its URL.`,
             });
           }
+          const repos = [named?.repo, ...after.map((entry) => entry.ref?.repo)];
+          yield* refuseOutOfReach(MERGE, store, thread.id, { repos }).pipe(
+            Effect.provideService(Proc, proc),
+          );
           const branch =
             input.pr === undefined && thread.boundPr === undefined
               ? yield* currentPr(thread)
@@ -1563,62 +1525,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         }).pipe(Effect.mapError(failed(LOCAL_CHECK))),
     });
 
-    const mergeFreezeTool = defineAppTool({
-      descriptor: {
-        name: "merge_freeze",
-        class: "self",
-        description: `Freeze Gram's merges onto a branch of a workspace \`repo\` (default: your PR's; \`branch\`: its default) for a \`reason\`, up to ${MERGE_FREEZE_MAX_MINUTES} \`minutes\`; call again to renew, 4 h at most. merge_when_ready waits and set_auto_merge refuses, except PRs in \`allow\`; GitHub auto-merge on Gram's PRs is off meanwhile, then restored on the head it stood on (a PR pushed meanwhile stays off; its thread is told). A person, a merge queue or other PRs' auto-merge can still merge. \`lift: true\` ends it (its thread or orchestrator). Wait with schedule_wake's freezeLifted.`,
-      },
-      audience: ["orchestrator", "worker"],
-      input: Schema.Struct({
-        repo: Schema.optionalKey(Schema.String),
-        branch: Schema.optionalKey(BranchName),
-        reason: Schema.optionalKey(
-          Schema.NonEmptyString.check(Schema.isMaxLength(MERGE_FREEZE_REASON_MAX)),
-        ),
-        minutes: Schema.optionalKey(
-          Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MERGE_FREEZE_MAX_MINUTES })),
-        ),
-        allow: Schema.optionalKey(
-          Schema.Array(Schema.Int).check(Schema.isMaxLength(MERGE_FREEZE_ALLOW_MAX)),
-        ),
-        lift: Schema.optionalKey(Schema.Boolean),
-      }),
-      handle: (caller, input) =>
-        Effect.gen(function* () {
-          const tool = "merge_freeze";
-          const thread = yield* store.getThread(caller).pipe(Effect.mapError(failed(tool)));
-          const repo = input.repo ?? thread.boundPr?.repo;
-          if (repo === undefined || !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-            return yield* new AppToolError({ tool, message: "Name the `repo` as owner/repo." });
-          }
-          if (input.lift === true) {
-            const lifted = yield* freezes.lift(thread, { repo, branch: input.branch });
-            return { lifted: true, repo: lifted.repo, branch: lifted.branch };
-          }
-          if (input.reason === undefined) {
-            return yield* new AppToolError({ tool, message: "Say why in `reason`." });
-          }
-          const { freeze: frozen, notDisarmed } = yield* freezes.freeze(thread, {
-            repo,
-            branch: input.branch,
-            reason: input.reason,
-            minutes: input.minutes,
-            allow: input.allow,
-          });
-          return {
-            frozen: true,
-            repo: frozen.repo,
-            branch: frozen.branch,
-            until: new Date(frozen.until).toISOString(),
-            ...(frozen.allow === undefined ? {} : { allow: frozen.allow }),
-            ...(frozen.disarmed === undefined
-              ? {}
-              : { autoMergeOff: frozen.disarmed.map((pr) => pr.number) }),
-            ...(notDisarmed.length === 0 ? {} : { autoMergeStillArmed: notDisarmed }),
-          };
-        }),
-    });
+    const mergeFreezeTool = yield* makeMergeFreezeTool;
 
     yield* registry.register([
       mergeFreezeTool,

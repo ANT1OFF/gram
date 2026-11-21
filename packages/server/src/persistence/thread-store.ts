@@ -74,7 +74,6 @@ import {
 import { projectRoot, projectRootKey } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
@@ -83,7 +82,17 @@ import { createHash, randomUUID } from "node:crypto";
 import { SqlClient, SqlError } from "../platform/unstable.ts";
 import { MigrationsLayer } from "./migrations.ts";
 import { noteForeignCheckouts } from "../host/foreign-paths.ts";
+import { pruneHistory } from "./history-prune.ts";
+import { backfillProjectOrigins, originOfRow, originToRecord } from "./project-origins.ts";
 import { notePrivacy, noteReaders } from "../embedding/readable-by.ts";
+import { unlinkOrchestrationIn } from "./orchestration-links.ts";
+import {
+  type ClosedHolder,
+  holderMachinesIn,
+  notePrivateThreads,
+  rememberHolderIn,
+  rememberPrivateIn,
+} from "./private-readers.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
@@ -343,41 +352,6 @@ export const findUserMessages = (
     return query.from === "newest" ? found.toReversed() : found;
   });
 
-/**
- * Prunes the append-only history tables to what they keep (`ORCHESTRATION_EVENTS_KEPT_MS` and the
- * rest), as of `now`. Run by the store's start.
- */
-export const pruneHistory = (sql: SqlClient.SqlClient, now: number) =>
-  sql
-    .withTransaction(
-      Effect.gen(function* () {
-        yield* sql`DELETE FROM orchestration_events
-          WHERE at < ${now - ORCHESTRATION_EVENTS_KEPT_MS}
-            AND NOT (kind = 'spawn' AND json_valid(data)
-              AND (json_extract(data, '$.threadId') IN (SELECT id FROM threads)
-                OR json_extract(data, '$.threadId') IN (SELECT thread_id FROM closed_threads)))`;
-        yield* sql`DELETE FROM settings_audit
-          WHERE at < ${now - SETTINGS_AUDIT_KEPT_MS}
-            AND seq NOT IN (SELECT seq FROM settings_audit ORDER BY seq DESC
-              LIMIT ${SETTINGS_AUDIT_KEPT_ROWS})
-            AND (request_id IS NULL OR request_id NOT IN (SELECT id FROM requests))`;
-        yield* sql`DELETE FROM actor_events
-          WHERE at < ${now - ACTOR_EVENTS_KEPT_MS}
-            AND seq NOT IN (SELECT seq FROM actor_events ORDER BY seq DESC
-              LIMIT ${ACTOR_EVENTS_KEPT_ROWS})`;
-        yield* sql`DELETE FROM helper_usage WHERE day < ${utcDayOf(now - HELPER_USAGE_KEPT_MS)}`;
-        yield* sql`DELETE FROM helper_events WHERE day < ${utcDayOf(now - HELPER_EVENTS_KEPT_MS)}`;
-      }),
-    )
-    .pipe(
-      // History it couldn't prune now waits for the next start; nothing depends on it going.
-      Effect.catchCause((cause) =>
-        Effect.logWarning("couldn't prune the history tables").pipe(
-          Effect.annotateLogs({ cause: Cause.pretty(cause) }),
-        ),
-      ),
-    );
-
 /** One thing a signed-in person did (`actor_events`). */
 export interface ActorEventEntry {
   readonly at: number;
@@ -407,31 +381,6 @@ export interface WaitResolution {
 
 /** How long a resolved Waiting on you item is kept, for the tray's Resolved line. */
 const RESOLVED_WAITS_KEPT_MS = 30 * DAY_MS;
-
-// What the start's sweep keeps of the append-only history tables (`pruneHistory`). Nothing shows
-// these past their windows; each rule keeps whatever something still reads.
-/**
- * `orchestration_events`: 90 days. A worker's `spawn` event stays while the worker does, open or
- * closed and reopenable: a `clientRequestId` retry reads it to tell a finished spawn from one a
- * crash cut short.
- */
-export const ORCHESTRATION_EVENTS_KEPT_MS = 90 * DAY_MS;
-/**
- * `settings_audit`: a year, and the newest 1,000 whatever their age; an entry whose approval
- * request is still open stays too.
- */
-export const SETTINGS_AUDIT_KEPT_MS = 365 * DAY_MS;
-export const SETTINGS_AUDIT_KEPT_ROWS = 1_000;
-/** `actor_events`: a year, and the newest 10,000 whatever their age. */
-export const ACTOR_EVENTS_KEPT_MS = 365 * DAY_MS;
-export const ACTOR_EVENTS_KEPT_ROWS = 10_000;
-/** `helper_usage`: 400 UTC days of daily totals, of which the helper reads today's. */
-export const HELPER_USAGE_KEPT_MS = 400 * DAY_MS;
-/** `helper_events`: 30 UTC days of daily counts, of which the helper reads the last 7. */
-export const HELPER_EVENTS_KEPT_MS = 30 * DAY_MS;
-
-/** The UTC day `at` falls on, as the helper tables key their rows. */
-const utcDayOf = (at: number) => new Date(at).toISOString().slice(0, 10);
 
 /** A thread's plan and the agent's latest todo list, as `thread_plans` keeps them. */
 export interface ThreadPlanRecord {
@@ -501,6 +450,7 @@ export interface ThreadStoreShape {
   ): Effect.Effect<UsageOverview, InvalidState>;
   ensureProject(input: { root: string; name: string; repoRoot?: string }): Effect.Effect<Project>;
   /** `ensureProject`, saying whether this call inserted the row: one transaction decides both. */
+  /** Records the identity of the folder's `origin` as it is now (`Project.originIdentity`). */
   registerProject(input: {
     root: string;
     name: string;
@@ -646,6 +596,8 @@ export interface ThreadStoreShape {
     workers?: ReadonlyArray<ClosedWorker>,
   ): Effect.Effect<void>;
   forgetClosed(threadId: ThreadId): Effect.Effect<void>;
+  /** Where a workspace's last closed orchestrator ran (`private-readers.ts` `holderMachinesIn`). */
+  closedHolderOf(workspaceId: WorkspaceId): Effect.Effect<ClosedHolder>;
   /**
    * Takes the newest closed thread that reads off the list, with `closedWorkers`, in one
    * transaction, so two reopens at once take two entries, never the same one twice.
@@ -1335,26 +1287,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const sql = yield* SqlClient.SqlClient;
       const reads = withReadWorker(yield* captureReadWorker);
       const unreadable = makeUnreadableLog();
-      // Whose each thread is, open or closed, and where it works, noted before anything asks
-      // (`embedding/readable-by.ts`): a thread no read has touched yet since the server started
-      // is still only its reader's, and so are its folders.
-      for (const row of yield* sql<{ id: string; data: string }>`
-        SELECT id, data FROM threads WHERE json_extract(data, '$.readableBy') IS NOT NULL
-        UNION ALL
-        SELECT thread_id AS id, data FROM closed_threads
-          WHERE json_extract(data, '$.readableBy') IS NOT NULL`.pipe(Effect.orDie)) {
-        const stored = JSON.parse(row.data) as Partial<Thread>;
-        if (typeof stored.readableBy === "string") {
-          const noted = { ...stored, id: row.id as ThreadId, readableBy: stored.readableBy };
-          notePrivacy(noted);
-          noteReaders({
-            ...noted,
-            readers: Array.isArray(stored.readers)
-              ? stored.readers.filter((each): each is string => typeof each === "string")
-              : undefined,
-          });
-        }
-      }
+      yield* notePrivateThreads(sql);
+      yield* run(backfillProjectOrigins(sql));
       const receiptScope = yield* Effect.scope;
       // The data methods below use one statement or one top-level transaction; nothing nests.
       // Message receipts own separate reservation/outcome transactions around the runtime action.
@@ -1485,6 +1419,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }
         });
 
+      const rememberPrivate = (table: "threads" | "closed_threads", ids: ReadonlyArray<string>) =>
+        rememberPrivateIn(sql, table, ids);
+
       const keepClosed = (
         id: string,
         closedAt: number,
@@ -1500,6 +1437,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           const evicted = yield* sql<{ thread_id: string }>`SELECT thread_id FROM closed_threads
             ORDER BY closed_at DESC, rowid DESC LIMIT -1 OFFSET ${CLOSED_THREADS_LIMIT}`;
           for (const { thread_id: evictedId } of evicted) {
+            yield* rememberPrivate("closed_threads", [evictedId]);
             yield* sql`DELETE FROM closed_threads WHERE thread_id = ${evictedId}`;
             yield* purgeHistory(evictedId);
           }
@@ -1664,6 +1602,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         last_opened_at: number | null;
         local_check?: string | null;
         folder_trust?: string | null;
+        origin_identity?: string | null;
       }
       const toProject = (r: ProjectRow): Project => {
         // A recipe with a key this build doesn't know is unreadable, never a check without it: the
@@ -1677,6 +1616,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           root: r.root,
           name: r.name,
           ...(r.repo_root === null ? {} : { repoRoot: r.repo_root }),
+          ...originOfRow(r.origin_identity),
           ...(decoded?.ok ? { localCheck: decoded.value } : {}),
           localCheckRevision: createHash("sha256")
             .update(JSON.stringify([r.local_check ?? null]))
@@ -1706,8 +1646,21 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }),
         );
 
-      /** `registerProject` inside a transaction of the caller's. */
-      const registerIn = (input: Parameters<ThreadStoreShape["registerProject"]>[0]) =>
+      type Registering = Parameters<ThreadStoreShape["registerProject"]>[0];
+      /** The origin a project being added records, read before its transaction opens. */
+      const originFor = (input: Registering) =>
+        run(projectAt(projectRoot(input.root))).pipe(
+          Effect.flatMap((row) =>
+            run(originToRecord(sql, row, projectRoot(input.repoRoot ?? input.root))),
+          ),
+        );
+
+      /**
+       * `registerProject` inside a transaction of the caller's, with the origin `originFor` read.
+       * A known project keeps the origin it was added with, or its lack of one: a later read is of
+       * a git config an agent may have rewritten since.
+       */
+      const registerIn = (input: Registering, originIdentity: string | null) =>
         Effect.gen(function* () {
           const root = projectRoot(input.root);
           const { name } = input;
@@ -1715,8 +1668,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           const row = yield* projectAt(root);
           if (row !== undefined) return { project: toProject(row), created: false };
           const id = Schema.decodeSync(ProjectId)(randomUUID());
-          yield* sql`INSERT INTO projects (id, root, name, repo_root, bookmarked)
-              VALUES (${id}, ${root}, ${name}, ${repoRoot ?? null}, 0)`;
+          yield* sql`INSERT INTO projects (id, root, name, repo_root, bookmarked, origin_identity)
+              VALUES (${id}, ${root}, ${name}, ${repoRoot ?? null}, 0, ${originIdentity})`;
           const project = toProject({
             id,
             root,
@@ -1724,11 +1677,13 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             repo_root: repoRoot ?? null,
             bookmarked: 0,
             last_opened_at: null,
+            origin_identity: originIdentity,
           });
           return { project, created: true };
         });
 
-      const registerProject: ThreadStoreShape["registerProject"] = (input) => tx(registerIn(input));
+      const registerProject: ThreadStoreShape["registerProject"] = (input) =>
+        originFor(input).pipe(Effect.flatMap((origin) => tx(registerIn(input, origin))));
 
       const ensureProject: ThreadStoreShape["ensureProject"] = (input) =>
         registerProject(input).pipe(Effect.map(({ project }) => project));
@@ -2147,29 +2102,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             : { ...rest, completedAt: completion.at, completedReason: completion.reason };
         }).pipe(Effect.map(({ thread }) => thread));
 
-      /**
-       * What a thread leaves behind in orchestration when it goes: the slot it held (column and
-       * JSON), its workers' link to it, the reports it filed unless `keepReports` (a close, whose
-       * reopen makes them its own again), and the link from a dream that ran as it. The dream's row
-       * stays, since its output is still there to review or discard. Runs inside the caller's
-       * transaction.
-       */
-      // SQLite's JSON functions raise on text that isn't JSON, so each is behind `json_valid`, and a
-      // row that doesn't parse is left as it is rather than failing the statement for every row.
       const unlinkOrchestration = (id: ThreadId, keepReports = false) =>
-        Effect.gen(function* () {
-          yield* sql`UPDATE workspaces SET orchestrator_thread_id = NULL,
-              data = CASE WHEN json_valid(data)
-                THEN json_remove(data, '$.workspace.orchestratorThreadId') ELSE data END
-            WHERE orchestrator_thread_id = ${id}`;
-          yield* sql`UPDATE threads SET data = json_remove(data, '$.spawnedBy')
-            WHERE CASE WHEN json_valid(data)
-              THEN json_extract(data, '$.spawnedBy.threadId') = ${id} ELSE 0 END`;
-          if (!keepReports) yield* sql`DELETE FROM worker_reports WHERE thread_id = ${id}`;
-          yield* sql`UPDATE dreams SET thread_id = NULL,
-              data = CASE WHEN json_valid(data) THEN json_remove(data, '$.threadId') ELSE data END
-            WHERE thread_id = ${id}`;
-        });
+        unlinkOrchestrationIn(sql, id, keepReports);
 
       const readAutomaticDreamState = (id: WorkspaceId) =>
         sql<{ data: string }>`SELECT data FROM automatic_dream WHERE workspace_id = ${id}`.pipe(
@@ -2810,6 +2744,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ]) {
                 yield* sql`DELETE FROM ${sql(table)} WHERE thread_id = ${id}`;
               }
+              yield* rememberPrivate("threads", [id]);
+              yield* rememberHolderIn(sql, id);
               yield* sql`DELETE FROM threads WHERE id = ${id}`;
               yield* sql`DELETE FROM message_receipts WHERE thread_id = ${id}
                 AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`;
@@ -2856,6 +2792,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ]) {
                 yield* sql`DELETE FROM ${sql(table)} WHERE thread_id = ${id}`;
               }
+              yield* rememberHolderIn(sql, id);
               yield* sql`DELETE FROM threads WHERE id = ${id}`;
               yield* unlinkOrchestration(id, true);
             }),
@@ -2956,9 +2893,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               };
             }),
           ),
+        closedHolderOf: (workspaceId) => run(holderMachinesIn(sql, workspaceId)),
         forgetClosed: (threadId) =>
           tx(
             Effect.gen(function* () {
+              yield* rememberPrivate("closed_threads", [threadId]);
               yield* sql`DELETE FROM closed_threads WHERE thread_id = ${threadId}`;
               yield* sql`DELETE FROM message_receipts WHERE thread_id = ${threadId}
                 AND thread_id NOT IN (SELECT id FROM threads)`;
@@ -4351,50 +4290,59 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             }),
           ),
         commitWorkspaceAudited: (change) =>
-          tx(
-            Effect.gen(function* () {
-              if (change.holds !== undefined && !change.holds(yield* readSettings)) {
-                return yield* Effect.fail(WORKSPACE_MOVED);
-              }
-              const current = yield* readWorkspace(change.id).pipe(
-                Effect.catchTag("NotFound", () => Effect.succeed(undefined)),
-              );
-              if (!change.unchanged(current)) return yield* Effect.fail(WORKSPACE_MOVED);
-              const projects: Array<Project> = [];
-              for (const repo of change.register) {
-                projects.push((yield* registerIn({ ...repo, repoRoot: repo.root })).project);
-              }
-              const next = change.next(current, projects);
-              if (next.workspace.id !== change.id) {
-                return yield* Effect.die(new Error(`workspace ${change.id} cannot change its id`));
-              }
-              // Every project it names still exists, read in this transaction: one forgotten
-              // while the card waited fails the whole change.
-              for (const id of next.workspace.projectIds) {
-                const [row] = yield* sql<{
-                  root: string;
-                }>`SELECT root FROM projects WHERE id = ${id}`;
-                const checked = change.roots?.[id];
-                if (row === undefined || (checked !== undefined && row.root !== checked)) {
-                  return yield* new NotFound({
-                    entity: "project",
-                    id,
-                    message: "A project on the card no longer exists in Gram.",
-                  });
-                }
-              }
-              yield* writeWorkspace(next);
-              const auditSeq = yield* insertSettingsAudit({
-                ...change.audit(next),
-                workspaceId: change.id,
-              });
-              return { state: next, auditSeq, projects };
-            }),
+          Effect.forEach(change.register, (repo) =>
+            originFor({ ...repo, repoRoot: repo.root }),
           ).pipe(
-            // A failure rolls the transaction back, the projects it registered included.
-            Effect.catchIf(
-              (e): e is typeof WORKSPACE_MOVED => e === WORKSPACE_MOVED,
-              () => Effect.succeed(undefined),
+            Effect.flatMap((origins) =>
+              tx(
+                Effect.gen(function* () {
+                  if (change.holds !== undefined && !change.holds(yield* readSettings)) {
+                    return yield* Effect.fail(WORKSPACE_MOVED);
+                  }
+                  const current = yield* readWorkspace(change.id).pipe(
+                    Effect.catchTag("NotFound", () => Effect.succeed(undefined)),
+                  );
+                  if (!change.unchanged(current)) return yield* Effect.fail(WORKSPACE_MOVED);
+                  const projects: Array<Project> = [];
+                  for (const [i, repo] of change.register.entries()) {
+                    const registering = { ...repo, repoRoot: repo.root };
+                    projects.push((yield* registerIn(registering, origins[i] ?? null)).project);
+                  }
+                  const next = change.next(current, projects);
+                  if (next.workspace.id !== change.id) {
+                    return yield* Effect.die(
+                      new Error(`workspace ${change.id} cannot change its id`),
+                    );
+                  }
+                  // Every project it names still exists, read in this transaction: one forgotten
+                  // while the card waited fails the whole change.
+                  for (const id of next.workspace.projectIds) {
+                    const [row] = yield* sql<{
+                      root: string;
+                    }>`SELECT root FROM projects WHERE id = ${id}`;
+                    const checked = change.roots?.[id];
+                    if (row === undefined || (checked !== undefined && row.root !== checked)) {
+                      return yield* new NotFound({
+                        entity: "project",
+                        id,
+                        message: "A project on the card no longer exists in Gram.",
+                      });
+                    }
+                  }
+                  yield* writeWorkspace(next);
+                  const auditSeq = yield* insertSettingsAudit({
+                    ...change.audit(next),
+                    workspaceId: change.id,
+                  });
+                  return { state: next, auditSeq, projects };
+                }),
+              ).pipe(
+                // A failure rolls the transaction back, the projects it registered included.
+                Effect.catchIf(
+                  (e): e is typeof WORKSPACE_MOVED => e === WORKSPACE_MOVED,
+                  () => Effect.succeed(undefined),
+                ),
+              ),
             ),
           ),
         listSettingsAudit: (limit) =>

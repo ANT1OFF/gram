@@ -22,6 +22,7 @@ const BROWSER_SERVERS: Record<AgentKind, ReadonlySet<string>> = {
   codex: new Set(["cua_repl", "node_repl", "computer-use"]),
   opencode: new Set(),
   grok: new Set(),
+  antigravity: new Set(),
 };
 
 /**

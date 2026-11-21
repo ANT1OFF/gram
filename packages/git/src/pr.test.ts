@@ -19,7 +19,6 @@ import {
   conversation,
   GetPrStatus,
   isTip,
-  makePrMemo,
   parsePrChecks,
   makePrResolver,
   parseOwnerRepo,
@@ -31,10 +30,10 @@ import {
   reshapePrNode,
   rollupStatus,
   withRequired,
-  THREADS_MAX_AGE_MS,
   type PrInputs,
   type PrLookup,
 } from "./pr.ts";
+import { makePrMemo, THREADS_MAX_AGE_MS } from "./pr-memo.ts";
 import { Proc } from "./proc.ts";
 
 type Json = Record<string, unknown>;

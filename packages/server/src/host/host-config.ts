@@ -69,6 +69,29 @@ export const hostRepos = (env: NodeJS.ProcessEnv = process.env, home = homedir()
   return set !== undefined && set !== "" ? set : join(hostHome(env, home), "repos");
 };
 
+const DIAL_TOKEN_FORM = /^[A-Za-z0-9_-]{32,128}$/;
+
+/**
+ * The token each dial carries for whoever launched the host (`DialOptions.dialToken`): the
+ * contents of the file `GRAM_HOST_DIAL_TOKEN_FILE` names, read afresh at every dial, so a launcher
+ * may rotate it in place. Only a token of 32 to 128 base64url characters is sent. Undefined when
+ * no file is named, and for a dial while it can't be read or holds anything else.
+ */
+export const hostDialToken = (
+  env: NodeJS.ProcessEnv = process.env,
+): (() => string | undefined) | undefined => {
+  const file = env["GRAM_HOST_DIAL_TOKEN_FILE"];
+  if (file === undefined || file === "") return undefined;
+  return () => {
+    try {
+      const token = readFileSync(file, "utf8").trim();
+      return DIAL_TOKEN_FORM.test(token) ? token : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+};
+
 const CONFIG = "host.json";
 const KEY = "host-key.pem";
 /** A token from `claude setup-token` the user sent from the main machine; never anything else. */

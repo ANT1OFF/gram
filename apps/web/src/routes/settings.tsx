@@ -1,4 +1,11 @@
-import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useLocation,
+  useNavigate,
+  useRouter,
+} from "@tanstack/react-router";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -93,6 +100,7 @@ function SettingsLayout() {
   const beforeSetup = useBeforeSetup();
   const phone = usePhone();
   const navigate = useNavigate();
+  const router = useRouter();
   // A page the embedding app left out (a link from a menu, or an old address) opens the first.
   // Only while the window is still in Settings: on a step out, the location moves before this
   // layout unmounts, and sending it back here would undo Back and every link out of Settings.
@@ -113,8 +121,14 @@ function SettingsLayout() {
     const page = pages.find((each) => each.path === path);
     if (page === undefined) return;
     const words = query.trim();
-    setQuery("");
-    void navigate({ to: page.path, search: { highlight: words } });
+    // Once the page's code is in: the results went at once and the page came a few frames later.
+    void router
+      .preloadRoute({ to: page.path })
+      .catch(() => undefined)
+      .then(() => {
+        setQuery("");
+        void navigate({ to: page.path, search: { highlight: words } });
+      });
   };
 
   return (

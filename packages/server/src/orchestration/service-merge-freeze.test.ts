@@ -79,7 +79,8 @@ const armedWorkspace = (world: World) =>
     });
     world.defaultBranches.set("acme/app", "main");
     world.originRepos.set(world.repo, "acme/app");
-    // The release worker's own PR, with GitHub's auto-merge armed on it.
+    // The release worker's own PR, from its branch, with GitHub's auto-merge armed on it.
+    world.prHeads.set(13, { headRefName: release.thread.checkout.branch! });
     yield* runtimes.updateThread(release.thread.id, (t) => ({
       ...t,
       boundPr: { repo: "acme/app", number: 13, monitor: false },
@@ -293,6 +294,16 @@ describe.skipIf(!hasGit)("merge freezes", () => {
             expect(elsewhere.message).toContain(
               "someone/else isn't the repo of any of your workspace's projects",
             );
+            // Nor once the project's folder names it as its origin: the workspace's repos are the
+            // origins its projects were added with.
+            world.originRepos.set(world.repo, "someone/else");
+            const rewritten = yield* release.session
+              .callTool("merge_freeze", { repo: "someone/else", reason: "x" })
+              .pipe(Effect.flip);
+            expect(rewritten.message).toContain(
+              "someone/else isn't the repo of any of your workspace's projects",
+            );
+            world.originRepos.set(world.repo, "acme/app");
 
             // Frozen for the release PR, #12: Gram's own PR #13 has its auto-merge taken down,
             // #40 is left as it is.
@@ -691,5 +702,37 @@ describe.skipIf(!hasGit)("merge freezes", () => {
           }),
         );
       }),
+  );
+
+  // Binding a PR is no claim to it: a freeze takes GitHub's auto-merge down only from a PR the
+  // ownership rule of the merge tools finds is a Gram worker's own.
+  it.effect("a freeze leaves alone the auto-merge of a PR a thread binds but doesn't own", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const runtimes = yield* ThreadRuntimes;
+          const { release } = yield* armedWorkspace(world);
+          // Somebody's PR from a branch no Gram worker holds, armed by them and bound by the release.
+          world.prHeads.set(14, { headRefName: "someone/feature" });
+          world.autoMerges.set("acme/app#14", { base: "main", method: "squash" });
+          yield* runtimes.updateThread(release.thread.id, (t) => ({
+            ...t,
+            boundPr: { repo: "acme/app", number: 14, monitor: false },
+          }));
+          const set = yield* release.session.callTool("merge_freeze", {
+            repo: "acme/app",
+            reason: "release 1.6 cut",
+          });
+          expect(set).toMatchObject({
+            frozen: true,
+            autoMergeStillArmed: [expect.stringContaining("#14: a thread binds it")],
+          });
+          expect(world.autoMergeCalls).not.toContain("disable acme/app#14");
+          expect(world.autoMerges.has("acme/app#14")).toBe(true);
+        }),
+      );
+    }),
   );
 });

@@ -180,6 +180,33 @@ const startedByBot = (thread: Json, bots: ReadonlyArray<ReviewBot>) => {
 };
 
 /**
+ * The reviews a verdict is read from, oldest first: the badge's window of the latest reviews, and
+ * each reviewer's own latest verdict (`latestOpinionatedReviews`), which no number of newer
+ * comment-only reviews, replies or bot rounds pushes out.
+ */
+const verdictReviews = (node: Json): Array<Json> => {
+  const byId = new Map<string, Json>();
+  for (const review of [
+    ...arr(at(node, ["latestOpinionatedReviews", "nodes"])),
+    ...arr(at(node, ["reviews", "nodes"])),
+  ])
+    byId.set(str(review["id"]) || `${byId.size}`, review);
+  const time = (review: Json) => Date.parse(str(review["submittedAt"])) || 0;
+  return [...byId.values()].toSorted((a, b) => time(a) - time(b));
+};
+
+/**
+ * Whether people's verdicts may be missing from what was read: the window of latest reviews came
+ * back full, and each reviewer's own latest verdict wasn't read whole beside it. Then an older
+ * change request may stand unseen, so the reviews count as unread.
+ */
+export const verdictsCutOff = (node: Json): boolean => {
+  if (arr(at(node, ["reviews", "nodes"])).length < BADGE_REVIEWS_READ) return false;
+  const latest = at(node, ["latestOpinionatedReviews", "nodes"]);
+  return !Array.isArray(latest) || latest.length >= BADGE_VERDICTS_READ;
+};
+
+/**
  * Each person's standing verdict, oldest first: their latest review that approved, requested changes
  * or was dismissed, kept unless dismissed. A comment-only review leaves the verdict before it standing,
  * as GitHub does. App accounts, the configured bots among them, and `author` are not people here;
@@ -187,7 +214,7 @@ const startedByBot = (thread: Json, bots: ReadonlyArray<ReviewBot>) => {
  */
 export const humanReviewsOf = (node: Json, author: string): Array<HumanReview> => {
   const latest = new Map<string, Json>();
-  for (const review of arr(at(node, ["reviews", "nodes"]))) {
+  for (const review of verdictReviews(node)) {
     const who = login(review);
     const state = review["state"];
     if (
@@ -258,6 +285,22 @@ export const personCommentsOf = (
 /** How many of each the badge reads: `comments(last:…)` and `reviews(last:…)`. */
 export const BADGE_COMMENTS_READ = 10;
 export const BADGE_REVIEWS_READ = 20;
+/** How many reviewers' own latest verdicts the badge reads: `latestOpinionatedReviews(first:…)`. */
+export const BADGE_VERDICTS_READ = 50;
+
+const REVIEW_NODE_FIELDS =
+  "id author{login __typename} authorAssociation state submittedAt commit{oid} body";
+/**
+ * Review-bot state: summary reviews and progress comments, and bot-started threads. The reviews and
+ * comments are everyone's, so people's verdicts and the ids of their comments come from the same
+ * connections at no extra cost: scalar fields add nothing to a document's price. Each reviewer's own
+ * latest verdict is one connection more, so a change request no window of later reviews pushes out
+ * still stands.
+ */
+export const REVIEW_GQL_FIELDS =
+  `reviews(last:${BADGE_REVIEWS_READ}){nodes{${REVIEW_NODE_FIELDS}}} ` +
+  `latestOpinionatedReviews(first:${BADGE_VERDICTS_READ}){nodes{${REVIEW_NODE_FIELDS}}} ` +
+  `comments(last:${BADGE_COMMENTS_READ}){nodes{id author{login __typename} createdAt body}}`;
 
 const postedAt = (node: Json): string => str(node["createdAt"]) || str(node["submittedAt"]);
 

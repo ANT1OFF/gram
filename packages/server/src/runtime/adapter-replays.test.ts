@@ -43,7 +43,7 @@ const fixtureNames = (agent: string, extension: string) =>
 
 /** Codex recordings mark our sends: every `turn/start` the recorder sent. */
 const codexSteps = (name: string): Array<Step> => {
-  const mapper = makeCodexMapper({ newMessageId: messageIds() });
+  const mapper = makeCodexMapper({ requestScope: "s", newMessageId: messageIds() });
   const steps: Array<Step> = [];
   for (const { dir, msg } of codexFixture(name).messages) {
     if (dir === "out" && msg["method"] === "turn/start") {
@@ -158,7 +158,7 @@ describe("recorded adapter sessions through the runtime", () => {
       writeFileSync(path, Buffer.from(png, "base64"));
       writeFileSync(other, Buffer.from(png, "base64"));
       writeFileSync(workspace, Buffer.from(png, "base64"));
-      const mapper = makeCodexMapper({ newMessageId: messageIds() });
+      const mapper = makeCodexMapper({ requestScope: "s", newMessageId: messageIds() });
       const notify = (method: string, params: unknown) =>
         mapper.map({ method, params } as Parameters<CodexMapper["map"]>[0]);
       const wrapper = {
@@ -408,7 +408,7 @@ for (const scenario of ["orphan", "late"]) {
     const png =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
     writeFileSync(path, Buffer.from(png, "base64"));
-    const mapper = makeCodexMapper({ newMessageId: messageIds() });
+    const mapper = makeCodexMapper({ requestScope: "s", newMessageId: messageIds() });
     const notify = (method: string, params: unknown) =>
       mapper.map({ method, params } as Parameters<CodexMapper["map"]>[0]);
     const completion = () =>
@@ -670,7 +670,11 @@ it.effect(
     const other = Buffer.concat([png, Buffer.from("invented second image")]);
     writeFileSync(pathA, png);
     writeFileSync(pathB, other);
-    const mapper = makeCodexMapper({ threadId: "provider", newMessageId: messageIds() });
+    const mapper = makeCodexMapper({
+      requestScope: "s",
+      threadId: "provider",
+      newMessageId: messageIds(),
+    });
     const notify = (method: string, params: unknown) =>
       mapper.map({ method, params } as Parameters<CodexMapper["map"]>[0]);
     const image = (turnId: string, id: string, path: string) =>
@@ -820,7 +824,11 @@ for (const kind of ["dynamicToolCall", "mcpToolCall"] as const) {
         ),
       );
       const messageId = MessageId.make("generic-read");
-      const mapper = makeCodexMapper({ newMessageId: () => messageId, threadId: "provider" });
+      const mapper = makeCodexMapper({
+        requestScope: "s",
+        newMessageId: () => messageId,
+        threadId: "provider",
+      });
       const item =
         kind === "dynamicToolCall"
           ? {

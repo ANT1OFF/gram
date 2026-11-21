@@ -320,6 +320,12 @@ export const Project = Schema.Struct({
   name: Schema.String,
   /** `git rev-parse --show-toplevel` of `root`; absent outside a repo. */
   repoRoot: Schema.optionalKey(Schema.String),
+  /**
+   * The identity of the repository's `origin` (as `Checkout.cloneIdentity`) when the project was
+   * added, or when a project added before it was recorded was first loaded. Which repository the
+   * project is goes by it, never by the origin its git config names later. Absent outside a repo.
+   */
+  originIdentity: Schema.optionalKey(Schema.String),
   localCheck: Schema.optionalKey(ProjectLocalCheck),
   /** Opaque identity of the complete stored recipe, including unreadable contents. */
   localCheckRevision: Schema.optionalKey(Schema.String),
@@ -328,8 +334,9 @@ export const Project = Schema.Struct({
   bookmarked: Schema.Boolean,
   /**
    * Whether the user trusts the folder's own agent settings and scripts (`.claude/`, `.mcp.json`,
-   * `.gram/scripts.json`). Asked once, when the folder is added; absent when it never was. An
-   * absent answer for a folder that brings any of them reads as `untrusted`.
+   * `.gram/scripts.json`). Asked once, when the folder is added, or on its row the first time it
+   * brings any; absent when it never was. An absent answer for a folder that brings any of them
+   * reads as `untrusted`.
    */
   folderTrust: Schema.optionalKey(Schema.Literals(["trusted", "untrusted"])),
   /** Epoch ms; absent if never opened (e.g. bookmarked only). Drives the recents list. */
@@ -1332,6 +1339,12 @@ const requestFields = {
   id: RequestId,
   /** The tool call this request gates, when the agent exposes one. */
   toolUseId: Schema.optionalKey(Schema.String),
+  /**
+   * This card's own key, which the server mints each time it puts a card up. An agent can ask
+   * again under the same `id`; an answer that names the `shown` it was given for is taken only by
+   * that card, never by a later one under the id (`thread.respond`).
+   */
+  shown: Schema.optionalKey(Schema.String),
 };
 
 export const ApprovalRequest = Schema.Struct({

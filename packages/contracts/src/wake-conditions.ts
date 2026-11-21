@@ -107,6 +107,14 @@ export const ReleaseVersion = Schema.String.check(
 /** An npm package (`@scope/name`) or a GitHub repo (`owner/repo`), never starting with a dash. */
 export const ReleaseName = Schema.String.check(Schema.isPattern(/^@?[\w.~][\w.~-]*(\/[\w.~-]+)?$/));
 
+/**
+ * A name npm reads as a registry package and nothing else: `name` or `@scope/name`, in npm's own
+ * characters. An unscoped `owner/repo`, a URL or a path would be a git or file spec, which `npm view`
+ * fetches from wherever it names.
+ */
+export const isNpmPackageName = (name: string): boolean =>
+  name.length <= 214 && /^(?:@[a-z0-9~][a-z0-9._~-]*\/)?[a-z0-9~][a-z0-9._~-]*$/.test(name);
+
 /** How old a release must be before it wakes anyone, by default: Gram's own Dependabot cooldown. */
 export const RELEASE_MIN_AGE_DAYS = 7;
 
@@ -339,6 +347,11 @@ export const MergeFreeze = Schema.Struct({
   /** The thread's title when it froze it, for the line that says who. */
   title: Schema.String,
   workspaceId: Schema.optionalKey(WorkspaceId),
+  /**
+   * The person approved holding every workspace's merges onto the branch. Without it a freeze holds
+   * only merges of threads in `workspaceId`, the freezing thread's.
+   */
+  acrossWorkspaces: Schema.optionalKey(Schema.Literal(true)),
   reason: Schema.String.check(Schema.isMaxLength(MERGE_FREEZE_REASON_MAX)),
   /** PR numbers in the repo that may still merge, such as the release PR the freeze is for. */
   allow: Schema.optionalKey(
@@ -375,6 +388,16 @@ export const mergeFreezeText = (freeze: MergeFreeze): string =>
       : ` (except ${freeze.allow.map((n) => `#${n}`).join(", ")})`
   }`;
 
-/** Whether `freeze` holds back a merge of PR `number`: every PR but those it allows. */
-export const mergeFreezeHolds = (freeze: MergeFreeze, number: number | undefined): boolean =>
-  number === undefined || !(freeze.allow ?? []).includes(number);
+/**
+ * Whether `freeze` holds back a merge of PR `number` by a thread of `workspaceId`: every PR but
+ * those it allows, of the freezing thread's workspace unless a person let it hold every workspace.
+ */
+export const mergeFreezeHolds = (
+  freeze: MergeFreeze,
+  number: number | undefined,
+  workspaceId?: string,
+): boolean =>
+  (freeze.acrossWorkspaces === true ||
+    freeze.workspaceId === undefined ||
+    freeze.workspaceId === workspaceId) &&
+  (number === undefined || !(freeze.allow ?? []).includes(number));

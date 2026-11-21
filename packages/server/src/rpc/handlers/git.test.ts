@@ -26,6 +26,7 @@ import { TEST_CONFIG } from "../../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { UNTRUSTED_SCRIPTS } from "./terminal.ts";
+import { ORIGIN_KEY_HEADER } from "../../http/auth.ts";
 
 const localSettingsPath = (root: string) => nodePath.join(root, ".claude", "settings.local.json");
 
@@ -42,7 +43,7 @@ const TestServer = ServerLayer.pipe(
 /** Performs the boot navigation and returns the session cookie. */
 const bootCookie = Effect.gen(function* () {
   const server = yield* HttpServer.HttpServer;
-  const { token } = yield* LaunchToken;
+  const { token, originKey } = yield* LaunchToken;
   const port = serverPort(server);
   const setCookie = yield* Effect.promise(
     () =>
@@ -58,11 +59,11 @@ const bootCookie = Effect.gen(function* () {
         req.end();
       }),
   );
-  return { port, cookie: setCookie.split(";")[0] ?? "" };
+  return { port, cookie: setCookie.split(";")[0] ?? "", originKey };
 });
 
 const makeClient = Effect.gen(function* () {
-  const { port, cookie } = yield* bootCookie;
+  const { port, cookie, originKey } = yield* bootCookie;
   const protocol = yield* Layer.build(
     RpcClient.layerProtocolSocket().pipe(
       Layer.provide(Socket.layerWebSocket(`ws://127.0.0.1:${port}/ws`)),
@@ -72,7 +73,9 @@ const makeClient = Effect.gen(function* () {
             new (globalThis.WebSocket as unknown as new (
               url: string,
               init: { headers: Record<string, string> },
-            ) => globalThis.WebSocket)(url, { headers: { cookie } }),
+            ) => globalThis.WebSocket)(url, {
+              headers: { cookie, [ORIGIN_KEY_HEADER]: originKey },
+            }),
         ),
       ),
       Layer.provide(RpcSerialization.layerJson),

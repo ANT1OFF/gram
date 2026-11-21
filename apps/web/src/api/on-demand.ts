@@ -1,4 +1,5 @@
 import { serverUrl } from "./server-base";
+import { withOriginKey } from "./origin-key";
 
 // A person's own machine, where the server's deployment starts one on demand (the server's
 // `embedding/on-demand.ts`). Each call is its own HTTP request, so the fronting proxy can sign it
@@ -170,23 +171,29 @@ export const fetchOnDemandStatus = async (
   workspace?: string,
 ): Promise<OnDemandStatus | undefined> => {
   const query = workspace === undefined ? "" : `?workspace=${encodeURIComponent(workspace)}`;
-  const response = await fetch(serverUrl(`${ON_DEMAND_STATUS_PATH}${query}`), {
-    credentials: "same-origin",
-    cache: "no-store",
-  });
+  const response = await fetch(
+    serverUrl(`${ON_DEMAND_STATUS_PATH}${query}`),
+    withOriginKey({
+      credentials: "same-origin",
+      cache: "no-store",
+    }),
+  );
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`The machine's status wasn't read (${response.status}).`);
   return parseStatus(await response.json());
 };
 
 const post = async (path: string, body: unknown): Promise<void> => {
-  const response = await fetch(serverUrl(path), {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const response = await fetch(
+    serverUrl(path),
+    withOriginKey({
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
   if (response.ok) return;
   const value = record(await response.json().catch(() => undefined));
   throw new Error(

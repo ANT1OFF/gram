@@ -478,8 +478,8 @@ layer(McpServer, { excludeTestServices: true })("HTTP MCP transport", (it) => {
   it.effect("doesn't accept the launch cookie", () =>
     Effect.gen(function* () {
       const p = yield* port;
-      const { token } = yield* LaunchToken;
-      expect((yield* rawPost(p, { cookie: `${tokenCookieName(p)}=${token}` })).status).toBe(401);
+      const { cookie } = yield* LaunchToken;
+      expect((yield* rawPost(p, { cookie: `${tokenCookieName(p)}=${cookie}` })).status).toBe(401);
     }),
   );
 });

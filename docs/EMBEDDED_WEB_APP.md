@@ -256,11 +256,12 @@ as starting in the default. A workspace with one of its own runs on a machine of
 your host provider starts in it ([EMBEDDING.md](EMBEDDING.md#a-workspaces-own-machine)); what an
 environment installs and may reach is your app's. Without the option the field is not shown. Read once, at mount.
 
-**More agents for the roles.** `roleAgents: ["grok"]` offers Grok Build beside Claude Code and
-Codex where a workspace's orchestrator and workers are picked. The server decides: it admits Grok
-to those roles only when it runs with `GRAM_ROLE_AGENTS=grok`, and refuses a pick otherwise. Grok
-runs in a home of Gram's own wherever it runs, so no allow rule of the person's clears its calls.
-Read once, at mount.
+**More agents for the roles.** `roleAgents: ["grok", "antigravity"]` offers Grok Build and
+Antigravity beside Claude Code and Codex where a workspace's orchestrator and workers are picked;
+list either or both. The server decides: it admits each to those roles only when it runs with it
+in `GRAM_ROLE_AGENTS` (`grok`, `antigravity`, or `grok,antigravity`), and refuses a pick otherwise.
+Both run in a config home of Gram's own wherever they run, so no allow rule of the person's clears
+their calls. Read once, at mount.
 
 **The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
 quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while
@@ -579,6 +580,15 @@ await mountGram({
 Each part applies only while the person hasn't chosen it; their own choice always wins. Pass the
 same `defaults` to `applyGramTheme` on the pages you draw before Gram mounts, so they paint the
 same palette.
+
+### Gram's palette as data
+
+An app that draws its own pages in Gram's colours, and would rather not run Gram's code to learn
+them, reads `packages/themes/palette.json` from the repository at the commit it pins. It holds the default palette and its pair: `defaultPaletteId`, then `light` and `dark`,
+each the preset's `id` and its `colors`, every colour the theme names (`surface-1`, `fg`, `accent`,
+…) derived at standard contrast, as `#rrggbb`. It is plain JSON, so a build or a CI job can fetch
+it for a commit with no checkout or install. The themes package's `palette:data` script writes
+it, and a test fails when it differs from what the theme's sources derive.
 
 ## Pages that look like Gram's
 
