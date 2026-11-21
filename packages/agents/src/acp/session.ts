@@ -18,6 +18,7 @@ import type { AgentSession, OpenSessionOptions } from "../host.ts";
 import { gateLevel } from "../outward.ts";
 import {
   acpFailure,
+  baseMessageOf,
   INITIALIZE_PARAMS,
   messageOf,
   signInProblem,
@@ -236,9 +237,11 @@ export const openAcpSession = (
           emit(current.ended(text(record(result)["stopReason"]), undefined, record(result)));
         })
         .catch((error: unknown) => {
-          const message = messageOf(error);
           emit(
-            current.ended(undefined, signInProblem(spec, message) ? spec.signInMessage : message),
+            current.ended(
+              undefined,
+              signInProblem(spec, baseMessageOf(error)) ? spec.signInMessage : messageOf(error),
+            ),
           );
         });
       turn = running;

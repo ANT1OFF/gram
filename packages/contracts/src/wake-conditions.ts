@@ -347,6 +347,11 @@ export const MergeFreeze = Schema.Struct({
   /** The thread's title when it froze it, for the line that says who. */
   title: Schema.String,
   workspaceId: Schema.optionalKey(WorkspaceId),
+  /**
+   * The person approved holding every workspace's merges onto the branch. Without it a freeze holds
+   * only merges of threads in `workspaceId`, the freezing thread's.
+   */
+  acrossWorkspaces: Schema.optionalKey(Schema.Literal(true)),
   reason: Schema.String.check(Schema.isMaxLength(MERGE_FREEZE_REASON_MAX)),
   /** PR numbers in the repo that may still merge, such as the release PR the freeze is for. */
   allow: Schema.optionalKey(
@@ -383,6 +388,16 @@ export const mergeFreezeText = (freeze: MergeFreeze): string =>
       : ` (except ${freeze.allow.map((n) => `#${n}`).join(", ")})`
   }`;
 
-/** Whether `freeze` holds back a merge of PR `number`: every PR but those it allows. */
-export const mergeFreezeHolds = (freeze: MergeFreeze, number: number | undefined): boolean =>
-  number === undefined || !(freeze.allow ?? []).includes(number);
+/**
+ * Whether `freeze` holds back a merge of PR `number` by a thread of `workspaceId`: every PR but
+ * those it allows, of the freezing thread's workspace unless a person let it hold every workspace.
+ */
+export const mergeFreezeHolds = (
+  freeze: MergeFreeze,
+  number: number | undefined,
+  workspaceId?: string,
+): boolean =>
+  (freeze.acrossWorkspaces === true ||
+    freeze.workspaceId === undefined ||
+    freeze.workspaceId === workspaceId) &&
+  (number === undefined || !(freeze.allow ?? []).includes(number));

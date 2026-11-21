@@ -10,8 +10,8 @@ import {
 import type * as Effect from "effect/Effect";
 
 import type { AgentConnectors, OpenSessionOptions, OutwardGate } from "../host.ts";
-import type { AcpConnection, StartAcpAgent } from "./connection.ts";
-import type { Json } from "./json.ts";
+import { AcpError, type AcpConnection, type StartAcpAgent } from "./connection.ts";
+import { type Json, record } from "./json.ts";
 import type { AcpMapper } from "./mapper.ts";
 
 /** Where an ACP agent runs, and how it starts; tests stand in `start`. */
@@ -112,8 +112,26 @@ export interface AcpAgentSpec {
   readonly setUp: (opened: AcpOpened) => Effect.Effect<AcpControls, AgentUnavailable>;
 }
 
-export const messageOf = (error: unknown): string =>
+/** The agent's own message for `error`, without the provider's detail. */
+export const baseMessageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const DETAIL_LIMIT = 500;
+
+/** The provider's answer an ACP error carries in `data`, capped, when it adds to the message. */
+const detailOf = (error: unknown): string | undefined => {
+  if (!(error instanceof AcpError)) return undefined;
+  const raw = typeof error.data === "string" ? error.data : record(error.data)["message"];
+  if (typeof raw !== "string") return undefined;
+  const detail = raw.trim().slice(0, DETAIL_LIMIT);
+  return detail === "" || detail === error.message ? undefined : detail;
+};
+
+/** What `error` says: the agent's message, then the provider's detail from `error.data`. */
+export const messageOf = (error: unknown): string => {
+  const detail = detailOf(error);
+  return detail === undefined ? baseMessageOf(error) : `${baseMessageOf(error)}: ${detail}`;
+};
 
 /** What an agent's error says when it has no usable sign-in. */
 export const SIGN_IN_PATTERN = /auth|sign[ -]?in|log ?in|unauthori[sz]ed|credential|token expired/i;
@@ -122,12 +140,13 @@ export const SIGN_IN_PATTERN = /auth|sign[ -]?in|log ?in|unauthori[sz]ed|credent
 export const signInProblem = (spec: AcpAgentSpec, message: string): boolean =>
   (spec.signInPattern ?? SIGN_IN_PATTERN).test(message);
 
-/** A failure of `spec`'s agent, read as a sign-in problem where it is one. */
+/** A failure of `spec`'s agent, read as a sign-in problem where its own message says so. */
 export const acpFailure = (spec: AcpAgentSpec, what: string, error: unknown) => {
-  const message = messageOf(error);
   return new AgentUnavailable({
     agent: spec.kind,
-    message: signInProblem(spec, message) ? spec.signInMessage : `${what}: ${message}`,
+    message: signInProblem(spec, baseMessageOf(error))
+      ? spec.signInMessage
+      : `${what}: ${messageOf(error)}`,
   });
 };
 

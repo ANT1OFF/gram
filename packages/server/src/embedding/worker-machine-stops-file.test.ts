@@ -18,6 +18,7 @@ import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { fakeApp, NAME, ORIGIN, SERVER } from "./signed-in-fixtures.ts";
+import { STOP_HOLD_MS } from "./worker-machine-stops.ts";
 import {
   bridgeWorkerMachines,
   fileOwedStops,
@@ -345,6 +346,29 @@ describe("the stops owed, as they are kept on disk", () => {
           attempt: `00000000-0000-4000-8000-${each.toString(16).padStart(12, "0")}`,
         });
       expect(fileOwedStops(dir).list()).toHaveLength(OWED_MOST);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("hold a name no longer than a stop can act, though the clock stepped back since", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-held-back-"));
+    try {
+      // Written before the clock stepped back an hour: the hold reads an hour too far ahead.
+      mkdirSync(join(dir, "remote-access"), { mode: 0o700 });
+      const now = Date.now();
+      writeFileSync(
+        join(dir, "remote-access", "worker-machine-stops.json"),
+        JSON.stringify({
+          version: 1,
+          owed: [],
+          holds: [{ id: "h-1", origin: ORIGIN, name: NAME, until: now + 60 * 60_000 }],
+        }),
+        { mode: 0o600 },
+      );
+      const owed = fileOwedStops(dir, () => now);
+      // No start of the name waits past what a stop sent now could hold it for.
+      expect(owed.holds.until(ORIGIN, NAME, now)).toBe(now + STOP_HOLD_MS);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

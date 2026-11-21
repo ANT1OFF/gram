@@ -18,8 +18,8 @@ import {
 import { listsLeaveOut, narrowsMcp, reportedLists } from "../mcp-lists.ts";
 import {
   acpFailure,
+  baseMessageOf,
   INITIALIZE_PARAMS,
-  messageOf,
   signInProblem,
   type AcpAgentSpec,
 } from "../acp/agent.ts";
@@ -252,7 +252,7 @@ const readBilling = (config: GrokHostConfig) =>
         }
       },
       catch: (error) =>
-        signInProblem(GROK, messageOf(error))
+        signInProblem(GROK, baseMessageOf(error))
           ? new AgentUnavailable({
               agent: "grok",
               reason: "not-logged-in",

@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 
 import type { AgentHost } from "../host.ts";
-import { messageOf, SIGN_IN_PATTERN, type AcpAgentSpec, type AcpHostConfig } from "../acp/agent.ts";
+import { baseMessageOf, SIGN_IN_PATTERN, type AcpAgentSpec, type AcpHostConfig } from "../acp/agent.ts";
 import { commandsOf } from "../acp/content.ts";
 import type { AcpConnection } from "../acp/connection.ts";
 import { makeAcpHost, withAcpAgent } from "../acp/host.ts";
@@ -80,7 +80,7 @@ export const withHeadlessSignIn = (
       try {
         return await connection.request<T>(method, params);
       } catch (error) {
-        if (signedIn || !SIGNED_METHODS.has(method) || !SIGNED_OUT.test(messageOf(error)))
+        if (signedIn || !SIGNED_METHODS.has(method) || !SIGNED_OUT.test(baseMessageOf(error)))
           throw error;
         await connection.request("authenticate", { methodId: "gemini-api-key" });
         signedIn = true;

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type { AcpConnection, AcpHandlers, StartAcpAgent } from "../acp/connection.ts";
+import { AcpError, type AcpConnection, type AcpHandlers, type StartAcpAgent } from "../acp/connection.ts";
 import type { Json } from "../acp/json.ts";
 import {
   antigravityMode,
@@ -288,7 +288,7 @@ describe("Antigravity's models and usage", () => {
 });
 
 /** A stand-in `agy acp`: records what Gram sends and answers like the CLI does. */
-const fakeAgent = (options: { signedOut?: boolean } = {}) => {
+const fakeAgent = (options: { signedOut?: boolean; promptFails?: AcpError } = {}) => {
   const started: Array<StartAcpAgent> = [];
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   let handlers: AcpHandlers | undefined;
@@ -309,6 +309,7 @@ const fakeAgent = (options: { signedOut?: boolean } = {}) => {
           case "session/resume":
             return SESSION_NEW as T;
           case "session/prompt": {
+            if (options.promptFails !== undefined) throw options.promptFails;
             const sessionId = params["sessionId"];
             handlers!.notification("session/update", {
               sessionId,
@@ -461,6 +462,15 @@ describe("Antigravity host", () => {
     const events = await turn(agent, { env: { GEMINI_API_KEY: "placeholder" } });
     expect(agent.calls.map((call) => call.method)).toContain("authenticate");
     expect(events).toContainEqual({ type: "notice", level: "warning", message: API_KEY_NOTICE });
+  });
+
+  it("ends a failed turn with what the provider answered, beside the CLI's own error", async () => {
+    const refused = new AcpError(-32603, "Internal error", { message: "quota exhausted (429)" });
+    const events = await turn(fakeAgent({ promptFails: refused }));
+    expect(events.find((event) => event.type === "turnEnd")).toMatchObject({
+      reason: "error",
+      error: "Internal error: quota exhausted (429)",
+    });
   });
 
   it("says to sign in with agy when a desktop has no sign-in", async () => {
