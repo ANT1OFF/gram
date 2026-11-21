@@ -825,8 +825,6 @@ export interface SentWorkTarget {
   readonly origin: string;
   /** What the server calls itself, as the app shows it. */
   readonly server: string;
-  /** The server's mark as Gram keeps it (`hostedLogoOf`), where it gave one the app could read. */
-  readonly logo?: string;
   readonly workspaceId: string;
   readonly workspace: string;
   readonly organisation: string;
@@ -951,6 +949,8 @@ export interface WorkerMachineServer {
   readonly origin: string;
   /** What the server calls itself, as the app shows it. */
   readonly server: string;
+  /** The server's mark as Gram keeps it (`hostedLogoOf`), where it gave one the app could read. */
+  readonly logo?: string;
   /**
    * An opaque mark of the sign-in machines are asked for under there (who the person is on that
    * server, as the app hashes it). What is made under one sign-in is acted on only under it.
