@@ -40,7 +40,7 @@ test("the chip's Codex group opens the sheet and changes nothing on the pick", a
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
 
   const popup = await openChoices(page);
-  // Two groups, each headed by its mark alone; the other agent's models end in "…".
+  // Two groups, each headed by its mark, the other agent's with its words too; its models end in "…".
   await expect(popup.getByTestId("model-group-mark")).toHaveCount(2);
   await expect(popup.getByTestId("model-group-mark").last()).toHaveAttribute(
     "aria-label",

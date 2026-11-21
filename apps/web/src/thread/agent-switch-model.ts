@@ -185,6 +185,21 @@ const refusalOf = (
 export const freshHint = (to: AgentKind): string =>
   `Start fresh in ${AGENT_NAMES[to]}: new session with the recent turns`;
 
+/**
+ * The other agent's heading in the composer's model list. A pick there moves the thread, so it says
+ * so beside the mark (`words`), and why it can't move now on a line under them (`note`); the mark's
+ * own label is the reason when there is one, else the words.
+ */
+export const switchGroupHead = (
+  offer: SwitchOffer,
+): { hint: string; words: string; note?: string } => {
+  if (!offer.offered) return { hint: "", words: "" };
+  const words = offer.fresh === undefined ? continueHint(offer.to) : freshHint(offer.to);
+  return offer.refusal === undefined
+    ? { hint: words, words }
+    : { hint: offer.refusal, words, note: offer.refusal };
+};
+
 /** The menu item's and the sheet's words for a fresh session on `to`. */
 export const freshLabel = (to: AgentKind): string => `Start fresh in ${AGENT_NAMES[to]}`;
 

@@ -169,7 +169,12 @@ function ModelRows({
                 <span aria-hidden className="flex shrink-0 items-center">
                   {head.mark}
                 </span>
-                {head.hint}
+                <span className="flex min-w-0 flex-col">
+                  <span>{head.words ?? head.hint}</span>
+                  {head.words !== undefined && head.note !== undefined && (
+                    <span className="text-foreground">{head.note}</span>
+                  )}
+                </span>
               </div>
             )}
             <button
