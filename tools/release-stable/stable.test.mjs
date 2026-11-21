@@ -67,6 +67,13 @@ let env;
 let ghLog;
 let said;
 let appChecks;
+const temps = [];
+
+const tempDir = (prefix) => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  temps.push(dir);
+  return dir;
+};
 
 const NONCE = "0123456789abcdef";
 const APPIMAGE = `gram_${VERSION}_x86_64.AppImage`;
@@ -209,7 +216,7 @@ async function setUp({
   github = await spawnFakeGitHub({
     [REPO]: { private: false, tokens: [LOGIN], head: SHA, ...repo },
   });
-  root = mkdtempSync(join(tmpdir(), "gram-stable-"));
+  root = tempDir("gram-stable-");
   work = join(root, "work");
   mkdirSync(join(root, "bin"));
   writeFileSync(
@@ -297,6 +304,7 @@ const again = async (how) => {
 
 afterEach(async () => {
   await github.close();
+  for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
@@ -778,7 +786,7 @@ function linuxRun(views, { id = LINUX_RUN } = {}) {
  * What's New card for 1.0.0. Returns its folder, its commit and git in it.
  */
 const notesRepo = () => {
-  const dir = mkdtempSync(join(tmpdir(), "gram-notes-source-"));
+  const dir = tempDir("gram-notes-source-");
   const git = (...args) => spawnSync("git", args, { cwd: dir, encoding: "utf8" });
   git("init", "-q");
   mkdirSync(join(dir, "notes"));
@@ -823,7 +831,7 @@ const notesOptions = (repo, extra = {}) => ({
   commit: repo.commit,
   version: "1.0.0",
   minimumMacOS: "13.0",
-  scratch: mkdtempSync(join(tmpdir(), "gram-notes-scratch-")),
+  scratch: tempDir("gram-notes-scratch-"),
   ...extra,
 });
 
