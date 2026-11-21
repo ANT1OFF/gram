@@ -1245,12 +1245,15 @@ export class Pr extends Context.Service<
       lookups: ReadonlyArray<{
         readonly cwd: string;
         readonly bound?: BoundPrRef | undefined;
-        /** Whom a bound lookup is made for (`GhCallEnv`); the caller's own when absent. */
+        /** Whom the lookup is made for (`GhCallEnv`); the caller's own when absent. */
         readonly caller?: Readonly<Record<string, string>> | undefined;
       }>,
     ) => Effect.Effect<void>;
   }
 >()("@gram/git/Pr") {}
+
+const asCaller = (caller: Readonly<Record<string, string>> | undefined) =>
+  caller === undefined ? <A, E, R>(effect: Effect.Effect<A, E, R>) => effect : asGhCaller(caller);
 
 /** One `Pr.checks` answer as `Pr.seenChecks` keeps it. */
 export interface SeenChecks {
@@ -1612,16 +1615,14 @@ export const PrLive = Layer.effect(
           lookups,
           ({ cwd, bound, caller }) =>
             bound !== undefined
-              ? Effect.succeed(
-                  caller === undefined
-                    ? boundBadges.get({ cwd, bound })
-                    : asGhCaller(caller)(boundBadges.get({ cwd, bound })),
-                )
+              ? Effect.succeed(asCaller(caller)(boundBadges.get({ cwd, bound })))
               : provide(resolvePrInputs(cwd)).pipe(
                   Effect.flatMap((inputs) =>
                     Effect.map(Clock.currentTimeMillis, (now) => {
                       primedInputs.set(cwd, { inputs, at: now });
-                      return inputs === undefined ? undefined : branchBadges.get(inputs);
+                      return inputs === undefined
+                        ? undefined
+                        : asCaller(caller)(branchBadges.get(inputs));
                     }),
                   ),
                   Effect.orElseSucceed(() => undefined),

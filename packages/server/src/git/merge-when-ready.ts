@@ -599,14 +599,13 @@ export const MergeWhenReadyLive = Layer.effect(
           "--json",
           "state,headRefOid",
         ]).pipe(
+          forThread(merge.threadId),
           Effect.flatMap((out) =>
-            Effect.try({
-              try: () =>
-                out.status === 0
-                  ? Schema.decodeUnknownSync(observedMerge)(JSON.parse(out.stdout))
-                  : undefined,
-              catch: () => undefined,
-            }),
+            Effect.try(() =>
+              out.status === 0
+                ? Schema.decodeUnknownSync(observedMerge)(JSON.parse(out.stdout))
+                : undefined,
+            ),
           ),
           Effect.orElseSucceed(() => undefined),
         );

@@ -3,7 +3,15 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ghConfig, ghThreadEnv, relayRequest, threadOfAuthorization } from "./github-relay.ts";
+import {
+  ghConfig,
+  ghThreadEnv,
+  NO_THREAD,
+  relayRequest,
+  threadOfAuthorization,
+} from "./github-relay.ts";
+
+const AS_THREAD = { authorization: "token gram-thread:thr_1" };
 
 interface Sent {
   readonly url: string;
@@ -72,7 +80,7 @@ describe("the GitHub relay", () => {
       {
         path: "/repos/acme/widgets/pulls?state=open",
         host: "api.github.com",
-        headers: { authorization: "token gram-relay", accept: "application/vnd.github+json" },
+        headers: { ...AS_THREAD, accept: "application/vnd.github+json" },
       },
     );
     expect(reply.status).toBe(200);
@@ -83,7 +91,26 @@ describe("the GitHub relay", () => {
     expect(sent[0]!.headers["authorization"]).toBe("Bearer route-token");
     expect(sent[0]!.headers["x-gram-upstream-host"]).toBe("api.github.com");
     expect(sent[0]!.headers["accept"]).toBe("application/vnd.github+json");
-    expect(sent[0]!.headers["x-gram-thread"]).toBeUndefined();
+    expect(sent[0]!.headers["x-gram-thread"]).toBe("thr_1");
+  });
+
+  it("refuses a call made for no thread, and sends nothing", async () => {
+    for (const authorization of [undefined, "token gram-relay", "token ghp_realtoken"]) {
+      const { sent, reply } = await relayed(
+        { url: "https://route.example.invalid", token: "route-token" },
+        {
+          path: "/repos/acme/widgets/pulls/1",
+          host: "api.github.com",
+          headers: {
+            ...(authorization === undefined ? {} : { authorization }),
+            "x-gram-thread": "thr_1",
+          },
+        },
+      );
+      expect(reply.status).toBe(403);
+      expect(reply.body).toContain(NO_THREAD);
+      expect(sent).toHaveLength(0);
+    }
   });
 
   it("names the thread a call was made for, and sends its body on", async () => {
@@ -105,18 +132,22 @@ describe("the GitHub relay", () => {
   it("drops a thread header gh was given rather than trust it", async () => {
     const { sent } = await relayed(
       { url: "https://route.example.invalid", token: "route-token" },
-      { path: "/user", host: "api.github.com", headers: { "x-gram-thread": "someone-else" } },
+      {
+        path: "/user",
+        host: "api.github.com",
+        headers: { ...AS_THREAD, "x-gram-thread": "someone-else" },
+      },
     );
-    expect(sent[0]!.headers["x-gram-thread"]).toBeUndefined();
+    expect(sent[0]!.headers["x-gram-thread"]).toBe("thr_1");
   });
 
   it("reads a token file on each call", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "gram-relay-")), "token");
     writeFileSync(file, "first-token\n");
     const endpoint = { url: "https://route.example.invalid", tokenFile: file };
-    const one = await relayed(endpoint, { path: "/x", host: "api.github.com" });
+    const one = await relayed(endpoint, { path: "/x", host: "api.github.com", headers: AS_THREAD });
     writeFileSync(file, "second-token\n");
-    const two = await relayed(endpoint, { path: "/x", host: "api.github.com" });
+    const two = await relayed(endpoint, { path: "/x", host: "api.github.com", headers: AS_THREAD });
     expect(one.sent[0]!.headers["authorization"]).toBe("Bearer first-token");
     expect(two.sent[0]!.headers["authorization"]).toBe("Bearer second-token");
   });
@@ -133,7 +164,7 @@ describe("the GitHub relay", () => {
   it("maps codeload to its own part and hands a redirect back as it came", async () => {
     const { sent, reply } = await relayed(
       { url: "https://route.example.invalid", token: "route-token" },
-      { path: "/acme/widgets/tar.gz/main", host: "codeload.github.com" },
+      { path: "/acme/widgets/tar.gz/main", host: "codeload.github.com", headers: AS_THREAD },
       () =>
         new Response(null, { status: 302, headers: { location: "https://elsewhere.invalid/" } }),
     );

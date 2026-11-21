@@ -59,7 +59,7 @@ import {
 import { GitStatePublisher } from "../git/publisher.ts";
 import { makeMergeFreezeTool } from "./merge-freeze-tool.ts";
 import { makeRunMonitorTool } from "./run-monitor-tool.ts";
-import { refuseOutOfReach, repoOutOfReach } from "../git/repo-reach.ts";
+import { refuseOutOfReach, repoOfIdentity, repoOutOfReach } from "../git/repo-reach.ts";
 import {
   withOwnedBranch,
   endedPrText,
@@ -415,10 +415,16 @@ export const PrAppToolsLive = Layer.effectDiscard(
         Effect.gen(function* () {
           const thread = yield* store.getThread(threadId as ThreadId);
           yield* refuseOrchestratorPr("pr_status", thread);
+          const theirs =
+            threadId === caller ? undefined : repoOfIdentity(thread.checkout.cloneIdentity);
+          yield* refuseOutOfReach("pr_status", store, caller, {
+            repos: [thread.boundPr?.repo, theirs],
+          });
           if (refresh) yield* refreshes.request(thread.checkout.path, true);
           const badge = yield* currentPr(thread);
-          const repo =
-            thread.boundPr?.repo ?? (badge === undefined ? undefined : repoFromPrUrl(badge.url));
+          const badgeRepo = badge === undefined ? undefined : repoFromPrUrl(badge.url);
+          const repo = thread.boundPr?.repo ?? badgeRepo;
+          yield* refuseOutOfReach("pr_status", store, caller, { repos: [repo, badgeRepo] });
           const reviewPolicy =
             repo === undefined ? undefined : yield* reviewPolicyFor(thread, repo);
           const configuration =

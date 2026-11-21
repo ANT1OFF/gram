@@ -3,24 +3,13 @@ import type { GramUIMessage } from "@gram/contracts";
 import { isToolPart, toolPhase, type AnyToolPart } from "@/thread/parts";
 import { toolInputField } from "@/thread/tool-group-model";
 
-// A worker's terminal as its transcript has it: the beside dock's Terminal tab and its peek.
-//
-// Nothing here starts or reads a process. A command's output arrives in the transcript: Codex sends
-// the running command's output as it grows (preliminary `tool-output-available` snapshots, each the
-// whole tail so far), and the Claude adapter sends the same snapshots from the output it reads back
-// once Claude Code registers the command as a task, a few seconds in. So the running command shows
-// live where the agent streams it, and its output on exit where it doesn't. A Claude shell in the
-// background has its call's result at once ("Background command started"), so its output comes
-// beside the transcript instead (`thread.backgroundOutput`, read back the same way) and stands in
-// for that result here.
-
 export interface LastCommand {
   /** The tool call, so a view can tell a new command from more output of the same one. */
   readonly toolCallId: string;
   readonly command: string;
   /** Its output so far, its tail only, as plain text: no escape sequences, `\r` overwrites applied. */
   readonly output: string;
-  /** Still running: started, streaming output, or kept going in the background. */
+  /** Still running: started, or streaming output. */
   readonly running: boolean;
   /** It came back as an error, was denied or was cancelled. */
   readonly failed: boolean;
@@ -28,36 +17,19 @@ export interface LastCommand {
   readonly exitCode?: number | undefined;
 }
 
-/**
- * The newest shell command among `messages`' tool calls: what a worker's terminal is showing.
- * `background` holds the tool calls the agent reports still running in the background, whose cards
- * say they finished when they only went to the background. `backgroundOutput` is what such a
- * call's shell last wrote, by tool call, which shows in place of the call's own output.
- */
-export const lastCommandOf = (
-  messages: readonly GramUIMessage[],
-  background: ReadonlySet<string> = NONE,
-  backgroundOutput: ReadonlyMap<string, string> = NO_OUTPUT,
-): LastCommand | undefined => {
+/** The newest shell command among `messages`' tool calls, and how it stands. */
+export const lastCommandOf = (messages: readonly GramUIMessage[]): LastCommand | undefined => {
   for (const message of messages.toReversed()) {
     for (const part of message.parts.toReversed()) {
       if (!isToolPart(part)) continue;
       const command = toolInputField(part.input, "command") ?? toolInputField(part.input, "cmd");
-      if (command !== undefined) return commandOf(part, command, background, backgroundOutput);
+      if (command !== undefined) return commandOf(part, command);
     }
   }
   return undefined;
 };
 
-const NONE: ReadonlySet<string> = new Set();
-const NO_OUTPUT: ReadonlyMap<string, string> = new Map();
-
-const commandOf = (
-  part: AnyToolPart,
-  command: string,
-  background: ReadonlySet<string>,
-  backgroundOutput: ReadonlyMap<string, string>,
-) => {
+const commandOf = (part: AnyToolPart, command: string) => {
   const phase = toolPhase(
     part.state,
     part.state === "output-error" ? part.errorText : undefined,
@@ -68,8 +40,8 @@ const commandOf = (
   return {
     toolCallId: part.toolCallId,
     command,
-    output: tail(backgroundOutput.get(part.toolCallId) ?? rawOutput(part)),
-    running: phase === "pending" || phase === "running" || background.has(part.toolCallId),
+    output: tail(rawOutput(part)),
+    running: phase === "pending" || phase === "running",
     failed: phase === "error" || phase === "denied" || phase === "cancelled",
     ...(exitCode === null ? {} : { exitCode }),
   };

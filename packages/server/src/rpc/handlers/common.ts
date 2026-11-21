@@ -1,7 +1,9 @@
 import { type GramRpcs } from "@gram/contracts";
+import { GhCallEnv } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
+import { threadCaller } from "../../embedding/gh-thread.ts";
 import { type Rpc, type RpcGroup, RpcSchema } from "../../platform/unstable.ts";
 
 /** Every RPC handler, keyed by tag. A group file builds a `Partial` of it. */
@@ -27,10 +29,18 @@ const defectFields = (defect: unknown): Record<string, string> => {
 const logDefect = (rpc: string, defect: unknown) =>
   Effect.logError("rpc handler died").pipe(Effect.annotateLogs({ rpc, ...defectFields(defect) }));
 
+/** The thread a request names by its `threadId`, if it names one. */
+export const requestThread = (payload: unknown): string | undefined => {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const id = (payload as { readonly threadId?: unknown }).threadId;
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+};
+
 /**
  * Logs every defect of `group`'s handlers under the RPC's tag, and turns a synchronous throw into a
  * defect of the request (a failing stream for a stream RPC), where the RPC server would otherwise
- * send it to the whole connection.
+ * send it to the whole connection. A request that names a thread (`threadId`) runs as that
+ * thread's (`GhCallEnv`), so every GitHub read it makes is made for that thread.
  */
 export const logDefects = <H extends Readonly<Record<string, (...args: never) => unknown>>>(
   group: Pick<RpcGroup.RpcGroup<Rpc.Any>, "requests">,
@@ -45,15 +55,23 @@ export const logDefects = <H extends Readonly<Record<string, (...args: never) =>
         (...args: Parameters<typeof handler>) => {
           try {
             const result = handler(...args);
+            const thread = requestThread(args[0]);
+            const caller = thread === undefined ? undefined : threadCaller(thread);
             if (Effect.isEffect(result)) {
-              return Effect.tapDefect(result, (defect) => logDefect(rpc, defect));
+              const logged = Effect.tapDefect(result, (defect) => logDefect(rpc, defect));
+              return caller === undefined
+                ? logged
+                : Effect.provideService(logged, GhCallEnv, caller);
             }
             if (Stream.isStream(result)) {
-              return Stream.tapCause(result, (cause) =>
+              const logged = Stream.tapCause(result, (cause) =>
                 Effect.forEach(cause.reasons.filter(Cause.isDieReason), (reason) =>
                   logDefect(rpc, reason.defect),
                 ),
               );
+              return caller === undefined
+                ? logged
+                : Stream.provideService(logged, GhCallEnv, caller);
             }
             return result;
           } catch (defect) {
