@@ -124,6 +124,7 @@ const deps = (threads: ReadonlyArray<Thread> = []): Effect.Effect<MachineDeps, n
     return {
       store: {
         listThreads: Effect.succeed(threads),
+        listProjects: Effect.succeed([]),
         getThread: () => Effect.die(new Error("no thread in this test")),
       } as unknown as ThreadStoreTag["Service"],
       hub: { internalEvents: () => Stream.never } as unknown as EventHubTag["Service"],
@@ -697,6 +698,7 @@ describe("a joined machine's terminals at rest", () => {
         ...(yield* deps([worker])),
         store: {
           listThreads: Effect.succeed([worker]),
+          listProjects: Effect.succeed([]),
           getThread: () => Effect.succeed(worker),
         } as unknown as ThreadStoreTag["Service"],
       });
