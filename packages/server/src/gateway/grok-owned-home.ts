@@ -8,12 +8,14 @@ const COMPAT_CELLS = ["skills", "rules", "agents", "mcps", "hooks"] as const;
 
 /**
  * Environment names that would put the person's own configuration back into Gram's Grok: config
- * overlays, the per-vendor compatibility switches, and Claude Code's relocated home.
+ * overlays, the per-vendor compatibility switches, Claude Code's relocated home, and the switch
+ * that turns folder trust off, which would run a repository's own hooks and MCP servers unasked.
  */
 export const isInheritedGrokConfig = (name: string): boolean =>
   name === "GROK_CONFIG" ||
   name === "GROK_CONFIG_PATH" ||
   name === "CLAUDE_CONFIG_DIR" ||
+  name === "GROK_FOLDER_TRUST" ||
   /^GROK_(CLAUDE|CURSOR|CODEX)_[A-Z_]+_ENABLED$/.test(name);
 
 /** The configuration Gram's Grok runs on, and nothing of the person's beside it. */
