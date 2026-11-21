@@ -3,7 +3,7 @@ import type { PrStatus } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ciDiffArgs, DOCUMENTATION_POLICY } from "./ci-policy.ts";
-import { mergeCiForLaunch, verifyMergeCi } from "./merge-ci.ts";
+import { mergeCiForLaunch, verifyMergeCi, withLaunchCi } from "./merge-ci.ts";
 import { Proc } from "./proc.ts";
 
 const base = "a".repeat(40);
@@ -256,6 +256,8 @@ const github = (
   runStatus = "completed",
   calls: string[][] = [],
   changed?: string,
+  runConclusion?: string,
+  latest: { readonly head?: string; readonly baseRef?: string; readonly tip?: string } = {},
 ) =>
   Layer.succeed(Proc, {
     run: (bin, args) => {
@@ -267,7 +269,23 @@ const github = (
         expect(args).toContain(`ref=${base}:.gram/merge-ci.json`);
         body = { data: { repository: { object: { text: JSON.stringify(declared) } } } };
       } else if (args[1]?.includes("actions/runs?"))
-        body = { total_count: 1, workflow_runs: [run(10, 1, runStatus)] };
+        body = {
+          total_count: 1,
+          workflow_runs: [
+            {
+              ...run(10, 1, runStatus),
+              ...(runConclusion === undefined ? {} : { conclusion: runConclusion }),
+            },
+          ],
+        };
+      else if (args[1]?.endsWith("/pulls/1"))
+        body = {
+          number: 1,
+          state: "open",
+          head: { sha: latest.head ?? head, ref: "prose" },
+          base: { ref: latest.baseRef ?? "main", sha: base },
+        };
+      else if (args[1]?.includes("/commits/heads%2F")) body = { sha: latest.tip ?? base };
       else body = { total_count: jobs.length, jobs };
       return Effect.succeed({
         status: 0,
@@ -596,6 +614,111 @@ describe("a run counts only when it is the PR's own", () => {
           Effect.provide(layer([own])),
         ),
       ).toBe("pending");
+    }),
+  );
+});
+
+const declaredOnly = (
+  layer: Layer.Layer<Proc>,
+  launched: PrStatus = { ...badge, baseRef: "main" },
+) =>
+  withLaunchCi("/repo", "example/project", launched, {
+    declaredCi: true,
+    localCheckHead: head,
+  }).pipe(Effect.provide(layer));
+
+describe("a merge that needs the CI its base declares", () => {
+  it.effect("never passes on a base that declares none, whatever GitHub's checks say", () =>
+    Effect.gen(function* () {
+      const calls: string[][] = [];
+      const undeclared = Layer.succeed(Proc, {
+        run: (_bin, args) =>
+          Effect.sync(() => {
+            calls.push([...args]);
+            return {
+              status: 0,
+              stdout: JSON.stringify({ data: { repository: { object: null } } }),
+              stderr: "",
+              truncated: false,
+            };
+          }),
+      });
+      // Required contexts green, optional ones only (a cancelled one rolls up as passing), none.
+      const shown: ReadonlyArray<Partial<PrStatus>> = [
+        { checks: "passing", requiredChecks: "passing" },
+        { checks: "passing" },
+        { checks: "none" },
+      ];
+      for (const checks of shown) {
+        const result = yield* declaredOnly(undeclared, { ...badge, ...checks });
+        expect(result).toMatchObject({ mergeChecks: "pending", mergeCiDeclared: false });
+      }
+      // Only the base's declaration was read each time: neither the head's runs nor a local check
+      // of it stood in for it.
+      expect(calls).toHaveLength(shown.length);
+    }),
+  );
+
+  it.effect("checks every declared job on the head, a local check of it standing in for none", () =>
+    Effect.gen(function* () {
+      const jobs = policy.workflows[0]!.jobs;
+      expect(
+        yield* declaredOnly(
+          github(
+            policy,
+            jobs.map((name) => job(name)),
+          ),
+        ),
+      ).toMatchObject({
+        mergeChecks: "passing",
+        mergeCiDeclared: true,
+      });
+      expect(
+        yield* declaredOnly(
+          github(
+            policy,
+            jobs.slice(1).map((name) => job(name)),
+          ),
+        ),
+      ).toMatchObject({ mergeChecks: "pending", mergeCiDeclared: true });
+      expect(
+        yield* declaredOnly(
+          github(
+            policy,
+            jobs.map((name, i) => job(name, i === 0 ? "cancelled" : "success")),
+          ),
+        ),
+      ).toMatchObject({ mergeChecks: "failing", mergeCiDeclared: true });
+      // A cancelled run fails, however its jobs read.
+      expect(
+        yield* declaredOnly(
+          github(
+            policy,
+            jobs.map((name) => job(name)),
+            "completed",
+            [],
+            undefined,
+            "cancelled",
+          ),
+        ),
+      ).toMatchObject({ mergeChecks: "failing", mergeCiDeclared: true });
+    }),
+  );
+
+  it.effect("refuses a pass once the PR was retargeted, pushed or its base moved meanwhile", () =>
+    Effect.gen(function* () {
+      const all = policy.workflows[0]!.jobs.map((name) => job(name));
+      const moved = [
+        { head: "d".repeat(40) },
+        { baseRef: "release" },
+        { tip: "e".repeat(40) },
+      ] as const;
+      for (const latest of moved) {
+        const result = yield* declaredOnly(
+          github(policy, all, "completed", [], undefined, undefined, latest),
+        ).pipe(Effect.result);
+        expect(result).toMatchObject({ _tag: "Failure" });
+      }
     }),
   );
 });

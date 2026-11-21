@@ -178,10 +178,15 @@ const runJobs = (cwd: string, repo: string, run: Record<string, unknown>) =>
     return list(json(jobsOut.stdout), "jobs");
   });
 
-export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
+type DeclaredPolicy = typeof Policy.Type;
+
+const verifyAgainst = (
+  cwd: string,
+  repo: string,
+  badge: ExactBadge,
+  policy: DeclaredPolicy | undefined,
+) =>
   Effect.gen(function* () {
-    if (!exact(badge)) throw new Error("Merge CI needs the exact base, head and branch");
-    const policy = yield* readPolicy(cwd, repo, currentBaseOf(badge) ?? badge.baseRefOid);
     if (policy === undefined && badge.requiredChecks !== undefined) return "passing" as const;
     // Independently reproduce the classification. A workflow's skipped checks or reported output
     // is never authority. Missing local commit objects/output limits conservatively require full.
@@ -330,6 +335,54 @@ export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
         throw new Error("Merge CI docs PR base/head or repository changed");
     }
     return result;
+  });
+
+export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
+  Effect.gen(function* () {
+    if (!exact(badge)) throw new Error("Merge CI needs the exact base, head and branch");
+    const policy = yield* readPolicy(cwd, repo, currentBaseOf(badge) ?? badge.baseRefOid);
+    return yield* verifyAgainst(cwd, repo, badge, policy);
+  }).pipe(Effect.catchDefect((error) => Effect.fail(new Error(String(error)))));
+
+const confirmUnmoved = (cwd: string, repo: string, badge: ExactBadge) =>
+  Effect.gen(function* () {
+    const prOut = yield* ghApi(cwd, [`repos/${repo}/pulls/${badge.number}`]);
+    if (prOut.status !== 0 || prOut.truncated)
+      throw new Error("Merge CI PR freshness lookup failed");
+    const pr = json(prOut.stdout);
+    const prHead = record(pr["head"]);
+    const prBase = record(pr["base"]);
+    if (
+      pr["number"] !== badge.number ||
+      pr["state"] !== "open" ||
+      prHead["sha"] !== badge.headRefOid ||
+      prHead["ref"] !== badge.headRef ||
+      badge.baseRef === undefined ||
+      prBase["ref"] !== badge.baseRef
+    )
+      throw new Error("Merge CI PR head or base branch changed");
+    const tipOut = yield* ghApi(cwd, [
+      `repos/${repo}/commits/${encodeURIComponent(`heads/${badge.baseRef}`)}`,
+    ]);
+    if (tipOut.status !== 0 || tipOut.truncated) throw new Error("Merge CI base tip lookup failed");
+    if (json(tipOut.stdout)["sha"] !== (currentBaseOf(badge) ?? badge.baseRefOid))
+      throw new Error("Merge CI base moved during its verification");
+  });
+
+/**
+ * The CI the base branch's tip declares, on exactly `badge`'s head, with no other evidence in its
+ * place: neither GitHub's check contexts nor a local check. `declared: false` when the base
+ * declares none, which never qualifies a merge that needs a declaration. A pass is confirmed
+ * against a last read of the PR and its base's tip: a retarget, a push or a moved base refuses it.
+ */
+export const verifyDeclaredMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
+  Effect.gen(function* () {
+    if (!exact(badge)) throw new Error("Merge CI needs the exact base, head and branch");
+    const policy = yield* readPolicy(cwd, repo, currentBaseOf(badge) ?? badge.baseRefOid);
+    if (policy === undefined) return { declared: false } as const;
+    const checks = yield* verifyAgainst(cwd, repo, badge, policy);
+    if (checks === "passing") yield* confirmUnmoved(cwd, repo, badge);
+    return { declared: true, checks } as const;
   }).pipe(Effect.catchDefect((error) => Effect.fail(new Error(String(error)))));
 
 /**
@@ -388,3 +441,30 @@ export const mergeCiForLaunch = (
   localCheckHead !== undefined && localCheckHead === badge.headRefOid
     ? verifyAlwaysJobs(cwd, repo, badge)
     : verifyMergeCi(cwd, repo, badge);
+
+/**
+ * `badge` with the CI evidence its merge launch needs. With `declaredCi`, the base's declared CI
+ * alone: `mergeCiDeclared` says whether the base declares any, and `mergeChecks` is pending if not.
+ * Otherwise as `mergeCiForLaunch` reads it.
+ */
+export const withLaunchCi = (
+  cwd: string,
+  repo: string,
+  badge: PrStatus,
+  options: {
+    readonly localCheckHead?: string | undefined;
+    readonly declaredCi?: boolean | undefined;
+  },
+) =>
+  Effect.gen(function* () {
+    if (options.declaredCi === true) {
+      const declared = yield* verifyDeclaredMergeCi(cwd, repo, badge);
+      return {
+        ...badge,
+        mergeChecks: declared.declared ? declared.checks : "pending",
+        mergeCiDeclared: declared.declared,
+      } satisfies PrStatus;
+    }
+    const mergeChecks = yield* mergeCiForLaunch(cwd, repo, badge, options.localCheckHead);
+    return mergeChecks === undefined ? badge : { ...badge, mergeChecks };
+  });
