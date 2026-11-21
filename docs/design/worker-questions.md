@@ -8,8 +8,11 @@ settles it. Otherwise the question goes to the user as the worker wrote it, with
 one line of context from the orchestrator. The user's answer goes straight to the worker,
 and the orchestrator gets a copy.
 
-Approval requests, permission prompts, plan approvals and a harness's own blocking ask
-(`AskUserQuestion`, a pending request) are handled separately.
+Approval requests, permission prompts and plan approvals are handled separately. A worker has
+no ask that holds its turn: Claude's `AskUserQuestion` is left out of a worker's session, as it
+is of an orchestrator's (`noBlockingAsk`), so a question never stops a worker that could carry on.
+A harness ask that still reaches a pending request (a plain thread's, or one from a harness that
+offers its own) is handled as a waiting request.
 
 ## Lifecycle
 
