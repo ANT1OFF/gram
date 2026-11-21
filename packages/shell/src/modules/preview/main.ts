@@ -7,7 +7,8 @@
 // agents' pages, and loads nothing off loopback but what the agent browser allows an agent's page;
 // it reaches loopback directly and anything else only through a proxy of its own, which connects
 // only to a host that check just let a page reach, so a socket the check never sees goes no further.
-// Its pages have no shared worker, whose sockets that check never sees either.
+// Its pages have no shared worker, whose sockets that check never sees either, and no WebRTC,
+// which looks names up past it (`webrtc-guard.ts`).
 // The web sessions hold the pages the user opens anywhere else, and no agent ever drives or reads
 // them, so what the user signs in to there stays theirs. The shared web session holds pages on the
 // internet, and never reaches loopback or a private network, whatever asks. A page the user opens
@@ -72,6 +73,7 @@ import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { focusedAppWindow } from "../../electron/decision-windows.ts";
 import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, PICK_WORLD, parsePicked } from "./pick.ts";
+import { guardWebRtc } from "./webrtc-guard.ts";
 
 /**
  * No `persist:` prefix, so their cookies and storage live in memory and are gone at quit. The local
@@ -185,6 +187,11 @@ interface Preview {
   /** The app pages that asked about this thread's page, told each time it changes. */
   readonly watchers: Set<WebContents>;
   error: string | undefined;
+  /**
+   * Whether the page may load: in the local session, once WebRTC is gone from it (`webrtc-guard.ts`),
+   * and never if it couldn't be taken away; a web page at once.
+   */
+  readonly guarded: Promise<boolean>;
 }
 
 /** What main can reach of the previews, for tools that act on a page from the main process. */
@@ -198,7 +205,7 @@ export interface PreviewHost {
    * As `contentsOf`, making the page, blank and out of sight, when `create` and there is none. A
    * web page the user opened there is closed for it, unread.
    */
-  contentsFor(threadId: string, create: boolean): WebContents | undefined;
+  contentsFor(threadId: string, create: boolean): Promise<WebContents | undefined>;
   /** Tells the windows watching `threadId`'s page that it changed, as its driver does. */
   changed(threadId: string): void;
 }
@@ -546,6 +553,10 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       window: undefined,
       watchers: new Set(),
       error: undefined,
+      guarded:
+        kind === "local"
+          ? guardWebRtc(view.webContents, (fields, message) => options.log.warn(fields, message))
+          : Promise.resolve(true),
     };
     const contents = view.webContents;
     previewContents.add(contents);
@@ -688,7 +699,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
         : replace(preview, kind, url);
     target.error = undefined;
     // A page that won't load rejects here and reports itself through `did-fail-load`.
-    await target.view.webContents.loadURL(url).catch(() => {});
+    if (await target.guarded) await target.view.webContents.loadURL(url).catch(() => {});
     report(target);
   };
 
@@ -864,6 +875,11 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     return preview === undefined ? null : stateOf(preview);
   });
 
+  /** `preview`'s page, once its WebRTC is gone; none if it couldn't be taken away. */
+  const whenGuarded = async (preview: Preview) => {
+    const contents = preview.view.webContents;
+    return (await preview.guarded) && !contents.isDestroyed() ? contents : undefined;
+  };
   const contentsOf = (threadId: string) => {
     const preview = previews.get(threadId);
     const contents = preview?.kind === "local" ? preview.view.webContents : undefined;
@@ -871,9 +887,10 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
   };
   return {
     contentsOf,
-    contentsFor: (threadId, make) => {
-      const existing = contentsOf(threadId);
-      if (existing !== undefined || !make) return existing;
+    contentsFor: async (threadId, make) => {
+      const known = previews.get(threadId);
+      if (contentsOf(threadId) !== undefined && known !== undefined) return whenGuarded(known);
+      if (!make) return undefined;
       // A web page the user opened is never the agent's: it closes, unread, for a page of its own,
       // and can't be re-opened in its session after.
       reopenable.delete(threadId);
@@ -882,7 +899,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       touch(preview);
       // A page no window has shown yet has no size, and lays out, hit-tests and captures nothing.
       if (preview.window === undefined) preview.view.setBounds(AGENT_PAGE_BOUNDS);
-      return preview.view.webContents;
+      return whenGuarded(preview);
     },
     changed: (threadId) => {
       const preview = previews.get(threadId);

@@ -19,11 +19,6 @@
 // replaces its document: `document.open`, and `document.write` and `writeln`, which open the
 // document when it has finished parsing, throw. A page builds its DOM with the DOM's own methods.
 //
-// It also takes WebRTC away. Chromium resolves an ICE server's or a remote candidate's host name
-// through the system resolver before any of the session's controls (its request check, proxy and
-// UDP policy) apply, so a page could otherwise send what it holds, or what the user types into it,
-// out in DNS queries for names it chose. A pinned page has no use for WebRTC.
-//
 // It runs in the frames the preload reaches, which include a `srcdoc` child the page makes: that
 // child runs the guard too. A child the page makes by script at `about:blank` gets no preload;
 // the sandbox the session puts on every response gives each of the page's documents an opaque
@@ -50,17 +45,6 @@ export function pageGuard(): void {
   const ctrlOf = getter(KeyboardEvent.prototype, "ctrlKey");
   const metaOf = getter(KeyboardEvent.prototype, "metaKey");
   const altOf = getter(KeyboardEvent.prototype, "altKey");
-  for (const name of [
-    "RTCPeerConnection",
-    "webkitRTCPeerConnection",
-    "RTCDataChannel",
-    "RTCIceTransport",
-    "RTCDtlsTransport",
-    "RTCSctpTransport",
-    "RTCIceCandidate",
-    "RTCSessionDescription",
-  ])
-    Reflect.deleteProperty(globalThis, name);
   const fixed = (name: string, value: unknown) =>
     define(doc, name, { value, writable: false, configurable: false, enumerable: false });
   // A function, not an arrow, for its `this`. A command that isn't a string is refused before

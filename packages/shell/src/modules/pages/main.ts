@@ -30,6 +30,7 @@ import {
 import { parsePreviewBounds, previewsToClose, windowRect } from "../../core/preview-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { harden } from "../preview/main.ts";
+import { guardWebRtc } from "../preview/webrtc-guard.ts";
 
 /** How many pages stay loaded; opening another closes the least recently used one not shown. */
 export const MAX_PAGES = 4;
@@ -78,6 +79,8 @@ interface PageView {
   window: BrowserWindow | undefined;
   readonly watchers: Set<WebContents>;
   error: string | undefined;
+  /** Whether the page may load: once WebRTC is gone from it (`webrtc-guard.ts`), never if not. */
+  readonly guarded: Promise<boolean>;
 }
 
 export interface PagesOptions {
@@ -218,7 +221,7 @@ export function installPages(ipc: ShellIpc, options: PagesOptions): PagesHost {
     view.setVisible(false);
     const contents = view.webContents;
     // WebRTC's sockets don't pass the request check: no UDP at all, and TCP only through the
-    // session's proxy, which goes nowhere.
+    // session's proxy, which goes nowhere. And the page has no WebRTC to start with.
     contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
     prefixes.set(contents, prefix);
     const page: PageView = {
@@ -228,6 +231,7 @@ export function installPages(ipc: ShellIpc, options: PagesOptions): PagesHost {
       window: undefined,
       watchers: new Set(),
       error: undefined,
+      guarded: guardWebRtc(contents, (fields, message) => options.log.warn(fields, message)),
     };
     contents.once("destroyed", () => {
       if (views.get(key) === page) views.delete(key);
@@ -294,7 +298,7 @@ export function installPages(ipc: ShellIpc, options: PagesOptions): PagesHost {
     touch(page);
     page.watchers.add(event.sender);
     page.error = undefined;
-    await page.view.webContents.loadURL(url).catch(() => {});
+    if (await page.guarded) await page.view.webContents.loadURL(url).catch(() => {});
     report(page);
     return true;
   });

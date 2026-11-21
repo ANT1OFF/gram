@@ -75,12 +75,12 @@ export interface PaneContents {
     sendCommand(method: string, commandParams?: object): Promise<unknown>;
     on(
       event: "message",
-      listener: (event: unknown, method: string, params: unknown) => void,
+      listener: (event: unknown, method: string, params: unknown, sessionId?: string) => void,
     ): unknown;
     on(event: "detach", listener: () => void): unknown;
     off(
       event: "message",
-      listener: (event: unknown, method: string, params: unknown) => void,
+      listener: (event: unknown, method: string, params: unknown, sessionId?: string) => void,
     ): unknown;
   };
   on(
@@ -270,16 +270,18 @@ const fail = (
  */
 const cdpOf = (contents: PaneContents): Cdp => {
   const listeners = new Map<string, Set<(params: unknown) => void>>();
-  const handler = (_event: unknown, method: string, params: unknown) => {
-    for (const listener of Array.from(listeners.get(method) ?? [])) listener(params);
+  // An event of a frame's own session (the WebRTC guard's, `preview/webrtc-guard.ts`) isn't the
+  // page's.
+  const handler = (_event: unknown, method: string, params: unknown, sessionId?: string) => {
+    const own = sessionId === undefined || sessionId === "" ? listeners.get(method) : undefined;
+    for (const listener of Array.from(own ?? [])) listener(params);
   };
   return {
     send: (method, params) => contents.debugger.sendCommand(method, params),
     on: (event, listener) => {
       if (listeners.size === 0) contents.debugger.on("message", handler);
       const forEvent = listeners.get(event) ?? new Set();
-      forEvent.add(listener);
-      listeners.set(event, forEvent);
+      listeners.set(event, forEvent.add(listener));
       return () => {
         forEvent.delete(listener);
         if (forEvent.size === 0) listeners.delete(event);
