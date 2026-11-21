@@ -22,6 +22,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { folderExists, resolveFolder } from "../fs/folders.ts";
 import { originIdentityAt } from "../host/repos.ts";
+import { recordedCloneIdentity } from "../persistence/project-origins.ts";
+import { answerCheckoutRepos } from "./checkout-repos.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { heldCheckoutPaths, usedCheckoutPaths } from "../runtime/create-in-checkout.ts";
 import { CheckoutService, THIS_MACHINE_FOLDER } from "../runtime/hooks.ts";
@@ -54,6 +56,8 @@ export const GitCheckoutLive = Layer.effect(
     const worktrees = yield* Worktrees;
     const checkpoints = yield* Checkpoints;
     const store = yield* ThreadStore;
+    // Its branch lookups name the repository each folder Gram made is, never its live origin.
+    yield* answerCheckoutRepos(store);
     const provide = Effect.provideService(Proc, proc);
 
     const currentBranch = (path: string) =>
@@ -86,8 +90,9 @@ export const GitCheckoutLive = Layer.effect(
     /**
      * `checkout` with the identity of its repository's origin recorded as Gram makes it, before the
      * thread's agent runs there: what the worker's ownership of a PR is later checked against,
-     * never the origin the agent can rewrite since. Only a worktree on this machine; another
-     * machine's records its own as it is made there.
+     * never the origin the agent can rewrite since. That origin must still be the one its project
+     * recorded when it was added (`recordedCloneIdentity`): one rewritten before is refused. Only a
+     * worktree on this machine; another machine's records its own as it is made there.
      */
     const withOrigin = (checkout: Checkout, repoRoot: string) =>
       checkout.kind !== "worktree" ||
@@ -95,6 +100,11 @@ export const GitCheckoutLive = Layer.effect(
       checkout.cloneIdentity !== undefined
         ? Effect.succeed(checkout)
         : provide(originIdentityAt(repoRoot)).pipe(
+            Effect.flatMap((live) =>
+              Effect.flatMap(store.listProjects, (projects) =>
+                recordedCloneIdentity(projects, repoRoot, live),
+              ),
+            ),
             Effect.map((cloneIdentity): Checkout =>
               cloneIdentity === undefined ? checkout : { ...checkout, cloneIdentity },
             ),

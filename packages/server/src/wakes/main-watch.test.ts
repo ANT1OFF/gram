@@ -14,6 +14,7 @@ import { Proc, ProcSpawnError } from "@gram/git";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { cloneIdentityOf } from "../host/repos.ts";
 import { GhBudget } from "../github/budget.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -123,10 +124,11 @@ const layerOf = (f: Fake) =>
         Layer.succeed(Proc, {
           run: (bin: string, args: ReadonlyArray<string>) =>
             Effect.suspend(() => {
+              // The folder's origin rewritten since the project was added: never what is read.
               if (bin === "git") {
                 return Effect.succeed({
                   status: 0,
-                  stdout: "https://github.com/acme/shop.git\n",
+                  stdout: "https://github.com/someone/private.git\n",
                   stderr: "",
                   truncated: false,
                 });
@@ -146,7 +148,13 @@ const layerOf = (f: Fake) =>
         }),
         Layer.succeed(ThreadStore, {
           listProjects: Effect.succeed([
-            { id: PROJECT, root: "/repos/shop", name: "shop", bookmarked: false } as Project,
+            {
+              id: PROJECT,
+              root: "/repos/shop",
+              name: "shop",
+              bookmarked: false,
+              originIdentity: cloneIdentityOf("https://github.com/acme/shop.git"),
+            } as Project,
           ]),
           listThreads: Effect.succeed([
             {

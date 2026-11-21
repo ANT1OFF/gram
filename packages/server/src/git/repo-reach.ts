@@ -20,7 +20,7 @@ import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { remoteRepoOf } from "./worker-pr.ts";
 
 /** The `owner/name` of the repository a clone identity (`cloneIdentityOf`'s) names, if any. */
-const repoOfIdentity = (identity: string | undefined) => {
+export const repoOfIdentity = (identity: string | undefined) => {
   const url = identity === undefined ? undefined : cloneUrlOf(identity);
   const named = url === undefined ? undefined : remoteRepoOf(url);
   return named === undefined ? undefined : `${named.owner}/${named.name}`;

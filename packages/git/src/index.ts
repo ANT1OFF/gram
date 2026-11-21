@@ -21,6 +21,11 @@ export * from "./names.ts";
 export * from "./open-prs.ts";
 export * from "./paths.ts";
 export * from "./pr.ts";
+export {
+  CheckoutRepos,
+  type CheckoutRepoLookup,
+  type CheckoutReposShape,
+} from "./checkout-repos.ts";
 export * from "./pr-actions.ts";
 export * from "./pr-cache.ts";
 export * from "./pr-checkout.ts";

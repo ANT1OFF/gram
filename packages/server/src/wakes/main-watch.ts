@@ -15,7 +15,8 @@
  * note's key keeps a red commit from being told twice across a restart.
  */
 import { type Project, type Thread, type WorkspaceId, type WorkspaceState } from "@gram/contracts";
-import { ghApi, originOwnerRepo, Proc } from "@gram/git";
+import { ghApi, Proc } from "@gram/git";
+import { projectRepo } from "../git/repo-reach.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -271,7 +272,9 @@ export const MainWatchLive = Layer.effect(
     const look = (workspaceId: WorkspaceId, project: Project, threads: ReadonlyArray<Thread>) =>
       Effect.gen(function* () {
         const cwd = project.root;
-        const repo = yield* originOwnerRepo(cwd).pipe(Effect.provideService(Proc, proc));
+        // The repository the project recorded when it was added, never the one its folder's git
+        // config names now, which an agent working there can rewrite.
+        const repo = projectRepo(project);
         if (repo === undefined) return;
         let branch = branches.get(repo);
         if (branch === undefined) {

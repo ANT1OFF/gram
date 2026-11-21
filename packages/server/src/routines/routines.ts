@@ -1111,11 +1111,8 @@ export const RoutinesLive = Layer.effect(
         ) {
           return undefined;
         }
-        const project = stored.project ?? state.workspace.homeProjectId;
-        const found = state.workspace.projectIds.includes(project)
-          ? (yield* store.listProjects).find((each) => each.id === project)
-          : undefined;
-        const look = yield* sources.look(stored.on, lookContextOf(found, stored.trigger?.baseline));
+        const context = lookContextOf(state.workspace, stored, yield* store.listProjects);
+        const look = yield* sources.look(stored.on, context);
         return {
           whenKey: scheduleKeyOf(stored),
           generation: stored.charterGeneration,

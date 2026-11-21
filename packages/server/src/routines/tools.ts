@@ -39,6 +39,7 @@ import * as Schema from "effect/Schema";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { refuseOutOfReach } from "../git/repo-reach.ts";
+import { triggerRepo } from "./events.ts";
 import { workerModelLabel } from "../orchestration/rules.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -70,16 +71,6 @@ const whenOf = (input: {
     ? parseRoutineSchedule(input.schedule)
     : parseRoutineTrigger(input.on!);
 };
-
-/** The GitHub repository a routine's event reads by name, if it names one. */
-const triggerRepo = (when: ReturnType<typeof whenOf>): string | undefined =>
-  !("on" in when)
-    ? undefined
-    : when.on.event === "reviewRequested"
-      ? when.on.repo
-      : when.on.event === "releasePublished" && when.on.source === "github"
-        ? when.on.name
-        : undefined;
 
 /** A routine's row in a tool's result: when it runs in words, where it runs, and its next run. */
 const shown = (routine: WorkspaceRoutine, nextRunAt: number | undefined) => ({
@@ -288,7 +279,8 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           const parsed = whenOf(input);
           if ("error" in parsed) return yield* toolError(tool, parsed.error);
           // A repository the routine would read on GitHub is one the asking thread works in.
-          yield* refuseOutOfReach(tool, store, caller, { repos: [triggerRepo(parsed)] });
+          const on = "on" in parsed ? parsed.on : undefined;
+          yield* refuseOutOfReach(tool, store, caller, { repos: [triggerRepo(on)] });
           const project =
             input.target === "orchestrator" || input.project === undefined
               ? undefined
@@ -355,9 +347,9 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           if (parsed !== undefined && "error" in parsed) {
             return yield* toolError(tool, parsed.error);
           }
-          if (parsed !== undefined) {
-            yield* refuseOutOfReach(tool, store, caller, { repos: [triggerRepo(parsed)] });
-          }
+          // Any change, to it or of what it reads: the repository it reads afterwards is checked.
+          const on = parsed === undefined ? before.on : "on" in parsed ? parsed.on : undefined;
+          yield* refuseOutOfReach(tool, store, caller, { repos: [triggerRepo(on)] });
           const project =
             input.project === undefined ? undefined : yield* projectOf(tool, state, input.project);
           const model =

@@ -16,7 +16,7 @@ import * as Option from "effect/Option";
 import { lstatSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
-import { cloneIdentityOf, cloneUrlOf } from "../host/repos.ts";
+import { cloneUrlOf } from "../host/repos.ts";
 import { WorkerHosts, type WorkerHostsShape } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 
@@ -328,22 +328,22 @@ export const liveHeadAt = (path: string): Effect.Effect<LiveHead, never, Proc> =
 /**
  * The workspace project a worktree on another machine was made for, from what this machine
  * recorded as it made it: the identity of the origin it cloned (`cloneIdentity`), which must be
- * the identity of the project's origin here, a project whose origin is the PR's repository.
+ * the origin the project recorded when it was added (`Project.originIdentity`), never the one its
+ * folder names now, and the PR's repository.
  */
 const projectOfClone = (
   checkout: Checkout,
   projects: ReadonlyArray<Project>,
   repo: string,
-): Effect.Effect<Project | undefined, never, Proc> =>
-  Effect.gen(function* () {
-    if (checkout.cloneIdentity === undefined) return undefined;
-    for (const project of projects) {
-      const origin = yield* originUrlOf(project.repoRoot ?? project.root);
-      if (origin === undefined || !mayNameRepo(origin, repo)) continue;
-      if (cloneIdentityOf(origin) === checkout.cloneIdentity) return project;
-    }
-    return undefined;
+): Project | undefined => {
+  if (checkout.cloneIdentity === undefined) return undefined;
+  return projects.find((project) => {
+    const identity = project.originIdentity;
+    if (identity === undefined || identity !== checkout.cloneIdentity) return false;
+    const url = cloneUrlOf(identity);
+    return url !== undefined && mayNameRepo(url, repo);
   });
+};
 
 /**
  * Whether the machine `checkout` is on confirms what this machine recorded as it made it: the
@@ -649,7 +649,7 @@ const checkWorkerPr = (
           unrecordedClone = true;
           continue;
         }
-        if ((yield* projectOfClone(checkout, projects, repo)) === undefined) continue;
+        if (projectOfClone(checkout, projects, repo) === undefined) continue;
         if (!(yield* machineConfirms(hosts, checkout, checkout.repoRoot, checkout.branch))) {
           unconfirmed = true;
           continue;

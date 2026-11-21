@@ -119,4 +119,31 @@ describe.skipIf(!hasGit)("repositories an agent names behind a GitHub route", ()
       ),
     { timeout: 90_000 },
   );
+
+  it.effect(
+    "give a worker spawned after its project's origin was rewritten no checkout of the new one",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          const { session } = yield* openOrchestrator(world);
+          world.origin = "https://github.com/someone/private.git";
+          const spawned = yield* spawn(session, { feature: "mail", title: "Mail" }).pipe(
+            Effect.result,
+          );
+          if (spawned._tag === "Success") {
+            const worker = spawned.success;
+            yield* completeTurn(worker.session);
+            expect(worker.thread.checkout.cloneIdentity).not.toContain("someone");
+            const refused = yield* worker.session
+              .callTool("pr_bind", { repo: "someone/private", number: 5 })
+              .pipe(Effect.flip);
+            expect(refused.message).toContain("isn't a repository this thread works in");
+          }
+          expect(
+            world.ghCalls.filter((call) => call.join(" ").includes("someone/private")),
+          ).toEqual([]);
+        }),
+      ),
+    { timeout: 90_000 },
+  );
 });

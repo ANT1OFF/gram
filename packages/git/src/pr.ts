@@ -32,7 +32,14 @@ import { makeTtlCache, PR_POLL_TTL_MS, trackBadgeCache } from "./pr-cache.ts";
 import { Proc } from "./proc.ts";
 import { detectRateLimit, type RateLimitSignal } from "./rate-limit.ts";
 import { originTips } from "./refs.ts";
-import { cachedCheckoutHead, cachedOriginUrl, type CheckoutHead } from "./repo-facts.ts";
+import {
+  CheckoutRepos,
+  originOwnerRepo,
+  parseOwnerRepo,
+  recordedOrOriginRepo,
+  withCheckoutRepos,
+} from "./checkout-repos.ts";
+import { cachedCheckoutHead, type CheckoutHead } from "./repo-facts.ts";
 import {
   buildReviewState,
   personCommentsFromOf,
@@ -1133,30 +1140,18 @@ const sharedPrResolver = (proc: Proc["Service"]): RequestResolver.RequestResolve
 // ---------------------------------------------------------------------------------------------
 // Inputs
 
-/** `owner/repo` from a remote URL (scp-style, https, ssh); `undefined` when not shaped like one. */
-export const parseOwnerRepo = (url: string): string | undefined => {
-  const match =
-    /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@/]+@)?[^/:]+[:/](?:\d+\/)?([^/]+)\/([^/]+?)(?:\.git)?\/?$/i.exec(
-      url.trim(),
-    );
-  return match ? `${match[1]}/${match[2]}` : undefined;
-};
-
-/** `owner/repo` of the checkout's `origin`, kept while the repo's config is unchanged. */
-export const originOwnerRepo = (cwd: string): Effect.Effect<string | undefined, never, Proc> =>
-  cachedOriginUrl(cwd).pipe(
-    Effect.map((url) => (url === undefined ? undefined : parseOwnerRepo(url))),
-    Effect.orElseSucceed(() => undefined),
-  );
+export { originOwnerRepo, parseOwnerRepo };
 
 /**
- * The repo for `--repo`, preferring the local origin URL over `gh repo view`: instant, and right on a
- * fork, where gh's default repo can be the upstream.
+ * The repo for `--repo`: the one the embedder recorded the folder as (`CheckoutRepos`), else the
+ * local origin URL over `gh repo view`: instant, and right on a fork, where gh's default repo can
+ * be the upstream.
  */
 const resolveRepoNwo = (workTree: string) =>
   Effect.gen(function* () {
-    const origin = yield* originOwnerRepo(workTree);
-    if (origin !== undefined) return origin;
+    // What the embedder recorded the folder as, when it did: `undefined` is no repository at all.
+    const origin = yield* recordedOrOriginRepo(workTree);
+    if (origin !== null) return origin;
     const out = yield* gh(
       workTree,
       ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
@@ -1391,7 +1386,9 @@ export const PrLive = Layer.effect(
     const ttlMs = yield* PrBadgeTtlMs;
     const memo = makePrMemo();
     const resolver = makePrResolver(proc, reviewBots.get, memo);
-    const provide = Effect.provideService(Proc, proc);
+    const repos = yield* Effect.serviceOption(CheckoutRepos);
+    const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      withCheckoutRepos(repos, Effect.provideService(effect, Proc, proc));
 
     // Keyed on the tips the badge is anchored against, so a commit, push or fetch is a new entry
     // and can never be answered from the one before it.

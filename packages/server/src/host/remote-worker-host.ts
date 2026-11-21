@@ -12,6 +12,7 @@ import {
   InvalidState,
   NotFound,
   type TerminalId,
+  type Project,
   type Thread,
   type HostSessionOpen,
   type ThreadId,
@@ -56,6 +57,7 @@ import { noAppToolsTunnel } from "./app-tools-tunnel.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
 import { olderHost } from "./folders.ts";
+import { recordedCloneIdentity } from "../persistence/project-origins.ts";
 import { cloneFolderOf, cloneIdentityOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
 import { HOST_THREADS_DIR, type HostThreadPlaces } from "./thread-places.ts";
@@ -200,7 +202,11 @@ const onMachine = (threads: ReadonlyArray<Thread>, machine: Machine) =>
 export const machineCheckouts = (
   machine: Machine,
   connection: HostConnection,
-  deps: { readonly proc: ProcShape; readonly threads: Effect.Effect<ReadonlyArray<Thread>> },
+  deps: {
+    readonly proc: ProcShape;
+    readonly threads: Effect.Effect<ReadonlyArray<Thread>>;
+    readonly projects: Effect.Effect<ReadonlyArray<Project>>;
+  },
 ): CheckoutServiceShape => {
   const others = (thread: Thread | undefined) =>
     Effect.map(deps.threads, (threads) =>
@@ -272,6 +278,9 @@ export const machineCheckouts = (
             message: `A worker on ${machine.name} works in a new worktree there.`,
           });
         const url = yield* originOf(projectRoot);
+        // The clone it is handed is of the origin its project recorded when it was added, never
+        // one rewritten since.
+        yield* recordedCloneIdentity(yield* deps.projects, projectRoot, cloneIdentityOf(url));
         const { path: repoPath } = yield* connection.repos
           .ensure(url)
           .pipe(
@@ -523,6 +532,9 @@ export const machineWorkerHost = (
 ): Effect.Effect<WorkerHost, never, Scope.Scope> =>
   Effect.gen(function* () {
     const threads = store.listThreads.pipe(Effect.orElseSucceed((): ReadonlyArray<Thread> => []));
+    const projects = store.listProjects.pipe(
+      Effect.orElseSucceed((): ReadonlyArray<Project> => []),
+    );
     /** The machine's shells by terminal, with their process ids there. */
     const shells = new Map<TerminalId, number>();
     const terminals = yield* terminalsThroughHost(
@@ -599,7 +611,7 @@ export const machineWorkerHost = (
             return through;
           }),
       }),
-      checkouts: machineCheckouts(machine, connection, { proc, threads }),
+      checkouts: machineCheckouts(machine, connection, { proc, threads, projects }),
       worktrees: machineWorktrees(connection),
       git: machineGit(connection),
       files: connection.files,

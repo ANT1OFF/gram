@@ -83,7 +83,7 @@ import { SqlClient, SqlError } from "../platform/unstable.ts";
 import { MigrationsLayer } from "./migrations.ts";
 import { noteForeignCheckouts } from "../host/foreign-paths.ts";
 import { pruneHistory } from "./history-prune.ts";
-import { backfillProjectOrigins, NO_ORIGIN, originIdentityOfFolder } from "./project-origins.ts";
+import { backfillProjectOrigins, originOfRow, originToRecord } from "./project-origins.ts";
 import { notePrivacy, noteReaders } from "../embedding/readable-by.ts";
 import { unlinkOrchestrationIn } from "./orchestration-links.ts";
 import {
@@ -1616,9 +1616,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           root: r.root,
           name: r.name,
           ...(r.repo_root === null ? {} : { repoRoot: r.repo_root }),
-          ...(r.origin_identity == null || r.origin_identity === NO_ORIGIN
-            ? {}
-            : { originIdentity: r.origin_identity }),
+          ...originOfRow(r.origin_identity),
           ...(decoded?.ok ? { localCheck: decoded.value } : {}),
           localCheckRevision: createHash("sha256")
             .update(JSON.stringify([r.local_check ?? null]))
@@ -1649,16 +1647,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         );
 
       type Registering = Parameters<ThreadStoreShape["registerProject"]>[0];
-      /**
-       * The origin a project being added records, read before its transaction opens; none is read
-       * for one already known, which keeps the origin it was added with.
-       */
+      /** The origin a project being added records, read before its transaction opens. */
       const originFor = (input: Registering) =>
         run(projectAt(projectRoot(input.root))).pipe(
           Effect.flatMap((row) =>
-            row !== undefined
-              ? Effect.succeed(undefined)
-              : originIdentityOfFolder(projectRoot(input.repoRoot ?? input.root)),
+            run(originToRecord(sql, row, projectRoot(input.repoRoot ?? input.root))),
           ),
         );
 
@@ -1667,7 +1660,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
        * A known project keeps the origin it was added with, or its lack of one: a later read is of
        * a git config an agent may have rewritten since.
        */
-      const registerIn = (input: Registering, originIdentity: string | undefined) =>
+      const registerIn = (input: Registering, originIdentity: string | null) =>
         Effect.gen(function* () {
           const root = projectRoot(input.root);
           const { name } = input;
@@ -1676,7 +1669,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           if (row !== undefined) return { project: toProject(row), created: false };
           const id = Schema.decodeSync(ProjectId)(randomUUID());
           yield* sql`INSERT INTO projects (id, root, name, repo_root, bookmarked, origin_identity)
-              VALUES (${id}, ${root}, ${name}, ${repoRoot ?? null}, 0, ${originIdentity ?? NO_ORIGIN})`;
+              VALUES (${id}, ${root}, ${name}, ${repoRoot ?? null}, 0, ${originIdentity})`;
           const project = toProject({
             id,
             root,
@@ -1684,7 +1677,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             repo_root: repoRoot ?? null,
             bookmarked: 0,
             last_opened_at: null,
-            origin_identity: originIdentity ?? NO_ORIGIN,
+            origin_identity: originIdentity,
           });
           return { project, created: true };
         });
@@ -4313,7 +4306,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   const projects: Array<Project> = [];
                   for (const [i, repo] of change.register.entries()) {
                     const registering = { ...repo, repoRoot: repo.root };
-                    projects.push((yield* registerIn(registering, origins[i])).project);
+                    projects.push((yield* registerIn(registering, origins[i] ?? null)).project);
                   }
                   const next = change.next(current, projects);
                   if (next.workspace.id !== change.id) {
