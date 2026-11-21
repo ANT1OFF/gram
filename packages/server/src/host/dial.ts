@@ -13,6 +13,7 @@ import { socketEndText, watchedSocket } from "./socket-end.ts";
 
 /** The first wait after a dial ends, doubled each time up to the last. */
 const RETRY_FIRST_MS = 2_000;
+const RETRY_UNSERVED_FIRST_MS = 250;
 const RETRY_MOST_MS = 30_000;
 /**
  * How often a host waiting to dial again looks whether its machine is still joined, so a leave
@@ -173,6 +174,7 @@ export const dialForever = <R>(
   timing: {
     readonly detachedMs?: number;
     readonly retryFirstMs?: number;
+    readonly retryUnservedFirstMs?: number;
     readonly idleMs?: number;
     readonly joinPollMs?: number;
   } = {},
@@ -203,8 +205,10 @@ export const dialForever = <R>(
     // Only a message from the main Gram after its hello says a dial got through: a dial left
     // hanging on its connect, refused, or asked its hello and then refused, doesn't. So a host the
     // main Gram keeps refusing ends what it kept once its grace runs out, however often it dials.
+    let servedOnce = false;
     const served = Effect.sync(() => {
       detachedSince = undefined;
+      servedOnce = true;
     });
     const joinPollMs = timing.joinPollMs ?? JOIN_POLL_MS;
     /** Done once the machine has left: looked at every `joinPollMs` meanwhile. */
@@ -212,7 +216,7 @@ export const dialForever = <R>(
       Effect.suspend(() =>
         joined() ? Effect.sleep(joinPollMs).pipe(Effect.andThen(untilLeft())) : Effect.void,
       );
-    let wait = retryFirstMs;
+    let wait = Math.min(timing.retryUnservedFirstMs ?? RETRY_UNSERVED_FIRST_MS, retryFirstMs);
     while (true) {
       if (!joined()) {
         yield* Effect.logWarning("gram-host: this machine left its Gram; the host stops dialling");
@@ -233,9 +237,10 @@ export const dialForever = <R>(
       const why = yield* dialOnce(options, keptService, served, timing.idleMs);
       detachedSince ??= now();
       if (!joined()) continue;
+      if (servedOnce) wait = Math.max(wait, retryFirstMs);
       if (now() - started >= STEADY_MS) wait = retryFirstMs;
       yield* Effect.logInfo("gram-host: not connected; dialling again").pipe(
-        Effect.annotateLogs({ inSeconds: Math.round(wait / 1000), why }),
+        Effect.annotateLogs({ inSeconds: Math.round(wait / 100) / 10, why }),
       );
       // The wait ends early on a leave: the loop's top then stops the host at once.
       yield* Effect.raceFirst(Effect.sleep(wait), untilLeft());

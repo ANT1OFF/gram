@@ -17,9 +17,10 @@ import {
   type VersionNotice,
 } from "./binary.ts";
 import { buildChildEnv, tokenChildEnv } from "./env.ts";
-import { runCommand } from "../cli/process.ts";
+import { type CommandError, type CommandOutput, runCommand } from "../cli/process.ts";
 import { nodeFs } from "../cli/discovery.ts";
-import { resettableOnSuccess } from "../cli/cache.ts";
+import { resettableOnSuccess, sharedRuns } from "../cli/cache.ts";
+import { createHash } from "node:crypto";
 
 import { ClaudeSdk } from "./sdk.ts";
 
@@ -191,6 +192,19 @@ export const claudeSdkExecutable = (
 ): Effect.Effect<string | undefined, AgentUnavailable> =>
   requireSdkExecutable(binaryPath, process.platform, nodeFs, hasBundledCli);
 
+/**
+ * How long one `claude auth status` that reported a usable sign-in answers later asks: a machine's
+ * status check and the session it opens next ask it within seconds, on one CPU at times.
+ */
+export const AUTH_STATUS_REUSE_MS = 10_000;
+
+const authStatusKey = (ready: Pick<PreparedClaude, "binaryPath" | "env">): string =>
+  createHash("sha256")
+    .update(ready.binaryPath)
+    .update("\0")
+    .update(JSON.stringify(Object.entries(ready.env).toSorted(([a], [b]) => (a < b ? -1 : 1))))
+    .digest("hex");
+
 export const ClaudeEnvironmentLive = (
   config: ClaudeEnvironmentConfig = {},
 ): Layer.Layer<ClaudeEnvironment, never, ClaudeSdk> =>
@@ -234,11 +248,25 @@ export const ClaudeEnvironmentLive = (
         } satisfies PreparedClaude;
       });
 
+      const usable = (stdout: string) => {
+        const problem = checkAuthStatus(stdout);
+        return problem === undefined || (problem === "api-key-auth" && config.keyAuth === true);
+      };
+      const statusRuns = yield* sharedRuns<CommandOutput, CommandError>(
+        AUTH_STATUS_REUSE_MS,
+        (output) => usable(output.stdout),
+      );
+      const authStatus = (ready: Pick<PreparedClaude, "binaryPath" | "env">) =>
+        statusRuns.run(
+          authStatusKey(ready),
+          runCommand(ready.binaryPath, ["auth", "status", "--json"], {
+            env: ready.env,
+            timeoutMs,
+          }),
+        );
+
       const checkAuth = (prepared: PreparedClaude) =>
-        runCommand(prepared.binaryPath, ["auth", "status", "--json"], {
-          env: prepared.env,
-          timeoutMs,
-        }).pipe(
+        authStatus(prepared).pipe(
           Effect.mapError(
             (error) =>
               new AgentUnavailable({
@@ -249,7 +277,7 @@ export const ClaudeEnvironmentLive = (
           ),
           Effect.flatMap((output) => {
             const problem = checkAuthStatus(output.stdout);
-            return problem === undefined || (problem === "api-key-auth" && config.keyAuth === true)
+            return problem === undefined || usable(output.stdout)
               ? Effect.void
               : Effect.fail(authUnavailable(problem));
           }),
@@ -270,13 +298,10 @@ export const ClaudeEnvironmentLive = (
                   ),
                 ),
               ),
-        invalidate: prepared.reset,
+        invalidate: prepared.reset.pipe(Effect.andThen(statusRuns.reset)),
         checkAuth,
         accountScope: (ready) =>
-          runCommand(ready.binaryPath, ["auth", "status", "--json"], {
-            env: ready.env,
-            timeoutMs,
-          }).pipe(
+          authStatus(ready).pipe(
             Effect.map((output) => accountScopeFromStatus(output.stdout)),
             Effect.mapError(
               () =>
