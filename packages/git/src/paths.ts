@@ -71,15 +71,52 @@ export const relativeInside = (
  */
 const foreignRoots = new Set<string>();
 
+/** Folders kept this machine's (`keepPathsHere`), as given and as the disk names them. */
+const keptRoots = new Set<string>();
+
+/** A path as compared with a kept one: case folded where the volumes usually ignore case. */
+const folded = (path: string): string =>
+  process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
+
+/** Whether `path` is, holds or lies under a kept folder. */
+const crossesKept = (path: string): boolean => {
+  const at = folded(path);
+  for (const kept of keptRoots) if (isInside(at, kept) || isInside(kept, at)) return true;
+  return false;
+};
+
 /**
  * Marks `path` and everything below it as another machine's: `physicalPath`, `samePathKey` and
- * `samePath` compare it as written and never touch the filesystem for it. Only ever added to, since
- * a folder that was another machine's stays so for a key already handed out. Relative paths are
- * ignored: a host's paths are always absolute.
+ * `samePath` compare it as written and never touch the filesystem for it. A folder that was another
+ * machine's stays so for a key already handed out, unless it turns out to cross one of this
+ * machine's (`keepPathsHere`): that one is never another's. Relative paths are ignored: a host's
+ * paths are always absolute.
  */
 export const noteForeignPath = (path: string): void => {
   if (!nodePath.isAbsolute(path)) return;
-  foreignRoots.add(nodePath.resolve(path));
+  const at = nodePath.resolve(path);
+  if (!crossesKept(at)) foreignRoots.add(at);
+};
+
+/**
+ * Keeps `paths` this machine's, whatever another machine says: no `noteForeignPath` takes one of
+ * them, a folder above one or a folder below one, and a mark that did already goes. Each is kept as
+ * resolved (a relative one against the working directory) and by its real path, so a link to it is
+ * covered too.
+ */
+export const keepPathsHere = (paths: Iterable<string>): void => {
+  let added = false;
+  for (const path of paths) {
+    const resolved = nodePath.resolve(path);
+    // Kept once with its real path, which needn't be asked of the disk again.
+    if (keptRoots.has(folded(resolved))) continue;
+    for (const form of [resolved, tryRealPathSync(resolved)]) {
+      if (form === undefined || keptRoots.has(folded(form))) continue;
+      keptRoots.add(folded(form));
+      added = true;
+    }
+  }
+  if (added) for (const root of foreignRoots) if (crossesKept(root)) foreignRoots.delete(root);
 };
 
 /** Whether `path` is at or below a folder `noteForeignPath` marked, by its lexical form. */
@@ -93,8 +130,11 @@ export const isForeignPath = (path: string): boolean => {
   }
 };
 
-/** Forgets every `noteForeignPath`, for tests. */
-export const forgetForeignPathsForTest = (): void => foreignRoots.clear();
+/** Forgets every `noteForeignPath` and `keepPathsHere`, for tests. */
+export const forgetForeignPathsForTest = (): void => {
+  foreignRoots.clear();
+  keptRoots.clear();
+};
 
 /**
  * `path` as the filesystem names it: the real path of its deepest part that exists, with the rest

@@ -5,7 +5,15 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import { type Checkout, HostId, LOCAL_HOST_ID, type Thread, ThreadId } from "@gram/contracts";
 import { forgetForeignPathsForTest, isForeignPath } from "@gram/git";
 import * as Effect from "effect/Effect";
-import { forgetOwnFoldersForTest, keepFoldersHere } from "./foreign-paths.ts";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import {
+  claimableByHost,
+  forgetOwnFoldersForTest,
+  keepFoldersHere,
+  noteForeignCheckouts,
+} from "./foreign-paths.ts";
 import { placedHost } from "./placed.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -52,4 +60,52 @@ describe("a machine's recorded folder", () => {
       expect(isForeignPath(REMOTE_PATH)).toBe(true);
     }),
   );
+
+  it.effect(
+    "never marks as another machine's a folder that is, holds or lies under a local checkout",
+    () =>
+      Effect.gen(function* () {
+        // The machine's threads come first, so their marks are made before the local checkout is read.
+        const placed = placedWith([
+          thread("t-same", { kind: "main", path: LOCAL_PATH, hostId: MACHINE }),
+          thread("t-above", { kind: "main", path: "/Users/me", hostId: MACHINE }),
+          thread("t-below", { kind: "main", path: `${LOCAL_PATH}/vendor`, hostId: MACHINE }),
+          thread("t-fine", { kind: "main", path: REMOTE_PATH, hostId: MACHINE }),
+          thread("t-local", { kind: "main", path: LOCAL_PATH }),
+        ]);
+        yield* placed.placeOf(`${LOCAL_PATH}/src`);
+        for (const path of [
+          LOCAL_PATH,
+          `${LOCAL_PATH}/src/link`,
+          "/Users/me",
+          `${LOCAL_PATH}/vendor`,
+        ])
+          expect(isForeignPath(path)).toBe(false);
+        expect(isForeignPath(REMOTE_PATH)).toBe(true);
+        // And a thread read on its own, after the local checkout is known, marks none of them.
+        noteForeignCheckouts(
+          thread("t-later", { kind: "main", path: `${LOCAL_PATH}/x`, hostId: MACHINE }),
+        );
+        expect(isForeignPath(`${LOCAL_PATH}/x`)).toBe(false);
+        expect(yield* placed.placeOf(`${LOCAL_PATH}/vendor/lib.ts`)).not.toBe(MACHINE);
+      }),
+  );
+
+  it("keeps a folder of this server's by its real path and from a relative one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-own-"));
+    try {
+      const real = join(dir, "vol", "gram");
+      mkdirSync(real, { recursive: true });
+      const link = join(dir, "gram");
+      symlinkSync(real, link);
+      keepFoldersHere([link, "relative-data"]);
+      for (const path of [real, `${real}/threads`, resolve("relative-data"), `${link}/x`]) {
+        expect(claimableByHost(path)).toBe(false);
+        noteForeignCheckouts(thread("t-host", { kind: "main", path, hostId: MACHINE }));
+        expect(isForeignPath(path)).toBe(false);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
