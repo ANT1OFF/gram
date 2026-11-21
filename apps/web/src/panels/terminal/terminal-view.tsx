@@ -299,7 +299,7 @@ export function TerminalView({
     if (active) {
       // A hidden terminal may have loaded a font without notifying its PTY.
       resizeRef.current?.();
-      handleRef.current?.focus();
+      if (latest.current.takesKeys?.() ?? true) handleRef.current?.focus();
     }
   }, [active]);
 
