@@ -7,6 +7,7 @@ import type { OutwardGate } from "../host.ts";
 import { count, type Json, record, records, text } from "../acp/json.ts";
 import { answerItself } from "../acp/permissions.ts";
 import type { CardTool } from "../acp/mapper.ts";
+import { CUSTOMIZATIONS_FOLDER } from "./workspace.ts";
 
 const EFFORTS: ReadonlySet<string> = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
@@ -66,10 +67,25 @@ const EDIT_KEYS = ["Path", "TargetFile", "AbsolutePath", "file_path"];
 export const antigravityToolName = (update: Json): string =>
   text(update["name"]) ?? text(update["title"]) ?? "tool";
 
+/** The input keys Antigravity, or a tool it runs, gives a command line in. */
+const COMMAND_KEYS = ["CommandLine", "commandLine", "command_line", "Command", "command"];
+
+/** The command line a call carries, whatever its kind. */
+export const commandLineOf = (call: Json): string | undefined => {
+  const input = record(call["rawInput"]);
+  for (const key of COMMAND_KEYS) {
+    const line = text(input[key]);
+    if (line !== undefined) return line;
+  }
+  return undefined;
+};
+
 /**
  * The answer Gram gives a permission request itself (`answerItself`). Gram's app tools are the calls
- * named for this session's own name of their server (`mcp_<server>_<tool>`), which no other server
- * can take; Antigravity's auto mode asks the person about what its classifier won't run.
+ * whose own `name` (never the title the model can shape) is for this session's own name of their
+ * server (`mcp_<server>_<tool>`), which no other server can take; Antigravity's auto mode asks the
+ * person about what its classifier won't run. A change under `.agents`, where Antigravity reads a
+ * workspace's hooks, MCP servers and plugins from, always shows its card.
  */
 export const autoAnswer = (
   mode: PermissionMode,
@@ -79,10 +95,11 @@ export const autoAnswer = (
   appToolsServer: string,
 ): "allow" | "deny" | undefined =>
   answerItself(mode, gate, call, roots, {
-    appTool: antigravityToolName(call).startsWith(`mcp_${appToolsServer}_`),
-    command: text(record(call["rawInput"])["CommandLine"]),
+    appTool: text(call["name"])?.startsWith(`mcp_${appToolsServer}_`) === true,
+    command: commandLineOf(call),
     editKeys: EDIT_KEYS,
     autoAsks: true,
+    guarded: [CUSTOMIZATIONS_FOLDER],
   });
 
 /**

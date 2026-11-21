@@ -30,14 +30,29 @@ import { type Json, record, text } from "./json.ts";
 import type { AcpMapper } from "./mapper.ts";
 import { offeredOptions, optionFor, type PermissionOption } from "./permissions.ts";
 
-/** Starts `spec`'s agent in `cwd`, connected through `handlers` and signed in as its env says. */
+/** What a launch knows beside the working folder. */
+export interface AcpLaunch {
+  /** The session's other folders, which the agent reads too. */
+  readonly additionalDirectories?: ReadonlyArray<string>;
+  /** Tells the thread what it should know about how the agent signed in. */
+  readonly notice?: (message: string) => void;
+}
+
+/**
+ * Starts `spec`'s agent in `cwd`, connected through `handlers` and signed in as its env says, unless
+ * the agent refuses its folders (`AcpAgentSpec.refuses`).
+ */
 export const launchAcp = (
   config: AcpHostConfig,
   spec: AcpAgentSpec,
   cwd: string,
   handlers: AcpHandlers,
+  launch: AcpLaunch = {},
 ) =>
   Effect.gen(function* () {
+    const refused = spec.refuses?.([cwd, ...(launch.additionalDirectories ?? [])]);
+    if (refused !== undefined)
+      return yield* Effect.fail(new AgentUnavailable({ agent: spec.kind, message: refused }));
     const binary = yield* config.binary;
     const env = yield* config.env;
     const extra = config.args === undefined ? [] : yield* config.args;
@@ -46,6 +61,7 @@ export const launchAcp = (
         spec.signIn(
           config.start({ binary, args: [...spec.args, ...extra], env, cwd, handlers }),
           env,
+          launch.notice ?? (() => {}),
         ),
       catch: (error) => acpFailure(spec, `${spec.name} didn't start`, error),
     });
@@ -145,7 +161,10 @@ export const openAcpSession = (
       },
     };
 
-    const connection = yield* launchAcp(config, spec, options.cwd, handlers);
+    const connection = yield* launchAcp(config, spec, options.cwd, handlers, {
+      additionalDirectories: options.additionalDirectories ?? [],
+      notice: (message) => Queue.offerUnsafe(events, { type: "notice", level: "warning", message }),
+    });
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {
         for (const each of pending.values()) each.answer({ outcome: { outcome: "cancelled" } });
@@ -207,17 +226,21 @@ export const openAcpSession = (
     const prompt = (input: UserInput) => {
       emit(current.started());
       const running = promptOf(input)
-        .then((content) => connection.request("session/prompt", { sessionId: id, prompt: content }))
-        .then(
-          (result) =>
-            emit(current.ended(text(record(result)["stopReason"]), undefined, record(result))),
-          (error: unknown) => {
-            const message = messageOf(error);
-            emit(
-              current.ended(undefined, signInProblem(spec, message) ? spec.signInMessage : message),
-            );
-          },
-        );
+        .then(async (content) => {
+          const refused = spec.refuses?.(roots);
+          if (refused !== undefined) return emit(current.ended(undefined, refused));
+          const result = await connection.request("session/prompt", {
+            sessionId: id,
+            prompt: content,
+          });
+          emit(current.ended(text(record(result)["stopReason"]), undefined, record(result)));
+        })
+        .catch((error: unknown) => {
+          const message = messageOf(error);
+          emit(
+            current.ended(undefined, signInProblem(spec, message) ? spec.signInMessage : message),
+          );
+        });
       turn = running;
       void running.finally(() => {
         if (turn === running) turn = undefined;

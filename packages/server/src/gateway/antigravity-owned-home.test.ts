@@ -10,8 +10,16 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ThreadId } from "@gram/contracts";
+import {
+  AntigravityHost,
+  AntigravityHostLive,
+  CUSTOMIZATIONS_REFUSAL,
+} from "@gram/agents/antigravity";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import {
@@ -125,6 +133,8 @@ const acp = (
     child.once("error", reject);
     void (async () => {
       await call("initialize", { protocolVersion: 1, clientCapabilities: {} });
+      if (env["GEMINI_API_KEY"] !== undefined)
+        await call("authenticate", { methodId: "gemini-api-key" });
       const opened = await call("session/new", { cwd, mcpServers: [server] });
       const sessionId = opened["sessionId"];
       if (prompt !== undefined) {
@@ -139,6 +149,50 @@ const acp = (
       resolve({ asked, output, stop: () => child.kill("SIGTERM") });
     })().catch(reject);
   });
+
+/**
+ * A repository's own `.agents` hooks and MCP server, each leaving a mark when it runs, in `work`.
+ */
+const repoCustomizations = (root: string, work: string) => {
+  const hook = join(root, "repo-hook-ran");
+  const server = join(root, "repo-mcp-ran");
+  mkdirSync(join(work, ".agents"));
+  writeFileSync(
+    join(work, ".agents", "hooks.json"),
+    JSON.stringify({ marker: { SessionStart: [{ type: "command", command: `touch '${hook}'` }] } }),
+  );
+  writeFileSync(
+    join(work, ".agents", "mcp_config.json"),
+    JSON.stringify({
+      mcpServers: { repo: { command: "sh", args: ["-c", `touch '${server}'; sleep 30`] } },
+    }),
+  );
+  return { hook, server };
+};
+
+/** A Gemini API stand-in on loopback that answers every request 404, so no turn reaches Google. */
+const standIn = () =>
+  Effect.acquireRelease(
+    Effect.promise(
+      () =>
+        new Promise<{ url: string; close: () => void }>((done) => {
+          const server = createServer((_request, response) => {
+            response.statusCode = 404;
+            response.end("{}");
+          });
+          server.listen(0, "127.0.0.1", () =>
+            done({
+              url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+              close: () => server.close(),
+            }),
+          );
+        }),
+    ),
+    (server) => Effect.sync(server.close),
+  );
+
+const agyPath = () =>
+  spawnSync("sh", ["-c", `command -v '${agy}'`], { encoding: "utf8" }).stdout.trim();
 
 describe("Gram's own Antigravity home", () => {
   it.effect("holds only Gram's settings, keeps the person's HOME, and drops config overrides", () =>
@@ -212,6 +266,73 @@ describe("Gram's own Antigravity home", () => {
           rmSync(root, { recursive: true, force: true });
         }
       }),
+    120_000,
+  );
+
+  it.effect.skipIf(!hasAgy)(
+    "refuses to open where the work folder has its own hooks and MCP servers, which agy would run",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { root, home, work, data } = personHome();
+          try {
+            const marks = repoCustomizations(root, work);
+            const gemini = yield* standIn();
+            const base = {
+              PATH: process.env["PATH"] ?? "/usr/bin",
+              HOME: home,
+              DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
+              GEMINI_API_KEY: "placeholder",
+              GOOGLE_GEMINI_BASE_URL: gemini.url,
+            };
+            const geminiDir = antigravityGeminiDir(data);
+            const host = yield* Effect.provide(
+              Effect.gen(function* () {
+                return yield* AntigravityHost;
+              }),
+              AntigravityHostLive({
+                ownedHome: () => prepareOwnedAntigravityHome(data, home, base),
+                geminiDir,
+                binaryPath: agyPath(),
+              }),
+            );
+            const opened = yield* Effect.flip(
+              Effect.scoped(
+                host.open({
+                  threadId: ThreadId.make("t"),
+                  cwd: work,
+                  permissionMode: "bypassPermissions",
+                }),
+              ),
+            );
+            expect(opened.message).toContain(CUSTOMIZATIONS_REFUSAL);
+            const listed = yield* Effect.flip(
+              host.listSessions?.({ cwd: work }) ?? Effect.die("no listing"),
+            );
+            expect(listed.message).toContain(CUSTOMIZATIONS_REFUSAL);
+            expect(existsSync(geminiDir)).toBe(false);
+            expect(existsSync(marks.hook)).toBe(false);
+            expect(existsSync(marks.server)).toBe(false);
+
+            yield* prepareOwnedAntigravityHome(data, home, base);
+            const bare = yield* Effect.promise(() =>
+              acp(base, ["--gemini-dir", geminiDir], work, sessionServer(join(root, "own")), "hi"),
+            );
+            yield* Effect.promise(() =>
+              vi.waitFor(
+                () => {
+                  expect(existsSync(marks.hook)).toBe(true);
+                  expect(existsSync(marks.server)).toBe(true);
+                },
+                { timeout: 30_000 },
+              ),
+            );
+            bare.stop();
+          } finally {
+            rmSync(root, { recursive: true, force: true });
+          }
+        }),
+      ),
     120_000,
   );
 

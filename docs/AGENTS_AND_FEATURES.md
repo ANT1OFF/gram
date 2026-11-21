@@ -425,7 +425,9 @@ over the [Agent Client Protocol](https://agentclientprotocol.com). It runs in a 
 in Gram's data folder, whose `.grok` shares only your `auth.json`, by path. So none of your own
 setup reaches a Gram thread: not your `~/.grok` config, MCP servers, plugins, hooks or memory, and
 not the Claude Code and Cursor settings, allow rules, MCP servers, skills and rules Grok would
-otherwise read. Commands it runs still see your `HOME`. The session takes the thread's permission
+otherwise read. A repository's own `.grok` hooks and MCP servers, and its `.mcp.json`, wait for
+folder trust, which that home holds none of, and Gram drops `GROK_FOLDER_TRUST` from the
+environment so trust can't be switched off. Commands it runs still see your `HOME`. The session takes the thread's permission
 mode, as Claude Code and Codex do, never a default of Grok's own. How the composer's modes map:
 
 | Mode         | Grok Build                                                                      |
@@ -482,8 +484,22 @@ put in the thread's mode, never a default of Antigravity's own:
 | Bypass       | `default`, with Gram allowing every call itself, so leaving Bypass takes effect at once |
 
 Under the outward gate (a supervised orchestrator's push, PR and merge checks) Auto runs in
-`default` too, so every command asks, and Gram lets through what the gate doesn't stop. An
-approval card offers once, the only grant Antigravity offers over ACP.
+`default` too, so every command asks, and Gram lets through what the gate doesn't stop; any call
+carrying a command line counts as a command, whatever kind Antigravity gives it. An approval card
+offers once, the only grant Antigravity offers over ACP.
+
+A repository can carry Antigravity customizations of its own: `.agents/hooks.json`,
+`.agents/mcp_config.json` and `.agents/plugins/`. `agy acp` runs them with no trust prompt, in
+every mode, whatever config folder it is given. So Gram won't open an Antigravity thread, or list
+its models or past sessions, where the folder, a parent up to its repository's root, or one of the
+thread's extra folders holds one of them: the thread fails with that reason in the Inbox. Move
+them aside or use another agent for that folder. Gram looks again before every turn, and a file
+that appeared during the session (from a command, say) ends the turn unprompted with the same
+reason. A write or edit to anything under `.agents` always comes to you as a card, in Bypass and
+under the outward gate too.
+
+When a desktop has no keyring sign-in and Gram falls back on the `GEMINI_API_KEY` in its
+environment (below), the thread says so: it runs on that key and is billed to it.
 
 Antigravity keeps the conversation; Gram resumes it by id after a restart. Models and their
 thinking levels are the ones the CLI lists. Each turn reports its tokens, cached and thinking

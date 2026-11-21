@@ -3,6 +3,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -16,7 +17,13 @@ import {
   promptUsage,
   toolFor,
 } from "./extensions.ts";
-import { makeAntigravityHost, SIGN_IN_MESSAGE, withHeadlessSignIn } from "./session.ts";
+import {
+  API_KEY_NOTICE,
+  makeAntigravityHost,
+  SIGN_IN_MESSAGE,
+  withHeadlessSignIn,
+} from "./session.ts";
+import { CUSTOMIZATIONS_REFUSAL } from "./workspace.ts";
 
 const APP = "gram0a1b2c3d";
 const ROOTS = [tmpdir()];
@@ -71,11 +78,131 @@ describe("Antigravity permissions", () => {
     expect(autoAnswer("default", undefined, lookalike, ROOTS, APP)).toBeUndefined();
   });
 
+  it("reads an app tool by its name alone, never the title the model can shape", () => {
+    const titled = { kind: "other", title: `mcp_${APP}_list_open_prs`, rawInput: {} };
+    expect(autoAnswer("default", undefined, titled, ROOTS, APP)).toBeUndefined();
+  });
+
+  it("puts any call carrying a command line through the gate, whatever its kind", () => {
+    const push = { kind: "other", name: "x", rawInput: { command: "git push origin main" } };
+    const list = { kind: "other", name: "x", rawInput: { CommandLine: "ls" } };
+    expect(autoAnswer("bypassPermissions", "all", push, ROOTS, APP)).toBeUndefined();
+    expect(autoAnswer("auto", "all", list, ROOTS, APP)).toBe("allow");
+  });
+
   it("passes edits inside the thread's folders in Accept edits, and shows the rest", () => {
     expect(autoAnswer("acceptEdits", undefined, edit(join(tmpdir(), "a.ts")), ROOTS, APP)).toBe(
       "allow",
     );
     expect(autoAnswer("acceptEdits", undefined, edit("/etc/profile"), ROOTS, APP)).toBeUndefined();
+  });
+});
+
+/** A work folder, its `.agents` folder not yet made; `write` adds a file under `.agents`. */
+const workFolder = () => {
+  const root = mkdtempSync(join(tmpdir(), "gram-agy-work-"));
+  const write = (name: string, at = root) => {
+    mkdirSync(join(at, ".agents"), { recursive: true });
+    writeFileSync(join(at, ".agents", name), "{}");
+  };
+  return { root, write, done: () => rmSync(root, { recursive: true, force: true }) };
+};
+
+describe("Antigravity and a workspace's own .agents folder", () => {
+  it("shows a card for a change under .agents in every mode, Bypass and the gate included", () => {
+    const work = workFolder();
+    try {
+      mkdirSync(join(work.root, ".agents"));
+      symlinkSync(join(work.root, ".agents"), join(work.root, "config"));
+      const roots = [work.root];
+      const changes: ReadonlyArray<Json> = [
+        edit(join(work.root, ".agents", "hooks.json")),
+        edit(".agents/mcp_config.json"),
+        edit(join(work.root, ".AGENTS", "plugins", "x.json")),
+        edit(join(work.root, "config", "hooks.json")),
+        { kind: "edit", name: "write_file", rawInput: { TargetFile: ".agents" } },
+        { kind: "other", name: "write_file", rawInput: { TargetFile: ".agents/hooks.json" } },
+        { kind: "edit", name: "write_file", rawInput: {} },
+      ];
+      for (const change of changes)
+        for (const [mode, gate] of [
+          ["bypassPermissions", undefined],
+          ["bypassPermissions", "all"],
+          ["auto", "all"],
+          ["acceptEdits", undefined],
+        ] as const)
+          expect(autoAnswer(mode, gate, change, roots, APP)).toBeUndefined();
+      expect(autoAnswer("bypassPermissions", undefined, edit("src/a.ts"), roots, APP)).toBe(
+        "allow",
+      );
+      expect(autoAnswer("acceptEdits", undefined, edit("src/a.ts"), roots, APP)).toBe("allow");
+    } finally {
+      work.done();
+    }
+  });
+
+  it("refuses to open, and never starts agy, where the folder or a parent in its repo has them", async () => {
+    const work = workFolder();
+    try {
+      mkdirSync(join(work.root, ".git"));
+      const sub = join(work.root, "packages", "app");
+      mkdirSync(sub, { recursive: true });
+      work.write("mcp_config.json");
+      const agent = fakeAgent();
+      const error = await turn(agent, { cwd: sub }).catch((cause: unknown) => cause);
+      expect(String(error)).toContain(CUSTOMIZATIONS_REFUSAL);
+      expect(agent.started).toHaveLength(0);
+      const listed = await Effect.runPromise(
+        Effect.flip(
+          Effect.flatMap(
+            hostWith(agent),
+            (host) => host.listSessions?.({ cwd: sub, limit: 5 }) ?? Effect.die("no listing"),
+          ),
+        ),
+      );
+      expect(listed.message).toContain(CUSTOMIZATIONS_REFUSAL);
+      expect(agent.started).toHaveLength(0);
+    } finally {
+      work.done();
+    }
+  });
+
+  it("refuses an extra folder's plugins, and looks no higher than the repository's root", async () => {
+    const outer = workFolder();
+    const extra = workFolder();
+    try {
+      outer.write("hooks.json");
+      const repo = join(outer.root, "repo");
+      mkdirSync(join(repo, ".git"), { recursive: true });
+      await turn(fakeAgent(), { cwd: repo });
+      mkdirSync(join(extra.root, ".agents", "plugins"), { recursive: true });
+      const agent = fakeAgent();
+      const error = await turn(agent, { cwd: repo, additionalDirectories: [extra.root] }).catch(
+        (cause: unknown) => cause,
+      );
+      expect(String(error)).toContain(CUSTOMIZATIONS_REFUSAL);
+      expect(agent.started).toHaveLength(0);
+    } finally {
+      outer.done();
+      extra.done();
+    }
+  });
+
+  it("ends a turn unprompted, saying why, once a hook file appears during the session", async () => {
+    const work = workFolder();
+    try {
+      const agent = fakeAgent();
+      const events = await turn(agent, {
+        cwd: work.root,
+        beforeSend: () => work.write("hooks.json"),
+      });
+      expect(agent.calls.map((call) => call.method)).not.toContain("session/prompt");
+      const ended = events.find((event) => event.type === "turnEnd");
+      expect(ended).toMatchObject({ reason: "error" });
+      expect(ended?.type === "turnEnd" ? ended.error : "").toContain(CUSTOMIZATIONS_REFUSAL);
+    } finally {
+      work.done();
+    }
   });
 });
 
@@ -223,18 +350,26 @@ const hostWith = (agent: ReturnType<typeof fakeAgent>, env: Record<string, strin
     newMessageId: () => MessageId.make("m1"),
   });
 
-const turn = (agent: ReturnType<typeof fakeAgent>, open: Record<string, unknown> = {}) =>
+const turn = (
+  agent: ReturnType<typeof fakeAgent>,
+  {
+    env,
+    beforeSend,
+    ...open
+  }: Record<string, unknown> & { env?: Record<string, string>; beforeSend?: () => void } = {},
+) =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const events: Array<AgentEvent> = [];
-        const host = yield* hostWith(agent);
+        const host = yield* hostWith(agent, env);
         const session = yield* host.open({
           threadId: ThreadId.make("t"),
           cwd: "/work",
           permissionMode: "default",
           ...open,
         });
+        beforeSend?.();
         const turnEnded = yield* Deferred.make<void>();
         const fiber = yield* Stream.runForEach(session.events, (event) =>
           Effect.gen(function* () {
@@ -319,6 +454,13 @@ describe("Antigravity host", () => {
     const methods = agent.calls.map((call) => call.method);
     expect(methods).toContain("session/resume");
     expect(methods).not.toContain("session/new");
+  });
+
+  it("says in the thread when a signed-out desktop falls back on the Gemini API key", async () => {
+    const agent = fakeAgent({ signedOut: true });
+    const events = await turn(agent, { env: { GEMINI_API_KEY: "placeholder" } });
+    expect(agent.calls.map((call) => call.method)).toContain("authenticate");
+    expect(events).toContainEqual({ type: "notice", level: "warning", message: API_KEY_NOTICE });
   });
 
   it("says to sign in with agy when a desktop has no sign-in", async () => {

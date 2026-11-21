@@ -122,6 +122,48 @@ export const editWithin = (
   });
 };
 
+/** Call kinds that only read. */
+const READING_KINDS: ReadonlySet<string> = new Set(["read", "search", "fetch", "think"]);
+
+/** Call kinds that change files. */
+const WRITING_KINDS: ReadonlySet<string> = new Set(["edit", "delete", "move"]);
+
+const inGuarded = (path: string, guarded: ReadonlySet<string>) =>
+  path.split(/[\\/]/).some((step) => guarded.has(step.toLowerCase()));
+
+/**
+ * Whether a call that may change files touches one of the `guarded` folders, whose contents the
+ * agent loads as its own config: a path it names (its `locations` and its input's `keys`) runs
+ * through one, as written or once links are followed, or a writing call names no path at all.
+ */
+export const touchesGuarded = (
+  call: Json,
+  roots: ReadonlyArray<string>,
+  keys: ReadonlyArray<string>,
+  guarded: ReadonlyArray<string>,
+): boolean => {
+  if (guarded.length === 0) return false;
+  const kind = text(call["kind"]) ?? "";
+  if (kind === "execute" || READING_KINDS.has(kind)) return false;
+  const names = new Set(guarded.map((name) => name.toLowerCase()));
+  const input = record(call["rawInput"]);
+  const named = [
+    ...records(call["locations"]).map((at) => at["path"]),
+    ...keys.map((key) => input[key]),
+  ].filter((path): path is string => typeof path === "string" && path !== "");
+  if (named.length === 0) return WRITING_KINDS.has(kind);
+  const cwd = roots[0] ?? "/";
+  return named.some((path) => {
+    const absolute = resolve(cwd, path);
+    const real = landing(absolute);
+    return (
+      inGuarded(path, names) ||
+      inGuarded(absolute, names) ||
+      (real !== undefined && inGuarded(real, names))
+    );
+  });
+};
+
 /** What Gram reads from a permission request to answer it itself. */
 export interface CallFacts {
   /** The call is one of Gram's own app tools, whose registry raises its own card. */
@@ -132,13 +174,17 @@ export interface CallFacts {
   readonly editKeys?: ReadonlyArray<string>;
   /** The agent's own auto mode asks the person about what it won't run, so Gram shows that. */
   readonly autoAsks?: boolean;
+  /** Folders the agent loads its own config from, so a change in one always shows its card. */
+  readonly guarded?: ReadonlyArray<string>;
 }
 
 /**
  * The answer Gram gives a permission request itself, without a card: Gram's own app tools go
  * through, as their registry raises its own card where one is needed; `dontAsk` refuses, edits
  * inside the thread's folders (`roots`, `editWithin`) go through in `acceptEdits`, and a mode that
- * would have run the call unasked lets it through when the outward gate doesn't ask about it.
+ * would have run the call unasked lets it through when the outward gate doesn't ask about it, any
+ * call carrying a command line being a command whatever its kind. A change to a `guarded` folder
+ * always shows its card.
  * `undefined` shows the card.
  */
 export const answerItself = (
@@ -150,12 +196,13 @@ export const answerItself = (
 ): "allow" | "deny" | undefined => {
   if (facts.appTool) return "allow";
   if (mode === "dontAsk") return "deny";
+  const keys = [...EDIT_PATH_KEYS, ...(facts.editKeys ?? [])];
+  if (touchesGuarded(call, roots, keys, facts.guarded ?? [])) return undefined;
   const kind = text(call["kind"]);
   if (mode === "acceptEdits" && kind === "edit" && editWithin(call, roots, facts.editKeys))
     return "allow";
   if (mode !== "bypassPermissions" && mode !== "auto") return undefined;
   if (gate === undefined) return mode === "auto" && facts.autoAsks === true ? undefined : "allow";
-  if (kind !== "execute") return "allow";
-  if (facts.command === undefined) return undefined;
+  if (facts.command === undefined) return kind === "execute" ? undefined : "allow";
   return gateAsks(gate, outwardKind(facts.command)) ? undefined : "allow";
 };

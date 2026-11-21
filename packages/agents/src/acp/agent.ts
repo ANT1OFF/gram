@@ -69,11 +69,20 @@ export interface AcpAgentSpec {
   readonly signInMessage: string;
   /** What the agent's errors say when it has no usable sign-in; `SIGN_IN_PATTERN` by default. */
   readonly signInPattern?: RegExp;
-  /** The connection the session uses, signing in headless where the environment says how. */
+  /**
+   * The connection the session uses, signing in headless where the environment says how, and
+   * telling `notice` what the person should know about the sign-in it fell back on.
+   */
   readonly signIn: (
     connection: AcpConnection,
     env: Readonly<Record<string, string | undefined>>,
+    notice: (message: string) => void,
   ) => AcpConnection;
+  /**
+   * Why the agent mustn't run in these folders (the first is its working folder), if it mustn't:
+   * checked before each agent process starts and before each turn.
+   */
+  readonly refuses?: (dirs: ReadonlyArray<string>) => string | undefined;
   /** Notifications that carry `session/update`s. */
   readonly updateMethods: ReadonlyArray<string>;
   readonly commandsOf: (update: Json) => ReadonlyArray<SlashCommand>;

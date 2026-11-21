@@ -20,6 +20,7 @@ import {
   promptUsage,
   toolFor,
 } from "./extensions.ts";
+import { refuseCustomizations } from "./workspace.ts";
 
 export const ANTIGRAVITY_CAPABILITIES: AgentCapabilities = {
   fork: false,
@@ -55,15 +56,20 @@ const SIGNED_METHODS: ReadonlySet<string> = new Set([
   "session/list",
 ]);
 
+/** What the thread says when it falls back on the Gemini API key. */
+export const API_KEY_NOTICE =
+  "Signed out of Google: this thread runs on your GEMINI_API_KEY and is billed to it.";
+
 /**
  * `connection` signing in headless on the Gemini API key its environment holds (`GEMINI_API_KEY`),
  * as a sandbox's does, but only once a request that needs a sign-in has failed for want of one:
  * on a desktop the CLI's own keyring sign-in comes first, and a key the person keeps for other tools
- * never takes its place.
+ * never takes its place. When the key does, `notice` says so (`API_KEY_NOTICE`).
  */
 export const withHeadlessSignIn = (
   connection: AcpConnection,
   env: Readonly<Record<string, string | undefined>>,
+  notice: (message: string) => void = () => {},
 ): AcpConnection => {
   const key = env["GEMINI_API_KEY"];
   if (key === undefined || key.trim() === "") return connection;
@@ -78,6 +84,7 @@ export const withHeadlessSignIn = (
           throw error;
         await connection.request("authenticate", { methodId: "gemini-api-key" });
         signedIn = true;
+        notice(API_KEY_NOTICE);
         return connection.request<T>(method, params);
       }
     },
@@ -92,6 +99,7 @@ const ANTIGRAVITY: AcpAgentSpec = {
   signInMessage: SIGN_IN_MESSAGE,
   signInPattern: SIGNED_OUT,
   signIn: withHeadlessSignIn,
+  refuses: refuseCustomizations,
   updateMethods: ["session/update"],
   commandsOf,
   appToolsServer: () => `gram${randomBytes(4).toString("hex")}`,
