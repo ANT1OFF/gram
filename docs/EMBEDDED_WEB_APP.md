@@ -618,7 +618,9 @@ For records and trees at scale:
   organisation chart is, with zoom, Fit, scroll or drag to move, and a button under each box that
   opens or folds its children (it says how many are folded). Only the open part is drawn.
   `expanded`/`onExpandedChange` or `defaultExpanded` (the top boxes when left out), `focusId` to
-  bring one into view and draw it as chosen, `nodeWidth`, `nodeHeight` and `height`.
+  bring one into view and draw it as chosen, `nodeWidth`, `nodeHeight` and `height`. Children that
+  open nothing stand in one column under their box (`stackLeaves`, on by default), and `fit` opens
+  it zoomed out to its frame, never below half size.
 
 `Page` also takes `above` (over the title: a back link, a line on where the page sits, or the
 tabs it belongs to), `headingLevel` (`2` where the page sits under an `h1` of your own; the look

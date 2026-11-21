@@ -38,6 +38,20 @@ describe("TreeChart", () => {
     expect(folded.placed.find((entry) => entry.node.id === "a")!.hidden).toBe(2);
   });
 
+  it("stands children that open nothing in one column under their box", () => {
+    const stacked = layOut(TREE, (id) => id === "lead", 100, 40, true);
+    const at = new Map(stacked.placed.map((entry) => [entry.node.id, entry]));
+    expect(at.get("a")!.x).toBe(at.get("b")!.x);
+    expect(at.get("a")!.x).toBeGreaterThan(at.get("lead")!.x);
+    expect(at.get("b")!.y).toBeGreaterThan(at.get("a")!.y);
+    expect(at.get("a")!.stacked).toBe(true);
+    const mixed = layOut(TREE, () => true, 100, 40, true);
+    const by = new Map(mixed.placed.map((entry) => [entry.node.id, entry]));
+    expect(by.get("a")!.stacked).toBeUndefined();
+    expect(by.get("a")!.parent).toEqual({ x: by.get("lead")!.x, y: 0 });
+    expect(by.get("a1")!.stacked).toBe(true);
+  });
+
   it("starts with the top open, and opens a box's children with the button under it", () => {
     render(<TreeChart label="People" nodes={TREE} />);
     expect(screen.queryByText("A1")).toBeNull();
