@@ -12,6 +12,7 @@ import { formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { PanelMessage } from "@/panels/panel-message";
 import { copyText } from "@/settings/copy-text";
+import { useFlash } from "@/lib/timers";
 
 import { useDoc } from "./doc-queries";
 
@@ -78,7 +79,7 @@ export function DocView({
   const [draft, setDraft] = useState<{ text: string; revision: number } | undefined>();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>();
-  const [copied, setCopied] = useState(false);
+  const [copied = false, flash] = useFlash(1500);
 
   const back = (
     <Button
@@ -174,10 +175,7 @@ export function DocView({
             variant="ghost"
             data-testid="doc-copy"
             onClick={() => {
-              void copyText(draft?.text ?? data.content).then(() => {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              });
+              void copyText(draft?.text ?? data.content).then(() => flash(true));
             }}
           >
             {copied ? "Copied" : "Copy Markdown"}

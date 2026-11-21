@@ -13,7 +13,7 @@ import {
   Send,
   SquareArrowRight,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, rewindErrorMessage } from "@/api/errors";
@@ -26,6 +26,7 @@ import { copyText } from "@/settings/copy-text";
 import { useDraftStore } from "@/stores/drafts";
 import { feedMessages } from "@/stores/feeds";
 import { useThreadsStore } from "@/stores/threads";
+import { useFlash } from "@/lib/timers";
 
 import { messageMarkdown, turnMarkdown, turnMessages } from "./copy-markdown";
 import { ForkDialog } from "./fork-dialog";
@@ -425,14 +426,9 @@ function CopyAction({
   text: () => string;
   menu?: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), COPIED_MS);
-    return () => clearTimeout(timer);
-  }, [copied]);
+  const [copied = false, flash] = useFlash(COPIED_MS);
   const shown = copied ? "Copied" : label;
-  const copy = () => void copyMarkdown(text()).then((ok) => setCopied(ok));
+  const copy = () => void copyMarkdown(text()).then((ok) => ok && flash(true));
   const content = (
     <>
       <Swap swapKey={copied ? "copied" : "copy"}>
