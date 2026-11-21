@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type { AcpConnection, AcpHandlers, StartAcpAgent } from "./acp.ts";
+import type { AcpConnection, AcpHandlers, StartAcpAgent } from "../acp/connection.ts";
 import {
   autoAnswer,
   billingLimits,

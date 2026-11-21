@@ -1,5 +1,5 @@
 // Grok Build's ACP extensions and payloads read as Gram's: its models, billing, permissions,
-// prompts, slash commands, MCP servers and replayed transcripts. Pure, apart from reading images.
+// slash commands, MCP servers and replayed transcripts. Pure.
 
 import type {
   AgentModel,
@@ -8,28 +8,18 @@ import type {
   SessionTranscriptMessage,
   SlashCommand,
   SubscriptionLimitReport,
-  UserInput,
 } from "@gram/contracts";
-import { readFile } from "node:fs/promises";
-import { lstatSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { APP_TOOLS_SERVER_NAME } from "../app-tools.ts";
 import { BUILT_IN_TOGGLE_REASON, type ConnectorStatus, type OutwardGate } from "../host.ts";
-import { gateAsks, outwardKind } from "../outward.ts";
+import { commandsOf, transcriptOf as acpTranscriptOf } from "../acp/content.ts";
+import { type Json, record, text } from "../acp/json.ts";
+import { answerItself } from "../acp/permissions.ts";
 import { grokToolName, toolFor } from "./mapper.ts";
 
-/** A JSON object as ACP carries it. */
-export type Json = Readonly<Record<string, unknown>>;
-
-/** `value` as an object, or an empty one. */
-export const record = (value: unknown): Json =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : {};
-
-/** `value` when it is a string. */
-export const text = (value: unknown): string | undefined =>
-  typeof value === "string" ? value : undefined;
+export { promptOf } from "../acp/content.ts";
+export { editWithin } from "../acp/permissions.ts";
+export { type Json, record, text };
 
 const EFFORTS: ReadonlySet<string> = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
@@ -116,146 +106,25 @@ export const permissionParams = (permission: "ask" | "auto" | "always-approve"):
   permission_mode: permission,
 });
 
-const EDIT_PATH_KEYS = ["file_path", "target_file", "path", "notebook_path", "target_directory"];
-
-const exists = (path: string) => {
-  try {
-    return lstatSync(path);
-  } catch {
-    return undefined;
-  }
-};
-
 /**
- * Where a write to absolute `path` lands: its nearest existing ancestor with every link followed,
- * then the rest, which can hold no link. `undefined` for a path that is itself a link, dangling or
- * not, or whose links can't be followed.
- */
-const landing = (path: string): string | undefined => {
-  let at = path;
-  while (exists(at) === undefined) {
-    if (dirname(at) === at) return undefined;
-    at = dirname(at);
-  }
-  if (at === path && exists(at)?.isSymbolicLink() === true) return undefined;
-  try {
-    return join(realpathSync(at), relative(at, path));
-  } catch {
-    return undefined;
-  }
-};
-
-/**
- * Whether every path an edit request names (its `locations` and its input's path keys) lands,
- * once links are followed, inside one of `roots`, the first of which relative paths are read
- * from. A request naming no path, or a path with a `..` step or ending in a link, is not.
- */
-export const editWithin = (call: Json, roots: ReadonlyArray<string>): boolean => {
-  const [cwd] = roots;
-  if (cwd === undefined) return false;
-  const input = record(call["rawInput"]);
-  const named = [
-    ...(Array.isArray(call["locations"]) ? call["locations"] : []).map((at) => record(at)["path"]),
-    ...EDIT_PATH_KEYS.map((key) => input[key]),
-  ].filter((path) => path !== undefined);
-  if (named.length === 0) return false;
-  const inside = roots.flatMap((root) => {
-    try {
-      return [realpathSync(resolve(root))];
-    } catch {
-      return [];
-    }
-  });
-  return named.every((path) => {
-    if (typeof path !== "string" || path === "" || path.split(/[\\/]/).includes("..")) return false;
-    const real = landing(resolve(cwd, path));
-    return (
-      real !== undefined &&
-      inside.some((root) => {
-        const rest = relative(root, real);
-        return rest === "" || (!rest.split(/[\\/]/).includes("..") && !isAbsolute(rest));
-      })
-    );
-  });
-};
-
-/**
- * The answer Gram gives a permission request itself, without a card: Gram's own app tools go
- * through, as their registry raises its own card where one is needed; `dontAsk` refuses, edits
- * inside the thread's folders (`roots`, `editWithin`) go through in `acceptEdits`, and a mode that
- * would have run the call unasked lets it through when the outward gate doesn't ask about it.
- * `undefined` shows the card.
+ * The answer Gram gives a permission request itself, without a card (`answerItself`): Gram's own
+ * app tools are the calls Grok names `gram__…`.
  */
 export const autoAnswer = (
   mode: PermissionMode,
   gate: OutwardGate | undefined,
   call: Json,
   roots: ReadonlyArray<string>,
-): "allow" | "deny" | undefined => {
-  const tool = text(record(call["rawInput"])["tool_name"]);
-  if (tool?.startsWith(`${APP_TOOLS_SERVER_NAME}__`) === true) return "allow";
-  if (mode === "dontAsk") return "deny";
-  const kind = text(call["kind"]);
-  if (mode === "acceptEdits" && kind === "edit" && editWithin(call, roots)) return "allow";
-  if (mode !== "bypassPermissions" && mode !== "auto") return undefined;
-  if (gate === undefined) return "allow";
-  if (kind !== "execute") return "allow";
-  const command = text(record(call["rawInput"])["command"]);
-  if (command === undefined) return undefined;
-  return gateAsks(gate, outwardKind(command)) ? undefined : "allow";
-};
-
-/** The largest image sent inline; a bigger one goes as a link to its file. */
-const IMAGE_INLINE_MAX = 10 * 1024 * 1024;
-
-/**
- * A message as ACP content: its text, each image inline (Grok Build reads images), and every other
- * attachment as a link to its file, which Grok reads with its own tools.
- */
-export const promptOf = async (
-  input: UserInput,
-  read: (path: string) => Promise<Uint8Array> = readFile,
-): Promise<ReadonlyArray<Json>> => {
-  const blocks: Array<Json> = [{ type: "text", text: input.text }];
-  for (const attachment of input.attachments ?? []) {
-    const name = attachment.name ?? attachment.path.split(/[\\/]/).at(-1) ?? attachment.path;
-    if (attachment.mediaType?.startsWith("image/") === true) {
-      const bytes = await read(attachment.path).catch(() => undefined);
-      if (bytes !== undefined && bytes.byteLength <= IMAGE_INLINE_MAX) {
-        blocks.push({
-          type: "image",
-          mimeType: attachment.mediaType,
-          data: Buffer.from(bytes).toString("base64"),
-        });
-        continue;
-      }
-    }
-    blocks.push({
-      type: "resource_link",
-      uri: pathToFileURL(attachment.path).href,
-      name,
-      ...(attachment.mediaType === undefined ? {} : { mimeType: attachment.mediaType }),
-    });
-  }
-  return blocks;
-};
+): "allow" | "deny" | undefined =>
+  answerItself(mode, gate, call, roots, {
+    appTool:
+      text(record(call["rawInput"])["tool_name"])?.startsWith(`${APP_TOOLS_SERVER_NAME}__`) ===
+      true,
+    command: text(record(call["rawInput"])["command"]),
+  });
 
 /** Grok Build's `available_commands_update` as Gram's slash commands. */
-export const grokCommands = (update: Json): ReadonlyArray<SlashCommand> =>
-  (Array.isArray(update["availableCommands"]) ? update["availableCommands"] : [])
-    .map(record)
-    .flatMap((command): Array<SlashCommand> => {
-      const name = text(command["name"]);
-      if (name === undefined || name === "") return [];
-      const hint = text(record(command["input"])["hint"]);
-      return [
-        {
-          name,
-          description: text(command["description"]) ?? "",
-          ...(hint === undefined ? {} : { argumentHint: hint }),
-        },
-      ];
-    });
+export const grokCommands = (update: Json): ReadonlyArray<SlashCommand> => commandsOf(update);
 
 /** A server's state in `x.ai/mcp/list` as Gram's connector status. */
 export const connectorOf = (entry: Json): ConnectorStatus | undefined => {
@@ -295,41 +164,5 @@ export const connectorOf = (entry: Json): ConnectorStatus | undefined => {
  * A past session's main conversation from the updates `session/load` replays: each user message,
  * and each reply with the calls it made, in order.
  */
-export const transcriptOf = (updates: ReadonlyArray<Json>): Array<SessionTranscriptMessage> => {
-  const messages: Array<SessionTranscriptMessage> = [];
-  let last:
-    | { role: "user" | "assistant"; text: string; tools: Array<{ name: string }>; at?: number }
-    | undefined;
-  const flush = () => {
-    if (last === undefined) return;
-    if (last.text.trim() !== "" || last.tools.length > 0)
-      messages.push({
-        role: last.role,
-        text: last.text.trim(),
-        ...(last.tools.length > 0 ? { tools: last.tools } : {}),
-        ...(last.at === undefined ? {} : { at: last.at }),
-      });
-    last = undefined;
-  };
-  for (const params of updates) {
-    const update = record(params["update"]);
-    const kind = update["sessionUpdate"];
-    const stamp = record(params["_meta"])["agentTimestampMs"];
-    const at = typeof stamp === "number" ? stamp : undefined;
-    const role =
-      kind === "user_message_chunk"
-        ? "user"
-        : kind === "agent_message_chunk" || kind === "tool_call"
-          ? "assistant"
-          : undefined;
-    if (role === undefined) continue;
-    if (last?.role !== role) {
-      flush();
-      last = { role, text: "", tools: [], ...(at === undefined ? {} : { at }) };
-    }
-    if (kind === "tool_call") last.tools.push({ name: toolFor(grokToolName(update), {}).name });
-    else last.text += text(record(update["content"])["text"]) ?? "";
-  }
-  flush();
-  return messages;
-};
+export const transcriptOf = (updates: ReadonlyArray<Json>): Array<SessionTranscriptMessage> =>
+  acpTranscriptOf(updates, (update) => toolFor(grokToolName(update), {}).name);
