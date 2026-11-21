@@ -70,7 +70,6 @@ import { sendDiscover } from "./use-board-actions";
 import { useWorkspacesQuery } from "./use-orchestration";
 import { parentFolder } from "./workspace-repos";
 import { sleep } from "@/lib/sleep";
-import { useLayoutSync } from "@/lib/effects";
 
 /** How often a sheet waiting for the person's machine asks whether it is up. */
 const MACHINE_POLL_MS = 1000;
@@ -447,10 +446,6 @@ function SheetForm({
   };
 
   const source = workspaces.find((state) => state.workspace.id === draft.from);
-  const footerRef = useRef<HTMLDivElement>(null);
-  useLayoutSync(() => {
-    if (issue !== undefined) footerRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [issue]);
 
   return (
     <form
@@ -580,51 +575,56 @@ function SheetForm({
           />
         </div>
       </fieldset>
-      {issue !== undefined &&
-        (created === undefined ? (
-          <FormError message={issue} />
-        ) : (
-          <SavedNotOpened name={created.state.workspace.name} reason={issue} />
-        ))}
-      {/* Where the machine reaches every repository, Start starts it: no second start. */}
-      {machineWanted && !reachesTheirs && <StartMachineCard />}
-      <div ref={footerRef} className="flex flex-wrap items-center gap-2 border-t border-edge pt-4">
-        <PressScale>
+      <div
+        data-testid="new-workspace-actions"
+        className="sticky bottom-0 z-10 -mx-5 -mb-5 flex flex-col gap-3 rounded-b-lg border-t border-edge bg-card px-5 pt-4 pb-5"
+      >
+        {issue !== undefined &&
+          (created === undefined ? (
+            <FormError message={issue} />
+          ) : (
+            <SavedNotOpened name={created.state.workspace.name} reason={issue} />
+          ))}
+        {/* Where the machine reaches every repository, Start starts it: no second start. */}
+        {machineWanted && !reachesTheirs && <StartMachineCard />}
+        <div className="flex flex-wrap items-center gap-2">
+          <PressScale>
+            <Button
+              type="submit"
+              data-testid="new-workspace-start"
+              disabled={busy || waiting}
+              aria-label={waiting ? `Start, waiting for your ${noun}` : undefined}
+            >
+              {(busy || waiting) && <Spinner aria-hidden />}
+              {waiting
+                ? `Opens once your ${noun} is up…`
+                : created === undefined
+                  ? "Start"
+                  : "Open orchestrator"}
+              <ShortcutKbd id="draft.create" cap />
+            </Button>
+          </PressScale>
           <Button
-            type="submit"
-            data-testid="new-workspace-start"
+            type="button"
+            variant="outline"
+            data-testid="new-workspace-save"
             disabled={busy || waiting}
-            aria-label={waiting ? `Start, waiting for your ${noun}` : undefined}
+            onClick={() => void saveOnly()}
           >
-            {(busy || waiting) && <Spinner aria-hidden />}
-            {waiting
-              ? `Opens once your ${noun} is up…`
-              : created === undefined
-                ? "Start"
-                : "Open orchestrator"}
-            <ShortcutKbd id="draft.create" cap />
+            {created === undefined ? "Save without starting" : "Leave it saved"}
           </Button>
-        </PressScale>
-        <Button
-          type="button"
-          variant="outline"
-          data-testid="new-workspace-save"
-          disabled={busy || waiting}
-          onClick={() => void saveOnly()}
-        >
-          {created === undefined ? "Save without starting" : "Leave it saved"}
-        </Button>
-        <Button type="button" variant="ghost" onClick={cancel}>
-          Cancel
-        </Button>
-        {source !== undefined && (
-          <span
-            data-testid="new-workspace-from"
-            className="ml-auto text-meta text-muted-foreground"
-          >
-            Setup from {source.workspace.name}
-          </span>
-        )}
+          <Button type="button" variant="ghost" onClick={cancel}>
+            Cancel
+          </Button>
+          {source !== undefined && (
+            <span
+              data-testid="new-workspace-from"
+              className="ml-auto text-meta text-muted-foreground"
+            >
+              Setup from {source.workspace.name}
+            </span>
+          )}
+        </div>
       </div>
     </form>
   );
