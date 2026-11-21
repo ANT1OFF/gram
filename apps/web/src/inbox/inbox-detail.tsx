@@ -4,6 +4,7 @@ import { AlarmClock, X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
+import { openContentUrl } from "@/api/open-external";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { formatRelative } from "@/lib/time";
@@ -41,6 +42,7 @@ import {
 } from "@/orchestration/question-entry";
 import { useThreadsStore } from "@/stores/threads";
 import { AlwaysPreviewRequestCards, RequestCards, SheetRequestCards } from "@/thread/request-cards";
+import { waitLinkOf } from "@/thread/waiting-model";
 import { WaitingItemRow } from "@/thread/waiting-tray";
 
 import { InboxContext } from "./inbox-context";
@@ -398,8 +400,10 @@ export function InboxDetail({
   card?: boolean;
   onOpenThread: (item: NeedsYouItem) => void;
 }) {
+  const api = useApi();
   const actions = useNeedsYouActions();
   const kind = kindOf(item);
+  const link = item.wait === undefined ? undefined : waitLinkOf(item.wait.item);
   const where = [item.workspace, item.where === "" ? undefined : item.where]
     .filter((part) => part !== undefined)
     .join(" · ");
@@ -451,6 +455,21 @@ export function InboxDetail({
         </div>
         {!card && (
           <>
+            {link !== undefined && (
+              <Button
+                size="xs"
+                variant="outline"
+                data-testid="inbox-open-link"
+                title={link.url}
+                onClick={() =>
+                  void openContentUrl(api, link.url).catch((error: unknown) =>
+                    console.error("inbox: open the link", error),
+                  )
+                }
+              >
+                Open {link.host}
+              </Button>
+            )}
             <Button
               size="xs"
               variant="ghost"

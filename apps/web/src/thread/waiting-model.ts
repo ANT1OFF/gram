@@ -1,6 +1,7 @@
 import {
   HELPER_RESOLVE_UNDO_MS,
   approvalSubject,
+  isWaitLink,
   waitViewOf,
   type MemoryQuestion,
   type PendingRequest,
@@ -101,15 +102,13 @@ export const undoableHelperResolves = (summary: WaitsOf, now: number): WaitItem[
     (item) => item.resolvedAt !== undefined && item.resolvedAt > now - HELPER_RESOLVE_UNDO_MS,
   );
 
-/** What a row offers, besides Jump to and Done, by its kind. */
-export type WaitAction = "copy" | "open" | "answer";
+/** What a row offers by its kind, besides Jump to, Done and Open where it has a link. */
+export type WaitAction = "copy" | "answer";
 
 export const primaryAction = (kind: WaitViewKind): WaitAction | undefined => {
   switch (kind) {
     case "draft":
       return "copy";
-    case "review":
-      return "open";
     case "decision":
       return "answer";
     default:
@@ -117,15 +116,16 @@ export const primaryAction = (kind: WaitViewKind): WaitAction | undefined => {
   }
 };
 
-/** The host a link goes to, shown before it is opened; `undefined` for one that doesn't parse. */
-export const linkHost = (link: string): string | undefined => {
-  try {
-    return new URL(link).host;
-  } catch {
-    // Stored links are checked on the way in; one that isn't a URL shows no host.
-    return undefined;
-  }
-};
+/**
+ * The link an item's Open opens and the host it is named by: an http(s) one only. Links are checked
+ * on the way in; one stored before that, or of another scheme, has no Open.
+ */
+export const waitLinkOf = (
+  item: Pick<WaitItem, "link">,
+): { readonly url: string; readonly host: string } | undefined =>
+  item.link === undefined || !isWaitLink(item.link)
+    ? undefined
+    : { url: item.link, host: new URL(item.link).host };
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n {0,3}\1[ \t]*$/gmu;
 
