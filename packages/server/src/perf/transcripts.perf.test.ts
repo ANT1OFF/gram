@@ -309,9 +309,9 @@ const STREAM_BACKLOG_TOOLS = Number(process.env["GRAM_PERF_LOAD_BACKLOG"] ?? 250
 const CLIENT = `
 const { parentPort, workerData } = require("node:worker_threads");
 const { performance } = require("node:perf_hooks");
-const { url, cookie, threadIds, turnThreadIds, turnMs, probeMs, dwellMs, seconds } = workerData;
+const { url, cookie, key, threadIds, turnThreadIds, turnMs, probeMs, dwellMs, seconds } = workerData;
 const open = () => new Promise((resolve, reject) => {
-  const ws = new WebSocket(url, { headers: { cookie } });
+  const ws = new WebSocket(url, { headers: { cookie, "x-gram-key": key } });
   ws.onopen = () => resolve(ws);
   ws.onerror = () => reject(new Error("socket failed"));
 });
@@ -431,12 +431,16 @@ interface ClientReport {
 const bootCookie = (port: number, token: string) =>
   Effect.promise(
     () =>
-      new Promise<string>((resolve, reject) => {
+      new Promise<{ cookie: string; key: string }>((resolve, reject) => {
         const req = httpRequest(
           { host: "127.0.0.1", port, path: `/?boot=${token}`, agent: false },
           (res) => {
             res.resume();
-            resolve((res.headers["set-cookie"]?.[0] ?? "").split(";")[0] ?? "");
+            // The cookie, and the page's key from the redirect's fragment.
+            resolve({
+              cookie: (res.headers["set-cookie"]?.[0] ?? "").split(";")[0] ?? "",
+              key: String(res.headers.location).split("#gram-key=")[1] ?? "",
+            });
           },
         );
         req.on("error", reject);
@@ -646,7 +650,7 @@ describe.skipIf(!LOAD)("a loaded server", () => {
           const http = yield* HttpServer.HttpServer;
           const { token } = yield* LaunchToken;
           const port = serverPort(http);
-          const cookie = yield* bootCookie(port, token);
+          const { cookie, key } = yield* bootCookie(port, token);
           const threadIds = [...existing, ...long, ...inWorktrees.slice(STREAMING + TURN_THREADS)];
           // Every fourth visit is to a streaming thread.
           const order = threadIds.flatMap((id, i) =>
@@ -663,6 +667,7 @@ describe.skipIf(!LOAD)("a loaded server", () => {
                   workerData: {
                     url: `ws://127.0.0.1:${port}/ws`,
                     cookie,
+                    key,
                     threadIds: order,
                     turnThreadIds: [...turnThreads, ...turnThreads],
                     turnMs: TURN_MS,

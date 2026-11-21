@@ -10,6 +10,7 @@ import { useCallback, useMemo, useState } from "react";
 import { serverUrl } from "@/api/server-base";
 import { useSubscription } from "@/lib/effects";
 import { useServerSettings } from "@/settings-sync/store";
+import { withOriginKey } from "../api/origin-key";
 
 // New task sending a task to a hosted workspace (docs/design/mocks/hosted-send-and-move, v1,
 // board 1): where it may go, the three checks before it goes, and the send. The local server asks
@@ -215,13 +216,16 @@ export class SendWorkError extends Error {}
 const post = async (path: string, body: unknown, fallback: string): Promise<unknown> => {
   let response: Response;
   try {
-    response = await fetch(serverUrl(path), {
-      method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    response = await fetch(
+      serverUrl(path),
+      withOriginKey({
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
   } catch {
     throw new SendWorkError(fallback);
   }

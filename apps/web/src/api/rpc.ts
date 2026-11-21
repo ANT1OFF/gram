@@ -41,6 +41,7 @@ import { run, type RpcContext } from "./rpc-client";
 import { createServed, gateClient, HANDSHAKE_TAG, startHandshake } from "./served";
 import { rpcProtocolLayer } from "./rpc-protocol";
 import type { Api } from "./types";
+import { originKeyProtocols } from "./origin-key";
 
 /**
  * The `Api` over Effect RPC on a browser WebSocket (`/ws`, cookie auth). The client lives for the
@@ -55,7 +56,9 @@ export async function createRpcApi(url: string, session?: GramServer["session"])
   const context = await Effect.runPromise(
     Layer.buildWithScope(
       rpcProtocolLayer(
-        Socket.layerWebSocket(url).pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal)),
+        Socket.layerWebSocket(url, { protocols: originKeyProtocols() }).pipe(
+          Layer.provide(Socket.layerWebSocketConstructorGlobal),
+        ),
         connection,
       ),
       scope,

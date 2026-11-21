@@ -37,7 +37,7 @@ import { HttpServer } from "../platform/unstable.ts";
 import { FakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
-import { tokenCookieName } from "./auth.ts";
+import { ORIGIN_KEY_HEADER, tokenCookieName } from "./auth.ts";
 import {
   MACHINES_LIST_PATH,
   MACHINES_PROVISION_PATH,
@@ -147,7 +147,7 @@ interface Answer {
 const local = (path: string, body?: unknown) =>
   Effect.gen(function* () {
     const port = serverPort(yield* HttpServer.HttpServer);
-    const { token } = yield* LaunchToken;
+    const { token, originKey } = yield* LaunchToken;
     return yield* Effect.promise(
       () =>
         new Promise<Answer>((resolve, reject) => {
@@ -161,6 +161,7 @@ const local = (path: string, body?: unknown) =>
               agent: false,
               headers: {
                 cookie: `${tokenCookieName(port)}=${token}`,
+                [ORIGIN_KEY_HEADER]: originKey,
                 origin: `http://127.0.0.1:${port}`,
                 "content-type": "application/json",
                 "content-length": Buffer.byteLength(text),

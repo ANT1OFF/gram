@@ -38,7 +38,7 @@ import * as Layer from "effect/Layer";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { eventually, hasGit, makeRepo } from "../git/test-repo.ts";
-import { tokenCookieName } from "../http/auth.ts";
+import { ORIGIN_KEY_HEADER, tokenCookieName } from "../http/auth.ts";
 import { LaunchToken, ServerLayer, serverPort } from "../http/server.ts";
 import {
   HttpServer,
@@ -126,12 +126,15 @@ const appClient = <Rpcs extends Rpc.Any>(
   group: RpcGroup.RpcGroup<Rpcs>,
   port: number,
   cookie: string,
+  key: string,
 ) =>
   Effect.gen(function* () {
     const protocol = yield* Layer.build(
       RpcClient.layerProtocolSocket().pipe(
         Layer.provide(
-          Socket.layerWebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { cookie } } as never),
+          Socket.layerWebSocket(`ws://127.0.0.1:${port}/ws`, {
+            headers: { cookie, [ORIGIN_KEY_HEADER]: key },
+          } as never),
         ),
         Layer.provide(NodeWS.layerWebSocketConstructor),
         Layer.provide(RpcSerialization.layerJson),
@@ -340,13 +343,16 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
         }).pipe(Effect.provideContext(server));
         const booted = yield* raw(port, { path: `/?boot=${token}` });
         const cookie = booted.headers["set-cookie"]?.[0]?.split(";")[0] ?? "";
+        // The page's key, from the boot redirect's fragment.
+        const pageKey = String(booted.headers.location).split("#gram-key=")[1] ?? "";
         expect(cookie.startsWith(`${tokenCookieName(port)}=`)).toBe(true);
         const local = {
           cookie,
+          [ORIGIN_KEY_HEADER]: pageKey,
           origin: `http://127.0.0.1:${port}`,
           "content-type": "application/json",
         };
-        const app = yield* appClient(GramRpcs, port, cookie);
+        const app = yield* appClient(GramRpcs, port, cookie, pageKey);
         // The fake agent's models fill no tier of the recommended setup a headless server starts
         // with, so this one runs on the models it lists.
         yield* app["settings.set"]({ patch: { agents: { recommendedSetup: { enabled: false } } } });
@@ -686,12 +692,15 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
         }).pipe(Effect.provideContext(server));
         const booted = yield* raw(port, { path: `/?boot=${token}` });
         const cookie = booted.headers["set-cookie"]?.[0]?.split(";")[0] ?? "";
+        // The page's key, from the boot redirect's fragment.
+        const pageKey = String(booted.headers.location).split("#gram-key=")[1] ?? "";
         const local = {
           cookie,
+          [ORIGIN_KEY_HEADER]: pageKey,
           origin: `http://127.0.0.1:${port}`,
           "content-type": "application/json",
         };
-        const app = yield* appClient(GramRpcs, port, cookie);
+        const app = yield* appClient(GramRpcs, port, cookie, pageKey);
         const added = yield* app["projects.add"]({ root: project.root });
 
         const machineAgents = yield* Layer.build(makeFakeAgentAdapter());
@@ -876,12 +885,15 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
         }).pipe(Effect.provideContext(server));
         const booted = yield* raw(port, { path: `/?boot=${token}` });
         const cookie = booted.headers["set-cookie"]?.[0]?.split(";")[0] ?? "";
+        // The page's key, from the boot redirect's fragment.
+        const pageKey = String(booted.headers.location).split("#gram-key=")[1] ?? "";
         const local = {
           cookie,
+          [ORIGIN_KEY_HEADER]: pageKey,
           origin: `http://127.0.0.1:${port}`,
           "content-type": "application/json",
         };
-        const app = yield* appClient(GramRpcs, port, cookie);
+        const app = yield* appClient(GramRpcs, port, cookie, pageKey);
         yield* app["settings.set"]({ patch: { agents: { recommendedSetup: { enabled: false } } } });
         const added = yield* app["projects.add"]({ root: project.root });
 

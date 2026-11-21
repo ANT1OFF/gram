@@ -1,5 +1,6 @@
 import { serverUrl } from "./server-base";
 import type { ConnectionMonitor, ConnectionNotice, ConnectionState } from "./types";
+import { withOriginKey } from "./origin-key";
 
 /** How long a command waits for a dropped connection to come back before it gives up. */
 export const RECONNECT_WAIT_MS = 120_000;
@@ -81,11 +82,14 @@ async function noticeOf(response: Response): Promise<ConnectionNotice | undefine
 
 export async function probeSession(fetchImpl: typeof fetch = fetch): Promise<ProbeAnswer> {
   try {
-    const response = await fetchImpl(serverUrl("/?boot=0"), {
-      credentials: "same-origin",
-      cache: "no-store",
-      redirect: "manual",
-    });
+    const response = await fetchImpl(
+      serverUrl("/?boot=0"),
+      withOriginKey({
+        credentials: "same-origin",
+        cache: "no-store",
+        redirect: "manual",
+      }),
+    );
     if (response.status === 401) return "rejected";
     if (response.status === 503) return (await noticeOf(response)) ?? "unknown";
     return "unknown";

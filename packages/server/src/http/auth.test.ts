@@ -3,6 +3,8 @@ import {
   authorize,
   contentSecurityPolicy,
   makeLaunchToken,
+  ORIGIN_KEY_HEADER,
+  ORIGIN_KEY_PROTOCOL,
   tokenCookieName,
   tokensEqual,
   type AuthRequest,
@@ -10,7 +12,8 @@ import {
 
 const PORT = 4321;
 const TOKEN = "a".repeat(64);
-const OPTIONS = { port: PORT, token: TOKEN };
+const KEY = "b".repeat(64);
+const OPTIONS = { port: PORT, token: TOKEN, originKey: KEY };
 
 const request = (overrides: Partial<AuthRequest> = {}): AuthRequest => ({
   method: "GET",
@@ -77,7 +80,11 @@ describe("authorize", () => {
     const decision = authorize(
       { ...OPTIONS, extraOrigins: ["http://localhost:5173"] },
       request({
-        headers: { host: `localhost:${PORT}`, origin: "http://localhost:5173" },
+        headers: {
+          host: `localhost:${PORT}`,
+          origin: "http://localhost:5173",
+          [ORIGIN_KEY_HEADER]: KEY,
+        },
         cookies: { [tokenCookieName(PORT)]: TOKEN },
       }),
     );
@@ -99,9 +106,66 @@ describe("authorize", () => {
     expect(
       authorize(OPTIONS, request({ url: "/ws", cookies: { sb_token_9999: TOKEN } })),
     ).toMatchObject({ status: 401 });
-    expect(
-      authorize(OPTIONS, request({ url: "/ws", cookies: { [tokenCookieName(PORT)]: TOKEN } })).kind,
-    ).toBe("pass");
+  });
+
+  // A server on another loopback port the browser visits is sent the cookie, and replays it.
+  describe("the cookie another port saw, without the key only Gram's origin holds", () => {
+    const cookies = { [tokenCookieName(PORT)]: TOKEN };
+    const host = `127.0.0.1:${PORT}`;
+
+    it("opens no socket and reaches no route", () => {
+      for (const [method, url] of [
+        ["GET", "/ws"],
+        ["POST", "/workspace/export"],
+        ["POST", "/machines/join"],
+        ["GET", "/?boot=0"],
+      ] as const)
+        expect(authorize(OPTIONS, request({ method, url, cookies }))).toMatchObject({
+          kind: "reject",
+          status: 401,
+        });
+      const wrong = { host, [ORIGIN_KEY_HEADER]: "c".repeat(64) };
+      expect(authorize(OPTIONS, request({ url: "/ws", headers: wrong, cookies }))).toMatchObject({
+        status: 401,
+      });
+    });
+
+    it("gets the web app's own files and nothing else", () => {
+      expect(authorize(OPTIONS, request({ url: "/", cookies })).kind).toBe("shell");
+      expect(authorize(OPTIONS, request({ url: "/settings/machines", cookies })).kind).toBe(
+        "shell",
+      );
+    });
+
+    it("with the key, as a header or as the socket's subprotocol, passes", () => {
+      expect(
+        authorize(
+          OPTIONS,
+          request({
+            method: "POST",
+            url: "/workspace/export",
+            headers: { host, [ORIGIN_KEY_HEADER]: KEY },
+            cookies,
+          }),
+        ).kind,
+      ).toBe("pass");
+      expect(
+        authorize(
+          OPTIONS,
+          request({
+            url: "/ws",
+            headers: { host, "sec-websocket-protocol": `other, ${ORIGIN_KEY_PROTOCOL}${KEY}` },
+            cookies,
+          }),
+        ).kind,
+      ).toBe("pass");
+    });
+
+    it("and the key without the cookie passes nothing", () => {
+      expect(
+        authorize(OPTIONS, request({ url: "/ws", headers: { host, [ORIGIN_KEY_HEADER]: KEY } })),
+      ).toMatchObject({ status: 401 });
+    });
   });
 
   describe("/mcp", () => {

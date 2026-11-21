@@ -14,6 +14,7 @@ import { HttpServer, RpcClient, RpcSerialization, Socket } from "../../platform/
 import { FakeAgentAdapter } from "../../runtime/fake-agent.ts";
 import { TurnHooks } from "../../runtime/hooks.ts";
 import { TEST_CONFIG } from "../../runtime/test-harness.ts";
+import { ORIGIN_KEY_HEADER } from "../../http/auth.ts";
 
 const TestServer = ServerLayer.pipe(
   Layer.provide(FakeAgentAdapter),
@@ -25,7 +26,7 @@ const TestServer = ServerLayer.pipe(
 
 const makeClient = Effect.gen(function* () {
   const server = yield* HttpServer.HttpServer;
-  const { token } = yield* LaunchToken;
+  const { token, originKey } = yield* LaunchToken;
   const port = serverPort(server);
   const setCookie = yield* Effect.promise(
     () =>
@@ -51,7 +52,9 @@ const makeClient = Effect.gen(function* () {
             new (globalThis.WebSocket as unknown as new (
               url: string,
               init: { headers: Record<string, string> },
-            ) => globalThis.WebSocket)(url, { headers: { cookie } }),
+            ) => globalThis.WebSocket)(url, {
+              headers: { cookie, [ORIGIN_KEY_HEADER]: originKey },
+            }),
         ),
       ),
       Layer.provide(RpcSerialization.layerJson),

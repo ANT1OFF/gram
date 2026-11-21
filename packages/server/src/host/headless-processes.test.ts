@@ -20,6 +20,7 @@ import { eventually, hasGit, makeRepo } from "../git/test-repo.ts";
 import { RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
 import { SIGNAL_STOP_DEADLINE_MS } from "../runtime/shutdown.ts";
 import { HEADLESS_NEEDS_HOSTED, NO_MACHINE_JOINED } from "./headless.ts";
+import { ORIGIN_KEY_HEADER } from "../http/auth.ts";
 
 const hasOpenssl = (() => {
   try {
@@ -139,7 +140,7 @@ const serverEnv = (name: string, extra: Record<string, string>): NodeJS.ProcessE
   };
 };
 
-const post = (port: number, cookie: string, path: string, body: unknown) =>
+const post = (port: number, cookie: string, path: string, body: unknown, key: string) =>
   Effect.promise(
     () =>
       new Promise<{ status: number; body: string }>((resolve, reject) => {
@@ -152,6 +153,7 @@ const post = (port: number, cookie: string, path: string, body: unknown) =>
             agent: false,
             headers: {
               cookie,
+              [ORIGIN_KEY_HEADER]: key,
               origin: `http://127.0.0.1:${port}`,
               "content-type": "application/json",
             },
@@ -228,12 +230,16 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
             60_000,
           );
           const port = Number(boot[2]);
-          const cookie = yield* Effect.promise(
+          // The cookie, and the page's key from the redirect's fragment, as the web app keeps it.
+          const [cookie, key] = yield* Effect.promise(
             () =>
-              new Promise<string>((resolve, reject) => {
+              new Promise<[string, string]>((resolve, reject) => {
                 const req = httpRequest(boot[1]!, { agent: false }, (res) => {
                   res.resume();
-                  resolve(res.headers["set-cookie"]?.[0]?.split(";")[0] ?? "");
+                  resolve([
+                    res.headers["set-cookie"]?.[0]?.split(";")[0] ?? "",
+                    String(res.headers.location).split("#gram-key=")[1] ?? "",
+                  ]);
                 });
                 req.on("error", reject);
                 req.end();
@@ -244,7 +250,7 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
             RpcClient.layerProtocolSocket().pipe(
               Layer.provide(
                 Socket.layerWebSocket(`ws://127.0.0.1:${port}/ws`, {
-                  headers: { cookie },
+                  headers: { cookie, [ORIGIN_KEY_HEADER]: key },
                 } as never),
               ),
               Layer.provide(NodeWS.layerWebSocketConstructor),
@@ -286,11 +292,17 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
           const registered = yield* eventually(
             "the provisioned-host listener, and the host registered",
             Effect.map(
-              post(port, cookie, "/machines/provision", {
-                name: provisioned.name,
-                publicKey: provisioned.publicKey,
-                platform: process.platform,
-              }),
+              post(
+                port,
+                cookie,
+                "/machines/provision",
+                {
+                  name: provisioned.name,
+                  publicKey: provisioned.publicKey,
+                  platform: process.platform,
+                },
+                key,
+              ),
               (answer) => (answer.status === 200 ? answer : undefined),
             ),
           );
@@ -298,7 +310,7 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
           const host = yield* started(HOST_ENTRY, ["run"], hostEnv);
           yield* eventually(
             "the host online with its models",
-            Effect.map(post(port, cookie, "/machines/list", {}), (answer) => {
+            Effect.map(post(port, cookie, "/machines/list", {}, key), (answer) => {
               if (host.child.exitCode !== null)
                 throw new Error(`the host exited:\n${host.output()}`);
               const machines: ReadonlyArray<{

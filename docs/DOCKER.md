@@ -20,6 +20,12 @@ Open the `boot http://127.0.0.1:4317/?boot=…` address the server printed. It s
 The address holds the launch token: anyone who has it can use this Gram, so don't paste it into a
 chat or a ticket. A restart prints a new one.
 
+Opening it hands the page a second key, in the part of the address after `#`, which no server is
+sent. The page keeps it in this browser's storage for Gram's address, and sends it with every
+request. Your browser also sends Gram's cookie to other servers on this computer's other ports. The
+cookie alone opens nothing but the app's own files, so such a server can't use it. A tab opened in
+another browser profile, or after a restart, needs the address again.
+
 The compose file maps the port to this machine's loopback only (`127.0.0.1:4317`), on the same
 port the server listens on inside the container, so the printed address works as it is. Other
 machines on your network can't reach it.
@@ -59,7 +65,7 @@ are much slower across that boundary.
 - The image sets `GRAM_CONTAINER=1` and `GRAM_LISTEN_HOST=0.0.0.0`, so the server listens on the
   container's own network, which only the port mapping reaches. Without `GRAM_CONTAINER=1` the
   server ignores `GRAM_LISTEN_HOST` and listens on loopback, and the desktop app drops both. Every
-  request still needs a loopback `Host` and the launch cookie.
+  request still needs a loopback `Host`, the launch cookie and the page's key.
 - To use another port, change the mapping's two sides and `GRAM_PORT` together. A `Host` that
   doesn't match the server's port is refused.
 - Phone access, the desktop app's tray and native notifications aren't part of the container.

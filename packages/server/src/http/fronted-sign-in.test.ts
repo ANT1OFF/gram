@@ -55,7 +55,7 @@ import { waitReal } from "../orchestration/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ACTOR_HEADER, actorHeadersForTests } from "./actor.ts";
-import { tokenCookieName } from "./auth.ts";
+import { ORIGIN_KEY_HEADER, tokenCookieName } from "./auth.ts";
 import { SERVICE_TYP, IDENTITY_HEADER } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { LOCAL_APP_HEADER } from "./local-app.ts";
@@ -150,8 +150,8 @@ const server = (
 };
 
 const info = Effect.gen(function* () {
-  const { token } = yield* LaunchToken;
-  return { port: serverPort(yield* HttpServer.HttpServer), token };
+  const { token, originKey } = yield* LaunchToken;
+  return { port: serverPort(yield* HttpServer.HttpServer), token, originKey };
 });
 
 /** A plain request to the server, as the proxy (or anyone who reached the port) would send it. */
@@ -358,14 +358,14 @@ describe("sign-in through a fronting proxy", () => {
   layer(server(true), { excludeTestServices: true })("with the hosted features on", (it) => {
     it.effect("refuses a missing or forged identity, the launch token included", () =>
       Effect.gen(function* () {
-        const { port, token } = yield* info;
+        const { port, token, originKey } = yield* info;
         const signedIn = { [IDENTITY_HEADER]: proxy.statement() };
         // The proxy's statement is the way in. No web root here: 404 is the app's own answer.
         expect((yield* get(port, "/", signedIn)).status).toBe(404);
         expect(yield* upgrade(port, signedIn)).toBe(101);
 
         // Nothing at all, on a loopback Host as the local app would send.
-        const host = { host: `127.0.0.1:${port}` };
+        const host = { host: `127.0.0.1:${port}`, [ORIGIN_KEY_HEADER]: originKey };
         const missing = yield* get(port, "/", host);
         expect(missing).toMatchObject({
           status: 401,
@@ -1545,9 +1545,9 @@ describe("sign-in through a fronting proxy", () => {
   layer(server(false), { excludeTestServices: true })("with the hosted features off", (it) => {
     it.effect("takes the launch token as before, and no proxy's word", () =>
       Effect.gen(function* () {
-        const { port, token } = yield* info;
+        const { port, token, originKey } = yield* info;
         const store = yield* ThreadStore;
-        const host = { host: `127.0.0.1:${port}` };
+        const host = { host: `127.0.0.1:${port}`, [ORIGIN_KEY_HEADER]: originKey };
         const signedIn = { ...host, [IDENTITY_HEADER]: proxy.statement() };
         expect(yield* get(port, "/", signedIn)).toMatchObject({
           status: 401,
