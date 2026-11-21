@@ -328,8 +328,18 @@ test("the user lets a local page use WebRTC, and an agent driving it can't", asy
   await webRtc.click();
   await expect(webRtc).toHaveAttribute("aria-pressed", "false");
 
+  // Anything else opening in the thread, a port chip or an agent's page, ends it.
+  await webRtc.click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("pane-header").getByTestId(`port-chip-${port}`).click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "false");
+
+  // An agent taking the page ends it, and the user can't switch it on while it drives.
+  await webRtc.click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "true");
   await page.evaluate(() => window.gramMock!.shell.preview.drive("t-deps", "agent"));
   await expect(webRtc).toBeDisabled();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "false");
 });
 
 test("a Markdown or HTML file the agent wrote gets a card that renders it in the Preview tab", async ({

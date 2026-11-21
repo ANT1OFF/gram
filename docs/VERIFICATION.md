@@ -500,7 +500,10 @@ temporary profile with the real preview module and no outside network. Every `.l
 resolves to loopback, where a listener stands for a TURN server. It checks that a local page has no
 WebRTC in itself, in a child it makes by script at `about:blank` (which no preload reaches) or in an
 out-of-process frame, and reaches no TURN server it names; that after something else detaches the
-page's debugger, the guard is attached again and the same holds; and, as the control, that the same
+page's debugger, the guard is attached again and the same holds; that the user's WebRTC switch
+gives the page WebRTC, and that anything else opening in the thread, the page leaving that origin,
+or an agent taking the page makes it again without, while an agent's peek leaves it as it was and
+the switch is refused while an agent drives; and, as the control, that the same
 page in a session without the guard makes a peer connection in each frame and reaches the listener.
 On Linux it needs a display (`DISPLAY`), which is all of the environment it passes on.
 

@@ -32,15 +32,7 @@ import {
 } from "electron";
 import { randomUUID } from "node:crypto";
 
-import {
-  loopbackUrl,
-  webUrl,
-  type BrowserInspection,
-  type BrowserRegion,
-  type BrowserViewportPreset,
-  type PaneResult,
-  type PreviewState,
-} from "@gram/contracts/link-trust";
+import { loopbackUrl, webUrl, type PreviewState } from "@gram/contracts/link-trust";
 
 import { Channels } from "../../channels.ts";
 import type { ShellLog } from "../../core/log.ts";
@@ -69,11 +61,12 @@ import {
   type WebDial,
   type WebProxy,
 } from "../../core/web-proxy.ts";
-import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { focusedAppWindow } from "../../electron/decision-windows.ts";
+import { installAgentHandlers, type PreviewAgent } from "./agent-handlers.ts";
+export type { PreviewAgent, PreviewRequestDetails } from "./agent-handlers.ts";
 import { installPickHandlers } from "./pick-handlers.ts";
-import { guardWebRtc, heldForGuard } from "./webrtc-guard.ts";
+import { guardWebRtc, heldForGuard, webRtcGuardHeld } from "./webrtc-guard.ts";
 
 /**
  * No `persist:` prefix, so their cookies and storage live in memory and are gone at quit. The local
@@ -128,45 +121,6 @@ export interface PreviewOptions {
   readonly dialWebAddress?: WebDial | undefined;
 }
 
-/**
- * What the preview asks of the agent browser about a thread's page. Each question answers
- * `undefined` for a page no agent drives, or for a URL the preview's own rules decide: loopback,
- * and a link the user follows off it.
- */
-/** One request of a preview's page, as `webRequest.onBeforeRequest` reports it. */
-export interface PreviewRequestDetails {
-  /** The same for each hop of one request's redirects. */
-  readonly id: number;
-  readonly url: string;
-  readonly method: string;
-  readonly mainFrame: boolean;
-  /** A frame inside the page navigating, which a form can target as well as the page itself. */
-  readonly subFrame: boolean;
-  /** The origin of the page that started it; absent for a load the app itself started. */
-  readonly initiator?: string | undefined;
-}
-
-export interface PreviewAgent {
-  /** Whether a main-frame navigation of an agent's page loads, or is stopped. */
-  navigation(contents: WebContents, url: string): "load" | "block" | undefined;
-  /** Whether one request of an agent's page goes out, as the session's `webRequest` sees it. */
-  request(
-    contents: WebContents,
-    details: PreviewRequestDetails,
-  ): Promise<"allow" | "block"> | undefined;
-  /** The user put input into `contents`. */
-  userInput(contents: WebContents): void;
-  /** Who drives the thread's page, once its agent has used it. */
-  driverOf(threadId: string): "agent" | "user" | undefined;
-  actionOf?(threadId: string): { readonly summary: string; readonly at: number } | undefined;
-  recordingOf?(threadId: string): boolean;
-  handBack(threadId: string): void;
-  takeOver(threadId: string): void;
-  inspectionOf(threadId: string): BrowserInspection | undefined;
-  inspect(threadId: string, target?: { ref?: string; region?: BrowserRegion }): Promise<PaneResult>;
-  viewport(threadId: string, preset: BrowserViewportPreset): Promise<PaneResult>;
-}
-
 interface Preview {
   readonly threadId: string;
   readonly kind: PreviewKind;
@@ -192,7 +146,23 @@ interface Preview {
    * and never if it couldn't be taken away; a web page at once.
    */
   readonly guarded: Promise<boolean>;
+  /**
+   * The origin the user let this local page use WebRTC on (`setWebRtc`), its guard off; anything
+   * else opening in the thread, an agent taking it, or its main frame leaving that origin makes
+   * the page again with the guard on.
+   */
+  readonly webRtcOrigin: string | undefined;
 }
+
+/** `url`'s origin, `undefined` for one that has none. */
+const originOf = (url: string) => {
+  try {
+    const { origin } = new URL(url);
+    return origin === "null" ? undefined : origin;
+  } catch {
+    return undefined;
+  }
+};
 
 /** What main can reach of the previews, for tools that act on a page from the main process. */
 export interface PreviewHost {
@@ -231,8 +201,11 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
    * as anything else opens in the thread, an agent's page above all.
    */
   const reopenable = new Map<string, { readonly token: string; readonly url: string }>();
-  /** The threads whose local page the user let use WebRTC; an agent taking the pane ends it. */
-  const webRtcAllowed = new Set<string>();
+  /**
+   * For each local page the user let use WebRTC, by its contents' id: whether a document at a URL
+   * leaves the origin they let it for, in which case the page is made again guarded, to load it.
+   */
+  const leavingWebRtc = new Map<number, (url: string) => boolean>();
 
   // Each web session's proxy credential, for Chromium only: asked for by that proxy's own realm and
   // port, for that session's pages.
@@ -315,6 +288,16 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     // A page whose WebRTC removal isn't in place waits for it, and loads nothing without it.
     ses.webRequest.onBeforeRequest(
       heldForGuard((details: Electron.OnBeforeRequestListenerDetails, callback) => {
+        // A page the user let use WebRTC loads no other origin's document: it is made again
+        // guarded, and that loads there.
+        const leave =
+          details.resourceType === "mainFrame" && details.webContents !== undefined
+            ? leavingWebRtc.get(details.webContents.id)
+            : undefined;
+        if (leave?.(details.url) === true) {
+          callback({ cancel: true });
+          return;
+        }
         const asked =
           details.webContents === undefined
             ? undefined
@@ -464,7 +447,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       ...(action === undefined ? {} : { action }),
       ...(recording ? { recording } : {}),
       ...(preview.token === undefined ? {} : { webView: preview.token }),
-      ...(preview.kind === "local" && webRtcAllowed.has(preview.threadId) ? { webRtc: true } : {}),
+      ...(preview.webRtcOrigin === undefined ? {} : { webRtc: true }),
     };
   };
 
@@ -521,7 +504,12 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
   };
 
   /** `threadId`'s page of `kind`, for a web page in the session `opening` belongs in. */
-  const create = (threadId: string, kind: PreviewKind, opening?: string): Preview => {
+  const create = (
+    threadId: string,
+    kind: PreviewKind,
+    opening?: string,
+    webRtcOrigin?: string,
+  ): Preview => {
     const web = kind === "web" ? webNetworkOf(opening ?? "") : undefined;
     const destination = web === "private" ? destinationOf(opening ?? "") : undefined;
     const view = new WebContentsView({
@@ -560,9 +548,10 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       watchers: new Set(),
       error: undefined,
       guarded:
-        kind === "local" && !webRtcAllowed.has(threadId)
+        kind === "local" && webRtcOrigin === undefined
           ? guardWebRtc(view.webContents, (fields, message) => options.log.warn(fields, message))
           : Promise.resolve(true),
+      webRtcOrigin: kind === "local" ? webRtcOrigin : undefined,
     };
     const contents = view.webContents;
     previewContents.add(contents);
@@ -621,8 +610,23 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       // browser. A redirect there, which nobody clicked, just stops.
       if (decision === "local" && !redirect) toLinkGate(url);
     };
+    // The user let WebRTC on for one origin: the page leaving it is made again with the guard on,
+    // and goes on there only where a local page may.
+    const leavesWebRtc = (url: string) =>
+      preview.webRtcOrigin !== undefined && originOf(url) !== preview.webRtcOrigin;
+    const guardAgain = (url: string) =>
+      // After the event raising it: closing the page inside its own navigation's events crashes.
+      setImmediate(() => {
+        if (previews.get(threadId) !== preview) return;
+        const next = replace(preview, "local");
+        if (previewNavigation(url) === "load") void openIn(next, "local", url);
+        else report(next);
+      });
     const steer = (event: { preventDefault(): void }, url: string, redirect: boolean) => {
-      if (kind === "local") steerLocal(event, url);
+      if (leavesWebRtc(url)) {
+        event.preventDefault();
+        guardAgain(url);
+      } else if (kind === "local") steerLocal(event, url);
       else steerWeb(event, url, redirect);
     };
     contents.on("will-navigate", (event) => {
@@ -632,8 +636,21 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       if (event.isMainFrame) steer(event, event.url, true);
     });
     contents.on("did-start-navigation", (event) => {
-      if (event.isMainFrame && !event.isSameDocument) preview.error = undefined;
+      if (!event.isMainFrame || event.isSameDocument) return;
+      preview.error = undefined;
+      // Back or forward to another origin, which no `will-navigate` asks about; its request the
+      // session's check refuses, and a page kept in the back-forward cache is closed with this one.
+      if (leavesWebRtc(event.url)) guardAgain(event.url);
     });
+    if (preview.webRtcOrigin !== undefined) {
+      const id = contents.id;
+      leavingWebRtc.set(id, (url) => {
+        if (!leavesWebRtc(url)) return false;
+        guardAgain(url);
+        return true;
+      });
+      contents.once("destroyed", () => leavingWebRtc.delete(id));
+    }
     contents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
       if (!isMainFrame || code === ERR_ABORTED) return;
       preview.error = description === "" ? `Error ${code}` : description;
@@ -680,10 +697,15 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
    * `old`'s thread's page made again in `kind`'s session, in its place: in the same window at the
    * same size, told to the same windows. Nothing of the old page comes along, its history neither.
    */
-  const replace = (old: Preview, kind: PreviewKind, url?: string): Preview => {
+  const replace = (
+    old: Preview,
+    kind: PreviewKind,
+    url?: string,
+    webRtcOrigin?: string,
+  ): Preview => {
     const { window, rect, watchers } = old;
     close(old);
-    const next = create(old.threadId, kind, url);
+    const next = create(old.threadId, kind, url, webRtcOrigin);
     for (const watcher of watchers) next.watchers.add(watcher);
     touch(next);
     if (window !== undefined && !window.isDestroyed() && rect !== undefined) {
@@ -730,7 +752,15 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     if (threadId === undefined || url === undefined) return false;
     // Anything else opening in the thread ends the closed web page's re-open.
     reopenable.delete(threadId);
-    const preview = previews.get(threadId) ?? create(threadId, kind, url);
+    // Nothing the user didn't switch on keeps WebRTC: a port chip, an agent's `show_panel`, the
+    // address strip all open in a page with the guard on.
+    const known = previews.get(threadId);
+    const preview =
+      known === undefined
+        ? create(threadId, kind, url)
+        : known.webRtcOrigin === undefined
+          ? known
+          : replace(known, kind, url);
     touch(preview);
     preview.watchers.add(sender);
     await openIn(preview, kind, url);
@@ -809,69 +839,33 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       typeof input === "object" && input !== null ? Reflect.get(input, "allowed") : undefined;
     if (preview?.kind !== "local" || typeof allowed !== "boolean") return false;
     if (options.agent?.driverOf(preview.threadId) === "agent") return false;
-    if (webRtcAllowed.has(preview.threadId) === allowed) return true;
-    if (allowed) webRtcAllowed.add(preview.threadId);
-    else webRtcAllowed.delete(preview.threadId);
+    if ((preview.webRtcOrigin !== undefined) === allowed) return true;
+    // For the origin the page is on as the user switches it, and no other.
     const url = preview.view.webContents.getURL();
-    const next = replace(preview, "local");
+    const origin = loopbackUrl(url) === undefined ? undefined : originOf(url);
+    if (allowed && origin === undefined) return false;
+    const next = replace(preview, "local", undefined, allowed ? origin : undefined);
     if (loopbackUrl(url) !== undefined) await openIn(next, "local", url);
     report(next);
     return true;
   });
-  ipc.on(Channels.previewHandBack, (event, input) => {
-    const threadId = previewFor(input, event.sender)?.threadId;
-    if (threadId !== undefined) options.agent?.handBack(threadId);
-  });
-  ipc.on(Channels.previewTakeOver, (event, input) => {
-    const threadId = previewFor(input, event.sender)?.threadId;
-    if (threadId !== undefined) options.agent?.takeOver(threadId);
-  });
-  const unavailable: PaneResult = {
-    ok: false,
-    code: "noPane",
-    message: "Browser inspection unavailable here.",
-  };
-  ipc.handle(Channels.previewInspect, (input, event) => {
-    const preview = previewFor(input, event.sender);
-    const target =
-      typeof input === "object" && input !== null ? Reflect.get(input, "target") : undefined;
-    const command = parsePaneCommand({
-      op: "screenshot",
-      ...(typeof target === "object" && target !== null ? target : {}),
-    });
-    if (preview === undefined || preview.kind !== "local" || command?.op !== "screenshot")
-      return unavailable;
-    return (
-      options.agent?.inspect(preview.threadId, {
-        ...(command.ref === undefined ? {} : { ref: command.ref }),
-        ...(command.region === undefined ? {} : { region: command.region }),
-      }) ?? unavailable
-    );
-  });
+  installAgentHandlers(ipc, previewFor, options.agent);
   installPickHandlers(ipc, previewFor);
-  ipc.handle(Channels.previewViewport, (input, event) => {
-    const preview = previewFor(input, event.sender);
-    const preset =
-      typeof input === "object" && input !== null ? Reflect.get(input, "preset") : undefined;
-    const command = parsePaneCommand({ op: "viewport", preset });
-    if (
-      preview === undefined ||
-      preview.kind !== "local" ||
-      command?.op !== "viewport" ||
-      command.preset === undefined
-    )
-      return unavailable;
-    return options.agent?.viewport(preview.threadId, command.preset) ?? unavailable;
-  });
   ipc.handle(Channels.previewStateGet, (input, event) => {
     const preview = previewFor(input, event.sender);
     return preview === undefined ? null : stateOf(preview);
   });
 
-  /** `preview`'s page, once its WebRTC is gone; none if it couldn't be taken away. */
+  /**
+   * `preview`'s page, once its WebRTC is gone; none if it couldn't be taken away, or was put back
+   * and then given up, which leaves a blank page.
+   */
   const whenGuarded = async (preview: Preview) => {
     const contents = preview.view.webContents;
-    return (await preview.guarded) && !contents.isDestroyed() ? contents : undefined;
+    if (!(await preview.guarded) || contents.isDestroyed()) return undefined;
+    const held = webRtcGuardHeld(contents);
+    if (held !== undefined && !(await held)) return undefined;
+    return contents.isDestroyed() ? undefined : contents;
   };
   const contentsOf = (threadId: string) => {
     const preview = previews.get(threadId);
@@ -882,11 +876,12 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     contentsOf,
     contentsFor: async (threadId, make) => {
       const known = previews.get(threadId);
-      // An agent's page never has WebRTC: one the user let have it is made again without.
-      const allowed = webRtcAllowed.delete(threadId);
+      // An agent's page never has WebRTC: one the user let have it is made again without, and only
+      // for an agent that takes the pane; a peek leaves the user's page as it is and gets none.
+      const allowed = known?.webRtcOrigin !== undefined;
       if (!allowed && contentsOf(threadId) !== undefined && known !== undefined)
         return whenGuarded(known);
-      if (!make && (!allowed || known === undefined)) return undefined;
+      if (!make) return undefined;
       // A web page the user opened is never the agent's: it closes, unread, for a page of its own,
       // and can't be re-opened in its session after.
       reopenable.delete(threadId);

@@ -84,9 +84,22 @@ async function main() {
   };
   const sender = { send: () => {}, isDestroyed: () => false, getZoomFactor: () => 1 };
   const invoke = (channel, arg) => handlers.get(channel)(arg, { sender });
+  /** The threads an agent drives, as the agent browser reports them. */
+  const driving = new Set();
   const host = installPreview(ipc, {
     openLink: async () => false,
     log: { info: () => {}, warn: () => {}, error: () => {} },
+    agent: {
+      navigation: () => undefined,
+      request: () => undefined,
+      userInput: () => {},
+      driverOf: (threadId) => (driving.has(threadId) ? "agent" : undefined),
+      handBack: () => {},
+      takeOver: () => {},
+      inspectionOf: () => undefined,
+      inspect: async () => ({ ok: false, code: "noPane", message: "none" }),
+      viewport: async () => ({ ok: false, code: "noPane", message: "none" }),
+    },
   });
   /** What `threadId`'s probe found, once it has said. */
   const probed = async (threadId) => {
@@ -122,6 +135,78 @@ async function main() {
     JSON.stringify(again) === JSON.stringify(NO_RTC) && turn.connections === before,
     { again, connections: turn.connections - before },
   );
+
+  // The user's own switch: WebRTC on, for the origin the page is on, in a page made again.
+  const stateOf = (threadId) => invoke(Channels.previewStateGet, { threadId });
+  const allow = () => invoke(Channels.previewSetWebRtc, { threadId: "t-probe", allowed: true });
+  /** The page's probe, freshly loaded, once it has said; and the page it ran in. */
+  const settled = async () => {
+    const page = host.contentsOf("t-probe");
+    page?.setBackgroundThrottling(false);
+    for (const end = Date.now() + 10_000; Date.now() < end && page?.isLoading();) await delay(100);
+    return { found: await probed("t-probe"), page };
+  };
+  check("the user's switch is taken", (await allow()) === true);
+  const allowed = await settled();
+  check(
+    "with the user's switch on, the page has WebRTC",
+    allowed.found?.top === "made" && (await stateOf("t-probe"))?.webRtc === true,
+    allowed.found,
+  );
+  const unguarded = allowed.page;
+
+  // An agent's `show_panel`, or a port chip, opens in the thread: the page is made again guarded.
+  await invoke(Channels.previewOpen, { threadId: "t-probe", url });
+  const opened = await settled();
+  check(
+    "anything else opening in the thread makes the page again with no WebRTC",
+    opened.page !== unguarded &&
+      JSON.stringify(opened.found) === JSON.stringify(NO_RTC) &&
+      (await stateOf("t-probe"))?.webRtc === undefined,
+    opened.found,
+  );
+
+  // The page leaves the origin it was switched on for: made again guarded, there.
+  await allow();
+  const left = (await settled()).page;
+  const elsewhere = `http://localhost:${dev.address().port}/`;
+  await left?.executeJavaScript(`location.href = ${JSON.stringify(elsewhere)}`).catch(() => {});
+  for (const end = Date.now() + 10_000; Date.now() < end && host.contentsOf("t-probe") === left;)
+    await delay(100);
+  const moved = await settled();
+  check(
+    "the page leaving the origin it was switched on for is made again with no WebRTC",
+    moved.page !== left &&
+      moved.page?.getURL() === elsewhere &&
+      JSON.stringify(moved.found) === JSON.stringify(NO_RTC) &&
+      (await stateOf("t-probe"))?.webRtc === undefined,
+    { found: moved.found, url: moved.page?.getURL() },
+  );
+
+  // An agent's peek leaves the user's page alone; an agent taking it makes it again guarded.
+  await allow();
+  const theirs = (await settled()).page;
+  check(
+    "an agent's peek at a page with WebRTC gets none, and leaves it as it was",
+    (await host.contentsFor("t-probe", false)) === undefined &&
+      host.contentsOf("t-probe") === theirs &&
+      (await stateOf("t-probe"))?.webRtc === true,
+  );
+  const taken = await host.contentsFor("t-probe", true);
+  driving.add("t-probe");
+  check(
+    "an agent taking the page ends WebRTC, in a page made again",
+    taken !== undefined && taken !== theirs && (await stateOf("t-probe"))?.webRtc === undefined,
+  );
+  check("the user's switch is refused while an agent drives", (await allow()) === false);
+  await taken?.loadURL(url).catch(() => {});
+  const driven = await settled();
+  check(
+    "the agent's page has no WebRTC",
+    JSON.stringify(driven.found) === JSON.stringify(NO_RTC),
+    driven.found,
+  );
+  driving.delete("t-probe");
 
   // The control: the same page in a session without the guard reaches the listener.
   const control = new WebContentsView({
