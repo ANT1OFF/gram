@@ -334,6 +334,14 @@ const everyTone = (
   };
 };
 
+const everywhere = (tone: string) => ({
+  shared: tone,
+  board: tone,
+  sidebar: tone,
+  workers: tone,
+  quiet: tone,
+});
+
 describe("one tone for a worker", () => {
   it("waits on the orchestrator everywhere while its question is in triage, and needs you once forwarded", () => {
     const entry = worker("question");
@@ -343,13 +351,6 @@ describe("one tone for a worker", () => {
       stage: "triage",
       triageUntil: NOW + 7 * 60_000,
     } as WorkerQuestion;
-    const everywhere = (tone: string) => ({
-      shared: tone,
-      board: tone,
-      sidebar: tone,
-      workers: tone,
-      quiet: tone,
-    });
     expect(everyTone(entry, threadOf(entry, "idle"), [asked])).toEqual(everywhere("waiting"));
     const row = workerRow(entry, {
       byId: {},
