@@ -85,6 +85,9 @@ import {
   UNANSWERED_STOP_HOLD_MS,
   withName,
 } from "./worker-machine-stops.ts";
+import { plainName } from "./server-name.ts";
+
+export { plainName } from "./server-name.ts";
 
 export * from "./signed-in-fences.ts";
 export * from "./signed-in-port.ts";
@@ -107,20 +110,6 @@ export const WAKE_RETRY_MS = 5_000;
 /** How long a desktop waits for a hosted machine to join before it stops it. */
 export const ARRIVE_TIMEOUT_MS = 5 * 60_000;
 const ARRIVE_EVERY_MS = 2_000;
-
-/**
- * A server's name as an orchestrator reads it, in its prompt and its tools' words: one line of
- * printable text, at most 60 characters, so a name can't pass for instructions.
- */
-export const plainName = (name: string): string => {
-  const flat = [...name]
-    .map((char) => (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(char) ? " " : char))
-    .join("")
-    .replace(/\s+/g, " ")
-    .trim();
-  const cut = [...flat].slice(0, 60).join("");
-  return cut === "" ? "The hosted server" : cut;
-};
 
 /** What an orchestrator is told when the signed-in server's answer stops a machine joining. */
 const failedWords = (name: string, why: string) => `The machine ${name} didn't join: ${why}`;
