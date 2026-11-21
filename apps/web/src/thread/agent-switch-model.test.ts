@@ -116,6 +116,12 @@ describe("switchOffer", () => {
     ).toBe(false);
   });
 
+  it("on a headless server, which looks for no CLI itself, goes by what its machines list", () => {
+    const headless = checks({ tools: [], headless: true, claudeSignIn: "unknown" });
+    expect(offer(summary(), headless).offered).toBe(true);
+    expect(offer(summary(), headless, { listed: false }).offered).toBe(false);
+  });
+
   it("offers the orchestrator the same sheet, greyed only where its switch would be refused", () => {
     expect(offer(orchestrator())).toEqual({ offered: true, to: "codex" });
     // Its checkpoint waits for its turn and questions, so neither greys it.

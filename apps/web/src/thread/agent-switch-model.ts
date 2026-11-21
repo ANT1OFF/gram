@@ -74,9 +74,12 @@ export type SwitchOffer =
       readonly fresh?: string;
     };
 
-/** The launch checks found `agent`'s CLI. */
+/**
+ * The launch checks found `agent`'s CLI. A headless server looks for none on its own machine, so
+ * its joined machines' model listing says instead.
+ */
 export const installed = (checks: LaunchChecks | undefined, agent: AgentKind): boolean =>
-  checks?.tools.find((tool) => tool.tool === agent)?.found === true;
+  checks?.headless === true || checks?.tools.find((tool) => tool.tool === agent)?.found === true;
 
 const RUNS_NOW: ReadonlySet<ThreadSummary["status"]> = new Set(["idle", "cold", "error"]);
 
