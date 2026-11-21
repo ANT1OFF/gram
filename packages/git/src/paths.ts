@@ -78,8 +78,26 @@ const keptRoots = new Set<string>();
 const folded = (path: string): string =>
   process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
 
+/** Kept folders that didn't exist when kept, whose real path is looked for again. */
+const keptPending = new Set<string>();
+
+/** Adds the real path of each kept folder that has come into existence since it was kept. */
+const settleKept = (): boolean => {
+  let added = false;
+  for (const resolved of keptPending) {
+    const real = tryRealPathSync(resolved);
+    if (real === undefined) continue;
+    keptPending.delete(resolved);
+    if (keptRoots.has(folded(real))) continue;
+    keptRoots.add(folded(real));
+    added = true;
+  }
+  return added;
+};
+
 /** Whether `path` is, holds or lies under a kept folder. */
 const crossesKept = (path: string): boolean => {
+  if (settleKept()) dropCrossingMarks();
   const at = folded(path);
   for (const kept of keptRoots) if (isInside(at, kept) || isInside(kept, at)) return true;
   return false;
@@ -110,13 +128,28 @@ export const keepPathsHere = (paths: Iterable<string>): void => {
     const resolved = nodePath.resolve(path);
     // Kept once with its real path, which needn't be asked of the disk again.
     if (keptRoots.has(folded(resolved))) continue;
-    for (const form of [resolved, tryRealPathSync(resolved)]) {
+    const real = tryRealPathSync(resolved);
+    // One that isn't there yet gets its real path once it is (`settleKept`).
+    if (real === undefined) keptPending.add(resolved);
+    for (const form of [resolved, real]) {
       if (form === undefined || keptRoots.has(folded(form))) continue;
       keptRoots.add(folded(form));
       added = true;
     }
   }
-  if (added) for (const root of foreignRoots) if (crossesKept(root)) foreignRoots.delete(root);
+  if (added) dropCrossingMarks();
+};
+
+/** Takes back every `noteForeignPath` mark that crosses a kept folder. */
+const dropCrossingMarks = (): void => {
+  for (const root of foreignRoots) {
+    const at = folded(root);
+    for (const kept of keptRoots)
+      if (isInside(at, kept) || isInside(kept, at)) {
+        foreignRoots.delete(root);
+        break;
+      }
+  }
 };
 
 /** Whether `path` is at or below a folder `noteForeignPath` marked, by its lexical form. */
@@ -134,6 +167,7 @@ export const isForeignPath = (path: string): boolean => {
 export const forgetForeignPathsForTest = (): void => {
   foreignRoots.clear();
   keptRoots.clear();
+  keptPending.clear();
 };
 
 /**
@@ -142,15 +176,22 @@ export const forgetForeignPathsForTest = (): void => {
  * spelling of a folder comes out the same and on a case-sensitive one two folders stay two. A path
  * on another machine (`noteForeignPath`) is only resolved lexically.
  */
-export const physicalPath = (path: string): string => {
-  if (isForeignPath(path)) return nodePath.resolve(path);
+export const physicalPath = (path: string): string =>
+  isForeignPath(path) ? nodePath.resolve(path) : diskPath(path);
+
+/**
+ * `path` as this machine's own disk names it, whatever another machine holds there
+ * (`noteForeignPath`): for what reads this disk at a path, where a link is followed whoever's
+ * folder the path also names.
+ */
+export const diskPath = (path: string): string => {
   const real = tryRealPathSync(path);
   if (real !== undefined) return real;
   const resolved = nodePath.resolve(path);
   const parent = nodePath.dirname(resolved);
   return parent === resolved
     ? resolved
-    : nodePath.join(physicalPath(parent), nodePath.basename(resolved));
+    : nodePath.join(diskPath(parent), nodePath.basename(resolved));
 };
 
 /** `physicalPath`, asynchronously. */

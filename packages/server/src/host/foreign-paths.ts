@@ -9,39 +9,71 @@ const folded = (path: string): string =>
 /** This server's own folders (`keepFoldersHere`), as given and by their real paths, folded. */
 const ownFolders = new Set<string>();
 
+/** Own folders that didn't exist when kept, whose real path is looked for again. */
+const ownPending = new Set<string>();
+
 /** Forgets every `keepFoldersHere`, for tests. */
-export const forgetOwnFoldersForTest = (): void => ownFolders.clear();
+export const forgetOwnFoldersForTest = (): void => {
+  ownFolders.clear();
+  ownPending.clear();
+};
 
 /**
- * Keeps `paths` (the server's data folder, the folder it runs in) this machine's: a checkout a
- * host records at one of them, above one or below one, never routes there or marks it as another
- * machine's. A relative path is taken against the working directory.
+ * Keeps `paths` (the server's data folder) this machine's: a checkout a host records at one of
+ * them, above one or below one, never routes there or marks it as another machine's. A relative
+ * path is taken against the working directory. One that isn't there yet is kept by its real path
+ * too once it is.
  */
 export const keepFoldersHere = (paths: ReadonlyArray<string>): void => {
   keepPathsHere(paths);
   for (const path of paths) {
     const resolved = resolve(path);
-    for (const form of [resolved, tryRealPathSync(resolved)])
-      if (form !== undefined) ownFolders.add(folded(form));
+    ownFolders.add(folded(resolved));
+    const real = tryRealPathSync(resolved);
+    if (real === undefined) ownPending.add(resolved);
+    else ownFolders.add(folded(real));
   }
+};
+
+/**
+ * The folders of this server's that a host's never claims, as `main.ts` keeps them: its data
+ * folder alone. Not the folder it runs in, which is `/` for an app opened from the Finder, a
+ * service or a container, and so would hold every path a host records.
+ */
+export const keepServerFolders = (dataDir: string): void => keepFoldersHere([dataDir]);
+
+/** `paths` (absolute, this machine's) as written and by their real paths, folded. */
+export const hereForms = (paths: Iterable<string>): ReadonlyArray<string> => {
+  const forms = new Set<string>();
+  for (const path of paths) {
+    if (!isAbsolute(path)) continue;
+    const resolved = resolve(path);
+    forms.add(folded(resolved));
+    const real = tryRealPathSync(resolved);
+    if (real !== undefined) forms.add(folded(real));
+  }
+  return [...forms];
 };
 
 /**
  * Whether a host's recorded folder may be taken as that machine's: one that is, holds or lies under
  * a folder of this server's (`keepFoldersHere`) may not, and neither may one that holds or lies
- * under one of `here` (this machine's checkouts). The very path of one of `here` may: two machines
- * can hold the same path, which then names both.
+ * under one of `here` (this machine's checkouts, as `hereForms` gives them). The very path of one
+ * of `here` may: two machines can hold the same path, which then names both.
  */
-export const claimableByHost = (path: string, here: Iterable<string> = []): boolean => {
+export const claimableByHost = (path: string, here: ReadonlyArray<string> = []): boolean => {
   // A path from a machine of another platform can't hold one of this server's folders.
   if (!isAbsolute(path)) return win32.isAbsolute(path);
+  for (const pending of ownPending) {
+    const real = tryRealPathSync(pending);
+    if (real === undefined) continue;
+    ownPending.delete(pending);
+    ownFolders.add(folded(real));
+  }
   const at = folded(resolve(path));
   for (const own of ownFolders) if (isInside(at, own) || isInside(own, at)) return false;
-  for (const mine of here) {
-    if (!isAbsolute(mine)) continue;
-    const local = folded(resolve(mine));
+  for (const local of here)
     if (at !== local && (isInside(at, local) || isInside(local, at))) return false;
-  }
   return true;
 };
 

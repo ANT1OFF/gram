@@ -14,6 +14,20 @@ export const SERVER_DISK: ReadonlySet<string> = new Set(["fs.browse", "fs.tree",
 export const SERVER_DISK_UNLESS_THREAD: ReadonlySet<string> = new Set(["fs.list", "fs.files"]);
 
 /**
+ * Whether `action` reads this server's own disk at the paths it names, following their links here
+ * whoever else holds those paths: `fs.browse`, `fs.tree` and `projects.add`, and a listing that
+ * names no thread.
+ */
+export const readsServerDisk = (action: string, payload: unknown): boolean =>
+  SERVER_DISK.has(action) ||
+  (SERVER_DISK_UNLESS_THREAD.has(action) &&
+    !(
+      typeof payload === "object" &&
+      payload !== null &&
+      typeof (payload as Record<string, unknown>)["threadId"] === "string"
+    ));
+
+/**
  * What runs git, `gh` or a folder's own config in a folder the call names. On a headless server
  * such a folder is a joined machine's, where the call is sent; one on this server's own disk is
  * nobody's work, and could be a repository a person planted there (through the shared folder, or

@@ -60,7 +60,7 @@ import { makeFakeAgentAdapter, makeFakeMcpCli, type FakeMcpServers } from "./run
 import { plainTail } from "./terminal/plain-text.ts";
 import { writeServerAgentGuide } from "./guide/agent-guide.ts";
 import { usageHistoryRootsLayer } from "./usage/history-roots.ts";
-import { keepFoldersHere } from "./host/foreign-paths.ts";
+import { keepServerFolders } from "./host/foreign-paths.ts";
 
 /** Present when Electron runs the server as a `utilityProcess`. */
 const parentPort = (
@@ -76,7 +76,7 @@ const config = {
   ...ServerConfig.fromEnv(),
   ...(parentPort === undefined ? {} : { shellOpensLinks: true }),
 };
-keepFoldersHere([config.dataDir, process.cwd()]);
+keepServerFolders(config.dataDir);
 
 /** Codex and Claude Code use installed subscription CLIs or an explicitly selected gateway.
  * Gateway keys and child homes remain separate from the developer's subscription credentials.
