@@ -28,6 +28,10 @@ export const aboveHigh = (effort: ReasoningVariant): boolean =>
 export const TierAgent = Schema.Literals(["claude", "codex"]);
 export type TierAgent = typeof TierAgent.Type;
 
+/** Whether the recommendation table names `agent`'s models. */
+export const isTierAgent = (agent: AgentKind): agent is TierAgent =>
+  (TierAgent.literals as ReadonlyArray<string>).includes(agent);
+
 export const TierRef = Schema.Struct({
   tier: Tier,
   agent: Schema.optionalKey(TierAgent),

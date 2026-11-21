@@ -1024,6 +1024,7 @@ const make = Effect.gen(function* () {
     hub,
     decisions,
     hooked,
+    serverRaised: (requestId) => serverApprovalOrigins.has(requestId),
     eventSink,
     forkDecision,
     config,

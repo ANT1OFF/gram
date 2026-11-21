@@ -13,6 +13,7 @@
     "./codex/testing": "./src/codex/testing.ts",
     "./opencode": "./src/opencode/index.ts",
     "./grok": "./src/grok/index.ts",
+    "./antigravity": "./src/antigravity/index.ts",
     "./testing/logs": "./src/testing/logs.ts"
   },
   "scripts": {

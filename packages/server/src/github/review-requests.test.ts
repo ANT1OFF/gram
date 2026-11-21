@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { vi } from "vitest";
 import {
   DEFAULT_SETTINGS,
   type GitState,
@@ -8,6 +9,7 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import {
+  type Proc,
   reviewRequestKey,
   ReviewRequestsError,
   type ReviewRequestDetails,
@@ -22,12 +24,24 @@ import { bindAppTools } from "../app-tools/registry.ts";
 import { listOpenPrsTool, listReviewRequestsTool } from "../app-tools/review-request-tools.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { GitServerConfig } from "../git/platform.ts";
+import { cloneIdentityOf } from "../host/repos.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import {
   GhReviewRequests,
   makeReviewRequestsPoller,
   ReviewRequestsPoller,
 } from "./review-requests.ts";
+
+// Off unless a test turns it on: behind an embedding deployment's GitHub route, the polls read with
+// the deployment's access, so an agent is shown only what its thread works in.
+const relay = vi.hoisted(() => ({ on: false }));
+vi.mock("../embedding/github-relay.ts", async (actual) => ({
+  ...(await actual<Record<string, unknown>>()),
+  githubRelayed: () => relay.on,
+}));
+
+/** The tools run no subprocess here: the thread store holds every origin they read. */
+const noProc = { run: () => Effect.die("no subprocess") } as unknown as Proc["Service"];
 
 const pr = (
   repo: string,
@@ -636,7 +650,10 @@ describe("ReviewRequestsPoller", () => {
       const poller = yield* ReviewRequestsPoller;
       for (let i = 0; i < 200 && fake.searches === 0; i++) yield* Effect.yieldNow;
       expect(fake.searches).toBe(1);
-      const [tool] = bindAppTools([listReviewRequestsTool(poller, store)], "t-1" as ThreadId);
+      const [tool] = bindAppTools(
+        [listReviewRequestsTool(poller, store, noProc)],
+        "t-1" as ThreadId,
+      );
       expect(tool!.descriptor.class).toBe("read");
 
       const all = (yield* tool!.run({ refresh: true })) as {
@@ -679,12 +696,15 @@ const mine = (
 const addThread = (
   id: string,
   root: string,
-  fields: Partial<Pick<Thread, "boundPr" | "role" | "lastActivityAt">> & { branch?: string } = {},
+  fields: Partial<Pick<Thread, "boundPr" | "role" | "lastActivityAt">> & {
+    branch?: string;
+    cloneIdentity?: string;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
     const project = yield* store.ensureProject({ root, name: root });
-    const { branch, ...rest } = fields;
+    const { branch, cloneIdentity, ...rest } = fields;
     yield* store.insertThread({
       id,
       projectId: project.id,
@@ -696,6 +716,7 @@ const addThread = (
         kind: "worktree",
         path: `${root}/${id}`,
         ...(branch === undefined ? {} : { branch }),
+        ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
       },
       labels: [],
       pinned: false,
@@ -907,7 +928,7 @@ describe("ReviewRequestsPoller's open PRs", () => {
       const store = yield* ThreadStore;
       const poller = yield* ReviewRequestsPoller;
       yield* poller.poll;
-      const [tool] = bindAppTools([listOpenPrsTool(poller, store, git)], "t-1" as ThreadId);
+      const [tool] = bindAppTools([listOpenPrsTool(poller, store, git, noProc)], "t-1" as ThreadId);
       expect(tool!.descriptor.class).toBe("read");
       const listed = (yield* tool!.run({})) as {
         checkedAt?: string;
@@ -923,6 +944,48 @@ describe("ReviewRequestsPoller's open PRs", () => {
       ]);
       expect(yield* tool!.run({ repo: "other/repo" })).toMatchObject({ prs: [] });
     }).pipe(Effect.scoped, Effect.provide(layer(false))),
+  );
+});
+
+describe("review requests and open PRs behind a GitHub route", () => {
+  it.effect("are shown to an agent only for repositories its thread works in", () =>
+    Effect.gen(function* () {
+      relay.on = true;
+      yield* Effect.addFinalizer(() => Effect.sync(() => void (relay.on = false)));
+      const web = cloneIdentityOf("https://github.com/acme/web.git")!;
+      yield* addThread("t-web", "/work/web", { branch: "feat/one", cloneIdentity: web });
+      fake.own = [mine("acme/web", 3), mine("acme/api", 4)];
+      const store = yield* ThreadStore;
+      const poller = yield* ReviewRequestsPoller;
+      yield* poller.poll;
+      const git = { stateForThread: () => Effect.succeed(undefined) };
+      const [requests] = bindAppTools(
+        [listReviewRequestsTool(poller, store, noProc)],
+        "t-web" as ThreadId,
+      );
+      const [open] = bindAppTools(
+        [listOpenPrsTool(poller, store, git, noProc)],
+        "t-web" as ThreadId,
+      );
+
+      expect(yield* requests!.run({})).toMatchObject({
+        requests: [{ repo: "acme/web", number: 1 }],
+      });
+      expect((yield* requests!.run({})) as { requests: unknown[] }).toHaveProperty(
+        "requests.length",
+        1,
+      );
+      expect(yield* open!.run({})).toMatchObject({ prs: [{ repo: "acme/web", number: 3 }] });
+      expect((yield* open!.run({})) as { prs: unknown[] }).toHaveProperty("prs.length", 1);
+
+      // Naming a repository out of reach is refused before any refresh reads it.
+      const searches = fake.searches;
+      yield* TestClock.adjust("61 seconds");
+      const refused = yield* requests!.run({ repo: "acme/api", refresh: true }).pipe(Effect.flip);
+      expect(String(refused)).toContain("acme/api");
+      expect(yield* open!.run({ repo: "acme/api", refresh: true }).pipe(Effect.flip)).toBeDefined();
+      expect(fake.searches).toBe(searches);
+    }).pipe(Effect.scoped, Effect.provide(seededLayer([pr("acme/web", 1), pr("acme/api", 7)]))),
   );
 });
 

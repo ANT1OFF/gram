@@ -103,13 +103,21 @@ const ANSWER_NOTES_KEPT = 1000;
 export interface EventSinkShape {
   /** Records one event, if the sink is on. Never fails: a sink that can't write logs it. */
   record(event: SinkRecord): Effect.Effect<void>;
-  /** Kept for the `ask.opened` of the approval `requestId`, which is published after this. */
-  noteAsk(requestId: RequestId, note: AskNote): Effect.Effect<void>;
+  /**
+   * Kept for the `ask.opened` of the approval `requestId` of `threadId`, which is published after
+   * this. A card's note is its thread's: another thread's card of the same id never reads it.
+   */
+  noteAsk(requestId: RequestId, note: AskNote, threadId: ThreadId): Effect.Effect<void>;
   /**
    * A person is answering `requestId`: kept for its `ask.resolved`, which is published after
-   * this. `undefined` takes it back, for an answer that wasn't taken.
+   * this. `undefined` takes it back, for an answer that wasn't taken. A card's answer is noted
+   * under its `threadId`; a question's ask id (with no thread) is its own scope.
    */
-  noteAnswer(requestId: RequestId, note: AnswerNote | undefined): Effect.Effect<void>;
+  noteAnswer(
+    requestId: RequestId,
+    note: AnswerNote | undefined,
+    threadId?: ThreadId,
+  ): Effect.Effect<void>;
   /**
    * `person` started `threadId`: sent as `createdBy` on its `thread.upsert`s, the first of which
    * is published after this. Kept across restarts.
@@ -292,6 +300,10 @@ export const askContent = (
 const IDLE_STATUSES: ReadonlySet<string> = new Set(["idle", "cold"]);
 
 const decodeAck = Schema.decodeUnknownOption(SinkAck);
+
+/** A note's key: a card's id within its thread, a question's ask id as it is. */
+const noteKey = (id: string, threadId?: ThreadId) =>
+  threadId === undefined ? id : JSON.stringify([threadId, id]);
 
 /**
  * The sink over one endpoint and outbox file, sending for as long as the scope is open. Closing
@@ -710,7 +722,7 @@ export const makeEventSink = (
           ];
         case "thread.request": {
           const { request } = event;
-          const note = askNotes.get(request.id);
+          const note = askNotes.get(noteKey(request.id, event.threadId));
           return [
             {
               type: "ask.opened",
@@ -728,9 +740,10 @@ export const makeEventSink = (
           ];
         }
         case "thread.requestResolved": {
-          askNotes.delete(event.requestId);
-          const answer = answerNotes.get(event.requestId);
-          answerNotes.delete(event.requestId);
+          const key = noteKey(event.requestId, event.threadId);
+          askNotes.delete(key);
+          const answer = answerNotes.get(key);
+          answerNotes.delete(key);
           return [
             {
               type: "ask.resolved",
@@ -1040,7 +1053,8 @@ export const makeEventSink = (
 
     return {
       record,
-      noteAsk: (requestId, note) => Effect.sync(() => void askNotes.set(requestId, note)),
+      noteAsk: (requestId, note, threadId) =>
+        Effect.sync(() => void askNotes.set(noteKey(requestId, threadId), note)),
       noteCreator: (threadId, person) =>
         Effect.sync(() => {
           creators.set(threadId, person);
@@ -1050,11 +1064,12 @@ export const makeEventSink = (
             // Known for this run of the server, and not after it.
           }
         }),
-      noteAnswer: (requestId, note) =>
+      noteAnswer: (requestId, note, threadId) =>
         Effect.sync(() => {
-          answerNotes.delete(requestId);
+          const key = noteKey(requestId, threadId);
+          answerNotes.delete(key);
           if (note === undefined) return;
-          answerNotes.set(requestId, note);
+          answerNotes.set(key, note);
           if (answerNotes.size > ANSWER_NOTES_KEPT) {
             answerNotes.delete(answerNotes.keys().next().value!);
           }

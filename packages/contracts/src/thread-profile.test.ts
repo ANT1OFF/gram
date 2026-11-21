@@ -245,6 +245,7 @@ describe("ThreadProfile", () => {
       codex: ".agents/skills",
       opencode: ".opencode/skills",
       grok: ".grok/skills",
+      antigravity: ".agents/skills",
     });
     expect(profileFilesOf({ agent: "claude", files, skills })).toEqual([
       { path: "AGENTS.md", content: "Rules.\n" },

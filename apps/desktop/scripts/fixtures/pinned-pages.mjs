@@ -221,6 +221,7 @@ try {
 /**
  * Input as the browser's own, through the DevTools protocol, so the page has the user's activation
  * whether or not the window has the system's focus. The fixture's alone; nothing in Gram does this.
+ * It leaves the debugger attached, as Gram does: the WebRTC guard holds the same session.
  */
 const input = (contents, method, params) => {
   if (!contents.debugger.isAttached()) contents.debugger.attach("1.3");
@@ -317,7 +318,6 @@ async function clipboardProbe(contents, url) {
   await delay(400);
   await delay(400);
   const page = await contents.executeJavaScript("JSON.stringify(window.clip)").catch(() => "{}");
-  if (contents.debugger.isAttached()) contents.debugger.detach();
   return {
     loaded,
     url: contents.getURL(),
@@ -495,7 +495,6 @@ async function hijackProbe(contents, url) {
   await clipboard.writeText("sentinel");
   await pressCopy(contents);
   const keys = await clipboard.readText();
-  if (contents.debugger.isAttached()) contents.debugger.detach();
   const refused = await contents.executeJavaScript("String(window.refused)").catch(() => "?");
   return { title, url: contents.getURL(), expected, menu, keys, refused };
 }

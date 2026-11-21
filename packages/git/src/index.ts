@@ -15,6 +15,7 @@ export * from "./diff.ts";
 export * from "./diff-file.ts";
 export * from "./errors.ts";
 export * from "./exec.ts";
+export * from "./gh-caller.ts";
 export * from "./git-state-runtime.ts";
 export * from "./git-state.ts";
 export * from "./names.ts";
@@ -28,6 +29,7 @@ export {
 } from "./checkout-repos.ts";
 export * from "./pr-actions.ts";
 export * from "./pr-cache.ts";
+export * from "./pr-memo.ts";
 export * from "./pr-checkout.ts";
 export * from "./pr-comments.ts";
 export * from "./pr-people.ts";

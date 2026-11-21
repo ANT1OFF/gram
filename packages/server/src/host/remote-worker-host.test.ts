@@ -151,6 +151,7 @@ describe("a joined machine's worker host", () => {
     "other records",
     "the root folder",
     "a relative folder",
+    "a long relative folder",
   ] as const) {
     it.live(`records only its own values for a worktree made there, given ${lie}`, () =>
       Effect.gen(function* () {
@@ -165,8 +166,18 @@ describe("a joined machine's worker host", () => {
               Effect.map((created) => ({
                 ...created,
                 checkout:
-                  lie === "the root folder" || lie === "a relative folder"
-                    ? { ...created.checkout, path: lie === "the root folder" ? "/" : "repo" }
+                  lie === "the root folder" ||
+                  lie === "a relative folder" ||
+                  lie === "a long relative folder"
+                    ? {
+                        ...created.checkout,
+                        path:
+                          lie === "the root folder"
+                            ? "/"
+                            : lie === "a relative folder"
+                              ? "repo"
+                              : "r".repeat(100_000),
+                      }
                     : lie === "another branch"
                       ? { ...created.checkout, branch: "feat/by-another-thread" }
                       : {
@@ -188,10 +199,15 @@ describe("a joined machine's worker host", () => {
         );
         // A folder that isn't one Gram records (the root, which would claim every path of the
         // machine, or a relative one) fails the placement, and nothing is recorded.
-        if (lie === "the root folder" || lie === "a relative folder") {
-          expect((yield* prepared.pipe(Effect.flip)).message).toContain(
-            "which isn't one Gram uses",
-          );
+        if (
+          lie === "the root folder" ||
+          lie === "a relative folder" ||
+          lie === "a long relative folder"
+        ) {
+          const { message } = yield* prepared.pipe(Effect.flip);
+          expect(message).toContain("which isn't one Gram uses");
+          // The machine's path is its own words, held to a size in the message.
+          expect(message.length).toBeLessThan(1024);
           return;
         }
         if (lie === "another branch") {

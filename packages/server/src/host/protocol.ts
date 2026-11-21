@@ -98,7 +98,7 @@ import {
   STOPPING,
 } from "./stop.ts";
 import { HOST_DROP_MS, HOST_RESTORE_MS, HOST_STOP_MS } from "./budgets.ts";
-import { openRefusal, readableBy } from "./session-gates.ts";
+import { hostKnowsAgent, openRefusal, readableBy } from "./session-gates.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type { HostLoopback } from "./loopback.ts";
@@ -230,6 +230,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "agent-codex",
   "agent-opencode-sessions",
   "agent-grok",
+  "agent-antigravity",
   "shared-folders",
   "dream-sessions",
   "stop-going",
@@ -1523,8 +1524,6 @@ export const connectHost = (
         ),
       );
     const browserPolicy = hostServes(hello, "browser-policy");
-    const knowsOpenCode = hostServes(hello, "agent-opencode");
-    const runsGrok = hostServes(hello, "agent-grok");
     const readable = readableBy(hello);
     const sessions: HostSessionsConnection = {
       browserPolicy,
@@ -1633,13 +1632,13 @@ export const connectHost = (
       },
       // A host that went took its sessions with it, so there is nothing left to close.
       close: (handle) => guarded(client["host.sessions.close"]({ handle })).pipe(Effect.ignore),
-      // A host that doesn't know OpenCode keeps no OpenCode config to drop.
+      // A host that doesn't know the agent keeps no config of it to drop.
       reload: (agent, reload) =>
-        (agent === "opencode" && !knowsOpenCode) || (agent === "grok" && !runsGrok)
+        !hostKnowsAgent(hello, agent)
           ? Effect.void
           : guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
       accountScope: (agent) =>
-        hostServes(hello, "account-scope") && (agent !== "grok" || runsGrok)
+        hostServes(hello, "account-scope") && hostKnowsAgent(hello, agent)
           ? sessionCall(
               client["host.sessions.accountScope"]({ agent }),
               (error): error is AgentUnavailable => error instanceof AgentUnavailable,

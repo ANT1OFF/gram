@@ -23,6 +23,7 @@ import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { McpTokens } from "./mcp-tokens.ts";
 import { AppToolRegistry } from "./registry.ts";
+import { withTupleItems } from "./tuple-items.ts";
 
 /** An app tool's input as an MCP `inputSchema`; throws unless the schema is an object. */
 export const toolInputSchema = (tool: AppTool): Tool["inputSchema"] => {
@@ -30,10 +31,10 @@ export const toolInputSchema = (tool: AppTool): Tool["inputSchema"] => {
   if (doc.schema["type"] !== "object") {
     throw new Error(`App tool ${tool.descriptor.name} input must be an object schema`);
   }
-  return {
+  return withTupleItems({
     ...doc.schema,
     ...(Object.keys(doc.definitions).length === 0 ? {} : { $defs: doc.definitions }),
-  } as Tool["inputSchema"];
+  }) as Tool["inputSchema"];
 };
 
 const textResult = (text: string, isError = false): CallToolResult =>

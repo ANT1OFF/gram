@@ -49,6 +49,7 @@ import { buildDiffTree, treeOrder } from "./diff-tree-model";
 import { checkoutRelative } from "./files/files-store";
 import { FolderMissing } from "./folder-missing";
 import { PanelMessage } from "./panel-message";
+import { keptDiff } from "./kept-diff";
 import { countHunks } from "./patch";
 import { RefreshButton } from "./refresh-button";
 import { sameTurnOptions, targetTurnId, turnOptions } from "./turn-diff";
@@ -172,19 +173,7 @@ export function DiffPanel({
   ] as const;
   const query = useQuery({
     queryKey: [...diffKey, ignoreWhitespace],
-    // Whitespace switched on or off, the diff it was stays until the new one comes, so the files
-    // opened in it stay open; so does a clean tree's fallback to the branch while Branch loads.
-    placeholderData: (previous, previousQuery) =>
-      diffKey.every(
-        (part, at) =>
-          previousQuery?.queryKey[at] === part ||
-          (at === 2 &&
-            part === "branch" &&
-            previousQuery?.queryKey[at] === "uncommitted" &&
-            previous?.base !== undefined),
-      )
-        ? previous
-        : undefined,
+    placeholderData: keptDiff(diffKey),
     queryFn: () =>
       ignoreWhitespace
         ? api.gitDiff(threadId, diffScope!, { ignoreWhitespace })

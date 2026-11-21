@@ -73,6 +73,8 @@ export interface FreezeInput {
   readonly minutes?: number | undefined;
   /** PR numbers in the repo that may still merge; a renewal without it keeps the ones it had. */
   readonly allow?: ReadonlyArray<number> | undefined;
+  /** A person approved holding every workspace's merges, not only the caller's workspace's. */
+  readonly acrossWorkspaces?: boolean | undefined;
 }
 
 /** What a freeze did: the freeze, and the GitHub auto-merges it couldn't turn off, with why. */
@@ -101,13 +103,15 @@ export interface MergeFreezesShape {
     branch: string | undefined,
   ) => Effect.Effect<MergeFreeze | undefined>;
   /**
-   * The freeze that holds back a merge of PR `number` onto the repo's branch (any branch of the
-   * repo when it isn't known), or `undefined`: a freeze standing there that doesn't allow it.
+   * The freeze that holds back a merge of PR `number` by a thread of `workspaceId` onto the repo's
+   * branch (any branch of the repo when it isn't known), or `undefined`: a freeze standing there
+   * that doesn't allow it, set in that workspace or, with a person's yes, across workspaces.
    */
   readonly holding: (
     repo: string,
     branch: string | undefined,
     number: number | undefined,
+    workspaceId: string | undefined,
   ) => Effect.Effect<MergeFreeze | undefined>;
   /** Every freeze standing now. */
   readonly list: Effect.Effect<ReadonlyArray<MergeFreeze>>;
@@ -469,7 +473,7 @@ export const MergeFreezesLive = Layer.effect(
         return found === undefined ? undefined : publicOf(found);
       });
 
-    const holding: MergeFreezesShape["holding"] = (repo, branch, number) =>
+    const holding: MergeFreezesShape["holding"] = (repo, branch, number, workspaceId) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
         const found = [...freezes.values()].find(
@@ -477,7 +481,7 @@ export const MergeFreezesLive = Layer.effect(
             sameRepo(freeze.repo, repo) &&
             (branch === undefined || freeze.branch === branch) &&
             standing(freeze, now) !== undefined &&
-            mergeFreezeHolds(freeze, number),
+            mergeFreezeHolds(freeze, number, workspaceId),
         );
         return found === undefined ? undefined : publicOf(found);
       });
@@ -502,17 +506,21 @@ export const MergeFreezesLive = Layer.effect(
       });
 
     /**
-     * Whose PR `number` of `repo` is: `owned`, a Gram worker's own by the rule the merge tools hold
-     * to (`workerOwnsPr`), so a freeze may take its GitHub auto-merge down; `bound`, a thread binds
-     * it but owns it by no proof, so it isn't touched; or `none`. A doubt is no proof.
+     * Whose PR `number` of the frozen repo is, among the threads the freeze holds: `owned`, a Gram
+     * worker's own by the rule the merge tools hold to (`workerOwnsPr`), so a freeze may take its
+     * GitHub auto-merge down; `bound`, a thread binds it but owns it by no proof, so it isn't
+     * touched; or `none`. A doubt is no proof.
      */
-    const gramOwns = (repo: string, number: number) =>
+    const gramOwns = (set: StoredFreeze, number: number) =>
       Effect.gen(function* () {
+        const repo = set.repo;
         let claimed = false;
         for (const thread of yield* store.listThreads) {
           const bound = thread.boundPr;
           if (bound === undefined || !sameRepo(bound.repo, repo) || bound.number !== number)
             continue;
+          // A freeze held to its workspace leaves other workspaces' PRs as they are.
+          if (!mergeFreezeHolds(set, undefined, thread.workspaceId)) continue;
           const owns = yield* workerOwnsPr(thread, repo, number).pipe(
             Effect.provideService(ThreadStore, store),
             Effect.provideService(Proc, proc),
@@ -541,7 +549,7 @@ export const MergeFreezesLive = Layer.effect(
         const failed: Array<string> = [];
         for (const pr of armed) {
           if ((set.allow ?? []).includes(pr.number)) continue;
-          const whose = yield* gramOwns(set.repo, pr.number);
+          const whose = yield* gramOwns(set, pr.number);
           // Bound by a thread but no worker's own: someone else's to arm, and the caller is told.
           if (whose === "bound")
             failed.push(`#${pr.number}: a thread binds it, but it isn't a Gram worker's own`);
@@ -651,6 +659,10 @@ export const MergeFreezesLive = Layer.effect(
                 threadId: caller.id,
                 title: caller.title,
                 ...(caller.workspaceId === undefined ? {} : { workspaceId: caller.workspaceId }),
+                // A renewal keeps the scope the user approved; widening it takes their yes again.
+                ...(input.acrossWorkspaces === true || held?.acrossWorkspaces === true
+                  ? { acrossWorkspaces: true as const }
+                  : {}),
                 // One line: it is shown inline in other threads' refusals and the ledger.
                 reason: oneLine(redactText(input.reason)).slice(0, MERGE_FREEZE_REASON_MAX),
                 ...(allow === undefined || allow.length === 0

@@ -973,3 +973,25 @@ describe("local-only debugging, recording and labels", () => {
     f.panes.closed("owned");
   });
 });
+
+// The WebRTC guard holds the page's debugger too, and detaching would take its removal away.
+describe("closing an agent's pane", () => {
+  it("lets the page go without detaching its debugger, undoing what the driver set", async () => {
+    const f = await fixture();
+    expect((await f.command({ op: "viewport", preset: "phone" })).ok).toBe(true);
+    f.sent.length = 0;
+    f.panes.closed("owned");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(f.contents.debugger.isAttached()).toBe(true);
+    const methods = f.sent.map(({ method }) => method);
+    expect(methods).toEqual(
+      expect.arrayContaining([
+        "Emulation.clearDeviceMetricsOverride",
+        "Emulation.setTouchEmulationEnabled",
+        "Emulation.setFocusEmulationEnabled",
+        "Runtime.disable",
+      ]),
+    );
+    expect(methods).not.toContain("Page.disable");
+  });
+});

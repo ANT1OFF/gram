@@ -1,9 +1,13 @@
 import { reconcileOpenPrs, reviewRequestsDirectOnly, reviewRequestsOn } from "@gram/contracts";
 import { readableOnly } from "../embedding/readable-by.ts";
+import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { GitStatePublisher, type GitStatePublisherShape } from "../git/publisher.ts";
+import { inReachOnly } from "../git/reach-filter.ts";
+import { refuseOutOfReach } from "../git/repo-reach.ts";
 import { ReviewRequestsPoller } from "../github/review-requests.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { defineAppTool } from "./definition.ts";
@@ -17,7 +21,8 @@ import { AppToolRegistry } from "./registry.ts";
  */
 export const listReviewRequestsTool = (
   poller: Pick<ReviewRequestsPoller["Service"], "current" | "refresh">,
-  store: Pick<ThreadStore["Service"], "getSettings">,
+  store: ThreadStore["Service"],
+  proc: Proc["Service"],
 ) =>
   defineAppTool({
     descriptor: {
@@ -31,11 +36,20 @@ export const listReviewRequestsTool = (
       repo: Schema.optionalKey(Schema.String),
       refresh: Schema.optionalKey(Schema.Boolean),
     }),
-    handle: (_threadId, { repo, refresh }) =>
+    handle: (threadId, { repo, refresh }) =>
       Effect.gen(function* () {
+        // A repository named is checked first, so a refused one asks for no poll either.
+        yield* refuseOutOfReach("list_review_requests", store, threadId, { repos: [repo] });
         if (refresh === true) yield* poller.refresh();
         const settings = yield* store.getSettings;
-        const { requests, checkedAt } = yield* poller.current;
+        const { checkedAt, ...current } = yield* poller.current;
+        const thread = yield* store.getThread(threadId).pipe(Effect.option);
+        const requests = yield* inReachOnly(
+          store,
+          Option.getOrUndefined(thread),
+          current.requests,
+          (request) => request.repo,
+        );
         const wanted = repo?.toLowerCase();
         return {
           // Off in Settings → Notifications, nothing is polled and the list is always empty.
@@ -47,7 +61,7 @@ export const listReviewRequestsTool = (
               ? requests
               : requests.filter((request) => request.repo.toLowerCase() === wanted),
         };
-      }),
+      }).pipe(Effect.provideService(Proc, proc)),
   });
 
 /**
@@ -58,8 +72,9 @@ export const listReviewRequestsTool = (
  */
 export const listOpenPrsTool = (
   poller: Pick<ReviewRequestsPoller["Service"], "own" | "projectOrigins" | "refresh">,
-  store: Pick<ThreadStore["Service"], "listThreads" | "listProjects">,
+  store: ThreadStore["Service"],
   git: Pick<GitStatePublisherShape, "stateForThread">,
+  proc: Proc["Service"],
 ) =>
   defineAppTool({
     descriptor: {
@@ -73,10 +88,12 @@ export const listOpenPrsTool = (
       repo: Schema.optionalKey(Schema.String),
       refresh: Schema.optionalKey(Schema.Boolean),
     }),
-    handle: (_threadId, { repo, refresh }) =>
+    handle: (threadId, { repo, refresh }) =>
       Effect.gen(function* () {
+        yield* refuseOutOfReach("list_open_prs", store, threadId, { repos: [repo] });
         if (refresh === true) yield* poller.refresh();
         const { prs, checkedAt } = yield* poller.own;
+        const caller = Option.getOrUndefined(yield* store.getThread(threadId).pipe(Effect.option));
         const origins = yield* poller.projectOrigins;
         const roots = new Map((yield* store.listProjects).map((p) => [p.id, p.root]));
         // No thread the caller's reader may not see owns one here (`embedding/readable-by.ts`).
@@ -95,7 +112,7 @@ export const listOpenPrsTool = (
         const wanted = repo?.toLowerCase();
         return {
           ...(checkedAt === undefined ? {} : { checkedAt: new Date(checkedAt).toISOString() }),
-          prs: reconcileOpenPrs(prs, live)
+          prs: (yield* inReachOnly(store, caller, reconcileOpenPrs(prs, live), (pr) => pr.repo))
             .filter((pr) => wanted === undefined || pr.repo.toLowerCase() === wanted)
             .map(({ owner, ...pr }) =>
               owner === undefined
@@ -103,7 +120,7 @@ export const listOpenPrsTool = (
                 : { ...pr, threadId: owner, threadTitle: titles.get(owner) ?? "" },
             ),
         };
-      }),
+      }).pipe(Effect.provideService(Proc, proc)),
   });
 
 /** Registers `list_review_requests` and `list_open_prs` over the review-request poll. */
@@ -112,9 +129,10 @@ export const ReviewRequestAppToolsLive = Layer.effectDiscard(
     const registry = yield* AppToolRegistry;
     const poller = yield* ReviewRequestsPoller;
     const store = yield* ThreadStore;
+    const proc = yield* Proc;
     yield* registry.register([
-      listReviewRequestsTool(poller, store),
-      listOpenPrsTool(poller, store, yield* GitStatePublisher),
+      listReviewRequestsTool(poller, store, proc),
+      listOpenPrsTool(poller, store, yield* GitStatePublisher, proc),
     ]);
   }),
 );

@@ -61,6 +61,7 @@ import { recordedCloneIdentity } from "../git/recorded-clone.ts";
 import { cloneFolderOf, cloneIdentityOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
 import { HOST_THREADS_DIR, type HostThreadPlaces } from "./thread-places.ts";
+import { cutHostText } from "./stop.ts";
 
 /**
  * The fewest folders a clone or worktree a host made sits below its root by: never the root, nor
@@ -119,9 +120,12 @@ const checkedPlaces = (machine: Machine, places: HostThreadPlaces): HostThreadPl
       ),
 });
 
-/** What a placement is told when the machine answered with a folder Gram doesn't record. */
+/**
+ * What a placement is told when the machine answered with a folder Gram doesn't record. The path
+ * is the machine's own words, so it is held to a size (`cutHostText`).
+ */
 const implausible = (machine: Machine, path: string) =>
-  `${machine.name} answered with ${path} for the thread's folder, which isn't one Gram uses, so the thread isn't placed there.`;
+  `${machine.name} answered with ${cutHostText(path, 512)} for the thread's folder, which isn't one Gram uses, so the thread isn't placed there.`;
 
 /** A joined machine as its worker host is named and reached. */
 export interface Machine {

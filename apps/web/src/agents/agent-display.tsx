@@ -5,7 +5,14 @@ import type { ComponentType } from "react";
 import { cn } from "@/lib/utils";
 
 import { AGENT_LABEL, agentLabel } from "./agent-label";
-import { type AgentMarkProps, ClaudeMark, GrokMark, OpenAiMark, OpenCodeMark } from "./agent-marks";
+import {
+  type AgentMarkProps,
+  AntigravityMark,
+  ClaudeMark,
+  GrokMark,
+  OpenAiMark,
+  OpenCodeMark,
+} from "./agent-marks";
 
 export { agentLabel } from "./agent-label";
 
@@ -22,6 +29,7 @@ export const AGENT_DISPLAY: Readonly<Record<AgentKind, AgentDisplay>> = {
   codex: { label: AGENT_LABEL.codex, icon: OpenAiMark, tone: "text-provider-openai" },
   opencode: { label: AGENT_LABEL.opencode, icon: OpenCodeMark, tone: "text-foreground" },
   grok: { label: AGENT_LABEL.grok, icon: GrokMark, tone: "text-foreground" },
+  antigravity: { label: AGENT_LABEL.antigravity, icon: AntigravityMark, tone: "text-foreground" },
 };
 
 const displayOf = (agent: string): AgentDisplay | undefined =>
