@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.34.0](https://github.com/ANT1OFF/gram/compare/v1.33.0...v1.34.0) (2026-11-21)
+
+
+### Features
+
+* **shell:** name this computer to a hosted server's sign-in page ([#950](https://github.com/ANT1OFF/gram/issues/950)) ([d14bfeb](https://github.com/ANT1OFF/gram/commit/d14bfeb6eddb4ed7c0e6af3668188fbb20dc36cf))
+* **web:** a hosted server's worker machine shows the server's mark, not its id ([#943](https://github.com/ANT1OFF/gram/issues/943)) ([55e1203](https://github.com/ANT1OFF/gram/commit/55e1203897aa5b978fcf39f274d31d9c248fe39b))
+* **web:** the worker pane's Terminal tab is your own shell in the worker's worktree ([#942](https://github.com/ANT1OFF/gram/issues/942)) ([0afeed0](https://github.com/ANT1OFF/gram/commit/0afeed0f0fb71d1b0d2897c27b911551d5413536))
+
+
+### Bug Fixes
+
+* **git:** route every fetch and push to origin through one checked helper ([#949](https://github.com/ANT1OFF/gram/issues/949)) ([54d754b](https://github.com/ANT1OFF/gram/commit/54d754b23417fd81682139e192eb5e9f35eea98d))
+* release-stable test removes its temp folders ([#947](https://github.com/ANT1OFF/gram/issues/947)) ([3311d6b](https://github.com/ANT1OFF/gram/commit/3311d6b66aa72fb8827b4b192ae301c1dec1f4fc))
+* **server:** behind a GitHub route every gh call is made for a thread ([#946](https://github.com/ANT1OFF/gram/issues/946)) ([383b08e](https://github.com/ANT1OFF/gram/commit/383b08e68993f44c444eebcec3f0f69fe4f765cc))
+* **server:** gate a provisioned machine's PR on CI, not a full check there ([#948](https://github.com/ANT1OFF/gram/issues/948)) ([6159c6b](https://github.com/ANT1OFF/gram/commit/6159c6b688464b85b84667c574b28782d1ba345f))
+* **server:** refuse an embedding answer that names no card when the card has a key ([#940](https://github.com/ANT1OFF/gram/issues/940)) ([9653021](https://github.com/ANT1OFF/gram/commit/965302127d5ef3b7bee26213aee5bd0705860fd8))
+* **server:** relay a hosted server's reason when it refuses a worker machine's start ([#944](https://github.com/ANT1OFF/gram/issues/944)) ([fe7d283](https://github.com/ANT1OFF/gram/commit/fe7d28365eaf49cdd11015536c86a8f51e5568f4))
+* **web:** on a headless server the New form starts in one of its projects instead of browsing its disk ([#945](https://github.com/ANT1OFF/gram/issues/945)) ([3bb0322](https://github.com/ANT1OFF/gram/commit/3bb0322ed86eaa814f64f24e69380955394e0588))
+
 ## [1.33.0](https://github.com/ANT1OFF/gram/compare/v1.32.0...v1.33.0) (2026-11-21)
 
 
