@@ -5,6 +5,7 @@
 
 import * as Schema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
+import { hostedLogoFromData } from "./hosted-logo.ts";
 
 /**
  * The device protocol's version, in the hello. Its own number, not the host protocol's: a device
@@ -424,6 +425,13 @@ export const HostedDiscovery = Schema.Struct({
   issuer: Address,
   /** What the server calls itself. Shown as its own word. */
   name: Text(128),
+  /**
+   * The server's mark, shown where something of the server's is (a worker's machine there): an
+   * image on its own origin, which the app fetches as an image and nothing else, or a `data:` image
+   * (`hosted-logo.ts`). One Gram can't use is dropped, never the sign-in; absent, Gram draws the
+   * first letter of `name`.
+   */
+  logo_uri: Schema.optionalKey(Schema.String),
   client_id: Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,256}$/)),
   authorization_endpoint: Address,
   token_endpoint: Address,
@@ -570,7 +578,11 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
     !on(discovery.worker_machine_connect, secure ? "wss:" : "ws:")
   )
     return { ok: false, why: "The server sends Gram to another address." };
-  return { ok: true, discovery };
+  const { logo_uri, ...rest } = discovery;
+  const logo =
+    logo_uri !== undefined &&
+    (on(logo_uri, secure ? "https:" : "http:") || hostedLogoFromData(logo_uri) !== undefined);
+  return { ok: true, discovery: logo ? discovery : rest };
 };
 
 /** An organisation's policy for lending to a workspace, as the server will enforce it. */
@@ -813,6 +825,8 @@ export interface SentWorkTarget {
   readonly origin: string;
   /** What the server calls itself, as the app shows it. */
   readonly server: string;
+  /** The server's mark as Gram keeps it (`hostedLogoOf`), where it gave one the app could read. */
+  readonly logo?: string;
   readonly workspaceId: string;
   readonly workspace: string;
   readonly organisation: string;

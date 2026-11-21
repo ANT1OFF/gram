@@ -1,7 +1,7 @@
 import type { KeyObject } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
-import { type HostId, type HostStatus, hostedOrigin } from "@gram/contracts";
+import { type HostId, type HostStatus, hostedOrigin, isHostedLogo } from "@gram/contracts";
 import { makeLaunchToken, tokensEqual } from "../http/auth.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
 import {
@@ -103,7 +103,31 @@ export interface PairedMachine {
    * after, released and stopped only under that sign-in. Absent on one registered before.
    */
   readonly viaAccount?: string;
+  /**
+   * The server at `via` as it named itself when the host was asked for, and its mark
+   * (`MachineState.hosted`). Absent on one registered before.
+   */
+  readonly hosted?: HostedMark;
 }
+
+/** A hosted server's own name, and its mark as Gram keeps one (`hosted-logo.ts`). */
+export interface HostedMark {
+  readonly name: string;
+  readonly logo?: string;
+}
+
+/** Whether `value` is a hosted server's mark as a machine's record may hold it. */
+const isHostedMark = (value: unknown): value is HostedMark => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const { name, logo, ...rest } = value as Record<string, unknown>;
+  return (
+    Object.keys(rest).length === 0 &&
+    typeof name === "string" &&
+    name.length > 0 &&
+    name.length <= 128 &&
+    (logo === undefined || isHostedLogo(logo))
+  );
+};
 
 /** What an embedder started a host on demand for. */
 export type OnDemandKind = "personal" | "thread" | "worker";
@@ -200,6 +224,8 @@ export interface ProvisionRequest {
   readonly via?: string;
   /** The sign-in there it was asked for under (`PairedMachine.viaAccount`): only with `via`. */
   readonly viaAccount?: string;
+  /** The server at `via`, by its own name and mark (`PairedMachine.hosted`): only with `via`. */
+  readonly hosted?: HostedMark;
 }
 
 export type ProvisionResult =
@@ -291,7 +317,8 @@ const isMachine = (value: unknown): value is PairedMachine => {
         isRelayOrigin(m["via"]) &&
         m["onDemand"] === "worker" &&
         m["owner"] === undefined)) &&
-    (m["viaAccount"] === undefined || (m["via"] !== undefined && isAccountMark(m["viaAccount"])))
+    (m["viaAccount"] === undefined || (m["via"] !== undefined && isAccountMark(m["viaAccount"]))) &&
+    (m["hosted"] === undefined || (m["via"] !== undefined && isHostedMark(m["hosted"])))
   );
 };
 
@@ -633,6 +660,8 @@ export const createPairedMachines = (
       // except a worker host a desktop asked a hosted server for: the desktop's, like a joined one.
       if (request.viaAccount !== undefined && !isAccountMark(request.viaAccount))
         return { kind: "refused", status: 400, message: "That sign-in mark isn't valid." };
+      if (request.hosted !== undefined && (request.via === undefined || !isHostedMark(request.hosted)))
+        return { kind: "refused", status: 400, message: "That server's mark isn't valid." };
       if (request.via !== undefined) {
         if (
           !isRelayOrigin(request.via) ||
@@ -713,6 +742,7 @@ export const createPairedMachines = (
         ...(request.via === undefined || request.viaAccount === undefined
           ? {}
           : { viaAccount: request.viaAccount }),
+        ...(request.hosted === undefined ? {} : { hosted: request.hosted }),
       };
       save([...machines, machine]);
       return { kind: "provisioned", machine, created: true };

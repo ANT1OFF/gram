@@ -599,6 +599,10 @@ export const signedInSource = (
                 onDemand: "worker",
                 via: origin,
                 ...viaField(),
+                hosted: {
+                  name: plainName(server.server),
+                  ...(server.logo === undefined ? {} : { logo: server.logo }),
+                },
               });
               if (result.kind === "refused") return { failed: failedWords(name, result.message) };
               // Registered here: the release pass looks after it from now on.

@@ -788,6 +788,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 ...(live === undefined ? {} : { onlineSince: live.since }),
                 ...(offline === undefined ? {} : { offline }),
                 ...(live !== undefined || starting === undefined ? {} : { starting }),
+                ...(machine.via === undefined || machine.hosted === undefined
+                  ? {}
+                  : { hosted: machine.hosted }),
               };
             }),
         watch: (listener) => {
