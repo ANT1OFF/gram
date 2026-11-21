@@ -123,3 +123,41 @@ describe("a thread's machine marker", () => {
     expect(marker().dataset["machineState"]).toBe("not heard");
   });
 });
+
+describe("a hosted server's worker machine", () => {
+  const WORKER = HostId.make("m-fedcba987654321001234567");
+  const LOGO = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg"/>')}`;
+  const worker = (hosted: MachineState["hosted"], online = true): MachineState => ({
+    id: WORKER,
+    name: "worker-827d7eaf1e",
+    kind: "provisioned",
+    ...(online ? { onlineSince: 1 } : { offline: { kind: "never" } }),
+    hosted,
+  });
+
+  it("shows the server's first letter in the machine's place, and names the server", () => {
+    useMachines.setState({ machines: [worker({ name: "example cloud" })] });
+    const { getByTestId } = render(<MachineMarker hostId={WORKER} hover="title" />);
+    const marker = getByTestId("machine-marker");
+    expect(marker.textContent).toBe("E");
+    expect(getByTestId("hosted-mark").dataset["mark"]).toBe("letter");
+    expect(marker.getAttribute("aria-label")).toBe("Runs on example cloud's machine");
+    expect(marker.title.split("\n")[0]).toBe("Runs on example cloud's machine");
+  });
+
+  it("shows the server's own image where it gave one", () => {
+    useMachines.setState({ machines: [worker({ name: "Example Cloud", logo: LOGO })] });
+    const { getByTestId } = render(<MachineMarker hostId={WORKER} hover="none" />);
+    const mark = getByTestId("hosted-mark");
+    expect(mark.tagName).toBe("IMG");
+    expect(mark.getAttribute("src")).toBe(LOGO);
+    expect(getByTestId("machine-marker").textContent).toBe("");
+  });
+
+  it("says offline by the struck glyph and its word, never the machine's id", () => {
+    useMachines.setState({ machines: [worker({ name: "Example Cloud", logo: LOGO }, false)] });
+    const { getByTestId, queryByTestId } = render(<MachineMarker hostId={WORKER} hover="none" />);
+    expect(queryByTestId("hosted-mark")).toBeNull();
+    expect(getByTestId("machine-marker").textContent).toBe("offline");
+  });
+});
