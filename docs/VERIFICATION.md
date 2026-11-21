@@ -234,7 +234,8 @@ On CI (`CI` set) there is no slot and Vitest keeps three workers.
 
 The root `test` script, for focused runs, caps Vitest at three workers. `bun run typecheck` keeps
 no cache, so every run checks every project from source. It starts one thread per core; on a
-machine short of memory, `bun run typecheck --threads 2` uses less.
+machine short of memory, `bun run typecheck --threads 2` uses less. It takes tsc's
+`--singleThreaded` and `--checkers` without complaint and ignores them.
 
 ## Browser checks
 
