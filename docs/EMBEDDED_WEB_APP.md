@@ -606,6 +606,22 @@ components the app itself draws, from the same build, so their styles are alread
 `gram-web.css` and a tooltip of yours opens under the app's own provider. The list grows as
 pages need more; a control added to it keeps its props.
 
+For records and trees at scale:
+
+- `DataTable<T>`: a table with headers that sort it. `columns` (`{ id, header, cell(row),
+  sortValue?, align?, width?, hideOnPhone? }`, the `DataTableColumn<T>` type), `rows`, `rowKey`,
+  `label`, and the sort kept by you (`sort`, `onSortChange`) or by it (`defaultSort`).
+  `onRowOpen` makes each row open with a click or Enter, `selectedKey` draws one as chosen,
+  `empty` shows when there are no rows, and `maxHeight` gives it its own scroll with the header
+  kept in view. Rows whose sort value is missing stay at the end.
+- `TreeChart`: the same `TreeNode`s as `TreeList`, drawn top-down as boxes joined by lines, as an
+  organisation chart is, with zoom, Fit, scroll or drag to move, and a button under each box that
+  opens or folds its children (it says how many are folded). Only the open part is drawn.
+  `expanded`/`onExpandedChange` or `defaultExpanded` (the top boxes when left out), `focusId` to
+  bring one into view and draw it as chosen, `nodeWidth`, `nodeHeight` and `height`. Children that
+  open nothing stand in one column under their box (`stackLeaves`, on by default), and `fit` opens
+  it zoomed out to its frame, never below half size.
+
 `Page` also takes `above` (over the title: a back link, a line on where the page sits, or the
 tabs it belongs to), `headingLevel` (`2` where the page sits under an `h1` of your own; the look
 is the same) and `hideTitleOnPhone` (on a phone the title is left to your own bar, which names the

@@ -380,6 +380,8 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         expect(worker.session.options).toMatchObject({
           audience: "worker",
           outwardGate: "irreversible",
+          // A worker asks through `ask_question`; nothing it can call holds its turn for the user.
+          noBlockingAsk: true,
         });
         expect(worker.session.options.instructions).toContain('"mail-trigger"');
         expect(worker.session.options.instructions).toContain(thread.title);
@@ -395,10 +397,10 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         expect(opened?.options).toMatchObject({ audience: "plain" });
         expect(opened?.options.outwardGate).toBeUndefined();
         expect(opened?.options.instructions).toBeUndefined();
+        expect(opened?.options).not.toHaveProperty("noBlockingAsk");
         for (const options of [worker.session.options, opened?.options]) {
           expect(options).not.toHaveProperty("mcpAllowlist");
           expect(options).not.toHaveProperty("mcpNoneWithoutToolSearch");
-          expect(options).not.toHaveProperty("noBlockingAsk");
           expect(options).not.toHaveProperty("pinCwd");
           expect(options).not.toHaveProperty("peerMessaging");
         }
