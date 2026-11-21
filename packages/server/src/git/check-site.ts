@@ -1,4 +1,3 @@
-// Where a thread's managed check runs: on this machine, or on the joined machine its checkout is on.
 import { type Checkout, hostOf, type HostId, isLocalHost } from "@gram/contracts";
 
 /** A thread's checkout on a joined machine, where its check runs through that machine's host. */

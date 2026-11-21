@@ -996,6 +996,12 @@ and `merge_when_ready` read and gate on it as they do on a check of this machine
   local check on <machine>** and the local gate is off, as for a project without a command. Update it
   ([Updating a machine](#updating-a-machine)). A selected-source check doesn't run on a joined machine
   yet.
+- A provisioned machine (one a hosted server or control plane started) runs no checks: it is sized
+  for an agent's work, not the project's whole check beside it. Its threads read **no local check on
+  <machine>**, `local_check` refuses, and a solo merge of their pull request needs the CI its base
+  branch declares in `.gram/merge-ci.json`, every declared job passing on the exact head. GitHub's
+  check contexts don't stand in for it, nor does a pass recorded before; a base that declares none
+  refuses the merge, and a worker on one of the person's own machines can take the PR over.
 
 ## Add a machine over SSH
 

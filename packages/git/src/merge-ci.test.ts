@@ -3,7 +3,7 @@ import type { PrStatus } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ciDiffArgs, DOCUMENTATION_POLICY } from "./ci-policy.ts";
-import { mergeCiForLaunch, verifyMergeCi } from "./merge-ci.ts";
+import { mergeCiForLaunch, verifyMergeCi, withLaunchCi } from "./merge-ci.ts";
 import { Proc } from "./proc.ts";
 
 const base = "a".repeat(40);
@@ -596,6 +596,73 @@ describe("a run counts only when it is the PR's own", () => {
           Effect.provide(layer([own])),
         ),
       ).toBe("pending");
+    }),
+  );
+});
+
+const declaredOnly = (layer: Layer.Layer<Proc>, launched: PrStatus = badge) =>
+  withLaunchCi("/repo", "example/project", launched, {
+    declaredCi: true,
+    localCheckHead: head,
+  }).pipe(Effect.provide(layer));
+
+describe("a merge that needs the CI its base declares", () => {
+  it.effect("never passes on a base that declares none, whatever GitHub's checks say", () =>
+    Effect.gen(function* () {
+      const calls: string[][] = [];
+      const undeclared = Layer.succeed(Proc, {
+        run: (_bin, args) =>
+          Effect.sync(() => {
+            calls.push([...args]);
+            return {
+              status: 0,
+              stdout: JSON.stringify({ data: { repository: { object: null } } }),
+              stderr: "",
+              truncated: false,
+            };
+          }),
+      });
+      const result = yield* declaredOnly(undeclared, {
+        ...badge,
+        checks: "passing",
+        requiredChecks: "passing",
+      });
+      expect(result).toMatchObject({ mergeChecks: "pending", mergeCiDeclared: false });
+      // Neither the head's runs nor a local check of it stood in for the declaration.
+      expect(calls).toHaveLength(1);
+    }),
+  );
+
+  it.effect("checks every declared job on the head, a local check of it standing in for none", () =>
+    Effect.gen(function* () {
+      const jobs = policy.workflows[0]!.jobs;
+      expect(
+        yield* declaredOnly(
+          github(
+            policy,
+            jobs.map((name) => job(name)),
+          ),
+        ),
+      ).toMatchObject({
+        mergeChecks: "passing",
+        mergeCiDeclared: true,
+      });
+      expect(
+        yield* declaredOnly(
+          github(
+            policy,
+            jobs.slice(1).map((name) => job(name)),
+          ),
+        ),
+      ).toMatchObject({ mergeChecks: "pending", mergeCiDeclared: true });
+      expect(
+        yield* declaredOnly(
+          github(
+            policy,
+            jobs.map((name, i) => job(name, i === 0 ? "cancelled" : "success")),
+          ),
+        ),
+      ).toMatchObject({ mergeChecks: "failing", mergeCiDeclared: true });
     }),
   );
 });

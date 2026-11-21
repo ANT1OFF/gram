@@ -141,12 +141,24 @@ const machine = (
   return { asked, layer: Layer.succeed(RemoteHosts, hosts) };
 };
 
+/** What a merge launch's fresh read asked of GitHub. */
+interface LaunchRead {
+  readonly forMerge?: boolean | undefined;
+  readonly declaredCi?: boolean | undefined;
+}
+
 /**
  * Arms the thread on `cachyos` to merge under solo, with a project check configured. GitHub shows
- * the PR as `now()` does, CI pending unless it says otherwise.
+ * the PR as `now()` does, CI pending unless it says otherwise, and a launch's fresh read as
+ * `launch` does, as `now()` unless given.
  */
-const armed = (hosts: Layer.Layer<RemoteHosts>, now: () => PrStatus = () => badge) =>
+const armed = (
+  hosts: Layer.Layer<RemoteHosts>,
+  now: () => PrStatus = () => badge,
+  launch: (read: LaunchRead) => PrStatus = now,
+) =>
   Effect.gen(function* () {
+    const launches: Array<LaunchRead> = [];
     const dir = mkdtempSync(join(tmpdir(), "gram-machine-check-"));
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
@@ -173,7 +185,12 @@ const armed = (hosts: Layer.Layer<RemoteHosts>, now: () => PrStatus = () => badg
         }),
     });
     const provider = Layer.succeed(Pr, {
-      status: () => Effect.sync(now),
+      status: (_cwd: string, _bound: unknown, _checkout: unknown, read?: LaunchRead) =>
+        Effect.sync(() => {
+          if (read?.forMerge !== true) return now();
+          launches.push(read);
+          return launch(read);
+        }),
     } as unknown as Pr["Service"]);
     const publisher = Layer.succeed(GitStatePublisher, {
       badgeFor: () => Effect.sync(now),
@@ -211,7 +228,7 @@ const armed = (hosts: Layer.Layer<RemoteHosts>, now: () => PrStatus = () => badg
       Layer.provideMerge(RuntimeTestLayer),
       Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
     );
-    return { dir, merged, localGit, layer };
+    return { dir, merged, localGit, launches, layer };
   });
 
 /** The thread, moved onto `cachyos`, under solo with its PR bound and the merge armed. */
@@ -292,19 +309,22 @@ describe("Gram's own check of a thread on a joined machine", () => {
   it.live("runs on its host, and its pass lets the merge through as a local one does", () =>
     Effect.gen(function* () {
       const host = machine((request) => Effect.succeed(passed(request)));
-      const { dir, merged, localGit, layer } = yield* armed(host.layer);
+      const { dir, merged, localGit, launches, layer } = yield* armed(host.layer);
       yield* Effect.gen(function* () {
         const { thread, site } = yield* placed(dir);
         const checks = yield* LocalChecks;
-        expect(yield* checks.configuration(site, thread.projectId)).toMatchObject({
-          config: { command: "invented-check" },
-        });
+        const found = yield* checks.configuration(site, thread.projectId);
+        expect(found).toMatchObject({ config: { command: "invented-check" } });
+        expect(found.declaredCiOnly).toBeUndefined();
         yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
         yield* waitReal(
           "the merge",
           Effect.sync(() => merged.length > 0),
         );
         expect(merged).toEqual([MERGE_ARGS]);
+        // A joined machine's merge goes by the solo gate as it was, its pass standing in for CI.
+        expect(launches.length).toBeGreaterThan(0);
+        expect(launches.every((read) => read.declaredCi === undefined)).toBe(true);
         // Asked of the machine's host, in its checkout there, for the exact head and base.
         expect(host.asked).toEqual([
           {
@@ -480,31 +500,47 @@ describe("Gram's own check of a thread on a joined machine", () => {
   );
 });
 
+const provisioned = () =>
+  machine(() => Effect.die("a provisioned machine was asked to run the check"), {
+    provisioned: true,
+  });
+/** Whether the thread's armed merge was refused on `HEAD`. */
+const refusedOnHead = (threadId: ThreadId) =>
+  Effect.gen(function* () {
+    const thread = yield* (yield* ThreadStore).getThread(threadId);
+    return thread.boundPr?.mergeWhenReady?.failedOn === HEAD;
+  });
+
 describe("a thread on a provisioned machine", () => {
-  it.live("runs no check there: CI pending holds the merge, green CI on its head merges it", () =>
+  it.live("runs no check there, and merges once its base's declared CI passes on its head", () =>
     Effect.gen(function* () {
-      const host = machine(() => Effect.die("a provisioned machine was asked to run the check"), {
-        provisioned: true,
-      });
-      let shown = badge;
-      const { dir, merged, layer } = yield* armed(host.layer, () => shown);
+      const host = provisioned();
+      let declared: NonNullable<PrStatus["mergeChecks"]> = "pending";
+      const { dir, merged, launches, layer } = yield* armed(
+        host.layer,
+        () => green,
+        () => ({ ...green, mergeChecks: declared, mergeCiDeclared: true }),
+      );
       yield* Effect.gen(function* () {
         const { thread, site } = yield* placed(dir);
         const checks = yield* LocalChecks;
         const found = yield* checks.configuration(site, thread.projectId);
-        expect(found.config).toBeUndefined();
-        expect(found.standIn).toBeDefined();
+        expect(found).toMatchObject({ config: undefined, declaredCiOnly: true });
         const gate = yield* MergeWhenReady;
         // local_check refuses rather than loading the machine with the full check.
         expect(yield* gate.runLocalCheck(thread.id as ThreadId)).toEqual({
           refused: found.reason,
         });
-        // While CI is pending the merge waits for it, and no check stands in for it.
+        // GitHub's checks are green, but the declared CI is still running: no merge yet.
         yield* gate.check(thread.id as ThreadId);
+        yield* waitReal(
+          "the launch's fresh read",
+          Effect.sync(() => launches.length > 0),
+        );
         yield* Effect.sleep("300 millis");
         expect(merged).toEqual([]);
-        expect(yield* checks.lookup(site, HEAD, BASE, thread.projectId)).toBeUndefined();
-        shown = green;
+        expect(launches.every((read) => read.declaredCi === true)).toBe(true);
+        declared = "passing";
         yield* gate.check(thread.id as ThreadId);
         yield* waitReal(
           "the merge",
@@ -512,6 +548,51 @@ describe("a thread on a provisioned machine", () => {
         );
         expect(merged).toEqual([MERGE_ARGS]);
         expect(host.asked).toEqual([]);
+        expect(yield* checks.lookup(site, HEAD, BASE, thread.projectId)).toBeUndefined();
+      }).pipe(Effect.scoped, Effect.provide(layer));
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("is refused on a base that declares no CI, whatever GitHub's checks say", () =>
+    Effect.gen(function* () {
+      const host = provisioned();
+      const { dir, merged, layer } = yield* armed(
+        host.layer,
+        () => green,
+        () => ({ ...green, mergeChecks: "pending", mergeCiDeclared: false }),
+      );
+      yield* Effect.gen(function* () {
+        const { thread } = yield* placed(dir);
+        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* waitReal("the refusal", refusedOnHead(thread.id as ThreadId));
+        expect(merged).toEqual([]);
+        expect(host.asked).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(layer));
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("doesn't merge a head that moved between the cached and the fresh read", () =>
+    Effect.gen(function* () {
+      const host = provisioned();
+      const { dir, merged, launches, layer } = yield* armed(
+        host.layer,
+        () => green,
+        () => ({
+          ...green,
+          headRefOid: "e".repeat(40),
+          mergeChecks: "passing",
+          mergeCiDeclared: true,
+        }),
+      );
+      yield* Effect.gen(function* () {
+        const { thread } = yield* placed(dir);
+        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* waitReal(
+          "the launch's fresh read",
+          Effect.sync(() => launches.length > 0),
+        );
+        yield* Effect.sleep("300 millis");
+        expect(merged).toEqual([]);
       }).pipe(Effect.scoped, Effect.provide(layer));
     }).pipe(Effect.scoped),
   );

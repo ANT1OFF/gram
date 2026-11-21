@@ -547,10 +547,11 @@ export interface LocalChecksShape {
     readonly config: LocalCheckRun | undefined;
     readonly reason: string;
     /**
-     * With the gate off for where the thread is rather than for the project: what can stand in
-     * for CI that never comes, where configuring a check wouldn't.
+     * The thread is on a provisioned machine, which runs no check: a solo merge of its PR needs
+     * the CI its base declares (`.gram/merge-ci.json`) passing on the exact head, and nothing else
+     * stands in for it.
      */
-    readonly standIn?: string | undefined;
+    readonly declaredCiOnly?: true | undefined;
   }>;
 
   /** The check of `head` merged onto `base`, in `repoDir`'s repository, if one ran or runs. */
@@ -1539,9 +1540,7 @@ export const LocalChecksLive = Layer.effect(
     /**
      * The project's check as a joined machine runs it: the project is the thread's own, since this
      * machine can't read the checkout there. A host too old to run checks has none, as a project
-     * without a command has none; a selected-source check doesn't run there yet. A provisioned
-     * machine runs none either: it is sized for an agent's work, not the project's whole check
-     * beside it, so the solo gate there is green CI on the exact head, as with no check configured.
+     * without a command has none; a selected-source check doesn't run there yet.
      */
     const machineConfiguration = (site: MachineCheckSite, projectId: ProjectId | undefined) =>
       Effect.gen(function* () {
@@ -1564,15 +1563,14 @@ export const LocalChecksLive = Layer.effect(
           found?.localCheckUnavailable,
           found?.localCheckRevision,
         );
-        if (config === undefined) return off(`no local check configured for ${project}`);
         if (isProvisioned(joined))
           return {
-            ...off(
-              `no local check on ${name}: it is a provisioned machine, where Gram doesn't run the project's full check`,
-            ),
-            standIn:
-              "a worker on one of the user's own machines can take the PR over, where Gram's check of the head stands in for the missing CI",
+            project,
+            config: undefined,
+            reason: `no local check on ${name}: it is a provisioned machine, where Gram doesn't run the project's full check; local gate OFF — the merge needs the CI its base declares in .gram/merge-ci.json, passing on its head`,
+            declaredCiOnly: true as const,
           };
+        if (config === undefined) return off(`no local check configured for ${project}`);
         // Offline, it can't say what it runs: the check waits for it rather than the gate opening.
         const online = yield* remoteHosts.connection(site.hostId).pipe(Effect.option);
         if (Option.isSome(online) && online.value.checks === undefined)

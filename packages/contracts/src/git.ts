@@ -68,6 +68,11 @@ export const PrStatus = Schema.Struct({
    */
   mergeChecks: Schema.optionalKey(ChecksRollup),
   /**
+   * Whether the base branch's tip declares the merge's CI (`.gram/merge-ci.json`), as a launch that
+   * needs the declaration read it; then `mergeChecks` is that CI alone, and pending without one.
+   */
+  mergeCiDeclared: Schema.optionalKey(Schema.Boolean),
+  /**
    * The failing checks that gate the merge (the required ones, where GitHub marks any), by name and
    * at most `MAX_FAILING_CHECK_NAMES`, from a checks read made under this head and rollup, and when
    * it was made: the names can move under the same rollup, so a reader ages them out

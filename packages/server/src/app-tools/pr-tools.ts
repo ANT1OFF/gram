@@ -1403,7 +1403,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const gateWarning =
             localGate === undefined || badge === undefined || !isBadgeOf(badge, pr)
               ? undefined
-              : soloGateCantPass(badge, localGate.reason, configuration?.standIn);
+              : soloGateCantPass(badge, localGate.reason, configuration?.declaredCiOnly);
           if (localGate !== undefined && updated.workspaceId !== undefined)
             yield* store.appendOrchestrationEvent(updated.workspaceId, {
               at: yield* Clock.currentTimeMillis,

@@ -50,7 +50,7 @@ import {
   REVIEW_GQL_FIELDS,
 } from "./review.ts";
 import { ReviewBots } from "./review-bots.ts";
-import { mergeCiForLaunch } from "./merge-ci.ts";
+import { withLaunchCi } from "./merge-ci.ts";
 import { isSameRepoHead } from "./open-prs.ts";
 import { Tools } from "./tools.ts";
 
@@ -1209,6 +1209,8 @@ export class Pr extends Context.Service<
          * check stands in for the runner evidence, all but the jobs the base declares `alwaysJobs`.
          */
         readonly localCheckHead?: string | undefined;
+        /** Only the base's declared CI counts (`withLaunchCi`), whatever else passed. */
+        readonly declaredCi?: boolean | undefined;
       },
     ) => Effect.Effect<PrStatus | undefined, PrLookupError>;
     /** `number` in `repo`, or in `cwd`'s origin repo when `repo` is absent. */
@@ -1493,7 +1495,7 @@ export const PrLive = Layer.effect(
           options.localCheckHead !== undefined && options.localCheckHead === badge.headRefOid;
         const repo = bound?.repo ?? repoFromPrUrl(badge.url);
         if (repo === undefined) {
-          if (locallyChecked) return badge;
+          if (locallyChecked && options.declaredCi !== true) return badge;
           return yield* new PrLookupError({ message: "Merge CI repository is unknown" });
         }
         // A merge goes by the base branch's tip: the REST fallback has none, so it asks for it, and
@@ -1502,10 +1504,9 @@ export const PrLive = Layer.effect(
           badge.baseTipOid !== undefined || badge.baseRef === undefined
             ? badge
             : { ...badge, baseTipOid: yield* provide(baseTip(cwd, repo, badge.baseRef)) };
-        const mergeChecks = yield* provide(
-          mergeCiForLaunch(cwd, repo, known, options.localCheckHead),
-        ).pipe(Effect.mapError((e) => new PrLookupError({ message: e.message })));
-        return mergeChecks === undefined ? known : { ...known, mergeChecks };
+        return yield* provide(withLaunchCi(cwd, repo, known, options)).pipe(
+          Effect.mapError((e) => new PrLookupError({ message: e.message })),
+        );
       });
 
     const detail = (cwd: string, number: number, explicitRepo?: string) =>
