@@ -35,6 +35,7 @@ const PATCH: Record<AgentKind, (on: boolean) => SettingsPatch> = {
   // OpenCode has no browser of its own to turn on.
   opencode: () => ({}),
   grok: () => ({}),
+  antigravity: () => ({}),
 };
 
 type Surface = keyof CodexSurfaces;
