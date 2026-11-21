@@ -30,7 +30,7 @@ import {
 import { parsePreviewBounds, previewsToClose, windowRect } from "../../core/preview-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { harden } from "../preview/main.ts";
-import { guardWebRtc } from "../preview/webrtc-guard.ts";
+import { guardWebRtc, heldForGuard } from "../preview/webrtc-guard.ts";
 
 /** How many pages stay loaded; opening another closes the least recently used one not shown. */
 export const MAX_PAGES = 4;
@@ -133,16 +133,19 @@ export function installPages(ipc: ShellIpc, options: PagesOptions): PagesHost {
     harden(ses);
     applyProxy(ses);
     // Every request, the page's own included, is held to the files of the view that made it.
-    ses.webRequest.onBeforeRequest((details, callback) => {
-      const contents = details.webContents;
-      const prefix =
-        contents === undefined || contents.isDestroyed() ? undefined : prefixes.get(contents);
-      callback(
-        pageRequest(prefix, { url: details.url, method: details.method }) === "allow"
-          ? {}
-          : { cancel: true },
-      );
-    });
+    // A page whose WebRTC removal isn't in place waits for it, and loads nothing without it.
+    ses.webRequest.onBeforeRequest(
+      heldForGuard((details: Electron.OnBeforeRequestListenerDetails, callback) => {
+        const contents = details.webContents;
+        const prefix =
+          contents === undefined || contents.isDestroyed() ? undefined : prefixes.get(contents);
+        callback(
+          pageRequest(prefix, { url: details.url, method: details.method }) === "allow"
+            ? {}
+            : { cancel: true },
+        );
+      }),
+    );
     // The pages' policy on every response, whatever the listener sent: the sandbox and CSP hold
     // even if the server's half didn't.
     ses.webRequest.onHeadersReceived((details, callback) => {

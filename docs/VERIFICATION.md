@@ -467,6 +467,21 @@ rule it would meet.
 node apps/desktop/scripts/verify-web-preview.mjs /tmp/new-evidence-directory
 ```
 
+### WebRTC guard
+
+`apps/desktop/scripts/verify-webrtc-guard.mjs` runs the installed pinned Electron in an owned
+temporary profile with the real preview module and no outside network. Every `.leak.test` name
+resolves to loopback, where a listener stands for a TURN server. It checks that a local page has no
+WebRTC in itself, in a child it makes by script at `about:blank` (which no preload reaches) or in an
+out-of-process frame, and reaches no TURN server it names; that after something else detaches the
+page's debugger, the guard is attached again and the same holds; and, as the control, that the same
+page in a session without the guard makes a peer connection in each frame and reaches the listener.
+On Linux it needs a display (`DISPLAY`), which is all of the environment it passes on.
+
+```sh
+node apps/desktop/scripts/verify-webrtc-guard.mjs /tmp/new-evidence-directory
+```
+
 ### Pinned pages session
 
 `apps/desktop/scripts/verify-pinned-pages.mjs` runs the installed pinned Electron in an owned

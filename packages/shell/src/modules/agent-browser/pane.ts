@@ -55,6 +55,7 @@ import {
   type PageTarget,
 } from "../../core/page-driver.ts";
 import { setTimeout as delay } from "node:timers/promises";
+import { releasePage } from "./release.ts";
 
 /** What the preview module gives this one: each thread's page, made when first asked for. */
 /**
@@ -63,6 +64,8 @@ import { setTimeout as delay } from "node:timers/promises";
  */
 export interface PaneContents {
   getURL(): string;
+  /** The page's own user agent, put back when the pane lets it go; absent from headless pages. */
+  getUserAgent?(): string;
   getTitle(): string;
   isDestroyed(): boolean;
   isLoading(): boolean;
@@ -1440,13 +1443,10 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       const page = pages.get(threadId);
       if (page !== undefined) endRecording(page);
       pages.delete(threadId);
-      if (
-        page !== undefined &&
-        !page.contents.isDestroyed() &&
-        page.contents.debugger.isAttached()
-      ) {
-        page.contents.debugger.detach();
-      }
+      // Let go without detaching: the WebRTC guard shares the page's debugger.
+      if (page === undefined || page.contents.isDestroyed()) return;
+      page.driver.dispose();
+      void releasePage(cdpOf(page.contents).send, page.contents.getUserAgent?.());
     },
   };
 }
