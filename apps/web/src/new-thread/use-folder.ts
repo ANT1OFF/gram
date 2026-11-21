@@ -2,6 +2,7 @@ import type { FolderEntry, FolderListing, HostFolderChecked, HostId } from "@gra
 import { useQuery } from "@tanstack/react-query";
 
 import { useApi } from "@/api/context";
+import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
 import type { Api } from "@/api/types";
 import { useDebounced } from "@/lib/timers";
 
@@ -37,6 +38,41 @@ export type FolderStatus =
   | { state: "checking" }
   | { state: "valid"; folder: FolderListing }
   | { state: "invalid"; problem: FolderProblem };
+
+/**
+ * Whether `path` is one of `projects`, on a server whose own disk is not browsed: a headless server
+ * people sign in to refuses `fs.browse`, and runs a thread on a machine, from the project it filed.
+ */
+export function projectFolderStatus(
+  path: string,
+  projects: ReadonlyArray<{ readonly root: string }>,
+): FolderStatus {
+  const trimmed = path.trim();
+  if (trimmed === "") return { state: "empty" };
+  const project = projects.find((each) => each.root === trimmed);
+  if (project === undefined)
+    return {
+      state: "invalid",
+      problem: {
+        kind: "notFound",
+        message: "Pick one of the projects: this server doesn't browse its own folders.",
+      },
+    };
+  return { state: "valid", folder: { path: project.root, entries: [], truncated: false } };
+}
+
+/**
+ * Where a new thread starts: a real, readable folder here, or on a headless server, whose own disk
+ * is never browsed, one of its `projects`.
+ */
+export function useStartFolder(
+  path: string,
+  projects: ReadonlyArray<{ readonly root: string }>,
+): FolderStatus {
+  const headless = useLaunchChecks().checks?.headless === true;
+  const browsed = useFolderStatus(headless ? "" : path);
+  return headless ? projectFolderStatus(path, projects) : browsed;
+}
 
 /** Whether `path` is a real, readable folder, checked as the user types. */
 export function useFolderStatus(path: string, debounceMs = 200): FolderStatus {
