@@ -10,7 +10,14 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DISK_ID, hostDiskId, hostIdentity, renewDiskId, VOLUME_ID_FOLDER } from "./host-config.ts";
+import {
+  DISK_ID,
+  hostDialToken,
+  hostDiskId,
+  hostIdentity,
+  renewDiskId,
+  VOLUME_ID_FOLDER,
+} from "./host-config.ts";
 
 describe("the id of the host's disk", () => {
   const homes: Array<string> = [];
@@ -97,4 +104,28 @@ describe("the id of the host's disk", () => {
       }
     },
   );
+});
+
+describe("the token a launcher gives the host's dials", () => {
+  // Sent as a header: anything but a token's form, a stray line break above all, is never sent.
+  it("is read from its file at each dial, and only in a token's form", () => {
+    const folder = mkdtempSync(join(tmpdir(), "gram-host-dial-token-"));
+    const file = join(folder, "token");
+    const token = hostDialToken({ GRAM_HOST_DIAL_TOKEN_FILE: file });
+    expect(token?.()).toBeUndefined();
+    writeFileSync(file, `${"a".repeat(43)}\n`);
+    expect(token?.()).toBe("a".repeat(43));
+    writeFileSync(file, "b".repeat(43));
+    expect(token?.()).toBe("b".repeat(43));
+    for (const bad of [
+      "short",
+      `${"a".repeat(20)}\r\nx-other: 1${"a".repeat(20)}`,
+      "a".repeat(129),
+    ]) {
+      writeFileSync(file, bad);
+      expect(token?.()).toBeUndefined();
+    }
+    expect(hostDialToken({})).toBeUndefined();
+    rmSync(folder, { recursive: true, force: true });
+  });
 });

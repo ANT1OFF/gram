@@ -463,6 +463,34 @@ describe("stop marks", () => {
       expect(marks.holding(other)).toBe(true);
     });
 
+    it("keeps writing other machines when one machine's record can't be written", () => {
+      let kept: MachineMarksByHost = {};
+      const marks = makeStopMarks(undefined, undefined, undefined, undefined, {
+        initial: {},
+        save: (all) => {
+          if (all[machine]?.blocks?.[thread("poison")] !== undefined)
+            throw new Error("The machines' marks don't fit in machine-marks.json.");
+          kept = structuredClone(all);
+        },
+      });
+      marks.arrive(machine, disk("aaaaaaaa"));
+      marks.arrive(machine, disk("bbbbbbbb"));
+      const poisoned = marks.resumeStarted(machine);
+      marks.block(machine, thread("poison"), "Too big to keep.", poisoned);
+      expect(marks.blocked(machine, thread("poison"))).toBe("Too big to keep.");
+
+      marks.arrive(other, disk("cccccccc"));
+      marks.arrive(other, disk("dddddddd"));
+      const generation = marks.resumeStarted(other);
+      marks.folderOwed(other, "/w/b", generation);
+      marks.threadBack(other, thread("b"), generation);
+      marks.folderDone(other, "/w/b", generation);
+      marks.resumed(other, generation, true);
+      expect(marks.owes(other)).toBe(false);
+      expect(kept[other]?.disk?.id).toBe("disk-dddddddd");
+      expect(kept[machine]?.blocks).toBeUndefined();
+    });
+
     it("lets a resume of the new disk run once one of the old disk's ends", () => {
       const marks = makeStopMarks();
       marks.arrive(machine, disk("aaaaaaaa"));

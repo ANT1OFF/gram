@@ -438,10 +438,7 @@ const gitActivity = { running: 0, started: 0 };
 
 /** Whether `args` read a repository's stored `origin` URL. */
 const readsOrigin = (args: ReadonlyArray<string>) =>
-  args.length === 3 &&
-  args[0] === "config" &&
-  args[1] === "--get" &&
-  args[2] === "remote.origin.url";
+  args.length === 3 && args.join(" ") === "config --get remote.origin.url";
 
 // Every git process of the server, the service's and the worktrees' alike, counted while it runs.
 // A repository with no `origin` of its own (`world.repo`) has the one the PR tools see
@@ -490,6 +487,8 @@ const conditionsOf = (world: World) =>
       fakeCiJobs(world),
       fakeMachine(world),
       fakeAutoMerges(world),
+      // Whose PR a freeze may take auto-merge down from is asked of `gh` as the PR tools ask it.
+      fakeGh(world),
       fakeReleases(world),
       fakeInstalled(world),
     ),

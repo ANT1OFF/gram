@@ -58,6 +58,7 @@ import { redactUrlCredentials } from "./remote-url.ts";
 import { olderHost } from "./folders.ts";
 import { cloneFolderOf, cloneIdentityOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
+import { HOST_THREADS_DIR, type HostThreadPlaces } from "./thread-places.ts";
 
 /**
  * The fewest folders a clone or worktree a host made sits below its root by: never the root, nor
@@ -84,6 +85,37 @@ export const plausibleFolder = (path: string, depth: number): boolean => {
   }
   return false;
 };
+
+/**
+ * Whether a host's answer for `threadId`'s own folder is one: plausible, and its clones'
+ * `.threads/<thread id>`, never another thread's folder nor one of the machine's broad folders.
+ */
+export const ownThreadFolder = (path: string, threadId: string): boolean => {
+  if (!plausibleFolder(path, CLONE_DEPTH + 1)) return false;
+  const parts = path.split(posix.isAbsolute(path) ? "/" : /[\\/]/).filter((part) => part !== "");
+  return parts.at(-1) === threadId && parts.at(-2) === HOST_THREADS_DIR;
+};
+
+/** The machine's thread places, a folder it made that isn't the thread's own taken back and refused. */
+const checkedPlaces = (machine: Machine, places: HostThreadPlaces): HostThreadPlaces => ({
+  ...places,
+  make: (threadId, files) =>
+    places
+      .make(threadId, files)
+      .pipe(
+        Effect.flatMap((made) =>
+          ownThreadFolder(made.path, threadId)
+            ? Effect.succeed(made)
+            : places
+                .remove(threadId)
+                .pipe(
+                  Effect.andThen(
+                    Effect.fail(new InvalidState({ message: implausible(machine, made.path) })),
+                  ),
+                ),
+        ),
+      ),
+});
 
 /** What a placement is told when the machine answered with a folder Gram doesn't record. */
 const implausible = (machine: Machine, path: string) =>
@@ -578,7 +610,10 @@ export const machineWorkerHost = (
       name: machine.name,
       reads: connection.reads,
       attachments: connection.attachments,
-      threadPlaces: connection.threadPlaces,
+      threadPlaces:
+        connection.threadPlaces === undefined
+          ? undefined
+          : checkedPlaces(machine, connection.threadPlaces),
       identify: connection.repos.identify,
       shared: connection.shared,
       loopback: connection.loopback,
