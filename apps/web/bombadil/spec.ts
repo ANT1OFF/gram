@@ -165,6 +165,24 @@ const FLICKER_INTENDED: FlickerAllow[] = [
     reason:
       "the mock runs turns at a twentieth of their pace, so Steer can come and go within 300 ms",
   },
+  {
+    selector: '[data-testid="composer-toolbar"] *',
+    kinds: ["reappeared"],
+    reason:
+      "the same pace: a turn ends, its background agent's Stop stands alone, and the next turn's delivery button is back within 300 ms",
+  },
+  {
+    selector: '[data-testid="overview-solo-status"]',
+    kinds: ["text-flip"],
+    reason:
+      "the same pace: a background agent's turn of 100 ms hides a thread's \"now\" while it works, as a working row shows no age",
+  },
+  {
+    selector: '[data-testid="right-panel"] *',
+    kinds: ["reappeared"],
+    reason:
+      "a thread switch shows the new thread's diff or PR once it answers: the last thread's meanwhile would be the wrong one, and two threads' \"No PR\" read as one",
+  },
 ];
 
 /**
@@ -172,21 +190,6 @@ const FLICKER_INTENDED: FlickerAllow[] = [
  * these again; remove an entry with its fix.
  */
 const FLICKER_KNOWN: FlickerAllow[] = [
-  {
-    selector: '[data-testid="right-panel"] *',
-    kinds: ["reappeared"],
-    reason: "known: switching threads leaves the right panel's diff or PR empty for a frame",
-  },
-  {
-    selector: '[data-testid="composer-toolbar"] *',
-    kinds: ["reappeared"],
-    reason: "known: switching threads redraws the composer's send button with a frame between",
-  },
-  {
-    selector: '[data-testid="overview-solo-status"]',
-    kinds: ["text-flip"],
-    reason: 'known: a thread\'s "now" in the overview blanks for a few frames as it updates',
-  },
   {
     selector: '[data-testid="inbox-detail-body"] *',
     kinds: ["reappeared"],
@@ -196,11 +199,6 @@ const FLICKER_KNOWN: FlickerAllow[] = [
     selector: '[data-testid="overview-sidebar"], [data-testid="overview-sidebar"] *',
     kinds: ["reappeared"],
     reason: "known: on the way to /threads the overview sidebar's sections go for a frame",
-  },
-  {
-    selector: '[data-testid="diff-panel"]',
-    kinds: ["text-flip"],
-    reason: 'known: a diff that loads at once still shows "Loading diff…" for a frame',
   },
   {
     selector: '[data-testid="right-panel"]',
