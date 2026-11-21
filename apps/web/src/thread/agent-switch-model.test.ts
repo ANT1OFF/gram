@@ -19,6 +19,7 @@ import {
   switchLimitMeta,
   switchLimitOf,
   switchOffer,
+  unlistedReason,
 } from "./agent-switch-model";
 
 const CLAUDE: ModelRef = { agent: "claude", model: "claude-opus-5-5", variant: "high" };
@@ -60,12 +61,13 @@ const checks = (overrides: Partial<LaunchChecks> = {}): LaunchChecks => ({
 const offer = (
   s: ReturnType<typeof summary>,
   c: LaunchChecks | undefined = checks(),
-  more: { platform?: string; listed?: boolean; servesFresh?: boolean } = {},
+  more: { platform?: string; listed?: boolean; unlisted?: string; servesFresh?: boolean } = {},
 ) =>
   switchOffer({
     summary: s,
     checks: c,
     listed: more.listed ?? true,
+    unlisted: more.unlisted,
     platform: more.platform,
     ...(more.servesFresh === undefined ? {} : { servesFresh: more.servesFresh }),
   });
@@ -114,6 +116,19 @@ describe("switchOffer", () => {
         checks({ tools: [{ tool: "claude", found: true }] }),
       ).offered,
     ).toBe(false);
+  });
+
+  it("greys the entry with the listing's reason once the other agent's listing settles empty", () => {
+    const why = unlistedReason("codex", { _tag: "AgentUnavailable", message: "no adapter" });
+    expect(offer(summary(), checks(), { listed: false, unlisted: why })).toEqual({
+      offered: true,
+      to: "codex",
+      refusal: why,
+    });
+    // Signed out says so itself, whatever the listing.
+    expect(
+      offer(summary(), checks({ codexSignIn: "notSignedIn" }), { listed: false, unlisted: why }),
+    ).toEqual({ offered: true, to: "codex", refusal: "Sign in to Codex in Settings → Agents." });
   });
 
   it("on a headless server, which looks for no CLI itself, goes by what its machines list", () => {

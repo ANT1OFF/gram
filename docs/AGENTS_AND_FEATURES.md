@@ -645,8 +645,8 @@ shows.
 All three open the same sheet. It shows the target model and effort (up to High), one line on
 what carries over, one on what doesn't, and **Ask Claude for a handoff note first**, ticked. The
 sheet preselects the target's model for the tier the current model fills, otherwise the target's
-default, and keeps the current effort where the target offers it. When a greyed entry can't
-switch, its hover says why.
+default, and keeps the current effort where the target offers it. A greyed entry says why under
+it: in the menu below the item, in the chip under the agent's heading.
 
 ### What carries over
 
@@ -704,6 +704,7 @@ beforehand:
 | An approval, question or plan waits on you              | "Answer the open approval first. It can't move to Codex."                                                                 |
 | The old agent still runs background work                | "Claude still has background work running."                                                                               |
 | The other CLI isn't installed                           | Nothing is offered                                                                                                        |
+| The other agent lists no models here                    | "Codex isn't available here, so this thread can't move to it.", or why its listing failed                                 |
 | The other CLI is signed out                             | "Sign in to Codex in Settings → Agents."                                                                                  |
 | A gateway profile on the thread                         | "Switching uses the CLI's own sign-in; it doesn't move gateway accounts."                                                 |
 | The thread's session runs on a joined machine           | "Codex can't run on this thread's machine yet."                                                                           |

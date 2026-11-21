@@ -190,10 +190,14 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await more.getByTestId("menu-thread").click();
   const threadGroup = page.getByTestId("titlebar-menu-thread");
   // "Switch orchestrator…" is gone: the orchestrator continues in the other agent through
-  // "Continue in…", offered only while that agent lists models (orchestrator-switch.spec.ts),
-  // which this mock's Codex doesn't, so the thread's own verbs lead.
+  // "Continue in…" (orchestrator-switch.spec.ts). This mock's Codex lists no models, so it is
+  // greyed with why under it, never hidden.
   await expect(threadGroup.getByRole("menuitem", { name: /^Switch/ })).toHaveCount(0);
-  await expect(threadGroup.getByTestId("menu-continue-in")).toHaveCount(0);
+  await expect(threadGroup.getByTestId("menu-continue-in")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await expect(threadGroup.getByTestId("menu-continue-in-why")).toBeVisible();
   await expect(threadGroup.getByRole("menuitem", { name: "Fork thread" })).toBeVisible();
   await expect(threadGroup.getByRole("menuitem", { name: "More…" })).toBeVisible();
   // One submenu at a time: Escape steps back out of the last before the next opens.

@@ -111,6 +111,11 @@ export const switchOffer = (input: {
    * signed out, it has nothing to offer.
    */
   readonly listed: boolean;
+  /**
+   * Why the other agent lists nothing, once its listing has settled (`unlistedReason`): the entry
+   * is then offered greyed with these words rather than hidden. Absent while the listing runs.
+   */
+  readonly unlisted?: string | undefined;
   /** Whether the server serves `thread.startFreshOn`, which a worker's fresh session needs. */
   readonly servesFresh?: boolean;
 }): SwitchOffer => {
@@ -123,19 +128,41 @@ export const switchOffer = (input: {
       : otherAgent(thread.model.agent);
   if (!installed(checks, to)) return { offered: false };
   const signedOut = (to === "codex" ? checks?.codexSignIn : checks?.claudeSignIn) === "notSignedIn";
-  if (!input.listed && !signedOut) return { offered: false };
+  const unlisted = input.listed || signedOut ? undefined : input.unlisted;
+  if (!input.listed && !signedOut && unlisted === undefined) return { offered: false };
   const fresh =
     thread.sessionSwitch === undefined ? noCarryOver(thread, to, input.platform) : undefined;
   const refusal =
-    fresh !== undefined && thread.role !== "orchestrator" && input.servesFresh === false
+    unlisted ??
+    (fresh !== undefined && thread.role !== "orchestrator" && input.servesFresh === false
       ? OLDER_SERVER
-      : refusalOf(summary, to, checks!, fresh !== undefined);
+      : refusalOf(summary, to, checks!, fresh !== undefined));
   return {
     offered: true,
     to,
     ...(refusal === undefined ? {} : { refusal }),
     ...(fresh === undefined ? {} : { fresh }),
   };
+};
+
+/**
+ * Why `to` lists no models to continue on, from its settled listing: the server can't run it at all
+ * (no adapter), its listing failed, or it listed none. The server refuses a switch to a model its
+ * CLI doesn't list (`checkSwitchTarget`), so these grey the entry; none of them is a sign-in, which
+ * the launch checks say on their own.
+ */
+export const unlistedReason = (to: AgentKind, error: unknown): string => {
+  const name = AGENT_NAMES[to];
+  if (error === undefined || error === null)
+    return `${name} lists no models here. Check ${name} in Settings → Agents.`;
+  const tag = typeof error === "object" ? Reflect.get(error, "_tag") : undefined;
+  const reason = typeof error === "object" ? Reflect.get(error, "reason") : undefined;
+  if (tag === "AgentUnavailable" && reason === undefined)
+    return `${name} isn't available here, so this thread can't move to it.`;
+  const message = typeof error === "object" ? Reflect.get(error, "message") : undefined;
+  return typeof message === "string" && message !== ""
+    ? `${name}'s models couldn't be listed: ${message}`
+    : `${name}'s models couldn't be listed. Check ${name} in Settings → Agents.`;
 };
 
 const refusalOf = (
