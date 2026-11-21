@@ -19,7 +19,10 @@ export type Call = { readonly call: string; readonly body: Record<string, unknow
  */
 export const fakeApp = (options: {
   readonly server?: {
-    readonly server?: typeof SERVER & { readonly formerAccounts?: ReadonlyArray<string> };
+    readonly server?: typeof SERVER & {
+      readonly formerAccounts?: ReadonlyArray<string>;
+      readonly logo?: string;
+    };
     readonly why?: string;
   };
   /** Every sign-in's marks, as the app answers `marks`: none unless given. */

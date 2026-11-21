@@ -1,5 +1,10 @@
 /** The image types a hosted server's mark may be (`HostedDiscovery.logo_uri`). */
-export const HOSTED_LOGO_TYPES = ["image/svg+xml", "image/png", "image/webp", "image/jpeg"] as const;
+export const HOSTED_LOGO_TYPES = [
+  "image/svg+xml",
+  "image/png",
+  "image/webp",
+  "image/jpeg",
+] as const;
 export type HostedLogoType = (typeof HOSTED_LOGO_TYPES)[number];
 
 /** The most bytes a server's mark may be: a small mark, not a picture. */
@@ -66,7 +71,9 @@ export const hostedLogoOf = (bytes: Uint8Array, labelled: string): string | unde
  * percent-encoded as it came. Undefined for any other address, or one that isn't that image.
  */
 export const hostedLogoFromData = (address: string): string | undefined => {
-  const match = /^data:([a-z0-9.+/-]+)((?:;[a-z0-9-]+=[a-z0-9.-]+)*)(;base64)?,(.*)$/is.exec(address);
+  const match = /^data:([a-z0-9.+/-]+)((?:;[a-z0-9-]+=[a-z0-9.-]+)*)(;base64)?,(.*)$/is.exec(
+    address,
+  );
   if (match === null) return undefined;
   const [, type = "", , base64, payload = ""] = match;
   if (payload.length > HOSTED_LOGO_MOST * 3) return undefined;

@@ -487,7 +487,10 @@ export const answerWorkerMachines = async (
     const found = device.workerMachineServer();
     if (!found.ok) return respond({ ok: true, why: found.why });
     const logo = await device.workerMachineLogo(found.server.origin);
-    return respond({ ok: true, server: logo === undefined ? found.server : { ...found.server, logo } });
+    return respond({
+      ok: true,
+      server: logo === undefined ? found.server : { ...found.server, logo },
+    });
   }
   if (op === "marks") return respond({ ok: true, marks: device.workerMachineMarks() });
   const origin = textOf(message, "origin", 512);

@@ -82,7 +82,10 @@ export const hostedLogos = (now: () => number = Date.now) => {
     if (discovery.logo_uri === undefined) return Promise.resolve(undefined);
     const key = `${origin} ${discovery.logo_uri}`;
     const held = kept.get(key);
-    if (held !== undefined && (held.failedAt === undefined || now() - held.failedAt < HOSTED_LOGO_RETRY_MS))
+    if (
+      held !== undefined &&
+      (held.failedAt === undefined || now() - held.failedAt < HOSTED_LOGO_RETRY_MS)
+    )
       return held.logo;
     const entry: { logo: Promise<string | undefined>; failedAt?: number } = {
       logo: fetchHostedLogo(discovery, fetch).then((logo) => {

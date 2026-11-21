@@ -99,7 +99,8 @@ export function machineMark(
   const hosted = machine.hosted;
   const where = hosted === undefined ? machine.name : `${hosted.name}'s machine`;
   const head = `Runs on ${where}`;
-  const kind = hosted === undefined ? KIND[machine.kind] : `${machine.name} · ${KIND[machine.kind]}`;
+  const kind =
+    hosted === undefined ? KIND[machine.kind] : `${machine.name} · ${KIND[machine.kind]}`;
   const from = hosted === undefined ? {} : { hosted };
   if (health.tone === "online")
     return {

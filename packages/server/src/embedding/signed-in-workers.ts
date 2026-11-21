@@ -599,10 +599,7 @@ export const signedInSource = (
                 onDemand: "worker",
                 via: origin,
                 ...viaField(),
-                hosted: {
-                  name: plainName(server.server),
-                  ...(server.logo === undefined ? {} : { logo: server.logo }),
-                },
+                viaName: plainName(server.server),
               });
               if (result.kind === "refused") return { failed: failedWords(name, result.message) };
               // Registered here: the release pass looks after it from now on.
@@ -833,8 +830,12 @@ export const SignedInWorkersLive = Layer.effect(
     // forgotten here, so its relay stops and its name is free.
     const misses = new Map<string, number>();
     const stopMisses = new Map<string, number>();
+    const told = (server: WorkerMachineServer) => {
+      hosts.hostedLogo?.(server.origin, server.logo);
+      return adopt(server);
+    };
     yield* port.server().pipe(
-      Effect.tap((answered) => Effect.sync(() => answered.ok && adopt(answered.server))),
+      Effect.tap((answered) => Effect.sync(() => answered.ok && told(answered.server))),
       Effect.andThen(forgetReclaimed(port, hosts, misses, asleep, sent)),
       // One the pass found stopped or failed is no longer among the relays told.
       Effect.tap(() => Effect.sync(() => sync(false))),
@@ -858,7 +859,7 @@ export const SignedInWorkersLive = Layer.effect(
       source: port.server().pipe(
         // What this sign-in made under its former marks is moved to its mark first, in one step,
         // before any source asks under it.
-        Effect.tap((answered) => Effect.sync(() => answered.ok && adopt(answered.server))),
+        Effect.tap((answered) => Effect.sync(() => answered.ok && told(answered.server))),
         Effect.map((answered) =>
           answered.ok
             ? {

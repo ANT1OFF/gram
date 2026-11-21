@@ -67,6 +67,15 @@ interface Online {
   checking?: Promise<HostStatus | undefined> | undefined;
 }
 
+const hostedOf = (
+  machine: PairedMachine,
+  logos: ReadonlyMap<string, string>,
+): Pick<MachineState, "hosted"> => {
+  if (machine.via === undefined || machine.viaName === undefined) return {};
+  const logo = logos.get(machine.via);
+  return { hosted: { name: machine.viaName, ...(logo === undefined ? {} : { logo }) } };
+};
+
 /** How old a status check may be before a listing asks the machine again. */
 export const SIGN_IN_FRESH_MS = 60_000;
 
@@ -249,6 +258,12 @@ export interface RemoteHostsShape {
    */
   readonly watch: (listener: () => void) => () => void;
   /**
+   * Keeps the mark the hosted server at `origin` gave last (`WorkerMachineServer.logo`), for the
+   * machines that came through it to show in `states`; undefined forgets it. Kept in memory only:
+   * it is told again each time the server is asked for.
+   */
+  readonly hostedLogo?: (origin: string, logo: string | undefined) => void;
+  /**
    * Runs `ready` when a machine's host says it is about to be taken away (`host.stop.going`), with
    * how long it waits: the host holds its exit until every `ready` has ended, or that time has
    * passed. Returns the unregister.
@@ -350,6 +365,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       };
       const machines = createPairedMachines(store, now, nonces, changed);
       const online = new Map<HostId, Online>();
+      const logos = new Map<string, string>();
       let readAccess: (() => DialAccess) | undefined;
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
@@ -788,11 +804,15 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 ...(live === undefined ? {} : { onlineSince: live.since }),
                 ...(offline === undefined ? {} : { offline }),
                 ...(live !== undefined || starting === undefined ? {} : { starting }),
-                ...(machine.via === undefined || machine.hosted === undefined
-                  ? {}
-                  : { hosted: machine.hosted }),
+                ...hostedOf(machine, logos),
               };
             }),
+        hostedLogo: (origin, logo) => {
+          if (logos.get(origin) === logo) return;
+          if (logo === undefined) logos.delete(origin);
+          else logos.set(origin, logo);
+          changed();
+        },
         watch: (listener) => {
           watchers.add(listener);
           return () => {
