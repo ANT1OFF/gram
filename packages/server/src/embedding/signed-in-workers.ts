@@ -41,6 +41,7 @@ import {
   type WorkerMachineStart,
   workerMachineIdentity,
 } from "./worker-machines.ts";
+import { fencedCalls } from "./signed-in-fences.ts";
 import { signInMarks } from "./signed-in-marks.ts";
 import {
   claimedHere,
@@ -77,6 +78,7 @@ import {
   RECLAIMED_AFTER_MISSES,
   settleOwedStops,
   stopHoldUntil,
+  stopNotAfter,
   stopOutcome,
   stopSendBy,
   stopSettled,
@@ -84,6 +86,7 @@ import {
   withName,
 } from "./worker-machine-stops.ts";
 
+export * from "./signed-in-fences.ts";
 export * from "./signed-in-port.ts";
 export * from "./signed-in-reclaim.ts";
 export * from "./signed-in-calls.ts";
@@ -311,7 +314,7 @@ export const signedInSource = (
               const answered = yield* port.call(
                 origin,
                 "stop",
-                { name },
+                { name, notAfter: stopNotAfter(sentAt) },
                 { sendBy: stopSendBy(sentAt), account: accountNow() },
               );
               if (stopSettled(answered) && held !== undefined) deps.owed?.holds.answered(held);
@@ -667,10 +670,12 @@ export const takeRelayedDial = (hosts: RemoteHostsShape, dial: RelayedDial) =>
 export const SignedInWorkersLive = Layer.effect(
   SignedInWorkers,
   Effect.gen(function* () {
-    const port = yield* WorkerMachinePort;
+    const app = yield* WorkerMachinePort;
     const hosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-    if (!port.available || hosts === undefined)
-      return { port, source: Effect.succeed({ refused: NO_SIGNED_IN_SERVER } as const) };
+    if (!app.available || hosts === undefined)
+      return { port: app, source: Effect.succeed({ refused: NO_SIGNED_IN_SERVER } as const) };
+    // Every stop and release, this layer's and the release pass's, fenced to its run.
+    const port = fencedCalls(app);
     const offered: OfferedByServer = new Map();
     const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
     const owed = config === undefined ? memoryOwedStops() : fileOwedStops(config.dataDir);
