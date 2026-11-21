@@ -422,6 +422,13 @@ describe("the codes a server's answers carry", () => {
       ["start", { code: "name_in_use", message: "Used." }],
       ["release", { code: "not_found" }],
       ["stop", { code: "not_found", stopped: false }],
+      // The run a start made, and a status saw, for a later stop or release to be fenced to.
+      ["start", { name: NAME, sandboxId: "sbx_1", generation: 2 }],
+      ["status", { phase: "running", sandboxId: "sbx_1", generation: 2 }],
+      // A fence that held a call back, and a release that so changed nothing.
+      ["stop", { code: "superseded", stopped: false }],
+      ["stop", { code: "expired", stopped: false }],
+      ["release", { code: "superseded", known: true, applied: false }],
     ] as const) {
       const device = deviceFor([], { on: true }, body);
       expect(

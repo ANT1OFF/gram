@@ -9,6 +9,7 @@ import { WORKER_MACHINE_NAME } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type { KeyedLock } from "../git/keyed-lock.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
+import { fenceRefusalOf } from "./signed-in-fences.ts";
 import type { WorkerMachinePortShape } from "./signed-in-port.ts";
 
 /**
@@ -54,6 +55,14 @@ export const STOP_HOLD_MS =
 export const stopHoldUntil = (sentAt: number) => sentAt + STOP_HOLD_MS;
 
 /**
+ * The latest a stop asked for at `sentAt` may act there (its `notAfter`): when it may last leave
+ * the app, its request's time and the server's (`SERVER_ACTS_WITHIN_MS`), 175 s, inside the name's
+ * hold by `UNANSWERED_STOP_HOLD_MS`, which is left for the two clocks to differ. Reached later, the
+ * server does nothing (`expired`), so no stop ever lands after the hold lets a start of it go.
+ */
+export const stopNotAfter = (sentAt: number) => stopHoldUntil(sentAt) - UNANSWERED_STOP_HOLD_MS;
+
+/**
  * One lock per machine name: a start and a stop of the same name never overlap, so a stop already
  * on its way is answered before a start of that name goes out, and one that waited for the start
  * sees it took the name. Shared by every source and the settling of stops owed.
@@ -95,7 +104,9 @@ export const isNotFound = (
 export const RECLAIMED_AFTER_MISSES = 3;
 
 /**
- * What a stop's answer says: the machine was stopped; there was no such machine (a 2xx saying
+ * What a stop's answer says: the machine was stopped; its fence held it back (`fenced`: it came
+ * after its `notAfter`, or the name is now another run, so nothing was done and it is asked again,
+ * never taken as no such machine); there was no such machine (a 2xx saying
  * `stopped: false`, as a server answers a name it holds nothing for, under its person's lock);
  * `missing`, a `404 not_found`, which says so only once it comes a few passes in a row
  * (`isNotFound`); or nothing clear.
@@ -104,10 +115,11 @@ export const stopOutcome = (
   answered:
     | { readonly ok: true; readonly status: number; readonly body: unknown }
     | { readonly ok: false },
-): "stopped" | "absent" | "missing" | "failed" => {
+): "stopped" | "fenced" | "absent" | "missing" | "failed" => {
   if (!answered.ok) return "failed";
   if (isNotFound(answered)) return "missing";
   if (answered.status >= 300) return "failed";
+  if (fenceRefusalOf(answered) !== undefined) return "fenced";
   const said =
     typeof answered.body === "object" && answered.body !== null
       ? (answered.body as { stopped?: unknown }).stopped
@@ -316,7 +328,7 @@ export const STOPS_FILE_MOST = 512 * 1024;
 const STOPS_FILE_READ_MOST = 16 * 1024 * 1024;
 
 /** `memoryOwedStops` kept in `<dataDir>/remote-access/worker-machine-stops.json`. */
-export const fileOwedStops = (dataDir: string): OwedStops => {
+export const fileOwedStops = (dataDir: string, now: () => number = Date.now): OwedStops => {
   // Room for every stop that may be owed (`OWED_MOST`), long origins included: one past it, or a
   // file too large to read, would lose them all.
   const file = privateJsonFile(dataDir, "worker-machine-stops.json", STOPS_FILE_MOST);
@@ -342,6 +354,9 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       keepFile = true;
     }
   }
+  // No stop holds a name past `STOP_HOLD_MS` from now: one read back further ahead was written
+  // before the clock stepped back, and would keep every start of its name waiting that much longer.
+  const readAt = now();
   const keptHolds = (Array.isArray(read?.holds) ? (read.holds as unknown[]) : []).flatMap(
     (each): StopHold[] =>
       typeof each === "object" &&
@@ -350,11 +365,16 @@ export const fileOwedStops = (dataDir: string): OwedStops => {
       typeof (each as StopHold).origin === "string" &&
       typeof (each as StopHold).name === "string" &&
       Number.isSafeInteger((each as StopHold).until)
-        ? [each as StopHold]
+        ? [
+            {
+              ...(each as StopHold),
+              until: Math.min((each as StopHold).until, readAt + STOP_HOLD_MS),
+            },
+          ]
         : [],
   );
   // Each hold is written as it is made, before its stop is sent, so a restart keeps it.
-  const owed = memoryOwedStops(keptHolds, () => save());
+  const owed = memoryOwedStops(keptHolds, () => save(), now);
   try {
     const kept = read;
     if (kept?.version === 1 && Array.isArray(kept.owed))
@@ -502,7 +522,7 @@ export const settleOwedStops = (
           const answered = yield* port.call(
             stop.origin,
             "stop",
-            { name: stop.name },
+            { name: stop.name, notAfter: stopNotAfter(sentAt) },
             { sendBy: stopSendBy(sentAt), account: stop.account },
           );
           // Its own answer came: its hold goes. Unanswered or a 5xx, it may still act: held.

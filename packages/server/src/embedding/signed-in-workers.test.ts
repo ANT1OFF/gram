@@ -356,7 +356,10 @@ describe("worker machines from a signed-in hosted server", () => {
         expect(arrived).toEqual({ failed: noAppToolsTunnel(NAME) });
         // As a spawn does with an arrival that failed: given back.
         yield* source.abandon(NAME);
-        expect(app.calls.at(-1)).toEqual({ call: "stop", body: { name: NAME } });
+        expect(app.calls.at(-1)).toEqual({
+          call: "stop",
+          body: { name: NAME, notAfter: expect.any(Number) },
+        });
         expect(hosts.list().some((each) => each.name === NAME)).toBe(false);
       }).pipe(Effect.scoped),
   );
@@ -589,7 +592,10 @@ describe("worker machines from a signed-in hosted server", () => {
       const words = yield* source.timedOut(NAME);
       expect(words).toMatch(/didn't join within \d+ minutes, so it was stopped/);
       expect(app.calls.map((each) => each.call)).toContain("stop");
-      expect(app.calls.find((each) => each.call === "stop")?.body).toEqual({ name: NAME });
+      expect(app.calls.find((each) => each.call === "stop")?.body).toEqual({
+        name: NAME,
+        notAfter: expect.any(Number),
+      });
       expect(unrelayed).toEqual([NAME]);
       expect(hosts.list().some((each) => each.name === NAME)).toBe(false);
     }),
@@ -729,7 +735,10 @@ describe("worker machines from a signed-in hosted server", () => {
       const tell = releaseTeller(undefined, port)!;
       yield* tell(machine, true);
       expect(app.calls).toEqual([
-        { call: "release", body: { name: NAME, released: true, reason: "finished" } },
+        {
+          call: "release",
+          body: { name: NAME, released: true, reason: "finished", notAfter: expect.any(Number) },
+        },
       ]);
     }),
   );
