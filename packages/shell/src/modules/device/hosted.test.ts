@@ -119,6 +119,29 @@ describe("a hosted server", () => {
     expect(fake.state.askNonceOnce).toBe(false);
   });
 
+  it("names this computer to the sign-in page, on one line", async () => {
+    const found = await discoverHosted(origin, fetch);
+    if (!found.ok) throw new Error(found.why);
+    const asked: Array<string | null> = [];
+    const signInAs = async (deviceName: string | undefined) =>
+      signInHosted({
+        discovery: found.discovery,
+        key,
+        openBrowser: async (url) => {
+          asked.push(new URL(url).searchParams.get("device_name"));
+          await browser(url);
+        },
+        fetch,
+        now,
+        ...(deviceName === undefined ? {} : { deviceName }),
+      });
+    expect((await signInAs("Ada's MacBook Pro")).ok).toBe(true);
+    expect((await signInAs(" studio\nbox ")).ok).toBe(true);
+    expect((await signInAs("   ")).ok).toBe(true);
+    expect((await signInAs(undefined)).ok).toBe(true);
+    expect(asked).toEqual(["Ada's MacBook Pro", "studio box", null, null]);
+  });
+
   it("refuses a sign-in that comes back from another server, or without Gram's state", async () => {
     const found = await discoverHosted(origin, fetch);
     if (!found.ok) throw new Error(found.why);

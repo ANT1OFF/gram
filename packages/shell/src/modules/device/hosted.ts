@@ -28,6 +28,7 @@ import {
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 import { dpopProof } from "./dpop.ts";
+import { sentDeviceName } from "./device-name.ts";
 import { page, sameText } from "./hosted-loopback.ts";
 
 /**
@@ -256,6 +257,8 @@ export interface SignInOptions {
   /** Ends the sign-in early, as when the person closes the dialog. */
   readonly signal?: AbortSignal;
   readonly waitMs?: number;
+  /** This computer's name, offered to the sign-in page as `device_name` (`device-name.ts`). */
+  readonly deviceName?: string;
 }
 
 export type SignedIn = { readonly ok: true; readonly tokens: HostedTokens } | Failed;
@@ -270,6 +273,7 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   const state = randomBytes(24).toString("base64url");
   const { discovery } = options;
+  const deviceName = sentDeviceName(options.deviceName);
 
   const { promise: answered, resolve: finish } = Promise.withResolvers<{ code: string } | Failed>();
   let expectedHost = "";
@@ -354,6 +358,7 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       state,
       code_challenge: challenge,
       code_challenge_method: "S256",
+      ...(deviceName === undefined ? {} : { device_name: deviceName }),
     }).toString();
     if (stopped()) return failed("The sign-in was stopped.");
     // Not waited for: a browser that never says it opened still can't hold the sign-in open.
