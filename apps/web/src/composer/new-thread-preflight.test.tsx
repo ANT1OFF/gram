@@ -105,4 +105,29 @@ describe("new-thread preflight workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   });
+
+  it("starts in one of a headless server's projects although it refuses to browse its disk", async () => {
+    const { api, create } = setup(() => ({ availability: { state: "available" } }));
+    const [project] = await api.listProjects();
+    useServerSettings.setState((state) => ({
+      settings: {
+        ...state.settings!,
+        agents: { ...state.settings!.agents, defaultFolder: project!.root },
+      },
+    }));
+    const checks = await api.launchChecks();
+    vi.spyOn(api, "launchChecks").mockResolvedValue({ ...checks, headless: true });
+    vi.spyOn(api, "browse").mockRejectedValue(
+      new Error("not yours to change: this server's own setup comes from its deployment"),
+    );
+    renderWithApi(<NewThreadDraft />, api);
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Start chat" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start chat" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create.mock.calls[0]![0]).toMatchObject({ projectRoot: project!.root });
+  });
 });
