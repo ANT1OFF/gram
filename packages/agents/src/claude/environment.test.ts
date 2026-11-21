@@ -222,7 +222,7 @@ const countingFixture = () => {
 
 describe("claude auth status", () => {
   it.effect(
-    "runs once for a burst of checks and the session's account, and never keeps a sign-out",
+    "runs once for checks asked while it runs, and afresh for every later one, so a sign-out counts at once",
     () => {
       const { binary, shell, done, runs, status } = countingFixture();
       return Effect.gen(function* () {
@@ -238,12 +238,9 @@ describe("claude auth status", () => {
           { concurrency: "unbounded" },
         );
         expect(runs()).toBe(1);
-        // Invalidated (a new CLI, settings re-read): asked afresh.
-        yield* environment.invalidate;
         writeFileSync(status, JSON.stringify({ loggedIn: false }));
         const signedOut = yield* Effect.exit(environment.checkAuth(prepared));
         expect(signedOut._tag).toBe("Failure");
-        // A sign-out isn't kept: the sign-in that follows counts at once.
         writeFileSync(status, JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }));
         const signedIn = yield* Effect.exit(environment.checkAuth(prepared));
         expect(signedIn._tag).toBe("Success");

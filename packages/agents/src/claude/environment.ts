@@ -19,7 +19,7 @@ import {
 import { buildChildEnv, tokenChildEnv } from "./env.ts";
 import { type CommandError, type CommandOutput, runCommand } from "../cli/process.ts";
 import { nodeFs } from "../cli/discovery.ts";
-import { resettableOnSuccess, sharedRuns } from "../cli/cache.ts";
+import { resettableOnSuccess, sharedWhileRunning } from "../cli/cache.ts";
 import { createHash } from "node:crypto";
 
 import { ClaudeSdk } from "./sdk.ts";
@@ -192,12 +192,6 @@ export const claudeSdkExecutable = (
 ): Effect.Effect<string | undefined, AgentUnavailable> =>
   requireSdkExecutable(binaryPath, process.platform, nodeFs, hasBundledCli);
 
-/**
- * How long one `claude auth status` that reported a usable sign-in answers later asks: a machine's
- * status check and the session it opens next ask it within seconds, on one CPU at times.
- */
-export const AUTH_STATUS_REUSE_MS = 10_000;
-
 const authStatusKey = (ready: Pick<PreparedClaude, "binaryPath" | "env">): string =>
   createHash("sha256")
     .update(ready.binaryPath)
@@ -248,14 +242,7 @@ export const ClaudeEnvironmentLive = (
         } satisfies PreparedClaude;
       });
 
-      const usable = (stdout: string) => {
-        const problem = checkAuthStatus(stdout);
-        return problem === undefined || (problem === "api-key-auth" && config.keyAuth === true);
-      };
-      const statusRuns = yield* sharedRuns<CommandOutput, CommandError>(
-        AUTH_STATUS_REUSE_MS,
-        (output) => usable(output.stdout),
-      );
+      const statusRuns = sharedWhileRunning<CommandOutput, CommandError>();
       const authStatus = (ready: Pick<PreparedClaude, "binaryPath" | "env">) =>
         statusRuns.run(
           authStatusKey(ready),
@@ -277,7 +264,7 @@ export const ClaudeEnvironmentLive = (
           ),
           Effect.flatMap((output) => {
             const problem = checkAuthStatus(output.stdout);
-            return problem === undefined || usable(output.stdout)
+            return problem === undefined || (problem === "api-key-auth" && config.keyAuth === true)
               ? Effect.void
               : Effect.fail(authUnavailable(problem));
           }),
@@ -298,7 +285,7 @@ export const ClaudeEnvironmentLive = (
                   ),
                 ),
               ),
-        invalidate: prepared.reset.pipe(Effect.andThen(statusRuns.reset)),
+        invalidate: prepared.reset,
         checkAuth,
         accountScope: (ready) =>
           authStatus(ready).pipe(
@@ -316,3 +303,22 @@ export const ClaudeEnvironmentLive = (
       } satisfies ClaudeEnvironmentShape;
     }),
   );
+
+/**
+ * The subscription guard and the account it signs in as, asked side by side so one run of
+ * `claude auth status` answers both: fails as `checkAuth` does, and the account is undefined
+ * where it can't be read.
+ */
+export const signedInAccount = (
+  environment: ClaudeEnvironmentShape,
+  prepared: PreparedClaude,
+): Effect.Effect<string | undefined, AgentUnavailable> =>
+  Effect.all(
+    [
+      environment.checkAuth(prepared),
+      environment.accountScope === undefined
+        ? Effect.succeed(undefined)
+        : environment.accountScope(prepared).pipe(Effect.orElseSucceed(() => undefined)),
+    ],
+    { concurrency: "unbounded" },
+  ).pipe(Effect.map(([, account]) => account));

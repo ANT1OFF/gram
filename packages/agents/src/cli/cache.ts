@@ -1,3 +1,4 @@
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 
@@ -32,39 +33,29 @@ export const resettableOnSuccess = <A, E>(
   });
 
 /**
- * Runs of a command shared by key: an ask made while one runs waits for it, and its result answers
- * every ask of the same key for `reuseMs` after, so a burst of asks (a machine's status check and
- * a session opening at once) runs it once. Only a result `keep` accepts is reused; a failure, or
- * a result a later ask must see fresh, never is. `reset` drops every kept result.
+ * Runs shared by key while they run: an ask made while one with its key runs waits for that run's
+ * result (success, failure or interruption), so a burst of asks (a machine's status check, a
+ * session's sign-in and account) runs it once. A finished run is never reused: the next ask runs
+ * afresh.
  */
-export const sharedRuns = <A, E>(
-  reuseMs: number,
-  keep: (result: A) => boolean,
-  now: () => number = Date.now,
-): Effect.Effect<{
+export const sharedWhileRunning = <A, E>(): {
   readonly run: (key: string, effect: Effect.Effect<A, E>) => Effect.Effect<A, E>;
-  readonly reset: Effect.Effect<void>;
-}> =>
-  Effect.gen(function* () {
-    const lock = yield* Semaphore.make(1);
-    const kept = new Map<string, { readonly at: number; readonly result: A }>();
-    return {
-      run: (key, effect) =>
-        lock.withPermits(1)(
-          Effect.suspend(() => {
-            const at = now();
-            for (const [old, entry] of kept) if (at - entry.at >= reuseMs) kept.delete(old);
-            const found = kept.get(key);
-            if (found !== undefined) return Effect.succeed(found.result);
-            return effect.pipe(
-              Effect.tap((result) =>
-                Effect.sync(() => {
-                  if (keep(result)) kept.set(key, { at: now(), result });
-                }),
-              ),
-            );
-          }),
-        ),
-      reset: lock.withPermits(1)(Effect.sync(() => kept.clear())),
-    };
-  });
+} => {
+  const running = new Map<string, Deferred.Deferred<A, E>>();
+  return {
+    run: (key, effect) =>
+      Effect.suspend(() => {
+        const joined = running.get(key);
+        if (joined !== undefined) return Deferred.await(joined);
+        const deferred = Deferred.makeUnsafe<A, E>();
+        running.set(key, deferred);
+        return effect.pipe(
+          Effect.onExit((exit) =>
+            Effect.sync(() => running.delete(key)).pipe(
+              Effect.andThen(Deferred.done(deferred, exit)),
+            ),
+          ),
+        );
+      }),
+  };
+};
