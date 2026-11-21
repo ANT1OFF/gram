@@ -147,9 +147,10 @@ export function ViewSwitcher({ className }: { className?: string }) {
       void navigate({ to: useViewStore.getState().lastChat ?? "/" });
     }
   };
-  // With no workspace yet there is no Board to switch to, and Chat alone is no choice.
+  // With no workspace yet there is no Board to switch to, and Chat alone is no choice. Nor until
+  // the workspaces are known: drawn meanwhile, Chat · Board showed for a frame and went.
   const { workspaces, settled } = useWorkspacesQuery();
-  if (settled && workspaces.length === 0) return null;
+  if (!settled || workspaces.length === 0) return null;
   return (
     <div
       role="radiogroup"

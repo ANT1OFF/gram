@@ -12,15 +12,23 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { FolderTrustQuestion } from "./folder-trust-question";
 
+/** The project whose row is asking unprompted, so only one asks at a time. */
+let asking: string | undefined;
+const claims = (id: string) => {
+  asking ??= id;
+  return asking === id;
+};
+
 /**
  * A project whose folder isn't trusted says so on its row, and asks there: its own agent settings
  * and scripts stay off until the user trusts it. Nothing shows for a trusted folder, or for one
- * never asked about that brings nothing.
+ * never asked about that brings nothing. One never asked about that brings something asks once,
+ * by itself: closing the question without trusting records the answer, so it doesn't ask again.
  */
 export function TrustFolderButton({ project }: { project: Project }) {
   const api = useApi();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [chosen, setOpen] = useState<boolean>();
   const settings = useQuery({
     queryKey: ["folderSettings", project.root],
     queryFn: () => api.folderSettings(project.root),
@@ -28,20 +36,27 @@ export function TrustFolderButton({ project }: { project: Project }) {
     staleTime: 30_000,
   });
   const trust = useMutation({
-    mutationFn: () => api.setFolderTrust(project.id, true),
+    mutationFn: (trusted: boolean) => api.setFolderTrust(project.id, trusted),
     onSuccess: () => {
       setOpen(false);
+      if (asking === project.id) asking = undefined;
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       void queryClient.invalidateQueries({ queryKey: projectScriptsKey(project.id) });
     },
     onError: (error) =>
       useThreadDialogs.getState().fail(`Couldn't trust ${project.name}: ${errorMessage(error)}`),
   });
+  const unasked = project.folderTrust === undefined && settings.data?.none === false;
+  const open = chosen ?? (unasked && claims(project.id));
+  const onOpenChange = (next: boolean) => {
+    if (!next && unasked && !trust.isPending) trust.mutate(false);
+    setOpen(next);
+  };
   if (project.folderTrust === "trusted" || settings.data === undefined) return null;
   if (project.folderTrust === undefined && settings.data.none) return null;
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root open={open} onOpenChange={onOpenChange}>
       <Popover.Trigger
         aria-label={`${project.name} isn't trusted`}
         title="Not trusted: its own agent settings and scripts are off"
@@ -57,14 +72,19 @@ export function TrustFolderButton({ project }: { project: Project }) {
               settings={settings.data}
               actions={
                 <>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onOpenChange(false)}
+                  >
                     Not now
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     disabled={trust.isPending}
-                    onClick={() => trust.mutate()}
+                    onClick={() => trust.mutate(true)}
                   >
                     Trust {project.name}
                   </Button>

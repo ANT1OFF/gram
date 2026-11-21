@@ -6,6 +6,7 @@ import { actions, always, eventually, next, now, weighted } from "@antithesishq/
 import { extract, type ActionTemplate } from "@antithesishq/bombadil/browser";
 import { defaultActions } from "@antithesishq/bombadil/browser/defaults";
 
+import { barOverlap } from "../e2e/bar-overlap.ts";
 import { installFlickerObserver, type FlickerAllow } from "../e2e/flicker-observer.ts";
 
 // Its shipped properties: no console errors, HTTP error codes, uncaught exceptions or unhandled
@@ -190,21 +191,6 @@ const FLICKER_INTENDED: FlickerAllow[] = [
  */
 const FLICKER_KNOWN: FlickerAllow[] = [
   {
-    selector: '[data-testid="welcome"]',
-    kinds: ["layout-shift"],
-    reason: "known: the welcome screen shifts by about 0.05 as it loads at /",
-  },
-  {
-    selector: '[data-testid="settings-subpages"]',
-    kinds: ["layout-shift"],
-    reason: "known: Settings' list shifts by about 0.03 as it loads after a reload",
-  },
-  {
-    selector: '[data-testid="keyboard-settings"] li',
-    kinds: ["reappeared"],
-    reason: "known: Keyboard settings redraw their terminal rows with a frame between on arrival",
-  },
-  {
     selector: '[data-testid="inbox-detail-body"] *',
     kinds: ["reappeared"],
     reason: "known: picking an Inbox item redraws its detail with a frame between",
@@ -215,21 +201,9 @@ const FLICKER_KNOWN: FlickerAllow[] = [
     reason: "known: on the way to /threads the overview sidebar's sections go for a frame",
   },
   {
-    selector:
-      '[data-testid="settings-subpages"], [data-testid="settings-subpages"] *, [data-testid="settings-section-picker"]',
-    kinds: ["reappeared", "text-flip"],
-    reason:
-      'known: opening Settings from the phone menu redraws its list, and shows "Section", for a frame',
-  },
-  {
     selector: '[data-testid="right-panel"]',
     kinds: ["text-flip"],
     reason: "known: the right panel's PR tab drops out for a frame or three in Settings",
-  },
-  {
-    selector: '[data-testid="shell-titlebar"]',
-    kinds: ["text-flip"],
-    reason: "known: the titlebar shows Chat · Board for a frame on the way to /threads",
   },
 ];
 
@@ -292,8 +266,9 @@ export const loadingEnds = always(() =>
 );
 
 // --- Fits the window ---------------------------------------------------------------------------
-// At every window size the page never scrolls sideways, and no two controls in the titlebar or
-// the navigation dock overlap. Either may happen for a moment while a resize or a fold animates,
+// At every window size the page never scrolls sideways, and no two drawn controls in the titlebar
+// or the navigation dock overlap (e2e/bar-overlap.ts: a hidden, inert copy the bar keeps to measure
+// a folded button doesn't count). Either may happen for a moment while a resize or a fold animates,
 // so it must last a second to count.
 
 const overflow = extract((state) => {
@@ -324,34 +299,15 @@ export const noSidewaysScroll = always(
 const BARS = '[data-testid="shell-titlebar"], [data-testid="nav-dock"]';
 const CONTROLS = 'button, a[href], input, [role="button"], [role="tab"], [role="link"]';
 
-const nameOf = (element: Element) =>
-  element.getAttribute("aria-label") ??
-  element.getAttribute("data-testid") ??
-  (element.textContent ?? "").trim().slice(0, 30);
-
 const crowded = extract((state) => {
   for (const bar of state.document.querySelectorAll(BARS)) {
-    const controls = [...bar.querySelectorAll(CONTROLS)].filter((control) => {
-      if (control.parentElement?.closest(CONTROLS)) return false; // a control inside another
-      const box = control.getBoundingClientRect();
-      return box.width > 0 && box.height > 0 && shown(control);
-    });
-    const boxes = controls.map((control) => control.getBoundingClientRect());
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i]!;
-        const b = boxes[j]!;
-        const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
-        const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-        if (overlapX > 2 && overlapY > 2)
-          return {
-            bar: bar.getAttribute("data-testid"),
-            first: nameOf(controls[i]!),
-            second: nameOf(controls[j]!),
-            width: state.window.innerWidth,
-          };
-      }
-    }
+    const overlap = barOverlap(bar);
+    if (overlap !== null)
+      return {
+        bar: bar.getAttribute("data-testid"),
+        ...overlap,
+        width: state.window.innerWidth,
+      };
   }
   return null;
 });

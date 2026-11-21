@@ -14,6 +14,7 @@ const excluded = new Set([
   ".git",
   "dist",
   "dist-e2e",
+  "dist-bombadil",
   "dist-embed",
   "dist-embed-fixture",
   "out",

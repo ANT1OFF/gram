@@ -564,6 +564,45 @@ const closeOnMachine = (get: (id: HostId) => Effect.Effect<WorkerHost, HostUnava
     return { closed, refused: Option.getOrUndefined(result) };
   });
 
+describe("a joined machine's own folders for threads", () => {
+  const OWN = "/home/dev/repos/.threads/t-own";
+  for (const answer of [
+    "/",
+    "repo/.threads/t-own",
+    "/home/dev/repos/.threads/../t-own",
+    "/home/dev/repos/.threads/t-other",
+    OWN,
+  ])
+    it.live(`records the folder a host answers only when it is the thread's own: ${answer}`, () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        const { connection } = yield* machine(join(dir, "repos"), {});
+        const removed: Array<string> = [];
+        const host = yield* machineWorkerHost(
+          MACHINE,
+          {
+            ...connection,
+            threadPlaces: {
+              make: () => Effect.succeed({ path: answer }),
+              lay: () => Effect.succeed({ laid: [] }),
+              remove: (threadId) => Effect.sync(() => void removed.push(threadId)),
+            },
+          },
+          yield* deps(),
+        );
+        const made = yield* host.threadPlaces!.make(ThreadId.make("t-own"), []).pipe(Effect.result);
+        if (answer === OWN) {
+          expect(made).toMatchObject({ _tag: "Success", success: { path: OWN } });
+          expect(removed).toEqual([]);
+        } else {
+          expect(made._tag).toBe("Failure");
+          expect(removed).toEqual(["t-own"]);
+        }
+      }).pipe(Effect.scoped, Effect.provide(Live)),
+    );
+});
+
 describe("a joined machine's git state", () => {
   const POISON = {
     origin: "elsewhere/other",

@@ -13,7 +13,7 @@
 // With messages sent, the ones stored before they were are sent too, once: the backfill, below.
 
 import type { AnswerProof } from "./answer-proof.ts";
-import { threadData } from "./thread-data.ts";
+import { errorDetailData, threadData } from "./thread-data.ts";
 import {
   approvalSubject,
   type DecisionAssignee,
@@ -704,6 +704,7 @@ export const makeEventSink = (
                 id: event.threadId,
                 status: event.status,
                 idle: IDLE_STATUSES.has(event.status),
+                ...errorDetailData(event.status, event.detail),
               },
             },
           ];

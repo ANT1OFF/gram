@@ -44,7 +44,17 @@ export interface DialOptions {
    * `dialForever` stops: it never dials a Gram the machine left. Always, when left out.
    */
   readonly joined?: () => boolean;
+  /**
+   * A token whoever launched this host gave it, sent with every dial as `x-gram-host-dial-token`
+   * beside the signed headers: an embedder whose own endpoint takes the dial reads it to tell which
+   * of the hosts it launched is dialling. Asked afresh for each dial, so a token that is rotated in
+   * place is sent as it is now. None, or none given: no such header.
+   */
+  readonly dialToken?: () => string | undefined;
 }
+
+/** The header a dial carries its launcher's token in (`DialOptions.dialToken`). */
+export const HOST_DIAL_TOKEN_HEADER = "x-gram-host-dial-token";
 
 export const connectUrl = (origin: string) =>
   `${origin.replace(/^https:/, "wss:").replace(/^http:/, "ws:")}${HOST_CONNECT_PATH}`;
@@ -102,8 +112,14 @@ export const dialOnce = <R>(
       Effect.repeat(Schedule.spaced(Duration.millis(Math.max(10, Math.floor(idleMs / 4))))),
       Effect.forkScoped,
     );
+    const dialToken = options.dialToken?.();
     const socket = yield* Socket.makeWebSocket(options.url ?? connectUrl(options.origin), {
-      headers: signedConnectHeaders(options.key, options.origin, options.hostId, now()),
+      headers: {
+        ...signedConnectHeaders(options.key, options.origin, options.hostId, now()),
+        ...(dialToken === undefined || dialToken === ""
+          ? {}
+          : { [HOST_DIAL_TOKEN_HEADER]: dialToken }),
+      },
       openTimeout: "15 seconds",
     });
     const host = yield* service;
