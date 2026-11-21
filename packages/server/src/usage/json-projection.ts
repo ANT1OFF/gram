@@ -106,7 +106,6 @@ export class JsonProjection {
           continue;
         }
         if (c === '"') {
-          // Unselected strings still validated their escapes/control bytes above.
           if (!this.#capture && !this.#key) this.#raw = '""';
           this.#endToken();
         }
@@ -165,7 +164,6 @@ export class JsonProjection {
       }
       const selected = this.#selection();
       if (c === "{" || c === "[") {
-        // Selected leaves are scalars. A malformed counter/model cannot allocate a subtree.
         if (selected === true) {
           this.#bad = true;
           break;

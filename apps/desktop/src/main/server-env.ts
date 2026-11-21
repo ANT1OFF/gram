@@ -1,7 +1,5 @@
-/** What swaps the real agents for the echo fake (`packages/server/src/main.ts`). */
 const FAKE_AGENT_KEYS = ["GRAM_FAKE_AGENT", "GRAM_FAKE_AGENT_REPLY"] as const;
 
-/** What moves the server off loopback, for the container image only (`server/src/config.ts`). */
 const CONTAINER_KEYS = ["GRAM_CONTAINER", "GRAM_LISTEN_HOST"] as const;
 
 /**

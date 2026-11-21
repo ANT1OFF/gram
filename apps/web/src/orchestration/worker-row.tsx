@@ -95,19 +95,12 @@ import { threadWorking } from "./tree-model";
 import { PAUSE_WORD, useWorkerPause, WorkerPauseMark, type WorkerPauseState } from "./worker-pause";
 import { besideRuns, watchedRuns, type WaitGlyph, type WaitingOn } from "./waiting-on";
 
-// One worker row, at two widths: the sidebar's, under its orchestrator, and the right pane's
-// Workers list, wide. Both draw the same mark, title, agent, words and last-active age from the
-// same facts (`OverviewWorkerRow`, the cards' and the ledger's), so a worker reads alike in both
-// lists. The sidebar cuts its words to one line; the pane wraps them and adds its plan's steps, the
-// docs it wrote and, for a pick it asks you to make, the pictures of the choices.
-
 type ThreadsState = ReturnType<typeof useThreadsStore.getState>;
 
 /** ⌘/Ctrl on a click: keep the worker beside its orchestrator's chat. */
 export const besideKey = (event: Pick<MouseEvent, "metaKey" | "ctrlKey">) =>
   event.metaKey || event.ctrlKey;
 
-/** Whether a thread is at work now, as its tree row would show it. */
 const busyThread = (s: ThreadsState, threadId: ThreadId): boolean => {
   const summary = s.byId[threadId];
   return summary !== undefined && threadWorking(summary, s.statusDetail[threadId]);
@@ -124,7 +117,6 @@ export const workLineOf = (s: ThreadsState, threadId: ThreadId): string | undefi
   const display = threadStatusOf(summary, s.statusDetail[threadId]);
   if (!display.working && display.running === undefined) return undefined;
   if (activity !== undefined) return plainActivity(activity);
-  // The glyph's title lists each command under the work it counts; its label alone stays plain.
   return display.running === undefined ? display.title : plainRunning(display.label);
 };
 
@@ -189,7 +181,6 @@ export function WorkerRow({
   const openThread = useOpenThread();
   const parts = wide;
   const isWide = parts !== undefined;
-  // Only this row's answer: a move to another thread re-renders the two rows it changes, not all.
   const viewed = useParams({
     strict: false,
     select: (params) => params.threadId === row.threadId,
@@ -202,17 +193,13 @@ export function WorkerRow({
   const busy = useThreadsStore((s) => busyThread(s, row.threadId));
   const pause = useWorkerPause(row.threadId, status, row.held);
   const asking = row.askKey !== undefined;
-  // What it asks, in the asker's words: the question, not "asks you" alone.
   const question = useAskQuestion(row.askKey);
-  // One tone for its dot, its words and its count on the orchestrator's line, as the Board has it.
   const tone = rowTone(row, { status, working: busy });
   const dot = TONE_DOT[tone];
   const working = tone === "working";
   const waiting = rowWaiting(row, tone);
-  // The runs it watches as one chip beside its PR chips, and its line's wait the next it has.
   const runs = watchedRuns(waiting);
   const lineWait = besideRuns(waiting);
-  // Ages to the minute, from its last activity in both lists; when it started is on its card.
   const now = useNow(true, undefined, 60_000);
   const ageAt = at ?? lastActivity;
   const settled =
@@ -220,33 +207,21 @@ export function WorkerRow({
     pause === undefined &&
     lastActivity !== undefined &&
     now - lastActivity >= SETTLED_AFTER_MS;
-  // Spawned and not begun, or its session opening: nothing has run yet, so neither "Working" nor
-  // "Stopped" is true. The rule ⌘J's rows, the Workers panel and the worker's header read too.
   const starting =
     tone === "working" && workerStarting({ asking, state: row.state, failed: row.failed, status });
-  // At work, it says what it is doing, its plan's step count left to the pane's steps.
   const routine = working && !starting && !asking && !row.failed && row.now !== ANSWERED;
   const workLine = useWorkLine(row.threadId, row.report);
   const doing = routine && workLine !== undefined ? steplessLine(workLine) : undefined;
-  // The other machine it runs on, if any: named at its edge unless the edge has words of its own,
-  // when the glyph alone stands and the name is on its hover card.
   const hostId = useThreadHost(row.threadId);
   const sent = useThreadSent(row.threadId);
   const machine = useMachineMark(hostId, sent);
-  // What its edge says beyond its dot: "Starting…", an ask, a failure, a wait's reason, what it
-  // does. A tone's own word ("Idle") gives way to the machine's name.
   const edgeSays =
     starting || (routine ? doing !== undefined : waiting !== undefined || nowLineShown(row));
   const prChips = useWorkerPrChips(row.threadId, row.prs);
   const startedAt = useThreadsStore((s) => s.byId[row.threadId]?.thread.createdAt);
-  // A second line under its title for what it has done and what it waits on: its PR chips (a run
-  // of merged ones folded into "N merged"), then its words, then its age. With neither chips nor
-  // words, the row stays one line and its dot says the rest. Wide, the same: its chips, then words.
   const hasChips = prChips.length > 0 || runs.length > 0;
-  // Wide, where the chips' room is on its second line, for the real ones over it.
   const room = useRef<HTMLSpanElement>(null);
   const roomAt = useRoomAt(room, isWide && hasChips);
-  // Wide, in the pane, its own PR chip opens it there on its PR tool, the orchestrator staying.
   const openOwnPr =
     isWide && onOpen !== undefined
       ? () => {
@@ -267,8 +242,6 @@ export function WorkerRow({
     ...(ageAt === undefined ? [] : [`last active ${agoText(ageAt, now)}`]),
     ...(startedAt === undefined ? [] : [`started ${formatStamp(startedAt)}`]),
   ];
-  // In the pane the keys land on a row whenever the list opens (⌘J, Back): its card waits for
-  // the pointer there, rather than cover the chat beside it.
   const preview = usePickedPreview(isWide);
   const onClick = (event: MouseEvent<HTMLElement>) => {
     preview.picked();
@@ -280,7 +253,6 @@ export function WorkerRow({
   };
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     rowMenuKeys(event);
-    // ⌘⏎ is ⌘-click from the keys; ⏎ alone is the row's click.
     if (onOpen === undefined || event.defaultPrevented) return;
     if (event.key !== "Enter" || !besideKey(event)) return;
     event.preventDefault();
@@ -289,7 +261,6 @@ export function WorkerRow({
   const props = {
     type: "button" as const,
     [STOP]: "",
-    // The pane's rows keep the Workers list's own name, which ⌘J and an embedder's tests find.
     "data-testid": isWide ? "workers-panel-row" : "overview-worker",
     "data-thread-id": row.threadId,
     "data-tone": tone,
@@ -297,7 +268,6 @@ export function WorkerRow({
     "data-unread": unread || undefined,
     "aria-current": isCurrent || undefined,
     "aria-label": facts.join(", "),
-    // The compact rail's flyout has no card to say them.
     title: card
       ? undefined
       : `${facts.join(" · ")}${waiting === undefined ? "" : `\n${waiting.hint}`}`,
@@ -305,8 +275,6 @@ export function WorkerRow({
     onClick,
     onKeyDown,
     ...threadDragProps(row.threadId),
-    // Its title on one line, cut at its end with the whole of it on hover, its marks at the line's
-    // right edge; with something to say, a second line under it and its dot a bar beside both.
     className: cn(
       ROW,
       WORKER_ROW,
@@ -316,7 +284,6 @@ export function WorkerRow({
       settled && SETTLED,
     ),
   };
-  // The PRs its chips show, which its words then leave out: each said once.
   const shownPrs = shownPrNumbers(prChips, true);
   const words = starting ? (
     <span
@@ -363,7 +330,6 @@ export function WorkerRow({
       {formatRelative(ageAt, now)}
     </span>
   );
-  // Wide, a third line under the words: its chips, its plan's steps and its docs.
   const foot =
     parts === undefined ? null : (
       <parts.Foot threadId={row.threadId} done={tone === "merged"} ghost />
@@ -377,18 +343,13 @@ export function WorkerRow({
         data-tall={twoLines || isWide || undefined}
         className={isWide ? WIDE_DOT : twoLines ? TALL_DOT : DOT}
       />
-      {/* Its title, one line cut at its end; the hover card, or the flyout's tooltip, says the
-          whole. */}
       <span
         data-testid="overview-worker-title"
         className={cn(ROW_TITLE, "text-foreground", unread && UNREAD_TITLE)}
       >
         {row.title}
       </span>
-      {/* At the title's edge: the machine it runs on, a pause, and its agent's mark; wide, its age
-          after them. */}
       <span className={cn(ROW_TRAIL, WORKER_TRAIL, isWide && "max-w-none")}>
-        {/* Its hover is the row's own: its card, or the flyout's title, says the machine whole. */}
         <MachineMarker
           hostId={hostId}
           sent={sent}
@@ -410,8 +371,6 @@ export function WorkerRow({
               data-testid="overview-worker-line"
               className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-start gap-x-1.5 gap-y-0.5 text-meta"
             >
-              {/* The chips' room, as the sidebar's line leads with it; the real ones sit over it
-                  outside the row's button. */}
               {hasChips && (
                 <WorkerPrChips
                   threadId={row.threadId}
@@ -432,12 +391,7 @@ export function WorkerRow({
           )
         : twoLines && (
             <span data-testid="overview-worker-line" className={ROW_STATUS}>
-              {/* Its chips, then its words, cut at their end, while a word or two fits beside the
-                  chips (they start at that width, not their whole): short of that they wrap out of
-                  sight to the hover card, rather than show a stub. */}
               <span className="flex h-lh min-w-0 flex-1 flex-wrap content-start items-center gap-x-1.5 overflow-hidden">
-                {/* The chips' room; the real ones, each a button, sit over it outside the row's
-                    own. */}
                 <WorkerPrChips
                   threadId={row.threadId}
                   cardPrs={row.prs}
@@ -458,8 +412,6 @@ export function WorkerRow({
       {foot}
     </>
   );
-  // The PR chips sit over their room, outside the row's button: each is a button of its own. Wide,
-  // its last line does too, its docs being buttons.
   const chips =
     parts !== undefined ? (
       <>
@@ -494,7 +446,6 @@ export function WorkerRow({
         />
       )
     );
-  // An ask between pictures shows the first two under the row, each enlarged on a click.
   const pictures =
     parts !== undefined && row.askKey !== undefined ? <parts.Pictures askKey={row.askKey} /> : null;
   if (!card) {
@@ -561,11 +512,6 @@ export interface WideFootProps {
   readonly ghost?: boolean;
 }
 
-/**
- * Where `room` sits in the row (its offset in the row's menu wrapper, which the real chips are
- * placed in), measured after each render; `undefined` while `on` is false. Its place moves only
- * with what the row draws (its title line, its mark), never with the pane's width, so no observer.
- */
 function useRoomAt(
   room: RefObject<HTMLElement | null>,
   on: boolean,
@@ -594,20 +540,12 @@ export interface WideParts {
 /** "Asks you: put the sheet under Help or under Settings?" */
 export const asksYouLine = (question: string): string => `Asks you: ${question}`;
 
-/** Words that wrap to two lines in the wide row, cut at the end of the second. */
 const WRAPPED = "line-clamp-2 break-words";
 
-/** The pane's row: a little more room, and the hover the pane's surfaces take. */
 const WIDE_ROW = "py-1.5 text-body hover:bg-accent";
 
-/** The pane's bar beside every line of a row, however many it has (empty ones take no room). */
 const WIDE_DOT = "row-span-3 h-auto min-h-6 w-1 self-stretch justify-self-center rounded-full";
 
-/**
- * What an ask in the stack puts to you, by its key: a worker's question, else what the stack leads
- * with and the exact command it is for ("Allow git push origin fix/retry"). `undefined` without an
- * ask.
- */
 function useAskQuestion(askKey: string | undefined): string | undefined {
   const asks = useWorkspaceAsks();
   if (askKey === undefined) return undefined;
@@ -622,12 +560,6 @@ function useAskQuestion(askKey: string | undefined): string | undefined {
   return undefined;
 }
 
-/**
- * A row's hover card, closed by the click or Enter that opens the row: it would otherwise stay over
- * the thread just opened, under a pointer that hasn't moved. It stays closed until a fresh hover,
- * after the pointer has left the row, or a fresh focus, after the focus has left it; a focus still
- * opens it from the keyboard.
- */
 function usePickedPreview(hoverOnly = false) {
   const [open, setOpen] = useState(false);
   const hoverQuiet = useRef(false);
@@ -679,25 +611,14 @@ export const TWO_LINE_ROW = "py-1";
 /** Its marks at the title line's edge, never a line of their own on the phone. */
 export const WORKER_TRAIL = "in-data-phone-drawer:col-start-3 in-data-phone-drawer:justify-end";
 
-/**
- * Its real PR chips, over their room at the start of the second line: the row's inset, its mark
- * column and the gap after it, and the row's bottom inset. Only the chips take the pointer: the
- * line's empty room around them stays the row's.
- */
-/** An open with no ⌘ or Ctrl held: in the pane. */
 const PLAIN_OPEN = { metaKey: false, ctrlKey: false } as const;
 
-/** The wide row's real PR chips, over their room on its second line (`useRoomAt`). */
 const WIDE_CHIPS =
   "pointer-events-none absolute flex h-lh items-center text-meta *:pointer-events-auto";
 
 const WORKER_CHIPS =
   "pointer-events-none absolute bottom-1 left-6 flex h-lh items-center text-meta in-data-phone-drawer:left-7.5 *:pointer-events-auto";
 
-/**
- * A worker's card now line under its title, when it says more than the row's dot; else its tone in
- * a word, so every live row keeps the same status line under its title.
- */
 function WorkerNow({
   row,
   asking,
@@ -708,12 +629,9 @@ function WorkerNow({
 }: {
   row: OverviewWorkerRow;
   asking: boolean;
-  /** What its ask puts to you, said in amber in place of "asks you". */
   question?: string | undefined;
   tone: RailTone;
-  /** PRs its chips show beside it, left out of its words. */
   prs?: readonly { readonly number: number }[];
-  /** Wrapped to two lines, as the pane's wide row has its words, rather than cut to one. */
   wrap?: boolean;
 }) {
   const cut = wrap ? "line-clamp-2 break-words" : "truncate";
@@ -745,7 +663,6 @@ function WorkerNow({
   );
 }
 
-/** A worker's step on its hover card in full, its plan's step count included. */
 function WorkerCardStep({ row }: { row: OverviewWorkerRow }) {
   const step = useWorkLine(row.threadId, row.report);
   if (step === undefined) return null;
@@ -756,10 +673,6 @@ function WorkerCardStep({ row }: { row: OverviewWorkerRow }) {
   );
 }
 
-/**
- * A worker on hover: its feature, agent, title, station and now line, its whole step while it
- * works, first PR and last activity.
- */
 function WorkerCard({
   row,
   feature,
@@ -777,18 +690,15 @@ function WorkerCard({
   feature: string;
   agent: string | undefined;
   lastActivity: number;
-  /** When it started, which its row's age leaves to the card. */
   startedAt: number | undefined;
   dot: string;
   tone: RailTone;
   asking: boolean;
   pause: WorkerPauseState | undefined;
   waiting: WaitingOn | undefined;
-  /** The other machine it runs on; absent on this one. */
   machine: MachineMark | undefined;
 }) {
   const time = formatStamp(lastActivity);
-  // Its agent, then its feature where the title doesn't already say it; wrapped, never cut.
   const context = [
     ...(agent === undefined ? [] : [agentLabel(agent)]),
     ...(featureAddsToTitle(feature, row.title) ? [feature] : []),
@@ -803,8 +713,6 @@ function WorkerCard({
       <p data-testid="overview-worker-card-title" className="font-medium">
         {row.title}
       </p>
-      {/* Its station and now line, wrapped rather than cut: a wait in its short words, as the
-          list under it says each one whole. */}
       <p className="flex min-w-0 items-start gap-1.5 text-meta">
         <span className="flex h-lh shrink-0 items-center">
           <span
@@ -855,7 +763,6 @@ function WorkerCard({
           <PrChip pr={row.pr} threadId={row.threadId} />
         </span>
       )}
-      {/* Where it runs, whole: the machine, how it got in, its state, and why when it is offline. */}
       {machine !== undefined && (
         <p
           data-testid="overview-worker-card-machine"
@@ -876,10 +783,6 @@ function WorkerCard({
   );
 }
 
-/**
- * A wait's glyph at a row's edge, in the PR vocabulary's marks where it has one; a timed wake's the
- * thread's wake chip's alarm clock, and a condition's what it waits on.
- */
 const WAIT_GLYPH: Readonly<Record<WaitGlyph, LucideIcon>> = {
   ci: PendingRing,
   localCheck: LaptopMinimalCheck,
@@ -920,7 +823,6 @@ export function WaitingLine({
   /** The pane's wide row: its words whole, wrapped to two lines, beside the wait's glyph. */
   wrap?: boolean;
 }) {
-  // A PR its row's chip names already isn't the edge's token as well: its words say the wait.
   const edge = wrap ? undefined : edgeBesidePrs(waiting.edge, prs);
   const Glyph = edge === undefined ? undefined : WAIT_GLYPH[edge.glyph];
   const detail = waiting.reasons[0]?.detail;
@@ -952,7 +854,6 @@ export function WaitingLine({
   );
 }
 
-/** Every wait of a worker on its hover card, the one its row names first. */
 function WaitingList({ waiting }: { waiting: WaitingOn }) {
   return (
     <ul

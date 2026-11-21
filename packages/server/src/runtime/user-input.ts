@@ -1,5 +1,3 @@
-// A user's input as the runtime keeps it, and the transcript message a turn opens with.
-
 import type {
   ConversationRef,
   TurnId,
@@ -83,7 +81,6 @@ export const typedText = (input: UserInput) => {
  */
 export const userParts = (input: UserInput, messageId: string) => [
   { type: "text", text: typedText(input) },
-  // What was attached, so the transcript shows it; the agent gets the paths as mentions.
   ...(input.attachments ?? []).map((attachment) => ({
     type: "file",
     mediaType: attachment.mediaType ?? "application/octet-stream",

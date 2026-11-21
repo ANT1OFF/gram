@@ -1,6 +1,3 @@
-// This computer as a device of a hosted server: registered with a signature made by its own key,
-// and forgotten there on sign-out, each over `hosted.ts`'s signed calls.
-
 import { sign } from "node:crypto";
 import {
   deviceRegistrationBytes,
@@ -73,7 +70,6 @@ export const registerHostedDevice = async (
     return failed("The server refused to register this machine.");
   const answer = Schema.decodeUnknownOption(HostedDeviceRegistered)(await jsonOf(registered));
   if (answer._tag === "None") return failed(UNREADABLE);
-  // An id the server made up for another key would let it speak for a device it isn't.
   if (answer.value.deviceId !== deviceIdOf(publicKey))
     return failed("The server registered another key.");
   return { ok: true, deviceId: answer.value.deviceId };

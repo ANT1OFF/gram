@@ -92,10 +92,8 @@ import { RoleChip } from "./role-chip";
 
 type RoleFields = Pick<Thread, "role" | "spawnedBy">;
 
-/** The asking thread's orchestration fields, so every card's heading can carry its role. */
 const RequestRoleContext = createContext<RoleFields | undefined>(undefined);
 
-/** Whether cards render small, for the approvals inbox. */
 const CompactContext = createContext(false);
 
 /**
@@ -107,7 +105,6 @@ export function CompactRequestCards({ children }: { children: ReactNode }) {
   return <CompactContext value={true}>{children}</CompactContext>;
 }
 
-/** Whether cards render in the ask sheet, which scrolls them whole and keeps their buttons in sight. */
 const SheetContext = createContext(false);
 
 /**
@@ -119,7 +116,6 @@ export function SheetRequestCards({ children }: { children: ReactNode }) {
   return <SheetContext value={true}>{children}</SheetContext>;
 }
 
-/** Whether an approval card opens on what "Always allow this rule…" would keep. */
 const AlwaysPreviewContext = createContext(false);
 
 /**
@@ -130,10 +126,8 @@ export function AlwaysPreviewRequestCards({ children }: { children: ReactNode })
   return <AlwaysPreviewContext value={true}>{children}</AlwaysPreviewContext>;
 }
 
-/** Whether a card shows its shortcut hints: of several on screen, only the one the keys answer. */
 const HintsContext = createContext(true);
 
-/** A card's shortcut hint, which the inbox leaves out as its cards own no shortcuts. */
 function CardKbd({ id }: { id: string }) {
   const hints = useContext(HintsContext);
   return useContext(CompactContext) || !hints ? null : <ShortcutKbd id={id} cap />;
@@ -170,12 +164,10 @@ export function RequestCards({
   const slots = sheet || compact ? undefined : drawn;
   return (
     <RequestRoleContext value={thread}>
-      {/* What the last answer did, until the next card lands: under its row when that is drawn. */}
       {!sheet && <Receipt threadId={threadId} approvals={approvals} slots={slots} />}
       {slots !== undefined && approvals.length > 0 && (
         <PlacedApprovals threadId={threadId} requests={approvals} focused={focused} slots={slots} />
       )}
-      {/* A card lands, and an answered one folds away, so the transcript above never jumps. */}
       <PresenceList>
         {requests.map((request) =>
           request.kind === "approval" &&
@@ -199,10 +191,6 @@ export function RequestCards({
   );
 }
 
-/**
- * The thread's one approval receipt, where its card was: under the call's row while that is drawn
- * and the request answered, else above the composer once no approval is left to answer.
- */
 function Receipt({
   threadId,
   approvals,
@@ -220,25 +208,12 @@ function Receipt({
   );
   const slot = source.toolUseId === undefined ? undefined : slots?.get(source.toolUseId);
   if (slot !== undefined) {
-    // Still pending, its card is in the slot; the receipt follows once the answer lands.
     if (approvals.some((request) => request.id === source.requestId)) return null;
     return createPortal(<ApprovalReceiptLine threadId={threadId} />, slot);
   }
   return approvals.length === 0 ? <ApprovalReceiptLine threadId={threadId} /> : null;
 }
 
-/**
- * A thread's approvals, each drawn under the tool row that waits on it. A card whose row isn't
- * drawn (scrolled out of the transcript's window, folded away, or a request no call made) waits
- * above the composer instead, paged as before. Every card stays mounted in this one place whichever
- * slot draws it, so moving never resets it: its preview stays open and an answer in flight stays
- * in flight.
- *
- * An approval's keys (1, 2 and 3 unless rebound) answer one card only: the selected one (the first, or the one a Needs
- * you jump, a focus or the pager chose), which alone shows their hints, and only while it is on
- * screen when the key is pressed. That is measured at the press (`onScreen`), never from an
- * earlier report, so a card scrolled away, paged out or folded into a collapsed row answers no key.
- */
 function PlacedApprovals({
   threadId,
   requests,
@@ -255,7 +230,6 @@ function PlacedApprovals({
   const found = requests.findIndex((request) => request.id === selected.id);
   const index = found < 0 ? Math.min(selected.index, requests.length - 1) : found;
   const current = requests[index];
-  // Resolving an earlier request must not change which command the user is reviewing.
   if (current && (current.id !== selected.id || index !== selected.index)) {
     setSelected({ id: current.id, index });
   }
@@ -263,19 +237,16 @@ function PlacedApprovals({
     const at = requests.findIndex((request) => request.id === id);
     if (at >= 0 && id !== selected.id) setSelected({ id, index: at });
   };
-  // A Needs you jump to one of these shows it, whichever was being reviewed.
   const revealed = useRequestRevealStore((s) =>
     s.request?.threadId === threadId ? s.request.requestId : undefined,
   );
   const revealAt = requests.findIndex((request) => request.id === revealed);
   if (revealAt >= 0 && revealAt !== index)
     setSelected({ id: requests[revealAt]?.id, index: revealAt });
-  // Shown, it is taken, so moving on to another approval stays where it is put.
   useEffect(() => {
     if (revealAt >= 0 && revealAt === index) useRequestRevealStore.getState().clear();
   }, [revealAt, index]);
 
-  // Read when a key is pressed: which card is selected now, and each card's element.
   const selectedId = useRef(current?.id);
   useLayoutEffect(() => {
     selectedId.current = current?.id;
@@ -353,21 +324,13 @@ function PlacedApprovals({
   );
 }
 
-/**
- * Moves a card's own element into `target`, the row's slot or the place above the composer, and
- * spaces it for where it is: under its row, clear of the row above and of the transcript row's
- * edge; above the composer, as the other cards there sit. A card shown in neither is hidden.
- */
 function place(element: HTMLElement, target: HTMLElement | null, inline: boolean, hidden: boolean) {
-  // What had focus in the card: still there, or lost with the row it sat in (folded away).
   const had = focusedIn(element);
   element.dataset["inline"] = String(inline);
   element.className = inline ? "pt-1 pb-1" : "my-2";
   element.hidden = hidden;
   if (target !== null && element.parentNode !== target) target.append(element);
   if (had === undefined) return;
-  // Moving an element drops the focus inside it; the control that had it keeps it. A card hidden
-  // (its row folded, or paged out) hands focus on, as an answered one does.
   if (!hidden && element.contains(had) && had.isConnected) {
     if (document.activeElement !== had) had.focus({ preventScroll: true });
   } else if (hidden) {
@@ -375,41 +338,25 @@ function place(element: HTMLElement, target: HTMLElement | null, inline: boolean
   }
 }
 
-/** The pager over approvals that wait above the composer. */
 const APPROVAL_NAV = 'nav[aria-label="Approval navigation"]';
 
-/**
- * The thread view a card is drawn in, a grid pane's or the one beside the chat (`ThreadView`):
- * where its keys reach and its focus is handed on, never into another thread's view.
- */
 const THREAD_VIEW = "[data-thread-view]";
 
-/**
- * Where an approval card's keys reach from, as its thread view does: that view, or the Focus review
- * strip (`data-approval-keys`), which answers the thread's approvals while its view is covered.
- */
 const KEY_AREA = `${THREAD_VIEW}, [data-approval-keys]`;
 
-/**
- * The control in each card's element that last had focus. A focused element removed with its row
- * leaves focus on the page and says nothing, so this is what tells that the card had it.
- */
 const lastFocused = new WeakMap<HTMLElement, HTMLElement>();
 
-/** Notes the control in `element` that has focus, and forgets it once focus moves on elsewhere. */
 function watchFocus(element: HTMLElement) {
   element.addEventListener("focusin", (event) => {
     if (event.target instanceof HTMLElement) lastFocused.set(element, event.target);
   });
   element.addEventListener("focusout", (event) => {
-    // Focus moved to something else: the card no longer has it. A removal moves it nowhere.
     if (event.relatedTarget instanceof Node && !element.contains(event.relatedTarget)) {
       lastFocused.delete(element);
     }
   });
 }
 
-/** What in `element` has focus now, or had it when focus was lost to the page. */
 function focusedIn(element: HTMLElement): HTMLElement | undefined {
   const active = document.activeElement;
   if (active instanceof HTMLElement && active !== document.body) {
@@ -418,18 +365,10 @@ function focusedIn(element: HTMLElement): HTMLElement | undefined {
   return lastFocused.get(element);
 }
 
-/**
- * Focus left with a card that went (answered, the turn over) or hid (its row folded): it goes to
- * the next approval in the same thread view that is on screen, the one the keys answer first, else
- * to that view's composer. Never to the page, where the keys would answer for nothing, nor into
- * another thread's view (the one beside the chat, or the chat beside it); never away from
- * something the user has focused meanwhile. Outside a thread view it is left where it fell.
- */
 function handFocusOn(near: Element, from: HTMLElement) {
   lastFocused.delete(from);
   const scope = near.closest(THREAD_VIEW);
   if (scope === null) return;
-  // After the commit that took the card away: the next card is selected by then.
   setTimeout(() => {
     if (!focusLost()) return;
     const shown = [...scope.querySelectorAll<HTMLElement>('[data-testid="approval-place"]')].filter(
@@ -470,10 +409,6 @@ export function onScreen(element: HTMLElement): boolean {
   return bottom > top && right > left;
 }
 
-/**
- * One approval card, rendered into an element of its own that is moved into its row's slot, or
- * into the place above the composer: the card is never remounted by the move.
- */
 function PlacedApproval({
   threadId,
   request,
@@ -491,11 +426,9 @@ function PlacedApproval({
   target: HTMLElement | null;
   inline: boolean;
   hidden: boolean;
-  /** Whether this is the card the keys answer, while it is on screen; it alone shows their hints. */
   selected: boolean;
   focused: boolean;
   register: (id: string, element: HTMLElement | undefined) => void;
-  /** Asked at each press: whether this card may answer it now. */
   mayAnswer: (id: string) => boolean;
   onSelect: (id: ApprovalRequest["id"]) => void;
 }) {
@@ -507,11 +440,9 @@ function PlacedApproval({
   });
   const id = request.id;
   useLayoutEffect(() => place(element, target, inline, hidden), [element, target, inline, hidden]);
-  // The card the keys answer: where focus goes first when another card hands it on.
   useLayoutEffect(() => {
     element.toggleAttribute("data-selected", selected);
   }, [element, selected]);
-  // The thread view the card is in, for focus to be handed on in once it has gone with its row.
   const view = useRef<Element | null>(null);
   useLayoutEffect(() => {
     view.current = element.closest(THREAD_VIEW) ?? target?.closest(THREAD_VIEW) ?? view.current;
@@ -520,7 +451,6 @@ function PlacedApproval({
     register(id, element);
     return () => {
       register(id, undefined);
-      // Answered, or the turn ended: focus in it goes on to the next approval, else the composer.
       if (focusedIn(element) !== undefined) handFocusOn(view.current ?? element, element);
       element.remove();
     };
@@ -541,7 +471,6 @@ function PlacedApproval({
   );
 }
 
-/** Keeps each request's in-flight answer and expanded details while another approval is shown. */
 function ApprovalQueue({
   threadId,
   requests,
@@ -555,19 +484,16 @@ function ApprovalQueue({
   const found = requests.findIndex((request) => request.id === selected.id);
   const index = found < 0 ? Math.min(selected.index, requests.length - 1) : found;
   const current = requests[index];
-  // Resolving an earlier request must not change which command the user is reviewing.
   if (current && (current.id !== selected.id || index !== selected.index)) {
     setSelected({ id: current.id, index });
   }
   const step = (next: number) => setSelected({ id: requests[next]?.id, index: next });
-  // A Needs you jump to one of these shows it, whichever was being reviewed.
   const revealed = useRequestRevealStore((s) =>
     s.request?.threadId === threadId ? s.request.requestId : undefined,
   );
   const revealAt = requests.findIndex((request) => request.id === revealed);
   if (revealAt >= 0 && revealAt !== index)
     setSelected({ id: requests[revealAt]?.id, index: revealAt });
-  // Shown, it is taken, so stepping on to another approval stays where it is put.
   useEffect(() => {
     if (revealAt >= 0 && revealAt === index) useRequestRevealStore.getState().clear();
   }, [revealAt, index]);
@@ -623,15 +549,12 @@ function CardShell({
   ref,
 }: {
   testId: string;
-  /** What a Needs you jump finds the card by. */
   requestId: string;
   icon: ReactNode;
   title: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
-  /** Whether the answer rule's keys work in it: a number picks, ⌘⏎ sends (`answerKey`). */
   answerKeys?: boolean;
-  /** The card's own element, for the keys to tell where focus is. */
   ref?: Ref<HTMLElement> | undefined;
 }) {
   const onKeyDown = answerKeys
@@ -680,16 +603,13 @@ function CardShell({
       data-surface="card"
       data-compact={compact}
       aria-label={typeof title === "string" ? title : undefined}
-      // Where focus lands when the card before it is answered (`handFocusOn`); not a Tab stop.
       tabIndex={compact ? undefined : -1}
       onKeyDown={onKeyDown}
       className={cn(
         "border border-status-needs-mark/70 bg-card text-reading outline-none focus-visible:focus-ring",
         compact
           ? "rounded-(--radius-md) p-2"
-          : // Above the composer, the card keeps to a share of the pane: its body scrolls and its
-            // buttons stay in view, however tall the request or short the window.
-            "flex max-h-[calc(var(--pane-height,100vh)*0.5)] flex-col rounded-(--radius-lg) p-3 shadow-(--shadow-raised)",
+          : "flex max-h-[calc(var(--pane-height,100vh)*0.5)] flex-col rounded-(--radius-lg) p-3 shadow-(--shadow-raised)",
       )}
     >
       <h3
@@ -705,7 +625,6 @@ function CardShell({
       {compact ? (
         children
       ) : (
-        // The inset keeps focus rings inside the scroll box from being cut off.
         <div data-testid="request-card-body" className="-m-1 min-h-0 overflow-y-auto p-1">
           {children}
         </div>
@@ -715,7 +634,6 @@ function CardShell({
           className={cn(
             "flex shrink-0 flex-wrap items-center gap-2",
             compact ? "mt-2" : "mt-3",
-            // A phone stacks the verbs, each a full-width 44 px target, without their key caps.
             "phone:flex-col phone:items-stretch phone:[&_button]:h-11 phone:[&_button]:w-full phone:[&_kbd]:hidden",
           )}
         >
@@ -726,8 +644,6 @@ function CardShell({
   );
   if (compact) return card;
   return (
-    // Inset: under its tool's row the card sits in the message's content, which clips a ring
-    // drawn outside it.
     <AttentionPulse active inset trigger={testId} className="rounded-(--radius-lg)">
       {card}
     </AttentionPulse>
@@ -739,7 +655,6 @@ function DetailFields({
   mono = false,
 }: {
   fields: readonly ApprovalDetailField[];
-  /** Values an agent wrote to be read exactly: an address, a point, typed text. */
   mono?: boolean;
 }) {
   return (
@@ -757,11 +672,6 @@ function DetailFields({
 const DETAIL_TEXT =
   "overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 text-meta break-words whitespace-pre-wrap";
 
-/**
- * An app tool's input, folded away under its description, except an issue's, which is open: the
- * user is approving that exact text for a shared repo. All of it is plain text, never markdown.
- */
-/** `open` shows the details from the start, for an approval that must be read before it is answered. */
 function ApprovalDetailsFold({
   details,
   open = false,
@@ -819,10 +729,6 @@ function ApprovalDetailsFold({
   );
 }
 
-/**
- * A change by chat's rows: each setting as it is now and as it would be, or for something new only
- * what it will be. Every row is shown, since approving applies exactly these.
- */
 function DiffTable({ rows, fresh = false }: { rows: readonly SettingsDiffRow[]; fresh?: boolean }) {
   return (
     <table className="w-full border-collapse text-meta">
@@ -876,7 +782,6 @@ function DiffTable({ rows, fresh = false }: { rows: readonly SettingsDiffRow[]; 
   );
 }
 
-/** The agent's reason and the server's notes on a change by chat, as plain text. */
 function ProposalWords({
   summary,
   reason,
@@ -914,11 +819,6 @@ function ProposalWords({
   );
 }
 
-/**
- * A `settings_propose` card's change set: each setting as it is now and as it would be, every row
- * shown, since Apply changes exactly these. The reason and notes are the agent's and the server's,
- * as plain text.
- */
 function SettingsDiff({
   card,
   summary,
@@ -937,11 +837,6 @@ function SettingsDiff({
 
 const PROJECT_CHANGE = { added: "Adds", removed: "Removes", kept: "Keeps" } as const;
 
-/**
- * A `workspace_create` or `workspace_update` card: the workspace's projects by path, each marked
- * with what happens to it, the home and any Gram doesn't know yet, then its settings. A new
- * workspace lists what it will have; a change shows before → after.
- */
 function WorkspaceDiff({
   card,
   summary,
@@ -995,7 +890,6 @@ function WorkspaceDiff({
   );
 }
 
-/** One labelled line of an MCP server card: the label muted, the value as written. */
 function McpRow({
   label,
   children,
@@ -1013,10 +907,6 @@ function McpRow({
   );
 }
 
-/**
- * One value as it would be written, in a chip of its own: whitespace kept exactly (`pre-wrap`), and
- * the chip's edge shows where it starts and ends, so `a  b`, ` a` and `a ` never read alike.
- */
 function McpValue({
   children,
   testId,
@@ -1045,11 +935,6 @@ const MCP_TRANSPORT = {
   sse: "SSE",
 } as const;
 
-/**
- * A `mcp_server_propose` card: everything that would be written, as written. A remote server's URL
- * and host; a local one's command line and env, under a plain line saying it runs a program here.
- * Then the scope, and each agent with where it is written and any server of the name it replaces.
- */
 function McpServerDiff({
   card,
   summary,
@@ -1096,7 +981,6 @@ function McpServerDiff({
           )}
           {card.command !== undefined && (
             <McpRow label="Command" testId="mcp-command">
-              {/* The program, then each argument, one chip each: spaces kept, edges seen. */}
               <span className="flex flex-wrap gap-1">
                 {[card.command, ...(card.args ?? [])].map((word, i) => (
                   <McpValue key={i} testId="mcp-arg" strong={i === 0}>
@@ -1150,11 +1034,9 @@ function McpServerDiff({
  */
 export function ApprovalInput({ request }: { request: ApprovalRequest }) {
   const extras = approvalExtras(request);
-  // More to the input than the line it leads with, if only a description: Details has all of it.
   const more =
     Object.keys(request.input).length > 1 &&
     approvalSubject(request) !== revealHidden(JSON.stringify(request.input));
-  // Characters that hide or reorder text show as markers, and the card says so before the input.
   const hides = approvalHidesText(request);
   return (
     <>
@@ -1176,8 +1058,6 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
           {HIDDEN_TEXT_WARNING}
         </p>
       )}
-      {/* What it is for, in the agent's words, before the input: the input stays in the open under
-          it, since the words are the agent's and the input is what an Allow covers. */}
       {request.description && (
         <p data-testid="approval-description" className="mb-2">
           {revealHidden(request.description)}
@@ -1187,8 +1067,6 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
         data-testid="approval-subject"
         className="overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap"
       >
-        {/* A shell command in colour, its embedded scripts in theirs; the text is exactly the input.
-            One that hides text reads as plain text with its markers, never highlighted over them. */}
         {typeof request.input["command"] === "string" && !hides ? (
           <HighlightedCommand code={request.input["command"]} />
         ) : (
@@ -1213,10 +1091,6 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
   );
 }
 
-/**
- * An ask to act in the person's browser or on their computer: what it acts on as labelled lines,
- * what the prompt said, and the whole call under Details.
- */
 function BrowserAskBody({ request, ask }: { request: ApprovalRequest; ask: BrowserAsk }) {
   const compact = useContext(CompactContext);
   return (
@@ -1234,7 +1108,6 @@ function BrowserAskBody({ request, ask }: { request: ApprovalRequest; ask: Brows
           <DetailFields fields={ask.fields} mono />
         </div>
       )}
-      {/* Why it asks, before the fold: the reason is read, the raw call rarely. */}
       {request.decisionReason && (
         <p className="mt-2 text-meta text-muted-foreground">{request.decisionReason}</p>
       )}
@@ -1262,32 +1135,20 @@ export function ApprovalCard({
   const { respond, pending } = useRespond(threadId, request);
   const compact = useContext(CompactContext);
   const summary = appToolSummary(request);
-  // The limit threshold's ask: Deny pauses new workers until the reset, Allow keeps going.
   const pause = limitPauseAsk(request);
-  // A settings change by chat: the diff is the whole card, and Apply changes applies it.
   const settings = pause === undefined ? settingsProposal(request) : undefined;
-  // A workspace made or changed by chat: the same, with its projects above its settings.
   const workspace = pause === undefined ? workspaceProposal(request) : undefined;
-  // An MCP server proposed by chat: the server whole, and where it is written.
   const mcpServer = pause === undefined ? mcpServerProposal(request) : undefined;
   const plainTool =
     pause === undefined &&
     settings === undefined &&
     workspace === undefined &&
     mcpServer === undefined;
-  // Outward app tools restrict scopes to `["once"]`; absent means every scope is allowed. A browse
-  // card's "always" is the host's place in Settings → Agent may browse, not a permission rule.
-  // "Always allow this rule…" never saves on its first press: it shows exactly what it would keep, and where,
-  // and saves only from there. A card with nothing to show offers no "always" at all.
-  // An act in the person's own browser or on their computer reads in words, not as a tool call.
   const browser = plainTool ? browserAsk(request) : undefined;
   const rules = alwaysRules(request);
   const canAlways = canAlwaysAllow(request);
-  // Opened from the Inbox's "Always allow this rule…", the card starts on what it would keep.
   const preview = useContext(AlwaysPreviewContext);
   const [confirming, setConfirming] = useState(preview && canAlways);
-  // The receipt says what was chosen, in its scope, where the card was. A limit pause, a settings
-  // change and a workspace say their own outcome, so only a tool's approval has one.
   const plain = plainTool;
   const allow = (scope: "once" | "always") =>
     void respond(
@@ -1301,9 +1162,6 @@ export function ApprovalCard({
     );
   const always = () => (confirming ? allow("always") : setConfirming(true));
 
-  // 1, 2 and 3 (unless rebound) answer the card the keys are on while focus is on nothing, or in
-  // this card, or in its thread view on nothing that types, activates or sits over it: never a key
-  // pressed in the Inbox beside it, a menu, another pane or the thread beside the chat.
   const cardRef = useRef<HTMLElement>(null);
   const keysReach = () => {
     const card = cardRef.current;
@@ -1311,16 +1169,12 @@ export function ApprovalCard({
     if (focus === null || focus === document.body) return true;
     if (card === null) return false;
     const view = card.closest(KEY_AREA);
-    // In the card, or on the pager in its thread view (or strip) that just showed it.
     const paging = focus.closest(APPROVAL_NAV) !== null && focus.closest(KEY_AREA) === view;
     if (card.contains(focus) || paging) return !types(focus);
     return view !== null && plainKeysReach(focus, view);
   };
   const mayAnswer = () => keysReach() && (canAnswer?.() ?? true);
-  // Text that hides or reorders characters is read, not answered by a key: 1 and 2 stay off and
-  // the buttons are pressed by hand. 3 still denies.
   const hides = approvalHidesText(request);
-  // What would run isn't known exactly: the card offers Deny alone.
   const withheld = request.allowWithheld !== undefined;
 
   useShortcut(
@@ -1342,8 +1196,6 @@ export function ApprovalCard({
       label: alwaysAllowOpenLabel(1),
       group: "Thread",
       when: () => canAlways && mayAnswer(),
-      // Once per press, for both steps: a held 2 opens the preview and nothing more, so saving
-      // takes a second, separate press, and a held key never reaches the next card in the queue.
       once: true,
       run: always,
     },
@@ -1478,7 +1330,6 @@ export function ApprovalCard({
           <p data-testid="approval-summary" className={cn("break-words", compact && "text-meta")}>
             {summary}
           </p>
-          {/* The inbox answers at a glance; the whole input is a click away in the thread. */}
           {(!compact || mustReadDetails(request)) && (
             <ApprovalDetailsFold
               details={approvalDetails(request)}
@@ -1500,11 +1351,6 @@ export function ApprovalCard({
   );
 }
 
-/**
- * What "Always allow this rule…" would keep, before it keeps it, as three labelled lines a rule:
- * Rule (what it does, in the agent's own spelling), Applies to (how far it reaches) and Saved in
- * (where it is written). Nothing is saved until its second press, "Always allow this rule".
- */
 function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
   const compact = useContext(CompactContext);
   const save = alwaysAllowLabel(rules.length);
@@ -1576,7 +1422,6 @@ export function QuestionCard({
       ),
     });
 
-  // One question at a time: four of them with four options each pushed the transcript off screen.
   const [index, setIndex] = useState(0);
   const count = request.questions.length;
   const page = Math.min(index, count - 1);
@@ -1703,8 +1548,6 @@ export function ChoiceList({
   const optionId = (index: number) => `${name}-${index}`;
   const fieldId = `${name}-other`;
   const pick = (label: string) => onChange(toggleOption(value, label, multiSelect));
-  // Focus sits in the field while Other is the chosen radio, so the arrows that would leave the
-  // radio leave the field instead.
   const stepOut = (event: KeyboardEvent<HTMLInputElement>) => {
     if (multiSelect || options.length === 0) return;
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -1716,7 +1559,6 @@ export function ChoiceList({
   return (
     <>
       {options.map((option, index) => (
-        // The key hint sits beside the label, not in it: the label names the choice alone.
         <div
           key={option.label}
           className="flex items-start gap-2 rounded-(--radius-sm) px-1 py-0.5 hover:bg-muted/50"
@@ -1845,7 +1687,6 @@ export function PlanCard({ threadId, request }: { threadId: ThreadId; request: P
       <div
         className={cn(
           "rounded-(--radius-sm) bg-muted/30 px-3 py-2",
-          // In the sheet the plan reads whole; above the composer it keeps to a box.
           !inSheet && "max-h-80 overflow-auto",
         )}
       >

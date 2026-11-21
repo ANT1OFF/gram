@@ -185,9 +185,6 @@ export type AgentRuntimes = typeof AgentRuntimes.Type;
 export const Sha256Hex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/));
 export type Sha256Hex = typeof Sha256Hex.Type;
 
-// ---------------------------------------------------------------------------------------------
-// The managed store's install state
-
 /** A runtime in the managed store. */
 export const ManagedInstall = Schema.Struct({
   version: RuntimeVersion,
@@ -200,9 +197,7 @@ export const ManagedInstall = Schema.Struct({
 export type ManagedInstall = typeof ManagedInstall.Type;
 
 const Settled = {
-  /** The runtime new sessions start from. */
   active: Schema.optionalKey(ManagedInstall),
-  /** The last healthy one before it, which a rollback returns to. */
   previous: Schema.optionalKey(ManagedInstall),
 };
 
@@ -217,23 +212,19 @@ export const RuntimeInstallState = Schema.Union([
     ...Settled,
   }),
   Schema.Struct({ state: Schema.Literal("verifying"), version: RuntimeVersion, ...Settled }),
-  /** Unpacked and checked; now `--version` and a handshake run against an empty home. */
   Schema.Struct({ state: Schema.Literal("testing"), version: RuntimeVersion, ...Settled }),
-  /** Verified and recorded; it becomes active once the agent has no live sessions. */
   Schema.Struct({
     state: Schema.Literal("ready"),
     version: RuntimeVersion,
     activeSessions: Schema.Int,
     ...Settled,
   }),
-  /** The install stopped; `active` is still what runs. */
   Schema.Struct({
     state: Schema.Literal("failed"),
     version: RuntimeVersion,
     message: Schema.String,
     ...Settled,
   }),
-  /** `from` failed to start before any turn, so `active` was put back. */
   Schema.Struct({
     state: Schema.Literal("rolledBack"),
     from: RuntimeVersion,
@@ -245,19 +236,12 @@ export type RuntimeInstallState = typeof RuntimeInstallState.Type;
 
 /** Why the managed store wouldn't install or switch to a version. */
 export const RuntimeRefusal = Schema.Literals([
-  /** This build doesn't approve it for this agent and platform. */
   "not-approved",
-  /** Its 24 hours aren't up. */
   "not-eligible",
-  /** Not qualified for this Gram version. */
   "not-qualified",
-  /** The artifact failed verification. */
   "unverified",
-  /** The managed store doesn't serve this agent or platform. */
   "unsupported",
-  /** Another install of the agent is under way. */
   "busy",
-  /** A rollback with no previous healthy runtime to go back to. */
   "nothing-to-roll-back",
 ]);
 export type RuntimeRefusal = typeof RuntimeRefusal.Type;
@@ -277,9 +261,6 @@ export type RuntimeInstallPayload = typeof RuntimeInstallPayload.Type;
 /** Which runtime an agent's new sessions start from: Gram's store, or the user's own. */
 export const RuntimeSourceChoice = Schema.Literals(["managed", "path"]);
 export type RuntimeSourceChoice = typeof RuntimeSourceChoice.Type;
-
-// ---------------------------------------------------------------------------------------------
-// Updating the user's own CLI
 
 /**
  * Why an update of the user's own CLI failed: `sign-in` (the registry refused npm's credential),
@@ -301,9 +282,7 @@ export const CliUpdateProblem = Schema.Literals([
 export type CliUpdateProblem = typeof CliUpdateProblem.Type;
 
 const UpdateRun = {
-  /** The command as the user confirmed it. */
   command: Schema.String,
-  /** The last few kilobytes of what it printed, stdout and stderr together, secrets scrubbed. */
   output: Schema.String,
 };
 
@@ -321,7 +300,6 @@ export const CliUpdateState = Schema.Union([
     /** The agent's threads with a live session, which keep the version they started with. */
     runningThreads: Schema.Int,
   }),
-  /** The command exited 0 and the CLI was probed again. */
   Schema.Struct({
     state: Schema.Literal("succeeded"),
     ...UpdateRun,

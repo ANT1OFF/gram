@@ -1,15 +1,3 @@
-/**
- * Wakes a plain thread sets itself with `schedule_wake`. A workspace's threads keep theirs in its
- * outbox (`orchestration/service.ts`); every other thread's go through here, kept in `thread_wakes`
- * so a restart arms them again and one that fell due while the app was down fires at start. A due
- * wake reaches its thread as a server notice (`ThreadRuntimes.sendNotice`), never as the user's
- * words, so the turn it starts has no more authority than the one that set it. A wake on another
- * PR's events also fires on the first of them, which the publisher's sweeps watch for.
- *
- * The user's snoozes (`thread.snooze`) are timed here too, on the same alarms: kept on the thread
- * (`snoozedUntil`), so a restart arms them again and one due while the app was down comes back at
- * start. A due snooze, or a snoozed thread that asks something or fails first, comes back unread.
- */
 import { randomUUID } from "node:crypto";
 import {
   AppToolError,
@@ -59,7 +47,6 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { DAY_MS } from "../zone-time.ts";
 import { conditionWakeOf, WakeConditions } from "./conditions.ts";
 
-/** How soon a due wake is tried again when its thread can't take it yet, or is parked. */
 const THREAD_WAKE_RETRY = Duration.minutes(1);
 
 export interface ThreadWakesShape {
@@ -97,17 +84,14 @@ export interface ThreadWakesShape {
   ): Effect.Effect<Thread, ThreadNotFound | InvalidState>;
 }
 
-/** The statuses that bring a snoozed thread back before its time: it asks something, or failed. */
 const SNOOZE_BREAKERS: ReadonlySet<ThreadStatus> = new Set([
   "needsApproval",
   "needsInput",
   "error",
 ]);
 
-/** A snooze's alarm, beside the wakes' own in one map; a wake's id is a UUID, so never this. */
 const snoozeKey = (threadId: ThreadId) => `snooze:${threadId}`;
 
-/** `thread` with no snooze. */
 const unsnoozed = (thread: Thread): Thread => {
   const { snoozedUntil, ...rest } = thread;
   void snoozedUntil;
@@ -176,16 +160,11 @@ export const ThreadWakesLive = Layer.effect(
     const hub = yield* EventHub;
     const publisher = yield* GitStatePublisher;
     const conditions = yield* WakeConditions;
-    // A sleep here; with an outside scheduler, the wait is registered there too.
     const timers = yield* Timers;
-    /** Per wake id, the fiber that fires it. */
     const alarms = yield* FiberMap.make<string>();
-    /** Each armed wake's thread, so a thread's removal can stop its alarms. */
     const armed = new Map<string, ThreadId>();
-    /** A wake's delivery and its cancellation, one at a time, as orchestration's `wakeLock`. */
     const lock = yield* Semaphore.make(1);
 
-    /** The PRs the stored wakes wait on, handed to the publisher's sweeps. */
     const syncWatches = store.listThreadWakes.pipe(
       Effect.flatMap((wakes) => publisher.watchPrs("threadWakes", prWakeWatches(wakes))),
     );
@@ -195,7 +174,6 @@ export const ThreadWakesLive = Layer.effect(
     const findWake = (id: string) =>
       store.listThreadWakes.pipe(Effect.map((wakes) => wakes.find((each) => each.id === id)));
 
-    /** Fires `wake` at its time, or `after` from now to try one due again, `fired` if its PR's event did. */
     const arm = (
       wake: ThreadWake,
       after?: Duration.Duration,
@@ -216,11 +194,6 @@ export const ThreadWakesLive = Layer.effect(
         );
       });
 
-    /**
-     * Whether a due wake waits: its thread is parked, or is in a workspace that is paused. A
-     * workspace thread's wake may have been set here while workspaces could still be turned off,
-     * and a pause (the one that boot brings such a user, say) must stop it as it stops the outbox's.
-     */
     const held = (thread: Thread) =>
       Effect.gen(function* () {
         if (thread.parked) return true;
@@ -231,18 +204,11 @@ export const ThreadWakesLive = Layer.effect(
         return state?.paused !== undefined;
       });
 
-    /**
-     * A wake fell due, or its PR's event `fired`. A parked or paused thread's waits, tried again until
-     * the thread is back; a thread that is gone takes it with it. Otherwise it is sent as a notice
-     * and dropped.
-     */
     const fire = (id: string, firedNow?: PrWakeFired): Effect.Effect<void> =>
       lock.withPermits(1)(
         Effect.gen(function* () {
           const wake = yield* findWake(id);
           if (wake === undefined) return;
-          // The event kept on the wake is the first one; a later one a concurrent look armed with
-          // gives way to it.
           const fired = wake.fired ?? firedNow;
           const met = wake.conditionState?.fired !== undefined;
           const now = yield* Clock.currentTimeMillis;
@@ -265,9 +231,6 @@ export const ThreadWakesLive = Layer.effect(
                 Effect.catch((e) =>
                   Effect.logWarning("scheduled wake not delivered").pipe(
                     Effect.annotateLogs({ threadId: wake.threadId, error: e.message }),
-                    // As a worker's wake: an agent that won't start leaves the notice queued and a
-                    // thread that's gone takes nothing, while anything holding the thread (a close
-                    // or a worktree cleanup) leaves the wake to be tried again.
                     Effect.as(e._tag !== "InvalidState"),
                   ),
                 ),
@@ -280,7 +243,6 @@ export const ThreadWakesLive = Layer.effect(
         }),
       );
 
-    /** Brings the snoozed thread back at `until`, the snooze it holds then deciding. */
     const armSnooze = (threadId: ThreadId, until: number): Effect.Effect<void> =>
       Effect.gen(function* () {
         yield* FiberMap.run(
@@ -290,10 +252,6 @@ export const ThreadWakesLive = Layer.effect(
         );
       });
 
-    /**
-     * A snooze fell due, or with `early` its thread asked something or failed: it comes back, unread
-     * so the lists say so. One snoozed again meanwhile, to a later time, waits for that one.
-     */
     const endSnooze = (threadId: ThreadId, early: boolean): Effect.Effect<void> =>
       lock.withPermits(1)(
         Effect.gen(function* () {
@@ -338,16 +296,12 @@ export const ThreadWakesLive = Layer.effect(
         }),
       );
 
-    /** A watched PR's new badge: each wake waiting on it fires on the first of its events. */
     const onWatchedPr = (badge: PrStatus) =>
       Effect.gen(function* () {
         for (const wake of yield* store.listThreadWakes) {
           if (wake.onPr === undefined || !isBadgeOf(badge, wake.onPr)) continue;
-          // One that fired already waits for its thread with that event.
           if (wake.fired !== undefined) continue;
           const fired = prWakeEventOf(wake.seen, badge, wake.on ?? DEFAULT_PR_WAKE_EVENTS);
-          // What it saw is kept, so a restart measures the next event from it; not on an event,
-          // which a held thread must still be told once it is back.
           if (fired === undefined) {
             const seen = nextPrWatchSeen(wake.seen, badge);
             if (JSON.stringify(seen) !== JSON.stringify(wake.seen)) {
@@ -355,7 +309,6 @@ export const ThreadWakesLive = Layer.effect(
             }
             continue;
           }
-          // Kept before it is delivered: a parked thread's waits for it, restart or not.
           yield* store.updateThreadWakePr(wake.id, { fired });
           armed.set(wake.id, wake.threadId);
           yield* FiberMap.run(alarms, wake.id, fire(wake.id, fired));
@@ -371,7 +324,6 @@ export const ThreadWakesLive = Layer.effect(
     const start = Effect.gen(function* () {
       if (started) return;
       started = true;
-      // Each snooze kept across the restart, one already due coming back now.
       for (const thread of yield* store.listThreads) {
         if (thread.snoozedUntil !== undefined) yield* armSnooze(thread.id, thread.snoozedUntil);
       }
@@ -385,8 +337,6 @@ export const ThreadWakesLive = Layer.effect(
       yield* syncWatches;
     });
 
-    // The condition sources look at these wakes; one found met is kept, then fired as a due one is.
-    // Before `start`, only kept: its start fires it with the rest.
     yield* conditions.register({
       name: "thread wakes",
       pending: store.listThreadWakes.pipe(
@@ -403,7 +353,6 @@ export const ThreadWakesLive = Layer.effect(
         }),
     });
 
-    // A snoozed thread that asks something or fails comes back then, before its time.
     yield* hub
       .internalEvents(
         (event): event is Extract<typeof event, { type: "thread.status" }> =>
@@ -422,7 +371,6 @@ export const ThreadWakesLive = Layer.effect(
         Effect.forkScoped,
       );
 
-    // The store drops a closed or removed thread's wakes with it; their alarms go here.
     yield* hub.internalEvents(isThreadRemoved, "thread wakes").pipe(
       Stream.runForEach(({ threadId }) =>
         Effect.gen(function* () {
@@ -449,7 +397,6 @@ export const ThreadWakesLive = Layer.effect(
           id: randomUUID(),
           threadId,
           at: due.at,
-          // Redaction can lengthen it past what the row carries.
           note: redactText(input.note).slice(0, WAKE_NOTE_MAX),
           setAt: now,
           ...prWakeFields(input),
@@ -465,7 +412,6 @@ export const ThreadWakesLive = Layer.effect(
         if (wake.conditionState !== undefined) {
           yield* conditions.nudge(wake.conditionState.spec.kind);
         }
-        // Another watch of the PR may have seen it move since the tool looked it up.
         const badge =
           wake.onPr === undefined ? undefined : yield* publisher.watchedBadge(wake.onPr);
         if (badge !== undefined) yield* onWatchedPr(badge);
@@ -503,7 +449,6 @@ export const ThreadWakesLive = Layer.effect(
 export const threadWakeHandlers = Effect.gen(function* () {
   const wakes = yield* ThreadWakes;
   return {
-    // None of a thread the caller may not see (`embedding/readable-by.ts`).
     "threads.wakes": () =>
       wakes.list.pipe(
         Effect.flatMap(({ wakes: all }) =>
@@ -513,7 +458,6 @@ export const threadWakeHandlers = Effect.gen(function* () {
           ),
         ),
       ),
-    // A wake that fired or was cancelled while the user's click was in flight is simply gone.
     "thread.cancelWake": ({ threadId, id }) => wakes.cancel(threadId, id),
     "thread.snooze": ({ threadId, until }) => wakes.snooze(threadId, until ?? undefined),
   } satisfies Partial<Handlers>;

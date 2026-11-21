@@ -1,8 +1,3 @@
-// A shell's `window.gram`, composed from a base and the shell modules the app installs,
-// so a module's bridge member comes with its main half and can't drift from
-// it. A sandboxed preload can load nothing but `electron`: this file and every module's
-// `preload.ts` import only types, and take `ipcRenderer` as a parameter.
-
 import type { IpcRenderer, IpcRendererEvent } from "electron";
 
 /** The renderer side of the app's IPC, as a module's preload half uses it. */

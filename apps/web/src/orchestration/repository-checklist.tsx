@@ -19,8 +19,6 @@ export const checklistRows = (
   projects: readonly Project[],
   picked: readonly ProjectId[],
 ): RepositoryCandidate[] => {
-  // Registration updates the projects cache before repository discovery refreshes. Reconcile
-  // that newly known identity by root, so the stale folder stays one selected, removable row.
   const registered = new Map(projects.map((project) => [project.root, project]));
   const reconciled = candidates.map((candidate) => {
     const project = registered.get(candidate.root);
@@ -64,7 +62,6 @@ export function RepositoryChecklist({
   const home = useHome();
   const api = useApi();
   const queryClient = useQueryClient();
-  // Under `projects` so whatever refreshes the projects (an add, a clone, a workspace) does this too.
   const { data } = useQuery({
     queryKey: ["projects", "repositories"],
     queryFn: () => api.listRepositories(),

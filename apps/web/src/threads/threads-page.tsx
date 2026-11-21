@@ -37,15 +37,10 @@ import {
 } from "./threads-model";
 import { WorkspacesList } from "./workspaces-view";
 
-/**
- * Which list the page shows where an embedding app turned the workspaces' list on: kept while the
- * window lives, so coming back from a thread finds the list that led to it.
- */
 const useThreadsView = create<{ view: "workspaces" | "threads" }>()(() => ({
   view: "workspaces",
 }));
 
-/** Rows drawn at most: a search finds the rest. */
 const SHOWN = 300;
 
 /**
@@ -62,18 +57,14 @@ export function ThreadsPage() {
   const workspaces = useWorkspaces();
   const groups = useDerivedAsks((s) => s.needsYou.groups);
   const entry = newEntryOf(useTaskDraftStore((s) => s.entry));
-  // An app in front of Gram may give the page and its button words of its own.
   const title = useThreadsTitle();
   const newLabel = useEmbedShell((s) => s.threadsPage.newLabel);
   const kinds = useEmbedShell((s) => s.threadsPage.kinds);
   const elsewhere = useEmbedShell((s) => s.threadsPage.elsewhere);
   const places = useEmbedShell((s) => s.threadsPage.places);
-  // The same app may have the page open on its workspaces, with the threads one click away.
   const workspaceWords = useEmbedShell((s) => s.threadsPage.workspaces);
   const view = useThreadsView((s) => s.view);
   const onWorkspaces = workspaceWords !== undefined && view === "workspaces";
-  // With no workspace yet, the empty list below offers the two ways in (a new workspace, or a
-  // thread in none): the header doesn't offer them a second time.
   const firstOne = onWorkspaces && workspaces.length === 0;
   const listings = useMemo(() => {
     const workspaceNames = new Map(
@@ -98,7 +89,6 @@ export function ThreadsPage() {
       query,
     );
   }, [summaries, workspaces, groups, query, kinds, elsewhere, places]);
-  // Which of its workers each orchestrator counts finished, as its Workers panel says it.
   const workerSpaces = useMemo(
     () => [
       ...new Set(
@@ -121,8 +111,6 @@ export function ThreadsPage() {
     [ledgers, byId, statusDetail, minute],
   );
   const counts = useMemo(() => threadsFilterCounts(listings), [listings]);
-  // A filter whose last thread left it would show an empty list with nothing to say why: every
-  // thread again.
   const picked = counts[filter] === 0 ? "all" : filter;
   const kept = useMemo(
     () => listings.filter((listing) => inThreadsFilter(listing, picked)),
@@ -130,12 +118,9 @@ export function ThreadsPage() {
   );
   const shown = kept.slice(0, SHOWN);
 
-  // Where the title bar names the page (a phone's, or an embedding app's) that is the page's top
-  // heading: this one is the next level down, and on a phone it is not drawn a second time.
   const phone = usePhone();
   const barTitled = useEmbedPageTitle() !== undefined;
   const Heading = phone || barTitled ? "h2" : "h1";
-  // With no thread at all there is nothing to count or to search: the page says what goes here.
   const none = listings.length === 0 && query.trim() === "";
   const outside = useMemo(() => {
     const solo = listings.filter((listing) => listing.summary.thread.workspaceId === undefined);
@@ -188,14 +173,11 @@ export function ThreadsPage() {
           )}
           {!none && workspaceWords === undefined && (
             <span className="text-meta text-muted-foreground tabular-nums">
-              {/* Without the title beside it, the count says what it counts. */}
               {phone
                 ? `${listings.length} ${listings.length === 1 ? "thread" : "threads"}`
                 : listings.length}
             </span>
           )}
-          {/* A phone's row holds the two lists and one button: on the list of threads that is the
-              thread's, and making a workspace is on the workspaces' own list, a tap away. */}
           {workspaceWords !== undefined && (onWorkspaces || !phone) && !firstOne && (
             <Button
               size="sm"
@@ -214,7 +196,6 @@ export function ThreadsPage() {
                 (workspaceWords === undefined || (phone && !onWorkspaces)) && "ms-auto",
               )}
               data-testid="threads-new"
-              // Worded by the embedding app, it starts a chat; Gram's own opens the choice used last.
               onClick={() =>
                 void navigate(newEntryRoute(newLabel === undefined ? entry : "oneOff"))
               }
@@ -316,7 +297,6 @@ function ThreadRow({
 }: {
   listing: ThreadListing;
   groups: Parameters<typeof threadNeed>[0];
-  /** Its orchestrator counts it finished: at rest it says Done, not Stopped. */
   finished: boolean;
 }) {
   const openThread = useOpenThread();
@@ -340,8 +320,6 @@ function ThreadRow({
         onClick={() => openThread(thread.id)}
         className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-2.5 gap-y-0.5 rounded-(--radius-sm) px-2.5 py-2 text-start outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {/* The state's dot, as the sidebar and the Board mark a thread: the words under the
-            title say it, the dot lets a long list be read down its edge. */}
         <span
           aria-hidden
           data-testid="threads-row-dot"

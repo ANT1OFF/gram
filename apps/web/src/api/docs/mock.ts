@@ -84,7 +84,6 @@ export function createDocsMock(world: MockWorld) {
     },
   };
 
-  /** Publishes or updates a doc as `threadId`'s `publish_doc` would; answers the doc. */
   const simulatePublishDoc = (threadId: ThreadId, input: MockPublishDoc, at = Date.now()): Doc => {
     const { thread } = world.summary(threadId);
     const workspaceId = thread.workspaceId;

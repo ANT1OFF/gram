@@ -1,11 +1,3 @@
-// How often a checkout's PR is worth asking GitHub about. The sweep ticks at one cadence for the
-// whole app; this says how many of those ticks pass between one checkout's lookups, so what the user
-// is looking at, or what is about to change, is asked about on every tick, and a thread nobody has
-// touched since yesterday is asked about a few times an hour.
-//
-// Counted in sweeps rather than seconds on purpose: an unfocused or hidden app, a draining allowance
-// and a rate-limit backoff all stretch the sweep, and they stretch this with it.
-
 import type { PrStatus } from "@gram/contracts";
 import { offScreenWatchSweeps } from "../github/poll-backoff.ts";
 import type { ActivityLevel } from "./activity.ts";
@@ -45,7 +37,6 @@ export interface LookupCadenceInput {
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-/** A thread's row on screen and nothing expected: by how long it has been left alone. */
 const byIdle = (idleMs: number): number => {
   if (idleMs < 10 * MINUTE) return 1;
   if (idleMs < HOUR) return 2;
@@ -54,9 +45,7 @@ const byIdle = (idleMs: number): number => {
   return 40;
 };
 
-/** A closed PR can be reopened, so it is still asked about, though rarely. */
 const CLOSED_EVERY = 20;
-/** Whoever has a watch on is waiting to be told, however idle the thread looks. */
 const WATCHED_AT_MOST = 4;
 
 /**

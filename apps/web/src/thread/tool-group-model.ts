@@ -22,7 +22,6 @@ import {
 import { formatElapsed } from "./subagent-strip-model";
 import { toolLabel } from "./tool-labels";
 
-/** Tool calls that keep their own card: a subagent's card carries its whole transcript. */
 const UNGROUPED = new Set(["Task", "Agent"]);
 
 /** A change an orchestrator's memory tool made, which its run shows as one of its rows. */
@@ -37,7 +36,6 @@ const groupable = (part: MessagePart): part is RunPart =>
 /** A run's tool calls, without the memory changes between them. */
 export const runCalls = (run: readonly RunPart[]): AnyToolPart[] => run.filter(isToolPart);
 
-/** The shortest run worth folding; a lone tool call is already one line. */
 const MIN_RUN = 2;
 
 export interface ToolRuns {
@@ -47,13 +45,6 @@ export interface ToolRuns {
   absorbed: ReadonlySet<number>;
 }
 
-/**
- * A part that draws nothing. The accumulator persists a `step-start` around every assistant API
- * response, so real tool calls are rarely adjacent in `parts`; a run reads through the markers.
- * Finished reasoning draws nothing either. Reasoning still streaming is a row: an agent may close a
- * reasoning part only when the turn ends, so one can sit between two tool calls. A tool's image
- * sits right after the call in `parts` and is drawn by that call's card, not where it lies.
- */
 const invisible = (part: MessagePart) =>
   part.type === "step-start" ||
   part.type === "data-tool-image" ||
@@ -148,7 +139,6 @@ const KIND_OF: Record<string, StepKind> = {
   WebSearch: "web",
 };
 
-/** Gram's tools that change an orchestrator's memory, each drawn with the change it made. */
 const MEMORY_CHANGE = /^mcp__gram__memory_(write|append|edit|delete)$/;
 
 const kindOf = (part: AnyToolPart): StepKind => {
@@ -156,7 +146,6 @@ const kindOf = (part: AnyToolPart): StepKind => {
   return KIND_OF[name] ?? (MEMORY_CHANGE.test(name) ? "memory" : "other");
 };
 
-// Edits first: what a run changed matters more than what it looked at.
 const KIND_ORDER: readonly StepKind[] = [
   "edit",
   "memory",
@@ -171,7 +160,6 @@ const PHRASE: Record<StepKind, (count: number) => string> = {
   command: (n) => (n === 1 ? "ran 1 command" : `ran ${n} commands`),
   read: (n) => (n === 1 ? "read 1 file" : `read ${n} files`),
   edit: (n) => (n === 1 ? "made 1 edit" : `made ${n} edits`),
-  // The run's rows name each file; the summary only says memory changed.
   memory: () => "updated memory",
   search: (n) => (n === 1 ? "searched once" : `searched ${n} times`),
   web: (n) => (n === 1 ? "made 1 web lookup" : `made ${n} web lookups`),
@@ -181,10 +169,8 @@ const PHRASE: Record<StepKind, (count: number) => string> = {
 /** The files a run's calls changed, in order; a call that doesn't say which adds none. */
 export const runEdits = (run: readonly RunPart[]): FileEdit[] => runCalls(run).flatMap(partEdits);
 
-/** Files named before a run's summary counts them instead. */
 const NAMED_FILES = 2;
 
-/** "Edited a.ts, b.ts" or "edited 3 files": one verb when every file had the same change. */
 function editPhrase(edits: readonly FileEdit[]): string {
   const names = [...new Set(edits.map((edit) => basename(edit.movedTo ?? edit.path)))];
   const kinds = new Set(edits.map((edit) => edit.kind));
@@ -218,7 +204,6 @@ export function runSummary(run: readonly RunPart[]): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** An agent's label with nothing in it that could hide or reorder what the user reads. */
 const visibleLabel = (text: string | undefined) => {
   if (text === undefined) return undefined;
   const clean = visibleText(text)
@@ -241,7 +226,6 @@ export function toolDetail(part: AnyToolPart): string | undefined {
   const path = field("file_path") ?? field("notebook_path") ?? field("filePath") ?? field("path");
   const queries = (input as { queries?: unknown } | undefined)?.queries;
   return (
-    // What an agent said its browser input is for ("Opens the Filters menu").
     (toolNameOf(part).includes("browser_") ? visibleLabel(field("actionSummary")) : undefined) ??
     field("description") ??
     field("command") ??
@@ -261,8 +245,6 @@ export function stepLabel(part: AnyToolPart): string {
   const name = toolLabel(toolNameOf(part), "running", part.title).label;
   const detail = toolDetail(part);
   if (detail === undefined) return name;
-  // A Bash description, or what an agent said its browser input is for, already reads as a
-  // sentence; everything else needs the tool's name.
   return toolInputField(part.input, "description") === detail ||
     toolInputField(part.input, "actionSummary") === detail
     ? detail
@@ -358,21 +340,14 @@ const phaseOf = (part: AnyToolPart) =>
     part.state === "output-available" && part.preliminary === true,
   );
 
-/** A tool call the fold can take: one that's over and neither failed nor needs the user. */
 const SETTLED: ReadonlySet<ToolPhase> = new Set(["done", "cancelled", "denied"]);
 
-/**
- * Narration and how the turn got there, the memory changes its tools made among it. Anything else,
- * an error card say, stays out of the fold, and
- * so do words still arriving, whatever the thread's status says of the turn.
- */
 const foldable = (part: MessagePart) =>
   ((part.type === "text" || part.type === "reasoning") && part.state !== "streaming") ||
   part.type === "data-chapter" ||
   part.type === "data-memory-write" ||
   (isToolPart(part) && SETTLED.has(phaseOf(part)));
 
-/** Parts that draw nothing wherever they are, so a reply of only these is empty. */
 const SILENT: ReadonlySet<MessagePart["type"]> = new Set([
   "step-start",
   "data-tool-image",
@@ -381,7 +356,6 @@ const SILENT: ReadonlySet<MessagePart["type"]> = new Set([
 
 const said = (part: MessagePart) => part.type === "text" && part.text.trim() !== "";
 
-/** Where the reply's last words start: the last text, and any text right before it. */
 function lastWordsStart(parts: readonly MessagePart[]): number {
   let start = parts.findLastIndex(said);
   for (let i = start - 1; i >= 0; i--) {
@@ -392,7 +366,6 @@ function lastWordsStart(parts: readonly MessagePart[]): number {
   return start;
 }
 
-/** The lines a set of hidden parts takes up: a run of tool calls is one, and silent parts none. */
 function linesHidden(reply: GramUIMessage, hidden: ReadonlySet<number>): number {
   const drawn = (i: number) => !invisible(reply.parts[i]!);
   const shown = new Set([...reply.parts.keys()].filter((i) => !hidden.has(i) && drawn(i)));
@@ -400,7 +373,6 @@ function linesHidden(reply: GramUIMessage, hidden: ReadonlySet<number>): number 
   return [...hidden].filter((i) => drawn(i) && !absorbed.has(i)).length;
 }
 
-/** A fold replaces its lines with one row of its own, so it has to take two to save any. */
 const MIN_FOLD = 2;
 
 const stateOf = (replies: readonly GramUIMessage[]): TurnFoldState => {
@@ -432,7 +404,6 @@ function foldTurn(
   const lastSaid = replies.findLastIndex((reply) => reply.parts.some(said));
   const wordsStart = lastSaid === -1 ? -1 : lastWordsStart(replies[lastSaid]!.parts);
   const wordsEnd = lastSaid === -1 ? -1 : replies[lastSaid]!.parts.findLastIndex(said);
-  /** Whether a part stays open: the last words, and while the turn runs whatever follows them. */
   const current = (reply: number, part: number) => {
     if (running)
       return lastSaid === -1 || reply > lastSaid || (reply === lastSaid && part >= wordsStart);
@@ -512,7 +483,6 @@ export function turnFolds(
       continue;
     }
     if (message.role !== "assistant") continue;
-    // A reply after its turn ended, or that the agent started on its own, opens a turn of its own.
     const ended = current !== undefined && turns.get(current)?.replies.at(-1)?.metadata?.turnEnd;
     if (ended || message.metadata?.initiator === "agent") current = message.id;
     const id = message.metadata?.turnId ?? current;
@@ -573,7 +543,6 @@ const FOLD_VERB: Record<TurnFoldState, readonly [word: string, joined: string]> 
   stopped: ["Stopped", "Stopped after"],
 };
 
-/** Below this a duration says nothing worth reading ("0s"), so the row leaves it out. */
 const SHORTEST_SHOWN_MS = 1000;
 
 /**

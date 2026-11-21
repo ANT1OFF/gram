@@ -1,20 +1,3 @@
-/**
- * Condition wakes: a `schedule_wake` that waits for something to happen beside its time, such as a
- * branch getting a new head or another thread finishing. The condition is a member of the closed
- * `WakeCondition` union (`@gram/contracts`); each kind has a source here that takes its baseline
- * when the wake is set and looks whether it is met, on a poll and whenever its event source says
- * something may have changed.
- *
- * The wakes themselves stay where every wake lives: a plain thread's in `thread_wakes`
- * (`ThreadWakes`), a workspace thread's in its outbox. Each of those registers as a host: it lists
- * its pending condition wakes, keeps what a look saw, and, once one is met, keeps that and delivers
- * it through its own path, the same one a due time or a PR's event takes. So a met condition
- * survives a restart and waits out a parked thread or a paused workspace like any wake, and the
- * wake's time stays its fallback.
- *
- * Adding a kind: a member of `WakeCondition` with its words (`wakeConditionWhen`), and a
- * `WakeConditionSource` for it in `WakeConditionSourcesLive`. Nothing else changes.
- */
 import {
   AppToolError,
   WAKE_CONDITION_VERSION,
@@ -164,21 +147,10 @@ export const WakeConditionsLive = Layer.effect(
     const sources = yield* WakeConditionSources;
     const byKind = new Map<string, AnyWakeConditionSource>(sources.map((s) => [s.kind, s]));
     const hosts: Array<WakeConditionHost> = [];
-    /** Per kind, the nudges its loop waits on beside its poll; one pending is enough. */
     const nudges = new Map<string, Queue.Queue<void>>();
-    /** Per kind, one sweep at a time. */
     const sweeping = makeKeyedLock<string>();
-    /**
-     * Per wake id, when a look first found it met, and the kind whose sweep looks at it; a look that
-     * doesn't find it met drops it.
-     */
     const metSince = new Map<string, { readonly kind: string; readonly at: number }>();
-    /** Per wake id, the look its debounce asks for. */
     const debounces = yield* FiberMap.make<string>();
-    /**
-     * The kinds whose last sweep found no pending wake: their loops wait for a nudge, which a host
-     * gives as it stores a wake of the kind, rather than polling for nothing.
-     */
     const idle = new Set<string>();
 
     for (const source of sources) {
@@ -193,7 +165,6 @@ export const WakeConditionsLive = Layer.effect(
 
     const lookAt = (source: AnyWakeConditionSource, host: WakeConditionHost, wake: ConditionWake) =>
       Effect.gen(function* () {
-        // Read for the thread that set it, as its notice goes to that thread.
         const look = yield* source.look(wake).pipe(forThread(wake.threadId));
         if (look === undefined) return;
         if (!look.met) {
@@ -236,7 +207,6 @@ export const WakeConditionsLive = Layer.effect(
           kind,
           Effect.gen(function* () {
             const live = new Set<string>();
-            // Idle unless a wake turns up below; a nudge while this runs still sweeps again.
             idle.add(kind);
             for (const host of hosts) {
               const pending = yield* host.pending;
@@ -247,8 +217,6 @@ export const WakeConditionsLive = Layer.effect(
                 yield* lookAt(source, host, wake);
               }
             }
-            // A wake cancelled, delivered or gone with its thread leaves nothing behind. Only this
-            // kind's: another kind's wakes aren't in `live`, and their debounces aren't this sweep's.
             for (const [id, met] of metSince) {
               if (met.kind !== kind || live.has(id)) continue;
               metSince.delete(id);
@@ -266,8 +234,6 @@ export const WakeConditionsLive = Layer.effect(
 
     for (const source of sources) {
       const queue = nudges.get(source.kind)!;
-      // A look at every poll, or sooner on a nudge, whichever comes first; with nothing pending,
-      // on the next nudge alone.
       yield* Effect.suspend(() =>
         idle.has(source.kind)
           ? Queue.take(queue)

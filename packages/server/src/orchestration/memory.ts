@@ -1,29 +1,3 @@
-/**
- * The orchestrator's file memory, and the only door to it.
- *
- * Invariant: every filesystem operation on a workspace's memory tree, a read, a write, a history
- * copy, a prune or the `CURRENT` pointer, takes its path from `resolveInTree` below. Nothing in
- * this module, and nothing outside it, builds a path into the tree by hand. The user edits this
- * tree in an editor and a dream's output is agent-written, so the resolver trusts none of it: the
- * tree may hold regular files and directories only, and a symlink anywhere between the workspace
- * folder and the target refuses the operation instead of being followed.
- *
- * ```
- * <root>/<workspaceId>/
- *   CURRENT               text naming the adopted version; a file, never a symlink
- *   versions/<NNNN>/      MEMORY.md, goals.md, repos/<name>.md, …
- *     .history/<file>/    the previous versions of one file, from live writes
- * ```
- *
- * `adopt` is how a dream's output gets in: it adds `versions/<NNNN+1>/` by writing file by file
- * through the resolver, never by renaming or linking a directory an agent produced, and rewrites
- * `CURRENT` last. `confinedTree` hands the same contract to `dream-files.ts`. Dream and adoption
- * request its directory-fd implementation; ordinary memory operations use the path resolver.
- *
- * Live writes change the adopted version in place, so `versions/<NNNN>/` is not a record of what
- * a dream started from: whoever needs that baseline later has to keep its own copy (`snapshot`
- * for the hashes, the dream's out-of-folder manifest for the text).
- */
 import { withAnchoredFiles } from "./anchored-files.ts";
 import { FsError, InvalidState, NotFound, type MemoryWrite } from "@gram/contracts";
 import * as Clock from "effect/Clock";
@@ -74,7 +48,6 @@ export const MEMORY_MAX_DEPTH = 3;
 export const MEMORY_HISTORY_KEEP = 20;
 /** Cap on each side of the diff a write reports; the file itself holds the full text. */
 export const MEMORY_DIFF_MAX_BYTES = 8 * 1024;
-/** A hand-edited file past this is refused rather than read into an agent's context. */
 const MEMORY_READ_MAX_BYTES = 256 * 1024;
 
 /** Adopted versions kept besides the current one; older ones are pruned at the next adoption. */
@@ -82,7 +55,6 @@ export const MEMORY_VERSIONS_KEEP = 5;
 
 const FIRST_VERSION = "0001";
 const HISTORY_DIR = ".history";
-/** When a version was adopted and from what; dotted, so no memory path can name it. */
 const ADOPTED_FILE = ".adopted";
 const VERSION = /^\d{4}$/;
 const SEGMENT_MAX_LENGTH = 100;
@@ -121,7 +93,6 @@ then add it here; a missing suggested note has no recorded content yet.
 - one note per other subject, such as a system, a trap or how the user likes something done
 `;
 
-/** One memory file, as `list` reports it. */
 const byPath = (a: { readonly path: string }, b: { readonly path: string }) =>
   a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 
@@ -297,29 +268,18 @@ export const memorySnapshotDigest = (snapshot: MemorySnapshot): string => {
 
 const refuse = (message: string) => new InvalidState({ message });
 
-/** Why a worker can't change a file: it is one the worker can't see. */
 const keptFromWorkers = (path: string) =>
   `kept_from_workers: ${path} is kept from workers, by its name or its text, so only the orchestrator can change it.`;
 
-/**
- * Why a worker can't read a file, named so it can pass it on: the reason names a line and a kind of
- * problem, never the text.
- */
 const keptFromWorkerReads = (path: string, reason: string) =>
   `kept_from_workers: Workers can't read ${path}: ${reason}. The orchestrator reads it in full, so ask it for what you need; the user can reword that line in the memory editor.`;
 
 const WORKER_WRITE_UNPLAIN =
   "kept_from_workers: Every worker reads what a worker writes, so it has to be plain prose under plain front matter: no credential, token, encoded blob or `private` marker. Leave that out, or ask your orchestrator.";
 
-/** Refuses a worker's change to a file it may not see; `text` is the file's raw text, if any. */
 const workerMayChange = (path: string, text: string | undefined) =>
   workerMayRead(path, text) ? Effect.void : Effect.fail(refuse(keptFromWorkers(path)));
 
-/**
- * Files whose words are the user's or the orchestrator's: the user's standing decisions, which a
- * boot digest carries as the user's word, and the questions put to the user. A worker reads them
- * and never changes them, so nothing a worker writes passes for either.
- */
 const AUTHORITY_FILES: ReadonlySet<string> = new Set([DECISIONS_FILE, "questions.md"]);
 
 const WORKER_WRITE_AUTHORITY = (path: string) =>
@@ -328,13 +288,8 @@ const WORKER_WRITE_AUTHORITY = (path: string) =>
 const WORKER_INDEX_LINES =
   "kept_from_workers: A worker only adds lines to MEMORY.md, each `- [[name]]: what it holds` on one line, and changes none already there.";
 
-/** One index line a worker may add: a note's name and one short line of what it holds. */
 const INDEX_LINE = /^- \[\[[a-z0-9-]+(?:\/[a-z0-9-]+)*\]\]: [^\n]{1,200}$/;
 
-/**
- * Whether a worker's MEMORY.md, `next`, keeps every line of `current` in order and adds only index
- * lines (and blank ones), so the index the orchestrator boots with gains entries and loses none.
- */
 const workerIndexChangeOk = (current: string | undefined, next: string): boolean => {
   const kept = (current ?? "").split("\n");
   let at = 0;
@@ -345,7 +300,6 @@ const workerIndexChangeOk = (current: string | undefined, next: string): boolean
     }
     if (line.trim() !== "" && !INDEX_LINE.test(line)) return false;
   }
-  // Every line of `current` is kept, trailing blank ones aside.
   return kept.slice(at).every((line) => line.trim() === "");
 };
 
@@ -365,7 +319,6 @@ export const labelWorkerLines = (current: string | undefined, next: string): str
     .join("\n");
 };
 
-/** Refuses a worker's change that would rewrite the user's, the orchestrator's or the index's words. */
 const workerMayWrite = (path: string, current: string | undefined, next: string | undefined) => {
   if (AUTHORITY_FILES.has(path)) return Effect.fail(refuse(WORKER_WRITE_AUTHORITY(path)));
   if (path === MEMORY_INDEX && (next === undefined || !workerIndexChangeOk(current, next)))
@@ -375,7 +328,6 @@ const workerMayWrite = (path: string, current: string | undefined, next: string 
 
 const codeOf = (error: unknown): unknown => (error as { code?: unknown } | undefined)?.code;
 
-/** Never the raw error: its message carries absolute paths. */
 const fsError = (rel: string, error: unknown) => {
   const code = codeOf(error);
   return new FsError({
@@ -387,7 +339,6 @@ const fsError = (rel: string, error: unknown) => {
 const attempt = <A>(rel: string, run: () => Promise<A>): Effect.Effect<A, FsError> =>
   Effect.tryPromise({ try: run, catch: (error) => fsError(rel, error) });
 
-/** `undefined` for a path that isn't there; every other failure is an error. */
 const attemptExisting = <A>(
   rel: string,
   run: () => Promise<A>,
@@ -401,8 +352,6 @@ const attemptExisting = <A>(
 const kb = (bytes: number): string => `${(bytes / 1024).toFixed(1)} KB`;
 
 const WORKSPACE_ID = /^[A-Za-z0-9_-]{1,64}$/;
-// Characters Windows gives a meaning to. `:` is the dangerous one: `goals.md:x.md` ends in `.md`
-// and names an alternate data stream of `goals.md` on NTFS.
 const FORBIDDEN_CHARS = /[\\:*?"<>|]/;
 const DEVICE_NAME = /^(?:con|prn|aux|nul|com\d|lpt\d)(?:\.|$)/i;
 
@@ -455,7 +404,6 @@ export const memoryPathProblem = (path: string): string | undefined => {
   const name = segments.at(-1)!;
   if (!name.endsWith(".md") || name === ".md")
     return "Memory files are Markdown: end the name in .md";
-  // On a case-insensitive disk `memory.md` is the index, and would get the larger per-file cap.
   if (path.toLowerCase() === MEMORY_INDEX.toLowerCase() && path !== MEMORY_INDEX) {
     return `The index is spelled ${MEMORY_INDEX}`;
   }
@@ -467,11 +415,9 @@ const validatePath = (path: string): Effect.Effect<string, InvalidState> => {
   return problem === undefined ? Effect.succeed(path) : Effect.fail(refuse(problem));
 };
 
-/** Text for the diff card: at most `MEMORY_DIFF_MAX_BYTES`, cut on a character boundary. */
 const capForDiff = (text: string): string => {
   const buffer = Buffer.from(text, "utf8");
   if (buffer.byteLength <= MEMORY_DIFF_MAX_BYTES) return text;
-  // A cut through a multi-byte character decodes to U+FFFD; drop it rather than show it.
   const head = buffer
     .subarray(0, MEMORY_DIFF_MAX_BYTES)
     .toString("utf8")
@@ -513,7 +459,6 @@ export const editPassage = (
     : current.replace(edit.old, () => edit.new);
 };
 
-// `/` can't appear in a segment and `%` is escaped first, so distinct paths never share a folder.
 const historyKey = (path: string): string => path.replaceAll("%", "%25").replaceAll("/", "%2F");
 
 const HISTORY_ENTRY = /^\d{15}\.md$/;
@@ -552,7 +497,6 @@ export const checkMemorySet = (
   for (const file of files) {
     const problem = memoryPathProblem(file.path);
     if (problem !== undefined) return no(`${JSON.stringify(file.path)}: ${problem}`);
-    // APFS and NTFS fold case, and APFS folds Unicode normalisation forms too.
     const key = file.path.normalize("NFC").toLowerCase();
     if (seen.has(key)) return no(`${file.path} is in the set twice`);
     seen.add(key);
@@ -661,7 +605,6 @@ export interface ConfinedTree {
   ): Effect.Effect<void, InvalidState | FsError>;
 }
 
-/** The refusal of `at` (`""` for the workspace folder) for being a symlink or a special file. */
 const notPlain = (at: string) =>
   refuse(
     `${at === "" ? "The memory folder" : at} is a symlink or a special file. ` +
@@ -674,14 +617,6 @@ export const confinedTree = (
   options?: AnchoredOptions & { readonly anchored: true },
 ): ConfinedTree => {
   if (options?.anchored) return anchoredTree(root, options);
-  /**
-   * The one resolver. `rel` is a POSIX path below the workspace folder (`""` is the folder itself)
-   * and `within` the part of the tree the target has to stay inside. In order: lexical
-   * containment; an `lstat` of the workspace folder and of every existing segment below it, which
-   * refuses anything that isn't a regular file or a directory; then `realpath` of the target's
-   * nearest existing parent against `realpath` of `within`. The walk stops at the workspace folder
-   * because the data dir above it may legitimately sit behind a symlink (`/tmp` on macOS).
-   */
   const resolveInTree = (
     workspaceId: string,
     rel: string,
@@ -717,8 +652,6 @@ export const confinedTree = (
       }
 
       if (segments.length > 0) {
-        // Before `within` exists (the first `init`) the nearest existing parent is above it, and
-        // the workspace folder is what it has to be inside.
         const bound = isInside(withinAbs, parent) ? withinAbs : wsRoot;
         const realParent = yield* attempt(rel, () => realPath(parent));
         const realBound = yield* attempt(within, () => realPath(bound));
@@ -738,14 +671,11 @@ export const confinedTree = (
       if (before.kind === "dir") return before.abs;
       if (before.kind === "file") return yield* refuse(`${rel} is a file, not a folder`);
       yield* attempt(rel, () => mkdir(before.abs, { recursive: true }));
-      // A recursive mkdir follows a symlink swapped in since the walk; resolving again refuses to
-      // go on to write through it.
       const after = yield* resolveInTree(workspaceId, rel, within);
       if (after.kind !== "dir") return yield* refuse(`${rel} is not a folder`);
       return after.abs;
     });
 
-  /** Temp file beside the target, then rename: a crash leaves the old file or the new, never half. */
   const writeAtomic = (
     workspaceId: string,
     rel: string,
@@ -761,7 +691,6 @@ export const confinedTree = (
       const temp = join(dir, `.tmp-${randomUUID()}`);
       yield* attempt(rel, async () => {
         try {
-          // `wx` refuses an existing name, symlink included, so the temp file is ours.
           await writeFile(temp, content, { encoding: "utf8", flag: "wx", mode });
           await rename(temp, target.abs);
         } catch (error) {
@@ -794,8 +723,6 @@ export const confinedTree = (
         );
       }
       return yield* attempt(shown, async () => {
-        // Protect the final component and bound the opened file. This path branch does not
-        // anchor ancestors; Dream and adoption explicitly request the stronger implementation.
         const handle = await open(target.abs, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
         try {
           const checked = await handle.stat();
@@ -842,8 +769,6 @@ export const confinedTree = (
       if (dir.kind !== "dir") return yield* refuse(`${rel} is a file, not a folder`);
       const entries = yield* attempt(rel, () => readdir(dir.abs, { withFileTypes: true }));
       for (const entry of entries) {
-        // Dirents don't follow links: a symlink to a folder is not a directory here, so it is
-        // unlinked below and what it points at is left alone.
         if (entry.isDirectory()) {
           yield* removeTree(workspaceId, `${rel}/${entry.name}`, within);
         } else {
@@ -852,7 +777,6 @@ export const confinedTree = (
             try {
               await unlink(target);
             } catch (error) {
-              // Windows won't delete a read-only file, which is what a dream's inputs are.
               if (codeOf(error) !== "EPERM" && codeOf(error) !== "EACCES") throw error;
               await chmod(target, 0o600);
               await unlink(target);
@@ -905,7 +829,6 @@ export const confinedTree = (
   };
 };
 
-/** Runs `run` once the workspace id, and `path` when given, are ones memory accepts. */
 const guarded = <A, E = never>(
   workspaceId: string,
   path: string | undefined,
@@ -926,7 +849,6 @@ const make = (root: string): OrchestrationMemoryShape => {
   const adoptionTree = confinedTree(root, { anchored: true });
   const { resolveInTree, ensureDir, writeAtomic, readText } = ordinaryTree;
 
-  /** `undefined` before `init`. A `CURRENT` that is a symlink, or names no version, is refused. */
   const adopted = (
     workspaceId: string,
     tree = ordinaryTree,
@@ -958,7 +880,6 @@ const make = (root: string): OrchestrationMemoryShape => {
       }
       yield* attempt("", () => mkdir(root, { recursive: true }));
       const versionsDir = yield* ensureDir(workspaceId, "versions", "");
-      // A lost `CURRENT` must not hide versions a dream adopted: take up the newest again.
       const found = (yield* attempt("versions", () =>
         readdir(versionsDir, { withFileTypes: true }),
       ))
@@ -972,7 +893,6 @@ const make = (root: string): OrchestrationMemoryShape => {
       if ((yield* resolveInTree(workspaceId, indexRel, within)).kind === "missing") {
         yield* writeAtomic(workspaceId, indexRel, within, MEMORY_INDEX_TEMPLATE);
       }
-      // Last, so a crash before here leaves a tree the next `init` finishes.
       yield* writeAtomic(workspaceId, "CURRENT", "", `${version}\n`);
       return version;
     });
@@ -989,7 +909,6 @@ const make = (root: string): OrchestrationMemoryShape => {
           const entries = yield* attempt(treeRel, () => readdir(dir.abs, { withFileTypes: true }));
           for (const entry of entries) {
             const path = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
-            // Dirents don't follow links, so a symlink is neither: it is skipped, never entered.
             if (entry.isDirectory()) {
               if (!entry.name.startsWith(".") && depth < MEMORY_MAX_DEPTH) {
                 yield* walk(path, depth + 1);
@@ -1010,7 +929,6 @@ const make = (root: string): OrchestrationMemoryShape => {
       return files.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     });
 
-  /** `listVersion` through the anchored tree, without what a worker may not see. */
   const listVersionForWorker = (workspaceId: string, version: string) =>
     Effect.gen(function* () {
       const within = versionRel(version);
@@ -1026,9 +944,7 @@ const make = (root: string): OrchestrationMemoryShape => {
           );
           for (const entry of entries ?? []) {
             const path = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
-            // A folder is entered only when its name is plain; a file listed only when it may be read.
             if (entry.kind === "dir" ? !workerMayEnter(path) : !workerMayRead(path)) continue;
-            // `other` (a symlink included) is neither entered nor listed.
             if (entry.kind === "dir") {
               if (!entry.name.startsWith(".") && depth < MEMORY_MAX_DEPTH) {
                 yield* walk(path, depth + 1);
@@ -1039,14 +955,12 @@ const make = (root: string): OrchestrationMemoryShape => {
                 `${within}/${path}`,
                 within,
               );
-              // Listed only when it may be read: its front matter and text are looked at too.
               const text = yield* adoptionTree
                 .readText(workspaceId, `${within}/${path}`, within, path, MEMORY_READ_MAX_BYTES)
                 .pipe(Effect.orElseSucceed(() => undefined));
               if (text === undefined) continue;
               const problem = workerReadProblem(path, text);
               if (problem !== undefined) {
-                // A file kept by the prose checks is named, with why; one marked private is not.
                 if (problem.kind === "text") withheld.push({ path, reason: problem.reason });
                 continue;
               }
@@ -1064,7 +978,6 @@ const make = (root: string): OrchestrationMemoryShape => {
       return { files: files.toSorted(byPath), withheld: withheld.toSorted(byPath) };
     });
 
-  /** Copies `text` into the file's history and drops what is older than the newest twenty. */
   const archive = (workspaceId: string, version: string, path: string, text: string) =>
     Effect.gen(function* () {
       const within = versionRel(version);
@@ -1075,7 +988,6 @@ const make = (root: string): OrchestrationMemoryShape => {
         .toSorted();
       const newest = entries.at(-1);
       const now = yield* Clock.currentTimeMillis;
-      // Two writes in one millisecond, or a clock that stepped back, still get their own entry.
       const at = Math.max(now, newest === undefined ? 0 : Number.parseInt(newest, 10) + 1);
       const name = historyName(at);
       yield* writeAtomic(workspaceId, `${dirRel}/${name}`, within, redactText(text));
@@ -1086,7 +998,6 @@ const make = (root: string): OrchestrationMemoryShape => {
       }
     });
 
-  /** The version folders there are, oldest first. */
   const versionNames = (workspaceId: string, tree = ordinaryTree) =>
     Effect.gen(function* () {
       return ((yield* tree.listDir(workspaceId, "versions", "")) ?? [])
@@ -1105,9 +1016,7 @@ const make = (root: string): OrchestrationMemoryShape => {
         try {
           const at: unknown = (JSON.parse(text) as { adoptedAt?: unknown }).adoptedAt;
           if (typeof at === "number" && Number.isFinite(at)) return at;
-        } catch {
-          // Hand-edited into something else; the folder's own age is the next best answer.
-        }
+        } catch (_handEditedIntoSomethingElseTheFoldersOwnAge) {}
       }
       const dir = yield* resolveInTree(workspaceId, within, "");
       return Math.round(dir.stats?.birthtimeMs || dir.stats?.mtimeMs || 0);
@@ -1122,7 +1031,6 @@ const make = (root: string): OrchestrationMemoryShape => {
       return version;
     });
 
-  /** Everything but the current version and the newest `MEMORY_VERSIONS_KEEP` others goes. */
   const prune = (workspaceId: string, current: string, tree = ordinaryTree) =>
     Effect.gen(function* () {
       const others = (yield* versionNames(workspaceId, tree)).filter((name) => name !== current);
@@ -1138,8 +1046,6 @@ const make = (root: string): OrchestrationMemoryShape => {
     basedOnDigest: string | undefined,
   ): Effect.Effect<string, MemoryError> =>
     Effect.gen(function* () {
-      // Adoption copies candidate text into a NEW live version. Its reads, writes, CURRENT
-      // switch and cleanup must use the same anchored boundary as candidate collection.
       const { ensureDir: ensureAdoptionDir, writeAtomic: writeAdoption, removeTree } = adoptionTree;
       const current = yield* adopted(workspaceId, adoptionTree);
       if (basedOn !== undefined && basedOn !== (current ?? "")) {
@@ -1148,8 +1054,6 @@ const make = (root: string): OrchestrationMemoryShape => {
             "Another version was adopted or restored in between; review against the current one.",
         );
       }
-      // Live writes keep CURRENT's version, so version alone cannot fence an awaited adoption.
-      // All Gram writers share this lock. Hand edits and other processes do not (see verification).
       if (basedOnDigest !== undefined) {
         const live: Record<string, { sha256: string; bytes: number }> = {};
         if (current !== undefined) {
@@ -1205,13 +1109,10 @@ const make = (root: string): OrchestrationMemoryShape => {
           JSON.stringify(note),
         );
       });
-      // Until `CURRENT` moves nothing reads this folder, so a failure or an interrupt only has to
-      // take it away again for the tree to be as it was.
       yield* writeAll.pipe(
         Effect.onError(() => Effect.ignore(removeTree(workspaceId, within, "versions"))),
       );
       yield* writeAdoption(workspaceId, "CURRENT", "", `${version}\n`);
-      // The adoption has happened; a version that won't delete is left for the next one to prune.
       yield* prune(workspaceId, version, adoptionTree).pipe(
         Effect.catch((error) =>
           Effect.logWarning("orchestration memory: pruning old versions failed", error.message),
@@ -1220,7 +1121,6 @@ const make = (root: string): OrchestrationMemoryShape => {
       return version;
     });
 
-  /** `write`, for a caller that holds the workspace's lock. */
   const writeLocked = (
     workspaceId: string,
     path: string,
@@ -1295,8 +1195,6 @@ const make = (root: string): OrchestrationMemoryShape => {
           const version = yield* adopted(workspaceId, adoptionTree);
           if (version === undefined) return yield* missing;
           const within = versionRel(version);
-          // Anchored: every folder down to the file is opened without following a link, and the
-          // file is read through that same chain, so nothing swapped in between leads elsewhere.
           const text = yield* adoptionTree.readText(
             workspaceId,
             `${within}/${path}`,
@@ -1305,8 +1203,6 @@ const make = (root: string): OrchestrationMemoryShape => {
             MEMORY_READ_MAX_BYTES,
           );
           const problem = workerReadProblem(path, text);
-          // A private file reads as missing, as it always has; one the prose checks hold back says
-          // which line and why, so a worker can pass that on rather than take memory to be empty.
           if (problem?.kind === "text") {
             return yield* refuse(keptFromWorkerReads(path, problem.reason));
           }
@@ -1390,14 +1286,11 @@ const make = (root: string): OrchestrationMemoryShape => {
               return yield* refuse(WORKER_WRITE_UNPLAIN);
             }
             if (options?.asWorker === true) yield* workerMayWrite(path, current, changed.content);
-            // The index lines a worker adds say they are a worker's, so the orchestrator's next
-            // session, which boots with the index, never reads them as its own.
             const content =
               options?.asWorker === true && path === MEMORY_INDEX
                 ? labelWorkerLines(current, changed.content)
                 : changed.content;
             const write = yield* writeLocked(workspaceId, path, content);
-            // What `read` will give back: the scrubbed text, as it is on disk, scrubbed again.
             return { write, result, revision: memoryRevision(redactText(redactText(content))) };
           }),
         ),
@@ -1491,7 +1384,6 @@ const make = (root: string): OrchestrationMemoryShape => {
     adopt: (workspaceId, files, options) =>
       guarded(workspaceId, undefined, () =>
         Effect.gen(function* () {
-          // Before the lock and before any I/O: a refused set must not have touched the tree.
           const checked = checkMemorySet(files);
           if (!checked.ok) return yield* refuse(checked.problem);
           return yield* locked(

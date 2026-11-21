@@ -11,7 +11,6 @@ import {
   type DiffComment,
 } from "@/stores/diff-comments";
 
-/** Lines picked in one hunk of one file, `anchor` where the pick began and `head` where it ends. */
 interface LineSelection {
   path: string;
   hunk: number;
@@ -150,7 +149,6 @@ export function CommentEditorRow({
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-      // Here ⌘⏎ adds the comment; the composer's Send must not also take it.
       event.preventDefault();
       submit();
     } else if (event.key === "Escape") {
@@ -162,7 +160,6 @@ export function CommentEditorRow({
     <tr data-testid="diff-comment-editor">
       <td colSpan={span} className={ROW_CELL}>
         <textarea
-          // The editor opens because the user asked to write in it.
           autoFocus
           aria-label={`Comment on ${label}`}
           placeholder="A note for the agent: it goes with your next message"

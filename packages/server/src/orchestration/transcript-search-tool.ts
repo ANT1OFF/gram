@@ -1,14 +1,3 @@
-/**
- * `search_transcripts`: full-text search over one workspace's conversations, for its orchestrator,
- * its workers and its memory updates. It reads the same index as `search_threads`, which searches
- * every thread on the server, but answers only from the caller's workspace and says where in a
- * thread each match sits, so an agent can find what was said or decided before without the whole
- * server's history crowding the results.
- *
- * Scope: an orchestrator and a running dream search the workspace's orchestrator and workers; a
- * worker searches its fellow workers and, unless it asks otherwise, the orchestrator too. Every
- * string that leaves goes through `redactText`, scrubbed before it is cut.
- */
 import { AppToolError, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -24,7 +13,6 @@ import { refusal } from "./rules.ts";
 import { Orchestration } from "./service.ts";
 
 const TOOL = "search_transcripts";
-/** Hits a call returns when it doesn't say, and at most. */
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 30;
 /** Cap on a hit's whole message text when `withText` asks for it. */
@@ -44,7 +32,6 @@ export const TranscriptSearchAppToolsLive = Layer.effectDiscard(
     const sql = yield* SqlClient.SqlClient;
     const reads = withReadWorker(yield* captureReadWorker);
 
-    /** The workspace the caller searches; `undefined` when it has none. */
     const scopeOf = (caller: ThreadId) =>
       Effect.gen(function* () {
         const authority = yield* orchestration.authorityOf(caller);
@@ -55,7 +42,6 @@ export const TranscriptSearchAppToolsLive = Layer.effectDiscard(
         if (thread._tag === "None") return undefined;
         const { role, workspaceId } = thread.value;
         if (role !== "dream" || workspaceId === undefined) return undefined;
-        // Only while it runs: an ended dream's thread keeps its role, not its reach.
         const running = (yield* store.listDreams(workspaceId)).some(
           (dream) =>
             dream.threadId === caller &&

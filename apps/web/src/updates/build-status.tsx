@@ -28,7 +28,7 @@ export function BuildStatus({
       (info) => {
         if (live) setBuild(info);
       },
-      () => {}, // Older/unavailable shells still show the version supplied by the updater.
+      () => {},
     );
     return () => {
       live = false;

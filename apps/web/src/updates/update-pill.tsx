@@ -14,7 +14,6 @@ import { pillView, type PillView } from "./update-pill-view";
 
 const RING = 2 * Math.PI * 6;
 
-/** A small ring that fills as the download does; it moves only with motion on. */
 function ProgressRing({ percent }: { percent: number }) {
   return (
     <svg viewBox="0 0 16 16" aria-hidden className="size-4 -rotate-90">
@@ -94,7 +93,6 @@ const ACCESSIBLE: Record<PillView["kind"], (view: PillView) => string> = {
 export function UpdatePill({ size = "sm" }: { size?: "xs" | "sm" }) {
   const shown = useFeature("appUpdates", { settled: true });
   const state = useUpdateStore((s) => s.native);
-  // A retried check asks for the saved channel, which a refusal may have found changed.
   const savedChannel = useServerSettings((s) => s.settings?.updates.channel);
   const navigate = useNavigate();
   const view = pillView(state);

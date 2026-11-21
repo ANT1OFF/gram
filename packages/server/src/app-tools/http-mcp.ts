@@ -62,7 +62,6 @@ export const callAppTool = (tool: AppTool, args: unknown): Effect.Effect<CallToo
     ),
   );
 
-/** A `gram` MCP server whose tools are bound to the thread only when listed or called. */
 interface McpCalls {
   start(id: RequestId): AbortController;
   finish(id: RequestId, controller: AbortController): void;
@@ -79,8 +78,6 @@ export const makeMcpServer = (tools: () => ReadonlyArray<AppTool>, calls?: McpCa
       description: tool.descriptor.description,
       inputSchema: toolInputSchema(tool),
       annotations: appToolAnnotations(tool.descriptor.class),
-      // Claude Code loads these up front rather than behind its tool search, as it does the same
-      // tools served in-process; other agents ignore the hint.
       ...(CORE_APP_TOOLS.has(tool.descriptor.name)
         ? { _meta: { "anthropic/alwaysLoad": true } }
         : {}),
@@ -107,8 +104,6 @@ export const makeMcpServer = (tools: () => ReadonlyArray<AppTool>, calls?: McpCa
       },
     );
   });
-  // Stateless HTTP creates a different SDK Server for the cancellation POST. Route the standard
-  // notification to its authenticated thread's active call instead of that new empty server.
   if (calls !== undefined)
     server.setNotificationHandler(CancelledNotificationSchema, (notification) => {
       if (notification.params.requestId !== undefined) calls.cancel(notification.params.requestId);
@@ -144,13 +139,10 @@ export const McpRoute = Layer.unwrap(
           return HttpServerResponse.text("unauthorized: bearer token required", { status: 401 });
         }
         const { threadId, signal: authorization } = identity;
-        // Asked per request: a thread's role can change while its agent keeps the same token.
         const audience = yield* registry.audienceOf(threadId);
         const disconnected = new AbortController();
         const incoming = NodeHttpServerRequest.toIncomingMessage(request);
         const response = NodeHttpServerRequest.toServerResponse(request);
-        // Gram listens with `node:http`, and the SDK's transport takes only its request and
-        // response; an HTTP/2 pair would mean a listener this route was never written for.
         if (!(incoming instanceof IncomingMessage) || !(response instanceof ServerResponse)) {
           return HttpServerResponse.text("MCP is served over HTTP/1.1", { status: 505 });
         }
@@ -180,10 +172,8 @@ export const McpRoute = Layer.unwrap(
           },
           cancel: (id) => running.get(authorization)?.get(id)?.abort(),
         });
-        // No `sessionIdGenerator`: stateless, so each request needs its own transport.
         const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
         yield* Effect.acquireUseRelease(
-          // The SDK's optional members don't satisfy `exactOptionalPropertyTypes`.
           Effect.promise(() => server.connect(transport as Transport)),
           () => Effect.promise(() => transport.handleRequest(incoming, response)),
           () =>
@@ -192,11 +182,8 @@ export const McpRoute = Layer.unwrap(
               await server.close();
             }),
         );
-        // The transport has ended the Node response; NodeHttpServer skips writing once it has.
         return HttpServerResponse.empty();
       });
-    // The same endpoint for a session on a joined machine, over the tailnet; the auth middleware
-    // lets a request through there only for a thread placed on that machine while it is online.
     return Layer.mergeAll(
       HttpRouter.add("*", MCP_PATH, handle),
       HttpRouter.add("*", HOST_MCP_PATH, handle),

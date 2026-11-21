@@ -45,7 +45,6 @@ export function MentionMenu({
             role="option"
             aria-label={path}
             aria-selected={index === activeIndex}
-            // Keep focus in the textarea.
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onChoose(entry)}
             className={cn(

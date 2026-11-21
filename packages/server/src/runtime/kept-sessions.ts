@@ -1,8 +1,3 @@
-// The sessions this machine's host keeps running after Gram quits, as Gram records them: which
-// thread each is, its handle in the host, and how far this Gram handled its events. A Gram that
-// opens again reads the record, keeps those the host still has, and follows each on from there,
-// the turn it was in included. The record is a file in Gram's data folder, this user's alone.
-
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ThreadId } from "@gram/contracts";
@@ -40,7 +35,6 @@ const off: KeptSessionsShape = {
 };
 
 interface Record {
-  /** The host's process when the record was written: another one has none of these sessions. */
   readonly hostPid: number;
   readonly sessions: ReadonlyArray<KeptSession>;
 }
@@ -88,8 +82,6 @@ export const makeKeptSessions = (
   Effect.gen(function* () {
     const before = readRecord(file);
     const live = new Map<ThreadId, KeptSession>();
-    // Another host process has none of the last one's sessions; this one says whether it still has
-    // each, by its agent's process.
     if (before !== undefined && before.hostPid === hostPid) {
       for (const kept of before.sessions) {
         const there = yield* sessions.processId(kept.handle).pipe(
@@ -105,9 +97,7 @@ export const makeKeptSessions = (
     const save = () => {
       try {
         writeRecord(file, { hostPid, sessions: [...live.values()] });
-      } catch {
-        // Unwritable: a Gram opened after this one finds nothing to follow, as before this record.
-      }
+      } catch (_unwritableAGramOpenedAfterThisOneFindsNothing) {}
     };
     save();
     return {

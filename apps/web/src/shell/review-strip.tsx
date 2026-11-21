@@ -109,7 +109,6 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
   const setReviewFocus = useLayoutStore((s) => s.setReviewFocus);
   const hint = useShortcutHint("panel.restore");
   const title = useThreadsStore((s) => s.byId[threadId]?.thread.title);
-  // Rebuilt on every streamed frame: kept while it says the same, so the store's snapshot is stable.
   const latest = useThreadFeed(
     threadId,
     useStableSelector(
@@ -124,7 +123,6 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
       ),
     ),
   );
-  // The approvals' own cards answer them here; what else waits says so and leads to its card.
   const answeredHere = new Set<string>(approvals.map((request) => request.id));
   const waiting = useNeedsYouList().items.filter(
     (item) =>
@@ -137,11 +135,7 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
     jump(item);
   };
   return (
-    <div
-      // The strip is where the thread's approval keys reach while its view is covered.
-      data-approval-keys
-      className="flex min-h-0 flex-1 flex-col border-t border-border"
-    >
+    <div data-approval-keys className="flex min-h-0 flex-1 flex-col border-t border-border">
       <div className="flex shrink-0 items-start gap-2 px-3 pt-3 pb-2">
         <Hint
           label={withHint(BACK, hint)}
@@ -169,7 +163,6 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
         )}
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-4">
-        {/* Mounted with none left, so the receipt of an answer shows where its card was. */}
         <div data-testid="review-strip-approvals" className="-my-2 empty:hidden">
           <RequestCards threadId={threadId} requests={approvals} focused />
         </div>
@@ -204,13 +197,8 @@ function ReadableStrip({ threadId }: { threadId: ThreadId }) {
   );
 }
 
-/**
- * A message's Markdown as the strip reads it: links as their (shortened) text that opens them,
- * code, bold and italics as marks, and line breaks kept; never the syntax itself.
- */
 function StripText({ text }: { text: string }) {
   return stripLines(text).map((line, at) => (
-    // Lines don't move: the message is rendered whole each time.
     <Fragment key={at}>
       {at > 0 && <br />}
       {line.map(renderMark)}
@@ -251,7 +239,6 @@ const renderMark = (mark: StripMark, at: number): ReactNode => {
   }
 };
 
-/** A decision waiting in the thread: what it is, and the way to its card in the conversation. */
 function WaitingDecision({ item, onAnswer }: { item: NeedsYouItem; onAnswer: () => void }) {
   const kind = kindOf(item);
   return (

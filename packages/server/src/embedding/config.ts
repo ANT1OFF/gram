@@ -1,8 +1,3 @@
-// What an embedding deployment hands the server at start: a server run behind another service
-// (self-hosted for a team, or as one part of a larger product) rather than as the desktop app's
-// own. All of it comes from the environment, none of it is a setting, and none of it does anything
-// until the hosted features setting (`experimental.embedding`) is on.
-
 /** The least a token may be: shorter is refused at start rather than trusted. */
 export const EMBED_TOKEN_MIN = 32;
 
@@ -42,7 +37,6 @@ export interface EmbedConfigShape {
 
 export const NO_EMBED: EmbedConfigShape = { repoEvents: "poll" };
 
-/** An `http:` or `https:` URL with no credentials, query or fragment, without its trailing slash. */
 const serviceUrl = (name: string, value: string | undefined): string | undefined => {
   if (value === undefined || value === "") return undefined;
   let url: URL | undefined;
@@ -59,7 +53,6 @@ const serviceUrl = (name: string, value: string | undefined): string | undefined
     url.search !== "" ||
     url.hash !== ""
   ) {
-    // Never echoed: a URL pasted with a credential in it must not reach a log.
     throw new Error(`${name} must be an http(s) URL with no credentials, query or fragment`);
   }
   return url.href.replace(/\/+$/, "");
@@ -86,7 +79,6 @@ const service = (
   return { url, ...(token === undefined ? {} : { token }) };
 };
 
-/** The variables that carry a secret, which nothing the server starts may inherit. */
 const SECRET_VARIABLES = [
   "GRAM_EMBED_TOKEN",
   "GRAM_SCHEDULER_TOKEN",
@@ -118,14 +110,12 @@ export const embedFromEnv = (
   if (events !== undefined && events !== "" && events !== "pushed" && events !== "poll") {
     throw new Error("GRAM_REPO_EVENTS must be `pushed` or `poll`");
   }
-  // Pushed events, and a scheduler's calls back, have nowhere to arrive without the inbound token.
   if (events === "pushed" && inboundToken === undefined) {
     throw new Error("GRAM_REPO_EVENTS=pushed needs GRAM_EMBED_TOKEN");
   }
   if (scheduler !== undefined && inboundToken === undefined) {
     throw new Error("GRAM_SCHEDULER_URL needs GRAM_EMBED_TOKEN, for the scheduler's calls back");
   }
-  // A provider reports how a start goes on `/embed/v1/hosts/progress`.
   if (hostProvider !== undefined && inboundToken === undefined) {
     throw new Error("GRAM_HOST_PROVIDER_URL needs GRAM_EMBED_TOKEN, for the provider's progress");
   }

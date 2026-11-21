@@ -31,8 +31,6 @@ export function useThreadActions(threadId: ThreadId) {
   });
   const labels = useLabels();
   const workspaces = useWorkspaces();
-  // The server matches the thread's checkouts to projects by resolved path, as the join does, so
-  // the repos a target says it adds are the ones the click consents to.
   const { data: joinTargets = [] } = useQuery({
     queryKey: ["joinTargets", threadId, thread?.workspaceId, thread?.spawnedBy?.threadId],
     queryFn: () => api.threadJoinTargets(threadId),

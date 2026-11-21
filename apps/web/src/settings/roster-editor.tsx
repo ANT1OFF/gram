@@ -67,11 +67,6 @@ import {
   type WorkerModelIssue,
 } from "./workspace-settings-model";
 
-// The roster editor: a workspace's orchestrator model and its worker models, each with the user's
-// note on what it is for, its effort and which is the default. It reads and writes only those two
-// fields of a charter, so Settings → Workspaces and the new-workspace sheet can both use it on a
-// charter of their own, saved or still a draft.
-
 /** What `RosterEditor` takes. */
 export interface RosterEditorProps {
   /**
@@ -94,16 +89,10 @@ const START: AgentChoice = {
 
 const NOTE_PLACEHOLDER = "Use it for… e.g. reviews, bug hunts, audits, tightly scoped changes";
 
-/** The effort select's value for "the model's own default". */
 const DEFAULT_EFFORT = "default";
 
-/** A model as a list names it: `Codex gpt-6-sol`. */
 const modelName = (model: ModelRef): string => `${agentLabel(model.agent)} ${model.model}`;
 
-/**
- * What a roster entry is for, in the user's words. Kept as a draft while typed and saved when the
- * field is left or Enter is pressed, so a note isn't a charter write per keystroke.
- */
 function UseForField({
   model,
   placeholder = NOTE_PLACEHOLDER,
@@ -118,7 +107,6 @@ function UseForField({
   const saved = model.useFor ?? "";
   const [draft, setDraft] = useState(saved);
   const [was, setWas] = useState(saved);
-  // A note saved elsewhere, or put back by a refused save, replaces a draft nobody is typing.
   if (saved !== was) {
     setWas(saved);
     setDraft(saved);
@@ -141,7 +129,6 @@ function UseForField({
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.nativeEvent.isComposing) {
           if (!event.metaKey && !event.ctrlKey) event.preventDefault();
-          // Create runs later in this event and must see the note still being edited.
           flushSync(commit);
         }
       }}
@@ -149,10 +136,6 @@ function UseForField({
   );
 }
 
-/**
- * An entry's effort, from what its model offers. The entry's own effort stays among the choices
- * when the list doesn't name it, as a gateway that advertises no efforts can still take one.
- */
 function EffortField({
   model,
   follows,
@@ -160,7 +143,6 @@ function EffortField({
   onChange,
 }: {
   model: PinnedWorkerModel;
-  /** The entry follows a tier, so its efforts end at high. */
   follows: boolean;
   disabled: boolean;
   onChange: (variant: ReasoningVariant | undefined) => void;
@@ -222,7 +204,6 @@ function WorkerSpeedField({
   );
 }
 
-/** `model` at `variant`, or at its model's own default effort. */
 const withVariant = (
   model: PinnedWorkerModel,
   variant: ReasoningVariant | undefined,
@@ -231,10 +212,6 @@ const withVariant = (
   return variant === undefined ? rest : { ...rest, variant };
 };
 
-/**
- * A following roster row at `variant`, still following: the tier's own effort for the model's
- * default, and pinned instead past high, which a following row never runs at.
- */
 const followAt = (
   stored: Extract<WorkerModel, TierRef>,
   view: PinnedWorkerModel,
@@ -245,21 +222,11 @@ const followAt = (
   return aboveHigh(variant) ? withVariant(view, variant) : { ...rest, variant };
 };
 
-/**
- * A roster row as the user pinned it: the model it runs on here and their own note, no longer
- * following its tier. Picking a model, an effort or a speed for a following row pins it.
- */
 const pinView = (view: RosterModel, stored: WorkerModel): PinnedWorkerModel => {
   const { tier: _tier, tierAgent: _tierAgent, useFor: _useFor, ...model } = view;
   return stored.useFor === undefined ? model : { ...model, useFor: stored.useFor };
 };
 
-/**
- * The model this workspace's orchestrator opens on: the app's default model, or one of its own. An
- * open orchestrator keeps the model it opened on; the next one takes this. What it shows is always
- * the charter's, so a workspace loaded, or saved from elsewhere, after this mounted shows its own;
- * only an agent picked whose model isn't listed yet is held here until it is.
- */
 function OrchestratorModelField({
   charter,
   disabled,
@@ -282,15 +249,12 @@ function OrchestratorModelField({
   const ownFollows = own !== undefined && isTierRef(own);
   const slot = useSlotHere(own);
   const ownHere = slot.model;
-  // Its own slot's reason, or, while it follows the default, the default's.
   const missing = own === undefined ? inherited.missing : slot.missing;
   const [pending, setPending] = useState<AgentChoice>();
-  // Nothing saved: what a new workspace opens on here, a Codex orchestrator on Codex alone.
   const installed = useAvailableModels(own === undefined && defaultModel === undefined);
   const shown =
     pending ?? choiceFromModel(ownHere ?? defaultModel ?? defaultOrchestratorModel(installed));
   const pick = (next: AgentChoice) => {
-    // A gateway agent's model is filled in once its models are listed; nothing is saved before.
     if (next.model === "") {
       setPending(next);
       return;
@@ -303,7 +267,6 @@ function OrchestratorModelField({
       ),
     );
   };
-  // The orchestrator's tier while it follows the recommendation (plan: Lead).
   const follow = () => onChange(withOrchestratorModel(charter, { tier: "lead" }));
   const inheriting = own === undefined && pending === undefined;
   const follows =
@@ -319,7 +282,6 @@ function OrchestratorModelField({
     >
       <div data-testid="orchestrator-model" className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Following the default model, it follows whatever the default does. */}
           {inheriting && <SlotGlyph slot={defaultSlot} />}
           <select
             id={selectId}
@@ -371,7 +333,6 @@ function OrchestratorModelField({
   );
 }
 
-/** The ids an agent listed on its own login; `null` once it couldn't, `undefined` until it answers. */
 const ownIds = (listed: ReturnType<typeof useModelsSettled>) =>
   listed.settled
     ? (listed.models?.flatMap((model) => [
@@ -381,7 +342,6 @@ const ownIds = (listed: ReturnType<typeof useModelsSettled>) =>
       ]) ?? null)
     : undefined;
 
-/** What an entry is checked against: the profiles, and what Codex offer on their own. */
 function useWorkerModelIssues(
   charter: Parameters<typeof workerModelIssues>[0],
 ): readonly WorkerModelIssue[] {
@@ -407,7 +367,6 @@ function useWorkerModelIssues(
   });
 }
 
-/** An entry's warning, with a link to where it is fixed when it can't run here. */
 function IssueNote({ issue }: { issue: WorkerModelIssue }) {
   return (
     <p
@@ -481,11 +440,8 @@ export function RosterEditor({
   const [choice, setChoice] = useState<AgentChoice>(startingChoice);
   const [note, setNote] = useState("");
   const models = charter.workerModels ?? [];
-  // Rows show what each entry runs on here; an entry that follows a tier is resolved, and one
-  // nothing here fills (or only a newer Gram knows) says so, as the server passes it over.
   const here = useRosterHere(models);
   const views = here.map((row) => row.entry);
-  // What a pinned row's Follow recommended moves it to needs this machine's lists.
   const recommendedOn = useRecommendedOn();
   const available = useAvailableModels(recommendedOn && models.some((model) => isPinned(model)));
   const fallback = defaultWorkerIndex(models);
@@ -501,13 +457,11 @@ export function RosterEditor({
           },
     )
     .filter((issue) => issue !== undefined);
-  // Checked before it is added, so an entry that can't run here says so while it is only a choice.
   const candidate = choice.model === "" ? undefined : withUseFor(choiceModel(choice), note);
   const candidateIssue = useWorkerModelIssues({
     ...charter,
     workerModels: candidate === undefined ? views : [...views, candidate],
   }).find((issue) => candidate !== undefined && issue.index === models.length);
-  // The default model is what an orchestrator following it, and a worker with no roster, runs on.
   const defaultAgent = defaultHere?.agent;
   const notes = harnessNotes(
     [...views, ...(orchestratorHere === undefined ? [] : [orchestratorHere])],
@@ -517,7 +471,6 @@ export function RosterEditor({
     model.profileId === undefined
       ? undefined
       : (profiles?.find((profile) => profile.id === model.profileId)?.name ?? model.profileId);
-  // A pinned row moves back to the tier that runs its model here; none until the lists answer.
   const followRow = (index: number): (() => void) | undefined => {
     const stored = models[index];
     if (stored === undefined || !isPinned(stored) || !available.settled) return undefined;

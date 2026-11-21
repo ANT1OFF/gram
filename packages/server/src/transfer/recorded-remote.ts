@@ -1,8 +1,3 @@
-// The remote a moved thread names, and the clone its checkout records: always the origin its
-// project recorded when it was added (`Project.originIdentity`). A folder whose origin was
-// rewritten since (`git remote set-url`) is refused rather than named, so a move can't turn a
-// repository an agent chose into one the thread works in.
-
 import type { Project } from "@gram/contracts";
 import { cachedOriginUrl } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -18,7 +13,6 @@ import { redactText } from "../logging/redact.ts";
  */
 export const shareableRemote = (url: string): string | undefined => {
   const text = url.trim();
-  // `git@host:owner/repo.git`, which names an account and no secret. Any other user may be one.
   if (/^git@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+$/.test(text)) return redactText(text);
   let parsed: URL;
   try {
@@ -27,7 +21,6 @@ export const shareableRemote = (url: string): string | undefined => {
     return undefined;
   }
   if (!["https:", "http:", "ssh:", "git:"].includes(parsed.protocol)) return undefined;
-  // A user is a token as often as a name; only ssh's own `git` account is kept.
   if (parsed.protocol !== "ssh:" || parsed.username !== "git") parsed.username = "";
   parsed.password = "";
   parsed.search = "";

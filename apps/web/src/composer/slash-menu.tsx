@@ -20,13 +20,10 @@ export function SlashMenu({
   activeIndex: number;
   onChoose: (command: MenuCommand) => void;
 }) {
-  // Focus stays in the textarea, so the browser won't scroll the active option into view itself.
   useEffect(() => {
     document.getElementById(`${id}-${activeIndex}`)?.scrollIntoView?.({ block: "nearest" });
   }, [id, activeIndex]);
 
-  // Gram's rows sit under a heading when they end the list, as they do until a typed name
-  // matches one of them better than the agent's; otherwise each carries the mark.
   const firstNative = commands.findIndex((c) => c.action !== undefined);
   const headed =
     firstNative !== -1 && commands.slice(firstNative).every((c) => c.action !== undefined);
@@ -61,9 +58,7 @@ export function SlashMenu({
             id={`${id}-${index}`}
             role="option"
             aria-selected={index === activeIndex}
-            // A screen reader doesn't get the group from the heading above.
             aria-description={command.action === undefined ? undefined : "Gram does this"}
-            // Keep focus in the textarea.
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onChoose(command)}
             className={cn(

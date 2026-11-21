@@ -100,9 +100,7 @@ export const keptTerminalsIn = (dir: string): KeptTerminals => {
         try {
           const value: unknown = JSON.parse(readFileSync(file, "utf8"));
           if (isKept(value) && `${value.terminalId}.json` === name) all.push(value);
-        } catch {
-          // Unreadable: dropped below like any other.
-        }
+        } catch (_unreadableDroppedBelowLikeAnyOther) {}
         rmSync(file, { force: true });
       }
       return all;
@@ -110,7 +108,6 @@ export const keptTerminalsIn = (dir: string): KeptTerminals => {
   };
 };
 
-/** Leaves whatever mode the old program left on, so the new shell starts on a plain screen. */
 const RESET = "\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[0m";
 
 /**

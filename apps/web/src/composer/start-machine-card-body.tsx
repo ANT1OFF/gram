@@ -9,10 +9,6 @@ import { Spinner } from "@/motion";
 import { changedFor, pickedFor, shortOf, useOnDemandPicks } from "./on-demand-picks";
 import { needsMachine, useOnDemandMachine } from "./start-machine-card";
 
-// Where the server's deployment starts machines on demand, a person with none of their own sees
-// this under the composer in place of "no machine has joined": one action that starts theirs, the
-// repositories it may use, and its start, step by step. Their draft stays as it is.
-
 const STEPS: ReadonlyArray<{
   readonly phase: OnDemandPhase;
   readonly label: (noun: string) => string;
@@ -40,7 +36,6 @@ export function StartMachineCardBody({
 }) {
   const noun = useMachineNoun();
   const facts = useMachineFacts();
-  // Where it reaches all of theirs there is nothing to choose: Start starts it.
   const reachesTheirs = useMachineReachesTheirs();
   const { status, refresh } = useOnDemandMachine();
   const [choosing, setChoosing] = useState(false);
@@ -53,7 +48,6 @@ export function StartMachineCardBody({
   if (!needsMachine(status)) return null;
   const choices = status?.choices;
   const picks = choices === undefined ? {} : pickedFor(choices.choices, kept);
-  // Only what differs from a default is sent: one left alone follows the deployment's default.
   const changed = choices === undefined ? {} : changedFor(choices.choices, kept);
   const keeps = choices?.keeps === true;
 

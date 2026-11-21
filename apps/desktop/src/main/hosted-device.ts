@@ -54,7 +54,6 @@ export const createDeviceHost = (options: DeviceHostOptions): DeviceHost => {
   let wanted = false;
   let closed = false;
   let made: MadeDevice | undefined;
-  /** The make or end under way; the next waits for it. */
   let turning: Promise<void> = Promise.resolve();
 
   const end = async () => {
@@ -83,7 +82,6 @@ export const createDeviceHost = (options: DeviceHostOptions): DeviceHost => {
     options.changed?.();
   };
 
-  /** A turn queued and not yet begun: changes before it begins are its to follow. */
   let queued = false;
   const turn = () => {
     if (queued) return turning;

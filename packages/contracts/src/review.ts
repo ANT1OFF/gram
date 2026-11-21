@@ -1,8 +1,5 @@
 import * as Schema from "effect/Schema";
 
-// Review bots: automated reviewers whose rounds, verdicts and inline findings the app
-// surfaces on a thread's PR.
-
 export const ReviewBot = Schema.Struct({
   /** Author login to match: case-insensitive, `*` wildcards, a trailing `[bot]` optional either side. */
   loginPattern: Schema.String,
@@ -108,7 +105,6 @@ export const HumanReview = Schema.Struct({
 });
 export type HumanReview = typeof HumanReview.Type;
 
-/** The ties to a repository that may hold write access to it: anyone else certainly holds none. */
 const MAY_WRITE = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 
 /**

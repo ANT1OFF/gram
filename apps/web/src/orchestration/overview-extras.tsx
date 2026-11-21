@@ -65,10 +65,6 @@ import {
 import { useLaunchIssues } from "@/launch-checks/banner";
 import { useSettingsLink } from "@/settings/open-settings";
 
-// The overview sidebar's extras: At rest's Pull requests and Done, each gone with nothing in it, the
-// way into History, and the usage meters and worker slots at its foot, off by default. Each reads
-// what the title bar's meter and History read, so they all say the same.
-
 /**
  * The review requests and the user's open PRs, as At rest lists them: a list placed nowhere is left
  * out here too.
@@ -148,10 +144,6 @@ export function RestHeading({
   );
 }
 
-/**
- * A PR in one row: its worst mark in the vocabulary (`worstPrMark`), its title, and its short ref
- * at the edge. Its tooltip and name say the rest: its author, which list it is on and every mark.
- */
 function PrRow({ row }: { row: OverviewPrRow }) {
   const api = useApi();
   const sub = prSubLine(row);
@@ -203,7 +195,6 @@ export function OverviewSearch({
   phone?: boolean;
 }) {
   const hint = useShortcutHint("palette.open");
-  // Where an app in front of Gram leaves the threads out of the sidebar, search finds more than them.
   const threadsListed = useThreadsListed();
   const open = useLayoutStore((s) => s.paletteOpen);
   if (roomy)
@@ -261,7 +252,6 @@ export function useOverviewDone(): { rows: readonly RecentDone[]; now: number } 
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
   });
-  // Minute resolution is enough for the times rows show, and for what has settled.
   const settle = useSettleRule();
   const { now } = settle;
   const rows = useThreadsStore(
@@ -315,7 +305,6 @@ export function OverviewDone({ rows, now }: { rows: readonly RecentDone[]; now: 
           onClick={() => useHistoryStore.getState().show("done")}
           className={cn(ROW, "text-meta text-muted-foreground hover:text-foreground")}
         >
-          {/* An empty mark column, so the words start where the rows' titles do. */}
           <span aria-hidden />
           <span className={ROW_TITLE}>{more} more in History</span>
         </button>
@@ -326,7 +315,6 @@ export function OverviewDone({ rows, now }: { rows: readonly RecentDone[]; now: 
 
 const NO_PROJECTS: readonly never[] = [];
 
-/** Each outcome's dot: the merged colour for work that landed, red for a failure, grey for a stop. */
 const OUTCOME_DOT: Readonly<Record<HistoryOutcome, DotState>> = {
   merged: "merged",
   delivered: "done",
@@ -336,10 +324,8 @@ const OUTCOME_DOT: Readonly<Record<HistoryOutcome, DotState>> = {
   idle: "idle",
 };
 
-/** A finished chat in one row: its outcome's dot, its title and when; muted until hovered. */
 function DoneRow({ row, now }: { row: RecentDone; now: number }) {
   const openThread = useOpenThread();
-  // Only this row's answer: a move to another thread re-renders the two rows it changes, not all.
   const viewed = useParams({
     strict: false,
     select: (params) => params.threadId === row.threadId,
@@ -367,8 +353,6 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
           CURRENT_ROW,
         )}
       >
-        {/* Its state's dot, as a worker's row has: one mark family down the column. Its outcome
-            and place are on its hover; the edge says when, or the outcome with no time to say. */}
         <span aria-hidden className={ROW_MARK}>
           <StatusDot state={row.outcome === undefined ? "done" : OUTCOME_DOT[row.outcome]} />
         </span>
@@ -404,15 +388,12 @@ export function OverviewHistory({ showHistory = true }: { showHistory?: boolean 
           onClick={() => useHistoryStore.getState().show()}
           className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-body text-muted-foreground [:where(&)_svg]:text-sidebar-icon outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2"
         >
-          {/* An inline glyph, on Search's and the rows' marks. Its key is on its hover: beside
-              Settings the foot has no room for it on one line. */}
           <History aria-hidden className="size-icon-row shrink-0" />
           <span className="flex-1 truncate">History</span>
         </button>
       ) : (
         <span className="flex-1" />
       )}
-      {/* Settings beside History, the sidebar's places to go, clear of its header's toggles. */}
       <TopLeftNav
         update={false}
         hintSide="top"

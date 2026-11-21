@@ -1,18 +1,3 @@
-/**
- * What a dream (a "memory update" to the user) is told. Pure: no filesystem, no clock.
- *
- * A dream is given a goal and tools, not a procedure: Gram lays out what is new since the last
- * update with an index, and the dream decides what to read, follows leads into older
- * conversations with the transcript tools when it needs to, writes the candidate as it learns,
- * and stops when it judges it has covered what matters.
- *
- * Two texts. `dreamRolePrompt` is the standing part, passed with every session the dream thread
- * opens so it survives a resume; `dreamPrompt` is the first message, which says what is in the
- * folder this time. The sentences about `input/` being data are the ones that matter most: a dream
- * reads whole transcripts of web pages, issue bodies and tool output, and its cwd is the only thing
- * its `acceptEdits` session may write without asking. They lower the rate of a hijack; what bounds
- * one is that only Gram's validated adoption path can make `output/` into memory.
- */
 import { dreamSupportFor } from "@gram/agents/dream-support";
 import {
   DREAM_DIGEST_MAX_CHARS,

@@ -1,14 +1,3 @@
-// Finished workers stay readable after their worktree is cleaned up. The sweep (or the user) closes
-// a worker with its worktree; what Gram keeps of it then is all this reads, and it writes nothing:
-//
-// - while it is on the reopen list (`CLOSED_THREADS_LIMIT`), its record as closed, its conversation
-//   (`closed_messages`) and its reports, which stay with it until it leaves that list;
-// - after that, the workspace's transcript archive (`archive.ts`), a rendered, scrubbed transcript
-//   whose heading names the worker and its feature.
-//
-// Its PR links come from the record's bindings, and its changed files from the edits in its
-// conversation, summed per path. Nothing here reads git: the worktree is gone.
-
 import {
   FINISHED_WORKER_MESSAGES_MAX,
   ThreadNotFound,
@@ -31,7 +20,6 @@ import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadArchiveShape } from "./archive.ts";
 import { readableWorkspacesOnly } from "../embedding/readable-by.ts";
 
-/** The most archive-only workers the list reads the headings of, newest first. */
 const FINISHED_ARCHIVE_LIST_MAX = 50;
 
 /** The worker, feature and id an archived transcript's heading names, or nothing for another kind. */
@@ -50,10 +38,6 @@ export const archivedHeading = (
   return { title, feature: source[1]!, threadId: source[2]! };
 };
 
-/**
- * Whether an archived transcript comes after `after` in the archive's own order (latest first, then
- * by id), so a cursor names one place in it; every one does without a cursor.
- */
 const pastCursor = (
   file: { readonly archivedAt: number; readonly threadId: string },
   after: FinishedWorkersCursor | undefined,
@@ -62,12 +46,10 @@ const pastCursor = (
   file.archivedAt < after.at ||
   (file.archivedAt === after.at && file.threadId > after.threadId);
 
-// The transcript readers live in contracts, where a live worker's peek reads them too.
 export { briefOf, changedFilesOf };
 
 const prUrl = (repo: string, number: number) => `https://github.com/${repo}/pull/${number}`;
 
-/** The PRs a closed worker's record follows: its bound one first, then the others it bound. */
 const finishedPrs = (thread: Thread): ReadonlyArray<FinishedWorkerPr> => {
   const merged = thread.completedReason === "prMerged";
   return [
@@ -132,11 +114,6 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
       return byThread;
     });
 
-  /**
-   * The archive's workers no closed record or live thread covers, newest first, headings read: the
-   * next `FINISHED_ARCHIVE_LIST_MAX` transcripts past `after` (from the newest without it), and
-   * where the page after them starts while the archive has more.
-   */
   const archivedOnly = (
     workspaceId: WorkspaceId,
     known: ReadonlySet<string>,
@@ -172,11 +149,6 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
       return { found, next };
     });
 
-  /**
-   * A page of the workspace's finished workers, newest first. The first (no `after`) has those on
-   * the reopen list and the newest archive-only ones; each later page the archive-only ones past
-   * `after`. Transcripts that aren't a worker's are passed over, and still move the cursor.
-   */
   const page = (
     workspaceId: WorkspaceId,
     after?: FinishedWorkersCursor,
@@ -197,7 +169,6 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
               );
               return worker === undefined ? [] : [worker];
             });
-      // A later page leaves out what the first lists from the reopen list, as the first does.
       const onList = listedClosed.flatMap((entry) => {
         const worker = closedWorkerOf(entry, workspaceId, undefined);
         return worker === undefined ? [] : [worker.threadId];
@@ -210,7 +181,6 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
       };
     });
 
-  /** The first page's workers: those on the reopen list and the newest archive-only ones. */
   const list = (workspaceId: WorkspaceId) =>
     Effect.map(page(workspaceId), (first) => first.workers);
 
@@ -238,10 +208,6 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
       return yield* archivedDetail(threadId);
     });
 
-  /**
-   * A worker only the archive has: found through the archives of the workspaces the caller may
-   * see, by its id. One in a workspace the caller may not see is answered as no such thread.
-   */
   const archivedDetail = (
     threadId: ThreadId,
   ): Effect.Effect<FinishedWorkerDetail, ThreadNotFound> =>

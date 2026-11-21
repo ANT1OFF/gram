@@ -14,11 +14,9 @@ import { focusedThreadId } from "@/shell/thread-switcher";
 import { newEntryRoute, prefillOneOff, type NewEntry } from "./new-entry";
 import { useTaskDraftStore } from "./task-draft-store";
 
-/** New as the overview head's icon (words beside it where the head has room). */
 const NEW_ICON =
   "ml-auto gap-1 text-muted-foreground [-webkit-app-region:no-drag] @min-[12.5rem]/overview-head:w-auto @min-[12.5rem]/overview-head:pr-2.5 @min-[12.5rem]/overview-head:pl-1.5 in-data-phone-drawer:ml-0 in-data-phone-drawer:size-11 in-data-phone-drawer:bg-primary in-data-phone-drawer:text-primary-foreground!";
 
-/** New as a phone menu's pill. */
 const PILL =
   "inline-flex h-13 shrink-0 items-center gap-2.5 rounded-full bg-foreground pr-6 pl-5 text-reading font-medium text-background shadow-overlay outline-none transition-[scale,opacity] duration-(--dur-fast) ease-(--ease-out) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-safe:active:scale-[0.97] [&_svg]:size-5";
 
@@ -29,7 +27,6 @@ const PILL =
 export const newEntryOf = (remembered: string | undefined): Exclude<NewEntry, "workspace"> =>
   remembered === "oneOff" ? "oneOff" : "task";
 
-/** The New form each of Who does it's choices opens on. */
 const ENTRY_OF: Readonly<Record<(typeof WHO_CHOICES)[number]["value"], NewEntry>> = {
   orchestrator: "task",
   me: "oneOff",
@@ -49,7 +46,6 @@ export function NewEntryMenu({
 } = {}) {
   const navigate = useNavigate();
   const last = newEntryOf(useTaskDraftStore((s) => s.entry));
-  // An app in front of Gram may have New start something of its own: one plain button, no menu.
   const hosts = useEmbedShell((s) => s.newEntry);
   const open = (entry: NewEntry) => {
     if (entry === "oneOff") prefillOneOff(focusedThreadId());
@@ -140,7 +136,6 @@ export function NewEntryMenu({
   );
 }
 
-/** One of New's choices: its glyph, its word and what it starts, and its shortcut at the end. */
 function NewChoice({
   choice,
   onPick,

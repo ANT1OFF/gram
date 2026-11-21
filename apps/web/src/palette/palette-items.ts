@@ -231,7 +231,6 @@ export function buildSections(
         found(sources.actions),
         text ? Infinity : PALETTE_CAPS.idle.commands,
       ),
-      // Typed, the thread's and workspace's own commands match too; More… lists them whole.
       { id: "scoped", label: "In view", items: text ? found(sources.scoped) : [] },
     ];
   } else if (kind === "threads") {

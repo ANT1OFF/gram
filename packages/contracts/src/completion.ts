@@ -1,7 +1,3 @@
-// What "finished" and "merged" mean, in one place: the sidebar, the orchestration tree, the ledger
-// and the publisher's settle all read a thread's PRs through these, so a row can't say merged while
-// the ledger says in review. Pure functions over wire shapes; nothing here is stored.
-
 import { samePr, samePrMark, type BoundPr, type CompletedReason, type Thread } from "./domain.ts";
 import { mergeStateAllowsMerge, requiredChecksGreen, type GitState, type PrStatus } from "./git.ts";
 import type { WorkerState } from "./orchestration.ts";
@@ -70,7 +66,6 @@ export const combinePrFacts = (prs: ReadonlyArray<PrFacts | undefined>): PrFacts
 
 const PR_URL = /^https?:\/\/[^/]+\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/i;
 
-/** Whether `badge` is `pr`'s: numbers are local to a repository, so the same one elsewhere isn't. */
 const isBadgeOf = (
   badge: Pick<PrStatus, "number" | "url">,
   pr: Pick<BoundPr, "repo" | "number">,

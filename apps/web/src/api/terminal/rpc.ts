@@ -21,17 +21,12 @@ export const terminalRpc = ({ client, connection }: RpcContext): TerminalApi => 
         connection,
         signal,
         {
-          // A terminal the server no longer has (it restarted) is the view's to explain.
           final: (error) => isNotFound(error) || isNotImplemented(error),
         },
       ),
     ),
 });
 
-/**
- * Reopened after a dropped connection, each time with a `replay` the view resets to, but ended at
- * `exit`: the server ends the stream there for good, and reopening it would only replay the exit.
- */
 async function* throughExit(events: AsyncIterable<TerminalEvent>): AsyncGenerator<TerminalEvent> {
   for await (const event of events) {
     yield event;

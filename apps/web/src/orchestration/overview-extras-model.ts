@@ -20,10 +20,6 @@ import {
 } from "@/stores/usage-limits";
 import { limitPercent, PROVIDER_SHORT, resetAtText } from "@/usage/limit-format";
 
-// The overview sidebar's extras: its Pull requests section and the usage meters and
-// worker slots at its foot. Pure, so the column says what the lists, ⌘J and the title bar's meter
-// say, and is tested without a browser.
-
 /** A pull request as the overview's compact row has it. */
 export interface OverviewPrRow {
   /** `review` waits on the user's review; `yours` is the user's own open PR. */
@@ -114,7 +110,6 @@ export const footMeters = (limits: UsageLimits, now: number): FootMeter[] =>
         provider,
         name: PROVIDER_SHORT[provider],
         percent: limitPercent(limit.utilization),
-        // As the title bar popover says it: dated once the reset is past today.
         resets: limit.resetsAt === undefined ? undefined : resetAtText(limit.resetsAt, now),
         warns: limitWarns(limit),
         limit,

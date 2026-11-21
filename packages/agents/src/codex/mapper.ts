@@ -29,22 +29,6 @@ import {
   type CodexUsageBasis,
 } from "./usage.ts";
 
-/*
- * Message shape
- * - One assistant UIMessage per turn, opened at `turn/started` and finished at `turn/completed`.
- *   `metadata.agentMessageIds` holds the turn id, the anchor Codex forks (`lastTurnId`) and reverts
- *   (`beforeTurnId`) by.
- * - Agent messages become text parts and reasoning items reasoning parts, both streamed by delta.
- * - Commands, file changes, web searches and MCP calls become provider-executed dynamic tool parts
- *   under Claude's tool names (`Bash`, `Edit`, `WebSearch`, `mcp__<server>__<tool>`), so cards and
- *   the activity line read them the same way.
- * - A known unified-exec PTY keeps its original command card after the reply finishes. Output
- *   snapshots are preliminary until its exit item; background levels keep its session visible.
- * - Collaboration invocation results expose the last reported child states, not child streams.
- * - Usage is the growth of `tokenUsage.total` over the turn; Codex reports no cost.
- * - Codex reports the thread idle before `turn/completed`; idle is held back until the turn ends.
- */
-
 export interface CodexMapperOptions {
   /** The session's own part of each card id (`codexRequestId`). */
   readonly requestScope: string;
@@ -252,7 +236,6 @@ export const toolOf = (
 /** A file change as `structuredPatch` hunks; an added or deleted file becomes one whole-file hunk. */
 export const hunksOf = (change: FileUpdateChange) => patchChangeHunks(change);
 
-/** A finished tool item's output chunk. */
 const toolResult = (item: ThreadItem): Chunk | undefined => {
   const available = (output: unknown): Chunk => ({
     type: "tool-output-available",
@@ -269,7 +252,6 @@ const toolResult = (item: ThreadItem): Chunk | undefined => {
   switch (item.type) {
     case "collabAgentToolCall":
       if (item.status === "inProgress") return undefined;
-      // Completion belongs to the invocation (e.g. spawn), not to the receiving agent's work.
       if (item.status === "interrupted") return failed("Cancelled");
       if (item.status === "failed")
         return failed(`Agent operation failed\n${JSON.stringify(item.agentsStates, null, 2)}`);
@@ -317,8 +299,6 @@ const toolResult = (item: ThreadItem): Chunk | undefined => {
       return failed(errorText?.trim() ? errorText : "The tool call failed");
     }
     case "webSearch":
-      // A completed item confirms the action, not retrieved page contents. Results are optional
-      // opaque provider data; retain them only when Codex actually supplies them.
       return available({
         ...(item.action != null
           ? { action: item.action }
@@ -344,12 +324,7 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
   const gateway = options.gateway === true;
   let turn: Turn | undefined;
   let lastStatus: AgentStatus | undefined;
-  /** `item/autoApprovalReview/started` reviews with no `completed` yet; a turn's end drops them. */
   const reviews = new Set<string>();
-  /**
-   * The auto-review and reviewer-warning notices shown this turn: an agent retrying around a
-   * denial gets the same one once, not a transcript full of it.
-   */
   const reviewNotices = new Set<string>();
   const reviewNotice = (notice: AgentEvent, out: Array<AgentEvent>): void => {
     if (notice.type !== "notice" || reviewNotices.has(notice.message)) return;
@@ -359,7 +334,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
   let idlePending = false;
   const usageLedger = makeCodexUsageLedger(options.freshSession);
   let contextWindow: number | undefined;
-  // Unified exec's item ends on process exit, even after its parent turn ends or is interrupted.
   const commands = new Map<
     string,
     {
@@ -387,12 +361,9 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
     );
     out.push({ type: "backgroundTasks", tasks });
   };
-  /** A `/compact` asked for a compaction that hasn't happened yet. */
   let manualCompaction = false;
-  /** The latest request's prompt size (`tokenUsage.last`, cached input included). */
   let contextTokens: number | undefined;
   const fileChanges = new Map<string, ReadonlyArray<FileUpdateChange>>();
-  /** Compactions under way, with the context they started from. */
   const compactions = new Map<string, Compaction>();
   const now = options.now ?? Date.now;
   const commandOutput = (command: {
@@ -431,7 +402,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
 
   const status = (s: AgentStatus, detail?: string): Array<AgentEvent> => {
     const compaction = compactions.values().next().value;
-    // Thread active/connection status describes the turn, not the end of its compaction item.
     if (s === "running" && compaction !== undefined) s = "compacting";
     if (detail === undefined && s === lastStatus) return [];
     lastStatus = s;
@@ -532,8 +502,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
     if (tool === undefined) return;
     const existing = t.tools.has(item.id);
     if (item.type === "webSearch") {
-      // Native web actions can arrive only on item/completed. Refresh the existing part's input
-      // and title without opening another tool or resetting its pending/completed lifecycle.
       const input = JSON.stringify(tool);
       if (t.webInputs.get(item.id) === input) return;
       t.webInputs.set(item.id, input);
@@ -572,7 +540,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
     }
   };
 
-  /** Sends the part of a finished item's full text that no delta carried. */
   const complete = (
     t: Turn,
     id: string,
@@ -595,7 +562,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
     reviews.clear();
     reviewNotices.clear();
     for (const [id, activity] of compactions) {
-      // An item with no completion never establishes a successful compaction.
       observeCompaction(id, t.id, activity, reason === "completed" ? "unfinished" : reason);
     }
     compactions.clear();
@@ -696,7 +662,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
           break;
         if (endedTurns.has(turnId)) break;
         const t = ensureTurn(turnId, out);
-        // A terminal item stays terminal, including when completion arrived before its start.
         if (
           item.type === "commandExecution" &&
           t.tools.has(item.id) &&
@@ -707,7 +672,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
           part(t, item.id, "text", out);
           if (item.text !== "") delta(t, item.id, "text", item.text, out);
         }
-        // Reasoning can be silent: its item lifecycle, not optional text, drives the indicator.
         if (item.type === "reasoning") part(t, item.id, "reasoning", out);
         if (item.type === "fileChange") fileChanges.set(item.id, item.changes);
         if (item.type === "contextCompaction") {
@@ -721,7 +685,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
           manualCompaction = false;
           observeCompaction(item.id, t.id, compaction, "started", notification.params.startedAtMs);
           lastStatus = "compacting";
-          // The item carries nothing but its id: who asked is what this session sent.
           out.push({
             type: "status",
             status: "compacting",
@@ -747,7 +710,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
         const p = notification.params;
         const command = commands.get(commandKey(p.turnId, p.itemId));
         if (command === undefined || p.delta === "") break;
-        // Keep a bounded tail while the process runs; the exit item supplies authoritative output.
         command.output = (command.output + p.delta).slice(-64_000);
         out.push(commandOutput(command));
         if (endedTurns.has(p.turnId)) out.push(chunk(command.turn, { type: "finish" }));
@@ -799,8 +761,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
             ? { ...item, aggregatedOutput: command.output }
             : item;
         if (endedTurns.has(turnId)) {
-          // A late exit updates only the known command in its original message. Never open a
-          // stale turn (or turn an unknown/replayed item into another tool row).
           if (command === undefined) break;
           if (item.type === "commandExecution" && item.processId !== command.item.processId) break;
           const result = toolResult(completedItem);
@@ -820,9 +780,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
           break;
         if (item.type === "agentMessage") complete(t, item.id, "text", item.text, out);
         if (item.type === "contextCompaction") {
-          // The item says no more than that it happened. The summarizing request reports usage of
-          // its own on the way, so the context it compacted is the reading from before it started;
-          // the context after isn't reported (the next `last` is a zero).
           const activity = compactions.get(item.id);
           const preTokens = activity?.preTokens;
           if (activity !== undefined)
@@ -852,15 +809,12 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
         if (item.type === "reasoning") {
           complete(t, item.id, "reasoning", item.summary.join("\n\n"), out);
           endPart(t, `${item.id}:raw`, out);
-          // Completion-only/reordered items stay terminal without inventing a streaming part.
           for (const id of [item.id, `${item.id}:raw`]) {
             if (!t.parts.has(id)) t.parts.set(id, { kind: "reasoning", emitted: 0, ended: true });
           }
         }
         const result = toolResult(completedItem);
         if (result !== undefined) {
-          // The final patch can supply paths/operations absent from item/started. Refresh only
-          // its input/name, keeping the original call and approval-time patches intact.
           startTool(
             t,
             item,
@@ -923,7 +877,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
         out.push({ type: "goal" });
         break;
       case "thread/tokenUsage/updated": {
-        // An ended native turn cannot seed a later turn from a delayed/replayed report.
         if (endedTurns.has(notification.params.turnId)) break;
         if (turn !== undefined && turn.id !== notification.params.turnId) break;
         const telemetry = notification.params.tokenUsage;
@@ -994,7 +947,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
         break;
       }
       case "turn/completed": {
-        // A compaction asked for and interrupted never happened; the next one is Codex's own.
         manualCompaction = false;
         const t = notification.params.turn;
         if (turn?.id !== t.id) break;
@@ -1012,8 +964,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
       case "error": {
         const p = notification.params;
         if (p.willRetry) {
-          // Codex's own words ("Reconnecting... 1/2") with the status its error carries, the way
-          // Claude's adapter writes a retry, so the runtime can log the attempt and status.
           const { httpStatus } = codexFailure(p.error, gateway);
           const suffix = httpStatus === undefined ? "" : ` (HTTP ${httpStatus})`;
           out.push(...status("retrying", `${p.error.message}${suffix}`));
@@ -1023,16 +973,12 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
             turn.error = p.error.message;
             turn.failure = failed;
           }
-          // A limit is waited out on the thread itself, so it raises no error notice of its own.
           if (failed.kind !== "rateLimit") {
             out.push({ type: "notice", level: "error", message: p.error.message });
           }
         }
         break;
       }
-      // Codex's automatic approvals reviewer (`auto_review`) answers in the user's place, so none of
-      // it is a card. Its decision reaches the agent as the tool's result; a denial or a review that
-      // couldn't finish is a notice too, so the user sees what was held back and why.
       case "item/autoApprovalReview/started":
         reviews.add(notification.params.reviewId);
         if (lastStatus === "awaitingApproval" && options.answersApprovals?.() === true)
@@ -1044,7 +990,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
         if (notice !== undefined) reviewNotice(notice, out);
         break;
       }
-      // Every later command of the turn goes to the reviewer before it runs; nothing to show.
       case "autoApprovalReview/strictReviewRequired":
         break;
       case "guardianWarning":
@@ -1079,7 +1024,6 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
       }
       case "warning": {
         const p = notification.params;
-        // Generic warnings can concern a turn. Only the explicit threadless MCP startup form groups.
         const mcp =
           p.threadId === null || p.threadId === undefined
             ? /^MCP (?:client for|server) [`'"]?([^`'": ]+)[`'"]? (?:failed to start|didn't start)/i.exec(
@@ -1129,9 +1073,7 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
       case "account/rateLimits/updated":
         out.push(...codexRateLimits(notification.params.rateLimits));
         break;
-      // A client's own records on the thread, made only by `thread/attachment/add`, never sent here.
       case "thread/attachment/updated":
-      // Sign-in for a model provider that authenticates by OAuth; Gram's providers take a key.
       case "account/gatewayOAuth/changed":
       default:
         break;

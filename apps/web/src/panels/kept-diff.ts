@@ -1,7 +1,6 @@
 import type { Diff } from "@gram/contracts";
 import type { Query } from "@tanstack/react-query";
 
-/** Where the diff's key has the tree's stamp (`diffStamp`), which moves with every edit. */
 const STAMP_AT = 4;
 
 /**

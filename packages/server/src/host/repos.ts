@@ -15,7 +15,6 @@ import * as Effect from "effect/Effect";
 import { redactUrlCredentials } from "./remote-url.ts";
 import { withCloneLock } from "./clone-lock.ts";
 
-/** How long a clone may take before it is given up. */
 const CLONE_TIMEOUT_MS = 15 * 60_000;
 const FETCH_TIMEOUT_MS = 2 * 60_000;
 
@@ -31,7 +30,6 @@ export const HOST_REPO_GIT_ENV = {
 const SSH_USER = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/;
 const SEGMENT = /^[A-Za-z0-9._-]{1,100}$/;
 
-/** Safe folder naming is deliberately lossy; only `identity` authorizes reuse of an origin. */
 const remoteOf = (
   url: string,
 ):
@@ -39,7 +37,6 @@ const remoteOf = (
   | { readonly error: string } => {
   const refuse = { error: "That remote isn't an https or ssh URL the host clones." };
   if (url.length > 512 || url.startsWith("-") || /[\s\0\\]/.test(url)) return refuse;
-  // Never a path that climbs or names itself, which a URL parser would quietly resolve.
   if (/(^|[/:])\.\.?(\/|$)/.test(url)) return refuse;
   let host: string;
   let path: string;
@@ -79,22 +76,18 @@ const remoteOf = (
     host = scp[2]!;
     path = scp[3]!;
     identityPath = path;
-    // SCP paths can be relative to an account's home; SSH URL paths are absolute.
     transport = "scp";
     port = "22";
   } else return refuse;
   const segments = [host.toLowerCase(), ...path.replace(/\.git\/?$/, "").split("/")].filter(
     (segment) => segment !== "",
   );
-  // No segment that is hidden or names a folder, such as `.git`, inside a clone.
   if (
     segments.length < 3 ||
     segments.length > 6 ||
     !segments.every((segment) => SEGMENT.test(segment) && !segment.startsWith("."))
   )
     return refuse;
-  // Always three levels deep, a group's subgroups joined into the name, so no clone's folder is
-  // ever inside another's: `gitlab.com/group/sub/repo` is `gitlab.com/group/sub+repo`.
   const [first, owner, ...name] = segments;
   const identity = JSON.stringify([transport, host.toLowerCase(), port, user, identityPath]);
   const legacyFolder = join(first!, owner!, name.join("+"));
@@ -175,7 +168,6 @@ export const originIdentityAt = (dir: string) =>
     Effect.orElseSucceed(() => undefined),
   );
 
-/** `cloneIdentityOf`, of a URL that may not be there. */
 const identityOf = (url: string | undefined) =>
   url === undefined ? undefined : cloneIdentityOf(url);
 
@@ -195,7 +187,6 @@ const failed = (message: string) =>
 export const reposOn = (
   proc: ProcShape,
   root: string,
-  /** Added to git's environment; tests reach a local remote through it. */
   extraEnv: Readonly<Record<string, string>> = {},
 ) => {
   const on = Effect.provideService(Proc, proc);
@@ -211,10 +202,6 @@ export const reposOn = (
       legacy: boolean,
     ): Effect.Effect<{ readonly path: string }, WorktreeError> => {
       const dest = join(root, folder);
-      /**
-       * Every folder from `root` down to the clone is a real folder of its own, never a link, so a
-       * clone can't be made, or answered, anywhere outside `root`.
-       */
       const contained = Effect.sync(() => {
         let at = root;
         for (const part of folder.split(sep)) {
@@ -235,15 +222,11 @@ export const reposOn = (
         Effect.gen(function* () {
           if (!(yield* contained)) return yield* outside;
           if (existsSync(dest)) {
-            // As stored, not as `insteadOf` rewrites it: a machine that routes its remotes
-            // through a proxy would otherwise never match the URL it cloned from.
             const origin = yield* on(
               git(dest, ["config", "--local", "--no-includes", "--get", "remote.origin.url"]),
             ).pipe(Effect.mapError((error) => failed(error.message)));
             const kept = origin.status === 0 ? remoteOf(origin.stdout.trim()) : undefined;
             if (kept === undefined || !("folder" in kept) || kept.identity !== target.identity) {
-              // Older hosts used the readable name alone. Leave another identity there untouched,
-              // and give this identity its own stable folder. Hash-folder collisions still refuse.
               if (legacy) return yield* ensureIn(target.folder, false);
               return yield* new WorktreeError({
                 reason: "conflict",
@@ -251,7 +234,6 @@ export const reposOn = (
                 dirty: false,
               });
             }
-            // A fetch that fails leaves the clone as it was: a worker can still start from it.
             yield* on(
               remoteGit(
                 dest,
@@ -280,7 +262,6 @@ export const reposOn = (
             if (!(yield* contained)) return yield* outside;
             renameSync(partial, dest);
           });
-          // A clone that failed, overran or was given up leaves no half-made folder behind.
           yield* clone.pipe(
             Effect.onExit((exit) =>
               exit._tag === "Success"
@@ -298,11 +279,6 @@ export const reposOn = (
     };
     return ensureIn(target.legacyFolder, true);
   };
-  /**
-   * What the worktree at `path` is now, beside the clone at `repoRoot`: its origin's identity,
-   * whether it shares that clone's repository, and its branch. Read-only, and anything git can't
-   * say is left out, so the control plane fails closed on it.
-   */
   const read = (cwd: string, args: ReadonlyArray<string>) =>
     on(git(cwd, args, { timeoutMs: 5_000 })).pipe(
       Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
@@ -315,17 +291,13 @@ export const reposOn = (
       const [mine, clones, stored, effective, branch] = [
         yield* read(path, common),
         yield* read(repoRoot, common),
-        // As stored, not as `insteadOf` rewrites it: the URL the clone was made from, in the
-        // clone's own config, which no worktree-scoped or included setting stands in for.
         yield* read(repoRoot, ["config", "--local", "--no-includes", ...origin]),
-        // And where the worktree's own pushes go, which a worktree-scoped setting can change.
         yield* read(path, ["config", ...origin]),
         yield* read(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
       ];
       const shared = mine === undefined ? undefined : tryRealPathSync(mine);
       const ofClone =
         shared !== undefined && clones !== undefined && shared === tryRealPathSync(clones);
-      // An identity only when both say the same one: otherwise none, and nothing is confirmed.
       const identity = identityOf(stored);
       const agreed = identity !== undefined && identityOf(effective) === identity;
       return {

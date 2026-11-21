@@ -83,7 +83,6 @@ export async function reopenLastClosed(
   try {
     reopened = await api.reopenClosedThread();
   } catch (error) {
-    // The server put the entry back, so the newest on the list is the one that failed.
     const [failed] = await api.listClosedThreads().catch(() => []);
     if (failed === undefined) {
       notify("error", "Couldn't reopen a closed thread", errorMessage(error));
@@ -111,8 +110,6 @@ export async function reopenLastClosed(
     return;
   }
   if (reopened.thread === undefined) return;
-  // The server's `thread.upsert` may land after the route changes; don't flash "not found".
-  // An upsert the server sent before this answer may still wait for its frame: it goes first.
   flushServerEvents();
   useThreadsStore.getState().applyEvent({ type: "thread.upsert", thread: reopened.thread });
   open(reopened.thread.id);

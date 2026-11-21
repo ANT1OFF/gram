@@ -5,7 +5,6 @@ import { APP_ICONS, isAppIconId, type AppIconId } from "@gram/contracts";
 import { app, nativeImage, type NativeImage } from "electron";
 import { appWindows } from "@gram/shell/electron";
 
-/** The icon the app bundle carries; macOS already shows it, so launch leaves the Dock alone. */
 const DEFAULT_APP_ICON: AppIconId = APP_ICONS[0];
 
 /** The icon saved in `app-icon.json`, or the default for a missing, unreadable or unknown one. */
@@ -56,8 +55,6 @@ export function createAppIcon({ file, dir }: { file: string; dir: string }) {
     get: (): AppIconId => current,
     /** After `ready`, before the first window: applies the saved icon and keeps new windows on it. */
     start() {
-      // Linux windows have no icon of their own, so an unpackaged run (and X11 taskbars that read
-      // the window rather than its .desktop entry) would show Electron's; set the default there too.
       if (current !== DEFAULT_APP_ICON || process.platform === "linux") {
         image = load(current);
         apply();
@@ -76,7 +73,6 @@ export function createAppIcon({ file, dir }: { file: string; dir: string }) {
       try {
         writeFileSync(file, JSON.stringify({ icon }));
       } catch (error) {
-        // The next launch opens with the previous icon; nothing else depends on the file.
         process.stderr.write(`app icon: couldn't save the choice: ${String(error)}\n`);
       }
     },

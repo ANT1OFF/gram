@@ -39,12 +39,7 @@ import type { McpCliShape } from "../connectors/mcp-cli.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 
-type InterruptBehavior =
-  /** Emits `turnEnd{interrupted}` and `status idle`, like the Claude SDK in the spike. */
-  | "complete"
-  /** Never returns and never ends the turn (as the Agent SDK can). */
-  | "hang"
-  | "fail";
+type InterruptBehavior = "complete" | "hang" | "fail";
 
 /** One opened session, as the test sees it. */
 export interface FakeSession {
@@ -145,7 +140,6 @@ export interface FakeAgentControlShape {
    */
   setSendRefusal(
     refuse: ((input: UserInput) => boolean) | undefined,
-    /** What the refusal emits instead, for an adapter's own sequence (an `error` status first). */
     events?: ReadonlyArray<AgentEvent>,
   ): Effect.Effect<void>;
   /** The `steer` capability sessions opened from now on report; `false` for an agent that can't. */
@@ -205,7 +199,6 @@ export const FAKE_CAPABILITIES: AgentCapabilities = {
   stopTasks: true,
 };
 
-/** Obviously fake models, so a picker backed by the fake is neither empty nor mistaken for Claude's. */
 const FAKE_MODELS: ReadonlyArray<AgentModel> = [
   { id: "fake-opus", displayName: "Fake Opus (echo)", supportsEffort: false, isDefault: true },
   { id: "fake-haiku", displayName: "Fake Haiku (echo)", supportsEffort: false },
@@ -271,10 +264,6 @@ export const makeFakeMcpCli = (servers: FakeMcpServers): McpCliShape => {
   };
 };
 
-/**
- * Chunks for one assistant reply streamed in two deltas, tagged with fake SDK message ids and, when
- * given, the agent and model a real adapter stamps on its replies, which usage is attributed by.
- */
 const replyChunks = (
   text: string,
   said?: { readonly agent: AgentKind; readonly model: string },
@@ -309,10 +298,8 @@ const replyChunks = (
   ];
 };
 
-/** `/call <tool> <json>`; the JSON runs to the end of the input and may be left out for `{}`. */
 const CALL = /\/call\s+([\w-]+)(?:\s+([\s\S]+))?/;
 
-/** `/stream{N}`: a reply of N words, a few at a time. */
 const STREAM = /\/stream\{(\d+)\}/;
 const STREAM_DELTA_WORDS = 4;
 const STREAM_DELTA_GAP = "20 millis";
@@ -321,10 +308,6 @@ const STREAM_WORDS =
     " ",
   );
 
-/**
- * The deltas of a `/stream{N}` reply: paragraphs with a list and a code block every so often, so
- * the renderer has the work a real reply gives it. Ends with "stream done." for a test to wait on.
- */
 const streamDeltas = (words: number): ReadonlyArray<string> => {
   if (words <= 0) return ["stream done."];
   const deltas: string[] = [];
@@ -346,13 +329,11 @@ const streamDeltas = (words: number): ReadonlyArray<string> => {
             : "\n\n";
     deltas.push(prefix + some);
   }
-  // A code block left open by the last full block is closed before the closing words.
   const open = Math.floor(Math.max(0, words - 1) / 48) % 6 === 3;
   deltas.push(`${open ? "\n```" : ""}\n\nstream done.`);
   return deltas;
 };
 
-/** The steps of a `/tool` turn: think, read, run, edit two files, then reply. */
 const toolTurnSteps = (cwd: string, reply: string): ReadonlyArray<ReadonlyArray<AgentEvent>> => {
   const messageId = `tools-${randomUUID()}` as MessageId;
   const chunk = (value: GramUIMessageChunk): AgentEvent => ({
@@ -419,7 +400,6 @@ export const makeFakeAgentAdapter = (
       let modelDiscoveryFailure: string | undefined;
       const releasedSwitches = new Set<string>();
       const neverStartedSwitches = new Set<string>();
-      /** Every switch startup id an open was given: single use for the host's lifetime, as natively. */
       const usedStartups = new Set<string>();
       let openDelay: Duration.Input | undefined;
       let sendRefusal: ((input: UserInput) => boolean) | undefined;
@@ -432,7 +412,6 @@ export const makeFakeAgentAdapter = (
       let unavailable: string | undefined;
       const autoOpenReports = new Map<AgentKind, { mode: PermissionMode; gapMs: number }>();
       let resumeNeedsTranscript = false;
-      /** Session ids that have been sent a message. */
       const transcripts = new Set<string>();
       let replies = 0;
 
@@ -466,8 +445,6 @@ export const makeFakeAgentAdapter = (
             resumeId !== undefined && openOptions.fork !== true
               ? resumeId
               : (openOptions.sessionId ?? `fake-session-${sessions.length + 1}`);
-          // The tool gate, as Claude's adapter keeps it (`makeToolGate`): a call is admitted as its
-          // input starts, the provider's `PreToolUse`, and refused there while the gate is closed.
           const admitted = new Set<string>();
           const refused = new Set<string>();
           let gateOpen = true;
@@ -516,15 +493,9 @@ export const makeFakeAgentAdapter = (
               (event) => Queue.offer(queue, event),
               { discard: true },
             );
-          /** What an echo turn does once its approval is answered, by request id. */
           const awaiting = new Map<RequestId, (allowed: boolean) => Effect.Effect<void>>();
-          /** Bumped by an interrupt, so a `/call` still running doesn't reply into a later turn. */
           let turnGeneration = 0;
 
-          /**
-           * Looked up per call, so a tool registered after the session opened is found. `gated` is
-           * the binding Claude's adapter serves, whose `run` raises the registry's cards.
-           */
           const findTool = (name: string, gated: boolean): AppTool | undefined => {
             const { appTools: registry, threadId, audience } = openOptions;
             const tools =
@@ -544,7 +515,6 @@ export const makeFakeAgentAdapter = (
             });
           const callTool = (name: string, input: unknown) => runTool(name, input, false);
 
-          /** Servers the session reconnected, which it lists from then on. */
           const reconnected = new Set<string>();
           const record: FakeSession = {
             options: openOptions,
@@ -573,8 +543,6 @@ export const makeFakeAgentAdapter = (
             end: (...events) => emit(...events).pipe(Effect.andThen(Queue.end(queue))),
             callTool,
             completeTurn: (text = "done") => {
-              // Unique across adapters too, as real agents mint theirs: a server started again on
-              // the same store never streams a new reply under a stored one's id.
               const messageId = `reply-${++replies}-${randomUUID().slice(0, 8)}` as MessageId;
               return emit(
                 {
@@ -623,8 +591,6 @@ export const makeFakeAgentAdapter = (
           );
           if (autoReport !== undefined) {
             yield* emit({ type: "mode", mode: autoReport.mode });
-            // The identity follows once the session is in the runtime's hands, so the report is
-            // heard on its own first.
             yield* Effect.promise(() => sleep(autoReport.gapMs)).pipe(
               Effect.andThen(confirm),
               Effect.forkIn(scope),
@@ -633,12 +599,6 @@ export const makeFakeAgentAdapter = (
             yield* confirm;
           }
 
-          /**
-           * A `/call` turn. Everything that touches the tool is forked into the session's scope:
-           * `send` and `respond` run under the runtime's per-thread lock, and an app tool may call
-           * back into the runtime (`set_title`, a message to this thread or another), which would
-           * wait on that lock forever if `send` waited on the tool.
-           */
           const callTurn = (name: string, json: string | undefined) => {
             const generation = turnGeneration;
             const finish = (outcome: string) =>
@@ -647,7 +607,6 @@ export const makeFakeAgentAdapter = (
                   ? emit(...replyChunks(`echo: ${name} → ${outcome}`))
                   : Effect.void,
               );
-            // As Claude's adapter does, the host raises no card: the tool's gate does.
             return Effect.gen(function* () {
               const input = yield* Effect.try((): unknown =>
                 json === undefined ? {} : JSON.parse(json),
@@ -664,7 +623,6 @@ export const makeFakeAgentAdapter = (
             }).pipe(Effect.forkIn(scope), Effect.asVoid);
           };
 
-          /** As a real adapter names its replies: the session's agent and its latest model. */
           const said = () => ({
             agent: openOptions.model?.agent ?? "claude",
             model: record.models.at(-1)?.model ?? openOptions.model?.model ?? FAKE_MODELS[0]!.id,
@@ -678,8 +636,6 @@ export const makeFakeAgentAdapter = (
               if (cd !== undefined)
                 return emit({ type: "cwd", cwd: cd }, ...replyChunks(reply, said()));
               if (input.text.includes("/tool")) {
-                // Forked into the session's scope: `send` runs under the runtime lock, and a paced
-                // script held there would deliver every step at once.
                 return Effect.forEach(
                   toolTurnSteps(openOptions.cwd, reply),
                   (step) =>
@@ -691,7 +647,6 @@ export const makeFakeAgentAdapter = (
               }
               const stream = STREAM.exec(input.text)?.[1];
               if (stream !== undefined) {
-                // Forked for the same reason as `/tool`: under the lock the deltas arrive at once.
                 const messageId = `reply-${randomUUID()}` as MessageId;
                 const deltas = streamDeltas(Number(stream));
                 const text = deltas.join("");
@@ -749,7 +704,6 @@ export const makeFakeAgentAdapter = (
                     id: requestId,
                     toolName: "Bash",
                     displayName: "Bash",
-                    // `/approve{git push}` asks about that command instead.
                     input: {
                       command: /\/approve\{([^}]+)\}/.exec(input.text)?.[1] ?? "echo approved",
                       description: "A fake command",
@@ -850,8 +804,6 @@ export const makeFakeAgentAdapter = (
             interrupt: Effect.suspend(() => {
               record.interrupts++;
               record.runningAtInterrupt.push([...admitted]);
-              // An interrupted `/approve` or `/call` turn is over; a late answer or a tool still
-              // running mustn't resume it.
               awaiting.clear();
               turnGeneration++;
               switch (interruptBehavior) {
@@ -889,14 +841,12 @@ export const makeFakeAgentAdapter = (
                     Effect.andThen(Effect.sync(() => void record.modes.push(mode))),
                   ),
             setModel: (model) => Effect.sync(() => void record.models.push(model)),
-            // A model only a fresh process can run, as Claude's across the EU data-zone boundary.
             needsReopenFor: (model) => model.startsWith("reopen:"),
             connectors: {
               status: mcpRead(
                 Effect.sync(() => {
                   const listed = [
                     { name: "github", status: "connected" as const, scope: "user" },
-                    // A gateway profile's key keeps claude.ai connectors out, as Claude Code does.
                     ...(openOptions.model?.profileId === undefined
                       ? [
                           {
@@ -928,7 +878,6 @@ export const makeFakeAgentAdapter = (
                   ),
                 ),
               ),
-              // Claude Code reads the server's entry again, so one added since comes up listed.
               reconnect: (name) =>
                 Effect.sync(() => {
                   record.connectorCalls.push(`reconnect:${name}`);
@@ -944,7 +893,6 @@ export const makeFakeAgentAdapter = (
                   record.connectorCalls.push(`authenticate:${name}`);
                   return { authorizationUrl: `https://idp.example/authorize?server=${name}` };
                 }),
-              // As Claude's on a gateway profile, whose key keeps claude.ai connectors out.
               ...(openOptions.model?.profileId === undefined
                 ? {}
                 : { claudeAiUnavailable: "claude.ai connectors need your Claude sign-in." }),
@@ -962,9 +910,7 @@ export const makeFakeAgentAdapter = (
       const mcpLists: Array<AgentKind> = [];
       const configReloads: Array<string> = [];
       let mcpConfigFailure: string | undefined;
-      /** Per agent, the servers its fake config holds; a sign-in from Settings marks one signed in. */
       const configured = new Map<AgentKind, Map<string, ConfiguredServer>>();
-      /** Per agent, the reader of its `mcpConfig.signedIn`, which hears each sign-in from Settings. */
       const signInReaders = new Map<AgentKind, (name: string) => void>();
       const configOf = (agent: AgentKind) => {
         const held = configured.get(agent) ?? new Map<string, ConfiguredServer>();
@@ -1027,7 +973,6 @@ export const makeFakeAgentAdapter = (
           ),
         reloadConfig: (profileId) =>
           Effect.sync(() => void configReloads.push(`${kind}:${profileId ?? ""}`)),
-        // Claude keeps no shared server, so only the others have it, as the real hosts do.
         ...(kind === "claude"
           ? {}
           : { reloadAllConfig: Effect.sync(() => void configReloads.push(`${kind}:*`)) }),

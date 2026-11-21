@@ -208,7 +208,6 @@ import {
   withProvisionedListener,
 } from "./provisioned-listener.ts";
 
-/** How often the provisioned-host listener and its hosts are held to the hosted-features switch. */
 const PROVISIONED_SWITCH_POLL = Duration.seconds(3);
 
 /**
@@ -229,7 +228,6 @@ export const SERVICE_PATHS: ReadonlySet<string> = new Set([
   THREAD_READERS_PATH,
 ]);
 
-/** What a service call's answer adds to its record: the thread a profile start made or found. */
 const recordOf = (response: HttpServerResponse.HttpServerResponse): Record<string, unknown> => {
   const thread = response.headers[PROFILE_START_RECORD.thread];
   if (thread === undefined) return {};
@@ -263,39 +261,24 @@ export const AuthMiddleware = HttpRouter.middleware(
   Effect.gen(function* () {
     const server = yield* HttpServer.HttpServer;
     const { token, cookie: launchCookie, originKey } = yield* LaunchToken;
-    // The server's, beside its static routes; a router without them serves nothing in its place.
     const shell = yield* Effect.serviceOption(AppShell);
     const config = yield* ServerConfig;
     const mcpTokens = yield* McpTokens;
     const port = serverPort(server);
     const control = yield* RemoteControl;
-    // Absent only in tests that serve the middleware alone: no machine can join or dial in then.
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-    // A joined machine's folders for the one-off chat's picker, reached only from the local app.
     const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const tokenCapture =
       remoteHosts === undefined ? undefined : yield* claudeTokenCaptureFor(remoteHosts);
-    // Access opened, closed or moved, by the switch or by recovery: joined machines' connections
-    // and dials follow it, so none outlives the address it came in on.
     if (remoteHosts !== undefined) control.watch((origin) => remoteHosts.keepOrigin(origin));
-    // Why an offline machine can't dial in, as a thread that runs on it says on its marker.
     remoteHosts?.accessFrom(control.dialAccess);
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
-    // Absent in tests that serve the middleware alone.
     const embedInbound = Option.getOrUndefined(yield* Effect.serviceOption(EmbedInbound));
-    // Hosts provisioned on demand for one person each, when the deployment provides them.
     const onDemand = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
-    /**
-     * Whether provisioned hosts are on: one of the hosted features, read at each dial and each
-     * registration so the switch holds at once.
-     */
     const provisionedOn =
       store === undefined
         ? Effect.succeed(false)
         : Effect.provideService(embeddingEnabled, ThreadStore, store);
-    // The listener is bound only while the switch is on, and hosts connected when it goes off
-    // are dropped: both within a few seconds of the change. They stay registered. A switch that
-    // can't be read counts as off.
     const listener = Option.getOrUndefined(yield* Effect.serviceOption(ProvisionedListener));
     if (remoteHosts?.provisionedOrigin !== undefined)
       yield* provisionedOn.pipe(
@@ -306,12 +289,10 @@ export const AuthMiddleware = HttpRouter.middleware(
         Effect.repeat(Schedule.spaced(PROVISIONED_SWITCH_POLL)),
         Effect.forkScoped,
       );
-    // Stopping a joined machine and resuming its threads: a hosted feature, local app only.
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
     const hub = Option.getOrUndefined(yield* Effect.serviceOption(EventHub));
-    // An orchestrator question answered through `asks/answer`, as the socket's `question.answer`.
     const answerQuestionAsUser =
       orchestration === undefined ||
       hub === undefined ||
@@ -320,7 +301,6 @@ export const AuthMiddleware = HttpRouter.middleware(
         ? undefined
         : questionAnswerer({ questions: orchestration.memoryQuestions, store, hub, runtimes });
     const sharedFolders = Option.getOrUndefined(yield* Effect.serviceOption(SharedFolders));
-    // Its long steps run as jobs in the server's scope, outliving the call that starts one.
     const machineJobs = yield* makeMachineJobs();
     const stopDeps =
       remoteHosts === undefined || store === undefined || runtimes === undefined
@@ -333,16 +313,12 @@ export const AuthMiddleware = HttpRouter.middleware(
             jobs: machineJobs,
             ...(sharedFolders === undefined ? {} : { sharedFlush: sharedFolders.flush }),
           };
-    // A thread's work on a joined machine kept off it while it works: a lost machine costs minutes.
     if (stopDeps !== undefined) yield* startWipKeeper(stopDeps);
-    // A provisioned machine about to be taken away (SIGTERM) is readied to stop while it can be.
     if (stopDeps !== undefined) {
       const off = stopDeps.hosts.onGoing(readyOnGoing(stopDeps));
       yield* Effect.addFinalizer(() => Effect.sync(off));
     }
-    // A machine back on another disk owes a resume; with the hosted features off, this Gram runs it.
     if (stopDeps !== undefined) yield* resumeOwedMachines(stopDeps);
-    // Absent only in tests that serve the middleware alone, which take the launch token.
     const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
@@ -376,11 +352,8 @@ export const AuthMiddleware = HttpRouter.middleware(
         };
         const target = authTarget(request.url);
         const path = target?.path;
-        // The provisioned-host listener serves a host's dial and its sessions' app tools, by their
-        // own proofs, and nothing a browser or the local app reaches: decided before any of it.
         if (yield* ViaProvisionedListener)
           return HttpServerResponse.setHeaders(
-            // A host's dial is the server's own; its sessions' tool calls read as their threads.
             yield* Effect.provideService(
               ReadingAs,
               SERVER,
@@ -400,17 +373,10 @@ export const AuthMiddleware = HttpRouter.middleware(
           );
         const remote = control.current();
         const isRemote = remote !== undefined && request.headers["host"] === remote.host;
-        // People sign in through a fronting proxy: its signed statement, on every request, in
-        // place of the launch cookie and of a phone's pairing. A thread's agent on this machine
-        // still reaches its app tools by its own token over loopback, and a joined machine's host
-        // by its own proof, below.
         const identity =
           fronted?.config !== undefined &&
           (yield* fronted.active) &&
-          // A person's request never goes there, so one that names a person isn't let by.
           !(path === MCP_PATH && !isRemote && request.headers[IDENTITY_HEADER] === undefined) &&
-          // Nor does the deployment's own service, which proves itself with its bearer token
-          // below. With a statement on it, the request is a person's, and reaches no such path.
           !(
             embedInbound !== undefined &&
             !isRemote &&
@@ -440,7 +406,6 @@ export const AuthMiddleware = HttpRouter.middleware(
             return secureResponse(
               HttpServerResponse.text("forbidden: request target", { status: 403 }),
             );
-          // A browser names the page a request comes from; only the proxy's own origin may ask.
           const origin = request.headers["origin"];
           if (origin !== undefined && origin !== identity.origin)
             return secureResponse(
@@ -448,7 +413,6 @@ export const AuthMiddleware = HttpRouter.middleware(
             );
           const stated = verifyIdentity(identity, request.headers[IDENTITY_HEADER]);
           if (!stated.ok) {
-            // Why is for the log alone: a caller learns nothing about what a statement lacked.
             yield* Effect.logInfo("refused a request without a valid signed identity").pipe(
               Effect.annotateLogs({ reason: stated.reason }),
             );
@@ -456,13 +420,8 @@ export const AuthMiddleware = HttpRouter.middleware(
               HttpServerResponse.text("unauthorized: signed identity required", { status: 401 }),
             );
           }
-          // The platform in front, for itself: it registers and removes the hosts it starts and
-          // moves workspaces in and out, and reaches nothing a person does. Each call is on
-          // record with how it was answered.
           if ("service" in stated) {
             const servicePath = target.path;
-            // Only the paths named for it, only the one this statement was made for, and from
-            // the public origin as the rest of a fronted server is.
             if (
               !SERVICE_PATHS.has(servicePath) ||
               stated.service.path !== servicePath ||
@@ -518,7 +477,6 @@ export const AuthMiddleware = HttpRouter.middleware(
                         },
                       ])
                       .pipe(
-                        // The call has happened either way: its answer isn't lost to the record.
                         Effect.catchCause((cause) =>
                           Effect.logError("a service call went unrecorded", cause),
                         ),
@@ -527,8 +485,6 @@ export const AuthMiddleware = HttpRouter.middleware(
             );
             return secureResponse(answered);
           }
-          // A person's own machine, started on demand: what the proxy signed for the request is
-          // the provider's proof that this person asked.
           if (
             ON_DEMAND_PATHS.has(target.path) &&
             onDemand !== undefined &&
@@ -544,7 +500,6 @@ export const AuthMiddleware = HttpRouter.middleware(
                 request.headers[IDENTITY_HEADER] ?? "",
               ),
             );
-          // An answer to a card, as its own request: what the proxy signed for it goes with it.
           if (target.path === ASK_ANSWER_PATH && runtimes !== undefined && store !== undefined)
             return secureResponse(
               yield* answerAsk(
@@ -620,10 +575,6 @@ export const AuthMiddleware = HttpRouter.middleware(
                 request.headers[IDENTITY_HEADER] ?? "",
               ),
             );
-          // Phone access, joining machines and moving a workspace are for this machine's own
-          // sign-in or the platform's, never a person signed in through the proxy. The agents'
-          // and hosts' routes take a thread's token or a host's proof, never a person: a person
-          // let through to them would act with neither a role nor a record.
           if (
             REMOTE_MANAGEMENT_PATHS.has(target.path) ||
             MACHINE_MANAGEMENT_PATHS.has(target.path) ||
@@ -652,9 +603,7 @@ export const AuthMiddleware = HttpRouter.middleware(
           );
           return secureResponse(
             target.path === "/ws"
-              ? // A socket keeps the person and role it opened with, so it is closed after a
-                // while: the app connects again, and the proxy states who they are now.
-                yield* Effect.raceFirst(
+              ? yield* Effect.raceFirst(
                   served,
                   Effect.as(
                     Effect.sleep(identity.socketLifetimeMs ?? SOCKET_LIFETIME_MS),
@@ -672,10 +621,6 @@ export const AuthMiddleware = HttpRouter.middleware(
           return secureResponse(
             HttpServerResponse.text("forbidden: request target", { status: 403 }),
           );
-        // An embedding platform's own service: its bearer token alone, before the loopback checks,
-        // since it reaches the server by its address inside the deployment. `undefined` while the
-        // hosted features are off, and the request is then any other.
-        // Never over phone access: a request that came in by Tailscale is a person's device.
         if (
           embedInbound !== undefined &&
           !isRemote &&
@@ -683,14 +628,11 @@ export const AuthMiddleware = HttpRouter.middleware(
           path !== undefined &&
           path.startsWith(EMBED_PREFIX)
         ) {
-          // The platform's own service, which names the person a route acts for in its body, and
-          // each route asks for that person itself (`embedding/thread-messages.ts`).
           const answered = yield* embedInbound
             .respond(request, path)
             .pipe(Effect.provideService(ReadingAs, SERVER));
           if (answered !== undefined) return secureResponse(answered);
         }
-        // Remote bootstrap has no app assets and exposes no data. The secret is a fragment.
         if (isRemote && path === REMOTE_CONNECT_PATH && request.method === "GET") {
           if (
             request.headers["origin"] !== undefined &&
@@ -714,8 +656,6 @@ export const AuthMiddleware = HttpRouter.middleware(
             Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(64)),
             Effect.catch(() => Effect.succeed("")),
           );
-          // The access this request came in on must still be the one serving: access closed or
-          // reopened while the body was read (even at the same address) refuses the claim.
           const session =
             code.length === 64 && control.current() === remote
               ? remote.claim(authRequest, code)
@@ -734,8 +674,6 @@ export const AuthMiddleware = HttpRouter.middleware(
           );
           return secureResponse(response);
         }
-        // A session on a joined machine reaching its thread's app tools: the thread's own token,
-        // let through only while that thread is placed on a machine that is online now.
         if (isRemote && path === HOST_MCP_PATH) {
           const allowed =
             request.method === "POST" &&
@@ -750,7 +688,6 @@ export const AuthMiddleware = HttpRouter.middleware(
                 }),
           );
         }
-        // A joined machine's host joining or dialling in: its own proof, never a browser's cookie.
         if (isRemote && path !== undefined && HOST_PATHS.has(path))
           return secureResponse(
             remoteHosts === undefined
@@ -759,11 +696,9 @@ export const AuthMiddleware = HttpRouter.middleware(
                   remoteHosts,
                   remote,
                   path,
-                  // A release is downloaded only for a packaged build, whose build is a commit.
                   config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
                     ? config.appVersion
                     : undefined,
-                  // A joined machine's host, by its own proof: the server's own infrastructure.
                 ).pipe(Effect.provideService(ReadingAs, SERVER)),
           );
         const decision = isRemote
@@ -787,8 +722,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                   ? isRemote || stopDeps === undefined
                     ? HttpServerResponse.text("forbidden: local access only", { status: 403 })
                     : yield* hostStopRoute(stopDeps, path)
-                  : // A workspace's bundle leaves and arrives through the local app only.
-                    isRemote &&
+                  : isRemote &&
                       path !== undefined &&
                       (WORKSPACE_TRANSFER_PATHS.has(path) ||
                         path === THREAD_SEND_CHECK_PATH ||
@@ -805,9 +739,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                             remote.sessionOf(authRequest),
                             asCaller(httpEffect, unmarkLocalApp(request)),
                           )
-                        : // The local app's own connection, which the RPC handlers can tell apart
-                          // from a phone's (`isLocalApp`); anything else says nothing of itself.
-                          yield* asCaller(
+                        : yield* asCaller(
                             httpEffect,
                             !isRemote && path === "/ws"
                               ? markLocalApp(request)
@@ -822,7 +754,6 @@ export const AuthMiddleware = HttpRouter.middleware(
                 });
             break;
           case "boot":
-            // The key goes in the fragment, which the page reads and no server is ever sent.
             response = yield* HttpServerResponse.redirect(`/#${ORIGIN_KEY_FRAGMENT}${originKey}`, {
               status: 302,
             }).pipe(
@@ -841,7 +772,6 @@ export const AuthMiddleware = HttpRouter.middleware(
                 : yield* httpEffect;
             break;
           case "reject":
-            // A phone opening Gram unpaired, or after it was removed, gets a page saying so.
             if (
               isRemote &&
               decision.status === 401 &&
@@ -859,29 +789,19 @@ export const AuthMiddleware = HttpRouter.middleware(
             break;
         }
         return secureResponse(response);
-      }).pipe(
-        // Every request reads as no one (`embedding/readable-by.ts`) unless it is known whose it
-        // is: a signed-in person's as theirs (`asCaller`), the platform's service and the
-        // machines' own proofs as the server's. A route added later fails closed.
-        Effect.provideService(ReadingAs, NOBODY),
-      );
+      }).pipe(Effect.provideService(ReadingAs, NOBODY));
   }),
   { global: true },
 );
 
-/** `effect` served as `request`, the caller as the auth middleware decided it is. */
 const asCaller = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   request: HttpServerRequest.HttpServerRequest,
   actor?: Actor,
 ) =>
   Effect.provideService(
-    actor === undefined
-      ? effect
-      : // A signed-in person reads as themselves, and only so (`embedding/readable-by.ts`).
-        Effect.provideService(effect, ReadingAs, { subject: actor.id }),
+    actor === undefined ? effect : Effect.provideService(effect, ReadingAs, { subject: actor.id }),
     HttpServerRequest.HttpServerRequest,
-    // Only a verified statement names an actor: any other caller's word for one is taken off.
     actor === undefined ? unmarkActor(request) : markActor(request, actor),
   );
 
@@ -900,7 +820,6 @@ export const rpcRoutes = <Rpcs extends Rpc.Any, E, R>(
     Layer.provide(RpcSerialization.layerJson),
   );
 
-// Every RPC behind the actor guard, which does nothing unless people sign in through a proxy.
 const RpcRoutes = rpcRoutes(GramRpcs.middleware(ActorGuard), RpcHandlersLayer).pipe(
   Layer.provide(ActorGuard.layer),
 );
@@ -911,243 +830,185 @@ export const ServerCore = Layer.unwrap(
     const config = yield* ServerConfig;
     const databaseFile = config.databaseFile ?? (yield* serverDatabaseFile(config.dataDir));
     if (databaseFile !== ":memory:") mkdirSync(config.dataDir, { recursive: true });
-    // A thread's open terminals, kept for the next start, which shows each one's last screen above
-    // a fresh shell. Not for a database in memory (tests), which keeps nothing past its run.
     const keptTerminals =
       databaseFile === ":memory:" || config.headless === true
         ? undefined
         : join(config.dataDir, "kept-terminals");
-    // The git app tools read the publisher and babysit observes it; the publisher and port chips
-    // depend on the runtimes; the runtimes depend on checkouts. Orchestration sits under the app
-    // tools because the cross-thread ones ask it whether a call is delegated, and over the launch
-    // checks, which tell it whether a new orchestrator can start on Claude.
-    return (
-      Layer.mergeAll(
-        HiddenPrsLive,
-        PrAppToolsLive,
-        ReviewAppToolsLive,
-        ReadAppToolsLive,
-        WrapUpAppToolsLive,
-        DocAppToolsLive,
-        PageAppToolsLive,
-        ReviewRequestAppToolsLive,
-        // Messages and stops for a worker sent to a server go through the desktop app.
-        OrchestrationAppToolsLive.pipe(Layer.provide(SentWorkPort.layer)),
-        OrchestratorAppToolsLive,
-        SentWorkersLive.pipe(Layer.provide(SentWorkPort.layer)),
-        TranscriptSearchAppToolsLive,
-        TranscriptReadAppToolsLive,
-        RoutineAppToolsLive,
-        SettingsAppToolsLive,
-        WorkspaceAppToolsLive,
-        McpProposeAppToolsLive,
-        IssueAppToolsLive,
-        BrowserFamilyAppToolsLive,
-        VerifyAppToolsLive,
-        ThreadAssistLive,
-        RepoEventsInboundLive,
-        ThreadNotesInboundLive,
-        IdleStopInboundLive,
-        ThreadMessagesInboundLive,
-        ThreadStartsInboundLive,
-        ThreadImportsInboundLive.pipe(Layer.provide(ThreadTransfer.layer)),
-        ConversationAppToolsLive,
-        SuppliedSettingsLive,
-      )
-        // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.
-        .pipe(Layer.provideMerge(PrDependenciesLive))
-        // Read by `report`, which notes the required verify drivers without a pass.
-        .pipe(Layer.provideMerge(VerifyStatusLive))
-        .pipe(
-          Layer.provideMerge(MergeWhenReadyLive),
-          // The connectors' handlers, which the RPCs serve and `mcp_server_propose` writes through.
-          Layer.provideMerge(Layer.mergeAll(IssueReporter.layer, ConnectorConfigs.layer)),
-          Layer.provideMerge(
-            Layer.mergeAll(
-              DreamsLive,
-              // Event routines read GitHub's branches and releases through their own readers.
-              RoutinesLive.pipe(
-                Layer.provide(
-                  RoutineEventSourcesLive.pipe(
-                    Layer.provide(Layer.mergeAll(BranchHeadsLive, UpstreamReleasesLive)),
+    return Layer.mergeAll(
+      HiddenPrsLive,
+      PrAppToolsLive,
+      ReviewAppToolsLive,
+      ReadAppToolsLive,
+      WrapUpAppToolsLive,
+      DocAppToolsLive,
+      PageAppToolsLive,
+      ReviewRequestAppToolsLive,
+      OrchestrationAppToolsLive.pipe(Layer.provide(SentWorkPort.layer)),
+      OrchestratorAppToolsLive,
+      SentWorkersLive.pipe(Layer.provide(SentWorkPort.layer)),
+      TranscriptSearchAppToolsLive,
+      TranscriptReadAppToolsLive,
+      RoutineAppToolsLive,
+      SettingsAppToolsLive,
+      WorkspaceAppToolsLive,
+      McpProposeAppToolsLive,
+      IssueAppToolsLive,
+      BrowserFamilyAppToolsLive,
+      VerifyAppToolsLive,
+      ThreadAssistLive,
+      RepoEventsInboundLive,
+      ThreadNotesInboundLive,
+      IdleStopInboundLive,
+      ThreadMessagesInboundLive,
+      ThreadStartsInboundLive,
+      ThreadImportsInboundLive.pipe(Layer.provide(ThreadTransfer.layer)),
+      ConversationAppToolsLive,
+      SuppliedSettingsLive,
+    )
+      .pipe(Layer.provideMerge(PrDependenciesLive))
+      .pipe(Layer.provideMerge(VerifyStatusLive))
+      .pipe(
+        Layer.provideMerge(MergeWhenReadyLive),
+        Layer.provideMerge(Layer.mergeAll(IssueReporter.layer, ConnectorConfigs.layer)),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            DreamsLive,
+            RoutinesLive.pipe(
+              Layer.provide(
+                RoutineEventSourcesLive.pipe(
+                  Layer.provide(Layer.mergeAll(BranchHeadsLive, UpstreamReleasesLive)),
+                ),
+              ),
+            ),
+            ThreadArchiverLive,
+            WorktreeSweepLive,
+            WorkerMachineReleaseLive,
+            MainWatchLive.pipe(Layer.provide(BranchHeadsLive)),
+          ),
+        ),
+        Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),
+        Layer.provideMerge(OrchestrationLive.pipe(Layer.provideMerge(WorkerMachineSourcesLive))),
+        Layer.provideMerge(LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer))),
+        Layer.provideMerge(OrchestrationMemory.layer),
+        Layer.provideMerge(
+          Layer.mergeAll(BabysitLive, PrCommentWakesLive, RunMonitorLive, ThreadWakesLive).pipe(
+            Layer.provide(PrCommentReads.layer),
+          ),
+        ),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            PlanKeeperLive,
+            wakeConditionsLayer(
+              Layer.mergeAll(
+                BranchHeadsLive,
+                CiJobsLive,
+                MachineStateLive,
+                AutoMergesLive,
+                UpstreamReleasesLive,
+                InstalledVersionsLive,
+              ),
+            ),
+          ),
+        ),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            GitStatePublisherLive,
+            config.headless === true ? LaunchChecksCache.layerNone : LaunchChecksCache.layer,
+          ),
+        ),
+        Layer.provideMerge(ReviewRequestsLive),
+        Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
+        Layer.provideMerge(ThreadVisibility.layer),
+        Layer.provideMerge(ThreadPorts.layer),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            AppToolRegistry.layer,
+            WorkspaceOutputs.layer,
+            Docs.layer,
+            Pages.layer,
+            Conversations.layer,
+          ),
+        ),
+        Layer.provideMerge(
+          Layer.mergeAll(ThreadRuntimes.layer, UsageLimitPoller.layer).pipe(
+            Layer.provideMerge(UsageLimitReadings.layer),
+          ),
+        ),
+        Layer.provideMerge(
+          Layer.mergeAll(WorkerHosts.placedCheckouts, ObjectStoreLive, SharedFolders.layer),
+        ),
+        Layer.provideMerge(
+          WorkerHosts.layerLocalOn.pipe(
+            Layer.provideMerge(
+              Layer.mergeAll(
+                GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
+                ClaudeAiSeenLive,
+                HostTerminals.layerKeeping(keptTerminals),
+                agentHostsOrHeadless(AgentHostsThroughHost),
+              ),
+            ),
+            Layer.provideMerge(
+              keptTerminals === undefined
+                ? Layer.succeed(KeptSessions, KeptSessions.off)
+                : KeptSessions.layer(config.dataDir),
+            ),
+            Layer.provideMerge(
+              config.headless === true
+                ? LocalHostProcess.layerWith({ hostProcess: false })
+                : LocalHostProcess.layerKeeping(
+                    keptTerminals,
+                    keptTerminals === undefined
+                      ? undefined
+                      : { dataDir: config.dataDir, release: config.appVersion },
                   ),
+            ),
+          ),
+        ),
+        Layer.provideMerge(
+          DecisionHook.layer.pipe(
+            Layer.provideMerge(EventSink.layer),
+            Layer.provideMerge(
+              Layer.mergeAll(
+                EventHub.layer,
+                TerminalGate.layer,
+                PreviewFiles.layer,
+                PageFiles.layer,
+                AppActivityLive,
+                ProcessRoots.layer,
+                TimersLive.pipe(
+                  Layer.provideMerge(EmbedInbound.layer),
+                  Layer.provideMerge(Embedding.layer),
                 ),
-              ),
-              ThreadArchiverLive,
-              WorktreeSweepLive,
-              // Tells the host provider when a worker's own machine has no work left.
-              WorkerMachineReleaseLive,
-              // Tells an orchestrator when a workspace repo's default branch turns red.
-              MainWatchLive.pipe(Layer.provide(BranchHeadsLive)),
-            ),
-          ),
-          Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),
-          // On-demand hosts under the orchestration, whose workers' own machines it starts
-          // (`worker-machines.ts`).
-          Layer.provideMerge(OrchestrationLive.pipe(Layer.provideMerge(WorkerMachineSourcesLive))),
-          // Gram's own full checks, which the solo merge policy accepts in place of CI, under the
-          // orchestration whose ledger shows them.
-          Layer.provideMerge(LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer))),
-          Layer.provideMerge(OrchestrationMemory.layer),
-          Layer.provideMerge(
-            Layer.mergeAll(BabysitLive, PrCommentWakesLive, RunMonitorLive, ThreadWakesLive).pipe(
-              // Both ask a commenter's or reviewer's permission before the agent hears them.
-              Layer.provide(PrCommentReads.layer),
-            ),
-          ),
-          // The condition wakes' engine, under the wakes and the orchestration, which keep the
-          // wakes its sources look at.
-          Layer.provideMerge(
-            Layer.mergeAll(
-              PlanKeeperLive,
-              wakeConditionsLayer(
-                Layer.mergeAll(
-                  BranchHeadsLive,
-                  CiJobsLive,
-                  MachineStateLive,
-                  AutoMergesLive,
-                  UpstreamReleasesLive,
-                  InstalledVersionsLive,
-                ),
+                GitHubRelayLive,
               ),
             ),
           ),
-          // Below the condition wakes, whose `versionChanged` reads a CLI's version off its runs.
-          Layer.provideMerge(
-            Layer.mergeAll(
-              GitStatePublisherLive,
-              // A headless server looks for no CLI on this machine: its agents are its machines'.
-              config.headless === true ? LaunchChecksCache.layerNone : LaunchChecksCache.layer,
+        ),
+        Layer.provideMerge(
+          withHeadlessCheck(
+            withEmbeddingSeed(
+              ThreadStore.layerSqlite(databaseFile, {
+                checkpointOffLoop: databaseFile !== ":memory:",
+                writerOffLoop: databaseFile !== ":memory:",
+              }),
             ),
           ),
-          Layer.provideMerge(ReviewRequestsLive),
-          Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
-          Layer.provideMerge(ThreadVisibility.layer),
-          Layer.provideMerge(ThreadPorts.layer),
-          // The outputs service observes the runtimes for files their threads produce; the browser
-          // tools record evidence there too.
-          // The docs a workspace's threads publish (`publish_doc`), and the pages its user pins,
-          // kept in Gram's state.
-          Layer.provideMerge(
-            Layer.mergeAll(
-              AppToolRegistry.layer,
-              WorkspaceOutputs.layer,
-              Docs.layer,
-              Pages.layer,
-              // Which thread answers each of an embedding host's conversations.
-              Conversations.layer,
-            ),
-          ),
-          // The runtimes read the limit readings, which a limit wait falls back on for its reset.
-          Layer.provideMerge(
-            Layer.mergeAll(ThreadRuntimes.layer, UsageLimitPoller.layer).pipe(
-              Layer.provideMerge(UsageLimitReadings.layer),
-            ),
-          ),
-          // The machines work runs on: this one, over its agents, checkouts, git, files, terminals
-          // and port scan, and the machines joined to it. One host process serves this machine's
-          // worker host, the worktrees its checkouts make, and the Claude sessions it can run.
-          // `CheckoutService` above here makes each thread's checkout on the machine it is placed on.
-          // Beside it, attachments, docs and outputs mirrored to an embedding deployment's object
-          // store, under the outputs and the handlers that read through it.
-          // Each workspace's shared folder, kept here and mirrored to the machines its threads run on.
-          Layer.provideMerge(
-            Layer.mergeAll(WorkerHosts.placedCheckouts, ObjectStoreLive, SharedFolders.layer),
-          ),
-          Layer.provideMerge(
-            WorkerHosts.layerLocalOn.pipe(
-              Layer.provideMerge(
-                Layer.mergeAll(
-                  GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
-                  ClaudeAiSeenLive,
-                  HostTerminals.layerKeeping(keptTerminals),
-                  // A headless server has no agents of its own, whatever it was given.
-                  agentHostsOrHeadless(AgentHostsThroughHost),
-                ),
-              ),
-              // What a host kept running after Gram quits still runs from the last Gram, and the
-              // record of what this one runs there.
-              Layer.provideMerge(
-                keptTerminals === undefined
-                  ? Layer.succeed(KeptSessions, KeptSessions.off)
-                  : KeptSessions.layer(config.dataDir),
-              ),
-              // Nor a host process: nothing of a thread's runs on this machine.
-              Layer.provideMerge(
-                config.headless === true
-                  ? LocalHostProcess.layerWith({ hostProcess: false })
-                  : LocalHostProcess.layerKeeping(
-                      keptTerminals,
-                      keptTerminals === undefined
-                        ? undefined
-                        : { dataDir: config.dataDir, release: config.appVersion },
-                    ),
-              ),
-            ),
-          ),
-          // The decision hook and event sink of an embedding deployment: both do nothing unless
-          // their endpoint is configured and hosted features are on. Under the runtimes and the
-          // orchestration, which ask the one and tell the other.
-          Layer.provideMerge(
-            DecisionHook.layer.pipe(
-              Layer.provideMerge(EventSink.layer),
-              Layer.provideMerge(
-                // Low enough for the port scan and the limit poll to rest while no window shows.
-                Layer.mergeAll(
-                  EventHub.layer,
-                  TerminalGate.layer,
-                  PreviewFiles.layer,
-                  PageFiles.layer,
-                  AppActivityLive,
-                  ProcessRoots.layer,
-                  // The inbound paths and timers of an embedding deployment, inert while the
-                  // hosted features are off.
-                  TimersLive.pipe(
-                    Layer.provideMerge(EmbedInbound.layer),
-                    Layer.provideMerge(Embedding.layer),
-                  ),
-                  // A headless control plane's `gh`, through the deployment's GitHub route.
-                  GitHubRelayLive,
-                ),
-              ),
-            ),
-          ),
-          Layer.provideMerge(
-            // `GRAM_EMBEDDING` first, since a headless server needs the hosted features on.
-            withHeadlessCheck(
-              withEmbeddingSeed(
-                ThreadStore.layerSqlite(databaseFile, {
-                  checkpointOffLoop: databaseFile !== ":memory:",
-                  writerOffLoop: databaseFile !== ":memory:",
-                }),
-              ),
-            ),
-          ),
-        )
-    );
+        ),
+      );
   }),
 );
 
-// Pinned ws implements closeTimeout; its bundled @types/ws has not declared it yet.
 const websocketOptions: NodeHttpServer.Options["websocket"] & { readonly closeTimeout: number } = {
   closeTimeout: 1_000,
-  // The feed is JSON that repeats itself: a sidebar of threads, a terminal's scrollback and a
-  // page of history all shrink to a fraction, which is seconds on a phone's connection. Small
-  // frames (a keystroke, a streamed delta) go as they are; level 3 keeps the server's share of a
-  // large answer to a few milliseconds.
   perMessageDeflate: {
     threshold: 1024,
     zlibDeflateOptions: { level: 3 },
   },
 };
 
-/** Requests can arrive between removal of the scoped handler and the listener's final close. */
 const createHttpListener = () => {
   const server = createServer();
   server.on("request", (_request, response) => {
-    // NodeHttpServer owns the other request listener while serving. Once that scope closes,
-    // a newly parsed request has no effect/response finalizer and would strand server.close.
-    // Finish only these unhandled requests; the real handler keeps auth and request ownership.
     if (server.listenerCount("request") !== 1) return;
     response.writeHead(503, { connection: "close" });
     response.end();
@@ -1170,7 +1031,6 @@ export const ServerLayer: Layer.Layer<
 > = Layer.unwrap(
   Effect.gen(function* () {
     const { port, listenHost, provisionedHosts } = yield* ServerConfig;
-    /** The app's own listener, and the provisioned hosts' TLS one beside it when configured. */
     const listeners = (options: NodeHttpServer.Options) =>
       withProvisionedListener(
         NodeHttpServer.layerServer(createHttpListener, options),
@@ -1188,11 +1048,7 @@ export const ServerLayer: Layer.Layer<
         ProfileStartRoutes,
         SentWorkRoutes.pipe(Layer.provide(SentWorkPort.layer)),
         AuthMiddleware,
-      ).pipe(
-        // One starter for the RPC and the route, so one id makes one thread either way in.
-        Layer.provide(ProfileStarters.layer),
-        Layer.provide(AppShell.layer),
-      ),
+      ).pipe(Layer.provide(ProfileStarters.layer), Layer.provide(AppShell.layer)),
       {
         disableListenLog: true,
         disableLogger: true,
@@ -1210,23 +1066,10 @@ export const ServerLayer: Layer.Layer<
         listeners({
           host: listenHost ?? LOOPBACK_HOST,
           port,
-          // Close request/WebSocket scopes before awaiting the listener's final close. The
-          // preemptive grace timeout interrupts a cached close effect; its later finalizer then
-          // repeats that interruption even after the sockets close, failing orderly teardown.
-          // Main's server-stop deadline still bounds the entire teardown and refuses updates on
-          // timeout or any real close/finalizer failure.
           disablePreemptiveShutdown: true,
-          // A hidden/suspended renderer may never answer the close frame. The ws default
-          // waits 30 s, exceeding main's 10 s server deadline after sessions have stopped.
-          // Bound only the peer handshake; request scopes and all service finalizers still
-          // have to finish before shutdown can be attested.
           websocket: websocketOptions,
         }),
       ),
     );
   }),
-).pipe(
-  // The server's own work, from its layers' fibers to its listeners', holds the capability; every
-  // RPC, route and tool call made for someone says whom for over it (`host/ownership.ts`).
-  Layer.provide(Layer.succeed(ServerWork)(true)),
-);
+).pipe(Layer.provide(Layer.succeed(ServerWork)(true)));

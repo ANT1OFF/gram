@@ -1,6 +1,3 @@
-// Text another agent influenced, made safe for a line or a block Gram writes: one line, clipped,
-// unable to open a tag or close the quotes round it. Pure, so any contract can use it.
-
 /** How long a quoted title runs on a server-written line. */
 export const TITLE_MAX = 80;
 
@@ -22,7 +19,6 @@ export const inline = (text: string, max = TITLE_MAX): string =>
       .trim()
       .replaceAll(/[<\uFF1C]/g, "‹")
       .replaceAll(/[>\uFF1E]/g, "›")
-      // Straight, curly, low and angle double quotes, full-width too: none may close “…”.
       .replaceAll(/["\u201C-\u201F\u00AB\u00BB\uFF02]/g, "'"),
     max,
   );

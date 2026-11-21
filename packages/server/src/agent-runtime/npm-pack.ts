@@ -9,7 +9,6 @@ import {
 } from "./npm-registry.ts";
 import type { Downloader } from "./transaction.ts";
 
-/** Long enough for a ~160 MB tarball over a slow link, and still bounded. */
 const PACK_TIMEOUT_MS = 20 * 60_000;
 
 /** What npm's failure means, in the same words the Agents rows use for the registry. */

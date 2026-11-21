@@ -52,10 +52,6 @@ export const FiledIssue = Schema.Struct({
 });
 export type FiledIssue = typeof FiledIssue.Type;
 
-/**
- * Longest body GitHub's new-issue page is given in its URL: longer URLs are refused, so the rest is
- * cut and marked.
- */
 const URL_BODY_LIMIT = 6000;
 
 /** GitHub's new-issue page for `repo`, pre-filled with the title, body and labels. */

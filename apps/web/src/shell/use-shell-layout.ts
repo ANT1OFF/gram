@@ -44,13 +44,10 @@ export function useShellLayout() {
   const lightsInset = useWindowLights((s) => s.inset);
   const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
   const hasThread = threadId !== undefined;
-  // Nothing uncommitted and nothing ahead of its base: the Diff tab would say only that.
   const threadQuiet = useThreadsStore((s) => {
     const git = threadId === undefined ? undefined : s.byId[threadId]?.git;
     return git !== undefined && (!git.repo || (git.changedFiles === 0 && git.aheadBase === 0));
   });
-  // The app in front of Gram may offer the panel on a thread in a repository alone: its git state
-  // says, and until that arrives a worktree is one.
   const threadInRepo = useThreadsStore((s) => {
     const summary = threadId === undefined ? undefined : s.byId[threadId];
     return summary?.git?.repo ?? summary?.thread.checkout.kind === "worktree";
@@ -58,7 +55,6 @@ export function useShellLayout() {
   const orchestrator = useThreadsStore(
     (s) => threadId !== undefined && s.byId[threadId]?.thread.role === "orchestrator",
   );
-  // An orchestrator's pane lists its workers, so the app in front may offer it there too.
   const panelBarred = !panelOffered(
     useEmbedShell((s) => s.panel),
     {
@@ -68,21 +64,14 @@ export function useShellLayout() {
     },
   );
   const board = useViewStore((s) => s.view === "board");
-  // A grid of panes shares the chat's place among its threads, so it needs the room too.
   const grid = useLayoutStore((s) => s.grid.preset !== "1" && !s.grid.maximized);
   const chatBusy = board || orchestrator || grid;
-  // The page on screen, not the one being loaded: a lazy route keeps the old page up until its code
-  // arrives, and the shell around it changing first showed Settings' Back strip beside the thread.
   const page = useRouterState({
     select: (state) => shellPage((state.resolvedLocation ?? state.location).pathname),
   });
 
-  // Settings is a place of its own: the overview steps aside (the title bar has Back and the
-  // page's name), and its stored mode stays as it was for when Settings closes.
   const settings = page === "/settings";
-  // A phone has no room beside the chat for the overview: it is the header's drawer instead.
   const phone = usePhone();
-  // A dock, or a sidebar that hides when not in use, takes no column: the page has the width.
   const nav = useNavigationLayout(phone);
   const navAway = nav.position !== "side" || nav.autoHide;
   const input = {
@@ -107,8 +96,6 @@ export function useShellLayout() {
     lightsInset,
   };
   const fit = fitShell(input);
-  // The panel and sidebar as they'd be without the review's focus, which the chat keeps its width
-  // under, so the transcript isn't laid out anew.
   const unfocused = fit.reviewFocus ? fitShell({ ...input, reviewFocus: false }) : fit;
   useLayoutEffect(() => {
     setShellContext({
@@ -133,7 +120,6 @@ export function useShellLayout() {
 
   const left = fit.sidebarWidth;
   const chatStart = (sidebar: number) => chatBarStart(sidebar, lightsInset);
-  // Beside a review the chat keeps more room, so the drag stops there too.
   const bounds = panelBoundsFor({ panelTab, chatBusy, windowWidth }, chatStart(left));
   const shownWidth = clampWidth(
     panelWidthFor(

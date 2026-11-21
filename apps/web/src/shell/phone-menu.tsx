@@ -34,27 +34,14 @@ import { useThemeStore } from "@/theme/store";
 import { MODE_PREFS, type ModePref } from "@/theme/theme";
 import { switchTheme } from "@/theme/transition";
 
-// A phone's menu in the `roomy` look: one plain column, the app's name at its head, every place a
-// large row, and at its foot the person (their avatar, name and the word Settings on one button
-// that opens their sheet) and one New pill.
-// The places you go to rather than work in (the foot's places, History, Settings, the theme) are
-// in the person's sheet, so nothing hides under the foot.
-
-/** A row of the menu and of the person's sheet: tall, a large icon, the reading size. */
 const ROW =
   "flex min-h-13 w-full min-w-0 items-center gap-4 rounded-xl px-3.5 text-left text-reading text-foreground outline-none transition-[background-color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:active:scale-[0.985] aria-[current=page]:bg-sidebar-row-active aria-[current=page]:font-medium [&_svg]:size-[1.375rem] [&_svg]:shrink-0";
 
-/**
- * The person's button at the menu's foot: their avatar, their name and the word Settings in one
- * 52 px chip, quieter than the New pill beside it. It gives way to the pill and cuts a long name.
- */
 const YOU =
   "flex h-13 min-w-0 items-center gap-2.5 rounded-full border border-border-strong bg-card pr-4 text-left text-foreground outline-none transition-[background-color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.97]";
 
-/** A heading over a group of rows: plain words, quiet, with air above. */
 const HEADING = "px-6 pt-5 pb-1.5 text-body text-muted-foreground";
 
-/** The places at one placement, as the menu's rows under their groups' plain headings. */
 function Places({ placement }: { placement: "main" | "foot" }) {
   const groups = navigationAt(
     useEmbedShell((s) => s.navigation),
@@ -62,7 +49,6 @@ function Places({ placement }: { placement: "main" | "foot" }) {
   );
   const list = useRef<HTMLElement>(null);
   const at = useCurrentDestination();
-  // The current row in view when the menu opens: on a short phone it may be below the fold.
   useEffect(() => {
     if (at === undefined) return;
     list.current
@@ -82,7 +68,6 @@ function Places({ placement }: { placement: "main" | "foot" }) {
         <PhoneGroup
           key={group.id}
           group={group}
-          // The first group needs no name under the menu's head: its places lead.
           named={index > 0 || placement === "foot"}
           at={at}
         />
@@ -91,11 +76,6 @@ function Places({ placement }: { placement: "main" | "foot" }) {
   );
 }
 
-/**
- * One group of the menu: its plain heading and its large rows. A collapsible group always shows its
- * heading, a button that opens and closes it; closed, it keeps the row the window is at, and the
- * heading counts what it hides.
- */
 function PhoneGroup({
   group,
   named,
@@ -268,7 +248,6 @@ export function PhoneMenu() {
         </button>
       </div>
       <EmbedSwitcher placement="drawer" className="px-4 pb-2" />
-      {/* The list scrolls above the foot, never under it: no row sits behind the avatar or New. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pt-1 pb-3 [scrollbar-width:none]">
         <Places placement="main" />
       </div>
@@ -289,18 +268,12 @@ const MODE_WORDS: Readonly<Record<ModePref, string>> = {
   dark: "Dark",
 };
 
-/**
- * The person at the menu's foot: their avatar as the embedding app draws it, their name and
- * "Settings" in one button, and the sheet it opens from the bottom with who they are, the foot's places, History, Settings, the
- * theme and anything else the app put at its foot.
- */
 function YouButton() {
   const account = useEmbedShell((s) => s.sidebar.account);
   const name = useEmbedShell((s) => s.sidebar.accountName);
   const [open, setOpen] = useState(false);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const historyOpen = useHistoryStore((s) => s.open);
-  // A pick in the sheet that moves the page, or opens History, closes it.
   const at = useRef({ pathname, historyOpen });
   useEffect(() => {
     const before = at.current;
@@ -330,7 +303,6 @@ function YouButton() {
             createElement(account, { placement: "drawer" })
           )}
         </span>
-        {/* The words say what the button holds: without them the avatar alone hid Settings. */}
         {account === undefined ? (
           <span className="truncate text-reading">Settings</span>
         ) : (
@@ -346,7 +318,6 @@ function YouButton() {
       </Drawer.Trigger>
       <Drawer.Portal>
         <Drawer.Backdrop
-          // Over the menu, itself a dialog: a nested backdrop is left out unless forced.
           forceRender
           className="fixed inset-0 z-50 scrim opacity-[calc(1-var(--drawer-swipe-progress,0))] transition-opacity duration-(--dur-base) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 data-swiping:duration-0"
         />

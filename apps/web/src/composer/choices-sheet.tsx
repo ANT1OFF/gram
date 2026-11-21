@@ -122,7 +122,6 @@ function SheetSection({
       {section.id === "model" && section.warning !== undefined && (
         <p className="text-meta text-warning">{section.warning}</p>
       )}
-      {/* What the chosen effort or mode does, the line a desktop row says under its label. */}
       {section.unavailable === undefined &&
         section.id !== "model" &&
         section.id !== "speed" &&
@@ -135,7 +134,6 @@ function SheetSection({
   );
 }
 
-/** The models, a row each with its line under the name and a check on the current one. */
 function ModelRows({
   section,
   onPick,
@@ -150,7 +148,6 @@ function ModelRows({
       {options.map((option, index) => {
         const selected = option.value === section.value;
         const icon = option.icon ?? section.search?.rowIcon;
-        // Another agent's group starts with its mark and, with no hover here, its words.
         const head =
           option.group !== undefined &&
           option.group !== options[index - 1]?.group &&
@@ -206,7 +203,6 @@ function ModelRows({
   );
 }
 
-/** Effort or mode as one row of segments, the chosen one raised. */
 function Segments({
   section,
   headingId,
@@ -256,7 +252,6 @@ function Segments({
   );
 }
 
-/** Speed as Fast's switch: on picks Fast, off Standard; greyed where the model has no Fast. */
 function FastSwitch({
   section,
   onPick,
@@ -293,7 +288,6 @@ function FastSwitch({
           className="relative h-6.5 w-11 after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-[''] [&>[data-slot=switch-thumb]]:size-5.5 [&>[data-slot=switch-thumb]]:data-checked:translate-x-[calc(100%-3px)]"
         />
       </div>
-      {/* What Fast costs, only where it can be had. */}
       {(offered || on) &&
         section.notes?.map((note) => (
           <p key={note} className="text-meta text-muted-foreground">

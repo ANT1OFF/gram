@@ -23,7 +23,6 @@ export const prHandlers = Effect.gen(function* () {
   const actions = yield* PrActions;
   const refreshes = yield* GitRefresh;
   const guard = yield* actionGuard;
-  /** The decision hook's word on a merge or a close of the thread's pull request, where one is set. */
   const decided = (
     threadId: ThreadId,
     action: "pr.merge" | "pr.close",
@@ -41,7 +40,6 @@ export const prHandlers = Effect.gen(function* () {
       }),
     ).pipe(Effect.mapError((e) => new InvalidState({ message: e.message, threadId })));
 
-  /** The thread's checkout and PR: the bound PR, else its branch's badge. */
   const target = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(threadId);
@@ -53,10 +51,6 @@ export const prHandlers = Effect.gen(function* () {
       return { thread, cwd, ...found } satisfies Target;
     });
 
-  /**
-   * Runs a write on the thread's PR, then refreshes its badge so the panel settles. The refresh runs
-   * on failure too: `gh` can exit non-zero after GitHub already acted.
-   */
   const write = (
     threadId: ThreadId,
     act: (target: Target) => Effect.Effect<void, PrActionError | InvalidState>,

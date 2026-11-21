@@ -54,7 +54,6 @@ export function ExpandPresence({
   children: ReactNode;
 }) {
   const animated = useMotionLevel() === "full";
-  // The fold is `--dur-move-base`; a little over it, so the unmount never cuts the last frames.
   const foldMs = useLookMotion().durations.base + 60;
   const [state, dispatch] = useReducer(expandPresence, { mounted: open, shown: open });
 
@@ -69,7 +68,6 @@ export function ExpandPresence({
     return () => clearTimeout(timer);
   }, [open, animated, foldMs]);
 
-  // `open` wins over a state that hasn't caught up, so the first render after opening already mounts.
   if (!state.mounted && !open) return null;
   return (
     <Expand

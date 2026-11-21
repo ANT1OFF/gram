@@ -36,7 +36,6 @@ const JUMP =
   "flex min-w-0 flex-1 items-center gap-1.5 self-stretch text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 const CHIP = "shrink-0 rounded-sm border border-border px-1 text-muted-foreground";
 
-/** A glyph per kind of work, so the strip says what each line is without a word for it. */
 const WORK_ICON: Record<BackgroundTaskKind, LucideIcon> = {
   subagent: Bot,
   shell: SquareChevronRight,
@@ -93,7 +92,6 @@ export function SubagentStrip({
     <div
       ref={ref}
       data-testid="subagent-strip"
-      // Shrinks before the composer does: in a short pane an open list scrolls rather than push it out.
       className="@container flex min-h-0 w-full thread-column shrink flex-col px-6"
     >
       <ul
@@ -213,10 +211,6 @@ export function SubagentStrip({
   );
 }
 
-/**
- * What the lines stand for, as a tooltip: each one's purpose, the start of its command in code, and
- * how long it has run when `now` is given. The folded line's names the first few and counts the rest.
- */
 function WorkHint({
   rows,
   now,
@@ -225,15 +219,11 @@ function WorkHint({
 }: {
   rows: readonly StripRow[];
   now: number | undefined;
-  /** Say what kind of work a line is when nothing describes it, as a lone line's tooltip does. */
   named?: boolean;
-  /** What a click on the line does, said last. */
   action?: string | undefined;
 }) {
   const more = rows.length - HINT_ROWS;
   return (
-    // One line per title and command, so six rows and the count stand about 250px tall, well inside
-    // the 600px a window can shrink to: a tooltip can't scroll, so its list mustn't need to.
     <ul className="flex max-h-[min(20rem,calc(var(--available-height)-1rem))] min-w-0 flex-col gap-1 overflow-hidden text-left">
       {rows.slice(0, more > 1 ? HINT_ROWS : rows.length).map((row) => {
         const hint = rowHint(row);
@@ -299,10 +289,6 @@ export function CopyButton({ command, testId }: { command: string; testId: strin
   );
 }
 
-/**
- * A line's body: a button that jumps to the card where there is one, or that shows a command in the
- * Command tab (pressed while it shows there), plain otherwise.
- */
 function Jump({
   run,
   onJump,

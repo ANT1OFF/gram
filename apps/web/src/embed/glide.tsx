@@ -2,12 +2,6 @@ import { useLayoutEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
-/**
- * Puts `mark` over the current row of `container`, in its coordinates, or hides it when no row is
- * current: over the row's tile (`data-glide-tile`) when `tile`, else the whole row. A current
- * element marked `data-glide-skip` (a group's heading) is passed over. The first time
- * it is shown it is put there; only later moves glide (`data-placed`).
- */
 const follow = (container: HTMLElement, mark: HTMLElement, tile: boolean) => {
   const current = container.querySelector<HTMLElement>(
     '[aria-current="page"]:not([data-glide-skip])',

@@ -96,19 +96,11 @@ import { sleep } from "@/lib/sleep";
 
 const labelCls = "text-meta font-medium text-muted-foreground";
 
-/** What Start says while an agent's readiness is checked: the agent by name, once it is known. */
 const checkingAgent = (model: { agent: string } | undefined): string =>
   model === undefined ? "Checking agents…" : `Checking ${agentLabel(model.agent)}…`;
 
-/**
- * The New form for the orchestrator (⌘N's `/new-task`): what needs doing, and the workspace whose
- * orchestrator it goes to, which decides how to run it. A repo with no workspace gets one on send,
- * at the autonomy picked above the goal. A single agent chat, the one-off thread, is the other
- * draft behind the same header.
- */
 const TaskOrchestratorFields = lazy(() => import("./task-orchestrator-fields"));
 
-/** The `ModelRef` an orchestrator pick starts on, as `choiceModel` makes it. */
 const orchestratorRef = (choice: AgentChoice): ModelRef => ({
   agent: choice.agent,
   model: choice.model,
@@ -130,8 +122,6 @@ export function NewTaskDraft({
     queryFn: () => api.listProjects(),
   });
   const { workspaces, settled } = useWorkspacesQuery();
-  // Where the draft was opened from: the thread or workspace page the window was on, else, opened
-  // straight onto the form, the thread in the focused pane, which ⌘N leaves there.
   const [from] = useState((): CameFrom => {
     const place = readCameFrom();
     if (place !== undefined) return place;
@@ -147,8 +137,6 @@ export function NewTaskDraft({
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
 
   const newForm = useNewForm();
-  // A pick in the "in" chip holds until a shortcut or the palette names another workspace.
-  // Switching who does it keeps the workspace in the route, and so the pick.
   const [picked, setPicked] = useRoutePick<TaskTarget>(initialWorkspace ?? "", pendingTaskTarget);
   useEffect(dropTaskTarget, []);
   const named: TaskTarget | undefined =
@@ -164,9 +152,6 @@ export function NewTaskDraft({
     last,
   });
   const offered = settledTaskTarget(picked ?? named ?? starting?.target, workspaces);
-  // A task goes to a workspace that exists: a repository without one is set up in New workspace,
-  // which picking it under Where it runs opens. One asked for (handed over, or the thread's) is
-  // named beside the picker instead; a default that is one gives way to a workspace.
   const askedRepo =
     offered?.kind === "repo" && (picked !== undefined || starting?.from === "thread")
       ? (projects.find((project) => project.id === offered.projectId) ?? null)
@@ -177,11 +162,8 @@ export function NewTaskDraft({
       : askedRepo !== undefined || workspaces[0] === undefined
         ? undefined
         : { kind: "workspace", workspaceId: workspaces[0].workspace.id };
-  // Kept from the last task rather than read off where the draft was opened: said beside Start.
   const remembered =
     picked === undefined && named === undefined && starting?.from === "last" && target === offered;
-  // The window is on the workspace the task goes to while it is drafted, so the title bar and the
-  // overview name the one the form does.
   const showing = target?.kind === "workspace" ? target.workspaceId : undefined;
   useEffect(() => {
     useTaskDraftStore.getState().show(showing);
@@ -193,9 +175,6 @@ export function NewTaskDraft({
       ? workspaces.find((state) => state.workspace.id === target.workspaceId)
       : undefined;
   const kind = useThreadsWorkspaceNoun();
-  // Sent to a hosted workspace instead, once a server signed in to runs work sent to it: the
-  // workspace's orchestrator's worker there, after the three checks (board 1 of
-  // docs/design/mocks/hosted-send-and-move).
   const sendTargets = useSendTargets();
   const [sendPick, setSendPick] = useState<SendTarget>();
   const sendTo =
@@ -227,8 +206,6 @@ export function NewTaskDraft({
   const name = workspace?.workspace.name ?? repos[0]?.name ?? "";
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
   const agents = useServerSettings((s) => s.settings?.agents);
-  // The orchestrator picked on this draft, for the target it was picked for: a running one moves
-  // to it as the task starts, a new one opens on it. Unpicked, the workspace's own.
   const [pickedOrchestrator, setPickedOrchestrator] = useState<{
     target: string;
     choice: AgentChoice;
@@ -261,8 +238,6 @@ export function NewTaskDraft({
     staleTime: 30_000,
   });
   const orchestratorModel = selection.data?.orchestrator;
-  // What the orchestrator chips show: the pick while its model is still being chosen, else what
-  // the preview says it runs on.
   const shownOrchestrator: AgentChoice | undefined =
     pickedOrchestrator !== undefined &&
     target !== undefined &&
@@ -274,7 +249,6 @@ export function NewTaskDraft({
   const onDemand = useOnDemandMachine();
   const startMachine = needsMachine(onDemand.status);
   const machineOnline = onDemand.status?.machine?.online === true;
-  // Once their machine is up, the check that failed for want of one is asked again.
   const recheck = selection.refetch;
   useEffect(() => {
     if (machineOnline) void recheck();
@@ -286,7 +260,6 @@ export function NewTaskDraft({
       ? {}
       : { threadId: selection.data.orchestratorThreadId },
   );
-  // Models by the names the composer gives them, not their ids.
   const nameOf = useModelNames([orchestratorModel, selection.data?.orchestratorFrom]);
   const inputModel = orchestratorModel;
   const inputModels = useModelsSettled(
@@ -339,7 +312,6 @@ export function NewTaskDraft({
   );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
-  /** While a send starts the person's machine there first: what it is on now. */
   const [machineStep, setMachineStep] = useState<string>();
   const mounted = useRef(true);
   useEffect(() => {
@@ -351,8 +323,6 @@ export function NewTaskDraft({
   const formRef = useRef<HTMLFormElement>(null);
   const [controlsOpen, setControlsOpen] = useState(false);
 
-  // A repeat start: the target is the one the last task went to and no new workspace is made, so
-  // who does it and where it runs fold away, said by the line beside Start until its Change.
   const [expanded, setExpanded] = useState(false);
   const repeat =
     settled &&
@@ -361,8 +331,6 @@ export function NewTaskDraft({
     target.kind === "workspace" &&
     taskTargetKey(last) === taskTargetKey(target);
   const folded = repeat && !expanded;
-  // Where it runs, changed from beside Start in one click or ⌘⇧L: a folded form unfolds, and the
-  // workspace's menu opens.
   const [whereOpen, setWhereOpen] = useState(false);
   const changeWhere = () => {
     if (attachments.uploading) return;
@@ -378,8 +346,6 @@ export function NewTaskDraft({
   });
   const whereHint = useShortcutHint("draft.where");
 
-  // Arriving here (⌘N, New task, the New menu) starts where typing does: the brief. Focus already
-  // in a field (a carried draft's, say) stays.
   useEffect(() => {
     if (!focusLost() && document.activeElement?.closest("input, textarea, [contenteditable]"))
       return;
@@ -392,7 +358,6 @@ export function NewTaskDraft({
     sendProject !== undefined &&
     prompt.trim() !== "" &&
     !attachments.uploading &&
-    // A server is sent the brief alone: files attached here don't go.
     attachments.ready.length === 0 &&
     !sendCheck.isFetching &&
     !sendBlocked;
@@ -404,22 +369,16 @@ export function NewTaskDraft({
     !selection.isFetching &&
     !selection.isError &&
     !preflight.blocked &&
-    // An agent picked for the orchestrator whose models aren't listed yet has nothing to start on.
     (shownOrchestrator === undefined || shownOrchestrator.model !== "") &&
     (!hasImages || !imagePreflight.blocked) &&
-    // The line beside Start names the workspace's autonomy: never start on a level not yet read.
     (target.kind !== "workspace" || workspace !== undefined);
 
   const send = async () => {
-    // A final still on its way would land after the draft is gone: stop, keeping what was heard,
-    // and leave sending to the user once it is in.
     if (dictation.active) return dictation.stop();
     if (sendTo !== undefined) {
       if (!sendValid || sending || target === undefined || sendProject === undefined) return;
       setSending(true);
       setError(undefined);
-      // The person's own machine there, started first where the server offers it and it isn't
-      // up: asked again until it runs, saying each step (`/threads/send-machine`).
       const machineRuns = async (): Promise<boolean> => {
         for (;;) {
           const progress = await startSendMachine(sendTo);
@@ -443,7 +402,6 @@ export function NewTaskDraft({
         const started = sendStartsMachine(sendCheck.data) && (await machineRuns());
         setMachineStep(started ? `Sending to ${sendTo.workspace}…` : undefined);
         let sent: Awaited<ReturnType<typeof sendIt>> | undefined;
-        // A machine that just came up may not have joined there yet: the same send, a few times.
         for (let attempt = 0; sent === undefined; attempt += 1) {
           try {
             sent = await sendIt();
@@ -488,7 +446,6 @@ export function NewTaskDraft({
     } catch (e) {
       setSending(false);
       setError(errorMessage(e) || "Couldn't start the task.");
-      // A workspace made meanwhile is the target now, which only a fresh list shows.
       void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     }
   };
@@ -501,9 +458,6 @@ export function NewTaskDraft({
     run: () => void send(),
   });
 
-  // Making a workspace is New workspace's: what was typed goes along as its first task, with the
-  // repository picked here, and comes back to the draft Esc returns to. The form has no place for
-  // files, so while any are attached the hand-off waits, saying why.
   const handOffBlocked =
     attachments.uploading || attachments.ready.length > 0
       ? "New workspace can't take attachments: remove them to set one up from here"
@@ -522,15 +476,12 @@ export function NewTaskDraft({
     void navigate({ to: "/new" });
   };
 
-  // The orchestrator is this draft; Chat is the other, which what was typed goes along to.
   const pickWho = (who: Who) => {
     if (who === "me") toOneOff();
   };
 
   const submitLabel =
     sendTo === undefined ? (newForm?.team?.start ?? "Send to team") : `Send to ${sendTo.workspace}`;
-  // What Start waits on while a check runs, in its own words on the button: the task's selection,
-  // then each agent's readiness, then the workspace's autonomy the summary beside it names.
   const checking: string | undefined =
     sendTo !== undefined
       ? sendCheck.isFetching && !sending
@@ -550,8 +501,6 @@ export function NewTaskDraft({
                   ? "Checking the workspace…"
                   : undefined;
   const budget = ledger?.budget;
-  // The level the line beside Start names, the workspace's own. Undefined while the workspace
-  // hasn't loaded: the line waits rather than show the default.
   const autonomy = workspace === undefined ? undefined : autonomyOf(workspace.charter);
   const mergeApproval = useWorkspaceMergeApproval(
     workspace,
@@ -619,7 +568,6 @@ export function NewTaskDraft({
                     aria-autocomplete="list"
                     rows={4}
                     className={cn(SLAB_TEXTAREA, "relative min-h-28")}
-                    // Cleared from the start of dictation, so the first words don't land on it.
                     placeholder={
                       dictation.active
                         ? ""
@@ -794,9 +742,6 @@ export function NewTaskDraft({
         )}
 
         <div className="flex flex-col gap-3">
-          {/* While the check runs, Start says so itself (`checking`); no line here. The model
-              itself is the Orchestrator picker's, and a new workspace's line beside Start: a line
-              of its own says only a move. */}
           {orchestratorModel !== undefined && selection.data?.orchestratorFrom !== undefined && (
             <p data-testid="task-orchestrator-line" className="text-meta text-muted-foreground">
               {selection.data.orchestratorFresh === true
@@ -804,7 +749,6 @@ export function NewTaskDraft({
                 : `The orchestrator moves from ${agentLabel(selection.data.orchestratorFrom.agent)} · ${nameOf(selection.data.orchestratorFrom)} to ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)} as the task starts.`}
             </p>
           )}
-          {/* Its slot follows a tier nothing here fills: why, beside what stands in. */}
           {selection.data?.orchestratorNote !== undefined && (
             <p
               role="status"
@@ -826,7 +770,6 @@ export function NewTaskDraft({
               }}
             />
           )}
-          {/* Where the deployment starts machines on demand, the person's own, in place of the error. */}
           {startMachine && <StartMachineCard />}
           {selection.isError && !startMachine && (
             <p role="alert" className="text-meta text-destructive">
@@ -856,7 +799,6 @@ export function NewTaskDraft({
                 disabled={(sendTo === undefined ? !valid : !sendValid) || sending}
                 data-testid="task-submit"
                 data-checking={checking === undefined ? undefined : ""}
-                // Its action stays its name while the check runs; the words say why it waits.
                 aria-label={checking === undefined ? undefined : `${submitLabel}, ${checking}`}
                 title={
                   checking === undefined && !sending && prompt.trim() === ""
@@ -885,9 +827,6 @@ export function NewTaskDraft({
               </span>
             )}
             {target !== undefined && sendTo === undefined && (
-              // Beside Start, wrapping in its own column rather than under the button: who acts
-              // and what still needs you, whatever is folded below. At the Task/Team/Chat
-              // choice's own size, since it says what that choice commits to.
               <span className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-1.5 text-reading text-muted-foreground">
                 {autonomy === undefined ? (
                   <span data-testid="task-authority-pending">
@@ -896,12 +835,10 @@ export function NewTaskDraft({
                 ) : (
                   <TaskAuthorityLine
                     workspace={name}
-                    // While a pick saves, the line says the level it is saving.
                     autonomy={mergeApproval.autonomy}
                     remembered={remembered}
                     onChangeWhere={attachments.uploading ? undefined : changeWhere}
                     changeWhereHint={whereHint || undefined}
-                    // The workspace's merge approval is picked here.
                     approval={{
                       label: mergeApproval.label,
                       onPick: mergeApproval.pick,

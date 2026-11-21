@@ -108,7 +108,6 @@ export function PrActions({
 
   const write = (effect: () => Promise<void>, done: string) =>
     void action.run(async () => {
-      // Refetch on failure too: `gh` can fail after GitHub already acted.
       try {
         await effect();
         setConfirming(undefined);
@@ -142,7 +141,6 @@ export function PrActions({
       });
     } else onBlocker?.(step);
   };
-  /** Blocked with a step to take: the row is that step alone, and Merge… moves into "…". */
   const mergeInMenu = blocked !== undefined && next !== undefined;
   const more = (
     <Menu.Root>
@@ -217,10 +215,6 @@ export function PrActions({
     <div className="flex flex-col gap-1.5">
       {summary !== undefined && (
         <div data-testid="pr-blockers" className="flex flex-col gap-1">
-          {/* One heading: that the merge is blocked and how many things block it. Each one's own
-              words follow right under it, so the heading doesn't name their kinds too: in a narrow
-              panel that second naming was what got cut short ("3 reasons: check, changes re…").
-              The merge dialog, which has no list, keeps the kinds. */}
           <p
             id={reasonId}
             data-testid="pr-merge-blocked"
@@ -286,9 +280,6 @@ export function PrActions({
                 Ready for review
               </Button>
             ) : mergeInMenu ? null : (
-              // Blocked with no step to offer, Merge steps back to a secondary button, described by
-              // the reasons above rather than repeating them; it still opens, for auto-merge or a
-              // merge the panel can't foresee GitHub allowing.
               <Button
                 size="xs"
                 variant={blocked === undefined ? "default" : "outline"}
@@ -393,7 +384,6 @@ export function UpdateBranch({
   );
 }
 
-/** Picks one of the strategies the repository allows, or auto-merge outside babysit mode. */
 function MergeDialog({
   threadId,
   detail,
@@ -409,7 +399,6 @@ function MergeDialog({
   notice: NoticeState | undefined;
   onClose: () => void;
   onMerge: (strategy: MergeStrategy, auto: boolean) => void;
-  /** What blocks the merge, as the panel's summary counts it; the dialog says so too. */
   blocked?: { readonly count: string; readonly categories: string } | undefined;
 }) {
   const api = useApi();

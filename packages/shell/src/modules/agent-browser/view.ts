@@ -1,9 +1,3 @@
-// Watching an agent's page in the headless browser from somewhere else: the server asks for a
-// thread's page (`pane.view.watch`), and while it keeps asking the host sends what the page is
-// and its frames, and puts a person's input into it. A click, a key or a scroll takes the page
-// over from its agent, as input in the desktop app's pane does; it goes back to the agent when
-// the person hands it back, or has sent nothing for a while.
-
 import {
   VIEW_IDLE_MS,
   VIEW_LEASE_MS,
@@ -18,7 +12,6 @@ import {
 import type { HeadlessPage } from "./headless.ts";
 import type { AgentPanes, PaneContents } from "./pane.ts";
 
-/** The most input batches one thread's page keeps waiting: seconds of a person's fastest typing. */
 const QUEUE_MAX = 64;
 
 export interface ViewsOptions {
@@ -53,7 +46,6 @@ interface Watch {
   expires: number;
   contents: PaneContents | undefined;
   stop: (() => void) | undefined;
-  /** What was last sent of the page, so only a change is sent. */
   sent: string | undefined;
 }
 
@@ -62,11 +54,8 @@ export const createViews = (options: ViewsOptions): Views => {
   const idleMs = options.idleMs ?? VIEW_IDLE_MS;
   const leaseMs = options.leaseMs ?? VIEW_LEASE_MS;
   const watches = new Map<string, Watch>();
-  /** When each thread's person is taken to have left, by their last input. */
   const idle = new Map<string, ReturnType<typeof setTimeout>>();
-  /** When each thread's inputs so far are in its page, so the next batch follows them. */
   const typing = new Map<string, Promise<void>>();
-  /** How many batches wait their turn, by thread. */
   const queued = new Map<string, number>();
   let poll: ReturnType<typeof setInterval> | undefined;
 
@@ -85,7 +74,6 @@ export const createViews = (options: ViewsOptions): Views => {
     };
   };
 
-  /** The page is its agent's again, with nothing of the person's still held down in it. */
   const giveBack = (threadId: string) => {
     const contents = watches.get(threadId)?.contents;
     if (contents !== undefined && !contents.isDestroyed()) options.watch(contents)?.letGo();
@@ -104,7 +92,6 @@ export const createViews = (options: ViewsOptions): Views => {
     watch.contents = undefined;
   };
 
-  /** Brings what a thread's watchers have in line with its page now. */
   const refresh = async (threadId: string) => {
     const watch = watches.get(threadId);
     if (watch === undefined) return;
@@ -121,7 +108,6 @@ export const createViews = (options: ViewsOptions): Views => {
         });
       }
     }
-    // A page that hasn't been anywhere yet is no page to show.
     const shown =
       contents === undefined || page === undefined || contents.getURL() === ""
         ? null
@@ -146,7 +132,6 @@ export const createViews = (options: ViewsOptions): Views => {
         void refresh(threadId);
         continue;
       }
-      // Nobody is watching any more: the frames stop, and a page a person held is the agent's.
       if (idle.has(threadId)) release(threadId);
       detach(watch);
       watches.delete(threadId);
@@ -162,8 +147,6 @@ export const createViews = (options: ViewsOptions): Views => {
     if (known !== undefined) {
       known.expires = Date.now() + leaseMs;
       if (fresh) {
-        // Whoever asks has nothing yet: the page is said again, and its frames start again, since
-        // a page that isn't repainting sends none by itself.
         detach(known);
         known.sent = undefined;
         void refresh(threadId);
@@ -180,7 +163,6 @@ export const createViews = (options: ViewsOptions): Views => {
     void refresh(threadId);
   };
 
-  /** The person acted: the page is theirs, until `idleMs` passes with nothing more from them. */
   const acted = (threadId: string) => {
     if (panes.driverOf(threadId) === "agent") panes.takeOver(threadId);
     clearTimeout(idle.get(threadId));
@@ -195,18 +177,13 @@ export const createViews = (options: ViewsOptions): Views => {
   };
 
   const input = async (threadId: string, inputs: ReadonlyArray<ViewInput>) => {
-    // Only a watched page takes input: what a person can't see, they don't drive.
     const watch = watches.get(threadId);
     const contents = watch?.contents;
     const page = contents === undefined ? undefined : options.watch(contents);
     if (contents === undefined || page === undefined) return;
     for (const each of inputs) {
-      // The page may have gone, or the watch lapsed, while the last input was on its way in:
-      // what is left of the batch was meant for that page, and is no one's now.
       if (watches.get(threadId)?.contents !== contents || contents.isDestroyed()) return;
       if (viewInputTakes(each)) acted(threadId);
-      // A pointer passing over the agent's page, or a release with no press, isn't the person's
-      // to send: nothing reaches the page until they have it.
       if (panes.driverOf(threadId) !== "user") continue;
       if (idle.has(threadId)) acted(threadId);
       await page.input(each);
@@ -225,11 +202,9 @@ export const createViews = (options: ViewsOptions): Views => {
       const { threadId } = message;
       if (message.type === "pane.view.watch") watchThread(threadId, message.fresh === true);
       else if (message.type === "pane.view.input") {
-        // No more waiting than a person sends: a flood is dropped, not queued without end.
         const waiting = queued.get(threadId) ?? 0;
         if (waiting >= QUEUE_MAX) return true;
         queued.set(threadId, waiting + 1);
-        // One batch after another: a release never overtakes its press.
         const after = (typing.get(threadId) ?? Promise.resolve())
           .then(() => input(threadId, message.inputs))
           .catch(() => {});

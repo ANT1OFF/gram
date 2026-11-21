@@ -53,7 +53,6 @@ const openPrsQuery = (api: Api) => ({
   retry: false,
 });
 
-/** The user's own open PRs, as the review-request poll found them; refetched on `openPrs.changed`. */
 function useOpenPrs() {
   return useQuery(openPrsQuery(useApi()));
 }
@@ -114,13 +113,11 @@ export function OpenPrsPanel() {
   );
 }
 
-/** A right-click menu over one piece of the list, as `RequestsMenu` is for review requests. */
 function OpenPrsMenu({
   row,
   render,
   children,
 }: {
-  /** The row's PR; absent on the headings and the empty space. */
   row?: OpenPrRow | undefined;
   render: ReactElement;
   children?: ReactNode;
@@ -148,10 +145,6 @@ function useGoToThread() {
   return (threadId: ThreadId) => void navigate({ to: "/t/$threadId", params: { threadId } });
 }
 
-/**
- * One PR's actions. A PR a thread owns leads to it; one nothing owns can be checked out into a new
- * thread, when a known project holds its repository.
- */
 function RowMenuItems({ row }: { row: OpenPrRow }) {
   const open = useOpenPr();
   const goTo = useGoToThread();
@@ -178,7 +171,6 @@ function RowMenuItems({ row }: { row: OpenPrRow }) {
   );
 }
 
-/** How the list is laid out and where; the poll and its sign-in are Review requests'. */
 function ListMenuItems() {
   const api = useApi();
   const navigate = useNavigate();
@@ -210,7 +202,6 @@ function ListMenuItems() {
       <ContextMenuSeparator />
       <ContextMenuItem
         onClick={() => {
-          // One poll finds both lists, so both are fresh after it.
           api
             .refreshReviewRequests({ force: true })
             .then(() =>
@@ -325,11 +316,9 @@ function OpenPrRepoGroup({
   );
 }
 
-/** The thread's title, live; `undefined` while no thread owns the PR or the thread is gone. */
 const useOwnerTitle = (owner: ThreadId | undefined) =>
   useThreadsStore((s) => (owner === undefined ? undefined : s.byId[owner]?.thread.title));
 
-/** What a row has no room for: the whole title, its head branch and owner, and its marks in words. */
 function OpenPrCard({ row }: { row: OpenPrRow }) {
   const note = openPrMergeNote(row);
   const owner = useOwnerTitle(row.owner);
@@ -347,17 +336,12 @@ function OpenPrCard({ row }: { row: OpenPrRow }) {
   );
 }
 
-/**
- * One PR. The row is one button that opens it on GitHub, stretched under its text, so the owning
- * thread's link can sit in the text above it without nesting one button in another.
- */
 function OpenPrRowItem({
   row,
   grouped = false,
   cardSide,
 }: {
   row: OpenPrRow;
-  /** Under its repository's heading, so the row names only the number. */
   grouped?: boolean;
   cardSide: CardSide;
 }) {

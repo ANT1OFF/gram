@@ -1,13 +1,8 @@
 import { changedFilesOf, type GramUIMessage } from "@gram/contracts";
 
-// What the Inbox's detail pane shows of the thread an item came from, under the item: its last few
-// turns and what its edits changed, so an ask can be answered without opening the thread. Pure, so
-// it is tested without a browser.
-
 /** How many of the thread's latest turns the pane shows. */
 export const CONTEXT_TURNS = 4;
 
-/** How long a turn's words run before they are cut short; the pane clamps them to lines too. */
 const TURN_CHARS = 320;
 
 export interface ContextTurn {

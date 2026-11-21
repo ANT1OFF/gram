@@ -15,18 +15,6 @@ import { redactText } from "../logging/redact.ts";
 import { REGISTRY_SIGN_IN_EXPIRED, refusedForAge, refusedSignIn } from "./npm-registry.ts";
 import { appendTail } from "../bounded.ts";
 
-/**
- * Updating the user's own agent CLI from Settings → Agents: the one place Gram runs a
- * package manager, or a CLI's own updater, against an install it doesn't own. It runs only an
- * install step the listing offers with `run`, as that argv, through `Proc`: the login-shell PATH,
- * so `npm` is the user's npm with its own registry, sign-in and `min-release-age`, and no flag of
- * Gram's. One update per agent at a time; the state lives in memory only, so a restart
- * leaves nothing stuck, and closing the server interrupts a run, which kills the child. The managed
- * store (`service.ts`) is separate: it installs verified copies Gram owns.
- *
- * The output is shown to the user, tail-capped and scrubbed, and never logged.
- */
-
 const AGENTS: ReadonlyArray<RuntimeAgent> = ["claude", "codex"];
 
 const NAMES: Readonly<Record<RuntimeAgent, string>> = {
@@ -37,17 +25,13 @@ const NAMES: Readonly<Record<RuntimeAgent, string>> = {
 /** How much of the output the row shows. */
 export const OUTPUT_TAIL_CHARS = 6_000;
 
-/** How much raw output is kept to tidy into that tail. */
 const RAW_TAIL_CHARS = 4 * OUTPUT_TAIL_CHARS;
 
-/** How often the running state is republished while output arrives. */
 const FLUSH_MS = 150;
 
-// CSI sequences (colours, cursor moves) and OSC ones (titles, hyperlinks).
 // oxlint-disable-next-line no-control-regex -- matching escape sequences is the point
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g;
 
-/** `scheme://user:password@`, which an npm error can print with the registry URL. */
 const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi;
 
 /**
@@ -109,7 +93,6 @@ export const updateFailure = (
   };
 };
 
-/** What a run that couldn't start, or overran, means. */
 const procFailure = (
   error: ProcError,
   argv: ReadonlyArray<string>,
@@ -169,10 +152,8 @@ export const makeCliUpdates = (deps: CliUpdatesDeps) =>
       refs.set(agent, yield* SubscriptionRef.make<CliUpdateState>({ state: "idle" }));
     const refOf = (agent: RuntimeAgent) => refs.get(agent)!;
     const jobs = yield* FiberMap.make<RuntimeAgent>();
-    /** Taken before anything yields, so a second request can't also pass the check. */
     const reserved = new Set<RuntimeAgent>();
 
-    /** The run itself, from the confirmed step to its outcome. */
     const job = (
       agent: RuntimeAgent,
       step: { readonly installer: Installer; readonly command: string },
@@ -219,7 +200,6 @@ export const makeCliUpdates = (deps: CliUpdatesDeps) =>
           yield* SubscriptionRef.set(ref, { state: "failed", command, output, ...failure });
           return;
         }
-        // The CLI has changed by now, so a cancel arriving here waits for the probe to finish.
         yield* Effect.uninterruptible(
           Effect.gen(function* () {
             yield* deps.updated(agent);

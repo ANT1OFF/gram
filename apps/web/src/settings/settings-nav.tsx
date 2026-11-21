@@ -60,18 +60,9 @@ export function SettingsNav({
   return (
     <nav
       aria-label="Settings sections"
-      // The narrow bar's classes are important: an app that mounts Gram writes plain utilities of
-      // its own after Gram's stylesheet, and its `flex` or `w-60` then beat the fold, leaving the
-      // whole list over the page on a phone.
       className="w-60 shrink-0 overflow-y-auto border-r border-border p-3 @max-2xl/settings:flex! @max-2xl/settings:w-auto! @max-2xl/settings:items-center @max-2xl/settings:gap-2 @max-2xl/settings:overflow-visible! @max-2xl/settings:border-r-0! @max-2xl/settings:border-b! @max-2xl/settings:py-2! @max-2xl/settings:*:data-search:mb-0 @max-2xl/settings:*:data-search:min-w-0 @max-2xl/settings:*:data-search:flex-1 phone:*:data-search:order-last phone:*:data-search:max-w-32"
     >
-      <h1
-        ref={headingRef}
-        tabIndex={-1}
-        // Named on screen by the title bar, beside Back; here for where focus lands and for
-        // screen readers.
-        className="sr-only"
-      >
+      <h1 ref={headingRef} tabIndex={-1} className="sr-only">
         Settings
       </h1>
       {needsYou}
@@ -116,7 +107,6 @@ export function SettingsNav({
   );
 }
 
-/** The groups as one picker, for the narrow bar; hidden while the list itself shows. */
 function SectionPicker({
   groups,
   current,
@@ -162,7 +152,6 @@ function SectionPicker({
   );
 }
 
-/** The pages that open from the open group, under its link; the open one is current. */
 function SubpageLinks({
   pages,
   current,
@@ -196,10 +185,6 @@ function SubpageLinks({
   );
 }
 
-/**
- * The open page's subsections under its link: a click scrolls to one, and the one at the top of
- * the page is marked as you scroll.
- */
 function SectionLinks({ sections }: { sections: readonly SettingsAnchor[] }) {
   const [active, pick] = useActiveSection(sections);
   return (
@@ -228,10 +213,8 @@ function SectionLinks({ sections }: { sections: readonly SettingsAnchor[] }) {
   );
 }
 
-/** How far below the scroller's top a subsection's top may be and still count as reached. */
 const REACHED = 48;
 
-/** The nearest ancestor that scrolls vertically, which is the page's own scroller. */
 const scrollerOf = (element: HTMLElement): HTMLElement | undefined => {
   for (let at = element.parentElement; at !== null; at = at.parentElement) {
     const overflow = getComputedStyle(at).overflowY;
@@ -240,11 +223,6 @@ const scrollerOf = (element: HTMLElement): HTMLElement | undefined => {
   return undefined;
 };
 
-/**
- * The subsection whose top was last scrolled up to the top of the page, read on any scroll since
- * the page's scroller is the layout's and its groups may arrive after the nav. One picked from the
- * nav stays marked until the next scroll of its own, as the page's foot may stop short of it.
- */
 function useActiveSection(
   sections: readonly SettingsAnchor[],
 ): [string | undefined, (id: string) => void] {
@@ -267,7 +245,6 @@ function useActiveSection(
       setActive(current);
     };
     const schedule = () => {
-      // The scroll a pick itself makes lands within a frame or two; a later one is the user's.
       const pick = picked.current;
       if (pick !== undefined && performance.now() - pick.at < 250) return;
       picked.current = undefined;

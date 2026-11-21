@@ -1,7 +1,3 @@
-// Pure parsing behind port chips: which TCP ports each thread's process trees listen on, and what
-// runs in the foreground of each of its terminals. macOS and Linux read `lsof` and `ps`; Windows
-// reads `netstat -ano` and a CIM process listing.
-
 export interface Command {
   readonly file: string;
   readonly args: ReadonlyArray<string>;
@@ -190,7 +186,6 @@ export const scanCommands = (platform: NodeJS.Platform): ScanCommands =>
         parseProcesses: parsePsProcesses,
       };
 
-/** ConPTY's own console host, a child of the shell that is no job of the user's. */
 const CONSOLE_HOSTS = new Set(["conhost", "openconsole"]);
 
 /**
@@ -216,7 +211,6 @@ export const foregroundOf = (
   const tree = descendants(children, [shell]);
   const leader = rows.get(root.tpgid);
   if (leader !== undefined && tree.has(leader.pid)) return leader;
-  // The group's leader has exited while the rest of its pipeline runs on.
   for (const pid of tree) {
     const row = rows.get(pid);
     if (row?.pgid === root.tpgid) return row;
@@ -224,10 +218,8 @@ export const foregroundOf = (
   return undefined;
 };
 
-/** Interpreters whose script says more than they do: `node …/pnpm dev` is `pnpm dev`. */
 const INTERPRETERS = new Set(["node", "bun", "deno", "python", "python3", "ruby", "perl"]);
 
-/** The first word of `text` (quotes taken off) and what follows it. */
 const firstWord = (text: string): readonly [string, string] => {
   const trimmed = text.trimStart();
   if (trimmed.startsWith('"')) {
@@ -241,7 +233,6 @@ const firstWord = (text: string): readonly [string, string] => {
 const baseName = (path: string) =>
   path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
 
-/** A program's name without its folder or Windows extension, lower-cased. */
 const programName = (command: string) =>
   baseName(firstWord(command)[0])
     .replace(/\.(exe|cmd|bat)$/i, "")

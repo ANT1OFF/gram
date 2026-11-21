@@ -86,10 +86,8 @@ export const UsageModelShare = Schema.Struct({
   totalTokens: Schema.Number,
 });
 export type UsageModelShare = typeof UsageModelShare.Type;
-/** What a breakdown row counted: the same disjoint buckets as `UsageTotals`, and its models. */
 const breakdownFields = {
   totals: UsageTotals,
-  /** Largest first. */
   models: Schema.Array(UsageModelShare),
 };
 /** Most threads a breakdown names; the rest are only in their workspace's or Solo's totals. */

@@ -13,20 +13,15 @@ import type { Api } from "@/api/types";
 interface ThreadTerminals {
   ids: readonly TerminalId[];
   active: TerminalId | undefined;
-  /** Each terminal's shell executable, for quoting dropped paths. */
   shells: Readonly<Record<string, string>>;
-  /** The folder a terminal was asked to start in, for the ones `openTerminalIn` opened. */
   folders?: Readonly<Record<string, string>> | undefined;
-  /** The project script each script tab runs, by name; its tab is named after it. */
   scripts?: Readonly<Record<string, string>> | undefined;
-  /** How each script tab's run stands. */
   runs?: Readonly<Record<string, ScriptRunState>> | undefined;
 }
 
 interface TerminalsState {
   byThread: Readonly<Record<string, ThreadTerminals>>;
   setActive: (threadId: ThreadId, terminalId: TerminalId) => void;
-  /** Records how a script tab's run ended, from its feed's `exit`. */
   setRun: (threadId: ThreadId, terminalId: TerminalId, run: ScriptRunState) => void;
 }
 
@@ -51,7 +46,6 @@ export const useTerminalsStore = create<TerminalsState>()((set) => ({
     }),
 }));
 
-/** How a terminal the server lists stands, for a script's tab. */
 const runOf = (info: TerminalInfo): ScriptRunState =>
   info.alive
     ? "running"
@@ -78,7 +72,6 @@ export type TerminalApi = Pick<
   | "terminalFeed"
 >;
 
-/** Initial size until the view has measured itself and sent `terminal.resize`. */
 const INITIAL_SIZE = { cols: 80, rows: 24 };
 
 const starting = new Map<string, Promise<void>>();
@@ -155,8 +148,6 @@ export async function openTerminalIn(
   await ensureTerminals(api, threadId, folder);
   const alive = (await api.terminalList(threadId)).filter((t) => t.alive);
   const entry = useTerminalsStore.getState().byThread[threadId];
-  // The server reports the resolved path, which a symlinked folder doesn't compare equal to, so a
-  // terminal this opened is also matched by the folder it was asked for.
   const match = alive.find(
     (t) =>
       entry?.ids.includes(t.terminalId) === true &&
@@ -210,7 +201,6 @@ export async function runScript(
       },
     };
   });
-  // Closed once the new run has its tab, so a run that fails to start leaves the last one's output.
   if (previous !== undefined) await api.terminalClose(previous).catch(() => {});
   return opened.terminalId;
 }
@@ -225,7 +215,6 @@ export async function restartTerminal(
   terminalId: TerminalId,
 ) {
   const entry = useTerminalsStore.getState().byThread[threadId];
-  // A script's tab runs its script again.
   const script = entry?.scripts?.[terminalId];
   if (script !== undefined) {
     await runScript(api, threadId, script);

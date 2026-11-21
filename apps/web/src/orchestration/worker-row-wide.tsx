@@ -10,16 +10,6 @@ import { useThreadHeadline } from "@/thread/plan-ui";
 import { useWorkspaceAsks } from "./ask-stack";
 import type { WideFootProps, WideParts } from "./worker-row";
 
-// The parts only the right pane's wide worker row draws (`WorkerRow`'s `wide`): its last line, with
-// its plan's steps and the docs it wrote, and an ask's pictures. Apart from the row,
-// so the sidebar's row on the first paint doesn't load what only the pane, loaded later, shows.
-
-/**
- * The wide row's last line: its plan's steps while it has a plan, then the docs it wrote, each a
- * titled chip that opens it (its PR chips lead the line above, as the sidebar's row has them).
- * Drawn twice: as `ghost`, inside the row's button, to hold its room; and over that room, outside
- * the button, where its docs are buttons of their own.
- */
 function WideFoot({ threadId, done, ghost = false }: WideFootProps) {
   const { headline } = useThreadHeadline(threadId);
   const workspaceId = useThreadsStore((s) => s.byId[threadId]?.thread.workspaceId ?? undefined);
@@ -68,7 +58,6 @@ function WideFoot({ threadId, done, ghost = false }: WideFootProps) {
   );
 }
 
-/** The docs a wide row names before the rest are left to the Docs tab. */
 const DOCS_SHOWN = 2;
 
 const DOC_CHIP =
@@ -102,10 +91,8 @@ export function PlanSteps({ done, total }: { done: number; total: number }) {
   );
 }
 
-/** How many of an ask's pictures a wide row shows. */
 const PICTURES_SHOWN = 2;
 
-/** The first pictures of an ask between options, 48 px tall, each with its option's name. */
 function AskPictures({ askKey }: { askKey: string }) {
   const asks = useWorkspaceAsks();
   const visuals = asks.flatMap((each) => each.asks).find((ask) => ask.key === askKey)?.visuals;

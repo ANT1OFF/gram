@@ -32,11 +32,8 @@ interface NativeSpec {
   readonly action: NativeAction;
   readonly description: string;
   readonly argumentHint?: string;
-  /** The names each agent's terminal uses for it too. */
   readonly aliases?: Partial<Record<AgentKind, ReadonlyArray<string>>>;
-  /** Only for these agents; every agent when left out. */
   readonly agents?: ReadonlyArray<AgentKind>;
-  /** Agents whose own command does it right when given arguments, so it gets those. */
   readonly agentTakesArgs?: ReadonlyArray<AgentKind>;
 }
 
@@ -53,8 +50,6 @@ const NATIVE: ReadonlyArray<NativeSpec> = [
     description: "Pick the model",
     argumentHint: "[model]",
     aliases: {},
-    // Claude's switches the session, and the thread follows it (`PostModelSwitch`), for any id,
-    // a model the pickers don't list included.
     agentTakesArgs: ["claude"],
   },
   { name: "effort", action: "pickEffort", description: "Pick the effort" },
@@ -110,7 +105,6 @@ const TERMINAL: Partial<Record<AgentKind, string>> = {
   codex: "open Codex in a terminal",
 };
 
-/** Typed-only commands that do nothing useful in a thread, with what to do instead when there is something. */
 const UNAVAILABLE: Partial<Record<AgentKind, Readonly<Record<string, string | null>>>> = {
   claude: {
     agents: "ask Claude to create or edit a subagent in .claude/agents",
@@ -158,10 +152,6 @@ const UNAVAILABLE: Partial<Record<AgentKind, Readonly<Record<string, string | nu
   },
 };
 
-/**
- * The Gram commands `agent`'s threads have, as menu rows, less the names the agent itself
- * reports: a user's `/help` skill or `/new` command runs, not Gram's.
- */
 const natives = (agent: AgentKind, canFork: boolean, reported: readonly SlashCommand[]) => {
   const taken = new Set(reported.flatMap(namesOf));
   return NATIVE.flatMap((spec) => {
@@ -205,7 +195,6 @@ export type Resolution =
   | { readonly kind: "native"; readonly action: NativeAction; readonly args: string }
   | { readonly kind: "unavailable"; readonly note: string };
 
-/** The command a draft opens with: `/name` then, after whitespace, its arguments. */
 const commandOf = (text: string) => {
   const match = /^\/([\w.:-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
   return match === null ? undefined : { name: match[1]!, args: match[2]?.trim() ?? "" };
@@ -224,8 +213,6 @@ export function resolveTyped(
   const command = commandOf(text);
   if (command === undefined) return { kind: "agent" };
   const { name, args } = command;
-  // The agent's own list outranks this file's: a user's command of that name, or a CLI that
-  // learned one, runs.
   if (reported.some((c) => namesOf(c).includes(name))) return { kind: "agent" };
   const native = natives(agent, canFork, reported).find((n) => namesOf(n.command).includes(name));
   if (native !== undefined && !(native.agentTakesArgs && args !== "")) {

@@ -19,9 +19,7 @@ export const PENDING_RULES = ["Bash(pnpm test:*)", "WebFetch(domain:github.com)"
 const DAY = 24 * 60 * 60_000;
 const GB = 1024 ** 3;
 
-/** A worktree Settings › Storage lists beside the threads' ones, in the first seeded repo. */
 interface StorageSeed {
-  /** Under the repo, or an absolute folder for one Gram didn't make. */
   readonly folder: string;
   readonly branch?: string;
   readonly daysIdle: number;
@@ -90,7 +88,6 @@ export const STORAGE_SEEDS: readonly StorageSeed[] = [
 const seedPath = (root: string, seed: StorageSeed) =>
   seed.folder.startsWith("/") ? seed.folder : `${root}/${seed.folder}`;
 
-/** What a Storage row takes on disk: its seed's size, else every mock worktree's. */
 const sizeOf = (entry: StorageWorktree): number => {
   if (entry.missing) return 0;
   const seed = STORAGE_SEEDS.find((s) => seedPath(entry.repoTop, s) === entry.path);
@@ -113,7 +110,6 @@ export function createWorktreesMock(world: MockWorld) {
     pendingRules: PENDING_RULES,
   });
   let lastRemove: { path: string; options: RemoveWorktreeOptions } | undefined;
-  /** Storage seeds and threads' worktrees removed through Settings › Storage, and bytes freed. */
   const cleaned = new Set<string>();
   let freed = 0;
 
@@ -200,7 +196,6 @@ export function createWorktreesMock(world: MockWorld) {
   const api: WorktreesApi = {
     listWorktrees: async (repoPath) => {
       const threads = world.threads().map((summary) => summary.thread);
-      // Like `git worktree list`, any folder of the repo works, including a linked worktree.
       const project = world
         .projects()
         .find(
@@ -279,7 +274,6 @@ export function createWorktreesMock(world: MockWorld) {
           result.kept = [...result.kept, { path, reason: reason ?? "not found" }];
           continue;
         }
-        // The repo's own thread-less worktrees go the Worktrees dialog's way too.
         if (checkouts.extra(entry.repoTop).some(([extra]) => extra === path)) {
           await checkouts.remove(path, { force: true });
         }

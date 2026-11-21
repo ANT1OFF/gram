@@ -7,7 +7,6 @@ import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
 import { useThreadsStore } from "@/stores/threads";
 
-// Shared with the `wrap_up` tool, which offers a Push button only when this one would show.
 export { pushActionOf };
 
 /** "Publish branch", or "Push N commits" when origin's count is known. */

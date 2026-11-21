@@ -86,9 +86,7 @@ export function parseStoredAppearance(text: string | undefined): TitleBarTheme |
 
 const MAX_NOTIFICATION_TEXT = 500;
 
-/** An ask notification's id: a page-made token, never text the OS shows. */
 const NOTIFICATION_ID = /^[\w-]{1,64}$/;
-/** Allow or Merge, then the Open the shell adds. */
 const MAX_NOTIFICATION_ACTIONS = 1;
 
 /**
@@ -158,7 +156,6 @@ export function overlayDotBitmap(size: number): Buffer {
       const d = Math.hypot(x + 0.5 - r, y + 0.5 - r);
       const alpha = Math.round(Math.max(0, Math.min(1, r - d)) * 255);
       const i = (y * size + x) * 4;
-      // Premultiplied BGRA, as nativeImage.createFromBitmap expects.
       buf[i] = Math.round((0x3b * alpha) / 255);
       buf[i + 1] = Math.round((0x3b * alpha) / 255);
       buf[i + 2] = Math.round((0xef * alpha) / 255);

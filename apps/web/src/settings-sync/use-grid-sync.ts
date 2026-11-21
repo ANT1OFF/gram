@@ -42,7 +42,6 @@ export function useGridSync() {
     if (restored.current || !ready) return;
     const apply = (saved: ReturnType<typeof restoreGrid>) => {
       const { grid: current, setGrid, openThread } = useLayoutStore.getState();
-      // A layout picked while settings were loading wins over the saved one.
       if (!saved || current.preset !== "1") return;
       setGrid(saved);
       if (routeThread) {

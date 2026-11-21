@@ -40,7 +40,6 @@ export const SURFACES_IDS = Object.keys(SURFACE_OPACITY) as SurfacesId[];
  */
 export const SCENE_SCRIM = { light: 0.6, dark: 0.3 } as const;
 
-/** The text colours checked over a picture: on the page itself, and on cards. */
 const PAGE_TEXT = ["fg", "fg-muted"] as const;
 const CARD_TEXT = ["fg", "fg-muted", "fg-subtle", "accent-text", "danger-text"] as const;
 
@@ -71,7 +70,6 @@ const holds = (texts: readonly string[], backgrounds: readonly string[], target:
     texts.every((text) => contrastRatio(text, background) >= target),
   );
 
-/** The least of `from`, `from + step`, … up to 1 for which `ok` holds. */
 function least(from: number, ok: (value: number) => boolean) {
   for (let value = from; value < 1; value = Math.round((value + 0.02) * 100) / 100)
     if (ok(value)) return value;
@@ -99,7 +97,6 @@ export function backdropLevels(
   const scrim = least(SCENE_SCRIM[mode], (value) => holds(text(PAGE_TEXT), washed(value), target));
   const under = washed(scrim);
   const alpha = least(SURFACE_OPACITY[surfaces], (value) =>
-    // Cards (surface-3) and the sidebar and title bar (surface-1) both take the opacity.
     holds(
       text(CARD_TEXT),
       under.flatMap((pixel) => [

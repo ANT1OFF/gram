@@ -1,6 +1,3 @@
-// Settings' notification row, the shell's half: the system's notification settings for Gram, and
-// the test notification. What happened to it is `core/notification-status.ts`'s to report.
-
 /** The system's notification settings, on Gram's own page where the OS has one. */
 export const notificationSettingsUrl = (
   platform: NodeJS.Platform,

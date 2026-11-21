@@ -191,7 +191,6 @@ export class MockSpeechStore {
 
   watch(model: SpeechModelId, signal: AbortSignal): AsyncIterable<SpeechStatus> {
     this.#known(model);
-    // `createChannel` closes an already-aborted one at once, before `channel` below is bound.
     if (signal.aborted) return createChannel<SpeechStatus>(signal);
     const watchers = this.#watchers.get(model) ?? new Set();
     this.#watchers.set(model, watchers);
@@ -210,7 +209,6 @@ export class MockSpeechStore {
     const total = speechModelBytes(this.#manifest(model));
     const failure = this.failNext;
     this.failNext = undefined;
-    // A cancelled or failed download resumes from what it kept, as the real store does.
     const kept =
       state.install.state === "idle" || state.install.state === "failed"
         ? (state.install.resumableBytes ?? 0)
@@ -236,7 +234,6 @@ export class MockSpeechStore {
         state.timer = undefined;
         state.installed = { id: model, sizeBytes: total, installedAt: Date.now() };
         this.#set(model, { state: "idle" });
-        // As the real store does: one variant of a checkpoint (the same source repo) stays on disk.
         const source = this.#manifest(model).source.repo;
         for (const [other, each] of this.#models)
           if (

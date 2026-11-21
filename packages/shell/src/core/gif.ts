@@ -1,7 +1,3 @@
-// An animated GIF from page frames, for an agent's recording of what it did in the Preview pane.
-// Dependency-free: one shared 256-colour palette chosen from the frames' most frequent colours,
-// LZW-compressed frames, looping forever. Good for UI captures, not for photographs.
-
 /** One frame of raw pixels, four bytes each, in `order`. */
 export interface GifFrame {
   readonly width: number;
@@ -16,7 +12,6 @@ export interface GifOptions {
   readonly order?: "rgba" | "bgra";
 }
 
-/** A colour cut to five bits a channel, the palette's unit. */
 const key15 = (r: number, g: number, b: number) => ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
 
 const channels = (order: "rgba" | "bgra") => (order === "rgba" ? [0, 1, 2] : [2, 1, 0]);
@@ -40,7 +35,6 @@ export function paletteOf(
   used.sort((a, b) => counts[b]! - counts[a]!);
   const palette = new Uint8Array(256 * 3);
   used.slice(0, 256).forEach((k, i) => {
-    // The bucket's centre, so a colour maps back near where it came from.
     palette[i * 3] = ((k >> 10) << 3) | 4;
     palette[i * 3 + 1] = (((k >> 5) & 31) << 3) | 4;
     palette[i * 3 + 2] = ((k & 31) << 3) | 4;
@@ -48,7 +42,6 @@ export function paletteOf(
   return palette;
 }
 
-/** Maps a five-bit colour to its nearest palette entry, remembering each answer. */
 const nearest = (palette: Uint8Array) => {
   const cache = new Int16Array(1 << 15).fill(-1);
   return (k: number): number => {
@@ -118,7 +111,6 @@ export function lzw(indices: Uint8Array, minCodeSize = 8): Uint8Array {
   emit(current);
   emit(end);
   if (bits > 0) out.push(pending & 0xff);
-  // Sub-blocks of at most 255 bytes, then an empty one.
   const blocks: number[] = [minCodeSize];
   for (let at = 0; at < out.length; at += 255) {
     const chunk = out.slice(at, at + 255);
@@ -147,13 +139,11 @@ export function* gifParts(
     ...[..."GIF89a"].map((c) => c.charCodeAt(0)),
     ...u16(width),
     ...u16(height),
-    // A global table of 256 colours.
     0xf7,
     0,
     0,
   ]);
   yield palette;
-  // Loop forever.
   yield Uint8Array.from([
     0x21,
     0xff,
@@ -175,7 +165,6 @@ export function* gifParts(
     }
     const delay = Math.max(2, Math.round(frame.delayMs / 10));
     yield Uint8Array.from([
-      // Graphic control: leave the frame in place, its delay in hundredths of a second.
       0x21,
       0xf9,
       0x04,
@@ -183,7 +172,6 @@ export function* gifParts(
       ...u16(delay),
       0,
       0,
-      // Image descriptor at the top left, using the global table.
       0x2c,
       0,
       0,

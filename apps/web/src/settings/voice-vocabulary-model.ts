@@ -4,7 +4,6 @@ import {
   type VocabularyEntry,
 } from "@gram/contracts";
 
-/** Longest term or spelling the list keeps, as the schema does. */
 const TEXT_MAX = 80;
 
 export const PROJECT_NAMES_HELP =

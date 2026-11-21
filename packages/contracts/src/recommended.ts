@@ -89,17 +89,13 @@ export const unknownTierWhy = (tier: string): string =>
   `it follows the "${tier}" tier, which only a newer version of Gram knows; update Gram, or pick a model for it`;
 
 const VendorPick = Schema.Struct({
-  /** In order of preference; an older CLI falls back to a later one within the tier. */
   models: Schema.NonEmptyArray(Schema.NonEmptyString),
-  /** This harness's starting effort for the tier, where it differs from the tier's. */
   effort: Schema.optionalKey(FollowEffort),
 });
 
 const TierPick = Schema.Struct({
-  /** What the tier is for, in a user's words: the roster's default "use for" note. */
   note: Schema.NonEmptyString,
   effort: FollowEffort,
-  /** Helpers run on Cheap: each helper kind's effort, by kind name (`title`, `recap`, …). */
   helpers: Schema.optionalKey(Schema.Record(Schema.String, FollowEffort)),
   claude: VendorPick,
   codex: VendorPick,
@@ -194,7 +190,6 @@ export const findListed = (
         row.resolvedId === undefined &&
         new RegExp(`^${escape(label)}(?:\\s|$)`).test(row.displayName)),
   );
-  // "default" follows the CLI's own choice, which may move; a named row stays on this model.
   return matches.find((row) => row.id !== "default") ?? matches[0];
 };
 
@@ -206,7 +201,6 @@ export const clampEffort = (
   if (!model.supportsEffort) return undefined;
   const listed = EFFORT_ORDER.filter((effort) => model.efforts?.includes(effort) ?? false);
   if (listed.length === 0) return undefined;
-  // xhigh and max aren't in the order, so they land on high.
   const asked = EFFORT_ORDER.indexOf(wanted as FollowEffort);
   const ceiling = asked === -1 ? EFFORT_ORDER.length - 1 : asked;
   const below = listed.filter((effort) => EFFORT_ORDER.indexOf(effort) <= ceiling);
@@ -351,7 +345,6 @@ export const firstChoiceOf = (
   table: RecommendationTable = RECOMMENDED,
 ): ModelRef => {
   if (isPinned(slot)) return slot;
-  // A tier only a newer Gram knows stands in as Lead, the default tier.
   if (!isTierRef(slot)) return firstChoiceOf({ tier: "lead" }, table);
   const agent = slot.agent ?? table.both[slot.tier];
   return {
@@ -418,7 +411,6 @@ export const hostCandidates = (
   });
 };
 
-/** A model id without its `[1m]` window or a dated snapshot's suffix: what two ids are compared by. */
 const plainId = (id: string) => bare(id).replace(/-\d{8}$/, "");
 
 /**

@@ -29,8 +29,6 @@ export function useForkAvailability(threadId: ThreadId): {
 } {
   const fork = useThreadsStore((s) => s.byId[threadId]?.capabilities?.fork);
   const status = useThreadsStore((s) => s.byId[threadId]?.status);
-  // Capabilities reach the store with the next snapshot, so a thread created this session has none
-  // yet; only an explicit `false` rules forking out, and the server refuses what it can't do.
   if (fork === false) return { available: false, reason: "This agent can't fork threads yet" };
   if (status !== undefined && TURN_IN_PROGRESS.has(status)) {
     return { available: false, reason: "Wait for the turn to finish" };
@@ -38,7 +36,6 @@ export function useForkAvailability(threadId: ThreadId): {
   return { available: true, reason: undefined };
 }
 
-// The server refuses a fork into a checkout whose agent session is still open.
 export const checkoutInUse = (error: unknown) =>
   errorMessage(error).includes("source checkout is in use");
 
@@ -49,8 +46,6 @@ export const forkErrorMessage = (error: unknown): string =>
 
 /** Shows a fork: in an empty pane when the grid has one, else in the focused pane. */
 export function openForkedThread(thread: Thread) {
-  // The server's `thread.upsert` may arrive after the route changes; don't flash "not found".
-  // An upsert the server sent before this answer may still wait for its frame: it goes first.
   flushServerEvents();
   useThreadsStore.getState().applyEvent({ type: "thread.upsert", thread });
   const { grid, openInPane, openThread } = useLayoutStore.getState();

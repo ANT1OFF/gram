@@ -1,7 +1,3 @@
-// Where the updater learns of releases and gets an installer onto disk. The
-// selection, the checks against the saved settings, and the signature verification are the
-// updater's; the source only reads and fetches.
-
 import type { ProcessResult, RunGh } from "./updater.ts";
 
 /** One release as a source reports it: its tag, whether it is a draft, and its assets' names. */
@@ -55,7 +51,6 @@ export function ghReleaseSource(options: {
   return {
     notReadyMessage: "GitHub CLI (gh) is not installed or not authenticated",
 
-    // `gh auth status` is slow, so its answer is cached, briefly when it says no.
     async ready() {
       if (readiness && now() - readiness.at < (readiness.ready ? READY_TTL_MS : NOT_READY_TTL_MS)) {
         return readiness.ready;

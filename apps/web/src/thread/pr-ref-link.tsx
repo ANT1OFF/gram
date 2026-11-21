@@ -41,7 +41,6 @@ export function PrRefsProvider({
   const projects = useWorkspaces().find((state) => state.workspace.id === workspaceId)?.workspace
     .projectIds.length;
   const { data: ledger } = useOrchestratorLedger(workspaceId);
-  // An orchestrator whose workspace isn't loaded yet may be in any number of repositories.
   const repoCount =
     workspaceId === undefined ? 1 + (extraCheckouts ?? 0) : (projects ?? Number.POSITIVE_INFINITY);
   const index = useMemo(
@@ -58,7 +57,6 @@ export function PrRefsProvider({
   return <PrRefsContext value={index}>{children}</PrRefsContext>;
 }
 
-/** Streamdown's link style, so a reference reads like any other link in the message. */
 const LINK = "wrap-anywhere font-medium text-link underline";
 
 function PrRefLink({
@@ -76,7 +74,6 @@ function PrRefLink({
   const index = use(PrRefsContext);
   const target = resolvePrRef({ repo, number: Number(number), url }, index);
   if (target === undefined) return <>{children}</>;
-  // A PR the thread knows the state of carries its glyph, as everywhere else Gram draws a PR.
   const state = target.state;
   const display = state === undefined ? undefined : PR_STATE_DISPLAY[state];
   const word =

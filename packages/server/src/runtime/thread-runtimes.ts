@@ -67,7 +67,6 @@ import { RETRIES_EXHAUSTED } from "./thread-error.ts";
 import type { CloseThreadOptions, ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 import { browserNotReady } from "./browser-status.ts";
 
-/** How long `thread.browserStatus` waits for a session to list its MCP servers. */
 const BROWSER_READY_TIMEOUT = Duration.seconds(3);
 import { makeDurableWork } from "../durable-work.ts";
 import type { RuntimeObserver } from "./runtime-observer.ts";
@@ -114,9 +113,7 @@ import { selectableModels } from "./model-efforts.ts";
 import { makeSessionLifecycle } from "./session-lifecycle.ts";
 import type { InputUndelivered } from "./undelivered.ts";
 
-/** Where a thread may be relocated from: at rest, or with a session only opening. */
 const RELOCATABLE: ReadonlySet<ThreadStatus> = new Set(["cold", "idle", "error", "starting"]);
-/** What a relocation hears when the thread was placed elsewhere since it was asked. */
 const MOVED_MEANWHILE = "the thread was placed elsewhere meanwhile";
 
 export {
@@ -184,28 +181,16 @@ export class ThreadRuntimes extends Context.Service<ThreadRuntimes, ThreadRuntim
   > = ThreadRuntimes.layer.pipe(Layer.provideMerge(WorkerHosts.layerLocalForTests));
 }
 
-/** One send of the input in flight: its runtime, and whether its message is in the feed. */
 interface InFlightSend {
   readonly rt: Runtime;
-  /** A launch's message is in the feed already, unless it is sent in a new turn. */
   readonly published?: boolean;
 }
 
-/** What the send of the input in flight came to. */
 interface Handover<E> {
   readonly started: Exit.Exit<void, E>;
-  /**
-   * Its writer may not reach the thread now (`host/ownership.ts`): nothing was sent, and it is
-   * dropped. Never sent as anyone else's, nor tried again.
-   */
   readonly refused?: true;
 }
 
-/**
- * A model pick stays on the thread's own agent: its session, `agentSessionId` and `codexHome`
- * belong to that agent, so a model of the other one would be written onto a session that can't run
- * it. Moving a thread to the other agent is a session switch, not a model change.
- */
 const otherAgentRefusal = (
   threadId: ThreadId,
   current: ModelRef,
@@ -224,12 +209,9 @@ const make = Effect.gen(function* () {
   const plans = yield* ThreadPlans;
   const waits = yield* ThreadWaits;
   const turnActivity = yield* TurnActivity;
-  // Each thread's machine: its session and its checkout go to the machine it is placed on.
   const workerHosts = yield* WorkerHosts;
-  // Absent where no machine can join.
   const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
   const { sessions: hosts, checkouts, git } = workerHosts.placed;
-  /** Subscription readings keep the install's privacy key and each machine/login's limits. */
   const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
   const accountScopes = makeAccountScopes(
     workerHosts.local.sessions,
@@ -244,30 +226,16 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
-  /** Set by `shutdown`, for good: the process is about to exit. */
   let shuttingDown = false;
-  // Kept after a switch marker clears: a delayed mutation still belongs to the former owner.
   const switchGenerations = new Map<ThreadId, string>();
   const switchConfigLock = yield* Semaphore.make(1);
   let shutdownFailed = false;
   const idleTimers = yield* FiberMap.make<ThreadId>();
   const quietTimers = yield* FiberMap.make<ThreadId>();
   const reopens = yield* FiberMap.make<ThreadId>();
-  /** A pending restart's second look once background tasks have settled (`BACKGROUND_SETTLE`). */
   const restartChecks = yield* FiberMap.make<ThreadId>();
-  /** `stopInMissing` per thread, forked so a session's own event can stop it. */
   const folderStops = yield* FiberMap.make<ThreadId>();
-  /**
-   * Watchdog recoveries, owned here rather than by the interrupt RPC: one cut short between closing
-   * the session and reopening it left the thread `running` with no session, taking no sends.
-   */
   const recoveries = yield* FiberMap.make<ThreadId, void, never>();
-  /**
-   * Each thread's close, owned here so that two callers can't both tear it down (the second used to
-   * empty the conversation the first kept) and a caller interrupted mid-close can't strand it
-   * `closing`. Taken under `closeLock`, so two callers can't both find none running; `runningCloses`
-   * has each running one's fiber and the options it was started with.
-   */
   const closes = yield* FiberMap.make<
     ThreadId,
     void,
@@ -281,48 +249,30 @@ const make = Effect.gen(function* () {
     }
   >();
   const closeLock = yield* Semaphore.make(1);
-  /** `releaseAfterClose`'s waits, which outlive the caller that handed them over. */
   const closeReleases = yield* FiberSet.make();
   const seenConnectors = yield* ClaudeAiSeen;
-  /** Runs what a session's report of its connectors records, off the agent's message loop. */
   const recordSeen = yield* FiberSet.makeRuntime();
   const rateLimitShown = makeRateLimitGate();
-  /** Cards raised by `requestApproval`, answered by the server rather than an agent session. */
   const serverRequests = new Map<RequestId, ServerApprovalRequest>();
-  // A failed withdrawal can leave its card stored after the waiter is released. Preserve that
-  // card's origin until actual removal, so a late answer never falls through to a native agent.
   const serverApprovalOrigins = new Map<RequestId, ThreadId>();
   const activityTimers = yield* FiberMap.make<ThreadId>();
-  /** Each retrying thread's deadline, after which its turn is stopped (`giveUpRetrying`). */
   const retryDeadlines = yield* FiberMap.make<ThreadId>();
-  /** Each stop a deadline began, which no later retry or turn end may cancel. */
   const retryStops = yield* FiberMap.make<ThreadId>();
-  /** Each thread waiting out a limit (`Thread.limitWait`), the timer that resumes it. */
   const limitTimers = yield* FiberMap.make<ThreadId>();
-  // Present in the full server; `undefined` leaves every request and session as it always was.
   const decisions = Option.getOrUndefined(yield* Effect.serviceOption(DecisionHook));
   const sharedFolders = Option.getOrUndefined(yield* Effect.serviceOption(SharedFolders));
   const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
   const hooked = makeHookedRequests();
-  /** The decision hook's calls for agents' requests, which outlive the event that began them. */
   const decisionCalls = yield* FiberSet.make();
   const forkDecision = (decision: Effect.Effect<void>) =>
     FiberSet.run(decisionCalls, decision).pipe(Effect.asVoid);
   const resumeHolds = new Set<ResumeHold>();
   const queueHolds = new Set<QueueHold>();
   const turnHolds = new Set<TurnHold>();
-  /** Per account, the batches workers let go from a hold resume in (`releaseSlot`). */
   const releaseWaves = new Map<string, ReleaseWave>();
-  /** Per account, when a turn on it last met its limit, this run; `hitAt` falls back to the waits. */
   const limitHits = new Map<string, number>();
-  /**
-   * Per account, the reset its latest limit named, this run: the agent's own word on when the
-   * account lifts, which every wait on it then shares (`scheduleAccount`).
-   */
   const hitResets = new Map<string, number>();
-  /** Per account, its early releases since a turn on it last went through (`earlyReleaseDue`). */
   const earlyReleases = new Map<string, EarlyReleases>();
-  /** Each account's early release under way, so a burst of readings starts one. */
   const releasing = yield* FiberMap.make<string>();
   const releaseLock = yield* Semaphore.make(1);
   const runtimes = new Map<ThreadId, Runtime>();
@@ -330,8 +280,6 @@ const make = Effect.gen(function* () {
   const registryLock = yield* Semaphore.make(1);
   let appTools: AppToolRegistryPort | undefined;
   const observers = new Set<RuntimeObserver>();
-  // Observer and delivery callbacks may call back into this service, so they never run under a
-  // runtime lock: they are handed to one fiber, which also keeps them in the order things happened.
   const callbacks = yield* Queue.unbounded<Effect.Effect<void>>();
   yield* Queue.take(callbacks).pipe(
     Effect.flatMap((callback) => callback),
@@ -363,7 +311,6 @@ const make = Effect.gen(function* () {
     switchHandoff,
     methods: policyMethods,
   } = makeSessionPolicy({ store });
-  // Present in the full server; tests without the HTTP layer run agents without MCP endpoints.
   const mcpTokens = yield* Effect.serviceOption(McpTokens);
   const httpServer = yield* Effect.serviceOption(HttpServer.HttpServer);
   const mcpEndpoint = (threadId: ThreadId) =>
@@ -375,15 +322,9 @@ const make = Effect.gen(function* () {
         )
       : Effect.succeed(Option.none());
 
-  // Absent in layers without it: nothing outlives the server then.
   const kept = Option.getOrUndefined(yield* Effect.serviceOption(KeptSessions)) ?? KeptSessions.off;
-  // Pending requests and open turns belong to agent processes, which didn't survive the previous
-  // server run. A turn left open would count as running forever and never report its cost. Those
-  // of a host kept running after Gram quit did: their turns stay open for their runtimes to take up
-  // below, and their sessions raise their requests again as they replay the turn.
   yield* store.clearRequests();
   const cutOff = yield* store.closeOpenTurns(yield* Clock.currentTimeMillis, kept.survivors);
-  // A send whose session a restart cut off before it opened is still queued, and goes from there.
   const withdrawn = yield* store.deleteQueuedMessages();
   if (withdrawn > 0) {
     yield* Effect.logInfo("withdrew messages the previous run never sent").pipe(
@@ -395,8 +336,6 @@ const make = Effect.gen(function* () {
       Effect.annotateLogs({ turns: cutOff.length }),
     );
   }
-  // Each takes the end checkpoint its turn would have, before any session can touch the checkout
-  // again: without one, `turn_diff` reads the live tree and blames later turns' edits on it.
   yield* Effect.forEach(
     cutOff,
     (turn) =>
@@ -422,12 +361,7 @@ const make = Effect.gen(function* () {
           const raced = runtimes.get(threadId);
           if (raced !== undefined) return raced;
           const thread = yield* store.getThread(threadId);
-          // The last reported usage survives a restart, so the meter counts on from it.
           const usage = yield* store.lastTurnUsage(threadId);
-          // What the store keeps of each notice's key goes back into `noticeKeys`, and of who
-          // each input was for into `actors`. An input whose writer may no longer reach the
-          // thread (its machine is someone else's now) is dropped: kept work is done only as
-          // the one it was written for (`host/ownership.ts`), never as the server's own.
           const listed = yield* store.listQueue(threadId);
           const stored: Array<(typeof listed)[number]> = [];
           for (const item of listed) {
@@ -466,7 +400,6 @@ const make = Effect.gen(function* () {
             cwd: undefined,
             queue: stored.map((item) => {
               const { noticeKey, actor: _actor, ...queued } = item;
-              // A notice queued without an author (a limit's "continue") is still Gram's, by its stored key.
               return noticeKey === undefined || queued.input.author !== undefined
                 ? queued
                 : { ...queued, input: { ...queued.input, author: "server" as const } };
@@ -522,8 +455,6 @@ const make = Effect.gen(function* () {
         }),
       );
     });
-
-  // --- feed, in-flight messages and turns (all called with the runtime lock held) ---
 
   const {
     publishMessage,
@@ -597,11 +528,6 @@ const make = Effect.gen(function* () {
           },
         }),
   });
-  /**
-   * `detail` is the adapter's retry line, of which only `retryFacts` reaches the log. A retry that
-   * outlasts `config.retryDeadline` stops the turn: Codex waiting for a network that never comes
-   * back retried for half an hour with nothing to say so but its activity line.
-   */
   const setRetrying = (rt: Runtime, retrying: boolean, detail?: string) =>
     Effect.gen(function* () {
       if (rt.retrying === retrying) return;
@@ -633,10 +559,6 @@ const make = Effect.gen(function* () {
         observer.onRetrying?.(rt.threadId, retrying),
       );
     });
-
-  // ---------------------------------------------------------------------------------------------
-  // Waiting out a provider limit
-  // ---------------------------------------------------------------------------------------------
 
   const {
     hitAt,
@@ -681,7 +603,6 @@ const make = Effect.gen(function* () {
     reopenWhenIdle: (rt) => reopenWhenIdle(rt),
   });
 
-  // Each reading taken in may say an account's limit no longer applies: one a thread waits on.
   if (Option.isSome(limitReadings)) {
     yield* limitReadings.value.changes.pipe(
       Stream.runForEach(() =>
@@ -703,12 +624,6 @@ const make = Effect.gen(function* () {
     );
   }
 
-  /**
-   * Stops a turn whose agent has been retrying since its deadline was set, and leaves the failure
-   * on the thread for its card and the ledger. Run in `retryStops`, apart from the deadline's
-   * sleep, so a retry the agent reports meanwhile can't cancel it, and only ever against the
-   * turn and session that expired, never a turn begun after.
-   */
   const giveUpRetrying = (rt: Runtime, turnId: TurnId): Effect.Effect<void> =>
     Effect.gen(function* () {
       const stuck = yield* locked(
@@ -750,11 +665,6 @@ const make = Effect.gen(function* () {
         rt,
         Effect.gen(function* () {
           yield* publishFailure(rt, stuck.failed, turnId, stuck.replyId);
-          // Only over the very state the stop left: the same session at rest, with no turn since.
-          // A watchdog's fresh session is still starting, and input queued meanwhile may have
-          // run; either is a newer state the error must not replace. `lastError` stands anyway.
-          // The agent's `idle` after the stopped turn may come before this or after it; after, it
-          // is that turn's tail and leaves the error standing (`errorAtRest`).
           const settled =
             rt.turn === undefined &&
             rt.session === stuck.session &&
@@ -817,10 +727,6 @@ const make = Effect.gen(function* () {
         ? undefined
         : (thread) => restoreGateOf(remoteHosts.stops, sessionHostOf(thread), thread.id),
   });
-  /**
-   * The turn an in-flight input goes in: the one it was given before, unless a turn with that id
-   * was opened already (a restart closed it), whose row a new one can't take.
-   */
   const unusedTurn = (rt: Runtime, turnId: TurnId | undefined) =>
     turnId === undefined
       ? Effect.sync(makeTurnId)
@@ -832,18 +738,6 @@ const make = Effect.gen(function* () {
             ),
           );
 
-  /**
-   * The send of the input in flight (`rt.inFlight`), a launch or the queue's head, as durable work
-   * (`makeDurableWork`): the caller stores it at the queue's head with its turn before the attempt,
-   * the attempt sends it, and it is marked done by clearing the stored copy, put back first when
-   * the send didn't go. Called with the runtime lock held.
-   *
-   * Its resume is the boot's `sendQueuedAtBoot`: the stored head comes back as the queue's first
-   * item, with its turn, and `drainQueue` opens a session and sends it through here once, as the
-   * same message (`queue-persistence.test.ts`). `resume` itself isn't used, since the send
-   * needs the session that drain opens.
-   */
-  // Undelivered input is put back by `sendNow` itself, so `perform` takes it as done.
   type SendError = Exclude<Effect.Error<ReturnType<typeof sendNow>>, InputUndelivered>;
   const handover = makeDurableWork<
     InFlightSend,
@@ -853,19 +747,14 @@ const make = Effect.gen(function* () {
     lockKey: (handed) => handed.rt.threadId,
     read: (handed) => Effect.sync(() => handed.rt.inFlight),
     owed: (item) => item.sent === undefined,
-    // As who the input was written for (`message-queue.ts` records it), whichever fiber sends it,
-    // the boot's drain included: never the target's owner, nor the server unless it wrote it.
     actor: (item, { rt }) => Effect.succeed(fromStored(rt.actors.get(item.id))),
     perform: (item, _retry, { rt, published }) =>
       Effect.gen(function* () {
         if (rt.session === undefined) return undefined;
-        // Admitted again as its writer just before it goes, whatever has changed since it was
-        // queued: a live drain and the boot's alike (`host/ownership.ts`).
         if (!(yield* mayReachThread(store.getThread, workerHosts.ownerOf, rt.threadId))) {
           yield* Effect.logWarning("a queued input not sent: its writer may not reach it").pipe(
             Effect.annotateLogs({ threadId: rt.threadId, itemId: item.id }),
           );
-          // A launch was in the feed already; nothing of it is left to say it went.
           if (published === true) yield* withdrawMessage(rt, item.id);
           rt.actors.delete(item.id);
           return { started: Exit.void, refused: true as const };
@@ -875,24 +764,18 @@ const make = Effect.gen(function* () {
             turnId: item.turnId,
             messageId: item.id,
             ...(published === undefined ? {} : { published }),
-          }).pipe(
-            // Kept at the queue's head, the thread in error saying why: it goes from there with
-            // the next session, never into this one again at once, so the send counts as done.
-            Effect.catchTag("InputUndelivered", () => Effect.void),
-          ),
+          }).pipe(Effect.catchTag("InputUndelivered", () => Effect.void)),
         );
         return { started };
       }),
     markDone: (item, sent, { rt }) =>
       Effect.gen(function* () {
         rt.inFlight = undefined;
-        // Clients saw the queue without the item when it was shifted; a launch was never in it.
         yield* persistQueue(rt);
         return { ...item, sent };
       }),
   });
 
-  /** Sends the input in flight (`handover`), and what came of it. */
   const sendInFlight = (handed: InFlightSend) =>
     handover
       .attempt(handed, false)
@@ -911,20 +794,15 @@ const make = Effect.gen(function* () {
         yield* setStatus(rt, "idle");
         return yield* pumpDeliveries(rt);
       }
-      // Nothing more starts once the server is shutting down: the launch and the queue stay as
-      // stored, for the next boot to send (`sendQueuedAtBoot`).
       if (shuttingDown) return yield* setStatus(rt, "idle");
-      // Straight from `starting` to `running`: the thread was never idle with the launch waiting.
       const launched = rt.reopenOnIdle ? undefined : rt.launch;
       if (launched !== undefined && rt.session !== undefined) {
-        // Stored, in flight, until the agent has taken it.
         const turnId = yield* unusedTurn(rt, launched.turnId);
         rt.launch = undefined;
         rt.inFlight = { ...launched, turnId };
         yield* persistQueue(rt);
         const { started, refused } = yield* sendInFlight({
           rt,
-          // In a new turn, its row is published again, under that turn.
           published: turnId === launched.turnId,
         });
         if (refused !== true) {
@@ -934,25 +812,15 @@ const make = Effect.gen(function* () {
       }
       yield* setStatus(rt, "idle");
       if (rt.reopenOnIdle) {
-        // The reopen that waited for this idle opens after the host dropped its cache, so it
-        // carries the pending restart: one restart, under its divider.
         if (rt.pendingRestart !== undefined) {
           rt.restartMarker ??= rt.pendingRestart;
           yield* setPendingRestart(rt, undefined);
         }
         return yield* reopenWhenIdle(rt);
       }
-      // A stop still under way holds the queue and the deliveries: its interrupt mustn't reach
-      // the next turn. Its end sends them (`runStop`).
       if (stopHeld(rt)) return;
-      // The queue and the deliveries wait for the limit's resume, which sends them.
       if (rt.limitWait !== undefined) return yield* startIdleTimer(rt);
-      // And for a queue hold to let go (`releaseQueue`).
       if (yield* queueHeld(rt)) return yield* startIdleTimer(rt);
-      // A monitor's notice queued before the thread was archived waits: it never wakes an
-      // archived thread (`sendInput`), and the monitor that queued it takes it back. Asked before
-      // it is taken off the queue, and again after that is written, the last wait before the
-      // send, so an archive committed during the write is seen too.
       const archived = (item: QueuedInput | undefined) =>
         item !== undefined && rt.noticeKeys.has(item.id)
           ? store.getThread(rt.threadId).pipe(
@@ -963,8 +831,6 @@ const make = Effect.gen(function* () {
       const held = rt.session !== undefined && (yield* archived(rt.queue[0]));
       const next = rt.session === undefined || held ? undefined : rt.queue.shift();
       if (next !== undefined) {
-        // Off the queue clients see, but stored, in flight, until the agent has taken it: a crash
-        // before then sends it again, as the same message, rather than lose it.
         rt.inFlight = { ...next, turnId: yield* unusedTurn(rt, next.turnId) };
         yield* syncQueue(rt);
       }
@@ -977,7 +843,6 @@ const make = Effect.gen(function* () {
         yield* startIdleTimer(rt);
       } else if (next !== undefined && rt.session !== undefined && rt.inFlight !== undefined) {
         const { started, refused } = yield* sendInFlight({ rt });
-        // Dropped: the queue goes on to what is next.
         if (refused === true) return yield* becomeIdle(rt);
         if (Exit.isFailure(started)) return yield* Effect.failCause(started.cause);
       } else if (rt.session === undefined || !(yield* deliverNext(rt, rt.session))) {
@@ -1144,37 +1009,24 @@ const make = Effect.gen(function* () {
     openSession: (rt, thread, resumeAt, switchAttempt) =>
       openSession(rt, thread, resumeAt, switchAttempt),
   });
-  /**
-   * Called with the lock held: claims the stop of the open turn (or, between turns, of background
-   * agents) for `runStop`. Aimed at `turnId`, it claims nothing once that turn has ended.
-   */
   const claimStop = (rt: Runtime, turnId?: TurnId): Effect.Effect<StopClaim | undefined> =>
     Effect.gen(function* () {
       if (rt.session === undefined) return undefined;
-      // Aimed at one turn, which has ended: whatever runs now isn't what the caller meant.
       if (turnId !== undefined && rt.turn?.id !== turnId) return undefined;
-      // Between turns there is nothing to interrupt, but a background subagent can still be
-      // working, and to the user that is the agent running. Stop means stop that too.
       if (rt.turn === undefined) return { background: rt.session };
-      // Stop answers every open card: drop them now rather than when the turn winds down.
       yield* clearPendingRequests(rt, "stop-requested");
-      // A machine restart that cuts the turn short now doesn't carry it on.
       rt.stopAsked = rt.turn.id;
       rt.stopsPending = (rt.stopsPending ?? 0) + 1;
       return { session: rt.session, turn: rt.turn };
     });
 
-  /** Stops what `claimStop` claimed, without the lock; a turn that ended meanwhile is left be. */
   const runStop = (rt: Runtime, target: StopClaim) =>
     Effect.gen(function* () {
       if ("background" in target) {
-        // Each stopped task reports back through its own `task_notification`, which closes its
-        // transcript and clears the activity line as any finished subagent does.
         yield* target.background.stopBackgroundTasks ?? Effect.void;
         return;
       }
       const turnId = target.turn.id;
-      // Every claim is counted; the last to settle lets the queue go.
       yield* Effect.gen(function* () {
         if (yield* Deferred.isDone(target.turn.done)) return;
         yield* target.session.interrupt.pipe(
@@ -1189,13 +1041,10 @@ const make = Effect.gen(function* () {
           Effect.catchTag("InterruptHung", () => recoverOwned(rt, turnId)),
         );
       }).pipe(
-        // The stop has settled, the turn with it: what waited behind it goes now, as a turn's end
-        // would have sent it.
         Effect.ensuring(
           locked(
             rt,
             Effect.gen(function* () {
-              // Every stop claimed holds the queue until it has settled: the last one sends.
               rt.stopsPending = Math.max(0, (rt.stopsPending ?? 0) - 1);
               if (stopHeld(rt)) return;
               if (rt.turn === undefined && rt.session !== undefined && rt.status === "idle")
@@ -1212,17 +1061,10 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const target = yield* locked(rt, claimStop(rt, options?.turnId));
-      // Stop means stop: a limit's resume, timed or already queued, never starts the thread again.
       if (options?.endLimitWait === true) yield* cancelLimitWait(threadId);
       if (target !== undefined) yield* runStop(rt, target);
     });
 
-  /**
-   * Called with the lock held: stops `turn` at its next tool boundary, never interrupting it. With
-   * a tool gate the gate closes now, so every call the turn makes from here is refused with
-   * `PAUSE_STOP_TEXT` and one already running ends by itself; without one the agent is steered the
-   * same words. Either way the agent ends its turn, and a hold keeps the next from starting.
-   */
   const beginBoundaryStop = (rt: Runtime, session: AgentSession, turn: Turn): Effect.Effect<void> =>
     Effect.gen(function* () {
       if (rt.turn?.id !== turn.id || rt.session !== session) return;
@@ -1237,7 +1079,6 @@ const make = Effect.gen(function* () {
           ),
         ),
       );
-      // Refused, the turn runs to its own end; the hold still keeps the next from starting.
       if (!asked) {
         yield* Effect.logWarning("a paused agent refused the request to end its turn").pipe(
           Effect.annotateLogs({ threadId: rt.threadId }),
@@ -1279,7 +1120,6 @@ const make = Effect.gen(function* () {
           new InvalidState({ message: "This agent can't stop a background task", threadId }),
         );
       }
-      // Its end arrives as a `backgroundTasks` event without it, published like any other change.
       if (!(yield* session.stopTask(taskId))) return yield* Effect.fail(notFound);
     });
 
@@ -1295,15 +1135,8 @@ const make = Effect.gen(function* () {
       return thread;
     });
 
-  /** Set once the switch is made: a thread back from the archive gets what its switch owes it. */
   let switchUnarchived: ((threadId: ThreadId) => Effect.Effect<void>) | undefined;
 
-  /**
-   * Archives a thread's own agent session in the agent's list as Gram archives the thread, and
-   * takes the mark off as it comes back, so the agent's resume list agrees. This machine's
-   * sessions only, in the background, and best effort: a session the agent no longer has is no
-   * failure of the archive.
-   */
   const markAgentSession = (thread: Thread) =>
     Effect.gen(function* () {
       const agentSessionId = thread.agentSessionId;
@@ -1336,7 +1169,6 @@ const make = Effect.gen(function* () {
       yield* publishUpsert(thread);
       const unarchived = before.parked && !thread.parked;
       if (before.parked !== thread.parked) yield* markAgentSession(thread);
-      // A switch that waited for the thread to come back gives it what it owes, ahead of its queue.
       if (unarchived && switchUnarchived !== undefined) yield* switchUnarchived(threadId);
       const rt =
         runtimes.get(threadId) ??
@@ -1347,9 +1179,6 @@ const make = Effect.gen(function* () {
       if (unarchived) {
         yield* locked(rt, drainQueue(rt));
       } else if (thread.parked && !before.parked) {
-        // A background subagent's result or a background shell's exit is still to come, and the
-        // agent opens a turn for it, so a thread parked meanwhile keeps its session until the idle
-        // timer runs out.
         const idle = yield* locked(
           rt,
           Effect.sync(
@@ -1375,7 +1204,6 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const rt = runtimes.get(thread.id);
       const pendingRequests = yield* store.listRequests(thread.id);
-      // A cold thread has no session yet, but the UI still needs to know what its agent can do.
       const hostCapabilities =
         rt?.capabilities ??
         (yield* hosts.get(thread.model.agent).pipe(
@@ -1417,7 +1245,6 @@ const make = Effect.gen(function* () {
               })),
             );
       const activity = live.activity;
-      // A cold or evicted thread, or one whose session hasn't reported yet, shows its last turn's usage.
       const usage = live.usage ?? (yield* store.lastTurnUsage(thread.id));
       const { plan, turnPlan } = yield* plans.record(thread.id);
       const openWaits = yield* store.listWaits(thread.id);
@@ -1586,8 +1413,6 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const busy = (message: string) => new InvalidState({ message, threadId, status: rt.status });
-      // Claimed under the lock: from here no send, delivery or turn starts on the thread, and no
-      // session opens, until the claim lets go (`rt.reserved`, as `whileAtRest` holds it).
       yield* locked(
         rt,
         Effect.gen(function* () {
@@ -1605,16 +1430,11 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           rt.reserved = false;
           yield* pumpDeliveries(rt);
-          // What waited, the message a session was opening for included, goes where it is now.
           yield* drainQueue(rt);
         }),
       );
       return yield* Effect.gen(function* () {
-        // Whatever of it runs on the old placement stops: an idle session, or one still opening
-        // for a message, which goes back to the head of the queue, as an eviction leaves it; with
-        // `endWork`, a session at work too, its turn ended as interrupted.
         yield* stopSession(rt, "evict");
-        // Gone for good: a turn left open with no session to end it (its machine took it) ends.
         if (plan.endWork === true) {
           yield* locked(
             rt,
@@ -1627,7 +1447,6 @@ const make = Effect.gen(function* () {
         return yield* locked(
           rt,
           Effect.gen(function* () {
-            // Nothing may have started there meanwhile, nor the thread been placed elsewhere.
             if (
               rt.session !== undefined ||
               FiberMap.hasUnsafe(sessions, threadId) ||
@@ -1636,7 +1455,6 @@ const make = Effect.gen(function* () {
             )
               return yield* busy("the thread started work on its old machine meanwhile");
             if (!(yield* sameCheckout(threadId, plan.from))) return yield* busy(MOVED_MEANWHILE);
-            // Placed: a thread that waited for its machine waits no longer, in the same write.
             const thread = yield* store
               .updateThread(
                 threadId,
@@ -1653,7 +1471,6 @@ const make = Effect.gen(function* () {
       }).pipe(Effect.ensuring(release));
     });
 
-  /** Whether the thread's stored checkout is still `from`: its folder and machine. */
   const sameCheckout = (threadId: ThreadId, from: Checkout) =>
     store.getThread(threadId).pipe(
       Effect.map(
@@ -1665,7 +1482,6 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
 
-  /** A switch's settling (`finish`) started by the boot or an unarchive, for the runtime's life. */
   const switchSettles = yield* FiberSet.make<void>();
   const agentSwitch = makeAgentSwitch({
     store,
@@ -1706,20 +1522,13 @@ const make = Effect.gen(function* () {
     roleHandoff: switchHandoff,
   });
   switchUnarchived = agentSwitch.giveOwed;
-  // Every turn end, for the switch's own turns: the note and the handoff.
   observers.add({ onTurnEnd: agentSwitch.onTurnEnd });
-  // A plain thread's or worker's switch the last run cut off; the orchestrator's is its handoff's.
   yield* Effect.forEach(
     (yield* store.listThreads).filter((thread) => thread.sessionSwitch !== undefined),
     agentSwitch.resumeAtBoot,
     { discard: true },
   );
 
-  // Each thread whose session the host kept running after the last Gram quit is taken up again:
-  // its open turn, under its own id, and its session followed on from where the last Gram's
-  // handling ended, which replays the turn. Once the app tools are set (`setAppTools`), and not
-  // before: taken up earlier, a session would be followed with no MCP endpoint, its tools left
-  // pointing at the Gram that quit.
   const takeUpKept = Effect.forEach(
     [...kept.survivors],
     (threadId) =>
@@ -1760,7 +1569,6 @@ const make = Effect.gen(function* () {
     handOverSwitch: agentSwitch.handOverSwitch,
     cutAtBoot: cutOff,
     ...queueMethods,
-    // A switch a restart left owing its new session the handoff gives it first.
     sendQueuedAtBoot: agentSwitch.handOverOwed.pipe(Effect.andThen(queueMethods.sendQueuedAtBoot)),
     create,
     stopTask,
@@ -1779,7 +1587,6 @@ const make = Effect.gen(function* () {
     ...approvalMethods,
     requestApproval,
     session: (threadId) => withSession(threadId, (_rt, session) => Effect.succeed(session)),
-    // Read without the thread's lock: it asks the session nothing a turn under way would wait on.
     browserNotReadyOf: (threadId) =>
       Effect.gen(function* () {
         const rt = yield* getRuntime(threadId);
@@ -1883,7 +1690,6 @@ const make = Effect.gen(function* () {
             });
         }
         const previous = yield* restartMethods.freshSession(threadId, model, { carryTurns: true });
-        // The divider: where it opened, and on hover what it left.
         yield* feedMethods
           .emitChunk(threadId, {
             type: "data-handoff",
@@ -1905,9 +1711,6 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const generation = switchGenerations.get(threadId);
         const rt = yield* getRuntime(threadId);
-        // One lock over the agent call and the write, so two quick picks land in the store in the
-        // order the agent took them. The store is written directly: `updateThread` takes this
-        // lock itself when a thread parks.
         yield* locked(
           rt,
           Effect.gen(function* () {
@@ -1947,7 +1750,6 @@ const make = Effect.gen(function* () {
           });
         const otherAgent = otherAgentRefusal(threadId, before.model, model);
         if (otherAgent !== undefined) return yield* otherAgent;
-        // A profile that limits the thread's models: by the name, else by the row it names.
         if (!profileAllowsModel(before.profile, model.model)) {
           const listed = yield* selectableModels(store, hosts, model.agent, model.profileId).pipe(
             Effect.orElseSucceed(() => undefined),
@@ -2068,7 +1870,6 @@ const make = Effect.gen(function* () {
           Effect.sync(
             () =>
               rt.status === "starting" ||
-              // Open through `needsApproval` and `needsInput` too, until `finishTurn`.
               rt.turn !== undefined ||
               rt.background.length > 0 ||
               rt.activity.subagentsRunning,
@@ -2080,7 +1881,6 @@ const make = Effect.gen(function* () {
     }),
     shutdown: Effect.suspend(() => {
       shuttingDown = true;
-      // A host kept running after Gram quits keeps its sessions for the next Gram.
       if (kept.on) kept.detach();
       return FiberMap.clear(sessions).pipe(
         Effect.andThen(
@@ -2118,9 +1918,6 @@ const make = Effect.gen(function* () {
       ),
   });
   yield* waits.bindTranscript(service);
-  // However this server ends (main's orderly shutdown, a signal, its layers closing), a host kept
-  // running after Gram quits keeps its sessions for the next Gram. Added last, so it runs before
-  // the sessions' own teardown, which then leaves each open turn as a shutdown does.
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       if (!kept.on) return;
@@ -2128,6 +1925,5 @@ const make = Effect.gen(function* () {
       kept.detach();
     }),
   );
-  // What reaches the runtimes from outside them changes a thread only for its owners.
   return ThreadRuntimes.of(ownedRuntimes(service, store.getThread, workerHosts.ownerOf));
 });

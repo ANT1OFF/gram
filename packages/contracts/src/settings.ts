@@ -359,7 +359,6 @@ export const AgentSettings = Schema.Struct({
   codexRuntime: Schema.optionalKey(RuntimeSourceChoice),
 });
 
-/** Days of inactivity a listed PR may have; a cutoff is only meaningful above zero. */
 const MaxAgeDays = Schema.Int.check(Schema.isGreaterThan(0));
 
 /**
@@ -590,14 +589,12 @@ export const ExperimentalSettings = Schema.Struct({
 });
 export type ExperimentalSettings = typeof ExperimentalSettings.Type;
 
-/** Days a finished thread's worktree is left alone before the sweep takes a step. */
 const SweepDays = Schema.Int.check(Schema.isGreaterThan(0));
 
 const OrchestratorConnector = Schema.String.check(
   Schema.makeFilter((entry: string) => connectorEntryProblem(entry) ?? true),
 );
 
-/** Local checks at once: each runs a project's whole check, so a few already fill a machine. */
 const LocalCheckConcurrency = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 16 }));
 
 export const WorkspaceSettings = Schema.Struct({
@@ -1135,7 +1132,6 @@ export const customModelsOf = (settings: Settings, agent: AgentKind): ReadonlyAr
 
 const partial = Struct.map(Schema.optionalKey);
 
-/** A patch leaf for an optional setting: absent leaves it unchanged, `null` removes it. */
 const clearable = <S extends Schema.Constraint>(schema: S) =>
   Schema.optionalKey(Schema.NullOr(schema));
 
@@ -1342,7 +1338,6 @@ export const applySettingsPatch = (settings: Settings, patch: SettingsPatch): Se
  * differs. A setting the server itself acts on is never one of these.
  */
 export const PERSONAL_SETTINGS: ReadonlyArray<readonly [section: string, field: string]> = [
-  // The pane grid and which pane has the focus.
   ["layout", "grid"],
 ];
 

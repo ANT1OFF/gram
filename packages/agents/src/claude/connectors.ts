@@ -23,29 +23,17 @@ import { DEFAULT_SIGN_IN_HINT } from "./mapper.ts";
 export const CLAUDE_SIGN_IN_HINT =
   "Claude Code signs in from its own menu: run claude in a terminal, open /mcp and sign in, then reconnect here.";
 
-/**
- * The SDK's `mcp_authenticate` control request, which Claude Code's changelog announces for the SDK
- * (2.1.121) and the SDK's `Query` implements, but which its typings leave out (0.3.284). Claude
- * Code runs the whole OAuth flow: it registers the client, listens for the callback on its own
- * loopback port, stores the token where a terminal `claude` reads it, and reconnects the server.
- */
 interface McpAuthenticator {
   readonly mcpAuthenticate: (serverName: string) => Promise<unknown>;
 }
 
-/**
- * Its answer: the page to open when the user has something to do, and whether Claude Code waits
- * for the callback itself. A claude.ai connector's page is claude.ai's, which calls nobody back.
- */
 const AuthenticateResponse = Schema.Struct({
   authUrl: Schema.optionalKey(Schema.String),
   callbackExpected: Schema.optionalKey(Schema.Boolean),
 });
 
-/** The page a sign-in may send the browser to: a web page, never a file or a custom scheme. */
 const webPage = (url: string) => /^https?:\/\//i.test(url);
 
-/** How long a claude.ai connector's sign-in is watched for, and how often it is retried. */
 const HOSTED_SIGN_IN_WAIT_MS = 5 * 60_000;
 const HOSTED_RECONNECT_EVERY_MS = 5_000;
 
@@ -59,7 +47,6 @@ export const GATEWAY_CLAUDE_AI_NOTE =
 /** What a connector says when claude.ai refused Claude Code's own sign-in, not the connector's. */
 export const CLAUDE_SIGN_IN_AGAIN = `claude.ai turned down Claude Code's own sign-in, so signing in to the connector can't help. Sign in to Claude again: ${DEFAULT_SIGN_IN_HINT}`;
 
-/** A field of an object the SDK's typings don't name, or `undefined`. */
 const untyped = (value: unknown, key: string): unknown =>
   typeof value === "object" && value !== null
     ? (value as Readonly<Record<string, unknown>>)[key]
@@ -74,11 +61,6 @@ const toTool = ({ name, annotations }: NonNullable<McpServerStatus["tools"]>[num
   return tool;
 };
 
-/**
- * What a claude.ai connector's status says beyond its typings (0.3.292): its catalogue entry's
- * eligibility and managed sign-in ride on `config` as Claude Code fetched them, and the reason a
- * connection failed on the untyped `error_code`.
- */
 const claudeAiOf = (server: McpServerStatus): ClaudeAiConnector | undefined => {
   const config: unknown = server.config;
   if (untyped(config, "type") !== "claudeai-proxy" && server.scope !== "claudeai") return undefined;
@@ -183,7 +165,6 @@ export const nextLapsedConnectors = (
   for (const server of hosted) if (server.status === "connected") worked.add(server.name);
   const lapsed = hosted
     .filter((server) =>
-      // A lapsed one reconnecting is still lapsed until it connects: a sign-in's reconnect.
       server.status === "pending"
         ? previous.lapsed.includes(server.name)
         : needsSignIn(server) && (worked.has(server.name) || everConnected.has(server.name)),
@@ -234,7 +215,6 @@ const signInFailed = (name: string) => (error: unknown) =>
     message: `Claude Code couldn't start signing in to ${name}: ${error instanceof Error ? error.message : String(error)}`,
   });
 
-/** The `mcpAuthenticate` of an SDK that has one at runtime, whatever its typings say. */
 const authenticatorOf = (q: object): McpAuthenticator | undefined => {
   const method = (q as Partial<Record<keyof McpAuthenticator, unknown>>).mcpAuthenticate;
   return typeof method === "function"
@@ -263,7 +243,6 @@ export const makeConnectors = (
 ): AgentConnectors => {
   const reconnectFailed = (name: string) => (error: unknown) => {
     const failed = controlFailed(error);
-    // Claude Code calls flag-settings restrictions "enterprise managed policy" too.
     if (!/blocked by enterprise managed policy|Server not found:/i.test(failed.message)) {
       return failed;
     }
@@ -274,11 +253,8 @@ export const makeConnectors = (
         message: `Gram excludes external connectors from this confined session; ${name} can't be reconnected here.`,
       });
     }
-    // On its default connectors an orchestrator's allowlist, if it has one, is its workspace's.
     const orchestrator =
       policy.audience === "orchestrator" && policy.mcpNoneWithoutToolSearch !== true;
-    // A changed workspace set reopens the session by itself once it is idle; the orchestrator
-    // list in settings is read at the next open.
     const orchestratorFix =
       "Settings → Workspaces → Orchestrator connectors, and to the workspace's Connectors if they list only some (use the connector's upstream URL for claude.ai connectors), then restart the session.";
     const fix = orchestrator
@@ -299,7 +275,6 @@ export const makeConnectors = (
       });
     }
     if (allowlist === undefined || allowlist.includes(name)) {
-      // A missing hosted server's URL isn't in mcpServerStatus, so a URL entry may be what left it out.
       if (!denylist.some((entry) => entry.includes("://"))) return failed;
       return new AgentUnavailable({
         agent: "claude",
@@ -307,7 +282,6 @@ export const makeConnectors = (
       });
     }
     const role = orchestrator ? "orchestrator" : "workspace";
-    // A missing hosted server's URL isn't available in mcpServerStatus, so a URL grant may match.
     const uncertain = allowlist.some((entry) => entry.includes("://"));
     const reason = uncertain
       ? `Check Gram's ${role} connector allowlist for ${name}`
@@ -318,17 +292,11 @@ export const makeConnectors = (
     });
   };
   const authenticator = authenticatorOf(q);
-  /**
-   * claude.ai connectors signing in, by name: when it began and when it was last retried. Claude
-   * Code doesn't hear when the user finishes on claude.ai, so while the sign-in is being watched
-   * the server is reconnected now and then until it connects.
-   */
   const hosted = new Map<string, { readonly since: number; tried: number }>();
   const nudge = (servers: ReadonlyArray<McpServerStatus>, now: number) => {
     for (const [name, attempt] of hosted) {
       const server = servers.find((listed) => listed.name === name);
       const waiting = server !== undefined && awaitsSignIn(server);
-      // `pending` is a retry still connecting, so it is neither the end nor a reason to retry.
       if (
         (!waiting && server?.status !== "pending") ||
         now - attempt.since > HOSTED_SIGN_IN_WAIT_MS
@@ -336,7 +304,6 @@ export const makeConnectors = (
         hosted.delete(name);
       } else if (waiting && now - attempt.tried >= HOSTED_RECONNECT_EVERY_MS) {
         attempt.tried = now;
-        // Not awaited, so the listing isn't held up; a refusal only means "not yet".
         q.reconnectMcpServer(name).catch(() => undefined);
       }
     }
@@ -357,11 +324,9 @@ export const makeConnectors = (
         try: () => signIn.mcpAuthenticate(name),
         catch: signInFailed(name),
       });
-      // The decode error would quote the answer, and nothing says what else it carries.
       const response = yield* Schema.decodeUnknownEffect(AuthenticateResponse)(answer).pipe(
         Effect.mapError(() => signInFailed(name)("its answer wasn't a sign-in page")),
       );
-      // Already signed in: Claude Code refreshed the token and reconnects the server itself.
       if (response.authUrl === undefined) return "started" as const;
       if (!webPage(response.authUrl)) {
         return yield* signInFailed(name)("its sign-in page isn't a web address");

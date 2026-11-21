@@ -1,8 +1,3 @@
-// Gram's own controls, for the pages an app in front of Gram adds beside Gram's: the second entry
-// of the embeddable package (`@gram/web/kit`). They are the app's components themselves, from the
-// same build as the app, so a tooltip here is under the app's tooltip provider and a button here
-// is the button Gram draws. Each one added is a promise to keep its props: add what an embedding
-// app's pages have needed, not everything there is. See docs/EMBEDDED_WEB_APP.md.
 import type { ReactElement } from "react";
 
 import { AgentIcon as AppAgentIcon } from "@/agents/agent-display";
@@ -76,14 +71,10 @@ export { Skeleton } from "@/components/ui/skeleton";
 export { Switch } from "@/components/ui/switch";
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-// Words for what is still loading ("Loading members…"), a band of light across them.
 export { Shimmer } from "@/motion/shimmer";
-// A page of settings, as Settings' own are built: the column, its groups, and a row per setting.
 export { Field, OptionGroup, SettingRow, Toggle, type OptionGroupOption } from "@/settings/fields";
 export { SettingsGroup } from "@/settings/settings-group";
-// A popover hung from a button, as the title bar's own are: for a switcher or a short menu.
 export { TitlebarPopover as Popover } from "@/shell/titlebar-popover";
-// A centred dialog, mounted while it is open, and a sheet from the window's end edge.
 export { DialogShell as Dialog, Sheet } from "@/thread/dialog-shell";
 
 export { Page } from "./page";

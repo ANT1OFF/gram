@@ -1,7 +1,3 @@
-// Which GitHub repository a checkout's PR lookups name. By default its `origin` as its git config
-// says now; an embedder that recorded which repository each folder is (`CheckoutRepos`) answers
-// instead, so a rewritten `origin` (`git remote set-url`) can't point a lookup at another one.
-
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -92,7 +88,6 @@ export const recordedOrOriginRepo = (
  */
 export const resolveRepoNwo = (cwd: string, workTree: string) =>
   Effect.gen(function* () {
-    // What the embedder recorded the folder as, when it did: `undefined` is no repository at all.
     const origin = yield* recordedOrOriginRepo(cwd, workTree);
     if (origin !== null) return origin;
     const out = yield* gh(

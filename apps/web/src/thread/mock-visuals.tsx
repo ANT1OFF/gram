@@ -25,27 +25,14 @@ import { useLayoutStore } from "@/stores/layout";
 
 import { AttachmentLightbox } from "./attachment-lightbox";
 
-// Mocks shown as pictures (docs/orchestration/playbooks/mock-first.md): a question's options with
-// their screenshots and an "Open mock" each, and the card `show_mock` puts in a reply. Every path
-// was confined to the asking thread's folders by the server; pictures are read back through
-// `fs.image` and pages through `fs.preview`, which confine them again. A card names a file only by
-// its name, never by its path.
-
 export type MockTheme = "dark" | "light";
 
-/** The mode the app is drawn in, which a mock card shows its screenshots in first. */
 const appMode = (): MockTheme =>
   document.documentElement.getAttribute("data-mode") === "light" ? "light" : "dark";
 
-/** Whether a choice shows anything: a screenshot, or a mock page to open. */
 const hasVisuals = (option: QuestionChoice): boolean =>
   option.image !== undefined || option.preview !== undefined;
 
-/**
- * Opens a mock page in `threadId`'s Preview tab, at its board and in a theme, going to the thread
- * first: the tab sits beside it, wherever the click came from (the Board, the Inbox, which closes
- * so the mock is what is seen).
- */
 function useOpenMock() {
   const navigate = useNavigate();
   const previewPane = useFeature("previewPane");
@@ -56,7 +43,6 @@ function useOpenMock() {
     const layout = useLayoutStore.getState();
     layout.openThread(threadId);
     void navigate({ to: "/t/$threadId", params: { threadId } });
-    // The kit focuses a board by its id, which is its name slugged.
     layout.previewFile(
       threadId,
       joinPreviewTarget(path, board === undefined ? undefined : boardSlug(board)),
@@ -107,7 +93,6 @@ export function MockThumb({
   );
 }
 
-/** The page a question's `mock` opens: the page itself, or the current version its mock.json names. */
 function useMockPage(threadId: ThreadId, mock: string | undefined): string | undefined {
   const api = useApi();
   const record = mock !== undefined && mockRefKind(mock) === "record";

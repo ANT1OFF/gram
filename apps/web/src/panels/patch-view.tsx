@@ -51,16 +51,12 @@ const SIGN: Record<PatchLineKind, string> = { add: "+", del: "−", ctx: " ", no
 
 const NUMBER = "w-10 pr-1 text-right align-top text-muted-foreground tabular-nums select-none";
 
-/** A line number that picks its line when the patch takes comments. */
 const GUTTER = "cursor-pointer hover:bg-accent hover:text-foreground";
 
-/** A picked line's number stays marked, whatever the row's colour. */
 const PICKED = "data-picked:bg-ring/25 data-picked:text-foreground";
 
-/** The patch and hunk a pointer drag over the line numbers began in, while it lasts. */
 let picking: { table: EventTarget; hunk: number } | undefined;
 
-/** The line a `data-line="<hunk>:<index>"` element stands for. */
 const lineAt = (target: EventTarget | null, attribute = "data-line") => {
   const raw =
     target instanceof Element ? target.closest(`[${attribute}]`)?.getAttribute(attribute) : null;
@@ -69,11 +65,8 @@ const lineAt = (target: EventTarget | null, attribute = "data-line") => {
   return { hunk: hunk!, line: line! };
 };
 
-/** What a hunk's rows need from the review: the pick, and the rows that go after a line. */
 interface HunkReview {
-  /** Picked line indexes in this hunk, lowest first. */
   picked: readonly [number, number] | undefined;
-  /** The rows under line `index`: its drafts, then the pick's action or editor if it ends there. */
   after(index: number, span: number): ReactNode;
 }
 
@@ -121,17 +114,14 @@ export function PatchView({
    */
   hunkOffset?: number;
 }) {
-  // A phone always wraps: a sideways scroll inside a scrolling thread is a fight for a thumb.
   const phone = usePhone();
   const wrap = wrapAsked || phone;
   const hunks = useMemo(() => parseHunks(file.patch), [file.patch]);
   const review = useDiffReview();
   const [menu, setMenu] = useState<MenuTarget>();
   const [showAll, setShowAll] = useState(false);
-  // Unset at first, so a patch that mounts for a jump renders the hunk it was opened for.
   const [revealed, setRevealed] = useState<number>();
   const [pagedPatch, setPagedPatch] = useState(file.patch);
-  // "Show more" was for the patch it was clicked on; a refreshed one starts within the budget again.
   if (file.patch !== pagedPatch) {
     setPagedPatch(file.patch);
     setShowAll(false);
@@ -173,7 +163,6 @@ export function PatchView({
                 picking?.table === event.currentTarget && event.buttons === 1
                   ? lineAt(event.target, "data-gutter")
                   : undefined;
-              // A drag stretches the pick within its own hunk; other gutters it crosses don't count.
               if (at && at.hunk === picking?.hunk) review.select(path, at.hunk, at.line, true);
             },
             onContextMenu: (event: MouseEvent) => {
@@ -239,7 +228,6 @@ export function PatchView({
     >
       {review ? (
         <ContextMenu>
-          {/* The code stays selectable for copying; only the line numbers aren't. */}
           <ContextMenuTrigger className="select-text">{table}</ContextMenuTrigger>
           <PatchMenu
             review={review}
@@ -265,7 +253,6 @@ export function PatchView({
   );
 }
 
-/** Each hunk's first row in the patch, counting a row for its header. */
 function hunkStarts(hunks: readonly Hunk[]): number[] {
   const starts: number[] = [];
   let row = 0;
@@ -276,7 +263,6 @@ function hunkStarts(hunks: readonly Hunk[]): number[] {
   return starts;
 }
 
-/** The split rows that hold the first `limit` lines: the budget counts lines, and a row holds up to two. */
 function takeLines(rows: readonly SplitRow[], limit: number): SplitRow[] {
   let lines = 0;
   let count = 0;
@@ -288,10 +274,8 @@ function takeLines(rows: readonly SplitRow[], limit: number): SplitRow[] {
   return rows.slice(0, count);
 }
 
-/** What was right-clicked: lines (the pick, which the click moved there) or a draft comment. */
 type MenuTarget = { kind: "lines" } | { kind: "comment"; id: string };
 
-/** Hunk `index`'s share of the review: its part of the pick, and its drafts under their last line. */
 function hunkReview(
   review: DiffReview,
   path: string,
@@ -309,9 +293,6 @@ function hunkReview(
   const label = range ? linesLabel(range.start, range.end) : "";
   const notes = new Map<number, DiffComment[]>();
   for (const comment of commented) {
-    // Under the last of its lines, only where they still read as they did: after a refresh or in
-    // another scope, a draft whose excerpt is gone stays a chip rather than sitting under lines it
-    // wasn't about.
     const span = comment.snippet.split("\n").length;
     const at = hunk.lines.findIndex((_, last) => {
       if (last + 1 < span) return false;
@@ -370,7 +351,6 @@ function hunkReview(
   };
 }
 
-/** The patch's right-click menu: comment on the picked lines, or edit or delete a draft. */
 function PatchMenu({
   review,
   path,
@@ -416,7 +396,6 @@ interface HunkProps {
   index: number;
   hunk: Hunk;
   current: boolean;
-  /** How many of the hunk's lines to render. */
   limit: number;
   review?: HunkReview | undefined;
   numbered?: boolean;
@@ -436,8 +415,6 @@ function HunkHeader({
   headers = true,
 }: Omit<HunkProps, "limit"> & { span: number }) {
   if (!headers) {
-    // Without headers the first hunk needs nothing above it, and the others a gap for the lines
-    // they skip.
     return index === 0 ? null : (
       <tr data-hunk={index} aria-hidden className="bg-muted/50 text-muted-foreground">
         <td colSpan={span} className="px-2 leading-4 select-none">
@@ -459,14 +436,8 @@ function HunkHeader({
   );
 }
 
-/**
- * The hunk's lines as highlighted tokens, one array per line, or `undefined` while they aren't (no
- * language, not yet tokenized, or tokens that don't reproduce the lines). Old and new lines are
- * tokenized together, which reads right for the line-level edits a hunk holds.
- */
 function useHunkTokens(hunk: Hunk, language: BundledLanguage | undefined) {
   const code = useMemo(() => hunk.lines.map((line) => line.text).join("\n"), [hunk.lines]);
-  // The language is a placeholder when there is none: nothing is tokenized then.
   const { tokens } = useCodeTokens(code, language ?? "tsx", language !== undefined);
   if (language === undefined || tokens.length !== hunk.lines.length) return undefined;
   const same = tokens.every(
@@ -496,7 +467,6 @@ function UnifiedHunk({
         const gutter = review && line.kind !== "note" ? { "data-gutter": at } : {};
         const picked = isPicked(review, row) || undefined;
         return (
-          // Rows have no stable identity beyond their position within the hunk.
           <Fragment key={row}>
             <tr
               data-kind={line.kind}
@@ -580,7 +550,6 @@ function SplitHunk({ index, hunk, current, limit, review }: HunkProps) {
   );
 }
 
-/** The rows under a split row: those of its old line, then of its new one when that's another line. */
 function afterSplitRow(review: HunkReview | undefined, left?: number, right?: number) {
   if (!review) return null;
   return (
@@ -591,7 +560,6 @@ function afterSplitRow(review: HunkReview | undefined, left?: number, right?: nu
   );
 }
 
-/** One half of a split row; a missing line is a blank, hatched so it doesn't read as an empty line. */
 function Side({
   line,
   number,
@@ -603,7 +571,6 @@ function Side({
   line: PatchLine | undefined;
   number: number | undefined;
   divider?: boolean;
-  /** `<hunk>:<index>` of the line, for picking it. */
   lineKey?: string | undefined;
   review?: HunkReview | undefined;
   picked?: boolean;

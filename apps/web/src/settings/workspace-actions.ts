@@ -23,8 +23,6 @@ export function useWorkspaceChanges(state: WorkspaceState | undefined) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  // The charter a save is sending, shown until it settles: a change shows at once rather than
-  // after the save and the refetch, and a refused one falls back to the saved charter.
   const [saving, setSaving] = useState<OrchestratorCharter>();
 
   const refresh = () =>
@@ -35,7 +33,6 @@ export function useWorkspaceChanges(state: WorkspaceState | undefined) {
         : queryClient.invalidateQueries({ queryKey: ["orchestratorLedger", state.workspace.id] }),
     ]);
 
-  /** Runs `change`, then offers `undo` under `title`; a refusal goes to `fail`, or the page's error. */
   const run = (
     change: () => Promise<unknown>,
     title: string,
@@ -91,7 +88,6 @@ export function useWorkspaceChanges(state: WorkspaceState | undefined) {
       "input" in before
         ? () =>
             api.saveWorkspace(
-              // Undo of an environment's change puts back the one it had, or the default.
               input.environment === undefined
                 ? before.input
                 : { ...before.input, environment: state.workspace.environment ?? null },
@@ -101,7 +97,6 @@ export function useWorkspaceChanges(state: WorkspaceState | undefined) {
     );
   };
 
-  /** Pausing says so with Undo; resuming needs no way back. */
   const setPaused = (paused: boolean): Promise<void> => {
     if (state === undefined) return Promise.resolve();
     const { id, name } = state.workspace;

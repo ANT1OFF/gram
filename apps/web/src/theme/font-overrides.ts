@@ -5,7 +5,6 @@ import { useServerSettings } from "@/settings-sync/store";
 const UI_FALLBACK = "ui-sans-serif, system-ui, sans-serif";
 const MONO_FALLBACK = 'ui-monospace, "SF Mono", Menlo, monospace';
 
-/** A single family name is quoted; a list the user typed (with commas or quotes) is kept as is. */
 const family = (value: string | undefined, fallback: string): string | undefined => {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;

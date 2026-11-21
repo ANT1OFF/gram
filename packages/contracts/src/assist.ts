@@ -3,8 +3,6 @@ import type { GitState } from "./git.ts";
 import { RequestId, ThreadId, TurnId } from "./ids.ts";
 import { WrapUpDataSchema } from "./wrap-up.ts";
 
-// The helper model's help with a thread: "where you left off" recaps and suggested replies.
-
 const HOUR_MS = 60 * 60 * 1000;
 
 /** How long a thread has to sit idle before opening it shows where you left off. */
@@ -132,7 +130,6 @@ export const recapFacts = (git: GitState | undefined): string[] => {
   } else if (
     branchWork &&
     git.branch !== undefined &&
-    // The git state leaves `base` out on the default branch itself, where no PR is expected.
     git.base !== undefined &&
     !git.base.endsWith(`/${git.branch}`)
   ) {

@@ -1,9 +1,3 @@
-// `preview_start`, `preview_list`, `preview_stop` and `preview_logs`: an agent runs its project's
-// dev servers for the Preview pane, by name from `.gram/launch.json` (or `.claude/launch.json` in
-// the same shape). Starting one runs the project's own command on the user's computer, so it asks
-// the user first, naming the command; a thread that restarts the command it was allowed doesn't
-// ask again, and a changed command does.
-
 import { randomUUID } from "node:crypto";
 
 import {
@@ -64,7 +58,6 @@ const stateOf = (server: DevServer) =>
     ? `running, pid ${server.pid ?? "unknown"}`
     : `exited${server.exit.code === null ? "" : ` with code ${server.exit.code}`}${server.exit.signal === null ? "" : ` on ${server.exit.signal}`}`;
 
-/** The project's dev server output, fenced as data like a page's. */
 const fencedLogs = (server: DevServer, body: string) =>
   pageContent(
     { url: server.url, title: `${server.name} dev server output` },
@@ -89,7 +82,6 @@ const promise = <A>(tool: string, run: () => Promise<A>) =>
 
 export const devServerTools = (deps: DevServerDeps): ReadonlyArray<AppToolDefinition> => {
   const { host, hub, store, runtimes } = deps;
-  /** Commands the user allowed a thread to run, by fingerprint; a changed one asks again. */
   const allowed = new Set<string>();
 
   const checkoutOf = (tool: string, threadId: ThreadId) =>
@@ -98,8 +90,6 @@ export const devServerTools = (deps: DevServerDeps): ReadonlyArray<AppToolDefini
         .getThread(threadId)
         .pipe(Effect.mapError(() => fail(tool, `unknown thread ${threadId}`)));
       if (thread.role === "dream") return yield* fail(tool, "Dream runs cannot run dev servers.");
-      // A dev server runs here, from this disk: a thread whose session runs on another machine
-      // has its folder there, and the same path here is this machine's own.
       if (sessionHostOf(thread) !== LOCAL_HOST_ID)
         return yield* fail(
           tool,
@@ -138,7 +128,6 @@ export const devServerTools = (deps: DevServerDeps): ReadonlyArray<AppToolDefini
         const existing = host.get(threadId, name);
         if (existing !== undefined && existing.exit === undefined)
           return `"${name}" is already running at ${existing.url}.`;
-        // One start of a name at a time: a second waits for nothing and starts nothing.
         if (!host.claim(threadId, name))
           return yield* fail(tool, `"${name}" is already starting; try preview_list in a moment.`);
         return yield* startClaimed(threadId, name, root, config, configuration).pipe(
@@ -158,9 +147,6 @@ export const devServerTools = (deps: DevServerDeps): ReadonlyArray<AppToolDefini
       const tool = "preview_start";
       const existing = host.get(threadId, name);
       if (existing !== undefined) yield* Effect.promise(() => host.stop(threadId, name));
-      // The port is reserved and handed to the start in one step no interruption splits: a start
-      // interrupted mid-reserve still gives its port back, rather than leaving it reserved under
-      // a holder nothing frees.
       const { port, started } = yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const reserved = yield* promise(tool, () => host.reserve(threadId, configuration));
@@ -313,7 +299,6 @@ export const DevServerAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* AppToolRegistry;
     const hub = yield* EventHub;
-    // Absent in tool-only test layers.
     const probe = Option.getOrUndefined(yield* Effect.serviceOption(PathProbe));
     const roots = Option.getOrUndefined(yield* Effect.serviceOption(ProcessRoots));
     const host = createDevServerHost({

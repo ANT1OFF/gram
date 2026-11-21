@@ -1,4 +1,3 @@
-// The kit's class joiner, typed without the library it wraps, for the full kit and the light one.
 import { cn as appCn } from "@/lib/utils";
 
 /** A class or a falsy value that is left out. */

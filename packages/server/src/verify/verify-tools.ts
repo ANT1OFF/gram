@@ -1,15 +1,3 @@
-// `verify`: an agent runs its repository's verification drivers, named in `.gram/verify.json`, and
-// Gram records the result. A driver runs through Gram's local checks: on a commit, in a clean
-// worktree of Gram's own outside the agent's checkout, on the machine the thread is on, and the
-// record is keyed by that commit and the driver's command. So a pass is Gram's word about that
-// commit; nothing the agent writes or prints counts as one. Records of a driver key apart from the
-// project's merge check (`runIdOf` takes the driver's profile), so no driver's pass ever satisfies
-// merge_when_ready.
-//
-// The recipe is read from the repository's own clone, never the agent's worktree, and the command
-// is the repository's own, run with the user's access, so the first run of each command in a project asks the user, naming it; a changed
-// command asks again. A folder the user hasn't trusted runs none.
-
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -57,7 +45,6 @@ import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.
 import { ThreadRuntimes, type ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
 
 const TOOL = "verify";
-/** The most of the recipe file read. */
 const RECIPE_MAX_BYTES = 256 * 1024;
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
@@ -98,15 +85,9 @@ interface VerifyDeps {
   readonly publisher: Pick<GitStatePublisherShape, "refresh" | "stateFor">;
   readonly checks: Pick<LocalChecksShape, "ensure" | "lookup"> | undefined;
   readonly hosts: Pick<RemoteHostsShape, "connection"> | undefined;
-  /** Local git, absent in tool-only test layers, where changed paths go unread. */
   readonly proc: Effect.Effect<Option.Option<Proc["Service"]>>;
 }
 
-/**
- * The recipe, `undefined` when there is none. It is read from the repository's own clone, not the
- * thread's worktree, as project scripts are: an agent editing its worktree's copy changes nothing
- * until it is merged and pulled.
- */
 const readRecipe = (deps: VerifyDeps, thread: Thread) =>
   Effect.gen(function* () {
     const checkout = effectiveCheckout(thread);
@@ -137,11 +118,6 @@ const readRecipe = (deps: VerifyDeps, thread: Thread) =>
     return parsed.drivers;
   });
 
-/**
- * The commit to verify and the paths it changed against its base. The head is the checkout's
- * committed `HEAD`, as Gram's git state reads it on whichever machine the checkout is; the paths
- * are read on this machine only, and are `undefined` elsewhere.
- */
 const commitOf = (deps: VerifyDeps, thread: Thread) =>
   Effect.gen(function* () {
     const checkout = effectiveCheckout(thread);
@@ -177,10 +153,6 @@ const statusOf = (check: LocalCheck | undefined) =>
       ? `failed: ${check.reason ?? "it didn't pass"}`
       : check.status;
 
-/**
- * Each driver of a recipe with how Gram recorded its run on the thread's committed head, and
- * whether it covers what the branch changed (`undefined` where the changed paths can't be read).
- */
 const driversOnHead = (deps: VerifyDeps, thread: Thread, drivers: readonly VerifyDriver[]) =>
   Effect.gen(function* () {
     const commit = yield* commitOf(deps, thread);
@@ -290,7 +262,6 @@ const stateRow = (
   ...evidenceOf(check),
 });
 
-/** The run's evidence folder, kept beside its log on this machine only. */
 const localLog = (check: LocalCheck | undefined) =>
   check?.machine === undefined ? check?.log : undefined;
 
@@ -358,7 +329,6 @@ export const VerifyStatusLive = Layer.effect(
 );
 
 export const verifyTools = (deps: VerifyDeps): ReadonlyArray<AppToolDefinition> => {
-  /** Commands the user let run, by project and command; a changed command asks again. */
   const allowed = new Set<string>();
 
   const verify = defineAppTool({

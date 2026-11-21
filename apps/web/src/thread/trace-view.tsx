@@ -35,9 +35,6 @@ import {
 } from "./trace-model";
 import { tookLabel, turnReplies } from "./turn-timeline-model";
 
-// What a step is, by colour and glyph: the model is the accent, a tool is neutral, a worker is
-// the merged purple, time waiting on the person is the needs colour. A failure is the danger
-// colour whatever it is.
 const KIND: Readonly<
   Record<TraceKind, { bar: string; text: string; icon: LucideIcon; name: string }>
 > = {
@@ -76,7 +73,6 @@ const barOf = (step: TraceStep) =>
 
 const ROW = "grid grid-cols-[clamp(9rem,38%,20rem)_3.5rem_minmax(0,1fr)] items-center gap-3 px-4";
 
-/** As much of a call's output as the detail shows; the conversation has the rest. */
 const OUTPUT_MAX = 6_000;
 
 const textOf = (value: unknown): string | undefined => {
@@ -139,7 +135,6 @@ export function TraceView({
     [messages, turn],
   );
   const endedAt = replies.at(-1)?.metadata?.turnEnd?.at;
-  // An older turn with no recorded end stopped where the next one started, or at its last call.
   const running = last && working && endedAt === undefined;
   const root = useRef<HTMLDivElement>(null);
   const now = useNow(running, root);
@@ -169,11 +164,9 @@ export function TraceView({
       awaiting,
     ],
   );
-  // The step picked, and the turn it was picked in: another turn starts with none.
   const [pick, setPick] = useState<{ turn: string | undefined; id: string } | undefined>();
   const picked = pick?.turn === turn?.id ? pick?.id : undefined;
   const setPicked = (id: string) => setPick({ turn: turn?.id, id });
-  // A turn opens on what went wrong in it, when something did.
   const selected =
     trace?.steps.find((step) => step.id === picked) ??
     (picked === undefined ? trace?.steps.find((step) => step.tone === "failed") : undefined);
@@ -212,7 +205,6 @@ export function TraceView({
           >
             <ChevronLeft aria-hidden />
           </Button>
-          {/* One line at any width: a phone's bar keeps the turn and drops when it started. */}
           <span
             data-testid="trace-turn"
             className="whitespace-nowrap text-muted-foreground tabular-nums"
@@ -299,8 +291,6 @@ function Summary({
           <b className="font-semibold text-foreground tabular-nums">{formatElapsed(wallMs)}</b>{" "}
           {running ? "so far" : `finished ${formatClockTime(trace.end)}`}
         </span>
-        {/* Between the total and its parts where they fit on one row; under them in a narrow view,
-          where it squeezed the parts onto a second row. */}
         <span
           aria-hidden
           className="flex h-1.5 min-w-32 gap-0.5 overflow-hidden rounded-full @max-2xl/tracesum:order-last @max-2xl/tracesum:basis-full @2xl/tracesum:flex-1"
@@ -415,7 +405,6 @@ function Waterfall({
                     <span className="shrink truncate text-muted-foreground">{step.note}</span>
                   )}
                 </span>
-                {/* A call held at its approval card says so where its time will be. */}
                 {step.kind === "wait" && step.tone === "running" ? (
                   <span data-testid="trace-step-waits" className={cn("text-caption", kind.text)}>
                     Waiting
@@ -478,7 +467,6 @@ const Code = ({ name, text, testid }: { name: string; text: string; testid: stri
   </div>
 );
 
-/** With no step selected: what the turn's tokens were, and how to read the bars. */
 function Overview({ trace, tokens }: { trace: Trace; tokens: ReturnType<typeof replyTokens> }) {
   const calls = trace.steps.filter((step) => step.kind !== "model").length;
   return (

@@ -1,5 +1,3 @@
-// Scheduled wakes: `schedule_wake` and `cancel_wake`, the timers
-// that fire them and the pull requests a wake watches.
 import {
   type StoredWakeCondition,
   WAKES_PER_THREAD_MAX,
@@ -67,16 +65,10 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
   } = kit;
   const { wake } = deps;
 
-  // ---------------------------------------------------------------------------------------
-  // Scheduled wakes
-  // ---------------------------------------------------------------------------------------
-
-  /** How long a due wake its worker couldn't take yet waits before it is tried again. */
   const WAKE_RETRY = Duration.minutes(1);
   const NO_WAKE =
     "Only an orchestrator, or a worker its orchestrator still listens to, can set a wake here.";
 
-  /** The workspace whose outbox keeps `callerId`'s wakes: the one it orchestrates or reports into. */
   const wakeWorkspace = (tool: string, callerId: ThreadId) =>
     Effect.gen(function* () {
       const authority = yield* authorityOf(callerId);
@@ -93,10 +85,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       Effect.orElseSucceed(() => false),
     );
 
-  /**
-   * Fires `alarm` when it falls due, or `after` from now to try a due one again, `fired` when the
-   * event of the PR it waits on did.
-   */
   const armAlarm = (
     workspaceId: WorkspaceId,
     alarm: StoredWake,
@@ -126,7 +114,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       );
     });
 
-  /** Hands the PRs the workspace's wakes wait on to the publisher's sweeps. */
   const syncPrWatches = (workspaceId: WorkspaceId) =>
     readOutbox(workspaceId).pipe(
       Effect.flatMap((outbox) =>
@@ -134,16 +121,12 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       ),
     );
 
-  /** Fires `alarm` now if `badge` shows one of its events since it last looked. */
   const checkPrWake = (workspaceId: WorkspaceId, alarm: StoredWake, badge: PrStatus) =>
     Effect.gen(function* () {
-      // One that fired already waits with that event, whatever its PR does since.
       if (alarm.onPr === undefined || alarm.fired !== undefined || !isBadgeOf(badge, alarm.onPr))
         return;
       const fired = prWakeEventOf(alarm.seen, badge, alarm.on ?? DEFAULT_PR_WAKE_EVENTS);
       if (fired !== undefined) {
-        // Kept before it is delivered: a pause holds a worker's, and a rerun of checks or a
-        // restart meanwhile mustn't take the event back.
         yield* updateOutbox(workspaceId, (outbox) => [
           {
             ...outbox,
@@ -155,8 +138,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
         ]);
         return yield* armAlarm(workspaceId, alarm, Duration.zero, fired);
       }
-      // What it saw is kept in the outbox, so a restart measures the next event from it; not on
-      // an event, which a pause holds and the resume must still find.
       const seen = nextPrWatchSeen(alarm.seen, badge);
       if (JSON.stringify(seen) === JSON.stringify(alarm.seen)) return;
       yield* updateOutbox(workspaceId, (outbox) => [
@@ -172,10 +153,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       ]);
     });
 
-  /**
-   * A watched PR's new badge: every workspace's wakes waiting on it are looked at, and so is
-   * whether it now drags on for a worker whose PR depends on it.
-   */
   const onWatchedPr = (badge: PrStatus) =>
     Effect.gen(function* () {
       for (const state of yield* store.listWorkspaces) {
@@ -191,10 +168,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       }
     });
 
-  /**
-   * Arms every wake the workspace's outbox keeps; one already due fires at once, and one whose PR
-   * has moved since it last looked fires on that.
-   */
   const armAlarms = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       const wakes = (yield* readOutbox(workspaceId)).wakes ?? [];
@@ -215,7 +188,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       yield* syncPrWatches(workspaceId);
     });
 
-  /** The workspace keeping `callerId`'s wakes: its role's, else the one it last belonged to. */
   const ownWakesWorkspace = (callerId: ThreadId) =>
     wakeWorkspace("cancel_wake", callerId).pipe(
       Effect.catch(() =>
@@ -243,7 +215,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
         id: randomUUID(),
         threadId: callerId,
         at: due.at,
-        // Redaction can lengthen it past what the ledger carries.
         note: redactText(input.note).slice(0, WAKE_NOTE_MAX),
         setAt: now,
         ...prWakeFields(input),
@@ -268,7 +239,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       if (alarm.conditionState !== undefined) {
         yield* kit.conditions.nudge(alarm.conditionState.spec.kind);
       }
-      // Another watch of the PR may have seen it move since the tool looked it up.
       const badge =
         alarm.onPr === undefined ? undefined : yield* publisher.watchedBadge(alarm.onPr);
       if (badge !== undefined) yield* checkPrWake(workspaceId, alarm, badge);
@@ -282,8 +252,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
         Effect.map((state) => [state?.workspace.id ?? callerKey(callerId)]),
       ),
       Effect.gen(function* () {
-        // Dropping its own wake needs no authority: one set while its orchestrator listened, or
-        // before it lost the slot, stays the caller's to cancel from its workspace.
         const state = yield* ownWakesWorkspace(callerId);
         if (state === undefined) {
           if (id === undefined) return { cancelled: 0 };
@@ -311,22 +279,12 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       }),
     );
 
-  /**
-   * A wake fell due. The orchestrator's goes into its next digest as a note, which a pause holds
-   * back with the rest; a worker's is sent to it, and waits in the outbox while the workspace is
-   * paused, to be armed again on the resume. An archived worker's, or one of a thread that is no
-   * longer the workspace's, is dropped.
-   */
   const onWakeAlarm = (workspaceId: WorkspaceId, wakeId: string, firedNow?: PrWakeFired) =>
-    // Under the lock `cancel_wake` takes, so a wake cancelled once this has read it can't come
-    // back, and one this is delivering is cancelled after, as delivered.
     wakeLock.withLock(
       workspaceId,
       Effect.gen(function* () {
         const alarm = (yield* readOutbox(workspaceId)).wakes?.find((each) => each.id === wakeId);
         if (alarm === undefined) return;
-        // The event kept on the wake is the first one; a later one a concurrent look armed with
-        // gives way to it.
         const fired = alarm.fired ?? firedNow;
         const condition = alarm.conditionState;
         const now = yield* Clock.currentTimeMillis;
@@ -365,8 +323,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
         }
         const listening = thread === undefined ? undefined : yield* listeningWorkspace(thread);
         if (thread !== undefined && listening?.workspace.id === workspaceId && !thread.parked) {
-          // Held, not dropped: a pause stops what wakes workers too, and the resume arms it again,
-          // the user's pause of the worker's feature as well as of the workspace.
           if (listening.paused !== undefined || pausedFeatureOf(listening, thread)) return;
           const text =
             condition !== undefined
@@ -381,9 +337,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
               Effect.catch((e) =>
                 Effect.logWarning("scheduled wake not delivered").pipe(
                   Effect.annotateLogs({ threadId: thread.id, error: e.message }),
-                  // An agent that won't start leaves the notice queued; a thread that's gone
-                  // takes nothing. Anything else (a close or worktree cleanup holding it, say)
-                  // passes, and the wake waits in the outbox to be tried again.
                   Effect.as(e._tag !== "InvalidState"),
                 ),
               ),
@@ -396,7 +349,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       }),
     );
 
-  /** Every workspace's pending wakes on a condition, with the workspace that keeps each. */
   const conditionWakes = Effect.gen(function* () {
     const found: Array<{ readonly workspaceId: WorkspaceId; readonly alarm: StoredWake }> = [];
     for (const state of yield* store.listWorkspaces) {
@@ -409,7 +361,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
     return found;
   });
 
-  /** Changes one stored wake's condition, unless it was found met already; answers the wake. */
   const updateCondition = (
     id: string,
     change: (state: StoredWakeCondition) => StoredWakeCondition,
@@ -435,7 +386,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       });
     });
 
-  /** The workspaces' outboxes as a store the condition sources look at (`WakeConditions`). */
   const conditionHost: WakeConditionHost = {
     name: "workspace outboxes",
     pending: conditionWakes.pipe(
@@ -443,8 +393,6 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
     ),
     saveSeen: (id, seen) =>
       updateCondition(id, (state) => ({ ...state, seen })).pipe(Effect.asVoid),
-    // Kept on the wake first, so a pause or a restart still delivers it as found; then fired as a
-    // due wake is, through `onWakeAlarm`.
     fire: (id, fired) =>
       Effect.gen(function* () {
         const updated = yield* updateCondition(id, (state) => ({ ...state, fired }));

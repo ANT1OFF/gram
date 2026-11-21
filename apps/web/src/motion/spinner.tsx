@@ -1,7 +1,3 @@
-/*
- * The arc is the running phase of `StatusMark` (svg-spinners' `90-ring`, notice in
- * `THIRD-PARTY-NOTICES.md` beside this file): a quarter-and-a-bit of its ring, from three o'clock.
- */
 import { createLucideIcon, type LucideIcon } from "lucide-react";
 import { forwardRef, useCallback } from "react";
 
@@ -13,11 +9,6 @@ const Arc = createLucideIcon({
   node: [["path", { d: "M21.5 12a9.5 9.5 0 0 1-10.1 9.48", key: "arc" }]],
 });
 
-/**
- * `icon`, turning on the shared clock for as long as it is mounted, wherever it is drawn: a table of
- * icons can't forget to start it. Under Reduced or Off motion it holds still, so give it a shape
- * that reads still too. An icon like any other, so it takes lucide's props, sizes and ref.
- */
 function spinningIcon(icon: LucideIcon, name: string): LucideIcon {
   const Icon = icon;
   const spinning: LucideIcon = forwardRef((props, ref) => {
@@ -46,12 +37,6 @@ function spinningIcon(icon: LucideIcon, name: string): LucideIcon {
  */
 export const Spinner: LucideIcon = spinningIcon(Arc, "Spinner");
 
-/*
- * A thin ring with a faint track and one quarter arc, for a turn under way (Stop's ring). Its
- * strokes are 1.5 CSS px whatever size the glyph is drawn at, so it reads as thin at `size-3` as it
- * would at 24. The width sits on each stroke, not the icon: the `lucide` class's stroke (base.css)
- * outranks a `strokeWidth` prop on the svg, but not a width the stroke carries itself.
- */
 const Ring = createLucideIcon({
   name: "ring-spinner",
   size: 24,

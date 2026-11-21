@@ -1,21 +1,3 @@
-/**
- * What an event routine (`WorkspaceRoutine.on`) watches: one look at a source says which
- * occurrences are there now, each with the key that makes it one. The engine (`routines.ts`) keeps
- * the keys it delivered, so it is the engine, not the source, that tells a new one from an old one.
- * See docs/design/event-routines-sources.md for why these four.
- *
- * Every look goes through the user's own `gh` or npm, as background work held to the background
- * share of the allowance (`github/budget.ts`), or reads a list Gram already polls:
- *
- * - `reviewRequested`: the review-request poll's list (no call of its own), with the user's holds
- *   (await checks, await the review bot) applied, so a PR fires once it is ready to review.
- * - `prReady`: one GraphQL read of the project's repo's open PRs (one point).
- * - `ciFailed`: one REST read of the branch's latest Actions runs.
- * - `releasePublished`: the package's releases, read at most every six hours and kept.
- *
- * What a look carries from GitHub or a registry (titles, logins, workflow names, tags) is data: the
- * brief fences it as untrusted (`routineEventBlock`).
- */
 import {
   RELEASE_MIN_AGE_DAYS,
   reviewRequestHolds,
@@ -155,13 +137,11 @@ export class RoutineEventSources extends Context.Service<
 export const pollEveryOf = (on: RoutineTrigger): Duration.Duration => {
   switch (on.event) {
     case "reviewRequested":
-      // The review-request poll's own pace: a look reads its list.
       return Duration.minutes(5);
     case "prReady":
     case "ciFailed":
       return Duration.minutes(10);
     case "releasePublished":
-      // Reads are kept six hours; looks over them see a release cross its age within the hour.
       return Duration.hours(1);
   }
 };
@@ -169,7 +149,6 @@ export const pollEveryOf = (on: RoutineTrigger): Duration.Duration => {
 const clip = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
-/** An event, its outside text clipped to what the state keeps. */
 const eventOf = (event: {
   readonly key: string;
   readonly at: number;
@@ -187,8 +166,6 @@ const eventOf = (event: {
   ...(event.url === undefined || event.url === "" ? {} : { url: clip(event.url, 500) }),
   ...(event.detail === undefined ? {} : { detail: clip(event.detail, 300) }),
 });
-
-// ── prReady ────────────────────────────────────────────────────────────────────────────────────
 
 export const READY_PRS_QUERY =
   "query($o:String!,$n:String!){repository(owner:$o,name:$n){pullRequests(states:OPEN,first:50," +
@@ -247,8 +224,6 @@ export const readyPrsOf = (
     );
 };
 
-// ── ciFailed ───────────────────────────────────────────────────────────────────────────────────
-
 const decodeRuns = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({
@@ -268,9 +243,7 @@ const decodeRuns = Schema.decodeUnknownOption(
   ),
 );
 
-/** A completed run's conclusion that turns the branch red. */
 const FAILED = new Set(["failure", "timed_out", "startup_failure"]);
-/** Runs of a PR aren't the branch's own, even when the PR's head branch has the same name. */
 const NOT_THE_BRANCH = new Set(["pull_request", "pull_request_target"]);
 
 /**
@@ -307,9 +280,6 @@ export const ciFailureOf = (
   ];
 };
 
-// ── releasePublished ───────────────────────────────────────────────────────────────────────────
-
-/** The newest stable release, or `undefined` for none. */
 const newestStable = (releases: ReadonlyArray<UpstreamRelease>) =>
   releases
     .filter((release) => !release.prerelease)
@@ -358,9 +328,6 @@ export const releaseLookOf = (
   };
 };
 
-// ── the live sources ───────────────────────────────────────────────────────────────────────────
-
-/** GitHub has no such repo or branch, or this login can't see it. */
 const NOT_FOUND = /not found|HTTP 404|Could not resolve to a Repository/i;
 
 export const RoutineEventSourcesLive = Layer.effect(
@@ -375,7 +342,6 @@ export const RoutineEventSourcesLive = Layer.effect(
     const upstream = yield* UpstreamReleases;
     const provide = Effect.provideService(Proc, proc);
 
-    /** One `gh api` call as background work; `undefined` when the allowance or `gh` refused it. */
     const api = (cwd: string, resource: "core" | "graphql", args: ReadonlyArray<string>) =>
       Effect.gen(function* () {
         if (!(yield* budget.admit(resource, "background")).allowed) return undefined;
@@ -386,7 +352,6 @@ export const RoutineEventSourcesLive = Layer.effect(
         );
       });
 
-    /** The routine's project's GitHub repo, or why there is none to watch. */
     const repoOf = (projectRoot: string | undefined, repo: string | undefined) =>
       Effect.gen(function* () {
         if (projectRoot === undefined) {
@@ -401,7 +366,6 @@ export const RoutineEventSourcesLive = Layer.effect(
         return { repo } as const;
       });
 
-    /** Per package: the last answer that read, when, and when to ask again. */
     const releaseReads = new Map<
       string,
       {
@@ -430,7 +394,6 @@ export const RoutineEventSourcesLive = Layer.effect(
     const look: RoutineEventSourcesShape["look"] = (on, context) =>
       Effect.gen(function* (): Effect.fn.Return<EventLook> {
         const now = yield* Clock.currentTimeMillis;
-        // Checked again at every run: a project gone from the workspace takes its repo's reach.
         const outside = outsideWorkspace(on, context, githubRelayed());
         if (outside !== undefined) return { problem: outside };
         switch (on.event) {
@@ -443,7 +406,6 @@ export const RoutineEventSourcesLive = Layer.effect(
               };
             }
             const current = yield* poller.current;
-            // Not polled yet, signed out, or refused: an empty list then isn't "none".
             if (current.checkedAt === undefined) {
               return (yield* tools.ghReady)
                 ? undefined

@@ -1,8 +1,3 @@
-// Downloads one pinned speech model into `<root>/staging/<id>/`, checks every file's size and
-// sha256, and only then renames the directory to `<root>/models/<id>/`, so a directory there is
-// always a complete, verified model. Partial files resume with a `Range` request after the bytes
-// already on disk are hashed again; a host that ignores the range and answers 200 restarts the file.
-
 import { createHash, type Hash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
@@ -34,14 +29,12 @@ export const freeBytesAt: FreeBytes = async (path) => {
     const stats = await statfs(path);
     return stats.bavail * stats.bsize;
   } catch {
-    // No answer is no disk check: the write itself still fails with ENOSPC.
     return undefined;
   }
 };
 
 const gb = (bytes: number) => (bytes / 1e9).toFixed(1);
 
-/** Kept free beyond the model itself, so a download never fills the disk to the last byte. */
 const DISK_HEADROOM_BYTES = 256 * 1024 * 1024;
 
 export interface DownloadOptions {
@@ -87,10 +80,6 @@ export const stagingDir = (root: string, id: string) => join(root, "staging", id
 export const modelDir = (root: string, id: string) => join(root, "models", id);
 const partialOf = (path: string) => `${path}.partial`;
 
-/**
- * `base` without trailing slashes. A loop, not `/\/+$/`, which backtracks quadratically on a long
- * run of slashes that isn't at the end (CodeQL js/polynomial-redos).
- */
 const withoutTrailingSlashes = (base: string): string => {
   let end = base.length;
   while (end > 0 && base[end - 1] === "/") end--;
@@ -104,10 +93,6 @@ export const fileUrl = (base: string, manifest: SpeechModelManifest, file: Speec
     .map(encodeURIComponent)
     .join("/")}`;
 
-/**
- * Whether a download may end up at `url` after redirects: the configured base's host, or Hugging
- * Face and the CDN it redirects to (`*.hf.co`, Xet's `*.xethub.hf.co`).
- */
 const allowedHost = (base: string, url: string): boolean => {
   let host: string;
   let protocol: string;
@@ -144,7 +129,6 @@ const FS_FULL = new Set(["ENOSPC", "EDQUOT"]);
 const proxyHelp = (base: string) =>
   `Ask for ${new URL(base).host === "huggingface.co" ? "huggingface.co and *.hf.co" : new URL(base).host} to be allowed through the proxy, or set GRAM_HF_BASE to a mirror you can reach.`;
 
-/** A fetch that threw: cut off, unreachable, or refused by a proxy or TLS inspection. */
 const networkFailure = (error: unknown, base: string): Failed => {
   const cause = (error as { cause?: unknown } | null)?.cause;
   const text = [String(error), String(cause ?? ""), errorCode(cause) ?? ""].join(" ");
@@ -182,7 +166,6 @@ export const bytesOnDisk = async (root: string, manifest: SpeechModelManifest): 
 
 const REVISION_FILE = ".revision";
 
-/** Clears staging left by another revision of the model, whose partial bytes would never verify. */
 const prepareStaging = async (staging: string, revision: string) => {
   const stamp = join(staging, REVISION_FILE);
   const previous = await readFile(stamp, "utf8").catch(() => undefined);
@@ -191,13 +174,8 @@ const prepareStaging = async (staging: string, revision: string) => {
   if (previous !== revision) await writeFile(stamp, revision);
 };
 
-/** Hugging Face redirects once, to its CDN; a mirror may add one. More is a loop. */
 const MAX_REDIRECTS = 5;
 
-/**
- * `url`, following redirects by hand: each hop's host is checked before it is asked for anything,
- * and every hop that names the repo's revision must name the pinned one.
- */
 const fetchFollowing = async (
   options: DownloadOptions,
   url: string,
@@ -240,7 +218,6 @@ const hostOf = (url: string): string => {
   }
 };
 
-/** Fetches one file into `<path>.partial`, resuming it, and renames it to `path` once it hashes. */
 const fetchFile = async (
   options: DownloadOptions,
   file: SpeechModelFile,
@@ -256,7 +233,6 @@ const fetchFile = async (
     await rm(partial);
     offset = 0;
   }
-  // The bytes already on disk are hashed again rather than trusted from an earlier run.
   let hash = offset > 0 ? await hashFile(partial) : createHash("sha256");
 
   if (offset < file.size) {
@@ -266,7 +242,6 @@ const fetchFile = async (
       offset > 0 ? { Range: `bytes=${offset}-` } : {},
     );
     if (response.status === 200 && offset > 0) {
-      // The host ignored the range: start the file again.
       progress(-offset);
       offset = 0;
       hash = createHash("sha256");
@@ -360,7 +335,6 @@ export const downloadModel = async (options: DownloadOptions): Promise<DownloadO
 
     options.onVerifying();
     for (const file of manifest.files) {
-      // Cancelled while hashing: the files stay staged and the next install checks them again.
       if (signal.aborted) return await failed(undefined, "Cancelled.");
       const path = join(staging, file.path);
       if (
@@ -379,7 +353,6 @@ export const downloadModel = async (options: DownloadOptions): Promise<DownloadO
       join(staging, "NOTICE"),
       `${manifest.name}\n${manifest.license.attribution}.\n${manifest.license.url}\n\nSource: ${manifest.source.url ?? `https://huggingface.co/${manifest.source.repo}`} at ${manifest.source.revision}\n`,
     );
-    // Written last: the speech process treats a directory with it as complete.
     await writeFile(join(staging, SPEECH_MODEL_VERIFIED_FILE), JSON.stringify(verified, null, 2));
     await install(root, manifest.id, options.rename ?? rename);
     return { ok: true, verified };
@@ -406,10 +379,6 @@ export const recoverReplaced = async (root: string, id: string) => {
   else await rm(old, { recursive: true, force: true });
 };
 
-/**
- * Moves verified staging into place. An older copy is moved aside first and put back if the move
- * fails, so a failed update leaves what was installed in place.
- */
 const install = async (root: string, id: string, move: typeof rename) => {
   const target = modelDir(root, id);
   await mkdir(dirname(target), { recursive: true });

@@ -1,7 +1,3 @@
-// The renderer watchdog wired to a real window (`core/renderer-health.ts` decides): a renderer that
-// died is reloaded, one that hangs is offered a reload in a dialog, and a page that failed to load
-// is tried again, each within a budget, and each logged without the page's URL or content.
-
 import { dialog, type BrowserWindow } from "electron";
 
 import type { ShellLog } from "../core/log.ts";

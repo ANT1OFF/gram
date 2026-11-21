@@ -22,7 +22,6 @@ export function SaveHint({ id }: { id: string }) {
   );
 }
 
-/** Keeps focus in the field, so the button's click, not the field's blur, decides what happens. */
 const keepFocus = (event: MouseEvent) => event.preventDefault();
 
 /**
@@ -61,11 +60,6 @@ export function DraftActions({
 /** How long a typed setting's Undo stays after its save. */
 export const UNDO_SHOW_MS = 8000;
 
-/**
- * The last typed setting saved and how to put its old value back. One at a time, like "Saved": a
- * save elsewhere takes it over. Kept outside the field, since a field keyed by its saved value
- * remounts as the save lands.
- */
 let pending: { key: string; seq: number; restore: () => void } | undefined;
 let seq = 0;
 const listeners = new Set<() => void>();
@@ -117,7 +111,6 @@ export function UndoSave({ undoKey }: { undoKey: string }) {
       variant="ghost"
       data-testid="setting-undo"
       className="text-muted-foreground hover:text-foreground"
-      // Keeps focus where it is: a field the click would blur saves its draft.
       onMouseDown={keepFocus}
       onClick={() => {
         if (pending?.seq !== shown.seq) return;

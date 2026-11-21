@@ -169,7 +169,6 @@ export function NewFormHeader({
   const labelId = useId();
   const soloWord = useSoloWord();
   const newForm = useNewForm();
-  // An embedding app gives the choices its words.
   const choices = WHO_CHOICES.map((choice) => {
     if (choice.value === "me") {
       const label = newForm?.solo?.label ?? soloWord;
@@ -182,7 +181,6 @@ export function NewFormHeader({
       : { ...choice, label: words.label, line: words.line ?? choice.line };
   });
   const whereId = useId();
-  // A phone's title bar names the page already, as its one top heading: not said twice.
   const phone = usePhone();
   const title = phone ? null : (
     <header>

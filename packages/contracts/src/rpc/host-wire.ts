@@ -78,9 +78,7 @@ export interface WireBreak {
   readonly what: string;
 }
 
-/** Keys that describe a value without changing which values are read. */
 const NOTES = new Set(["title", "description", "default", "examples", "$comment", "deprecated"]);
-/** Keys this walks into, rather than comparing whole. */
 const WALKED = new Set([
   "$ref",
   "anyOf",
@@ -100,7 +98,6 @@ interface Side {
   readonly definitions: WirePart["definitions"];
 }
 
-/** Follows `$ref` to the schema it names; the name is kept to stop at a schema that holds itself. */
 const resolve = (side: Side): { readonly side: Side; readonly names: ReadonlyArray<string> } => {
   const names: Array<string> = [];
   let node = side.node;
@@ -128,7 +125,6 @@ const compare = (
 ): ReadonlyArray<WireBreak> => {
   const was = resolve(released);
   const now = resolve(current);
-  // A schema that holds itself is compared once.
   const pair = `${was.names.join(">")}|${now.names.join(">")}`;
   if (was.names.length > 0 && now.names.length > 0) {
     if (seen.has(pair)) return [];
@@ -143,9 +139,6 @@ const compare = (
     definitions,
   });
 
-  // A choice between shapes: every released shape must still be there, and none may be new, since
-  // a released peer can't read a shape it never knew. A value that can't be (`never`, as a call
-  // with no error has it) is a choice of no shapes.
   const aChoice = shapes(a);
   const bChoice = shapes(b);
   if (aChoice !== undefined || bChoice !== undefined) {
@@ -160,7 +153,6 @@ const compare = (
         olds.length > 1 ? `${at}(${label(old, released)})` : at,
         seen,
       );
-    // First each shape that is there unchanged, then the ones told apart by the same values.
     for (const old of olds) {
       const same = news.findIndex(
         (fresh, index) => !taken.has(index) && between(old, fresh).length === 0,
@@ -259,7 +251,6 @@ const compare = (
       );
   }
 
-  // Everything else (its type, bounds, patterns) reads the same values only when it is the same.
   if (text(a["type"]) !== text(b["type"])) {
     say(`its type changed from ${text(a["type"]) ?? "any"} to ${text(b["type"]) ?? "any"}`);
     return found;
@@ -272,7 +263,6 @@ const compare = (
   return found;
 };
 
-/** The shapes a value chooses between; none for a value that can't be. */
 const shapes = (node: WireSchema): ReadonlyArray<WireSchema> | undefined => {
   const never = (candidate: WireSchema) => text(candidate["not"]) === "{}";
   if (never(node)) return [];
@@ -281,7 +271,6 @@ const shapes = (node: WireSchema): ReadonlyArray<WireSchema> | undefined => {
     : undefined;
 };
 
-/** The fields of a shape that take one value each, which tell it apart from its siblings. */
 const tagOf = (node: WireSchema, side: Side): string => {
   const resolved = resolve({ node, definitions: side.definitions }).side.node;
   const fields = isObject(resolved["properties"])
@@ -295,7 +284,6 @@ const tagOf = (node: WireSchema, side: Side): string => {
     .join(", ");
 };
 
-/** A shape of a choice, named by the values that tell it apart, for a message. */
 const label = (node: WireSchema, side: Side): string => {
   const tag = tagOf(node, side);
   if (tag !== "") return tag;

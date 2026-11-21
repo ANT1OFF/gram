@@ -1,6 +1,3 @@
-// Pauses: pausing a workspace for the user, a failed delivery
-// or a read it could not make, what a pause stops, the recovery that lifts a delivery failure by
-// itself, and resuming, which sends what each held worker owes in batches.
 import { personKey } from "../../embedding/person.ts";
 import { readableByOfWorkspace } from "../../embedding/readable-by.ts";
 import {
@@ -56,7 +53,6 @@ export const RECOVERY_DELAYS: ReadonlyArray<Duration.Duration> = [
 ];
 /** The `sendNotice` key of what a worker the user's pause stopped is told as it resumes. */
 export const PAUSE_RESUME_KEY = "pause-resume";
-/** What a worker the user's pause stopped is told as the resume lets it go. */
 const pauseResumeText = (entry: PauseResume) =>
   `The user paused this workspace at ${clockText(entry.pausedAt)} and resumed it at ${clockText(entry.resumedAt)}. You were asked to stop while it was paused, and nothing was cut off. Continue where you left off.`;
 
@@ -107,19 +103,11 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
   const { cancelDelivery, wake, armAlarms, noteForNextDigest, armLimitResume, abandonHandoff } =
     deps;
 
-  /**
-   * Sets aside the workspace's outbox if it can't be read, and pauses the workspace while one is
-   * set aside, so nothing the empty state in its place would decide runs before the user knows.
-   * Boot does this before anything reads a workspace; later finds come through `signalUnreadable`.
-   */
   const quarantineOutbox = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       const before = readStoredOutbox(yield* store.getOutbox(workspaceId));
       const kept = before._tag === "read" && before.setAside !== undefined;
       if (before._tag !== "unreadable" && !kept) return;
-      // Paused before the row is set aside: a digest builder that finds a set-aside row with no
-      // such pause takes it for one the user ended, and lets the row go. It takes the place of
-      // any other pause too, the in-error one included, whose recovery would otherwise lift it.
       const state = yield* findWorkspace(workspaceId);
       if (state?.paused?.detail !== OUTBOX_UNREADABLE_DETAIL) {
         yield* pause(workspaceId, "deliveryFailed", OUTBOX_UNREADABLE_DETAIL, "any");
@@ -139,10 +127,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
     deliveryFailed: "Orchestration paused: the orchestrator couldn't be reached",
   };
 
-  /**
-   * Pauses a workspace that isn't paused yet, and says so once; a second pause changes nothing,
-   * unless it is for the reason `replaces` names (or `"any"`), which this one takes the place of.
-   */
   const pause = (
     workspaceId: WorkspaceId,
     reason: PauseReason,
@@ -152,7 +136,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
     Effect.gen(function* () {
       const at = yield* Clock.currentTimeMillis;
       let taken = false;
-      // Behind a merge launch under way (`launchUnlessPaused`), which finishes first.
       const state = yield* pauseFence.withLock(
         workspaceId,
         store
@@ -183,7 +166,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
         yield* signals.offer({ type: "questionDue", workspaceId, questionId });
     }).pipe(Effect.ignore);
 
-  /** What a pause just stored sets off: delivery stops, the audit, and the user is told. */
   const afterPause = (
     workspaceId: WorkspaceId,
     state: WorkspaceState,
@@ -207,9 +189,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       yield* workspacesChanged;
       yield* orchestrationChanged(workspaceId);
       if (reason === "user" || reason === "parked") return;
-      // Only an agent that couldn't start is looked at again: one whose turns keep failing would
-      // only fail again, and stays the user's. A recovery's attempt that failed the same way
-      // brings back a pause the user was already told of.
       const recoverable = reason === "deliveryFailed" && detail === IN_ERROR_DETAIL;
       const told = recoverable && recovering.has(workspaceId);
       if (recoverable) yield* armRecovery(workspaceId);
@@ -226,13 +205,10 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
         ...(detail === undefined ? {} : { body: detail }),
         ...(holder === undefined ? {} : { threadId: holder }),
       };
-      // A workspace readable by one person is named to their connections alone, its
-      // orchestrator gone or not (`embedding/readable-by.ts`).
       const reader = readableByOfWorkspace(workspaceId, holder);
       yield* reader === undefined ? hub.publish(notice) : hub.publishTo(personKey(reader), notice);
     });
 
-  /** Arms the next look at a `deliveryFailed` pause, later with every look that finds it can't lift. */
   const armRecovery = (workspaceId: WorkspaceId) =>
     Effect.suspend(() => {
       const looks = recovering.get(workspaceId) ?? 0;
@@ -246,7 +222,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       );
     }).pipe(Effect.asVoid);
 
-  /** Stops looking: the pause was lifted some other way, or a digest landed. */
   const endRecovery = (workspaceId: WorkspaceId) =>
     Effect.suspend(() => {
       recovering.delete(workspaceId);
@@ -254,14 +229,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       return FiberMap.remove(recoveryTimers, workspaceId);
     });
 
-  /**
-   * Lifts a `deliveryFailed` pause to try the orchestrator again, as the user would by resuming:
-   * an agent that dropped off the PATH overnight otherwise left its workspace paused until morning.
-   * The attempt is the probe. Starting a session looks the agent up afresh (Claude's asks the login
-   * shell again), where the launch checks read the PATH captured at start and would miss an install
-   * into a folder added since. One that fails pauses again, quietly, and the looks grow further
-   * apart. An ended orchestrator can't come back; the pause's notice said to open another.
-   */
   const onRecoveryDue = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       const state = yield* findWorkspace(workspaceId);
@@ -270,7 +237,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       const holder = state.workspace.orchestratorThreadId;
       const thread = holder === undefined ? undefined : yield* findThread(holder);
       if (thread === undefined) return yield* endRecovery(workspaceId);
-      // Parking keeps a `deliveryFailed` pause as it is, and unparking doesn't lift it: keep looking.
       if (thread.parked) return yield* armRecovery(workspaceId);
       const status = yield* runtimes
         .status(thread.id)
@@ -300,16 +266,9 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       yield* workspacesChanged;
       yield* orchestrationChanged(workspaceId);
       yield* wake(workspaceId, "the orchestrator could be reached again", true);
-      // A worker's wake that fell due during the pause waited for this.
       yield* armAlarms(workspaceId);
     });
 
-  /**
-   * Looks at a `deliveryFailed` pause again now, not at its next look, when its orchestrator is in
-   * error from a provider limit and fresh readings since that error show its login below every
-   * limit (`limitClearedBy`): another login, say, or a window reset early. A wait the user stopped
-   * (`cancelled`) is theirs, and so is every other pause.
-   */
   const recoverAtHeadroom = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       if (Option.isNone(limitReadings)) return;
@@ -321,7 +280,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       if (thread === undefined || error?.kind !== "rateLimit") return;
       if (thread.parked || thread.limitWait?.cancelled === true) return;
       const now = yield* Clock.currentTimeMillis;
-      // `current` is already restricted to the freshly identified local login.
       const readings = (yield* limitReadings.value.current).map((record) => ({
         ...record,
         accountScope: undefined,
@@ -333,14 +291,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       yield* onRecoveryDue(workspaceId);
     });
 
-  /**
-   * The user's pause asks the workspace's turns to stop at their next tool boundary, interrupting
-   * none (`stopAtToolBoundary`): the orchestrator's,
-   * unless a handoff or switch is under way, and every worker's but those the user holds, whose
-   * conversation stays theirs. Nothing is cut off mid-command, a card waiting on the user stays
-   * theirs, and the sessions keep everything, so the resume can tell each to continue.
-   * Workers a resume still had to let go of wait for this pause's resume instead.
-   */
   const haltWorkspace = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       yield* FiberMap.remove(pauseResumeTimers, workspaceId);
@@ -355,7 +305,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       const { workers: memos } = yield* readOutbox(workspaceId);
       const now = yield* Clock.currentTimeMillis;
       const holder = state.workspace.orchestratorThreadId;
-      // A handoff or switch under way goes on through a pause, as its boot does (`bootsAnyway`).
       const handingOff = (yield* readOutbox(workspaceId)).handoff !== undefined;
       const targets = [
         ...threads.filter(
@@ -395,11 +344,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
         .pipe(Effect.ignore);
     });
 
-  /**
-   * The user resumed `pause`: the workers it stopped, then those with input waiting, are let go in
-   * batches (`pauseResumePlan`), kept in the outbox so a restart keeps their places; the rest at
-   * once. The orchestrator's next digest says what the pause did and when each goes.
-   */
   const planPauseResume = (workspaceId: WorkspaceId, ended: OrchestrationPause) =>
     Effect.gen(function* () {
       const state = yield* findWorkspace(workspaceId);
@@ -457,13 +401,10 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       yield* armPauseResumes(workspaceId);
     });
 
-  /** Lets go of one worker the resume held back: told to continue if stopped, then its queue. */
   const letGoAfterPause = (entry: PauseResume) =>
     Effect.gen(function* () {
       const thread = yield* findThread(entry.threadId);
       if (thread === undefined || thread.parked) return;
-      // One the user has taken over since is theirs: what waited for it goes, but no "continue"
-      // is put into a conversation that isn't Gram's to steer.
       const memo =
         thread.workspaceId === undefined
           ? undefined
@@ -483,7 +424,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       yield* runtimes.releaseQueue(thread.id);
     });
 
-  /** Lets go of the workspace's held-back workers as each one's time comes, one timer for all. */
   const armPauseResumes = (workspaceId: WorkspaceId) =>
     FiberMap.run(
       pauseResumeTimers,
@@ -517,10 +457,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       ),
     ).pipe(Effect.asVoid);
 
-  /**
-   * The user wrote to a thread the pause stopped: it is theirs now, and isn't told to continue,
-   * whether the pause still holds or its resume has yet to let the thread go.
-   */
   const forgetStopped = (thread: Thread) =>
     Effect.gen(function* () {
       const workspaceId = thread.workspaceId;
@@ -554,10 +490,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       });
     });
 
-  /**
-   * A turn the agent opened by itself was stopped by the user's pause after its first sweep (a
-   * report on a background task): kept on the pause like the rest, so the resume tells it to go on.
-   */
   const recordHeldStop = (thread: Thread) =>
     Effect.gen(function* () {
       const own = yield* orchestratorState(thread);
@@ -591,10 +523,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       return yield* afterResume(workspaceId, state, lifted);
     });
 
-  /**
-   * What a resume of `lifted` just stored sets off: the orchestrator is unparked, woken and its
-   * alarms rearmed, and the workers the user's pause held are let go in their batches.
-   */
   const afterResume = (
     workspaceId: WorkspaceId,
     state: WorkspaceState,
@@ -602,17 +530,12 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
   ) =>
     Effect.gen(function* () {
       yield* endRecovery(workspaceId);
-      // Resuming unparks the orchestrator, whatever the pause was for: the wake below would
-      // otherwise reach a thread that still shows as parked.
       const holder = state.workspace.orchestratorThreadId;
       if (holder !== undefined) {
         yield* runtimes
           .updateThread(holder, (thread) => (thread.parked ? { ...thread, parked: false } : thread))
           .pipe(Effect.ignore);
       }
-      // Resuming lets go of an outbox set aside, whatever pause it ended: the set-aside one says
-      // so, and another can only have taken its place by the user's doing, while delivery stays
-      // stopped for as long as one is kept.
       const letGo = yield* releaseSetAside(workspaceId);
       yield* updateOutbox(workspaceId, (outbox) => [{ ...outbox, failures: 0 }, undefined]);
       yield* store.appendOrchestrationEvent(workspaceId, {
@@ -620,14 +543,11 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
         kind: "resume",
         data: letGo ? { outbox: "startedOver" } : {},
       });
-      // Before the wake, so its digest says when each worker the pause held goes.
       if (lifted.reason === "user") yield* planPauseResume(workspaceId, lifted);
       yield* workspacesChanged;
       yield* orchestrationChanged(workspaceId);
       yield* wake(workspaceId, "the user resumed orchestration", true);
-      // A worker's wake that fell due during the pause waited for this.
       yield* armAlarms(workspaceId);
-      // So did a held brief whose limit reset meanwhile.
       yield* armLimitResume(workspaceId);
       return state;
     });
@@ -652,7 +572,6 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
           store.updateWorkspaceAudited(
             workspaceId,
             (current) => {
-              // Only from the state the card showed: paused stays paused, running stays running.
               if ((current.paused !== undefined) === paused) return undefined;
               if (paused) return { ...current, paused: { reason: "user" as const, at } };
               lifted = current.paused;
@@ -669,16 +588,11 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       }),
     );
 
-  /**
-   * A parked orchestrator parks its workspace: paused, so nothing wakes it, until it is unparked.
-   * A pause for any other reason is left alone either way.
-   */
   const followPark = (workspaceId: WorkspaceId, holder: Thread) =>
     Effect.gen(function* () {
       const state = yield* findWorkspace(workspaceId);
       if (state === undefined) return;
       if (holder.parked) {
-        // A handoff's checkpoint and boot would each open a turn in the parked thread.
         if ((yield* readOutbox(workspaceId)).handoff !== undefined) {
           yield* abandonHandoff(workspaceId, holder.id, "The orchestrator was parked.");
         }

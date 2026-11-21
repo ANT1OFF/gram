@@ -37,7 +37,6 @@ export const RETRIES_EXHAUSTED: AgentFailure = {
 const clip = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
 
-/** The agent's own words, redacted and on one line, for the one kind that has no sentence of ours. */
 const excerpt = (detail: string, room: number): string =>
   clip(redactText(detail).replaceAll(/\s+/g, " ").trim(), room);
 
@@ -53,7 +52,6 @@ const hostOf = (url: string): string | undefined => {
   try {
     return new URL(url).host.toLowerCase();
   } catch {
-    // Not a URL: a profile saved with a typo, or a fragment of the agent's message.
     return undefined;
   }
 };
@@ -67,7 +65,6 @@ export const requestHost = (detail: string): string | undefined => {
   return named === null ? undefined : hostOf(named[1]!);
 };
 
-/** A refusal from a different host must not be blamed on an explicitly selected gateway key. */
 const offGateway = (
   detail: string,
   context: FailureContext,
@@ -80,7 +77,6 @@ const offGateway = (
     : undefined;
 };
 
-/** The sentence for a sign-in refused by something other than the thread's gateway. */
 const offGatewayText = (
   off: { readonly host: string | undefined },
   context: FailureContext,

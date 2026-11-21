@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useFeature } from "./use-diagnostics";
 
-/** Offered for the interface font when there's no desktop bridge to list installed fonts. */
 const CURATED_UI_FONTS: readonly string[] = [
   "Geist",
   "Helvetica Neue",

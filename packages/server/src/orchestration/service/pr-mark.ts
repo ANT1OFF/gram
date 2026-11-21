@@ -1,6 +1,3 @@
-// A pull request's badge as the ledger marks it: its state, its required checks, the review's
-// verdict on its head and how it merges.
-
 import { type PrStatus, requiredChecksOf } from "@gram/contracts";
 import type { PrMark } from "../rules.ts";
 

@@ -13,7 +13,6 @@ import type { FileUpdateChange } from "./protocol/v2/FileUpdateChange.ts";
 
 type Elicitation = Extract<ServerRequest, { method: "mcpServer/elicitation/request" }>["params"];
 
-/** Codex keeps a session or standing grant itself when the answer's `_meta.persist` says so. */
 const promptOf = (p: Elicitation): McpPrompt => ({
   serverName: p.serverName,
   message: "message" in p ? p.message : "",
@@ -51,10 +50,6 @@ type CommandApproval = Extract<
   { method: "item/commandExecution/requestApproval" }
 >["params"];
 
-/**
- * What the command does outwardly, read from the full command line and its parsed actions: the most
- * severe reading of any of them.
- */
 const kindOf = (p: CommandApproval): OutwardKind | undefined => {
   const kinds = [p.command, ...(p.commandActions ?? []).map((action) => action.command)].map(
     (command) => (typeof command === "string" ? outwardKind(command) : undefined),
@@ -62,14 +57,9 @@ const kindOf = (p: CommandApproval): OutwardKind | undefined => {
   return kinds.includes("irreversible") ? "irreversible" : kinds.find((kind) => kind !== undefined);
 };
 
-/** The exact command a command approval runs, or "" when Codex didn't send one. */
 const exactCommand = (p: CommandApproval): string =>
   typeof p.command === "string" && p.command.trim() !== "" ? p.command : "";
 
-/**
- * Whether a command approval can't be allowed from what its card shows: it names no exact command
- * and isn't a network ask, which says its host instead.
- */
 const withholdsAllow = (p: CommandApproval): boolean =>
   exactCommand(p) === "" && (p.networkApprovalContext ?? null) === null;
 
@@ -106,7 +96,6 @@ export const gateVerdict = (
     return answersItself && plain ? "accept" : "pass";
   }
   if (request.method === "item/fileChange/requestApproval") {
-    // A `grantRoot` asks for standing write access, which is more than the one patch.
     return answersItself && (request.params.grantRoot ?? null) === null ? "accept" : "pass";
   }
   return "pass";
@@ -115,13 +104,6 @@ export const gateVerdict = (
 /** The result that lets a request the gate accepted run: `accept`, once. */
 export const GATE_ACCEPT = { decision: "accept" } as const;
 
-/**
- * Whether "always" is kept off a command's card. Codex's "always" writes a
- * `prefix_rule(..., decision="allow")` into `CODEX_HOME`, and an allow rule runs what it matches
- * with no request at all, in every approval policy. So under a gate no outward command gets one,
- * a push at `irreversible` included: its rule would be a prefix of the forced push the gate still
- * asks about, and at that level no prompt rule on `git push` stands beside it to outrank it.
- */
 const withholdsAlways = (level: OutwardGate | undefined, kind: OutwardKind | undefined): boolean =>
   level !== undefined && kind !== undefined;
 
@@ -134,11 +116,9 @@ const withholdsAlways = (level: OutwardGate | undefined, kind: OutwardKind | und
  */
 export const toPendingRequest = (
   request: ServerRequest,
-  /** The session's own part of each card id (`codexRequestId`). */
   idScope: string,
   changes: (itemId: string) => ReadonlyArray<FileUpdateChange> | undefined,
   gate: boolean | OutwardGate = false,
-  /** A server's permission prompt is answered once each time (`OpenSessionOptions.browserAsk`). */
   promptsOnce = false,
 ): PendingRequest | undefined => {
   const level = gateLevel(gate);
@@ -147,9 +127,6 @@ export const toPendingRequest = (
     case "item/commandExecution/requestApproval": {
       const p = request.params;
       const kind = kindOf(p);
-      // The card shows the exact command that runs. Codex's parsed actions are a best-effort
-      // reading for display, so they come second, and only when they read differently. A request
-      // without the command can't be allowed from what it shows: it offers Deny alone.
       const command = exactCommand(p);
       const parsed = (p.commandActions ?? []).map((action) => action.command).join("; ");
       const network = p.networkApprovalContext ?? null;
@@ -226,8 +203,6 @@ export const toPendingRequest = (
       };
     }
     case "mcpServer/elicitation/request": {
-      // A server's permission prompt, as computer use raises before it touches an app or a site.
-      // One that isn't a plain yes or no has no scopes, and is declined like any unknown request.
       const p = request.params;
       const prompt = promptOf(p);
       const scopes = promptScopes(prompt, level !== undefined || promptsOnce);
@@ -277,7 +252,6 @@ export const responseFor = (
       const offers = (decision: string) =>
         available === null || available === undefined || available.includes(decision);
       let decision: CommandExecutionApprovalDecision;
-      // A card that showed no exact command offered no Allow, and none is sent for it.
       if (!allow || withholdsAllow(p)) decision = gated || offers("decline") ? "decline" : "cancel";
       else if (gateAsks(level, kind)) decision = "accept";
       else if (

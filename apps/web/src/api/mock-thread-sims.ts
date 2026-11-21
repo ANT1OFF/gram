@@ -21,9 +21,6 @@ import type {
   UserInput,
 } from "@gram/contracts";
 
-// Dev and e2e hooks that put one thread in a state: requests, queue, plan, background work,
-// messages, status, errors, limit waits, processes, ports, files and panels.
-
 /**
  * Dev and e2e hook: a request that can be answered independently of a scripted turn; `onAnswer`
  * hears the answer, as the server's own card would.

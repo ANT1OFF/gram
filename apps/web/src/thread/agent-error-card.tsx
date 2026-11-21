@@ -36,7 +36,6 @@ import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
 import { MachineLostCard } from "./machine-lost-card";
 import { AUTO_RETRY_MS, retryKey, retryTimeOf, useRetrySchedule } from "./retry-time";
 
-/** Failures a gateway profile's settings can fix: its key, its models, or its spending limit. */
 const GATEWAY_FIXES: ReadonlySet<ThreadError["kind"]> = new Set([
   "auth",
   "gatewayRefused",
@@ -44,13 +43,8 @@ const GATEWAY_FIXES: ReadonlySet<ThreadError["kind"]> = new Set([
   "costGuard",
 ]);
 
-/** Statuses with no turn under way, from which sending again starts one. */
 const SETTLED: ReadonlySet<ThreadStatus> = new Set(["error", "idle", "cold"]);
 
-/**
- * The text of the message that started turn `turnId`, to send again; `undefined` when it carried
- * more than text (an attachment a resend would drop) or can't be found.
- */
 const retryText = (
   messages: ReadonlyArray<GramUIMessage>,
   turnId: TurnId | undefined,
@@ -62,17 +56,12 @@ const retryText = (
   return text.trim() === "" ? undefined : text;
 };
 
-/** Refusals `thread.send` makes before it takes the message, so nothing of it was sent. */
 const REFUSED_BEFORE_SENDING: ReadonlySet<string> = new Set([
   "ThreadNotFound",
   "InvalidState",
   "NotImplemented",
 ]);
 
-/**
- * What a failed retry says: that nothing was sent only when the server refused it before taking it.
- * Any other failure, a dropped connection say, may have lost the answer after the message went.
- */
 const retryFailure = (error: unknown): string => {
   const tag = typeof error === "object" && error !== null ? Reflect.get(error, "_tag") : undefined;
   return typeof tag === "string" && REFUSED_BEFORE_SENDING.has(tag)
@@ -80,7 +69,6 @@ const retryFailure = (error: unknown): string => {
     : `Couldn't confirm the retry reached the agent: ${errorMessage(error)}. Check the transcript before trying again.`;
 };
 
-/** This failed turn's attempt facts, from the thread's transcript as it stands. */
 function useAttempt(threadId: ThreadId, error: ThreadError): AttemptFacts | undefined {
   const messages = useThreadFeed(threadId, (state) => state.messages);
   const attempts = useMemo(() => attemptsOf(messages), [messages]);
@@ -96,10 +84,6 @@ export const retriedLabel = (retried: Pick<RetryReceipt, "at" | "recovered">): s
   return retried.recovered ? `${when} · succeeded` : when;
 };
 
-/**
- * The attempts before the one a card shows, behind a disclosure: "1 earlier attempt", each with
- * its number, when it failed and what it said.
- */
 function EarlierAttempts({ earlier }: { earlier: readonly EarlierAttempt[] }) {
   if (earlier.length === 0) return null;
   const count = earlier.length === 1 ? "1 earlier attempt" : `${earlier.length} earlier attempts`;
@@ -142,10 +126,7 @@ function EarlierAttempts({ earlier }: { earlier: readonly EarlierAttempt[] }) {
  * above the reply that came of it.
  */
 export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error: ThreadError }) {
-  // A thread the server no longer has, a finished worker's, has no feed to read attempts from.
   const live = useThreadsStore((s) => s.byId[threadId] !== undefined);
-  // A lost machine has a card of its own, with its own resume; not once its saved work is gone,
-  // which a resume can't bring back: that card says so, with its own way out.
   if (error.machineLost !== undefined && error.code !== KEPT_WORK_GONE_CODE)
     return <MachineLostCard threadId={threadId} error={error} lost={error.machineLost} />;
   return live ? (
@@ -179,22 +160,17 @@ function ErrorCard({
   });
   const model = useThreadsStore((s) => s.byId[threadId]?.thread.model);
   const onGateway = model?.profileId !== undefined;
-  // The server waiting the limit out (`Thread.limitWait`) retries on its own; the card offers none.
   const waiting = useThreadsStore((s) => s.byId[threadId]?.thread.limitWait !== undefined);
   const limited = error.kind === "rateLimit";
   const key = retryKey(threadId, error);
   const due = useRetrySchedule((s) => s.due[key]);
   const live = limited && current && retried === undefined;
-  // A minute's tick is enough for a reset shown to the minute, and only matters once it passes.
   const minute = useNow(live, undefined, 60_000);
   const limits = useUsageLimits((s) => s.limits);
   const retryAt = limited ? retryTimeOf(error, model, limits, minute) : undefined;
-  // An automatic retry, set with no reset to wait for, counts down each second.
   const second = useNow(live && due !== undefined && retryAt === undefined, undefined, 1000);
   const now = Math.max(minute, second);
 
-  // Read, not subscribed: the turn's own message is in the feed before its error is. A limit the
-  // provider gave a reset for is worth sending again then, even where sending now would only repeat.
   const text =
     (error.retryable || retryAt !== undefined) && current && retried === undefined
       ? retryText(feedMessages(threadId), error.turnId)
@@ -217,7 +193,6 @@ function ErrorCard({
   if (attempt?.folded === true) return null;
 
   if (retried !== undefined) {
-    // Only the run's newest failure has a card, so a retry here is the one that didn't fail.
     return (
       <div
         role="status"
@@ -229,7 +204,6 @@ function ErrorCard({
       >
         <RotateCw aria-hidden className="mt-0.5 size-icon-row shrink-0" />
         <div className="min-w-0 flex-1">
-          {/* What was done and how it went leads; the failure it got past folds under Details. */}
           <p data-testid="agent-error-retried" className="text-meta font-medium text-foreground">
             {retriedLabel(retried)}
           </p>
@@ -259,10 +233,7 @@ function ErrorCard({
   }
 
   const repeat = attempt !== undefined && attempt.attempt > 1;
-  // A known reset still ahead: the title says when, once, and the card's step is to retry then.
   const early = retryAt !== undefined && retryAt > now;
-  // A spent usage limit says so, and when it resets once that is known: "Usage limit · resets
-  // 11:15". The provider throttling requests stays "Rate limited".
   const spent = limited && (!error.retryable || retryAt !== undefined);
   const keptGone = error.code === KEPT_WORK_GONE_CODE;
   const title = keptGone
@@ -273,17 +244,9 @@ function ErrorCard({
         : USAGE_LIMIT
       : failureLabel(error.kind, error.retryable);
   const canRetryNow = text !== undefined && (error.retryable || !early);
-  // Repeated throttling, with no reset to wait for: the card can try again on its own in a moment,
-  // or the user can move the thread to another model. Never while the server waits the limit out.
   const throttledAgain =
     limited && repeat && error.retryable && !early && current && retried === undefined && !waiting;
-  // A model this thread can't run: the step is another model, in the prompt box's picker.
   const otherModel = throttledAgain || (error.kind === "modelUnavailable" && current);
-  /**
-   * Sends the turn's message again at `at` (plus `margin`), if it is still the thread's last error
-   * with nothing running by then: "Retry at 11:15" and "Retry automatically in 30 s". Read when it
-   * fires, not now: the user may have sent something else in the meantime.
-   */
   const retryLater = (again: string, at: number, margin?: number) =>
     useRetrySchedule.getState().schedule(
       key,
@@ -450,11 +413,6 @@ function ErrorCard({
 /** The title of a thread whose saved work is gone from the remote (`kept-work-gone`). */
 export const KEPT_WORK_GONE_TITLE = "Saved work is gone";
 
-/**
- * The way out of a thread whose saved work is gone and whose branch doesn't hold it: open it from
- * the branch without that work (`thread.restoreFromBranch`). It drops the work, so it asks first,
- * in so many words; the other way out (push the saved ref back) is the card's sentence.
- */
 function FromBranch({ threadId, current }: { threadId: ThreadId; current: boolean }) {
   const api = useApi();
   const served = useServes("thread.restoreFromBranch");
@@ -552,10 +510,6 @@ function FromBranch({ threadId, current }: { threadId: ThreadId; current: boolea
   );
 }
 
-/**
- * "Retry automatically in 30 s" on a repeated rate limit; once chosen, the seconds left counting
- * down, "Retrying in 24 s", with Cancel. It sends the turn's message again the way Retry does.
- */
 function AutoRetry({
   due,
   now,
@@ -563,7 +517,6 @@ function AutoRetry({
   onArm,
   onCancel,
 }: {
-  /** When the automatic retry goes, epoch ms; undefined until it is chosen. */
   due: number | undefined;
   now: number;
   disabled: boolean;
@@ -584,7 +537,6 @@ function AutoRetry({
       </Button>
     );
   }
-  // `now` can be a tick older than the click that set it: never more than the wait it was set for.
   const left = Math.min(AUTO_RETRY_MS / 1000, Math.max(0, Math.ceil((due - now) / 1000)));
   return (
     <span

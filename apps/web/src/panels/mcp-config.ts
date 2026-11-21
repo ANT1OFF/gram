@@ -170,7 +170,6 @@ export function configFromJson(text: string, formName: string): Parsed {
   return { error: "`type` must be stdio, http or sse." };
 }
 
-/** Where each agent keeps a server at each of its scopes, in the user's words. */
 const PLACE: Readonly<Record<McpTarget, Partial<Record<McpScope, string>>>> = {
   claude: {
     local: "only you, in this project",

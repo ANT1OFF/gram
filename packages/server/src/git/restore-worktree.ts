@@ -11,10 +11,6 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { CheckoutService } from "../runtime/hooks.ts";
 import { GitStatePublisher, type GitStatePublisherShape } from "./publisher.ts";
 
-/**
- * The PR whose head can recreate the thread's branch: its bound one, else its branch's last badge,
- * and only one in the repo `origin` names, since its head is fetched from there.
- */
 const restorablePr = (thread: Thread, publisher: GitStatePublisherShape | undefined) =>
   Effect.gen(function* () {
     if (publisher === undefined) return undefined;
@@ -41,7 +37,6 @@ export const restoreThreadWorktree = (threadId: ThreadId, fromPr: boolean) =>
     const checkouts = yield* CheckoutService;
     const publisher = Option.getOrUndefined(yield* Effect.serviceOption(GitStatePublisher));
     const thread = yield* store.getThread(threadId);
-    // The checkout the thread is shown, and whose state reads missing: a followed worktree's too.
     const checkout = effectiveCheckout(thread);
     if (yield* checkouts.present(checkout.path)) {
       return yield* new InvalidState({

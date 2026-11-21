@@ -19,11 +19,6 @@ import { SpeedGlyph } from "./picker-glyphs";
 import type { PickerOption } from "./picker";
 import { speedOptions, speedReport, speedUsage, speedValueWord } from "./speed-field";
 
-// The four sections of the composer's choices, in its one order (model · effort · mode · speed),
-// the same in a thread's composer and in `/new`. Each says its value in words in the chip's name,
-// tooltip and popover; on the chip itself the model says its name beside the agent's mark, the mode
-// draws its glyph, and Fast its bolt while on.
-
 /** The model, its name on the chip beside the agent's mark, and in the chip's name and tooltip. */
 export function modelSection({
   value,
@@ -94,7 +89,6 @@ export function effortSection({
   };
 }
 
-/** A mode's glyph, in the warning colour for one that never asks. */
 const modeGlyph = (mode: PermissionMode, size: string) =>
   createElement(MODE_ICONS[mode], {
     "aria-hidden": true,

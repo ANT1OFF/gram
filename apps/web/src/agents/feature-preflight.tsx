@@ -57,7 +57,6 @@ export function useHarnessPreflight(
   const checking = model !== undefined && query.isPending && query.fetchStatus === "fetching";
   const recheck = async () => {
     if (model === undefined) return;
-    // Explicit retry follows the established cache retirement path after CLI/login changes.
     await api.launchChecks(true);
     const next = await api.agentSupport(model, {
       ...(options.threadId === undefined ? {} : { threadId: options.threadId }),

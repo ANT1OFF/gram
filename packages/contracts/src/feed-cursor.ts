@@ -92,13 +92,10 @@ export class FeedCursor {
   opened(id: string, held: boolean): boolean {
     const head = this.#head;
     if (head === undefined) {
-      // A message new to the client has had no row stored before the revision it holds.
       this.#openedAt.set(id, held ? undefined : this.#rev);
       return held;
     }
     head.received.add(id);
-    // One carried over keeps its bound, and one the client didn't have began after the revision
-    // resumed from. A full head's are unknown.
     const bound = !head.resumed
       ? undefined
       : head.carried.has(id)

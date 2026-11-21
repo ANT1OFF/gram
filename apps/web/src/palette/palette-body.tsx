@@ -114,8 +114,6 @@ import { openThreadBeside } from "./open-beside";
 import { paletteIcon, paletteIconKind } from "./palette-icons";
 import { paletteDot, paletteStatusWords, soloPaletteStatus, statusWord } from "./status-words";
 
-/** Steps of "Open in pane…" that keep the palette open for the next pick. */
-/** The pane commands a touch screen goes without, as it shows one pane at a time. */
 const PANE_ACTIONS = new Set([
   "action:split",
   "action:layout",
@@ -123,19 +121,15 @@ const PANE_ACTIONS = new Set([
   "action:maximize",
 ]);
 
-/** The right panel's commands, left out where the app in front of Gram offers no panel. */
 const PANEL_ACTIONS = new Set(["action:panel", "action:panelExpand", "action:reviewFocus"]);
 
 const KEEPS_OPEN = /^(pick:|action:openInPane$|action:resume$)/;
 const MESSAGE_LIMIT = 20;
-/** Claude Code on the web, opened as a plain page: Gram reads no session list from it. */
 const CLAUDE_CODE_WEB = "https://claude.ai/code";
 
-/** Reports an action that failed after the palette closed. */
 const notifyError = (title: string, body: string) =>
   useThreadsStore.getState().applyEvent({ type: "notify", kind: "error", title, body });
 
-/** A command's key, when it has one bound. */
 const shortcut = (id: string) => {
   const keys = shortcutHint(id);
   return keys === "" ? {} : { shortcut: keys };
@@ -143,7 +137,6 @@ const shortcut = (id: string) => {
 
 const nonEmpty = (section: PaletteSection) => section.items.length > 0;
 
-/** A step's rows for what is typed: the row the words make, when they make one, then its matches. */
 const pickerItems = (picker: PalettePicker, query: string): PaletteItem[] => {
   const typed = query.trim() === "" ? undefined : picker.typed?.(query);
   return [...(typed === undefined ? [] : [typed]), ...matchItems(picker.items, query)];
@@ -193,18 +186,15 @@ export function PaletteBody({
   );
   const currentThread = currentId ? byId[currentId]?.thread : undefined;
   const currentProjectId = currentThread?.projectId;
-  /** The thread "Run script…" runs in: the one in view, unless it orchestrates. */
   const scriptThread = currentThread?.role === "orchestrator" ? undefined : currentThread;
   const { data: projectScripts } = useProjectScripts(scriptThread?.projectId);
   const workspaces = useWorkspaces();
   const workspaceIds = useMemo(() => workspaces.map(({ workspace }) => workspace.id), [workspaces]);
   const ledgers = useOrchestratorLedgers(workspaceIds);
-  /** Whether `projectId` has the one-project workspace `openOrchestrator` would otherwise make. */
   const hasOwnWorkspace = (projectId: string) =>
     workspaces.some(
       ({ workspace }) => workspace.projectIds.length === 1 && workspace.homeProjectId === projectId,
     );
-  // On a board or a memory view, the workspace on screen; elsewhere, the current thread's.
   const shownWorkspace = params.workspaceId as WorkspaceId | undefined;
   const boardWorkspace = boardWorkspaceFor(
     currentThread ?? (shownWorkspace === undefined ? undefined : { workspaceId: shownWorkspace }),
@@ -214,21 +204,14 @@ export function PaletteBody({
   const { data: docList } = useDocs(boardWorkspace);
   const [query, setQuery] = useState(initialQuery);
   const [active, setActive] = useState(0);
-  /** The filter under the field: everything, or only threads, workers or actions. */
   const [picked, setPicked] = useState<PaletteKind>("all");
-  /** The groups opened in full with their Show more row. */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const recentDestinations = useRecentDestinations((s) => s.ids);
   const openBoard = useOpenBoard();
-  /** The thread or workspace whose commands alone are listed: More… opens it, Tab enters one. */
   const [scope, setScope] = useState(initialScope);
-  /** A command's second step: a layout, a label, a pane. */
   const [picker, setPicker] = useState<PalettePicker>();
-  /** "Open in pane…": first pick a thread, then a pane. */
   const [picking, setPicking] = useState<{ threadId?: ThreadId }>();
-  /** "Resume a past session…": the folder whose sessions are listed. */
   const [resumeRoot, setResumeRoot] = useState<string>();
-  /** "Reopen Waiting on you item…": the thread whose resolved items are listed. */
   const [reopenIn, setReopenIn] = useState<ThreadId>();
   const stepping =
     picker !== undefined ||
@@ -264,7 +247,6 @@ export function PaletteBody({
     setActive(0);
     setExpanded(new Set());
   };
-  /** Picks a filter under the field; a `>` typed for actions goes with any other pick. */
   const pickKind = (next: PaletteKind, typeOn = true) => {
     setPicked(next);
     if (next !== "actions" && query.startsWith(">")) setQuery(query.slice(1).trimStart());
@@ -292,7 +274,6 @@ export function PaletteBody({
     },
   };
   const scoped = useScopeCommands(scope, steps);
-  // The thread and workspace in view, whose commands `>` matches once something is typed.
   const viewThread =
     scope === undefined && currentThread !== undefined && currentThread.role !== "orchestrator"
       ? currentThread
@@ -321,13 +302,11 @@ export function PaletteBody({
         wordFilters.remainder.trim().split(/\s+/).length >= 3 &&
         query.length <= 500));
   const answered = hiddenIds({ held: askHeld, sent: askSent });
-  // Each thread's status as the sidebar and ⌘J word it, from the same selectors.
   const statusWords = paletteStatusWords(
     workspaces.map(({ workspace, paused }) => ({ id: workspace.id, paused: paused !== undefined })),
     ledgers,
     { byId, statusDetail, now },
   );
-  // A thread outside the workspaces says what its sidebar row says, the Inbox's ask included.
   const solo = (summary: ThreadSummary) =>
     statusWords.has(summary.thread.id) || summary.thread.spawnedBy !== undefined
       ? undefined
@@ -351,8 +330,6 @@ export function PaletteBody({
     if (focusOtherWindow(threadId)) return;
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
-  // What is over lives in History, not beside the live threads: the lists below leave it out, and
-  // one row hands a search that matches any of it to History, searching the same words there.
   const live = recent.filter((summary) => !inHistory(summary, settle));
   const pastMatches =
     searchText === ""
@@ -378,7 +355,6 @@ export function PaletteBody({
               pastMatches === 1 ? "1 finished in History" : `${pastMatches} finished in History`,
             hint: `Search History for “${searchText}”`,
             ...shortcut("history.open"),
-            // It stands for what matched, so it matches whatever was typed.
             keywords: searchText,
             run: () => useHistoryStore.getState().show("all", searchText),
           },
@@ -399,7 +375,6 @@ export function PaletteBody({
     keywords: `${summary.thread.checkout.branch ?? ""} ${workspaceNames.get(summary.thread.workspaceId as WorkspaceId) ?? ""}`,
     dot: paletteDot(statusWord(summary, statusWords)),
     scope: threadScope(summary.thread),
-    // As a ⌘- or ⌥-click on its sidebar row: beside its orchestrator, or a look in a sheet.
     beside: () => {
       if (!keepBeside(summary.thread.id, openThread)) openThreadBeside(summary.thread.id);
     },
@@ -412,7 +387,6 @@ export function PaletteBody({
   const workers: PaletteItem[] = live
     .filter(({ thread }) => thread.spawnedBy !== undefined)
     .map(workerItem);
-  // A feature is the workers spawned for it, in each workspace that is listed.
   const featureWorkers = new Map<
     string,
     { workspaceId: WorkspaceId; feature: string; count: number }
@@ -433,7 +407,6 @@ export function PaletteBody({
       label: feature,
       hint: `${workspaceNames.get(workspaceId)} · ${count === 1 ? "1 worker" : `${count} workers`}`,
       scope: { kind: "workspace", workspaceId },
-      // Its sheet: where it stands, its PRs and workers, and its menu.
       run: () => openFeatureSheet(workspaceId, feature),
     }),
   );
@@ -479,7 +452,6 @@ export function PaletteBody({
           run: () => showDoc(boardWorkspace, doc.id),
         }));
 
-  // This Mac's folders: a joined machine's project is no folder here.
   const projectItems: PaletteItem[] = projects.filter(isFolderProject).map((project) => ({
     id: `project:${project.id}`,
     label: project.name,
@@ -490,7 +462,6 @@ export function PaletteBody({
     },
   }));
 
-  // The places the window goes, each with its key: first-class here, rather than only in "…".
   const gramDestinations: PaletteItem[] = [
     ...(boardWorkspace === undefined
       ? []
@@ -581,7 +552,6 @@ export function PaletteBody({
       run: go("go:threads", () => void navigate({ to: "/threads" })),
     },
   ];
-  // The places an app in front of Gram added, each under its group's name; none on Gram's own.
   const embedDestinations: PaletteItem[] = embedNavigation.flatMap((group) =>
     group.items.map((item) => {
       const id = `go:embed:${group.id}/${item.id}`;
@@ -594,9 +564,6 @@ export function PaletteBody({
       };
     }),
   );
-  // In front of an app with places of its own, those lead, and Gram's that it replaces or leaves
-  // out go: its Inbox when it counts what needs someone, a page its navigation already lists, Focus
-  // (a calm view of Gram's own threads), and the Settings pages it does not keep.
   const embedPaths = new Set(
     embedNavigation.flatMap((group) => group.items.map((item) => item.to)),
   );
@@ -612,7 +579,6 @@ export function PaletteBody({
       ? gramDestinations
       : [...embedDestinations, ...gramDestinations.filter((item) => !replaced.has(item.id))];
 
-  // A touch screen shows one pane at a time: no splits, layouts or panes to open into.
   const touch = isTouch();
   const panelBarred = useLayoutStore((s) => s.panelBarred === true);
   const actions: PaletteItem[] = [
@@ -711,8 +677,6 @@ export function PaletteBody({
     ...(currentProjectId !== undefined && !hasOwnWorkspace(currentProjectId)
       ? [
           {
-            // Making the project's workspace is New workspace's, which says how far it may go
-            // unasked before anything starts.
             id: "action:openOrchestrator",
             label: "Start project workspace…",
             keywords: "orchestrate orchestrator workers workspace dispatch autonomy",
@@ -942,8 +906,6 @@ export function PaletteBody({
     (item) =>
       (!touch || !PANE_ACTIONS.has(item.id)) && (!panelBarred || !PANEL_ACTIONS.has(item.id)),
   );
-  // The workspace's own verbs, and its orchestrator's thread verbs only on the orchestrator itself;
-  // the same command can come from the thread and from its workspace, so it is listed once.
   const inView = [
     ...flattenSections(
       viewThread === undefined
@@ -954,7 +916,6 @@ export function PaletteBody({
   ].filter(
     (item, index, all) =>
       all.findIndex((other) => other.id === item.id) === index &&
-      // A command the app has anyway, such as Open in pane…, is listed once, with the others.
       !actions.some((action) => action.label === item.label) &&
       !(touch && item.label === "Open in pane…") &&
       !destinations.some((destination) => destination.label === item.label),
@@ -1085,13 +1046,10 @@ export function PaletteBody({
                     ? [{ id: "messages" as const, label: "Messages", items: messageItems }]
                     : []),
                 ];
-  // Plain matches (including messages) always remain first and untouched by parsing or editing.
   if (searchMode && wordFilters.filters.length > 0) {
     const filtered: PaletteItem[] = recent.flatMap((summary) => {
       const kind = summary.thread.spawnedBy === undefined ? "thread" : "worker";
       const candidates: { kind: string; item: PaletteItem; at?: number }[] = [
-        // Words like "merged this week" ask after old work too, so a thread History holds is a
-        // match here, opening where it is.
         { kind, item: kind === "thread" ? threadItem(summary) : workerItem(summary) },
         ...prs
           .filter((item) => item.id === `pr:${summary.thread.id}`)
@@ -1106,7 +1064,6 @@ export function PaletteBody({
             run: () => goTo(summary.thread.id),
           },
         })),
-        // Only what the stack still asks: one answered, or held to be sent, is gone from it.
         ...summary.pendingRequests
           .filter((request) => !answered.has(request.id))
           .map((request) => ({
@@ -1147,7 +1104,6 @@ export function PaletteBody({
 
   const run = (item: PaletteItem | undefined) => {
     if (!item) return;
-    // The palette stays, with the reason, so another command can be picked.
     if (item.unavailable !== undefined) {
       useThreadsStore.getState().applyEvent({
         type: "notify",
@@ -1165,10 +1121,6 @@ export function PaletteBody({
     if (!item.stay && !KEEPS_OPEN.test(item.id)) onDone();
     item.run();
   };
-  /**
-   * ⌘⏎ / ⌘-click opens a thread beside the chat and ⌥⏎ / ⌥-click peeks at a worker, as the same
-   * clicks on its sidebar row do; a row with no such gesture just opens. True when one ran.
-   */
   const runGesture = (item: PaletteItem | undefined, mods: { beside: boolean; peek: boolean }) => {
     const gesture = mods.beside ? item?.beside : mods.peek ? item?.peek : undefined;
     if (item === undefined || gesture === undefined || item.unavailable !== undefined) return false;
@@ -1176,7 +1128,6 @@ export function PaletteBody({
     gesture();
     return true;
   };
-  /** One step back: out of a second step, then out of the scope. */
   const back = () => {
     if (picker !== undefined) setPicker(undefined);
     else if (stepping) {
@@ -1189,7 +1140,6 @@ export function PaletteBody({
     return true;
   };
 
-  // Focus stays in the search field, so the browser won't scroll the active item into view itself.
   useEffect(() => {
     if (activeIndex === -1) return;
     document.getElementById(`palette-item-${activeIndex}`)?.scrollIntoView?.({ block: "nearest" });
@@ -1354,10 +1304,8 @@ export function PaletteBody({
               type="button"
               role="radio"
               aria-checked={shownKind === each.kind}
-              // One stop in the Tab order, the picked one; arrows move between them.
               tabIndex={shownKind === each.kind ? 0 : -1}
               data-kind={each.kind}
-              // The field keeps focus: a pick changes the list, not where typing goes.
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => pickKind(each.kind)}
               className="h-6 rounded-full px-2.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:bg-accent aria-checked:text-accent-foreground"
@@ -1367,7 +1315,6 @@ export function PaletteBody({
           ))}
         </div>
       )}
-      {/* A new scope or step swaps the list in where the old one stood. */}
       <Swap
         as="div"
         swapKey={`${scopeKey(scope)}:${picker?.title ?? ""}`}
@@ -1476,7 +1423,6 @@ export function PaletteBody({
         data-testid="palette-keys"
         className="flex gap-3 border-t phone:hidden border-border px-3 py-1.5 text-caption text-muted-foreground"
       >
-        {/* The catalog's words: History's "↑↓ move", and "Actions" for a row's own commands. */}
         {items.length > 1 && (
           <span>
             <kbd className="font-mono">↑↓</kbd> move
@@ -1524,7 +1470,6 @@ export function PaletteBody({
   );
 }
 
-/** A row's kind as its glyph, muted, in a column of its own so the labels start on one edge. */
 function PaletteRowIcon({ item }: { item: PaletteItem }) {
   const kind = paletteIconKind(item);
   return (
@@ -1535,7 +1480,6 @@ function PaletteRowIcon({ item }: { item: PaletteItem }) {
   );
 }
 
-/** Why "Reopen Waiting on you item…" lists nothing, or that it is still looking. */
 function ReopenNote({
   query,
   empty,

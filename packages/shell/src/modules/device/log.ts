@@ -74,8 +74,6 @@ const parseLines = (
   let at = 0;
   while (at < text.length) {
     const end = text.indexOf("\n", at);
-    // A last line without its newline was a write cut short, as by a crash: it holds no entry,
-    // and the kept head still says whether anything it covers is missing.
     if (end === -1) return { entries, macs, goodBytes, clean: true };
     const line = text.slice(at, end);
     let parsed: unknown;
@@ -89,7 +87,6 @@ const parseLines = (
       parsed.length !== 2 ||
       typeof parsed[0] !== "string" ||
       typeof parsed[1] !== "string" ||
-      // Byte for byte as the app writes it: no spaces, blank lines or other spellings.
       JSON.stringify(parsed) !== line
     )
       return { entries, macs, goodBytes, clean: false };
@@ -209,8 +206,6 @@ export const openDeviceLog = async (
   return {
     append: (entry) => {
       const next = last.then(async () => {
-        // The file at the path must still be the one held: one renamed away and replaced would
-        // take these lines with it, unseen.
         const [held, there] = await Promise.all([
           handle.stat(),
           fs.lstat(file).catch(() => undefined),
@@ -239,18 +234,14 @@ export const openDeviceLog = async (
             written += bytesWritten;
           }
         } catch (error) {
-          // Nothing of a line that didn't land whole stays to break the next.
           await handle.truncate(goodBytes).catch(() => undefined);
           throw error;
         }
-        // On disk before the head that counts it is handed back to be kept with the settings,
-        // so a power loss can't leave the settings counting a line the log never got.
         await handle.datasync();
         goodBytes += line.length;
         head = { count: head.count + 1, mac };
         return head;
       });
-      // One failed write doesn't stop the next line from being tried.
       last = next.catch(() => undefined);
       return next;
     },

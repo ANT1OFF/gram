@@ -1,6 +1,3 @@
-// The loop guard for agent-driven messages between threads: no self-sends, no
-// back-to-back sends into a thread nobody else has written to, a hop limit and a rate limit.
-
 import type { MessageOrigin, ThreadId } from "@gram/contracts";
 
 /** Messages one thread may send to other threads per minute. */

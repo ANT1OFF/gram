@@ -68,7 +68,6 @@ export function mergeHistoryUsage(
     for (const native of record.nativeIds) turns.add(native);
     sessions.set(id, turns);
   }
-  // Fork inheritance is identified against the actual parent's stable native IDs, never by time.
   for (const [id, record] of unique) {
     if (record.parent === null) continue;
     const parent = sessions.get(JSON.stringify([record.provider, record.parent]));
@@ -214,9 +213,6 @@ export function mergeHistoryUsage(
       (decoded.value.telemetryVersion === "codex-request-delta-v1" ||
         (decoded.value.telemetryVersion === "codex-last-request-v1" &&
           decoded.value.partial === true));
-    // Codex amounts without a request telemetry version can contain session totals. Unscoped Claude
-    // amounts cannot safely be combined with CLI requests. Excluded amounts are unknown, not lower
-    // bounds or repaired rows.
     const independentClaude =
       record.agent === "claude" &&
       ids !== undefined &&
@@ -261,8 +257,6 @@ export function mergeHistoryUsage(
           ? { ...record, model: cliModel }
           : record,
     );
-    // Missing/invalid/open Gram snapshots contribute no tokens: their CLI requests remain visible.
-    // Only a valid included amount may suppress an incomplete exact overlap, including real zero.
     if (record.ended_at !== null && validAmount)
       for (const candidate of matched) {
         used.add(key(candidate));

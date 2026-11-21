@@ -58,23 +58,16 @@ import { editorHandlers } from "./editor.ts";
 import { docHandlers } from "./docs.ts";
 import { outputHandlers } from "./outputs.ts";
 
-/** `path` as spelled, `~` expanded and normalized, never through a link; case counts but on Windows. */
 const namedPathKey = (path: string) => {
   const resolved = resolve(expandHome(path.trim()));
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 };
 
-/**
- * Whether `written`, as a Write named it, is the path `target` names, by `namedPathKey`: a written
- * path retargeted at another file afterwards doesn't vouch for that file.
- */
 const sameNamedPath = (written: string, target: string): boolean =>
   namedPathKey(written) === namedPathKey(target);
 
-/** Thread titles the project vocabulary reads, the most recently updated first. */
 const VOCABULARY_TITLES = 200;
 
-/** Previews name the thread whose transcript or checkouts they come from. */
 const noThread = () => new InvalidState({ message: "Open a file from a thread to preview it" });
 
 /**
@@ -85,18 +78,12 @@ export const fsHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const runtimes = yield* ThreadRuntimes;
   const proc = yield* Proc;
-  // The Files panel reads this machine's folders; which paths a thread may read stays decided here.
   const hosts = yield* WorkerHosts;
   const hostFiles = hosts.placed.files;
   const nameOf = yield* machineNames;
   const config = yield* ServerConfig;
   const secrets = config.secretPaths ?? [];
   const realSecrets = realSecretPaths(secrets);
-  /**
-   * Whether a thread's transcript may vouch for a path outside its folders on this disk: only on
-   * a server with a local user, for a thread whose session runs here. Anywhere else whoever writes
-   * the messages (a session on another machine, a person signed in) is who the gate holds back.
-   */
   const transcriptVouches = (thread: Thread) =>
     !openerFenced(config) && sessionHostOf(thread) === LOCAL_HOST_ID;
 
@@ -109,28 +96,19 @@ export const fsHandlers = Effect.gen(function* () {
         ),
       );
   const vocabulary = makeVocabularyCache();
-  // Absent in handler-only test layers, where no HTML is previewed.
   const previewFiles = Option.getOrUndefined(yield* Effect.serviceOption(PreviewFiles));
 
-  /** The checkout a `threadId` scopes paths to; none without a thread. */
   const scopeRoot = (threadId: ThreadId | undefined) =>
     threadId === undefined
       ? Effect.succeed(undefined)
       : threadOf(threadId).pipe(Effect.map((thread) => effectiveCheckout(thread).path));
 
-  /** Whether `threadId`'s messages write `path` in their text, in any of its forms. */
   const mentioned = (threadId: ThreadId, path: string) =>
     Effect.gen(function* () {
       const forms = mentionForms(path);
       const texts = yield* store.messageTextsWith(threadId, [...forms, ...mentionHints(forms)]);
       return texts.some((text) => writesPath(text, forms));
     });
-  /**
-   * Whether `threadId`'s own Write or Edit calls named `path`, in any of its `mentionForms`, and
-   * finished: the narrower rule the Preview tab holds a file outside the thread's folders to, since
-   * an HTML page shown from there can load the files beside it. A turn still running counts too,
-   * since its finished parts reach the transcript before they are all stored.
-   */
   const wrote = (threadId: ThreadId, path: string) =>
     Effect.gen(function* () {
       const forms = mentionForms(path);
@@ -143,10 +121,6 @@ export const fsHandlers = Effect.gen(function* () {
           filesWrittenBy(message).some((written) => sameNamedPath(written, target)),
       );
     });
-  /**
-   * A gate for a path outside a thread's folders: named in its messages, in their text or by a
-   * finished Write or Edit, unless the caller asks for `wrote` alone.
-   */
   type Gate = { readonly allows: typeof mentioned; readonly refusal: string };
   const inMessages: Gate = {
     allows: (threadId, path) =>
@@ -159,25 +133,16 @@ export const fsHandlers = Effect.gen(function* () {
     allows: wrote,
     refusal: "is outside this thread's folders, and the thread didn't write it",
   };
-  /** No path outside the thread's folders, whatever its messages say. */
   const confined: Gate = {
     allows: () => Effect.succeed(false),
     refusal: "is outside this thread's folders",
   };
-  /** `gate`, or `confined` for a thread whose transcript doesn't vouch for paths here. */
   const gateOf = (thread: Thread, gate: Gate): Gate =>
     transcriptVouches(thread) ? gate : confined;
-  /** `gate` for `path` in `threadId`, as `previewTarget` asks it. */
   const gateFor = (threadId: ThreadId, path: string, gate: Gate): OutsideGate => ({
     allows: gate.allows(threadId, path),
     refusal: gate.refusal,
   });
-  /**
-   * Reads `path` for a preview in `threadId` with `read`, where `previewTarget` allows it; outside
-   * `roots` through `openOutside`, which refuses a credential file and hands `read` the very file
-   * it checked. A path an agent wrote is all the renderer may read outside the checkouts, so a
-   * renderer made to ask for anything else is refused.
-   */
   const preview = <A>(
     path: string,
     thread: Thread,
@@ -195,11 +160,6 @@ export const fsHandlers = Effect.gen(function* () {
       ),
     );
 
-  /**
-   * The machine a thread's files are on when it isn't this one: its host, for the reads that are
-   * done there, and its name. `undefined` for a thread on this machine. Nothing about the thread's
-   * paths is looked up on this disk once it is on another machine.
-   */
   const machineOf = (thread: Thread) =>
     Effect.gen(function* () {
       const checkout = effectiveCheckout(thread);
@@ -213,7 +173,6 @@ export const fsHandlers = Effect.gen(function* () {
             }),
         ),
       );
-      /** The machine's reads, or a refusal naming it for a host too old to do them. */
       const reads: Effect.Effect<HostFileReads, InvalidState> =
         host.reads === undefined
           ? Effect.fail(
@@ -224,10 +183,6 @@ export const fsHandlers = Effect.gen(function* () {
           : Effect.succeed(host.reads);
       return { name, files: host.files, reads };
     });
-  /**
-   * Whether the thread's transcript lets a preview on its machine read `path` outside `roots`,
-   * asked only when `path` could be outside them (`mayBeOutside`), since the host decides the rest.
-   */
   const outsideOn = (
     threadId: ThreadId,
     path: string,
@@ -237,7 +192,6 @@ export const fsHandlers = Effect.gen(function* () {
     mayBeOutside(path, roots)
       ? Effect.map(gate.allows(threadId, path), (allowed) => ({ allowed, refusal: gate.refusal }))
       : Effect.succeed({ allowed: false, refusal: gate.refusal });
-  /** The thread's folder on its machine, `path` scoped to it there; for list, search and names. */
   const scopedOn = (
     machine: NonNullable<Effect.Success<ReturnType<typeof machineOf>>>,
     path: string,
@@ -261,7 +215,6 @@ export const fsHandlers = Effect.gen(function* () {
             kind: "dir" as const,
           })),
         })),
-        // `fs.tree` only declares `FsError`; carry the friendly message in it.
         Effect.mapError(
           (error) =>
             new FsError({
@@ -289,7 +242,6 @@ export const fsHandlers = Effect.gen(function* () {
         if (threadId === undefined) return yield* noThread();
         const limit = Math.min(maxBytes ?? FILE_MAX_BYTES, FILE_MAX_BYTES_CEILING);
         const thread = yield* threadOf(threadId);
-        // A worker spanning repos has files in its other worktrees too, which a file link opens.
         const roots = checkoutRoots(thread);
         const machine = yield* machineOf(thread);
         if (machine !== undefined) {
@@ -334,7 +286,6 @@ export const fsHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const thread = yield* threadOf(threadId);
         const checkout = effectiveCheckout(thread);
-        // The project's recent threads name what is being worked on; their titles cost no git.
         const titles = (yield* readableOnly(yield* store.listThreads, (other) => other))
           .filter((other) => other.projectId === thread.projectId)
           .toSorted((a, b) => b.lastActivityAt - a.lastActivityAt)
@@ -342,7 +293,6 @@ export const fsHandlers = Effect.gen(function* () {
           .map((other) => other.title);
         const machine = yield* machineOf(thread).pipe(Effect.orElseSucceed(() => null));
         if (machine !== undefined) {
-          // Read where the checkout is; offline, or on a host too old to read it, the titles stay.
           const sources =
             machine === null
               ? undefined
@@ -361,8 +311,6 @@ export const fsHandlers = Effect.gen(function* () {
         const roots = checkoutRoots(thread);
         const machine = yield* machineOf(thread);
         if (machine !== undefined) {
-          // The host resolves what is in the thread's folders; a path outside them is asked about
-          // here, in the transcript, and then checked there.
           const reads = yield* machine.reads;
           const first = yield* reads.resolve(paths, roots, []);
           const vouched = yield* Effect.filter(
@@ -380,7 +328,6 @@ export const fsHandlers = Effect.gen(function* () {
         const files = yield* resolveFileRefs(paths, roots, (path) =>
           vouches ? mentioned(threadId, path) : Effect.succeed(false),
         ).pipe(Effect.provideService(Proc, proc));
-        // A deployment's secret is answered as no file at all, so the link says nothing of it.
         const readable = yield* Effect.filter(files, (file) =>
           Effect.map(isSecretPath(file.resolved, secrets), (secret) => !secret),
         );
@@ -397,7 +344,6 @@ export const fsHandlers = Effect.gen(function* () {
         const roots = [...checkoutRoots(thread), ...(thread.additionalDirectories ?? [])];
         const machine = yield* machineOf(thread);
         if (machine !== undefined && kind === "html") {
-          // Its page loads the files beside it from a listener on this machine, which can't reach them.
           return yield* new InvalidState({
             message: `Gram can't preview HTML from ${machine.name} yet. Open ${path} in the Files panel to read its source.`,
           });
@@ -421,7 +367,6 @@ export const fsHandlers = Effect.gen(function* () {
           if (previewFiles === undefined) {
             return yield* new InvalidState({ message: "HTML previews aren't available here" });
           }
-          // The listener opens each file it serves through `openOutside`, this page included.
           const { target, outside } = yield* previewTarget(
             path,
             roots,
@@ -448,8 +393,6 @@ export const fsHandlers = Effect.gen(function* () {
 
     "fs.image": ({ path, threadId, maxBytes }) =>
       Effect.gen(function* () {
-        // A relative path is the checkout's; an absolute one may be in any folder of the thread's,
-        // since a file link opens images in a multi-repo worker's other worktrees too.
         if (threadId === undefined) return yield* noThread();
         const thread = yield* threadOf(threadId);
         const roots = [...new Set([thread.checkout.path, ...checkoutRoots(thread)])];

@@ -98,7 +98,6 @@ export const mergePolicyReady = (
     return false;
   if (
     badge.review?.verdictOnHead === "changesRequested" ||
-    // An outsider's change request blocks nothing: anyone can review a public PR.
     badge.review?.humanReviews?.some(
       (review) => review.verdict === "changesRequested" && reviewerMayWrite(review),
     )

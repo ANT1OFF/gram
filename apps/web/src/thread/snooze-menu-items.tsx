@@ -15,13 +15,11 @@ import { useThreadActions } from "./use-thread-actions";
 
 const WHEN = "ml-auto pl-4 text-meta text-muted-foreground tabular-nums";
 
-/** The presets from the moment the submenu opened, so their times hold still while it is open. */
 const usePresets = () => {
   const [now] = useState(() => Date.now());
   return { now, presets: snoozePresets(now) };
 };
 
-/** The row menu's snooze items: the presets, each with when it ends, then a time of the user's. */
 function ContextSnoozeItems({ threadId }: { threadId: ThreadId }) {
   const actions = useThreadActions(threadId);
   const { now, presets } = usePresets();

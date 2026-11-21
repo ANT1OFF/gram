@@ -1,15 +1,3 @@
-// A project-configured check of a pull request: what the solo merge policy accepts in place of GitHub CI.
-//
-// Gram builds the source itself. It merges the PR's head onto its base's current tip
-// (`git merge-tree`), commits that tree to a throwaway commit and checks it out in a fresh
-// worktree outside the repository, so nothing uncommitted, ignored, excluded or flagged
-// skip-worktree in anyone's checkout can reach it. It runs the approved project command and keeps the
-// result in its own database, keyed by project, run, head, base and merged tree. Nothing an agent writes into the
-// repository counts as a pass, and a pass stops counting once the head or the base moves.
-//
-// What it can't prevent: the check runs the PR's own scripts and tests, as CI does, so a change
-// that weakens `tools/check` or a test is the reviewer's to catch; and any process of this user
-// could rewrite Gram's database, the trust boundary every local result shares.
 import {
   type HostCheckResult,
   localCheckConcurrencyOf,
@@ -98,14 +86,12 @@ export {
   type LocalCheckRun,
 } from "./check-process.ts";
 
-/** A publisher Git read's stdout; any failure or truncation refuses the publish. */
 const requiredPublisherGit = (result: ProcOutput | undefined) => {
   if (result?.status !== 0 || result.truncated)
     throw new Error("publisher Git metadata unavailable");
   return result.stdout;
 };
 
-/** A private selected-source preparation step's stdout; any failure or truncation refuses it. */
 const requirePreparedGit = (out: ProcOutput | undefined) => {
   if (out?.status !== 0 || out.truncated)
     throw new Error("private selected Git preparation failed");
@@ -141,9 +127,7 @@ const SELECTED_CHECK_ISOLATION = "own-bare-repository/selected/1";
 export const MachineReattachMs = Context.Reference<number>("@gram/server/MachineReattachMs", {
   defaultValue: () => 2 * 60_000,
 });
-/** How often a check waiting for its machine looks for it again. */
 const MACHINE_POLL_MS = 2_000;
-/** Past its timeout, how long a joined machine's check is given to answer before it is given up. */
 const MACHINE_SLACK_MS = 10 * 60_000;
 
 /** The single neutral project setting to command conversion. */
@@ -279,7 +263,6 @@ export const LocalCheck = Schema.Struct({
 });
 export type LocalCheck = typeof LocalCheck.Type;
 type CheckJobRecord = NonNullable<LocalCheck["job"]>;
-/** A job whose process was recorded, as a restart finds it. */
 type RecordedJob = CheckJobRecord & {
   readonly pid: number;
   readonly processStart: string;
@@ -287,20 +270,17 @@ type RecordedJob = CheckJobRecord & {
   readonly status: string;
 };
 
-/** A record as it ends: what took it back is kept, what ran it is not. */
 const ended = (check: LocalCheck): LocalCheck => {
   const { job: _, ...rest } = check;
   return rest;
 };
 
-/** How a check Gram lost track of while closed ended. */
 const lost = (reason: string): LocalCheckOutcome => ({
   ok: false,
   reason,
   failure: { kind: "stopped" },
 });
 
-/** Why a running check reads as it does after Gram started again. */
 const RESTARTED_AFTER_QUIT = "restarted after Gram quit";
 const KEPT_AFTER_QUIT = "kept running while Gram was closed";
 
@@ -348,7 +328,6 @@ export class LocalCheckRunner extends Context.Service<LocalCheckRunner, LocalChe
     );
 }
 
-/** Shared selected checkout and raw-byte verification for native and explicit publisher preparation. */
 type SelectedGit = (
   args: ReadonlyArray<string>,
   env?: Record<string, string>,
@@ -428,8 +407,6 @@ export const materializeSelectedPublisher = (
       ).trim() !== ""
     )
       throw new Error("publisher replacement refs forbidden");
-    // GIT_GRAFT_FILE is deliberately /dev/null for child commands, so asking
-    // rev-parse for info/grafts would return that override rather than the real file.
     const common = requiredPublisherGit(
       yield* g(["rev-parse", "--path-format=absolute", "--git-common-dir"]),
     ).trim();
@@ -544,11 +521,6 @@ export interface LocalChecksShape {
     head: string | undefined,
     base: string | undefined,
     projectId?: ProjectId,
-    /**
-     * A run of its own in place of the project's configured one: a repository's verify driver.
-     * Its records key apart from the project's check (`runIdOf`), so no pass of it is the merge
-     * gate's.
-     */
     run?: LocalCheckRun,
   ) => Effect.Effect<LocalCheck | undefined>;
   /**
@@ -588,16 +560,11 @@ export interface LocalChecksShape {
   readonly sweep: Effect.Effect<RetentionReport>;
 }
 
-/** What a retention sweep removed. */
 interface RetentionReport {
-  /** Finished checks forgotten. */
   readonly records: number;
-  /** Logs deleted, and their bytes. */
   readonly logs: number;
   readonly logBytes: number;
-  /** Abandoned work folders reclaimed. */
   readonly work: number;
-  /** Gram's own repositories garbage-collected, and removed as unused. */
   readonly collected: number;
   readonly repos: number;
 }
@@ -606,18 +573,12 @@ interface RetentionReport {
 export const PASS_KEEP_MS = 30 * DAY_MS;
 /** Any other finished check is kept this long. */
 export const OTHER_KEEP_MS = 7 * DAY_MS;
-/** The most the logs of kept checks may take; the oldest finished ones' go first. */
 const LOG_BUDGET_BYTES = 256 * 1024 * 1024;
-/** A work folder or log nothing names, untouched this long, was left by a crash. */
 const ABANDONED_MS = 60 * 60 * 1000;
-/** How often Gram's own repositories are garbage-collected. */
 const GC_EVERY_MS = DAY_MS;
-/** Unreachable objects younger than this survive a collection: a fetch in flight needs them. */
 const GC_PRUNE = "3.days.ago";
-/** When the first sweep runs after a start, and how often after it. */
 const SWEEP_FIRST = Duration.minutes(5);
 const SWEEP_EVERY = Duration.hours(6);
-/** In one of Gram's repositories, touched when it was last garbage-collected. */
 const COLLECTED = "gram-gc";
 
 /** Whether retention keeps `check`: every running one, passes `PASS_KEEP_MS`, others `OTHER_KEEP_MS`. */
@@ -640,7 +601,6 @@ export const logsOverBudget = (
     pinned: (log) => log.check.status === "running",
   }).map((log) => log.key);
 
-/** A file's size and when it last changed, or undefined when it isn't a regular file. */
 const fileStat = (path: string) => {
   try {
     const stat = lstatSync(path);
@@ -650,7 +610,6 @@ const fileStat = (path: string) => {
   }
 };
 
-/** A folder's stat, links not followed, or undefined when it isn't a folder. */
 const dirStat = (path: string) => {
   try {
     const stat = lstatSync(path);
@@ -660,7 +619,6 @@ const dirStat = (path: string) => {
   }
 };
 
-/** The names in `dir`, or none when it can't be read. */
 const entries = (dir: string): ReadonlyArray<string> => {
   try {
     return readdirSync(dir);
@@ -673,25 +631,16 @@ export class LocalChecks extends Context.Service<LocalChecks, LocalChecksShape>(
   "@gram/server/LocalChecks",
 ) {}
 
-/**
- * A check vouches for one head on one base, with one run (`LocalCheckRun`). Two bases can merge
- * with a head into the same tree (one moved by an empty commit, or by a commit the head has too),
- * and a pass on one doesn't carry over to the other: merge_when_ready pins the base it launches on
- * to the checked one. Nor does a pass of another run count.
- */
 const keyOf = (
   head: string,
   base: string,
   tree: string | null,
   run: Parameters<typeof runIdOf>[0] & { readonly machine?: string | undefined },
 ) =>
-  // A joined machine's check is asked for before its host says what tree it merged: the pair
-  // names it, as the tree names nothing a pair doesn't already.
   run.machine === undefined
     ? `${head}:${base}:${tree ?? "conflict"}:${runIdOf(run)}`
     : `machine:${run.machine}:${head}:${base}:${runIdOf(run)}`;
 
-/** A broken database is a defect, as in `ThreadStore`. */
 const run = <A>(effect: Effect.Effect<A, SqlError>) =>
   effect.pipe(Effect.catch((error) => Effect.die(error)));
 
@@ -711,8 +660,6 @@ const PRIVATE_TREE_ENV = {
 };
 const PRIVATE_GIT_ENV = { ...PRIVATE_TREE_ENV, GIT_ATTR_NOSYSTEM: "1" };
 
-// Shared native metadata-first selected tree preparation; both LocalChecks
-// and the explicit private-publisher entry use this identical path.
 type SelectedTreeGit = (
   cwd: string,
   args: ReadonlyArray<string>,
@@ -732,8 +679,6 @@ const selectedTreeOf = (
   trees: Map<string, string | null>,
 ) =>
   Effect.gen(function* () {
-    // A partial source repository is kept separate from ordinary checks,
-    // so an earlier full fetch cannot supply a selected check's objects.
     let selection: { tree: string; entries: Array<SelectedSource> };
     try {
       selection = selectedSourceManifest(preparation, head, base);
@@ -749,9 +694,6 @@ const selectedTreeOf = (
     };
     const upload =
       "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack";
-    // Git otherwise silently falls back to a full fetch if the server
-    // does not advertise filtering. Check the local upload-pack's v2
-    // capability before requesting any candidate objects.
     const advertise = yield* remoteG(
       own,
       [
@@ -765,8 +707,6 @@ const selectedTreeOf = (
       ],
       { ...env, GIT_TRACE_PACKET: "1" },
     );
-    // The client receives the server's v2 capability advertisement over
-    // the transport. A separated upload-pack does not share its stderr.
     if (
       advertise?.status !== 0 ||
       advertise.truncated ||
@@ -839,8 +779,6 @@ const selectedTreeOf = (
           if (row !== undefined) needed.add(row.oid);
         }
       } else {
-        // Only an unchanged omitted blob can pass to merge-tree; do not
-        // give Git the opportunity to merge or lazily fetch its bytes.
         const target = omitted.get(path);
         if (target === undefined) return undefined;
         if (values.some((row) => row?.oid !== target.oid || row.mode !== target.mode))
@@ -963,12 +901,10 @@ export const LocalChecksLive = Layer.effect(
     const proc = yield* Proc;
     const runner = yield* LocalCheckRunner;
     const { dataDir } = yield* ServerConfig;
-    /** The machines joined to this Gram, whose threads' checks run through their hosts. */
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const reattachMs = yield* MachineReattachMs;
     const machineName = (id: string) => remoteHosts?.machines.get(id)?.name ?? id;
     const records = new Map<string, LocalCheck>();
-    /** `${head}:${base}` to the latest of its records. */
     const latestByPair = new Map<string, LocalCheck>();
     const remember = (key: string, check: LocalCheck) => {
       records.set(key, check);
@@ -979,24 +915,16 @@ export const LocalChecksLive = Layer.effect(
     const waiters = new Map<string, Array<(check: LocalCheck) => Effect.Effect<void>>>();
     const fibers = yield* FiberMap.make<number>();
     let runs = 0;
-    /**
-     * Set as Gram's scope closes, before the checks' fibers are interrupted: a check whose process
-     * was recorded is then left running (`DurableCheck`), and taken back on the next start.
-     */
     let closing = false;
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closing = true;
       }),
     );
-    // A cap on Gram's own checks at once on this machine (`localCheckConcurrencyOf`): each runs a
-    // project's whole check, and several at once starve each other into their timeouts. The rest
-    // wait their turn in order, reading as queued; a check's timeout starts once it runs.
     const cores = availableParallelism();
     const capacity = store.getSettings.pipe(
       Effect.map((settings) => localCheckConcurrencyOf(settings, cores)),
     );
-    /** Each queued check reads how many wait ahead of it. */
     const queuedNote = (waiting: ReadonlyArray<string>) =>
       waiting.forEach((key, ahead) => {
         const queued = records.get(key);
@@ -1004,10 +932,6 @@ export const LocalChecksLive = Layer.effect(
           remember(key, { ...queued, reason: `queued for local check (${ahead} ahead)` });
       });
     const admission = makeAdmission<string>(capacity, queuedNote);
-    /**
-     * Each joined machine's own slot, one check at a time there: a check on another machine never
-     * waits behind this one's, nor this one's behind it.
-     */
     const machineAdmissions = new Map<string, ReturnType<typeof makeAdmission<string>>>();
     const machineAdmission = (hostId: string) => {
       let found = machineAdmissions.get(hostId);
@@ -1017,10 +941,6 @@ export const LocalChecksLive = Layer.effect(
       }
       return found;
     };
-    /**
-     * Runs `effect` once a slot is free, in turn; `record` is how the check reads once it runs.
-     * Gram quitting interrupts a wait as readily as a run.
-     */
     const inTurn = <A, E, R>(
       key: string,
       record: () => LocalCheck,
@@ -1034,13 +954,9 @@ export const LocalChecksLive = Layer.effect(
         }),
       );
 
-    /** Running checks a previous run of Gram left, taken back once everything is defined. */
     const left: Array<{ readonly key: string; readonly check: LocalCheck }> = [];
-    /** `${head}:${base}` to its merged tree, or `null` when they conflict. */
     const trees = new Map<string, string | null>();
 
-    // Keyed by what each record says it checked: a row under any other key comes back under that
-    // one, the latest of them winning, and is written back under it.
     const rekeyed = new Set<string>();
     for (const row of yield* run(
       sql<{ key: string; data: string }>`SELECT key, data FROM local_checks`,
@@ -1069,13 +985,6 @@ export const LocalChecksLive = Layer.effect(
       );
     }
 
-    // Everything an agent's checkout shares with its repository (refs, config, attributes, hooks,
-    // `info`, the object files themselves) can be written from that checkout. So the merge and its
-    // worktree are made in a bare repository of Gram's own, which takes objects from the agent's
-    // repository only by fetch: each arrives hashed again, so none can be anything but what its id
-    // names. Replace refs and grafts are ignored besides, no hook runs, and no git variable Gram
-    // inherited points it elsewhere (`isGitControl`); what the user's own global and system git
-    // config do (LFS, say) still applies, as it does for any git they run.
     const ran = ranOn(proc);
     const via =
       (spawn: typeof git): SelectedTreeGit =>
@@ -1126,7 +1035,6 @@ export const LocalChecksLive = Layer.effect(
 
     const checksDir = nodePath.join(dataDir, "local-checks");
 
-    /** Gram's own bare repository for the one `repoDir` belongs to, made on first use. */
     const ownRepoOf = (repoDir: string, wanted?: LocalCheckRun) =>
       Effect.gen(function* () {
         const common = yield* g(repoDir, [
@@ -1162,7 +1070,6 @@ export const LocalChecksLive = Layer.effect(
         noLazy ? { GIT_NO_LAZY_FETCH: "1" } : undefined,
       ).pipe(Effect.map((out) => out?.status === 0));
 
-    /** Fetches `sha` into Gram's repository from `repoDir`'s, after fetching it there if need be. */
     const fetchInto = (own: string, repoDir: string, sha: string) =>
       Effect.gen(function* () {
         const take = ran(
@@ -1193,10 +1100,6 @@ export const LocalChecksLive = Layer.effect(
         return yield* hasCommit(own, sha);
       });
 
-    /**
-     * The tree of `head` merged onto `base` in Gram's repository; `null` on conflicts; undefined
-     * when unknowable, which it is until `fetch` brought both commits in.
-     */
     const treeOf = (
       own: string,
       repoDir: string,
@@ -1251,7 +1154,6 @@ export const LocalChecksLive = Layer.effect(
             ? found
             : undefined;
         }
-        // Without fetching: a pair Gram never fetched has no check of it.
         const own = yield* ownRepoOf(repoDir, wanted);
         const tree = yield* treeOf(own, repoDir, head, base, false, wanted);
         if (tree === undefined) return undefined;
@@ -1264,7 +1166,6 @@ export const LocalChecksLive = Layer.effect(
           : undefined;
       });
 
-    // A running check is kept too, with what it needs to be taken back after a quit (`job`).
     const save = (key: string, check: LocalCheck) =>
       Effect.gen(function* () {
         remember(key, check);
@@ -1282,11 +1183,6 @@ export const LocalChecksLive = Layer.effect(
         for (const listener of listeners) yield* listener(check).pipe(Effect.ignore);
       });
 
-    /**
-     * Checks the merged tree in a worktree of Gram's repository `own`, in a folder no one can name
-     * beforehand, removed afterwards whatever happens.
-     */
-    /** Removes a check's worktree, only one made under Gram's own `work` folder. */
     const removeWork = (own: string, dir: string) =>
       Effect.gen(function* () {
         const parent = nodePath.dirname(dir);
@@ -1300,7 +1196,6 @@ export const LocalChecksLive = Layer.effect(
         yield* g(own, ["worktree", "prune"]);
       });
 
-    /** The record of how a run ended, from how it was recorded running. */
     const endedAs = (
       running: LocalCheck,
       result: LocalCheckOutcome,
@@ -1318,14 +1213,12 @@ export const LocalChecksLive = Layer.effect(
 
     const check = (own: string, key: string, started: LocalCheck, wanted: LocalCheckRun) => {
       let retain = false;
-      /** Left running as Gram quit: the next start takes it, and its worktree, back. */
       let detached = false;
       let current = started;
       const record = (next: LocalCheck) => {
         current = next;
         return save(key, next);
       };
-      /** What the record keeps of how the run is going, for a start after a quit. */
       const job = (more: Partial<CheckJobRecord>) =>
         current.job === undefined ? current : { ...current, job: { ...current.job, ...more } };
       const body = Effect.gen(function* () {
@@ -1421,14 +1314,12 @@ export const LocalChecksLive = Layer.effect(
           "src",
         );
         const status = nodePath.join(nodePath.dirname(dir), "status");
-        // Recorded before git writes it: a start after a crash knows the worktree is Gram's.
         yield* record(job({ work: dir, status }));
         const remove = Effect.gen(function* () {
           if (retain || detached) return;
           yield* removeWork(own, dir);
         });
         return yield* Effect.acquireUseRelease(
-          // No checkout hook may change the tree after git wrote it.
           g(own, [
             "-c",
             "core.hooksPath=/dev/null",
@@ -1518,11 +1409,6 @@ export const LocalChecksLive = Layer.effect(
       );
     };
 
-    /**
-     * The project's check as a joined machine runs it: the project is the thread's own, since this
-     * machine can't read the checkout there. A host too old to run checks has none, as a project
-     * without a command has none; a selected-source check doesn't run there yet.
-     */
     const machineConfiguration = (site: MachineCheckSite, projectId: ProjectId | undefined) =>
       Effect.gen(function* () {
         const projects = yield* store.listProjects;
@@ -1552,7 +1438,6 @@ export const LocalChecksLive = Layer.effect(
             declaredCiOnly: true as const,
           };
         if (config === undefined) return off(`no local check configured for ${project}`);
-        // Offline, it can't say what it runs: the check waits for it rather than the gate opening.
         const online = yield* remoteHosts.connection(site.hostId).pipe(Effect.option);
         if (Option.isSome(online) && online.value.checks === undefined)
           return off(
@@ -1569,7 +1454,6 @@ export const LocalChecksLive = Layer.effect(
         };
       });
 
-    /** How a joined machine's run ended, as its record keeps it. */
     const machineEnded = (
       running: LocalCheck,
       result: HostCheckResult,
@@ -1581,13 +1465,6 @@ export const LocalChecksLive = Layer.effect(
       host: result.host,
     });
 
-    /**
-     * Runs the check on the machine `site` is on, through its host, in that machine's own slot.
-     * The host is asked under one id throughout: a connection that drops while it runs is waited
-     * for (`MachineReattachMs`) and asked again, which joins the run still going there or hears
-     * how it ended. Only the host's own answer is a result; a machine that doesn't come back in
-     * time leaves the check unknown, a failure that runs again when asked, never a pass.
-     */
     const machineCheck = (
       site: MachineCheckSite,
       key: string,
@@ -1620,7 +1497,6 @@ export const LocalChecksLive = Layer.effect(
         if (remoteHosts === undefined)
           return failed(`${name} isn't joined to this Gram`, "unstartable");
         const deadline = (yield* Clock.currentTimeMillis) + request.timeoutMs + MACHINE_SLACK_MS;
-        /** Since when the machine has been away, while the check waits for it. */
         let away: number | undefined;
         let asked = false;
         for (;;) {
@@ -1653,7 +1529,6 @@ export const LocalChecksLive = Layer.effect(
               "unstartable",
             );
           asked = true;
-          // A host that stays connected but never answers holds the slot no longer than this.
           const answer = yield* checks.run(request).pipe(
             Effect.timeoutOrElse({
               duration: Duration.millis(Math.max(0, deadline - now)),
@@ -1669,7 +1544,6 @@ export const LocalChecksLive = Layer.effect(
           );
           if (Exit.isSuccess(answer)) {
             const result = answer.value;
-            // Only a pass that names what it checked counts as one.
             return result.ok &&
               (result.tree === null ||
                 !SHA.test(result.tree) ||
@@ -1682,7 +1556,6 @@ export const LocalChecksLive = Layer.effect(
           if (Option.isSome(error) && error.value._tag === "HostFailed")
             return failed(`${name} couldn't run it: ${error.value.message}`, "unstartable");
           if (Option.isNone(error)) return yield* Effect.failCause(answer.cause);
-          // The connection went before the host answered: wait for it, then ask again.
           away = yield* Clock.currentTimeMillis;
           yield* Effect.logInfo(
             "local check: a joined machine's connection dropped mid-check",
@@ -1711,9 +1584,7 @@ export const LocalChecksLive = Layer.effect(
                     writeFileSync(started.log!, text.endsWith("\n") ? text : `${text}\n`, {
                       mode: 0o600,
                     });
-                  } catch {
-                    // The record keeps how it ended regardless.
-                  }
+                  } catch (_theRecordKeepsHowItEndedRegardless) {}
                 });
               }
               yield* finish(key, machineEnded(started, result, yield* Clock.currentTimeMillis));
@@ -1722,7 +1593,6 @@ export const LocalChecksLive = Layer.effect(
         );
     };
 
-    /** `ensure` for a thread on a joined machine: the same reuse, the run on that machine. */
     const machineEnsure = (
       site: MachineCheckSite,
       head: string,
@@ -1804,7 +1674,6 @@ export const LocalChecksLive = Layer.effect(
           return failed;
         }
         if (tree === null) {
-          // Conflicts: nothing to check until the branch is brought up to date.
           const key = keyOf(head, base, null, wanted);
           const known = records.get(key);
           if (known !== undefined) return known;
@@ -1851,16 +1720,10 @@ export const LocalChecksLive = Layer.effect(
         };
         yield* save(key, started);
         waiters.set(key, [onDone]);
-        // Each run under its own id: the last one may still be telling its listeners.
         yield* FiberMap.run(fibers, ++runs, check(own, key, started, wanted));
         return started;
       });
 
-    // Running checks a previous run of Gram left. One still running, verifiably the process it
-    // recorded, is followed to its end; one that ended while Gram was closed keeps the status its
-    // wrapper wrote; one whose process is gone without a word was cut off, and runs again once,
-    // from the start, saying so. Each reads as running meanwhile, so asking for it waits for it.
-    /** Ends a check a previous run left, as `outcome` says, its worktree removed unless kept. */
     const endLeft = (key: string, running: LocalCheck, outcome: LocalCheckOutcome, keep = false) =>
       Effect.gen(function* () {
         const work = running.job?.work;
@@ -1872,18 +1735,11 @@ export const LocalChecksLive = Layer.effect(
       });
     const timedOutLeft = (running: LocalCheck) =>
       timedOut(running.log ?? "", running.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS);
-    /**
-     * Follows a check Gram left running to its end: the status its wrapper writes, then what it
-     * left in its group stopped, as a live check's are; or its deadline, then the group stopped.
-     * `seen`: its leader was verified, so the group is the check's even once the leader is gone.
-     */
     const follow = (key: string, running: LocalCheck, job: RecordedJob, seen: boolean) =>
       Effect.gen(function* () {
         let verified = seen;
         for (;;) {
           let state = yield* Effect.sync(() => recordedGroup(job, false));
-          // Without its leader, a group verified by nothing yet: by a process in the worktree,
-          // or by being gone a moment later, as a watchdog that outlived its wrapper soon is.
           if (!verified)
             for (let n = 0; state === "leaderless" && n < LEADERLESS_WAITS; n++) {
               state = yield* Effect.sync(() => recordedGroup(job, true));
@@ -1901,7 +1757,6 @@ export const LocalChecksLive = Layer.effect(
                 : Date.now() >= (job.deadline ?? Infinity)
                   ? timedOutLeft(running)
                   : lost("its processes ended without saying how, while Gram was closed"),
-              // A group no one can vouch for may still be in the worktree.
               state !== "gone",
             );
           const exited = code !== undefined;
@@ -1919,7 +1774,6 @@ export const LocalChecksLive = Layer.effect(
           yield* Effect.sleep("1 second");
         }
       });
-    /** Runs a check a quit cut off again, unless the project's check changed since. */
     const restart = (key: string, running: LocalCheck, job: CheckJobRecord) =>
       Effect.gen(function* () {
         if (job.work !== undefined) yield* removeWork(job.own, job.work);
@@ -1966,12 +1820,10 @@ export const LocalChecksLive = Layer.effect(
       ) {
         const kept: LocalCheck = { ...running, afterQuit: "kept", reason: KEPT_AFTER_QUIT };
         remember(key, kept);
-        // Already running: it takes a slot at once, whatever the cap, and frees it as it ends.
         const held = yield* admission.takeSlot(follow(key, kept, recorded, state === "ours"));
         yield* FiberMap.run(fibers, ++runs, held);
         continue;
       }
-      // Its start time matches but its folder can't be shown to: never a second run beside it.
       if (state === "unsure") {
         yield* ending(
           lost(
@@ -1981,7 +1833,6 @@ export const LocalChecksLive = Layer.effect(
         );
         continue;
       }
-      // Its watchdog stopped it at its deadline, before the wrapper could say so.
       if (job?.deadline !== undefined && restartedAt >= job.deadline) {
         yield* ending(timedOutLeft(running));
         continue;
@@ -2008,10 +1859,6 @@ export const LocalChecksLive = Layer.effect(
       yield* FiberMap.run(fibers, ++runs, restart(key, again, job));
     }
 
-    // Retention: what checks leave grows with every head, base and run, so it is bounded by age and
-    // bytes. Running checks and the passes a merge may still reuse stay; so do a pass's commits, by
-    // a ref in Gram's repository, which a collection then keeps. Only what Gram made is touched: a
-    // work folder by its name, place and worktree link into one of Gram's repositories.
     const sweeping = Semaphore.makeUnsafe(1);
     const sweep: LocalChecksShape["sweep"] = sweeping.withPermits(1)(
       Effect.gen(function* () {
@@ -2033,7 +1880,6 @@ export const LocalChecksLive = Layer.effect(
 
         const named = new Set<string>();
         for (const record of records.values()) if (record.log !== undefined) named.add(record.log);
-        // A log goes with its run's evidence folder, and the budget counts both.
         const unlink = (path: string, size: number) =>
           Effect.sync(() => {
             removeEvidence(path);
@@ -2041,9 +1887,7 @@ export const LocalChecksLive = Layer.effect(
               unlinkSync(path);
               logs++;
               logBytes += size;
-            } catch {
-              // Gone already.
-            }
+            } catch (_goneAlready) {}
           });
         for (const name of entries(checksDir)) {
           const path = nodePath.join(checksDir, name);
@@ -2068,7 +1912,6 @@ export const LocalChecksLive = Layer.effect(
         for (const key of logsOverBudget(sized)) {
           const listed = sized.find((each) => each.key === key)!;
           const record = records.get(key);
-          // Asked for again since the listing: its log is a running check's now.
           if (record?.status !== listed.check.status || record.log !== listed.check.log) continue;
           yield* unlink(record.log!, listed.size);
           const { log: _, ...rest } = record;
@@ -2101,7 +1944,6 @@ export const LocalChecksLive = Layer.effect(
           const src = nodePath.join(folder, "src");
           const link = fileStat(nodePath.join(src, ".git"));
           if (link === undefined) {
-            // Made, but never checked out: nothing of a worktree in it.
             if (entries(src).length === 0) {
               yield* Effect.sync(() => rmSync(folder, { recursive: true, force: true }));
               work++;
@@ -2130,7 +1972,6 @@ export const LocalChecksLive = Layer.effect(
           const own = nodePath.join(reposDir, name);
           if (!/^[0-9a-f]{16}\.git$/.test(name) || !existsSync(nodePath.join(own, "HEAD")))
             continue;
-          // A check under way fetches and checks out here; the next sweep comes back.
           if (running.some((record) => record.job?.own === own)) continue;
           yield* g(own, ["worktree", "prune"]);
           const found = yield* g(own, ["cat-file", "--batch-check"], undefined, {
@@ -2163,8 +2004,6 @@ export const LocalChecksLive = Layer.effect(
             ),
           );
           if (present.size === 0 && used < now - PASS_KEEP_MS) {
-            // Unused for as long as a pass is kept, and keeping none: the next check fetches anew.
-            // Its own entry (`bare`) aside, git must list no worktree; an unreadable list keeps it.
             const listed = yield* g(own, ["worktree", "list", "--porcelain"]);
             const folders = (listed?.stdout ?? "")
               .split("\n\n")
@@ -2188,8 +2027,6 @@ export const LocalChecksLive = Layer.effect(
           });
           collected++;
         }
-        // A merged tree remembered for a pair whose commits a collection may have pruned is worked
-        // out again, with a fetch where `ensure` asks for one.
         trees.clear();
         return { records: forgotten, logs, logBytes, work, collected, repos };
       }),

@@ -56,7 +56,6 @@ const ICONS: Readonly<Record<PaletteIcon, LucideIcon>> = {
   usage: ChartNoAxesCombined,
 };
 
-/** Each destination's glyph, by its id. */
 const DESTINATIONS: Readonly<Record<string, PaletteIcon>> = {
   "go:workers": "worker",
   "go:memory": "memory",
@@ -68,7 +67,6 @@ const DESTINATIONS: Readonly<Record<string, PaletteIcon>> = {
   "go:settings": "setting",
 };
 
-/** The kind a row's id names, for rows that don't say their own. */
 const BY_PREFIX: readonly (readonly [string, PaletteIcon])[] = [
   ["thread:", "thread"],
   ["worker:", "worker"],

@@ -1,4 +1,3 @@
-/** Explicit selected-source preparation; this never runs a check or publishes a result. */
 import { ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { materializeSelectedPublisher } from "./local-checks.ts";

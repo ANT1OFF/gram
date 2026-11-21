@@ -1,7 +1,6 @@
 /** Whether the thread grid is on screen, rather than Settings, the new-thread draft or another page. */
 export const gridShown = (): boolean => document.querySelector("[data-pane-index]") !== null;
 
-/** Controls a pane without a composer can take focus on, e.g. an empty pane's thread picker. */
 const FOCUSABLE =
   "button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
 

@@ -32,8 +32,6 @@ export function makeClaudeHistory(initialFrom = -Infinity, initialTo = Infinity)
     consume(value) {
       const provider = "claude" as const,
         raw = object(value);
-      // The pinned SDK remaps UUID/session/tail timestamp and retains usage on fork copies.
-      // These are inherited context, not a newly executed request; never charge the fork.
       if (identity(object(raw.forkedFrom).sessionId) !== undefined) {
         if (object(raw.message).usage !== undefined) reducer.ambiguous++;
         return;
@@ -93,7 +91,6 @@ export function makeClaudeHistory(initialFrom = -Infinity, initialTo = Infinity)
         uuid = identity(raw.uuid);
       if (previous !== undefined) {
         if (uuid === undefined) previous.complete = false;
-        // Repeated content blocks can progressively report output. They are the same request.
         const compatible = ["inputTokens", "cacheReadTokens", "cacheWriteTokens"].every(
           (key) => previous.tokens[key as keyof TokenUsage] === tokens[key as keyof TokenUsage],
         );

@@ -51,10 +51,6 @@ import { useWorkerWaitings } from "./use-waiting-on";
 import { workingWorkerThreads } from "./tree-model";
 import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-model";
 
-// A feature you can open and act on:
-// a sheet from the right with its stations, PRs and workers, opened from its Board line or its card
-// in the stream, and the feature's menu: Open, Ask about it, Pause (Resume), Rename, Archive.
-
 /** Who has an open ask in the workspace's stack, and each thread's live status. */
 export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
   const all = useWorkspaceAsks();
@@ -63,21 +59,15 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
     () => cards.flatMap((card) => card.workers.map((worker) => worker.threadId)),
     [cards],
   );
-  // The status of the workers on the cards only: a change to any other thread, or to anything
-  // but a worker's status, leaves the Board still.
   const statuses = useThreadsStore(
     useSame((s) =>
       Object.fromEntries(workers.map((threadId) => [threadId, s.byId[threadId]?.status])),
     ),
   );
   const ledger = useOrchestratorLedger(workspaceId).data;
-  // What each worker does at rest, by the selector Quiet and the sidebar share: only a change to
-  // what it reads moves the Board.
   const activity = useThreadsStore(
     useSame((s) => workerActivities(ledger, s.byId, s.statusDetail)),
   );
-  // Which workers show is the sidebar's rule (`workerShown`): the ledger's, while their work isn't
-  // over by Done's rule; one a card keeps after it closed is gone. And who is at work now.
   const over = useThreadsStore(
     useSame((s) => (ledger === undefined ? undefined : ledgerWorkersOver(ledger, s.byId))),
   );
@@ -91,7 +81,6 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
         ),
     ),
   );
-  // Merged or delivered workers the ledger still sees at work, so their line isn't done yet.
   const ongoing = useMemo(
     () =>
       new Set(
@@ -103,7 +92,6 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
       ),
     [ledger],
   );
-  // Who an ask in the stack is from, so its chip says so too: the ask itself lives once, below.
   const asking = useMemo(
     () =>
       new Set(
@@ -111,9 +99,7 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
       ),
     [all, workspaceId],
   );
-  // Who was answered here and isn't heard from yet: no longer asking, on its way back to work.
   const answered = useAnsweredWorkers();
-  // Each live worker's tone, by the selector the sidebar, ⌘J and Quiet read too.
   const tones = useThreadsStore(
     useSame(
       (s) =>
@@ -126,7 +112,6 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
         ).tones,
     ),
   );
-  // What each one at rest waits on, in the sidebar's and ⌘J's words.
   const waiting = useWorkerWaitings(ledger, asking);
   return useMemo(
     () => ({
@@ -138,7 +123,6 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
       over,
       running,
       waiting,
-      // A thread on no card isn't drawn here; it reads as it stands, as before.
       status: (threadId) =>
         Object.hasOwn(statuses, threadId)
           ? statuses[threadId]
@@ -155,7 +139,6 @@ export function useOpenWorker() {
     useFeatureSheet.getState().close(false);
     if (event.metaKey || event.ctrlKey) {
       useViewStore.getState().setView("chat");
-      // A worker opens beside its orchestrator's chat, as ⌘-click on its row does elsewhere.
       if (keepBeside(threadId, open)) return;
       const layout = useLayoutStore.getState();
       if (layout.grid.preset === "1") layout.toggleSplit(threadId);
@@ -172,7 +155,6 @@ const notifyError = (title: string, error: unknown) =>
     .getState()
     .applyEvent({ type: "notify", kind: "error", title, body: errorMessage(error) });
 
-/** What the feature's menu does, wherever it shows. */
 function useFeatureActions(workspaceId: WorkspaceId) {
   const api = useApi();
   const open = useOpenThread();
@@ -182,12 +164,9 @@ function useFeatureActions(workspaceId: WorkspaceId) {
   const groups = useMemo(() => groupNames(state?.groups, cards), [state?.groups, cards]);
   const setGroup = useSetGroup(workspaceId);
   return {
-    /** Every group a feature can be moved to. */
     groups,
-    /** Each feature's stage, from the workspace. */
     stages: state?.stages,
     setGroup,
-    /** Starts a message to the orchestrator about the feature, in Chat; nothing is sent. */
     ask:
       orchestrator === undefined
         ? undefined
@@ -202,7 +181,6 @@ function useFeatureActions(workspaceId: WorkspaceId) {
         (error: unknown) => notifyError(`Couldn't archive ${feature}`, error),
       );
     },
-    /** Pauses the feature, or resumes it when it is paused. */
     togglePause: (feature: string, paused: boolean) => {
       api
         .setFeaturePaused(workspaceId, feature, !paused)
@@ -213,7 +191,6 @@ function useFeatureActions(workspaceId: WorkspaceId) {
   };
 }
 
-/** Rename…: the feature's new slug, refused with the server's reason; the sheet follows it. */
 function RenameFeatureDialog({
   workspaceId,
   feature,
@@ -284,7 +261,6 @@ function RenameFeatureDialog({
   );
 }
 
-/** New group…: names a group for the feature, shown as the slug the server will keep. */
 function NewGroupDialog({
   feature,
   setGroup,
@@ -374,12 +350,10 @@ export function FeatureMenu({
   const run: Record<FeatureMenuItem, (() => void) | undefined> = {
     Open: () => openFeatureSheet(row.card.workspaceId, row.feature),
     "Ask about it": actions.ask === undefined ? undefined : () => actions.ask?.(row),
-    // The editor lives in the sheet, which this opens, or is already.
     "Set stage": () =>
       inSheet
         ? useFeatureSheet.getState().editStage(true)
         : openFeatureSheet(row.card.workspaceId, row.feature, true),
-    // A submenu: its items run themselves.
     "Move to group": undefined,
     Pause: () => actions.togglePause(row.feature, paused),
     Rename: () => setRenaming(true),
@@ -430,7 +404,6 @@ function FeatureMenuList({
   state: FeatureMenuState;
   run: Record<FeatureMenuItem, (() => void) | undefined>;
   groups: readonly string[];
-  /** Into a group, or out of its own with `undefined`. */
   onMove: (group: string | undefined) => void;
   onNewGroup: () => void;
   className: string | undefined;
@@ -568,7 +541,6 @@ export function SheetBody({
 
 const SHEET_LABEL = "text-meta font-medium text-muted-foreground";
 
-/** Where the feature stands in its plan, which a click on a step moves, and the plan's editor. */
 function StageSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feature: string }) {
   const stage = useWorkspaces().find((each) => each.workspace.id === workspaceId)?.stages?.[
     feature
@@ -615,10 +587,6 @@ function StageSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feat
   );
 }
 
-/**
- * The feature's worker questions: those forwarded to the user, answered in the ask sheet, then the rest
- * with who answered and when (docs/design/worker-questions.md).
- */
 function QuestionsSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feature: string }) {
   const ledger = useOrchestratorLedger(workspaceId).data;
   const questions = useMemo(() => featureQuestions(ledger, feature), [ledger, feature]);

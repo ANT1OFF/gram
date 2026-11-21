@@ -6,7 +6,6 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { useThreadDialogs } from "./thread-dialogs-store";
 
-/** A turn is open, so a restart either waits for it or cuts it off: the user picks which. */
 const MID_TURN: ReadonlySet<ThreadStatus> = new Set(["running", "needsApproval", "needsInput"]);
 
 /** Whether restarting `threadId` now stops work in flight: a turn, or background tasks. */

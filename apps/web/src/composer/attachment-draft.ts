@@ -66,7 +66,6 @@ export class AttachmentDraft {
   #idle() {
     if (this.#idleScheduled) return;
     this.#idleScheduled = true;
-    // Strict Mode unsubscribes and resubscribes in the same task; that is not an owner ending.
     queueMicrotask(() => {
       this.#idleScheduled = false;
       if (this.#closed || this.#listeners.size > 0 || this.#leases > 0) return;
@@ -99,7 +98,6 @@ export class AttachmentDraft {
     if (attachments.length > 0) this.#set([...this.#items, ...attachments.map(readyItem)]);
   };
   settle = (key: string, next: Partial<PendingAttachment>) => {
-    // Removed/consumed uploads never reappear, even if their promise settles after a remount.
     if (!this.#items.some((item) => item.key === key)) return;
     this.#set(this.#items.map((item) => (item.key === key ? { ...item, ...next } : item)));
   };
@@ -188,8 +186,6 @@ export class AttachmentDraft {
 }
 
 const threadDrafts = new Map<ThreadId, { createdAt: number | undefined; draft: AttachmentDraft }>();
-// A reconnect may reveal a close/reopen without delivering a removal: the id survives, the
-// authoritative createdAt does not. Ordinary snapshots and pane changes retain the same lifetime.
 useThreadsStore.subscribe((current, previous) => {
   if (current.byId === previous.byId) return;
   for (const [threadId, { createdAt, draft }] of threadDrafts) {

@@ -9,7 +9,6 @@ import { join } from "node:path";
  */
 export const DATABASE_FILE = "gram-v1.db";
 
-/** What 0.x builds named their database. Only ever checked for; never opened. */
 const PRE_1_0_DATABASE_FILE = "gram.db";
 
 /** The database path in `dataDir`, saying once when a 0.x database stays beside it untouched. */

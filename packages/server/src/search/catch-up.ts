@@ -1,7 +1,3 @@
-// The startup sweep for messages whose search index row is behind (`messageSearchPending`): a
-// reply cut off by a crash or a stop between two refreshes. Indexed in small batches, each its own
-// short write, in the background, so a large backlog never holds the event loop or the open.
-
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -31,7 +27,6 @@ export const isLockWait = (error: SqlError) =>
 export const catchUpSearch = (retry: Schedule.Schedule<unknown, SqlError> = LOCK_RETRY) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    // Read first: even an UPDATE that changes nothing takes the write lock.
     const step = Effect.gen(function* () {
       const batch = yield* sql<{ rowid: number }>`SELECT rowid FROM messages
         WHERE search_pending IS NOT NULL LIMIT ${CATCH_UP_BATCH}`;
@@ -53,9 +48,6 @@ export const catchUpSearch = (retry: Schedule.Schedule<unknown, SqlError> = LOCK
 export const SearchCatchUp: Layer.Layer<never, never, SqlClient.SqlClient> = Layer.effectDiscard(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    // Started at once. On the loop, with nothing behind, it has read so before the store opens; on
-    // the writer thread it runs beside the opening, which is as safe: clearing a mark re-indexes the
-    // row as it stands.
     yield* Effect.forkScoped(
       catchUpSearch().pipe(
         Effect.provideService(SqlClient.SqlClient, sql),

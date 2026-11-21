@@ -1,5 +1,3 @@
-// The Preview tab's address strip parts, shared by the shell's pane and the server's page.
-
 import { Bot, Circle, HandGrab } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -21,7 +19,6 @@ export function AgentActivity({
   action: { readonly summary: string; readonly at: number } | undefined;
   recording: boolean;
 }) {
-  // A recording is shown whoever drives; the agent's latest label only while it does.
   const label = driver === "agent" ? action : undefined;
   if (label === undefined && !recording) return null;
   return (

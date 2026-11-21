@@ -1,11 +1,3 @@
-// Behind an embedding deployment's GitHub route (`embedding/github-relay.ts`), the `gh` a tool
-// starts reads with the deployment's access, not the agent's or its person's. So a repository an
-// agent names (a PR to bind or watch, a branch, a run, a release) is read there only when the
-// thread works in it: a checkout of its was made from that repository, or it is the origin a
-// project of the thread's workspace recorded when it was added (`Project.originIdentity`), as
-// `merge_freeze` asks. Anywhere else the `gh` is the
-// person's own sign-in, and any repository they can see may be named.
-
 import {
   AppToolError,
   type Project,
@@ -36,7 +28,6 @@ export const projectRepo = (project: Project): string | undefined =>
 const names = (identity: string | undefined, repo: string) =>
   repoOfIdentity(identity)?.toLowerCase() === repo.toLowerCase();
 
-/** Whether `thread` works in `repo`, by its checkouts' recorded clones or its workspace's origins. */
 const worksIn = (store: ThreadStoreShape, thread: Thread, repo: string) =>
   Effect.gen(function* () {
     for (const checkout of [thread.checkout, ...(thread.extraCheckouts ?? [])]) {
@@ -70,7 +61,6 @@ export const repoOutOfReach = (
         ),
       );
 
-/** The repository a wake's condition reads on GitHub, if it reads one. */
 const conditionRepo = (spec: WakeCondition | undefined): string | undefined =>
   spec === undefined
     ? undefined

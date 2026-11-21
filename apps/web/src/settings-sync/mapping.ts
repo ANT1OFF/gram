@@ -28,7 +28,6 @@ export function appearanceFromPrefs(prefs: ThemePrefs): Appearance {
     density: prefs.density,
     contrast: prefs.contrast === "system" ? "standard" : prefs.contrast,
     motion: prefs.motion,
-    // Only what the person chose: left out, the embedding app's default or Gram's applies.
     ...(prefs.accent ? { accent: prefs.accent } : {}),
     ...(prefs.backdrop ? { backdrop: prefs.backdrop } : {}),
     ...(prefs.surfaces ? { surfaces: prefs.surfaces } : {}),
@@ -68,11 +67,9 @@ const panelPatch = (prev: SyncedSettings, next: SyncedSettings) => {
   return Object.keys(panel).length > 0 ? { panel } : {};
 };
 
-// Absent on the server means off, so turning focus mode off clears the field.
 const focusModePatch = (prev: SyncedSettings, next: SyncedSettings) =>
   next.focusMode !== prev.focusMode ? { layout: { focusMode: next.focusMode ? true : null } } : {};
 
-// Absent on the server means automatic.
 const overviewPatch = (prev: SyncedSettings, next: SyncedSettings) =>
   next.overviewSidebar !== prev.overviewSidebar
     ? { layout: { overviewSidebar: next.overviewSidebar ?? null } }
@@ -81,7 +78,6 @@ const overviewPatch = (prev: SyncedSettings, next: SyncedSettings) =>
 const sameList = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((value, index) => value === b[index]);
 
-// Only what differs from the default is stored; with every section at its default, the field is cleared.
 const overviewSectionsPatch = (prev: SyncedSettings, next: SyncedSettings) =>
   sameList(next.overviewHidden, prev.overviewHidden)
     ? {}
@@ -120,9 +116,6 @@ export function settingsPatch(
   };
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
-
-// ---------------------------------------------------------------------------------------------
-// Palettes
 
 export const toThemePalette = (palette: ContractPalette): Palette => ({
   id: palette.id,
@@ -166,9 +159,6 @@ export function paletteOps(synced: readonly Palette[], local: readonly Palette[]
     remove: synced.filter((p) => !after.has(p.id)).map((p) => p.id as PaletteId),
   };
 }
-
-// ---------------------------------------------------------------------------------------------
-// Pane grid
 
 const validFractions = (fr: readonly number[] | undefined, length: number) =>
   fr !== undefined && fr.length === length && fr.every((f) => Number.isFinite(f) && f > 0)

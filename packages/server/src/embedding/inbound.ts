@@ -1,13 +1,3 @@
-// The paths an embedding platform's own services call the server on, under `/embed/v1/`: a pushed
-// repository event, a timer firing, the settings it supplies. They exist only while the hosted
-// features setting is on and `GRAM_EMBED_TOKEN` is set; otherwise a request to one is answered as
-// a request to any path the server doesn't have.
-//
-// The caller is a service, never a browser: it proves itself with the bearer token alone, which no
-// cookie or page can stand in for, and a request carrying an `Origin` is refused whatever its
-// token. The auth middleware hands these paths over before its loopback checks
-// (`http/server.ts`), since a service reaches the server by its address inside the deployment.
-
 import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -19,7 +9,6 @@ import { Embedding } from "./embedding.ts";
 /** Every inbound path starts with this. */
 export const EMBED_PREFIX = "/embed/v1/";
 
-/** The largest body an inbound call may carry. */
 const BODY_MAX = 256 * 1024;
 
 export type EmbedMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -99,7 +88,6 @@ export class EmbedInbound extends Context.Service<EmbedInbound, EmbedInboundShap
         Effect.gen(function* () {
           if (expected === undefined || !path.startsWith(EMBED_PREFIX)) return undefined;
           if (!(yield* embedding.on)) return undefined;
-          // No browser request that could carry a body from another site lacks an `Origin`.
           if (request.headers["origin"] !== undefined) {
             return json(refusal(403, "forbidden: not a service request"));
           }
@@ -119,7 +107,6 @@ export class EmbedInbound extends Context.Service<EmbedInbound, EmbedInboundShap
           if (body === "malformed") return json(refusal(400, "body must be a JSON object"));
           return json(
             yield* handler(body).pipe(
-              // A handler's defect is this call's failure, never the server's.
               Effect.catchCause((cause) =>
                 Effect.logWarning("embed call failed").pipe(
                   Effect.annotateLogs({ path, cause: String(cause) }),

@@ -63,10 +63,6 @@ import type { WorkerHost } from "./worker-host.ts";
 import { HOST_THREADS_DIR, type HostThreadPlaces } from "./thread-places.ts";
 import { cutHostText } from "./stop.ts";
 
-/**
- * The fewest folders a clone or worktree a host made sits below its root by: never the root, nor
- * a folder as broad as a home folder, which would claim all of that machine's paths for it.
- */
 const CLONE_DEPTH = 3;
 
 /**
@@ -99,7 +95,6 @@ export const ownThreadFolder = (path: string, threadId: string): boolean => {
   return parts.at(-1) === threadId && parts.at(-2) === HOST_THREADS_DIR;
 };
 
-/** The machine's thread places, a folder it made that isn't the thread's own taken back and refused. */
 const checkedPlaces = (machine: Machine, places: HostThreadPlaces): HostThreadPlaces => ({
   ...places,
   make: (threadId, files) =>
@@ -120,10 +115,6 @@ const checkedPlaces = (machine: Machine, places: HostThreadPlaces): HostThreadPl
       ),
 });
 
-/**
- * What a placement is told when the machine answered with a folder Gram doesn't record. The path
- * is the machine's own words, so it is held to a size (`cutHostText`).
- */
 const implausible = (machine: Machine, path: string) =>
   `${machine.name} answered with ${cutHostText(path, 512)} for the thread's folder, which isn't one Gram uses, so the thread isn't placed there.`;
 
@@ -150,30 +141,22 @@ export interface Machine {
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
 
-/**
- * Whether a terminal of a thread runs a command on the machine, by the machine's own scan and its
- * shells' process ids there (`shells`, by terminal); undefined when that can't be told, so a close
- * at rest leaves the thread open. Never this machine's processes: the ids are the other machine's.
- */
 const terminalBusyOn =
   (connection: HostConnection, shells: ReadonlyMap<TerminalId, number>) => (threadId: ThreadId) =>
     Effect.gen(function* () {
       const open = (yield* connection.terminals.list(threadId)).filter((t) => t.alive);
-      // An empty list from a machine that went meanwhile says nothing about its shells.
       if (connection.gone()) return undefined;
       if (open.length === 0) return false;
       const swept = yield* connection.scan.pipe(Effect.orElseSucceed(() => undefined));
       if (swept?.processes === undefined) return undefined;
       for (const { terminalId } of open) {
         const pid = shells.get(terminalId);
-        // A shell whose id hasn't come in yet can't be ruled out.
         if (pid === undefined) return undefined;
         if (foregroundOf(swept.processes, swept.children, pid) !== undefined) return true;
       }
       return false;
     });
 
-/** Terminals that aren't there: a machine's host that went took its shells with it. */
 const noTerminals = (machine: Machine): Terminals => ({
   open: () => Effect.fail(new InvalidState({ message: offline(machine) })),
   input: (terminalId) => Effect.fail(new NotFound({ entity: "terminal", id: terminalId })),
@@ -184,7 +167,6 @@ const noTerminals = (machine: Machine): Terminals => ({
   snapshot: () => Effect.succeed([]),
 });
 
-/** The thread's checkouts that are on `machine`: its own, and any other repo's there. */
 const ownCheckouts = (thread: Thread, machine: Machine) =>
   [thread.checkout, ...(thread.extraCheckouts ?? [])].filter(
     (checkout) => hostOf(checkout) === machine.id,
@@ -192,7 +174,6 @@ const ownCheckouts = (thread: Thread, machine: Machine) =>
 
 const repoOf = (checkout: Checkout) => checkout.repoRoot ?? checkout.path;
 
-/** The threads on `machine`, for the one-thread-per-worktree guard there. */
 const onMachine = (threads: ReadonlyArray<Thread>, machine: Machine) =>
   threads.filter((thread) => hostOf(effectiveCheckout(thread)) === machine.id);
 
@@ -217,10 +198,6 @@ export const machineCheckouts = (
       usedCheckoutPaths(onMachine(threads, machine).filter((t) => t.id !== thread?.id)),
     );
 
-  /**
-   * The project's remote, read here as stored, not as `insteadOf` rewrites it: the host clones the
-   * same repository.
-   */
   const originOf = (projectRoot: string) =>
     git(projectRoot, ["config", "--get", "remote.origin.url"]).pipe(
       Effect.provideService(Proc, deps.proc),
@@ -228,7 +205,6 @@ export const machineCheckouts = (
       Effect.flatMap((out) => {
         const url = out.stdout.trim();
         if (out.status === 0 && url !== "") {
-          // Checked here too, so a token in the URL never leaves this machine.
           const filed = cloneFolderOf(url);
           return "error" in filed
             ? Effect.fail(new InvalidState({ message: filed.error }))
@@ -260,8 +236,6 @@ export const machineCheckouts = (
   return {
     prepare: (request, openCheckouts, projectRoot) =>
       Effect.gen(function* () {
-        // A folder the user picked there for this thread alone, checked by the machine itself:
-        // the host refuses a credential folder or its own, and resolves links where they are.
         if (request.kind === "machineFolder") {
           const folders = connection.folders;
           if (folders === undefined)
@@ -282,8 +256,6 @@ export const machineCheckouts = (
             message: `A worker on ${machine.name} works in a new worktree there.`,
           });
         const url = yield* originOf(projectRoot);
-        // The clone it is handed is of the origin its project recorded when it was added, never
-        // one rewritten since.
         yield* recordedCloneIdentity(yield* deps.projects, projectRoot, cloneIdentityOf(url));
         const { path: repoPath } = yield* connection.repos
           .ensure(url)
@@ -296,9 +268,6 @@ export const machineCheckouts = (
           );
         if (!plausibleFolder(repoPath, CLONE_DEPTH))
           return yield* new InvalidState({ message: implausible(machine, repoPath) });
-        // The machine's own clone as it is, for a thread that makes no branch of its own (an
-        // orchestrator of a headless Gram): where the worktrees of its workers there come from.
-        // Its branch is read there; every other value is this machine's own.
         if (request.kind === "current") {
           const state = yield* connection.git.local(repoPath).pipe(
             Effect.mapError(
@@ -335,11 +304,6 @@ export const machineCheckouts = (
                   : new GitError({ message: redactUrlCredentials(error.message) }),
             ),
           );
-        // The record a check of the worker's ownership later goes by, made of this machine's own
-        // values: the branch it asked for (as the host's worktree code trims it), the clone it was
-        // handed for its origin, that origin's identity and the machine. Of the host's reply only
-        // where it put the worktree, and the base it chose, are taken; a reply naming another
-        // branch is refused rather than recorded.
         const branch = request.branch.trim();
         if (
           !plausibleFolder(created.checkout.path, CLONE_DEPTH) ||
@@ -370,8 +334,6 @@ export const machineCheckouts = (
           }),
     release: (thread, options) =>
       Effect.gen(function* () {
-        // What a stop kept of the thread at its remote stays: a closed thread can be reopened
-        // (`thread-lifecycle.ts` keeps it as it was), and its work in progress with it.
         const removal = options.removeWorktree;
         if (removal === undefined) return;
         const used = yield* others(thread);
@@ -420,7 +382,6 @@ export const machineCheckouts = (
             ),
           );
       }),
-    // An offline machine answers "there": its worktree isn't marked missing for being unreachable.
     present: (path) => connection.git.present(path),
     restore: (thread, fromPr) =>
       Effect.gen(function* () {
@@ -451,7 +412,6 @@ export const machineCheckouts = (
   };
 };
 
-/** A machine's worktrees as the server's own are reached: an activity lookup isn't sent. */
 const machineWorktrees = (connection: HostConnection): Worktrees["Service"] => ({
   ...connection.worktrees,
   list: (repoPath, options) =>
@@ -478,10 +438,6 @@ export const localTierOf = (state: GitState): GitState => {
   return local;
 };
 
-/**
- * A machine's checkouts' git state. Only the local tier is read there for now: the PR badge and
- * the rebase signal need the network tier, which runs where the checkout is.
- */
 const machineGit = (connection: HostConnection): GitStateRuntime["Service"] => ({
   local: (cwd) => Effect.map(connection.git.local(cwd), localTierOf),
   present: connection.git.present,
@@ -489,7 +445,6 @@ const machineGit = (connection: HostConnection): GitStateRuntime["Service"] => (
     options.local === undefined
       ? Effect.map(connection.git.local(cwd), localTierOf)
       : Effect.succeed(localTierOf(options.local)),
-  // A watch ends with the machine's connection, as its watcher there does.
   watch: (paths, options) =>
     connection.git.watch(paths, options).pipe(
       Stream.map((change) => ({ ...change, state: localTierOf(change.state) })),
@@ -539,7 +494,6 @@ export const machineWorkerHost = (
     const projects = store.listProjects.pipe(
       Effect.orElseSucceed((): ReadonlyArray<Project> => []),
     );
-    /** The machine's shells by terminal, with their process ids there. */
     const shells = new Map<TerminalId, number>();
     const terminals = yield* terminalsThroughHost(
       connection.terminals,
@@ -547,14 +501,12 @@ export const machineWorkerHost = (
       noTerminals(machine),
       {
         ...(gate === undefined ? {} : { held: gate.held }),
-        // Kept apart from this machine's `ProcessRoots`: these ids mean nothing here.
         roots: {
           add: (_threadId, pid, terminalId) => void shells.set(terminalId, pid),
           remove: (pid) => {
             for (const [terminalId, known] of shells) if (known === pid) shells.delete(terminalId);
           },
         },
-        // Only a thread placed on this machine has a folder here.
         threadFolder: (threadId: ThreadId) =>
           store.getThread(threadId).pipe(
             Effect.flatMap((thread) => {
@@ -564,7 +516,6 @@ export const machineWorkerHost = (
                 : Effect.fail(new ThreadNotFound({ threadId }));
             }),
           ),
-        // Every shell on another machine opens in a worker's folder there.
         defaultFolder: Effect.succeed(undefined),
         settingsShell: Effect.succeed(undefined),
         path: Effect.succeed(""),
@@ -574,7 +525,6 @@ export const machineWorkerHost = (
           .pipe(Stream.map((event) => event.threadId)),
       },
     );
-    // A removed thread's attachments there go with it; a thread on no machine finds nothing.
     const attachments = connection.attachments;
     if (attachments !== undefined) {
       yield* hub.internalEvents(isThreadRemoved, `attachment cleanup on ${machine.id}`).pipe(
@@ -583,7 +533,6 @@ export const machineWorkerHost = (
       );
     }
     const wrapped = new WeakMap<object, ReturnType<typeof agentHostOnMachine>>();
-    // A session outlives the dial it opened on: a dropped connection that comes back picks it up.
     const sessions =
       machine.connection === undefined
         ? connection.sessions
@@ -636,10 +585,6 @@ export const machineWorkerHost = (
     };
   });
 
-/**
- * The machine's attachments store on its connection at the time of each call, since a session
- * outlives the dial it opened on; why not while it is offline or on a build without one.
- */
 const currentAttachments =
   (machine: Machine, opened: HostConnection): AttachmentsOnMachine =>
   () =>
@@ -654,13 +599,6 @@ const currentAttachments =
       ),
     );
 
-/**
- * Opens a relayed machine's app-tool tunnel and answers each call on it for as long as `scope`
- * lasts (its connection): the address its sessions reach their app tools at. Undefined when its
- * host carries none or this Gram answers none, so its sessions open without app tools rather
- * than at an address that would take their tokens elsewhere.
- */
-/** The one address a host's tunnel may be at: its own loopback, by port. */
 const TUNNEL_ADDRESS = /^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/;
 
 export const appToolsTunnel = (
@@ -672,12 +610,8 @@ export const appToolsTunnel = (
     const tunnel = connection.appTools;
     const answer = deps.appTools;
     if (tunnel === undefined || answer === undefined) return undefined;
-    // A host that never answers is given no tunnel, rather than holding up the others.
     const opened = yield* tunnel.open.pipe(Effect.timeout("10 seconds"), Effect.option);
-    // Only the host's own loopback: a session's token goes nowhere else a host might name.
     if (opened._tag === "None" || !TUNNEL_ADDRESS.test(opened.value.url)) return undefined;
-    // Each call answered on a fiber of its own, by its id: a session that hangs up on one there
-    // stops it here (`cancel`), as one that hangs up on this Gram's own endpoint does.
     const calls = yield* FiberMap.make<string>();
     yield* tunnel.requests.pipe(
       Stream.runForEach((request) =>
@@ -720,11 +654,6 @@ export const machineHosts = (
       }
     >();
     const lock = yield* Semaphore.make(1);
-    /**
-     * Each relayed machine's app-tool tunnel, one per connection, answered for as long as that
-     * connection lasts: started when the machine comes online (a redial too), not when a worker
-     * host is first built here, since a session that reattaches to the new connection builds none.
-     */
     const tunnels = new WeakMap<HostConnection, Deferred.Deferred<string | undefined>>();
     const tunnelOf = (id: HostId, connection: HostConnection) =>
       Effect.suspend(() => {
@@ -737,7 +666,6 @@ export const machineHosts = (
           const url = yield* appToolsTunnel(id, connection, deps).pipe(
             Scope.provide(scope),
             Effect.catchCause(() => Effect.succeed(undefined)),
-            // Stopped before it finished: no one waits on it, and the next lookup opens it again.
             Effect.onInterrupt(() =>
               Effect.andThen(
                 Effect.sync(() => {
@@ -749,7 +677,6 @@ export const machineHosts = (
             ),
           );
           Deferred.doneUnsafe(made, Exit.succeed(url));
-          // Its answers end with the connection: the next one opens the tunnel again.
           yield* Effect.forkIn(
             Effect.gen(function* () {
               while (!connection.gone()) yield* Effect.sleep("2 seconds");
@@ -760,7 +687,6 @@ export const machineHosts = (
           return url;
         });
       });
-    // Each at once: one host slow to answer holds up no other's tunnel. Read afresh each time.
     const relayedOnline = Effect.suspend(() =>
       Effect.forEach(
         remote
@@ -776,7 +702,6 @@ export const machineHosts = (
         { concurrency: "unbounded", discard: true },
       ),
     );
-    // Only where this Gram answers app-tool calls at all: without, no machine has a tunnel.
     if (deps.appTools !== undefined) {
       const changes = yield* Queue.sliding<void>(1);
       const unwatch = remote.watch(() => Queue.offerUnsafe(changes, undefined));
@@ -800,28 +725,20 @@ export const machineHosts = (
             yield* Scope.close(kept.scope, Exit.void);
           }
           const scope = yield* Scope.fork(root);
-          // A machine a hosted server relays reaches no address of this Gram's: its sessions'
-          // app tools go over its own connection, at an address on its loopback.
-          // Never the relaying server's own address: a thread's token would go there.
           const relayed = remote.machines.get(id)?.via !== undefined;
           const tunnel = relayed ? yield* tunnelOf(id, connection) : undefined;
           const machine = {
             id,
             name: remote.machines.get(id)?.name ?? id,
             origin: () => (relayed ? tunnel : remote.origin(id)),
-            // A relayed machine whose gram-host carries no app tools is refused in words, not
-            // waited on as if it were offline.
             unreachable: () =>
               relayed && tunnel === undefined && !connection.gone()
                 ? noAppToolsTunnel(remote.machines.get(id)?.name ?? id)
                 : undefined,
             recheckSignIn: () => void remote.checkSignIn(id),
             connection: remote.connection(id),
-            // A machine readied to stop is waited for longer: it comes back as a new host.
             reattachMs: () =>
               remote.stops.recently(id) ? STOPPED_REATTACH_MS : REATTACH_WITHIN_MS,
-            // Asked again as the open goes out: the machine may have come back on another disk
-            // since its session was let through, and owe a resume first.
             admit: (threadId: ThreadId) =>
               remote.stops.blocked(id, threadId) ??
               (remote.stops.resuming(id) && !remote.stops.isThreadBack(id, threadId)
@@ -832,7 +749,6 @@ export const machineHosts = (
             Scope.provide(scope),
           );
           built.set(id, { connection, host, scope });
-          // Once the machine's connection ends, its terminals and watches here end with it.
           yield* Effect.forkIn(
             Effect.gen(function* () {
               while (!connection.gone()) yield* Effect.sleep("2 seconds");

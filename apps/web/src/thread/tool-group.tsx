@@ -36,14 +36,11 @@ export function ToolGroup({
     useAwaitingTools(),
   );
   const edits = runEdits(run);
-  // A run waiting on the user is open until the user says otherwise, even when the ask came later.
   const [toggled, setToggled] = useState<boolean>();
   const open = toggled ?? awaiting;
-  // Like a tool card's body: not laid out until first opened, then kept so closing animates.
   const [everOpened, setOpened] = useState(false);
   const opened = everOpened || open;
   const bodyId = useId();
-  // Closed, the run's line holds the card of the call it hides, or that card's receipt.
   const needsSlot = useNeedsSlot();
   const calls = runCalls(run);
   const hidden = open ? undefined : calls.find((part) => needsSlot(part.toolCallId));
@@ -52,7 +49,6 @@ export function ToolGroup({
     <div
       data-testid="tool-group"
       data-open={open}
-      // Find in thread opens the group a match is in (find-highlight.ts).
       data-tool-call-ids={calls.map((part) => part.toolCallId).join(" ")}
     >
       <button

@@ -1,12 +1,3 @@
-// An agent proposes an MCP server (`mcp_server_propose`); the user approves it on a card that
-// shows everything that would be written, and only then does Gram add it to each agent CLI's own
-// MCP config, through the path Settings → Connectors uses. Pure: the server reads what the agents
-// already have, raises the card and writes.
-//
-// A proposal never carries a credential. Anything that looks like one (a secret-named env var or
-// header, a key-shaped value, a URL with a user or a token in it) is refused before any card, so
-// the user adds it by hand where Gram never sees it.
-
 import * as Schema from "effect/Schema";
 import {
   MCP_SERVER_NAME_PATTERN,
@@ -108,7 +99,6 @@ export interface McpServerProposal {
   readonly reason: string;
 }
 
-/** Code point ranges that hide or reorder what the card shows: controls, zero-widths, bidi marks. */
 const HIDDEN_RANGES: ReadonlyArray<readonly [number, number]> = [
   [0x00, 0x1f],
   [0x7f, 0x9f],
@@ -124,7 +114,6 @@ const HIDDEN = new RegExp(
   "u",
 );
 
-/** Name parts that say the value is a credential, as whole parts: `API_KEY`, `X-Auth-Token`. */
 const SECRET_PARTS: ReadonlySet<string> = new Set([
   "KEY",
   "APIKEY",
@@ -151,7 +140,6 @@ export const secretName = (name: string): boolean =>
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Bits per character: random keys are high, words and paths low. */
 const entropy = (text: string) => {
   const counts = new Map<string, number>();
   for (const char of text) counts.set(char, (counts.get(char) ?? 0) + 1);
@@ -163,10 +151,6 @@ const entropy = (text: string) => {
   return bits;
 };
 
-/**
- * An HTTP auth scheme and its credentials, however short and in any case (`Basic dTpw`,
- * `bearer abc`), at the start of a value or after a `:`, `=` or `,`, as a header line holds one.
- */
 const AUTH_SCHEME =
   /(?:^|[:=,])\s*(?:basic|bearer|digest|negotiate|ntlm|token|hoba|mutual|vapid|aws4-hmac-sha256|scram-sha-\d+)\s+\S/i;
 
@@ -189,17 +173,9 @@ export const secretValue = (value: string): boolean => {
   return false;
 };
 
-/**
- * A flag that names a credential, as `--token` or `--api-key=…`. Two linear tests rather than one
- * pattern with a word around the name, which backtracks on a long run of repeats.
- */
 const secretFlag = (flag: string): boolean =>
   /^--?[\w-]+$/.test(flag) && /token|secret|password|passphrase|api[-_]?key|credential/i.test(flag);
 
-/**
- * Env vars that change which program runs or what it loads, so the command line on the card would
- * no longer say what runs.
- */
 const LOADER_ENV =
   /^(?:PATH|LD_\w+|DYLD_\w+|NODE_OPTIONS|NODE_PATH|PYTHONPATH|PYTHONSTARTUP|PYTHONHOME|PERL5OPT|PERL5LIB|RUBYOPT|RUBYLIB|BASH_ENV|ENV)$/;
 
@@ -211,7 +187,6 @@ const LOOPBACK: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"
 const REFUSE_SECRET =
   "Add credentials yourself in Settings → Connectors or the CLI, where Gram never sees them.";
 
-/** Why `url` would carry a credential: a user, a secret query value, a key-shaped path. */
 const urlCredential = (url: URL, where: string): string | undefined => {
   if (url.username !== "" || url.password !== "") {
     return `${where} carries a user name or password. ${REFUSE_SECRET}`;
@@ -224,9 +199,7 @@ const urlCredential = (url: URL, where: string): string | undefined => {
   let path = url.pathname;
   try {
     path = decodeURIComponent(path);
-  } catch {
-    // A malformed escape is checked as written.
-  }
+  } catch (_aMalformedEscapeIsCheckedAsWritten) {}
   return secretValue(path) ? `${where} has a key-shaped path. ${REFUSE_SECRET}` : undefined;
 };
 
@@ -238,7 +211,6 @@ const parseUrl = (url: string): URL | undefined => {
   }
 };
 
-/** Why `url` can't be proposed, or its written form and host. */
 const checkUrl = (
   url: string,
   where: string,
@@ -265,7 +237,6 @@ const checkUrl = (
   return { ok: true, href: parsed.href, host: parsed.host };
 };
 
-/** `values` as name/value pairs, or why one can't be written. */
 const checkPairs = (
   values: Readonly<Record<string, string>> | undefined,
   kind: "env" | "header",
@@ -291,7 +262,6 @@ const checkPairs = (
   return pairs;
 };
 
-/** The arguments' problems: hidden characters, credential flags and key-shaped values. */
 const checkArgs = (args: ReadonlyArray<string>, errors: Array<string>) => {
   if (args.length > MCP_PROPOSAL_LIMITS.args)
     errors.push(`At most ${MCP_PROPOSAL_LIMITS.args} arguments.`);
@@ -315,7 +285,6 @@ const checkArgs = (args: ReadonlyArray<string>, errors: Array<string>) => {
   });
 };
 
-/** `[mcp_servers.<name>]` in Codex's config, or the scope `claude mcp add-json` writes. */
 const whereFor = (target: McpTarget, scope: McpProposalScope, name: string, folder: string) =>
   target === "codex"
     ? `Codex's config.toml, [mcp_servers.${name}]: every project, Gram's own Codex home included`
@@ -369,7 +338,6 @@ export const checkMcpServerProposal = (
     } else if (secretValue(command)) {
       errors.push(`The command looks like a credential. ${REFUSE_SECRET}`);
     } else if (command.includes("/") && !command.startsWith("/")) {
-      // Found from each session's own folder, so the card couldn't say which file runs.
       errors.push("The command is a relative path: use an absolute path or a program on PATH.");
     }
     checkArgs(server.args ?? [], errors);
@@ -408,11 +376,9 @@ export const existingOf = (server: ConfiguredServer): McpProposalExisting => ({
   carriesValues: server.carriesValues,
 });
 
-/** `values` as the card lists them, in the order given. */
 const pairsOf = (values: Readonly<Record<string, string>> | undefined) =>
   Object.entries(values ?? {}).map(([key, value]) => ({ name: key, value }));
 
-/** What the user does after an approval to finish: a remote server's sign-in, in each target. */
 const signInNotes = (proposal: McpServerProposal): ReadonlyArray<string> => {
   if (proposal.config.type === "stdio") return [];
   const steps = proposal.targets.map((target) =>

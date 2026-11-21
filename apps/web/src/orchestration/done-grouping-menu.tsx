@@ -13,10 +13,6 @@ import { useLayoutStore, type DoneGrouping } from "@/stores/layout";
 
 import { DONE_GROUPINGS } from "./done-model";
 
-// History's grouping control: by date or by orchestrator. An icon that says the current
-// choice on its hover and offers both in a menu; the choice is the user's, kept in the layout store
-// for History.
-
 const ICONS: Readonly<Record<DoneGrouping, LucideIcon>> = {
   date: CalendarDays,
   orchestrator: Network,
@@ -34,10 +30,6 @@ export function DoneGroupingMenu({
   const setGrouping = useLayoutStore((s) => s.setDoneGrouping);
   const current = DONE_GROUPINGS.find((each) => each.id === grouping) ?? DONE_GROUPINGS[0]!;
   const Icon = ICONS[current.id];
-  // The menu's trigger acts on the pointer going down, from the next animation frame, and lets the
-  // click after it go by. A page too busy to draw that frame (History mounting its rows) left the
-  // press showing nothing, so the click finishes the press too: it leaves the menu as the press
-  // meant, open if it went down on a shut menu, and the frame's own change then finds it so.
   const [open, setOpen] = useState(false);
   const pressedOpen = useRef<boolean | undefined>(undefined);
   return (
@@ -53,7 +45,6 @@ export function DoneGroupingMenu({
         onClick={() => {
           const was = pressedOpen.current;
           pressedOpen.current = undefined;
-          // A click from the keyboard has no press before it: the trigger's own handler opens it.
           if (was !== undefined) setOpen(!was);
         }}
         data-testid="done-grouping"

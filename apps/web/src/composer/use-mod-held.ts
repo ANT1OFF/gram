@@ -16,7 +16,6 @@ export function useHeldDelivery(active: boolean): HeldDelivery {
   useSubscription(() => {
     if (!active) return;
     const read = (event: KeyboardEvent) => setHeld(heldOf(event));
-    // Switching away with the key down never delivers its key-up.
     const release = () => setHeld(undefined);
     window.addEventListener("keydown", read);
     window.addEventListener("keyup", read);

@@ -10,7 +10,6 @@ import { SaveFooter } from "./save-footer";
 import { validateReviewBots, type ReviewBotDraft } from "./review-bots";
 import { useSaveSettings } from "./use-save-settings";
 
-/** The drafts as they'd be saved, for comparing with the stored list. */
 const plain = (list: ReadonlyArray<ReviewBotDraft>) =>
   JSON.stringify(list.map(({ key: _key, ...bot }) => bot));
 
@@ -26,7 +25,6 @@ export function ReviewBotsSection() {
   const saved = reviewBotsOf(settings);
   return (
     <ReviewBotsEditor
-      // A save from elsewhere resets the drafts.
       key={JSON.stringify(saved)}
       saved={saved}
       status={status}
@@ -41,7 +39,6 @@ function ReviewBotsEditor({
   onStatus,
 }: {
   saved: ReadonlyArray<ReviewBot>;
-  /** The last save succeeded and nothing has changed since. */
   status: boolean;
   onStatus: (saved: boolean) => void;
 }) {

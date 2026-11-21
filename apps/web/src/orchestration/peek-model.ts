@@ -21,10 +21,6 @@ import {
 import { lastCommandOf } from "./last-command";
 import { prWait } from "./wait-model";
 
-// What a peek shows of a worker or a PR: only the lines Gram has facts for, and none it would have to guess. Pure, so it is tested
-// without a browser.
-
-/** How many checks and files a peek names before "N more". */
 const PEEK_LIST_MAX = 3;
 
 const samePr = (
@@ -108,7 +104,6 @@ const reviewLine = (detail: PrDetail | undefined, pr: WorkerPr | undefined): str
     changesRequestedBy: pr?.changesRequestedBy,
   })?.detail;
 
-/** The PRs it waits to merge after, those not merged yet. */
 const waitsOnLine = (pr: WorkerPr | undefined): string | undefined => {
   const open = (pr?.dependsOn ?? []).filter(
     (dependency) => dependency.mergeAfter !== false && dependency.state !== "merged",
@@ -143,7 +138,6 @@ export const prPeekOf = (pr: WorkerPr | undefined, detail: PrDetail | undefined)
           },
     runs: runs.slice(0, PEEK_LIST_MAX),
     moreRuns: Math.max(0, runs.length - PEEK_LIST_MAX),
-    // The dependency line already says what it waits on.
     note: wait === undefined || wait.tag === "dependency" ? undefined : wait.detail,
   };
 };

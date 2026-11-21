@@ -1,4 +1,3 @@
-/** Native selected-store preparation; never checks, posts or materializes source. */
 import { ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { prepareSelectedPrivatePublisher } from "./local-checks.ts";

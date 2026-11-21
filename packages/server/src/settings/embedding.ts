@@ -1,7 +1,3 @@
-// The hosted features setting (`experimental.embedding`), which every feature for running Gram
-// behind another service sits behind: how a server with no window takes it from its environment,
-// and how server code reads it.
-
 import { applySettingsPatch, embeddingOn, RECOMMENDED } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

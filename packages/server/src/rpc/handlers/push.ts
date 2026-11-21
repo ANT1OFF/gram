@@ -34,7 +34,6 @@ export const pushHandlers = Effect.gen(function* () {
             input: {},
           }),
         ).pipe(Effect.mapError((e) => new InvalidState({ message: e.message, threadId })));
-        // Where this push goes must be the repository the thread's project was added with.
         const project = (yield* store.listProjects).find((each) => each.id === thread.projectId);
         yield* effectiveOriginsChecked(project, cwd).pipe(
           Effect.provideService(Proc, proc),
@@ -44,7 +43,6 @@ export const pushHandlers = Effect.gen(function* () {
           Effect.provideService(Proc, proc),
           Effect.mapError((e) => new InvalidState({ message: e.message, threadId })),
         );
-        // A push starts CI, and a review round where a bot reviews every push.
         yield* refreshes.request(cwd, true, { expectChange: true });
         return result;
       }),

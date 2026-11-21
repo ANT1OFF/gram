@@ -3,7 +3,6 @@ import { useCallback } from "react";
 import { useApi } from "@/api/context";
 import type { Api } from "@/api/types";
 
-/** The server holds background helper jobs for a little longer than this after each report. */
 const TYPING_REPORT_MS = 2_000;
 
 /**
@@ -25,7 +24,6 @@ export function typingReporter(
   };
 }
 
-/** One reporter per connection, shared by every composer, so two windows' panes throttle as one. */
 const reporters = new WeakMap<Api, () => void>();
 
 /** Call on every edit of a composer's text: background helper jobs wait while the user types. */

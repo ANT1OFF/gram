@@ -106,7 +106,6 @@ export const toolFor = (
   }
 };
 
-/** The tool a permission's action is about, for the approval card when no call is known. */
 const ACTION_TOOLS: Readonly<Record<string, string>> = {
   shell: "Bash",
   edit: "Edit",
@@ -137,7 +136,6 @@ const actionInput = (permission: OpenCodePermission): Readonly<Record<string, un
   }
 };
 
-/** OpenCode tools run in its own server, never through the AI SDK's client-side tool loop. */
 const TOOL_FLAGS = { providerExecuted: true, dynamic: true } as const;
 
 export const tokenUsage = (tokens: {
@@ -161,12 +159,9 @@ export interface OpenCodeMapperOptions {
 
 interface Turn {
   readonly messageId: MessageId;
-  /** OpenCode's assistant message ids this turn spanned, one per step. */
   readonly steps: Array<string>;
   stepOpen: boolean;
-  /** Text and reasoning parts started and not yet ended, by part id. */
   readonly open: Map<string, "text" | "reasoning">;
-  /** Tool calls by id: their Gram name, and whether a result has been sent. */
   readonly tools: Map<string, { name: string; done: boolean }>;
 }
 
@@ -176,7 +171,6 @@ export interface OpenCodeMapper {
   interrupted(): ReadonlyArray<AgentEvent>;
 }
 
-/** A text or reasoning part's id: its message, its kind and its place in the message. */
 const partId = (data: Readonly<Record<string, unknown>>, kind: "text" | "reasoning") =>
   `${field.string(data, "assistantMessageID") ?? "step"}:${kind}:${field.number(data, "ordinal") ?? 0}`;
 
@@ -186,9 +180,7 @@ const partId = (data: Readonly<Record<string, unknown>>, kind: "text" | "reasoni
  */
 export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapper => {
   let turn: Turn | undefined;
-  /** The permission requests open now, by id, so a reply resolves the one Gram showed. */
   const asked = new Set<string>();
-  /** Inputs of calls seen this session, for the approval card of a permission one raises. */
   const calls = new Map<string, { name: string; input: Readonly<Record<string, unknown>> }>();
   let costUsd = 0;
   let tokens: TokenUsage | undefined;
@@ -262,8 +254,6 @@ export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapp
         );
       }
       endStep(t, out);
-      // A permission is asked while its call runs, so a call's input is needed no longer than its
-      // turn: kept past it, every file a long session wrote would stay in memory.
       for (const id of t.tools.keys()) {
         calls.delete(id);
         rawNames.delete(id);
@@ -295,7 +285,6 @@ export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapp
       input: call?.input ?? actionInput(permission),
       ...(permission.message === undefined ? {} : { description: permission.message }),
       suggestions: [],
-      // OpenCode saves an `always` for the project; it has no session-long grant.
       scopes: ["once", "always"],
     };
   };
@@ -303,7 +292,6 @@ export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapp
   const map = (event: OpenCodeEvent): ReadonlyArray<AgentEvent> => {
     const { data } = event;
     const session = field.string(data, "sessionID");
-    // `permission.asked` and the rest carry the session too; an event for another one isn't ours.
     if (session !== undefined && session !== options.sessionId) return [];
     const out: Array<AgentEvent> = [];
     switch (event.type) {
@@ -381,7 +369,6 @@ export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapp
         const toolName = toolFor(name, {}).name;
         t.tools.set(id, { name: toolName, done: false });
         calls.set(id, { name: toolName, input: {} });
-        // The raw OpenCode name rides along, so `called` can map the input by it.
         rawNames.set(id, name);
         out.push(chunk(t, { type: "tool-input-start", toolCallId: id, toolName, ...TOOL_FLAGS }));
         break;
@@ -518,7 +505,6 @@ export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapp
     return out;
   };
 
-  /** OpenCode's own name of each call, by id, from its `input.started`. */
   const rawNames = new Map<string, string>();
 
   return {

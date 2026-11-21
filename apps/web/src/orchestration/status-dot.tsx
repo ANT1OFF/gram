@@ -3,12 +3,6 @@ import { cn } from "@/lib/utils";
 import { TONE_DOT } from "./rail-model";
 import { STATUS_WORDS, type DotState } from "./status-words";
 
-// One dot per state, the same in the sidebar, on the Board and in Workers, and few of them: amber
-// needs you, the accent runs (and pulses), a hollow accent ring waits on something outside it
-// (checks, a review, a wake, a usage limit), grey has stopped, red failed, and the merged colour is
-// done. The row beside a dot says its state in words, and the dot's own hover says what its colour
-// and fill mean, so the marks teach themselves without a legend (DESIGN.md).
-
 export type { DotState };
 
 /** Each state's dot, and its word (`STATUS_WORDS`), the one every surface says. */

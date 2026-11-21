@@ -7,14 +7,10 @@ export interface MentionTrigger {
   readonly query: string;
 }
 
-/** A run of three or more backticks or tildes, and what follows it on the line. */
 const FENCE_RUN = /^(`{3,}|~{3,})(.*)$/;
-/** A block quote marker, which a quoted fence repeats on every one of its lines. */
 const QUOTE = /^ {0,3}> ?/;
-/** A list marker and the spaces after it; its length is where the item's content starts. */
 const LIST_ITEM = /^ {0,3}(?:[-*+]|\d{1,9}[.)])(?: +|$)/;
 
-/** How far a line is indented, in characters and in columns: a tab is as wide as four spaces. */
 const indentOf = (line: string) => {
   const chars = line.length - line.trimStart().length;
   return { chars, columns: chars + 3 * (line.slice(0, chars).split("\t").length - 1) };
@@ -47,13 +43,10 @@ export const inOpenFence = (before: string): boolean => {
   for (const raw of before.split("\n")) {
     let line = raw;
     let quotes = 0;
-    // Inside a fence only its own container's markers are markers; a `>` past those is content.
     const deepest = open?.quotes ?? Infinity;
     for (; quotes < deepest && QUOTE.test(line); quotes++) line = line.replace(QUOTE, "");
     if (open !== undefined) {
       const indent = indentOf(line);
-      // A line outside the fence's container ends the container and the fence with it, closer or
-      // no closer. So a run out there is read below, as what it is: the opener of a new fence.
       const left = quotes < open.quotes || (line.trim() !== "" && indent.columns < open.margin);
       if (!left) {
         const fence =
@@ -79,7 +72,6 @@ export const inOpenFence = (before: string): boolean => {
       column + indent.columns - margin <= 3
         ? FENCE_RUN.exec(line.slice(column + indent.chars))
         : null;
-    // A backtick fence's info string can't hold a backtick: that line is inline code.
     if (!fence || (fence[1]![0] === "`" && fence[2]!.includes("`"))) continue;
     open = { char: fence[1]![0]!, length: fence[1]!.length, margin, quotes };
   }
@@ -111,10 +103,6 @@ export const formatMention = (path: string): string =>
 
 const SEPARATORS = new Set(["/", ".", "-", "_"]);
 
-/**
- * How well `query`'s characters appear in order in `path`: runs of adjacent characters, segment
- * starts and a matching file name score higher. `undefined` when they don't all appear.
- */
 function mentionScore(path: string, query: string): number | undefined {
   const p = path.toLowerCase();
   const q = query.toLowerCase();
@@ -187,7 +175,6 @@ export function insertMention(
   const mention = formatMention(path);
   const after = text.slice(caret);
   const open = entry.kind === "dir" && !/\s/.test(path);
-  // A space already after the caret isn't doubled; the caret still steps past it.
   const spaced = open || /^\s/.test(after) ? mention : `${mention} `;
   return {
     text: `${text.slice(0, trigger.start)}${spaced}${after}`,

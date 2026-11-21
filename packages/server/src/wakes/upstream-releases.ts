@@ -1,12 +1,3 @@
-/**
- * The releases a package or tool has published, for the condition wakes that wait on a new one:
- * every version with its publish time. Gram asks through the user's own tools and nothing else:
- * npm's registry through the user's npm (`npm view <name> time versions --json`, so npm applies its
- * own registry, proxy and cache, and Gram never reads `.npmrc`), and a GitHub repo's releases
- * through the user's gh (`gh api repos/<owner>/<repo>/releases` on github.com), paced to the
- * background share of the allowance like the other polls. Neither sends anything of Gram's beyond
- * the name asked about; neither's error text is kept or logged, since npm's can name its registry.
- */
 import { homedir } from "node:os";
 import { isNpmPackageName } from "@gram/contracts";
 import { ghApi, Proc } from "@gram/git";
@@ -52,16 +43,13 @@ export const versionOfTag = (tag: string): string | undefined =>
 
 const isSemverPrerelease = (version: string) => /^\d+\.\d+\.\d+-/.test(version);
 
-/** One read may take this long: a cold packument of a long-lived package takes a while. */
 const READ_TIMEOUT_MS = 2 * 60_000;
-/** Every version's publish time of a package with thousands of them fits in this. */
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 const decodeNpm = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({
       time: Schema.Record(Schema.String, Schema.String),
-      // One version is printed as a string, more as a list.
       versions: Schema.Union([Schema.String, Schema.Array(Schema.String)]),
     }),
   ),
@@ -122,7 +110,6 @@ export const githubReleases = (stdout: string): ReadonlyArray<UpstreamRelease> |
   });
 };
 
-/** npm or GitHub says there is no such package or repo. */
 const NOT_FOUND = /\bE404\b|not found|HTTP 404/i;
 
 export const UpstreamReleasesLive = Layer.effect(
@@ -132,7 +119,6 @@ export const UpstreamReleasesLive = Layer.effect(
     const budget = yield* GhBudget;
     const cwd = homedir();
     const npm = (name: string) =>
-      // Anything but a registry name is a spec npm would fetch (a git repo, a URL, a path).
       !isNpmPackageName(name)
         ? Effect.succeed(null)
         : proc

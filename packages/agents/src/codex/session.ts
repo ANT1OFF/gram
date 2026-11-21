@@ -133,10 +133,6 @@ const unavailable = (what: string) => (error: CodexRpcError) =>
     message: `${what}: ${error.message}`,
   });
 
-/**
- * `unavailable(what)`, naming which of `paths` don't exist when Codex failed on a missing file, as
- * its own error ("No such file or directory (os error 2)") names none.
- */
 const unavailableNaming =
   (what: string, paths: ReadonlyArray<string>) =>
   (error: CodexRpcError): AgentUnavailable => {
@@ -170,7 +166,6 @@ const catalogModel = (model: Model): AgentModel => {
             (modality) => modality === "text" || modality === "image",
           ),
         }),
-    // New catalogs declare serviceTiers; older ones may only advertise additionalSpeedTiers.
     ...(model.serviceTiers !== undefined || model.additionalSpeedTiers !== undefined
       ? {
           speeds: [
@@ -271,7 +266,6 @@ export const autoAvailable = (outwardGate: boolean | OutwardGate, autoReviewer: 
  */
 export const gateHoldsInMode = (mode: PermissionMode): boolean => mode !== "dontAsk";
 
-/** The one mode where a gated session answers Codex's requests itself; see `policyFor`. */
 const gateAnswersInMode = (mode: PermissionMode): boolean => mode === "bypassPermissions";
 
 /**
@@ -298,7 +292,6 @@ const sandboxPolicy = (sandbox: SandboxMode, roots: ReadonlyArray<string>): Sand
           excludeSlashTmp: false,
         };
 
-/** The name of the thread's own app-tools MCP server. */
 const APP_TOOLS_NAME = APP_TOOLS_SERVER_NAME;
 
 const CODEX_RECONNECT_REASON = "Codex reconnects its MCP servers when the thread restarts.";
@@ -313,10 +306,6 @@ const CONNECTION_STATE: Record<McpServerConnectionStatus, ConnectorStatus["statu
   disabled: "disabled",
 };
 
-/**
- * A Codex MCP server's thread status as a connector; `builtIn` for the thread's app tools. A server
- * no plugin brought comes from `config.toml`, Codex's one scope, which is what makes it removable.
- */
 const toConnectorStatus = (status: McpServerStatus, builtIn: boolean): ConnectorStatus => ({
   name: status.name,
   status: status.runtimeStatus === null ? "pending" : CONNECTION_STATE[status.runtimeStatus],
@@ -326,7 +315,6 @@ const toConnectorStatus = (status: McpServerStatus, builtIn: boolean): Connector
   ...(builtIn ? { builtIn: true, toggleUnavailable: BUILT_IN_TOGGLE_REASON } : {}),
 });
 
-/** `config/batchWrite`'s edit for one server's table; `undefined` removes it. */
 const serverEdit = (name: string, entry: Record<string, unknown> | undefined) => ({
   edits: [
     {
@@ -335,7 +323,6 @@ const serverEdit = (name: string, entry: Record<string, unknown> | undefined) =>
       mergeStrategy: "replace" as const,
     },
   ],
-  // Loaded threads share a child: a write must not live-refresh their MCP managers.
   reloadUserConfig: false,
 });
 
@@ -344,15 +331,8 @@ const asUnavailable = (error: AgentUnavailable | { readonly message: string }) =
     ? error
     : new AgentUnavailable({ agent: "codex", message: error.message });
 
-/** How long a sign-in started from Settings is listened for; the user may never finish it. */
 const SIGN_IN_WAIT = Duration.minutes(15);
 
-/**
- * A sign-in to `name` started with no thread, on a user-home app-server held for its whole length
- * like a session's (`acquireHeld`), so a config change retiring the server can't stop it while the
- * user is in the browser. `started` gets the page to open, or why there is none; the result is
- * whether it succeeded, `false` too when the app-server went or `SIGN_IN_WAIT` passed.
- */
 const threadlessSignIn = (
   servers: CodexServers["Service"],
   name: string,
@@ -362,7 +342,6 @@ const threadlessSignIn = (
     Effect.gen(function* () {
       const server = yield* acquireHeld(servers.acquire(undefined, "user"));
       const done = yield* Deferred.make<boolean>();
-      // Listening before the request, so a completion can't come before anyone hears it.
       yield* server.subscribe(SERVER_WIDE, {
         message: (message) => {
           if (
@@ -385,7 +364,6 @@ const threadlessSignIn = (
   ).pipe(
     Effect.tapError((error) => Deferred.fail(started, asUnavailable(error))),
     Effect.orElseSucceed(() => false),
-    // The host closing first still answers the caller; a no-op once `started` has its answer.
     Effect.ensuring(
       Deferred.fail(
         started,
@@ -394,17 +372,11 @@ const threadlessSignIn = (
     ),
   );
 
-/** Whether Codex holds a sign-in for each server; absent for one with nothing to sign in to. */
 const SIGNED_IN: Readonly<Partial<Record<McpAuthStatus, boolean>>> = {
   notLoggedIn: false,
   oAuth: true,
 };
 
-/**
- * `config/read`'s `mcp_servers` for showing. The response carries every header and env value, and
- * `describeCodexEntry` drops them. A server's scope is the config layer its address came from:
- * `user` for `config.toml`, the one layer Gram writes.
- */
 const configuredServers = (
   read: ConfigReadResponse,
   auth: ReadonlyMap<string, McpAuthStatus> | undefined,
@@ -441,14 +413,12 @@ export const COMPUTER_USE_PLUGINS: ReadonlyArray<string> = [
   "browser@openai-bundled",
 ];
 
-/** The `mcp_servers` names the ChatGPT app writes for its browser and desktop runtime. */
 const COMPUTER_USE_SERVERS: ReadonlySet<string> = new Set([
   "node_repl",
   "cua_repl",
   "computer-use",
 ]);
 
-/** A configured server that is computer use, by its name or the program it runs. */
 const isComputerUseServer = (name: string, table: unknown): boolean => {
   if (COMPUTER_USE_SERVERS.has(name)) return true;
   const command =
@@ -561,10 +531,6 @@ export const scopeConfig = (
       }),
 });
 
-/**
- * Every page of a thread's MCP server statuses. With no thread Codex starts and connects every
- * configured server to answer, so that is only for a user who asked.
- */
 const listServerStatus = (rpc: CodexRpc, threadId?: string) =>
   Effect.gen(function* () {
     const all: Array<McpServerStatus> = [];
@@ -581,18 +547,15 @@ const listServerStatus = (rpc: CodexRpc, threadId?: string) =>
     return all;
   });
 
-/** Codex compacts on `thread/compact/start`, which only its TUI's `/compact` sends. */
 const COMPACT: SlashCommand = {
   name: "compact",
   description: "Summarize the conversation to free up context",
 };
 
-/** A prompt as Codex input; attachments become `@` mentions in the text. */
 const toInput = (input: UserInput): TurnStartParams["input"] => [
   { type: "text", text: promptText(input), text_elements: [] },
 ];
 
-/** A comparable path: trailing separators dropped, and case and separators folded on Windows. */
 const pathKey = (path: string): string => {
   const trimmed = path.replace(/[\\/]+$/, "");
   return process.platform === "win32" ? trimmed.replaceAll("\\", "/").toLowerCase() : trimmed;
@@ -607,15 +570,8 @@ const toSessionSummary = (thread: Thread): AgentSessionSummary => ({
   cwd: thread.cwd,
 });
 
-/** How many `thread/list` pages a folder's listing follows before it settles for what it has. */
 const LIST_MAX_PAGES = 20;
 
-/**
- * The root threads of `cwd`, newest first. `thread/list` answers for the whole home, newest first,
- * so the folder's threads are picked out page by page until there are enough of them: one page
- * alone would miss a folder's sessions behind fifty newer ones from everywhere else. Its own `cwd`
- * filter isn't used, since it matches a path exactly, and these are compared through `pathKey`.
- */
 const listThreads = (rpc: CodexRpc, cwd: string, limit: number | undefined) =>
   Effect.gen(function* () {
     const wanted = limit ?? 50;
@@ -626,9 +582,6 @@ const listThreads = (rpc: CodexRpc, cwd: string, limit: number | undefined) =>
         ...(cursor === null ? {} : { cursor }),
         limit: Math.max(wanted, 50),
         sortKey: "updated_at",
-        // Left out, this is the server's default provider alone, and a listing server has none of
-        // a gateway profile's: every thread of the gateway home, recorded under the profile's
-        // provider, went unlisted (measured on codex 0.154.0). Empty is every provider.
         modelProviders: [],
       });
       found.push(
@@ -642,15 +595,9 @@ const listThreads = (rpc: CodexRpc, cwd: string, limit: number | undefined) =>
     return found.toSorted((a, b) => b.updatedAt - a.updatedAt).slice(0, wanted);
   });
 
-/** How many turns one `thread/turns/list` page asks for, and how many pages a read follows. */
 const HISTORY_PAGE_TURNS = 100;
 const HISTORY_MAX_PAGES = 50;
 
-/**
- * A thread's turns with their items, oldest first, until there are none left or the transcript they
- * make has `limit` messages. Paged, because `thread/read` with `includeTurns` is deprecated for the
- * paginated history new threads are written with.
- */
 const readTurns = (rpc: CodexRpc, threadId: string, limit: number | undefined) =>
   Effect.gen(function* () {
     const turns: Array<Turn> = [];
@@ -688,7 +635,6 @@ export const codexHomeFor = (
         ? "owned"
         : "user");
 
-/** The session to run: new, resumed, forked, or reverted to just after the turn `resumeAt`. */
 const resolveThread = (server: CodexServer, o: OpenSessionOptions, settings: ThreadSettings) =>
   Effect.gen(function* () {
     const { rpc } = server;
@@ -735,7 +681,6 @@ const resolveThread = (server: CodexServer, o: OpenSessionOptions, settings: Thr
     return resumed;
   });
 
-/** What `thread/start`, `thread/resume` and `thread/fork` share. */
 interface ThreadSettings {
   readonly cwd: string;
   readonly model?: string;
@@ -744,11 +689,6 @@ interface ThreadSettings {
   readonly approvalsReviewer?: ApprovalsReviewer;
   readonly sandbox: SandboxMode;
   readonly config?: NonNullable<ThreadStartParams["config"]>;
-  /**
-   * `OpenSessionOptions.instructions`. All three requests take it, so a resumed or forked thread
-   * is told its role again, as a Claude session is at every open. A plan-mode turn's collaboration
-   * mode brings its own developer instructions and outranks these for that turn.
-   */
   readonly developerInstructions?: string;
 }
 
@@ -757,17 +697,11 @@ export const makeCodexHost = (
 ): Effect.Effect<AgentHost, never, CodexServers | GatewayKeyProvider | Scope.Scope> =>
   Effect.gen(function* () {
     const servers = yield* CodexServers;
-    /** Outlives any session: a sign-in started from Settings has no thread to belong to. */
     const hostScope = yield* Effect.scope;
     const gateway = yield* GatewayKeyProvider;
     const newId = config.newId ?? randomUUID;
     const interruptTimeoutMs = config.interruptTimeoutMs ?? 5_000;
-    /**
-     * Per Gram thread: servers the user switched on or off. Codex can't toggle a server live,
-     * so the choice applies when the session reopens, and survives that reopen here.
-     */
     const serverOverrides = new Map<string, Map<string, boolean>>();
-    /** The servers a sign-in from Settings finished signing in to, for `mcpConfig.signedIn`. */
     const signedInQueue = yield* Queue.unbounded<string>();
 
     const switchAttempts = new Map<string, { delegated: boolean; notStarted: boolean }>();
@@ -787,8 +721,6 @@ export const makeCodexHost = (
             "A guided Codex memory update requires its explicit mode and the bounded memory update file bridge.",
         });
       const home = codexHomeFor(o);
-      // A server-owned thread's eviction must not strand its writer behind unrelated lifetimes.
-      // This changes child acquisition only; the physical-home/thread ownership fence is global.
       const sessionPartitionId =
         o.audience === "orchestrator" || o.audience === "worker" ? o.threadId : undefined;
       const level = gateLevel(o.outwardGate);
@@ -807,9 +739,6 @@ export const makeCodexHost = (
             "This thread asks before a push. Codex needs Gram's prepared native or gateway home with prompt rules; the user's own Codex home cannot hold this gate.",
         });
       }
-      // `o.confineWrites` leaves the sandbox alone: every sandboxed mode is `workspace-write` with the
-      // network off (`policyFor`), so the OS already holds an `acceptEdits` session's writes to its
-      // roots. What it does take is the MCP servers, which Codex runs outside the sandbox.
       if (o.switchStartup !== undefined) switchAttempts.get(o.switchStartup)!.delegated = true;
       if (o.waitForPreviousSession !== undefined && o.resumeId !== undefined && o.fork !== true) {
         const resolver = yield* servers.acquire(o.model?.profileId, home, sessionPartitionId);
@@ -818,7 +747,6 @@ export const makeCodexHost = (
       const server = yield* acquireHeld(
         servers.acquire(o.model?.profileId, home, sessionPartitionId, o.switchStartup),
       );
-      // A machine's own provider authenticates itself: there is no ChatGPT login to check.
       if (home === "owned" && server.ownProvider === undefined) {
         const account = yield* server.rpc
           .request("account/read", { refreshToken: false })
@@ -861,10 +789,7 @@ export const makeCodexHost = (
           });
       }
       const needs = [o.cwd, ...server.generated];
-      // Not on a gateway profile: nobody has checked that the reviewer's own model resolves there,
-      // and where it doesn't every escalation is denied (`hasAuto`).
       const autoReviewer = home !== "gateway" && codexAutoReviewSupported(server.cliVersion);
-      /** `auto` where it isn't Auto (`autoAvailable`) runs, and is reported, as `default`. */
       const runnable = (wanted: PermissionMode): PermissionMode =>
         wanted === "auto" && !autoAvailable(gated, autoReviewer) ? "default" : wanted;
       let mode: PermissionMode = runnable(o.permissionMode ?? "default");
@@ -879,8 +804,6 @@ export const makeCodexHost = (
           return yield* new AgentUnavailable({ agent: "codex", message: problem });
       }
       const roots = o.additionalDirectories ?? [];
-      // Someone else's tree (a fork's PR head): a project layer the user's Codex trusts would bring
-      // its author's MCP servers, hooks and rules, so the session doesn't open on one.
       if (o.untrustedTree === true) {
         const loaded = loadedProjectLayers(
           yield* server.rpc
@@ -908,10 +831,6 @@ export const makeCodexHost = (
               o.mcp === undefined ? undefined : APP_TOOLS_NAME,
             )
           : undefined;
-      // Computer use only for a thread given the browser, and only in the user's own CODEX_HOME,
-      // where the user installed it: Gram's homes run with plugins off (`home === "owned"`).
-      // `false`, or `true` where it can't be had, turns it off; absent leaves the user's config.
-      // A thread given the browser with every surface turned off isn't given it.
       const noSurface =
         o.browserSurfaces !== undefined &&
         !o.browserSurfaces.chrome &&
@@ -922,12 +841,9 @@ export const makeCodexHost = (
         o.browser !== undefined &&
         !(o.browser && home === "user" && !noSurface);
       const lent = confined === undefined && !browserOff && o.browser === true;
-      // With the browser lent to ask each time, a computer-use prompt offers no lasting "yes".
       const promptsOnce = lent && o.browserAsk === true;
       const narrowedSurfaces =
         lent && o.browserSurfaces !== undefined ? surfacesOff(o.browserSurfaces) : undefined;
-      // Confinement already switches every server off; otherwise the workspace's lists might, and
-      // a thread without the browser turns computer use's servers off by name.
       const narrowedRead =
         confined === undefined && (narrowsMcp(o) || o.mcpServer !== undefined || browserOff)
           ? yield* server.rpc
@@ -941,16 +857,12 @@ export const makeCodexHost = (
         ...(narrowedRead === undefined
           ? {}
           : leftOutConfig(narrowedRead, o, o.mcp === undefined ? undefined : APP_TOOLS_NAME)),
-        // Here too, so a thread's own toggle can't turn one back on.
         ...noComputerUse?.servers,
       };
       const tables = narrowedRead?.config["mcp_servers"];
-      /** The servers `config/read` names, which `leftOutConfig` has decided on already. */
       const configured = new Set(
         typeof tables === "object" && tables !== null ? Object.keys(tables) : [],
       );
-      // A thread's table merges into a same-named one of the user's or the folder's, so that
-      // table's command, headers or token would go with the address the session was given.
       if (o.mcpServer !== undefined && confined === undefined && configured.has(o.mcpServer.name)) {
         return yield* new AgentUnavailable({
           agent: "codex",
@@ -962,25 +874,18 @@ export const makeCodexHost = (
       const mcpServers = {
         ...confined?.mcp_servers,
         ...leftOut,
-        // A thread's own toggle turns a server off, never back on past confinement or the lists.
         ...Object.fromEntries(
           [...overrides]
             .filter(([name, enabled]) => !enabled || (confined === undefined && !(name in leftOut)))
             .map(([name, enabled]) => [name, { enabled }]),
         ),
-        // The one server the session was given by address (`mcpServer`), unless it is confined.
-        // `enabled` because a same-named table of the user's could otherwise switch it off.
         ...(o.mcpServer === undefined || confined !== undefined
           ? {}
           : { [o.mcpServer.name]: { enabled: true, url: o.mcpServer.url } }),
-        // App tools: one MCP server per thread, bound to it by the thread's bearer token. The
-        // registry gates its own tools, so Codex doesn't ask again.
         ...(o.mcp === undefined
           ? {}
           : {
               [APP_TOOLS_NAME]: {
-                // A same-named table in the user's or a project's config merges into this one, and
-                // its `enabled = false` would otherwise take the thread's app tools away.
                 enabled: true,
                 url: o.mcp.url,
                 http_headers: { ...o.mcp.headers },
@@ -1009,12 +914,10 @@ export const makeCodexHost = (
             }
           : {}),
         ...(Object.keys(mcpServers).length === 0 ? {} : { mcp_servers: mcpServers }),
-        // Merged into the user's `[plugins]`, so their other plugins stay as they are.
         ...(noComputerUse === undefined ? {} : { plugins: noComputerUse.plugins }),
         ...(narrowedSurfaces === undefined || Object.keys(narrowedSurfaces.plugins).length === 0
           ? {}
           : { plugins: narrowedSurfaces.plugins }),
-        // A surface turned off denies the whole of it, whatever the lists allow.
         ...(lent && o.browserScope !== undefined ? scopeConfig(o.browserScope) : {}),
         ...narrowedSurfaces?.config,
         ...(confined === undefined ? {} : { apps: confined.apps, features: confined.features }),
@@ -1060,7 +963,6 @@ export const makeCodexHost = (
       const threadId = started.thread.id;
       const rpc = server.rpc;
       if (confined !== undefined) {
-        // No turn has run, so nothing has reached a server yet; one still on refuses the session.
         const left = unconfinedServers(
           yield* listServerStatus(rpc, threadId).pipe(
             Effect.mapError(unavailable("Codex couldn't list its MCP servers")),
@@ -1076,8 +978,6 @@ export const makeCodexHost = (
         }
       }
       if (narrowedRead !== undefined) {
-        // Check named exclusions too: a CLI that ignores an override must not bypass the lists.
-        // Unknown plugin servers have no configured URL, so match their names against the lists.
         const kept = unconfinedServers(
           yield* listServerStatus(rpc, threadId).pipe(
             Effect.mapError(unavailable("Codex couldn't list its MCP servers")),
@@ -1085,8 +985,6 @@ export const makeCodexHost = (
           o.mcp !== undefined,
         ).filter(
           (name) =>
-            // The server the session was given by address is on because it was asked for, and
-            // is its table alone: a configured one of that name was refused above.
             name !== o.mcpServer?.name &&
             (Object.hasOwn(leftOut, name) || (!configured.has(name) && listsLeaveOut(o, { name }))),
         );
@@ -1103,15 +1001,9 @@ export const makeCodexHost = (
       const emit = (event: AgentEvent): void => {
         Queue.offerUnsafe(events, event);
       };
-      /**
-       * Whether something other than the user answers this session's approval requests: the gate
-       * in bypass, or Codex's automatic reviewer in Auto.
-       */
       const answersItself = (): boolean =>
         (gated && gateAnswersInMode(mode)) ||
         (mode === "auto" && autoAvailable(gated, autoReviewer));
-      // As Claude Code does with a mode it can't run: the thread shows what runs, and orchestration
-      // moves a session it opened in `auto` on (`modeAfterDowngrade`).
       if (downgradedAtOpen) emit({ type: "mode", mode });
       const pending = new Map<RequestId, ServerRequest>();
       const run = yield* FiberSet.makeRuntime();
@@ -1127,9 +1019,6 @@ export const makeCodexHost = (
         diagnosticScope,
         diagnosticCwd: o.cwd,
         newMessageId: () => MessageId.make(newId()),
-        // Codex flags `waitingOnApproval` while its automatic reviewer decides too, perhaps before
-        // the review's `started`; only a card is the user's to answer, and a card going up says so
-        // itself (`handleRequest`).
         answersApprovals: () => !cardUp() && (answersItself() || mapper.autoReviewing()),
         gateway: server.gateway,
         onCompaction: (phase) => {
@@ -1146,13 +1035,7 @@ export const makeCodexHost = (
         },
       });
       let turnId: string | undefined;
-      // Notifications and RPC replies share stdio but are consumed by separate fibers. A short
-      // turn can complete before turn/start answers; its late reply must not make it active again.
       let completedTurnId: string | undefined;
-      // A thread the app-server still has loaded takes none of `thread/resume`'s settings: reopened
-      // under a gate it had not had, it kept `never` and ran a push unasked (measured on codex
-      // 0.154.0; its developer instructions and config stay as first given, too). A turn's own
-      // policy does apply, so a resumed session states it with its first turn.
       let policyChanged = o.resumeId !== undefined && o.fork !== true;
       let planned = false;
 
@@ -1201,14 +1084,12 @@ export const makeCodexHost = (
           return;
         }
         pending.set(card.id, request);
-        // Codex's own `waitingOnApproval` flag came before the request and was kept back.
         if (card.kind === "approval" && (gated || answersItself() || mapper.autoReviewing())) {
           for (const event of mapper.awaitingApproval()) emit(event);
         }
         emit({ type: "request", request: card });
       };
 
-      /** The token is stored by now; the thread's servers reload so this one connects with it. */
       const signedIn = (login: McpServerOauthLoginCompletedNotification) => {
         if (login.success) {
           run(
@@ -1282,8 +1163,6 @@ export const makeCodexHost = (
         },
       });
 
-      // The skills Codex finds for the folder: its own, the user's, the repo's and plugins'. Codex
-      // has no slash commands of its own outside its TUI, so these and `/compact` are the list.
       const skills = yield* rpc.request("skills/list", { cwds: [o.cwd] }).pipe(
         Effect.flatMap((listed) =>
           Effect.try(() => {
@@ -1297,7 +1176,6 @@ export const makeCodexHost = (
             return byName;
           }),
         ),
-        // A Codex without skills, or one answering in another shape, offers `/compact` alone.
         Effect.catch(() => Effect.succeed(new Map<string, SlashCommand>())),
       );
       for (const warning of server.warnings)
@@ -1334,7 +1212,6 @@ export const makeCodexHost = (
           model === undefined || model.model === "default" ? started.model : model.model;
         const policy = policyFor(mode, gated, autoReviewer);
         const plan = mode === "plan";
-        // The collaboration mode sticks to the thread, so leaving plan mode has to be said too.
         const collaboration =
           plan || planned
             ? {
@@ -1378,7 +1255,6 @@ export const makeCodexHost = (
           emit({ type: "status", status: "idle" });
         });
 
-      /** A skill is `$name` to Codex, which reads the skill in for the turn as its TUI does. */
       const asSkill = (input: UserInput): UserInput => {
         const name = /^\/(\S+)/.exec(input.text.trim())?.[1];
         return name !== undefined && skills.has(name)
@@ -1438,10 +1314,7 @@ export const makeCodexHost = (
         return rpc.request("turn/start", params).pipe(
           Effect.tap((response) =>
             Effect.sync(() => {
-              // A rejected send applied no settings. Keep the permission change for its retry;
-              // a mode selected while this request was in flight also belongs to the next turn.
               if (sentMode === mode) policyChanged = false;
-              // Collaboration settings stick too: a refused exit from plan mode must be retried.
               planned = sentMode === "plan";
               if (response.turn.id !== completedTurnId) turnId = response.turn.id;
             }),
@@ -1473,14 +1346,10 @@ export const makeCodexHost = (
         configOwner: server,
         events: Stream.fromQueue(events),
         send: (input, options) => send(input, options?.messageId),
-        // A steer joins the running turn or fails, never starting one: the runtime still counts its
-        // turn as running (Codex's end can reach us first), so a turn started here is one it never
-        // tracks, and a refused steer may have been taken. The runtime queues what fails.
         steer: (input) =>
           turnId === undefined
             ? Effect.die(new Error("Codex has no running turn to steer"))
             : rpc
-                // Mid-turn `/compact` stays text: a compaction would be a turn of its own.
                 .request("turn/steer", {
                   threadId,
                   expectedTurnId: turnId,
@@ -1582,8 +1451,6 @@ export const makeCodexHost = (
               serverOverrides.set(o.threadId, next);
               return Effect.succeed("restart" as const);
             }),
-          // Codex runs the whole flow: it listens on its own loopback port for the callback and
-          // keeps the token in this app-server's credential store.
           authenticate: (name) =>
             rpc.request("mcpServer/oauth/login", { name, threadId }).pipe(
               Effect.mapError(unavailable(`Codex couldn't start signing in to ${name}`)),
@@ -1672,12 +1539,6 @@ export const makeCodexHost = (
             .credentials(options.profileId, "codex")
             .pipe(Effect.map(({ profile }) => gatewayAgentModels(profile.models, "codex")));
 
-    /**
-     * Persist on the user's home without reloading any loaded thread. Retire acquisition caches
-     * afterwards: fresh children (gateway copies included) read the changed config, while held
-     * siblings keep their child. An interrupted/failed reply may follow a persisted write, so
-     * cache retirement also runs on that exit; it never forces held sessions to stop.
-     */
     const writeServer = (name: string, entry: Record<string, unknown> | undefined) =>
       Effect.gen(function* () {
         const user = yield* acquireHeld(servers.acquire(undefined, "user"));
@@ -1687,9 +1548,6 @@ export const makeCodexHost = (
         );
       }).pipe(Effect.scoped);
 
-    // The catalog the profile's app-server runs on, gateway clones included; hidden entries count,
-    // since Codex runs them with their own settings too.
-    // A listing that fails part way says nothing, rather than marking the later pages unknown.
     const knownModels = (profileId: ProfileId) =>
       Effect.gen(function* () {
         const { rpc } = yield* acquireHeld(servers.acquire(profileId, "gateway"));
@@ -1754,7 +1612,6 @@ export const makeCodexHost = (
       readSubscriptionLimits: Effect.gen(function* () {
         const server = yield* acquireHeld(servers.acquire(undefined, "user"));
         const account = yield* server.rpc.request("account/read", { refreshToken: false });
-        // API keys and gateways never stand in for a subscription; the CLI owns authentication.
         if (account.account === null || account.account.type !== "chatgpt") return [];
         return codexSubscriptionLimits(
           yield* server.rpc.request("account/rateLimits/read", undefined),
@@ -1790,15 +1647,11 @@ export const makeCodexHost = (
               includeLayers: false,
               ...(cwd === undefined ? {} : { cwd }),
             });
-            // Listing statuses makes Codex start and connect every server, so only when asked to.
             const auth = checkSignIn
               ? new Map((yield* listServerStatus(rpc)).map((s) => [s.name, s.authStatus]))
               : undefined;
             return configuredServers(read, auth);
           }).pipe(Effect.scoped, Effect.mapError(asUnavailable)),
-        // Codex keeps the token in the OS keyring by server name and URL, so a sign-in made on the
-        // user's app-server holds for the gateway home's too.
-        // It runs on beside the host until the user is done, bounded by `SIGN_IN_WAIT`.
         signIn: (name) =>
           Effect.gen(function* () {
             const started = yield* Deferred.make<
@@ -1821,7 +1674,6 @@ export const makeCodexHost = (
       invalidateRuntime: servers.retireAll,
       reloadConfig: servers.retire,
       reloadAllConfig: servers.retireAll,
-      // The user's own CODEX_HOME and the gateway home each hold their own threads.
       listSessions: ({ cwd, limit }) =>
         Effect.forEach(servers.homes, (home) =>
           Effect.scoped(
@@ -1842,9 +1694,6 @@ export const makeCodexHost = (
             return limit === undefined ? all : all.slice(0, limit);
           }),
         ),
-      // Codex reads any thread of a home whatever folder asks, so the folder is checked here. An id
-      // a home doesn't have is an error from `thread/read` ("thread not loaded", "invalid thread
-      // id"), which only means: look in the other home.
       readSession: ({ cwd, agentSessionId, limit }) =>
         Effect.gen(function* () {
           for (const home of servers.homes) {

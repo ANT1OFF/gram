@@ -27,9 +27,6 @@ import type { DocCardData } from "./docs.ts";
 import type { MockCardData } from "./mock-visuals.ts";
 import type { WrapUpData } from "./wrap-up.ts";
 
-// ---------------------------------------------------------------------------------------------
-// Metadata and data parts
-
 export const TurnEndReason = Schema.Literals(["completed", "interrupted", "error", "maxTurns"]);
 export type TurnEndReason = typeof TurnEndReason.Type;
 
@@ -307,9 +304,6 @@ export type DataParts = {
   "wrap-up": WrapUpData;
 };
 
-// ---------------------------------------------------------------------------------------------
-// Claude built-in tools (Agent SDK 0.3.272 `sdk-tools.d.ts`, trimmed to what the UI renders)
-
 export interface StructuredPatchHunk {
   oldStart: number;
   oldLines: number;
@@ -486,11 +480,6 @@ export interface TodoWriteOutput {
   newTodos: TodoItem[];
 }
 
-/**
- * A subagent's tool result arrives as plain text: the Claude Code SDK sends no `tool_use_result`
- * on a sidechain message, so the Claude mapper falls back to the result text. Each declared output
- * is what the main lane sends, and `string` is what a subagent sends instead.
- */
 type WithResultText<T extends Record<string, { input: unknown; output: unknown }>> = {
   [K in keyof T]: { input: T[K]["input"]; output: T[K]["output"] | string };
 };
@@ -508,9 +497,6 @@ export type ClaudeTools = WithResultText<{
   WebSearch: { input: WebSearchInput; output: WebSearchOutput };
   TodoWrite: { input: TodoWriteInput; output: TodoWriteOutput };
 }>;
-
-// ---------------------------------------------------------------------------------------------
-// Messages and chunks
 
 export type GramUIMessage = UIMessage<MessageMetadata, DataParts, ClaudeTools>;
 export type GramUIMessageChunk = InferUIMessageChunk<GramUIMessage>;

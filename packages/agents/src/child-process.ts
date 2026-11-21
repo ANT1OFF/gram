@@ -32,20 +32,12 @@ export const spawnServe = (
     windowsHide: true,
     shell: invocation.shell,
   });
-  // Observe the whole owned lifetime, before host exit listeners remove the child from their set.
-  // stopChild's separate observer still records forced cleanup; a natural exit may never reach it.
   child.once("exit", () => recordShutdownExit(child, false));
   ownAgentChild(child, "serve");
   return child;
 };
 
-/**
- * Every agent process the server owns and hasn't seen exit: `serve` children (the `codex`
- * app-server) are stopped with `stopChild`; `session` children (a Claude Code CLI) end with the
- * session that started them. An update attests that none is left (`stopOwnedAgentsForUpdate`).
- */
 const ownedAgents = new Map<ChildProcess, "serve" | "session">();
-/** What each owned agent process was, kept past its exit for the shutdown check's report. */
 const agentKinds = new WeakMap<ChildProcess, "serve" | "session">();
 
 /**
@@ -69,7 +61,6 @@ export const ownAgentChild = (
   agentKinds.set(child, kind);
   child.once("exit", (code) => {
     ownedAgents.delete(child);
-    // A signalled child's code is null, which no clean exit is.
     if (kind === "session" && code !== cleanExit()) notOrderly(child, false);
   });
 };
@@ -123,8 +114,6 @@ export const stopOwnedAgentsForUpdate = async (
   return runningOwnedAgents();
 };
 
-// Process-local shutdown observation, enabled only by the server's shutdown request. It leaves
-// normal quit's cleanup behavior intact while making forced/crashed owned-child exits observable.
 interface ShutdownCheck {
   orderly: boolean;
   readonly exits: Array<NotOrderlyExit>;
@@ -140,7 +129,6 @@ export interface NotOrderlyExit {
   readonly forced: boolean;
 }
 
-/** At most this many exits are kept for the shutdown's log line. */
 const MAX_NOT_ORDERLY = 8;
 
 const notOrderly = (child: ChildProcess, forced: boolean) => {
@@ -199,7 +187,6 @@ export const stopChildForSwitch = (child: ChildProcess, graceMs = 3_000): Promis
   if (!isRunning(child)) return Promise.resolve(true);
   protectChildForSwitch(child);
   switchStopping.add(child);
-  // Windows' process termination is forced even for SIGTERM. No switch qualification there yet.
   if (process.platform === "win32") return Promise.resolve(false);
   return new Promise((resolve) => {
     stoppingChildren.add(child);
@@ -214,7 +201,6 @@ export const stopChildForSwitch = (child: ChildProcess, graceMs = 3_000): Promis
       resolve(false);
     }, graceMs);
     child.once("exit", exited);
-    // Ignore the return value: acceptance of a signal is not proof of process exit.
     child.kill("SIGTERM");
   });
 };

@@ -113,7 +113,6 @@ function WorkspaceList() {
   );
 }
 
-/** One workspace: what it is and how it runs, at a glance, with its settings a click away. */
 function WorkspaceRow({
   state,
   projects,
@@ -125,7 +124,6 @@ function WorkspaceRow({
   const openBoard = useOpenBoard();
   const { workspace, charter, paused } = state;
   const changes = useWorkspaceChanges(state);
-  // How many of its workers work now, by their tones, as the overview's line counts them.
   const ledger = useOrchestratorLedger(workspace.id).data;
   const asks = useWorkspaceAsks();
   const asking = useMemo(
@@ -197,8 +195,6 @@ function WorkspaceRow({
               <span className="font-medium">{workspace.name}</span>
               <AutonomyChip autonomy={autonomyOf(charter)} testId="workspace-autonomy" />
             </span>
-            {/* Its state, how many work and its repositories on one line under the name. Beside
-                the name they wrapped on a phone, the count starting a line with its dot. */}
             <span className="flex min-w-0 items-center gap-x-1.5 text-meta text-muted-foreground">
               {paused !== undefined ? (
                 <span
@@ -227,7 +223,6 @@ function WorkspaceRow({
               variant="outline"
               disabled={changes.busy}
               onClick={() => void changes.openOrchestrator()}
-              // On a phone the button says Open, which leaves the row's line room for its words.
               aria-label="Open orchestrator"
             >
               <span>
@@ -247,7 +242,6 @@ function WorkspaceRow({
   );
 }
 
-/** What holds for every workspace: restarts, connectors and the starting roster. */
 function Defaults({ settings }: { settings: Settings }) {
   const save = useSaveSettings();
   const [continueError, setContinueError] = useState<string>();
@@ -377,7 +371,6 @@ function Defaults({ settings }: { settings: Settings }) {
   );
 }
 
-/** A roster in a line: `Claude opus, Codex gpt-6.1-sol`. */
 const rosterLine = (models: readonly WorkerModel[]): string =>
   models.length === 0
     ? "None: workers run on the orchestrator's model."
@@ -387,7 +380,6 @@ const rosterLine = (models: readonly WorkerModel[]): string =>
         )
         .join(", ");
 
-/** The worker models a new workspace starts with, copied from a workspace; none until then. */
 function StartingRosterRow({ settings }: { settings: Settings }) {
   const api = useApi();
   const save = useSaveSettings();

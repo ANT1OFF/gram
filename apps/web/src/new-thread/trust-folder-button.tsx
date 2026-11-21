@@ -12,7 +12,6 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { FolderTrustQuestion } from "./folder-trust-question";
 
-/** The project whose row is asking unprompted, so only one asks at a time. */
 let asking: string | undefined;
 const claims = (id: string) => {
   asking ??= id;

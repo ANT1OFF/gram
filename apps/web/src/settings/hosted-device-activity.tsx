@@ -28,7 +28,6 @@ export function Drawn({ text }: { text: string }) {
           piece.text
         ) : (
           <span
-            // The pieces are fixed for one text; their place is their identity.
             key={index}
             data-drawn={piece.kind}
             className="mx-px rounded-sm bg-muted px-0.5 text-warning not-italic"
@@ -42,7 +41,6 @@ export function Drawn({ text }: { text: string }) {
   );
 }
 
-/** Why Gram itself refused, after "Gram refused". */
 const GRAM_REFUSED: Record<
   Exclude<DeviceRefusalReason, "not-allowed-by-person" | "not-answered">,
   string
@@ -98,7 +96,6 @@ function AskedFor({ entry }: { entry: Entry }) {
   );
 }
 
-/** The workspace's name as the server lists it now, else its id. */
 const workspaceName = (view: HostedDeviceView, entry: Entry): string =>
   view.servers
     .find((server) => server.origin === entry.origin)
@@ -122,8 +119,6 @@ export function HostedDeviceActivityList({
   const [activity, setActivity] = useState<HostedDeviceActivity | null>();
   useEffect(() => {
     if (!open) return undefined;
-    // One read at a time, and at most one a second: each reads the whole record, and a busy
-    // server changes it with every request. A change during a read reads again after it.
     let live = true;
     let busy = false;
     let again = false;
@@ -238,7 +233,6 @@ function ActivityBody({
             <tbody>
               {activity.entries.map((entry, index) => (
                 <tr
-                  // Lines have no id of their own; their order is fixed, newest first.
                   key={`${entry.time}-${index}`}
                   className="border-t border-border align-top"
                   data-testid="activity-row"

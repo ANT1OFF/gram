@@ -1,14 +1,3 @@
-// `POST /threads/send-check` and `POST /threads/send`: New task sending a task to a hosted
-// workspace (docs/design/mocks/hosted-send-and-move, v1, board 1). The check answers where work
-// may go and what New task's three checks need: whether the server reaches the repository (asked
-// of it, `SentWorkPortShape.check`), whether what the worker starts from is pushed, and what stays
-// uncommitted here. The send makes the task the workspace orchestrator's worker on that server
-// (`sendWorker`), as `send_worker` would, by the person's own say. Only the local app reaches them
-// (`http/remote-access.ts`); while the hosted features setting is off they answer as a path that
-// isn't there. `POST /threads/send-machine` starts the person's own machine there for a send with
-// none running and says how it stands (`embedding/hosted-machine.ts`): New task asks it again until
-// the machine runs, then sends.
-
 import { embeddingOn, type ProjectId, type WorkspaceId } from "@gram/contracts";
 import { git, Proc } from "@gram/git";
 import * as ByteSize from "effect/ByteSize";
@@ -102,7 +91,6 @@ export const localChecks = (root: string): Effect.Effect<LocalChecks, never, Pro
         : Number(
             (yield* out(root, ["rev-list", "--count", `refs/remotes/origin/${branch}..HEAD`])) ?? 0,
           );
-    // Each line is two status letters and a space before the path: never trimmed.
     const status = (yield* raw(root, ["status", "--porcelain"])) ?? "";
     const lines = status.split("\n").filter((line) => line.length > 3);
     return {
@@ -120,10 +108,8 @@ const refuse = (message: string, status: number) =>
   HttpServerResponse.jsonUnsafe({ error: message }, { status });
 const notThere = HttpServerResponse.text("not found", { status: 404 });
 
-/** The body as JSON, or the response that refuses it. */
 const jsonBody = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
-  // A form or a plain-text post from another page is never one of these.
   if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json"))
     return { refused: refuse("Send the body as application/json.", 415) };
   const text = yield* request.text.pipe(
@@ -142,7 +128,6 @@ const jsonBody = Effect.gen(function* () {
 
 const NOT_ONE = "That isn't a request New task sends.";
 
-/** The workspace's project, by id, with the workspace's orchestrator. */
 const projectIn = (store: ThreadStoreShape, workspaceId: string, projectId: string) =>
   Effect.gen(function* () {
     const state = yield* store.getWorkspace(workspaceId as WorkspaceId).pipe(Effect.option);
@@ -169,7 +154,6 @@ export const SentWorkRoutes = Layer.unwrap(
     const guard = (path: string) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
-        // Only under its one spelling: the checks above this route match the path exactly.
         if (authTarget(request.url)?.path !== path) return notThere;
         if (!(yield* on) || !port.available || orchestration === undefined) return notThere;
         if (request.method !== "POST")
@@ -205,8 +189,6 @@ export const SentWorkRoutes = Layer.unwrap(
                 each.origin === input.target?.origin &&
                 each.workspaceId === input.target.workspaceId,
             );
-      // Whether the server reaches the repository, and how the person's own machine there stands:
-      // both read, neither changes anything there.
       const [reach, machine] =
         picked === undefined
           ? [undefined, undefined]
@@ -225,8 +207,6 @@ export const SentWorkRoutes = Layer.unwrap(
         ...(repository === undefined ? {} : { repository }),
         orchestrator: found.state.workspace.orchestratorThreadId !== undefined,
         local,
-        // A check the server couldn't make (an older server, or one that failed) says nothing:
-        // the send is still the server's to refuse.
         ...(reach?.ok === true
           ? { reach: reach.reach.items[0] ?? { repository, reach: "unknown" } }
           : {}),
@@ -273,8 +253,6 @@ export const SentWorkRoutes = Layer.unwrap(
       );
     });
 
-    // Each target's start, while it runs and once it ended: asked again, a running one is only
-    // read, and an ended one is made again (which only reads a machine that runs).
     const root = yield* Effect.scope;
     const starts = new Map<string, { progress: HostedMachineProgress; running: boolean }>();
     const machine = Effect.gen(function* () {
@@ -311,7 +289,6 @@ export const SentWorkRoutes = Layer.unwrap(
         ),
         Effect.forkIn(root),
       );
-      // The first reading, so a machine that runs answers ready at once.
       yield* Effect.yieldNow;
       return HttpServerResponse.jsonUnsafe(entry.progress);
     });

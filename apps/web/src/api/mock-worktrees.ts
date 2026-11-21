@@ -8,8 +8,6 @@ import {
 } from "./mock-worktrees-many";
 import type { RemoveWorktreeOptions } from "./types";
 
-// Worktrees without a thread (status, removal) and PR binding for MockApi.
-
 /** The thread-less worktree every seeded project lists; it has uncommitted and unmerged work. */
 export const MOCK_EXPERIMENT: MockExtraWorktree = {
   folder: "cache-experiment",

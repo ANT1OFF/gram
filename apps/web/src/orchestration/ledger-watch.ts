@@ -1,9 +1,5 @@
 import type { OrchestratorLedger, WorkspaceId } from "@gram/contracts";
 
-// One `watchLedger` stream per workspace however many views show it: the sidebar tree, the board and
-// a worker's banner all read the same ledger. Counted like `useThreadFeed`'s feeds, and with no React
-// in it so the counting is tested without a browser. `watchFeatureCards` streams are counted the same.
-
 export interface LedgerWatchOptions<T = OrchestratorLedger> {
   /** Opens the stream; iteration ends when `signal` aborts. */
   readonly open: (workspaceId: WorkspaceId, signal: AbortSignal) => AsyncIterable<T>;
@@ -58,8 +54,6 @@ export function createLedgerWatch<T = OrchestratorLedger>({
       } catch (error) {
         if (!entry.abort.signal.aborted) console.error("ledger watch", workspaceId, error);
       }
-      // A stream that ended by itself (the workspace went) frees its slot, so a later viewer of a
-      // workspace made again under the same id opens a new one.
       if (entries.get(workspaceId) === entry && !entry.abort.signal.aborted) {
         clearTimeout(entry.evict);
         entries.delete(workspaceId);

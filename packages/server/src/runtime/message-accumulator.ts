@@ -3,10 +3,6 @@ import type { GramUIMessage, GramUIMessageChunk } from "@gram/contracts";
 type Part = Record<string, unknown> & { type: string };
 type LooseChunk = Record<string, unknown> & { type: string };
 
-/**
- * Folds `UIMessageChunk`s into a `UIMessage` the way the AI SDK's `readUIMessageStream` does, but
- * synchronously, so the runtime can persist a snapshot the moment a part completes.
- */
 const streaming = (parts: Map<string, Part>) =>
   [...parts.values()].some((part) => part["state"] === "streaming");
 
@@ -198,7 +194,6 @@ export class MessageAccumulator {
     const incoming = metadata as Record<string, unknown>;
     const previousIds = this.metadata?.["agentMessageIds"];
     this.metadata = { ...this.metadata, ...incoming };
-    // Agent message ids accumulate across chunks (one per SDK content block), in order.
     if (Array.isArray(previousIds) && Array.isArray(incoming["agentMessageIds"])) {
       this.metadata["agentMessageIds"] = [
         ...new Set([

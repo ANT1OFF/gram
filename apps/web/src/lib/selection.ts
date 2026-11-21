@@ -1,6 +1,3 @@
-// One selection and focus style, everywhere: the utilities and tokens behind these are in
-// styles/globals.css and styles/tokens.css, and DESIGN.md says where each goes.
-
 /** Keyboard focus on a control: the focus-ring token outside it, nothing for a pointer. */
 export const FOCUS_RING = "outline-none focus-visible:focus-ring";
 

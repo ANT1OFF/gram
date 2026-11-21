@@ -1,8 +1,3 @@
-/**
- * The theme values a widget may use, by the name it uses them under. An SVG inside `<img>` is its
- * own document and inherits nothing from the page, so the values are resolved here and written into
- * it; that isolation is also why the markup needs no sanitising.
- */
 const WIDGET_TOKENS = {
   "--fg": "--fg",
   "--fg-muted": "--fg-muted",
@@ -30,11 +25,6 @@ export const readWidgetTheme = (root: Element): Partial<WidgetTheme> => {
   return theme;
 };
 
-/**
- * Where the tag opening at `from` ends (exclusive), or -1. Quote-aware, because an attribute value
- * may hold a `>`: cutting at the one in `aria-label="latency > target"` would put the style inside
- * the attribute and leave `<img>` with malformed XML and nothing to draw.
- */
 const tagEnd = (text: string, from: number): number => {
   let quote: string | undefined;
   for (let i = from; i < text.length; i++) {
@@ -50,10 +40,6 @@ const tagEnd = (text: string, from: number): number => {
   return -1;
 };
 
-/**
- * Where the root element starts: past the XML declaration, comments and a doctype. Searching the
- * text for `<svg` instead would find the one in `<!-- source: <svg> -->` and theme the comment.
- */
 const rootStart = (svg: string): number => {
   let i = 0;
   for (;;) {
@@ -84,7 +70,6 @@ export const themedSvg = (svg: string, theme: Partial<WidgetTheme>): string => {
   const start = rootStart(svg);
   if (!/^<svg[\s>/]/i.test(svg.slice(start, start + 5))) return svg;
   const at = tagEnd(svg, start);
-  // A self-closing root has nowhere to put a style, and nothing to colour either.
   if (at === -1 || svg[at - 2] === "/") return svg;
   return `${svg.slice(0, at)}<style>:root{${declarations}}</style>${svg.slice(at)}`;
 };

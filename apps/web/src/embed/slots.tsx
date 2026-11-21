@@ -31,9 +31,6 @@ import {
   useThreadsTitle,
 } from "./store";
 
-// The places in Gram's shell an app in front of it may fill. Each draws nothing until something was
-// added (`mountGram`), which never happens in Gram on its own.
-
 /** The embedding app's switcher, where the shell has room for one. */
 export function EmbedSwitcher({
   placement,
@@ -44,7 +41,6 @@ export function EmbedSwitcher({
 }) {
   const switcher = useEmbedShell((s) => s.workspaceSwitcher);
   const inTitlebar = useEmbedShell((s) => s.sidebar.switcher === "titlebar");
-  // Kept to the title bar, the navigation draws none.
   if (switcher === undefined || (inTitlebar && placement !== "titlebar")) return null;
   return (
     <div
@@ -52,7 +48,6 @@ export function EmbedSwitcher({
       data-placement={placement}
       className={cn("flex min-w-0 shrink-0 [-webkit-app-region:no-drag]", className)}
     >
-      {/* The embedding app's own component, held in the store: the same one from render to render. */}
       {createElement(switcher, { placement })}
     </div>
   );
@@ -80,7 +75,6 @@ export function useCurrentDestination(): string | undefined {
 /** The added pages take their path as a string: the router's typed `to` knows only Gram's own. */
 export const linkTo = (to: string) => ({ to }) as unknown as { to: "/" };
 
-/** A first letter, where a destination brought no icon. */
 function Monogram({ label, className }: { label: string; className?: string }) {
   return (
     <span aria-hidden className={cn("grid place-items-center text-caption font-medium", className)}>
@@ -118,12 +112,6 @@ export const spokenStatus = (item: ShellNavigationItem, name: string): string =>
 /** The ground a mark's status dot is ringed in: the sidebar's own. */
 export const MARK_GROUND = "[--mark-ground:var(--color-sidebar)]";
 
-/**
- * A navigation row: its fill and colour ease in on hover, and it gives a little when pressed, under
- * the Motion setting. The current row's fill is the list's `Glide`, which moves between rows.
- */
-// The current page's glyph takes the accent, the colour of the current place; its words and fill
-// stay as they were, so the place never rests on colour alone.
 const NAV_ROW =
   "relative flex h-8 min-w-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-muted-foreground outline-none [:where(&)_svg]:text-sidebar-icon transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:text-foreground aria-[current=page]:[&_svg]:text-primary aria-[current=page]:hover:bg-transparent in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2";
 
@@ -197,7 +185,6 @@ export function EmbedAccount({ className }: { className?: string }) {
   );
 }
 
-/** A row's count, at its end. */
 function Count({ count }: { count: number | undefined }) {
   const shown = shownCount(count);
   if (shown === undefined) return null;
@@ -223,8 +210,6 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
     placement,
   );
   const roomy = useRoomySidebar();
-  // The row the window is on is brought into view when the window gets there, and when the list
-  // first shows: in a short window it may be below the fold.
   const list = useRef<HTMLElement>(null);
   const at = useCurrentDestination();
   useEffect(() => {
@@ -246,12 +231,9 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
         "relative flex shrink-0 flex-col text-body",
         MARK_GROUND,
         roomy ? "gap-0" : "gap-tight",
-        // In the list it scrolls with the rest, a list's step from what follows; at the foot it
-        // is a block of its own, ruled off from the list above.
         !main && "border-t border-border px-inset py-tight",
       )}
     >
-      {/* The current row's fill, the hover's shape and a step stronger, gliding from row to row. */}
       <Glide />
       {groups.map((group) => (
         <EmbedGroup key={group.id} group={group} roomy={roomy} at={at} />
@@ -260,11 +242,6 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
   );
 }
 
-/**
- * One navigation group in the open sidebar: its heading, when it has one, and its rows. A
- * collapsible group's heading is a button that opens and closes it; closed, it keeps the row the
- * window is at, and the heading counts what it hides.
- */
 function EmbedGroup({
   group,
   roomy,
@@ -281,8 +258,7 @@ function EmbedGroup({
   const page = headingTo(group);
   const pathname = usePathname();
   const heading = roomy
-    ? // Small capitals, letter-spaced, with air above: a quiet label for what follows.
-      "flex h-5 items-end px-2 pt-3 pb-1 text-caption font-medium tracking-[0.08em] text-muted-foreground uppercase box-content"
+    ? "flex h-5 items-end px-2 pt-3 pb-1 text-caption font-medium tracking-[0.08em] text-muted-foreground uppercase box-content"
     : "flex h-6 items-center px-1.5 text-meta text-muted-foreground";
   return (
     <section
@@ -351,9 +327,6 @@ function EmbedGroup({
               onClick={fold.toggle}
               className={cn(
                 heading,
-                // The heading's 20 px and its 4 px below, counted inside its width: a content-box
-                // button at full width would stand out past the sidebar by its padding and scroll
-                // the sidebar sideways.
                 roomy && "box-border h-6 pt-0",
                 "w-full gap-1 rounded-(--radius-sm) text-left outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
               )}
@@ -422,7 +395,6 @@ function EmbedGroup({
 export const RAIL_TILE =
   "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none [:where(&)_svg]:text-sidebar-icon transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground aria-[current=page]:[&_svg]:text-primary aria-expanded:text-foreground";
 
-/** A rail tile in a list whose current fill is its `Glide`. */
 const GLIDE_TILE = cn(
   RAIL_TILE,
   "aria-[current=page]:bg-transparent aria-[current=page]:hover:bg-transparent",
@@ -519,7 +491,6 @@ export function EmbedRailNavigation({
             return (
               <Hint
                 key={item.id}
-                // The strip's own words are the place's name alone; the group is its neighbours'.
                 label={quiet ? item.label : spoken}
                 side="right"
                 disabled={stripOpen}
@@ -559,9 +530,7 @@ export function EmbedRailNavigation({
 export function useEmbedPageTitle(): string | undefined {
   const titles = useEmbedShell((s) => s.titles);
   const missing = useShowingNotFound();
-  // Gram's own page that names itself in the title bar as an added page does: in no workspace.
   const threads = useThreadsTitle();
-  // The deepest match is the page; its `fullPath` is the path the page was added under.
   const path = useMatches({ select: (matches) => matches.at(-1)?.fullPath as string | undefined });
   if (missing && Object.keys(titles).length > 0) return "Not found";
   return path === undefined
@@ -586,7 +555,6 @@ export function EmbedPageTitle({ title }: { title: string }) {
   return (
     <h1
       data-testid="embed-page-title"
-      // Keyed by the title where it is drawn: a new page's name fades in where the last one was.
       className="gram-fade min-w-0 truncate px-2 text-body font-medium text-foreground"
     >
       {title}

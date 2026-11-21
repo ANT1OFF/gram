@@ -26,10 +26,6 @@ export const sessionHandlers = Effect.gen(function* () {
     ),
   );
 
-  /**
-   * The sessions of threads, open or closed, the caller may not see (`embedding/readable-by.ts`):
-   * their transcripts are those threads', so they are neither listed, previewed nor deleted.
-   */
   const unreadableSessions = Effect.gen(function* () {
     const hidden = new Set<string>();
     if (!anyPrivate()) return hidden;

@@ -12,11 +12,9 @@ import {
 
 import type { SpeechAccuratePaths, SpeechModelPaths } from "../../speech-process/protocol.ts";
 
-/** The recogniser this shell runs; a model for another is refused rather than half-loaded. */
 const RECOGNIZER_KIND = "sherpa-onnx-online-transducer";
 const OFFLINE_KIND = "sherpa-onnx-offline-transducer";
 const VAD_KIND = "sherpa-onnx-silero-vad";
-/** The chunk of a manifest that names none: the first export's, 560 ms. */
 const DEFAULT_CHUNK_MS = 560;
 
 export type SpeechModelResolution =
@@ -36,13 +34,11 @@ export const nodeModelFs: ModelFs = {
   realpath: (path) => realpath(path),
 };
 
-/** Whether `path` lies strictly inside `dir`; both already canonical. */
 const isInside = (dir: string, path: string): boolean => {
   const inside = relative(dir, path);
   return inside !== "" && !inside.startsWith("..") && !isAbsolute(inside);
 };
 
-/** `path` with its symlinks resolved, if that is still inside `dir`; else undefined. */
 const realInside = async (fs: ModelFs, dir: string, path: string) => {
   try {
     const real = await fs.realpath(path);
@@ -61,7 +57,6 @@ const missing = (message: string): SpeechModelResolution => ({
 const field = (value: unknown, key: string): unknown =>
   typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
 
-/** An installed model's directory, what its `verified.json` says, and each file's verified size. */
 interface Verified {
   readonly dir: string;
   readonly recognizer: unknown;
@@ -86,7 +81,6 @@ const readVerified = async (
   try {
     verified = JSON.parse(await fs.readFile(manifest));
   } catch {
-    // Still being written, or not the server's: either way the model isn't installed.
     return undefined;
   }
   const files = field(verified, "files");
@@ -101,7 +95,6 @@ const readVerified = async (
   return { dir, recognizer: field(verified, "recognizer"), sizes };
 };
 
-/** The file a recogniser names for `role`, or why it isn't the file that was verified. */
 const verifiedFile = async (
   fs: ModelFs,
   { dir, recognizer, sizes }: Verified,

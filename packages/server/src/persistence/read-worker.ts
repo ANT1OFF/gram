@@ -1,20 +1,3 @@
-/**
- * Long read-only queries on a second, read-only connection on a worker thread, so a global search
- * or a usage overview never holds the event loop while SQLite works. `node:sqlite` is synchronous:
- * on the main connection, a search over a large history took 200–300 ms, and every socket, stream
- * and timer of the server waited for it.
- *
- * Only reads that can tolerate a snapshot go here: WAL gives the worker every transaction committed
- * before its statement starts, never one in progress, so a read sees what an ordinary read on the
- * main connection between two commits would. Nothing here writes: the connection is opened
- * read-only and `query_only`.
- *
- * The server's own database file only (`ThreadStore.layerSqlite` with `checkpointOffLoop`). Without
- * the layer (tests, `:memory:`), or once the worker fails, {@link readOffLoop} runs the statement on
- * the main connection, as before this module.
- *
- * The worker is plain JavaScript in a string, so a bundler has nothing to resolve or rewrite in it.
- */
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -24,13 +7,10 @@ import { UnknownError } from "effect/sql/SqlError";
 import { SqlClient, SqlError } from "../platform/unstable.ts";
 import * as UpdateSeal from "./update-seal.ts";
 
-/** How long the worker's statement waits on a lock (a checkpoint's) before it fails. */
 const BUSY_TIMEOUT_MS = 1_000;
 
-/** How many prepared statements the worker keeps; the callers' SQL texts are a handful. */
 const STATEMENT_CACHE = 32;
 
-/** How long shutdown waits for the worker to close its connection before terminating it. */
 const STOP_TIMEOUT_MS = 2_000;
 
 const WORKER_SOURCE = String.raw`
@@ -87,7 +67,6 @@ type Reply =
   | { readonly kind: "error"; readonly id: number; readonly message: string };
 
 interface ReadWorkerShape {
-  /** The rows of `sql` with `params`, read on the worker; undefined when the worker can't. */
   readonly all: (
     sql: string,
     params: ReadonlyArray<unknown>,
@@ -98,7 +77,6 @@ export class ReadWorker extends Context.Service<ReadWorker, ReadWorkerShape>()(
   "@gram/server/ReadWorker",
 ) {}
 
-/** A request waiting for the worker, or the one it is running. */
 interface Request {
   readonly id: number;
   readonly sql: string;
@@ -118,19 +96,13 @@ export const layer = (filename: string): Layer.Layer<ReadWorker> =>
     Effect.gen(function* () {
       let usable = true;
       let sequence = 0;
-      /**
-       * One statement runs at a time, sent only when the one before it has answered: a read
-       * interrupted while it waits (a search typed over) is dropped before the worker sees it.
-       */
       const queue: Array<Request> = [];
       let running: Request | undefined;
       const spawned = new Worker(WORKER_SOURCE, {
         eval: true,
         workerData: { filename, busyTimeoutMs: BUSY_TIMEOUT_MS, statementCache: STATEMENT_CACHE },
       });
-      // A read worker never keeps the server alive.
       spawned.unref();
-      // Listened for from the start: a worker that can't open the file exits before any stop.
       const exited = Promise.withResolvers<void>();
       const settleAll = () => {
         usable = false;
@@ -162,10 +134,8 @@ export const layer = (filename: string): Layer.Layer<ReadWorker> =>
         exited.resolve();
       });
       let stopping: Promise<void> | undefined;
-      /** Lets the running statement finish, closes the connection and ends the thread, once. */
       const stop = () =>
         (stopping ??= (async () => {
-          // Reads from here on go to the main connection.
           usable = false;
           for (const request of queue.splice(0)) request.settle(undefined);
           // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node worker_threads has no origin argument.
@@ -205,7 +175,6 @@ export const layer = (filename: string): Layer.Layer<ReadWorker> =>
             };
             queue.push(request);
             next();
-            // Waiting, it is dropped; running, the worker finishes it and its answer goes unread.
             return Effect.sync(() => {
               const at = queue.indexOf(request);
               if (at >= 0) queue.splice(at, 1);

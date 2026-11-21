@@ -44,7 +44,6 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
   const [showProblem, setShowProblem] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Choosing another palette in the picker restarts the draft from it.
   if (active && base !== active.id) {
     setBase(active.id);
     setSeeds({ ...active.seeds });
@@ -225,7 +224,6 @@ function SeedField({
   const id = useId();
   const [text, setText] = useState(value);
   const [shown, setShown] = useState(value);
-  // A swatch pick or reset replaces whatever was typed.
   if (shown !== value) {
     setShown(value);
     setText(value);

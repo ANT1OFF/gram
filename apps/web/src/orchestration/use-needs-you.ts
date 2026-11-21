@@ -30,11 +30,6 @@ import {
 import { useOpenQuestionsOf } from "./use-board-actions";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
-// The one list of what needs the user (needs-you-items.ts), and the one place it opens: the Inbox
-// (inbox/inbox-view.tsx), from the title bar's Inbox button, the sidebar's pill, ⌘⇧I and ⌘⌥3.
-// ⌘⇧U and ⌘⇧Y walk the list, each step opening its item's thread at the turn that asked.
-
-/** An item put away for Later, with the epoch ms it comes back. */
 interface LaterItem {
   readonly item: NeedsYouItem;
   readonly wakes: number;
@@ -69,13 +64,11 @@ export function NeedsYouSource(): null {
   const workspaces = useWorkspaces();
   const workspaceIds = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
   const questions = useOpenQuestionsOf(workspaceIds);
-  // The workers' questions forwarded to the user ride on each workspace's ledger.
   const ledgers = useOrchestratorLedgers(workspaceIds);
   const { data: projects = NO_PROJECTS } = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
   });
-  // Before paint, so a view reading the lists never shows a frame behind what was fetched.
   useLayoutEffect(() => {
     useDerivedAsks.getState().setQueried({ workspaces, questions, ledgers, projects });
   }, [workspaces, questions, ledgers, projects]);
@@ -151,7 +144,6 @@ export function useNeedsYouStep(items: readonly NeedsYouItem[]) {
   };
 }
 
-/** What ⌘⇧U and ⌘⇧Y run, which the palette's Next runs too; set by the shell's `NeedsYouShortcut`. */
 let stepper: ((by: 1 | -1) => void) | undefined;
 export const setNeedsYouStepper = (next: (by: 1 | -1) => void) => {
   stepper = next;
@@ -177,7 +169,6 @@ export function useNeedsYouIn(scope: NeedsYouScope): {
   readonly elsewhere: readonly NeedsYouItem[];
 } {
   const { groups } = useNeedsYouList();
-  // A new object for the same workspace is the same scope.
   const kind = typeof scope === "string" ? scope : "workspace";
   const workspaceId = typeof scope === "string" ? undefined : scope.workspaceId;
   return useMemo(() => {

@@ -10,17 +10,10 @@ import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import { DAY_MS } from "../zone-time.ts";
 
-/** As long as a call may wait: the MCP client's own default gives up after a minute. */
 const CALL_TIMEOUT_MS = DAY_MS;
 
-/** Statuses whose responses carry no body, which `Response` refuses one for. */
 const NO_BODY = new Set([101, 103, 204, 205, 304]);
 
-/**
- * `fetch` over Node's own HTTP client, which has no limit on waiting for a response's headers. The
- * endpoint answers a call only once the tool returns, and a tool can wait on an approval card for as
- * long as the user takes, where the global `fetch` gives up after five minutes.
- */
 const untimedFetch = (input: string | URL, init?: RequestInit): Promise<Response> =>
   new Promise((resolve, reject) => {
     const target = new URL(input);
@@ -76,7 +69,6 @@ export const appToolsAt = (
             requestInit: { headers: { ...endpoint.headers } },
             fetch: untimedFetch,
           });
-          // The SDK's optional members don't satisfy `exactOptionalPropertyTypes`.
           await next.connect(transport as Transport);
           return next;
         },
@@ -100,7 +92,6 @@ export const appToolsAt = (
         (await client.callTool(
           { name, arguments: (args ?? {}) as Record<string, unknown> },
           undefined,
-          // A call can wait on an approval card for as long as the user takes.
           { timeout: CALL_TIMEOUT_MS, ...(signal === undefined ? {} : { signal }) },
         )) as CallToolResult,
     } satisfies RemoteAppTools;

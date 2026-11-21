@@ -114,7 +114,6 @@ import { SnoozeChip } from "./snooze-chip";
 import { BrowserChip } from "./browser-chip";
 import { HeaderWakeChip } from "./wake-chip";
 
-/** Only for a thread that moved away, so it loads only then. */
 const SentNotice = lazy(async () => ({
   default: (await import("./sent-notice")).SentNotice,
 }));
@@ -122,17 +121,14 @@ const MovedAwayNotice = lazy(async () => ({
   default: (await import("./moved-away-notice")).MovedAwayNotice,
 }));
 
-/** Only for a thread back from a server whose copy there is still open. */
 const LeftOpenNotice = lazy(async () => ({
   default: (await import("./moved-away-notice")).LeftOpenNotice,
 }));
 
-/** The optional turn trace, loaded apart from the conversation. */
 const traceBody = lazyPart(() => import("./trace-view"));
 
 const FLASH_MS = 1600;
 
-/** The transcript row holding keyboard focus, by message id. */
 const focusedMessageId = (): string | undefined =>
   document.activeElement?.closest<HTMLElement>("[data-message-id]")?.dataset["messageId"];
 
@@ -140,7 +136,6 @@ const isControl = (target: EventTarget) =>
   target instanceof Element &&
   target.closest("button, a, input, select, textarea, [role='button'], [role='menuitem']") !== null;
 
-/** A thread's header, transcript, cards and composer; the focused one owns the keyboard. */
 const NO_STRIP_LINES: readonly StripRow[] = [];
 
 export function ThreadView({
@@ -178,9 +173,6 @@ export function ThreadView({
   /** Makes the header a drag source; the grid swaps panes on drop. */
   onHeaderDragStart?: (event: DragEvent<HTMLElement>) => void;
 }) {
-  // An expanded right panel or a review in focus covers the chat, so nothing in it answers keys:
-  // Enter would otherwise approve a request nobody can see, and ⌘Enter send a draft behind the panel.
-  // So does the Thread tab beside it while it holds the focus, whose keys are its thread's then.
   const covered = useLayoutStore((s) => s.panelExpanded || fitShell(s).reviewFocus);
   const besideFocused = useBesideStore((s) => s.focused && besideShown(s) !== undefined);
   const focused = beside === undefined ? paneFocused && !covered && !besideFocused : paneFocused;
@@ -202,28 +194,21 @@ export function ThreadView({
     );
 
   const { top, children, subagentUsage } = useSplitSubagents(messages);
-  // The thread's trace, in place of its conversation. Beside the chat there is no room for one.
   const tracing = useTraceViewStore((s) => (beside === undefined ? s.open[threadId] : undefined));
   const trace = traceBody.useModule(tracing !== undefined);
   const traceShown = tracing !== undefined && trace !== undefined;
-  // An orchestrator's calm stream: its silent digests left out, its feature cards placed.
   const stream = useOrchestratorStream(summary?.thread, top);
-  // What the transcript renders, which every index handed to it counts in: an orchestrator's
-  // stream has fewer rows than `top`.
   const shown = stream?.plan.messages ?? top;
-  // "New" over the first message since you last looked, decided as the view opens.
   const unreadFrom = useUnseenFrom(
     threadId,
     shown,
     summary?.thread.lastViewedAt,
     summary !== undefined && phase !== "loading",
   );
-  // Rebuilt with every streamed frame, but the same chapters keep the rail from re-rendering.
   const chapters = useStable(
     useMemo(() => chaptersOf(shown), [shown]),
     sameChapters,
   );
-  // Walks the whole history, so once per history change rather than on every scroll render.
   const turnEnds = useMemo(() => turnEndMessages(top), [top]);
   const undos = useMemo(() => turnUndos(top), [top]);
   const turnStatus = summary?.status;
@@ -253,7 +238,6 @@ export function ThreadView({
     [running, background, canStop],
   );
   const stopTask = useStopTask(threadId);
-  // A command's line opens it in the right panel's Command tab, and marks it while it shows there.
   const commandOf = (row: StripRow) =>
     row.output === undefined
       ? undefined
@@ -287,8 +271,6 @@ export function ThreadView({
       nonce: (previous?.nonce ?? 0) + 1,
     }));
   };
-  // Carried by the title bar, the header's Contents is a submenu of the bar's one "…": published
-  // there, with stable callbacks that call this render's.
   const carriedByBar =
     titlebarSlot !== null &&
     titlebarThread === threadId &&
@@ -316,7 +298,6 @@ export function ThreadView({
   }, [carriedByBar, threadId, chapters, earlier, loadingEarlier, earlierFailed]);
   const lastSubagentJump = useRef<string>(undefined);
   const [finding, setFinding] = useState(false);
-  /** Where Esc in find puts the transcript back to. */
   const [restore, setRestore] = useState<ScrollRestore>();
   const revealRequest = useRevealStore((s) => s.request);
   const sourceTitle = useThreadsStore((s) => {
@@ -326,12 +307,10 @@ export function ThreadView({
   const label = useThreadLabel(summary?.thread);
   const paneTitle = usePaneTitle(summary?.thread);
 
-  // A search hit (⌘K or ⌘F) is scrolled to and flashed once the transcript has the message.
   const revealIndex =
     revealRequest?.threadId === threadId
       ? shown.findIndex((m) => m.id === revealRequest.messageId)
       : -1;
-  // Loaded, though perhaps folded out of an orchestrator's stream, which no page brings back.
   const revealLoaded =
     revealRequest?.threadId === threadId && top.some((m) => m.id === revealRequest.messageId);
   const revealNonce = revealIndex === -1 ? undefined : revealRequest?.nonce;
@@ -340,8 +319,6 @@ export function ThreadView({
     [revealIndex, revealNonce],
   );
   const flashId = revealNonce === undefined ? undefined : revealRequest?.messageId;
-  // A search hit older than the history loaded so far is paged in first, and again once a failed
-  // page is retried.
   const unloadedHit =
     revealRequest?.threadId === threadId && !revealLoaded && earlier
       ? revealRequest.messageId
@@ -359,7 +336,6 @@ export function ThreadView({
     return () => clearTimeout(timer);
   }, [revealNonce]);
 
-  // A search hit or a jump to a reply a quiet update folded shows all activity, so it can land.
   const foldedHit =
     revealRequest?.threadId === threadId && revealIndex === -1
       ? stream?.plan.foldedInto.has(revealRequest.messageId)
@@ -372,7 +348,6 @@ export function ThreadView({
 
   const jumpToSubagent = (run: RunningSubagent) => {
     lastSubagentJump.current = run.toolCallId;
-    // `run.index` counts in `top`; the transcript counts in what it shows.
     const messageId = top[run.index]?.id;
     const index = shown.findIndex((m) => m.id === messageId);
     if (index === -1) return;
@@ -399,7 +374,6 @@ export function ThreadView({
     focused,
   );
 
-  // Beside the chat, the orchestrator is already in view.
   useBackToOrchestrator(threadId, focused && beside === undefined);
 
   useShortcut(
@@ -410,7 +384,6 @@ export function ThreadView({
       group: "Thread",
       run: () => {
         setFinding(true);
-        // Again while it is open: its field, with what it holds selected to type over.
         requestAnimationFrame(() =>
           transcriptScroller(threadId)
             ?.closest("[data-thread-view]")
@@ -428,7 +401,6 @@ export function ThreadView({
       keys: "mod+shift+c",
       label: "Copy focused message",
       group: "Thread",
-      // A message counts as focused while one of its actions has keyboard focus.
       when: () => focusedMessageId() !== undefined,
       run: (event) => {
         const message = top.find((m) => m.id === focusedMessageId());
@@ -450,43 +422,26 @@ export function ThreadView({
   }
 
   const { thread, status } = summary;
-  // Started before its machine, which isn't named yet (`Thread.awaitingMachine`).
   const awaiting = thread.awaitingMachine !== undefined;
-  // A worker's link in its orchestrator's chat, or in a sibling's beside it, opens beside the chat.
   const linkScope =
     thread.role === "orchestrator" ? thread.id : beside ? thread.spawnedBy?.threadId : undefined;
   const pr = summary.git?.pr;
-  // The badge's PR as the badge paints it: anchored when the thread is bound to that very PR.
   const shownPr = targetBadge(summary.git, thread.boundPr) ?? pr;
-  // It rings while it needs you, by the test the sidebar and the window title count by.
   const needs = needsYou(summary) || summary.pendingRequests.length > 0;
   const activity = activityLine(status, detail, summary.activity);
   const display = threadStatusOf(summary, detail);
-  // The glyph says work is under way: the turn's spinner, or what runs under the thread.
   const glyphWorks = display.working || display.running !== undefined || status === "starting";
-  // A thread alone in Chat puts its header in the window's title bar: one bar, not two. The
-  // title and the empty room move the window; everything after the title is a control.
   const inTitlebar = carriedByBar;
-  // The chips drop by the pane's width, as they did in the pane, and the title bar is as wide as
-  // the pane: the header itself is narrower there, sharing the bar with the window's controls.
   const hideSm = inTitlebar ? "@max-sm/titlebar:hidden" : "@max-sm:hidden";
-  // Beside the title bar's switcher, an orchestrator named for its workspace shows no title and no
-  // glyph: the switcher and Chat say both.
   const titleShown = !(inTitlebar && paneTitle.workspaceName);
   const hideMd = inTitlebar ? "@max-md/titlebar:hidden" : "@max-md:hidden";
-  // The PR strip over the composer owns the thread's PR while it shows it; once hidden from
-  // there, the header's chips say it again.
   const prOnStrip = ownPrOnStrip(thread.boundPr, summary.git, thread.hiddenPrs);
 
   const header = beside ? (
     beside.header
   ) : (
     <AttentionPulse
-      // Alone in the window the approval card, the sidebar's dot and its count already say it; in
-      // a grid the ring says which pane.
       active={needs && !inTitlebar}
-      // In the title bar the ring rounds and insets, so it marks the thread rather than boxing in
-      // part of the window's bar.
       className={cn(
         "@container",
         inTitlebar ? "my-1 flex min-w-0 flex-1 rounded-(--radius-md)" : "shrink-0",
@@ -496,7 +451,6 @@ export function ThreadView({
         data-testid="pane-header"
         draggable={onHeaderDragStart !== undefined}
         onDragStart={onHeaderDragStart}
-        // A double-click selects a word first; keep the selection out of the maximize gesture.
         onMouseDown={(event) => {
           if (onHeaderDoubleClick && event.detail > 1 && !isControl(event.target)) {
             event.preventDefault();
@@ -513,15 +467,8 @@ export function ThreadView({
             : "h-10 border-b border-border px-4 @max-sm:px-2",
         )}
       >
-        {/* The title truncates before any chip goes, and the chips drop whole rather than clip:
-              they wrap, the fixed height hides every line after the first, and what wraps is
-              inert. What drops is in the thread menu or the PR row too. The cap keeps the title
-              the larger share of the room. */}
         <div
-          // In the title bar, the room the bar folds its lesser buttons to keep: a few letters of
-          // the title, or a chip when the switcher has the orchestrator's name.
           data-titlebar-room={inTitlebar ? (titleShown ? 96 : 48) : undefined}
-          // Shorter still, the title is cut rather than run under the controls after it.
           className={cn("flex min-w-0 flex-1 items-center gap-2", inTitlebar && "overflow-x-clip")}
         >
           {thread.spawnedBy === undefined ? (
@@ -543,30 +490,19 @@ export function ThreadView({
             data-titlebar-gives={inTitlebar ? "" : undefined}
             className={cn(
               "flex h-6 max-w-[60%] min-w-0 shrink-[0.01] flex-wrap items-center gap-x-2 gap-y-4 overflow-hidden",
-              // Chips that wrapped out of sight still widen the row, so in the title bar, which it
-              // shares with the window's controls, the title keeps the larger share, and narrow
-              // the chips go: the PR row, the right panel and the thread menu have the rest.
               inTitlebar && "[-webkit-app-region:no-drag]",
               inTitlebar && titleShown && "max-w-[45%] @max-sm:max-w-[30%]",
-              // Short of room the chips give way before the title: a chip that wrapped out of
-              // sight keeps no share of the room the title needs. Shrinking is weighed by width,
-              // so only a factor this large leaves the title whole until the chips are gone.
               inTitlebar && titleShown && "shrink-[10000]",
-              // An orchestrator's title is the switcher's, so its chips have the room.
               inTitlebar && !titleShown && "max-w-none shrink",
-              // Wrapped, the first line is as tall as the row, so its chips stay centred on it.
               inTitlebar && "before:-mr-2 before:h-6 before:w-0 before:content-['']",
             )}
           >
-            {/* First, so a machine that is offline is the last chip to give way. */}
             <MachineChip thread={thread} className={hideSm} />
             <WorkerNowChip thread={thread} prOnStrip={prOnStrip} />
             <OrchestratorChips thread={thread} inTitlebar={inTitlebar} />
             {thread.forkedFrom && (
               <ForkedFrom from={thread.forkedFrom} title={sourceTitle} hideClass={hideMd} />
             )}
-            {/* Named and neutral: a red label's colour here would read as an error that isn't
-                  there, beside the one card that says when there is one. */}
             {label && (
               <LabelChip
                 label={label}
@@ -575,8 +511,6 @@ export function ThreadView({
                 className={cn("text-meta text-muted-foreground", hideMd)}
               />
             )}
-            {/* The branch is the agents' working detail, not the thread's name: the thread menu
-                  has it, to read and copy. */}
             <WorktreeMissingChip
               git={summary.git}
               testId="pane-folder-missing"
@@ -633,14 +567,8 @@ export function ThreadView({
             <FakeAgentBadge className={hideSm} />
           </div>
         </div>
-        {/* Outside the chips that drop when short of room: a snooze's Unsnooze must always be
-            there, the one sign of why the lists leave the thread out. */}
         <SnoozeChip threadId={threadId} />
         <WorkerActions thread={thread} inTitlebar={inTitlebar} />
-        {/* In the title bar the glyph shows only while the thread works: at rest it is the bar's
-            default, and what needs you (an approval, a question, an error) is the needs-you pill's
-            and the card's to say, so the bar never carries a second, unlabelled warning beside it.
-            Its words stay for screen readers. */}
         <Hint
           label={statusHint(display, activity)}
           side="bottom"
@@ -665,14 +593,12 @@ export function ThreadView({
           <span className="sr-only">{display.label}</span>
         </Hint>
         {inTitlebar ? (
-          // Short of room in the bar, View ▸ Conversation only in its "…" switches it.
           <Foldable level={FOLD_ICONS} gap={8}>
             <ConversationOnlyButton inTitlebar />
           </Foldable>
         ) : (
           <ConversationOnlyButton hideClass={hideMd} />
         )}
-        {/* In the title bar, Contents, Run script and the thread's menu are the bar's one "…". */}
         {!inTitlebar && (
           <>
             <TableOfContents
@@ -703,8 +629,6 @@ export function ThreadView({
       <div
         ref={trackPaneHeight}
         data-pane-root
-        // The one thread this view draws, in a grid pane or beside the chat: what an approval's
-        // keys and focus stay within (request-cards.tsx).
         data-thread-view={threadId}
         className="flex min-h-0 flex-1 flex-col"
         data-testid="thread-view"
@@ -737,13 +661,11 @@ export function ThreadView({
             }}
           />
         )}
-        {/* The conversation stays mounted under its trace, so it is where it was left. */}
         <div className={traceShown ? "hidden" : "contents"}>
           <StatusHeader thread={thread} digests={stream?.plan.digests} />
           <WaitingTray threadId={threadId} />
           {beside?.ownHead !== true && <PlanStrip threadId={threadId} />}
           <WorkerBanner thread={thread} repos={beside?.ownHead !== true} />
-          {/* A helper's summary isn't the conversation, which is all "Conversation only" shows. */}
           {!conversationOnly && <CatchUpCard thread={thread} />}
           <StuckCard thread={thread} />
           <OrchestratorBanner thread={thread} />
@@ -756,8 +678,6 @@ export function ThreadView({
           {finding && (
             <FindBar
               threadId={threadId}
-              // Every loaded message, a reply a quiet update folded away included: a step to one
-              // reveals it, which shows all activity.
               messages={top}
               earlier={earlier}
               getScroller={() => transcriptScroller(threadId)}
@@ -768,10 +688,7 @@ export function ThreadView({
               }}
             />
           )}
-          {/* The transcript's waiting rows hold the approval cards the requests below draw. */}
           <ApprovalSlotsProvider threadId={threadId}>
-            {/* Started before its machine: nothing is said yet, so the conversation is the
-                message that waits and how the wait stands. */}
             {awaiting && shown.length === 0 && (
               <div
                 data-testid="machine-wait-scroll"
@@ -809,7 +726,6 @@ export function ThreadView({
               )}
             </OrchestratorStreamProvider>
             {awaiting && shown.length > 0 && <AwaitingMachine thread={thread} />}
-            {/* Its machine stopped while idle and is coming back for what was sent to it. */}
             {!awaiting && <MachineStarting thread={thread} />}
             <div className="w-full thread-column shrink-0 px-6">
               {thread.spawnedBy === undefined && !conversationOnly && (
@@ -821,7 +737,6 @@ export function ThreadView({
                 focused={focused}
                 thread={thread}
               />
-              {/* With turns to follow, the transcript's last line says it, under the last turn. */}
               {shown.length === 0 && <LimitWaitLine thread={thread} />}
               <QueueList threadId={threadId} />
             </div>
@@ -841,9 +756,7 @@ export function ThreadView({
           <LapsedConnectorsNotice threadId={threadId} />
           <EditBanner threadId={threadId} />
           <PinnedDocChip threadId={threadId} />
-          {/* Read only, a finished worker's PR is in its own tool, not a strip that acts on it. */}
           {beside?.readOnly !== true && <PrStrip threadId={threadId} focused={focused} />}
-          {/* Subagents at work are work, which "Conversation only" leaves out. */}
           <SubagentStrip
             rows={conversationOnly ? NO_STRIP_LINES : stripLines}
             shownRow={shownRow}
@@ -852,7 +765,6 @@ export function ThreadView({
             onStop={stopTask}
           />
           {thread.role === "orchestrator" && <UndoLine />}
-          {/* Sent to a server: it runs there, and its orchestrator messages it, so no composer. */}
           {beside?.readOnly === true ? (
             <p
               data-testid="beside-readonly-note"
@@ -883,9 +795,6 @@ export function ThreadView({
   );
 }
 
-/**
- * The thread's composer. On a thread that waits for its machine it says the message waits too.
- */
 function ThreadComposer({
   thread,
   focused,
@@ -895,7 +804,6 @@ function ThreadComposer({
   focused: boolean;
   placeholder?: string;
 }) {
-  // Started before its machine: the box says where a message goes now, which is into the wait.
   const wait = useMachineWait(thread);
   const phone = usePhone();
   const words =
@@ -923,7 +831,6 @@ function ForkedFrom({
 }: {
   from: NonNullable<Thread["forkedFrom"]>;
   title: string | undefined;
-  /** The container query that drops it when narrow. */
   hideClass: string;
 }) {
   const label = forkedFromText(from, title);
@@ -963,13 +870,6 @@ function ForkedFrom({
   );
 }
 
-/**
- * The pane's heading: the role's glyph and the title. An orchestrator opened as
- * `Orchestrator · <workspace>` shows the workspace's name alone, as its glyph says the rest: the
- * current one, or with workspaces off or not loaded yet, the one it was opened under. The heading's
- * name spells the role out, since the glyph's words would run into the title.
- */
-/** The pane's title, and whether it is the orchestrator's workspace's name, as the switcher says. */
 function usePaneTitle(thread: Thread | undefined): { title: string; workspaceName: boolean } {
   const workspaces = useWorkspaces();
   if (thread === undefined) return { title: "", workspaceName: false };
@@ -986,7 +886,6 @@ function PaneHeading({
 }: {
   thread: Thread;
   gestures: boolean;
-  /** False beside the title bar's workspace switcher, which says an orchestrator's name already. */
   titleShown: boolean;
 }) {
   const role = useThreadRole(thread);
@@ -995,11 +894,8 @@ function PaneHeading({
     <h1
       aria-label={role === undefined ? undefined : `${role.name}: ${title}`}
       className="flex min-w-0 items-center gap-1.5 font-heading font-medium"
-      // The whole title on hover, wherever the header cuts it.
       title={gestures ? `${title}. Double-click to maximize or restore; drag to swap panes` : title}
     >
-      {/* Beside the title bar's switcher and Chat · Board, the place says "orchestrator": a glyph
-          there would be one more bare mark in the bar, so its name is for screen readers only. */}
       <RoleGlyph thread={thread} testId="pane-role" spoken={!titleShown} />
       <span
         data-titlebar-title={titleShown ? "" : undefined}
@@ -1011,10 +907,6 @@ function PaneHeading({
   );
 }
 
-/**
- * A thread the server no longer has: closed or deleted elsewhere, or a stale link. A worker closed
- * with its worktree stays readable from what Gram kept of it.
- */
 function ThreadGone({ threadId }: { threadId: ThreadId }) {
   const api = useApi();
   const finished = useQuery({
@@ -1055,11 +947,6 @@ function ThreadGoneNotice({ threadId }: { threadId: ThreadId }) {
   );
 }
 
-/**
- * The header's Run script, once the project has scripts: the bare glyph, so every chip keeps its
- * room. In a pane of a grid it drops below the container's small width; a thread the title bar
- * carries has it in the bar's "…" (`RunScriptMenuItems`) instead.
- */
 function HeaderRunScript({
   threadId,
   projectId,

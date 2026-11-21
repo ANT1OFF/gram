@@ -40,13 +40,10 @@ export const STEER_AT_CARD_LABEL = "Steer now: the agent reads it once the card 
 /** What the same button says with no turn running, when pressing it sends the message now. */
 export const SEND_NOW_LABEL = "Send now: no turn is running";
 
-/** Statuses with no turn for a queued message to wait on, where its button sends it. */
 const NOTHING_RUNNING: ReadonlySet<ThreadStatus> = new Set(["idle", "error", "cold"]);
 
-/** Statuses whose turn waits on a card the user answers. */
 const AT_CARD: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
 
-/** What a queued message's button says, enabled. */
 const queueSendLabel = (status: ThreadStatus | undefined): string =>
   status === undefined
     ? STEER_LABEL
@@ -88,7 +85,6 @@ export const pastCardBlocked = (
   return "Only your own message goes in past a card: this one waits for the turn to end";
 };
 
-/** A queued message's Steer: enabled, or greyed with why in its hint and name. */
 function QueueSteer({
   blocked,
   sendLabel,
@@ -119,7 +115,6 @@ function QueueSteer({
   );
 }
 
-/** Why another thread's message sits in the queue, as the card's byline puts it. */
 const queuedBecause = (origin: MessageOrigin): string | undefined =>
   origin.mode === "queue"
     ? "queued as context"
@@ -140,7 +135,6 @@ function AttachmentCount({ n }: { n: number }) {
   );
 }
 
-/** Names the thread that queued a message and why, linking back to it; the user's own have none. */
 function QueuedFrom({ origin }: { origin: MessageOrigin }) {
   const Icon = origin.role === "orchestrator" ? ROLE_ICON.orchestrator : MessagesSquare;
   const because = queuedBecause(origin);
@@ -165,11 +159,6 @@ function QueuedFrom({ origin }: { origin: MessageOrigin }) {
 
 const FADE = "1.25rem";
 
-/**
- * A box of capped height that scrolls, its edge fading while there is more past it. The queue, and
- * each message in it, sit in one: a long message, or several joined, once grew the card until it
- * pushed the composer off the pane and clipped the text with it.
- */
 function ScrollFade({
   className,
   children,
@@ -187,13 +176,11 @@ function ScrollFade({
     if (el === null) return;
     const measure = () => {
       const above = el.scrollTop > 0;
-      // A pixel of slack: a fractional height can leave the end a hair short of `scrollHeight`.
       const below = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
       setEdges((was) => (was.above === above && was.below === below ? was : { above, below }));
     };
     measure();
     el.addEventListener("scroll", measure, { passive: true });
-    // The box stops growing at its cap, so it's what is inside that says when there's more.
     const resize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
     resize?.observe(el);
     if (body.current !== null) resize?.observe(body.current);
@@ -231,7 +218,6 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
   const held = useThreadsStore((s) => s.byId[threadId]?.thread.awaitingMachine !== undefined);
   const all = useThreadsStore((s) => s.byId[threadId]?.queue ?? EMPTY);
   const queue = useMemo(() => (held ? all.slice(1) : all), [all, held]);
-  // Agents that buffer mid-turn input until the turn ends are doing what the queue already does.
   const blocked = useThreadsStore((s) => {
     const summary = s.byId[threadId];
     return steerBlocked(summary?.status, summary?.capabilities?.steer, summary?.thread.model.agent);
@@ -242,8 +228,6 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
 
   const getState = useThreadsStore.getState;
 
-  // The section folds in with the first message and away with the last, and each message does the
-  // same between, so the composer under it slides rather than jumps.
   return (
     <PresenceList>
       {queue.length > 0 && (
@@ -272,8 +256,6 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
                       data-testid="queue-item"
                       className="@container rounded-(--radius-sm) border border-edge bg-card/40 px-2 py-1"
                     >
-                      {/* In a narrow pane the controls go above the text rather than squeeze it
-                          out, or sit below a screenful of it. */}
                       <div className="flex items-start gap-2 @max-xs:flex-col-reverse @max-xs:items-stretch @max-xs:gap-0">
                         {editing?.id === item.id ? (
                           <form

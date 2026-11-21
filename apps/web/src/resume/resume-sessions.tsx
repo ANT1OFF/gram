@@ -117,8 +117,6 @@ export async function resumeSession(
     resumeSessionId: session.agentSessionId,
     ...(session.codexHome === undefined ? {} : { codexHome: session.codexHome }),
   });
-  // The server's `thread.upsert` may land after the route changes; don't flash "not found".
-  // An upsert the server sent before this answer may still wait for its frame: it goes first.
   flushServerEvents();
   useThreadsStore.getState().applyEvent({ type: "thread.upsert", thread });
   return thread.id;
@@ -192,7 +190,6 @@ export function ContinueLatest({
 
 const sessionKey = (session: ResumableSession) => `${session.agent}:${session.agentSessionId}`;
 
-/** The hovered or focused past session's first prompt and last reply. */
 function SessionPreviewNote({
   id,
   preview,
@@ -254,7 +251,6 @@ export function ResumeSessions({
   const [confirming, setConfirming] = useState<string>();
   const [deleting, setDeleting] = useState<string>();
   const [error, setError] = useState<string>();
-  // Only the hovered or focused session is read, never a transcript per row.
   const [focused, setFocused] = useState<string>();
   const previewId = useId();
   const focusedSession = query.data?.sessions.find((session) => sessionKey(session) === focused);
@@ -338,7 +334,6 @@ export function ResumeSessions({
                     className="flex flex-wrap items-center gap-2 rounded-md bg-muted px-2 py-1.5 text-meta"
                     onKeyDown={(event) => {
                       if (event.key !== "Escape") return;
-                      // Cancels the confirmation only, not an app shortcut on Escape as well.
                       event.preventDefault();
                       event.stopPropagation();
                       setConfirming(undefined);

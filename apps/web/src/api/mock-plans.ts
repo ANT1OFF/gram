@@ -1,10 +1,5 @@
 import type { PlanSource, PlanStep, PlanStepId, PlanStepStatus, ThreadPlan } from "@gram/contracts";
 
-/**
- * The seeded threads' plans, as the agent, the helper and the user left them. The threads with a
- * PR, or that get one, have none: a plan takes the PR badge off the row, where specs click it.
- */
-
 const step = (
   id: string,
   text: string,

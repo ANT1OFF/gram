@@ -1,12 +1,3 @@
-// The runtimes as everything outside them reaches them: what a person (or an agent, for its
-// lineage's person) does to a thread, the thread's owners must be (`host/ownership.ts`). Checked
-// here, at what delivers to the agent, so no route around the RPC guard (a workspace's task, an
-// answer over HTTP, a tool) reaches another person's thread. A notice or a system delivery is
-// checked as well, against whoever's call it is made in: the server's own (no caller) passes, a
-// person's or an agent's must be the thread's owners'. Work kept to be done later records who it
-// was for and runs as them (a worker question's `closedFor`), so a retry can't make it the
-// server's.
-
 import { hostOf, InvalidState, type Thread, type ThreadId, ThreadNotFound } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import {
@@ -27,7 +18,6 @@ export const ownedRuntimes = (
   ownerOf: OwnerOf,
 ): ThreadRuntimesShape => {
   const admit = (threadId: ThreadId) => admitThread(getThread, ownerOf, threadId);
-  /** For what can only say a thread isn't there: another person's is not, to this caller. */
   const admitOrAbsent = (threadId: ThreadId) =>
     Effect.flatMap(mayReachThread(getThread, ownerOf, threadId), (ok) =>
       ok ? Effect.void : Effect.fail(new ThreadNotFound({ threadId })),
@@ -43,9 +33,6 @@ export const ownedRuntimes = (
       Effect.andThen(admit(threadId), runtimes.sendNotice(threadId, ...rest)),
     requestSystemDelivery: (threadId, ...rest) =>
       Effect.andThen(admitOrAbsent(threadId), runtimes.requestSystemDelivery(threadId, ...rest)),
-    // A thread keeps whose it is wherever it goes: onto a machine of the same person's, or of no
-    // one's from no one's. A route that moves one checks first and refuses with a reason; this is
-    // the floor under every route, so a move that would change the owner never happens.
     moveCheckout: (threadId, checkout) =>
       Effect.gen(function* () {
         yield* admitOrAbsent(threadId);
@@ -54,10 +41,6 @@ export const ownedRuntimes = (
           return yield* Effect.die(new InvalidState({ message: MOVE_CHANGES_OWNER, threadId }));
         return yield* runtimes.moveCheckout(threadId, checkout);
       }),
-    // The same floor under a move off a machine that is gone (an embedder's): whoever asks must
-    // reach the thread, and what `prepare` places it on must be of the same owner.
-    // A thread still waiting for its first machine has no owner to keep: it goes on a machine of
-    // whoever it was started by, or of no one's (`mayPlaceAwaited`).
     relocate: (threadId, plan) =>
       Effect.gen(function* () {
         yield* admitOrAbsent(threadId);
@@ -75,9 +58,6 @@ export const ownedRuntimes = (
           ),
         });
       }),
-    // What changes a thread's record or its session outside a delivery (an archive, a park, a
-    // workspace's directory grants, a reload, a queue edit, a completion): the same rule, so a
-    // caller's own approved card never reaches another person's thread through them.
     updateThread: (threadId, ...rest) =>
       Effect.andThen(admitOrAbsent(threadId), runtimes.updateThread(threadId, ...rest)),
     addDirectories: (threadId, ...rest) =>
@@ -96,10 +76,8 @@ export const ownedRuntimes = (
       Effect.andThen(admitOrAbsent(threadId), runtimes.interrupt(threadId, options)),
     stopAtToolBoundary: (threadId) =>
       Effect.andThen(admitOrAbsent(threadId), runtimes.stopAtToolBoundary(threadId)),
-    // Before the request is taken: an answer refused here leaves it open for its owner.
     respond: (threadId, ...rest) =>
       Effect.andThen(admit(threadId), runtimes.respond(threadId, ...rest)),
-    // Each answer on its own: one refused leaves the others to be given, in the order asked.
     respondMany: (answers) =>
       Effect.gen(function* () {
         const reachable: Array<boolean> = [];

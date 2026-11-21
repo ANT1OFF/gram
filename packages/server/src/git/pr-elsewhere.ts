@@ -1,10 +1,3 @@
-// For a checkout whose branch has no PR: an open PR on another worktree of the same repo, so the badge
-// area can point at it. One worktree list per repo per sweep. A worktree a thread tracks answers from
-// the state the publisher already holds; the rest are matched by branch against the repo's open PRs,
-// one cached list however many worktrees there are. A badge lookup per untracked worktree cost some
-// five GraphQL points each, every sweep, and a repo with a dozen idle worktrees spent the hour's
-// allowance on this cue alone.
-
 import {
   effectiveCheckout,
   type GitState,

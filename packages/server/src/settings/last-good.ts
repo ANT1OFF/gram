@@ -1,9 +1,3 @@
-// Last-good configuration: a file the user (or an agent asked to) edits by hand never breaks what
-// it configures. A version that reads cleanly is copied aside as the last good one; a broken edit
-// leaves that copy in use, and the reason is written to an error file beside it, in Gram's data
-// folder, where the Settings page and an agent can both read it. The copy and the error file live
-// in Gram's data folder, never in a project's own folder.
-
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -62,7 +56,6 @@ export const errorText = (
     "",
   ].join("\n");
 
-/** `2026-11-12 21:37 UTC`: 24-hour, and the same in every zone. */
 const stamp = (date: Date) => `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
 /**

@@ -1,8 +1,3 @@
-// Dreams and history import: the reviewed job that
-// rewrites an orchestrator's memory from past transcripts. A leaf beside `workspaces.ts`: it names
-// `ModelRef`, `AgentKind` and `UsageSummary` from `domain.ts`, so `domain.ts` and what it imports
-// can't import it without closing a cycle; `rpc.ts` and `ui-message.ts`, which sit above, do.
-
 import * as Schema from "effect/Schema";
 import { AgentKind, ModelRef, UsageSummary } from "./domain.ts";
 import { ProjectId, ThreadId, WorkspaceId } from "./ids.ts";

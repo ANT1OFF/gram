@@ -5,10 +5,6 @@ import { formatElapsed } from "./subagent-strip-model";
 import { toolDetail, toolInputField } from "./tool-group-model";
 import { toolLabel } from "./tool-labels";
 
-// A turn's run timeline: each tool call it made, in order, as a bar on one time axis from the
-// turn's start to its end, from the `toolTimes` the server stamps on each message. Calls that ran
-// side by side overlap; the gaps are the model thinking and writing. No React.
-
 export type StepTone = "done" | "running" | "failed" | "stopped";
 
 export interface TimelineStep {

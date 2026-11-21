@@ -1,6 +1,3 @@
-// For tests: an `EventHub` over the real one that holds the first matching publish until a gate opens,
-// so a test can interrupt the publishing fiber at a known point.
-
 import type { ServerEvent } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

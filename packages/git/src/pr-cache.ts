@@ -1,6 +1,3 @@
-// A TTL + in-flight cache for the GitHub polls on the hot path. The badge sweep and the review
-// reads are the two calls that run per checkout per tick, so they are the two that get one.
-
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -50,10 +47,6 @@ export interface TtlCache<I, A, E, R> {
 export const makeTtlCache = <I, A, E, R>(spec: TtlCacheSpec<I, A, E, R>): TtlCache<I, A, E, R> => {
   const { key, fetch, ttlMs = PR_POLL_TTL_MS, keep, reusable } = spec;
   const entries = new Map<string, { readonly at: number; readonly value: A; readonly input: I }>();
-  /**
-   * A key's running fetch. `superseded` once an input that couldn't share it started its own: it
-   * still answers whoever is waiting on it, but no longer writes the entry.
-   */
   interface Flight {
     readonly deferred: Deferred.Deferred<A, E>;
     readonly input: I;
@@ -61,11 +54,8 @@ export const makeTtlCache = <I, A, E, R>(spec: TtlCacheSpec<I, A, E, R>): TtlCac
   }
   const inFlight = new Map<string, Flight>();
   const canReuse = (input: I, cached: I) => reusable === undefined || reusable(input, cached);
-  /** Bumped by `clear`, so a fetch that began before it can't write its answer back afterwards. */
   let generation = 0;
 
-  // Evicting, reading and claiming happen in one synchronous block: an `await` between them would
-  // let a second fiber claim the same key and start a second fetch, which is the whole point.
   type Claim =
     | { readonly kind: "hit"; readonly value: A }
     | { readonly kind: "await"; readonly deferred: Deferred.Deferred<A, E> }
@@ -80,7 +70,6 @@ export const makeTtlCache = <I, A, E, R>(spec: TtlCacheSpec<I, A, E, R>): TtlCac
     const pending = inFlight.get(id);
     if (pending !== undefined) {
       if (canReuse(input, pending.input)) return { kind: "await", deferred: pending.deferred };
-      // Joining it would hand this caller an answer to a question it has just refused.
       pending.superseded = true;
     }
     const flight: Flight = { deferred: Deferred.makeUnsafe<A, E>(), input, superseded: false };
@@ -90,7 +79,6 @@ export const makeTtlCache = <I, A, E, R>(spec: TtlCacheSpec<I, A, E, R>): TtlCac
 
   const get = (input: I): Effect.Effect<A, E, R> =>
     Effect.gen(function* () {
-      // Per caller: what was read for one is never another's answer, nor a fetch it joins.
       const id = `${yield* currentGhCaller}\u0000${key(input)}`;
       const claim = claimUnsafe(id, input, yield* Clock.currentTimeMillis);
       if (claim.kind === "hit") return claim.value;

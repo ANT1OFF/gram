@@ -15,7 +15,6 @@ const MAX_LINES = 1000;
  */
 export const OUTPUT_BUDGET = 48_000;
 
-/** The end of `text` that fits in `max` characters, from a line start when there is one to cut at. */
 const tailWithin = (
   text: string,
   max: number,
@@ -62,7 +61,6 @@ export const readTerminalTool = (terminals: Pick<Terminals, "snapshot">) =>
         const shown = yield* Effect.forEach(wanted, (t) =>
           Effect.promise(() => plainTail(t.scrollback, count, t, t.scrollbackCut)).pipe(
             Effect.map((tail) => {
-              // Redacted before it is cut, so a cut can't leave half a token the patterns no longer match.
               const { text, cut } = tailWithin(redactText(tail.text), share);
               return {
                 terminalId: t.terminalId,

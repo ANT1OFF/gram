@@ -13,26 +13,7 @@ export const ASK_WINDOW_MS = 10 * 60_000;
 /** This many asks in a row refused or left unanswered pause lending to the server. */
 export const REFUSALS_IN_A_ROW = 3;
 
-export type AskOutcome =
-  /** The person allowed it. */
-  | "allowed"
-  /** The person chose not to. */
-  | "refused"
-  /** Nobody answered in time. */
-  | "unanswered"
-  /**
-   * The server took it back. Counted like one left unanswered: otherwise a server could keep
-   * asking for ever by taking each ask back just before it timed out.
-   */
-  | "withdrawn"
-  /** Lending stopped under it, or the screen locked. Says nothing about the person or the server. */
-  | "stopped"
-  /**
-   * Refused for its path before any ask was shown. It took one of the server's requests in the
-   * window, as every request that says something about the disk does, but nothing about the
-   * person.
-   */
-  | "unasked";
+export type AskOutcome = "allowed" | "refused" | "unanswered" | "withdrawn" | "stopped" | "unasked";
 
 export interface Admitted {
   readonly settle: (outcome: AskOutcome) => void;
@@ -57,7 +38,6 @@ export interface AskLimits {
 }
 
 export const makeAskLimits = (
-  /** A clock that only goes forward, in milliseconds: the wall clock can be set back. */
   now: () => number,
   start: { readonly paused: boolean } = { paused: false },
   onPaused: () => void = () => undefined,

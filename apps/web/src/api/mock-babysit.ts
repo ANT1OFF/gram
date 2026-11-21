@@ -13,8 +13,6 @@ import {
 import { MockInvalidState } from "./mock-fs";
 import { MOCK_HEAD_OID } from "./mock-review";
 
-// Babysit mode for MockApi: the toggle, then one scripted review notice round.
-
 const PR_URL = "https://github.com/example/api/pull/412";
 
 export const mockReviewNotice = (number: number): ReviewNotice => ({
@@ -109,7 +107,6 @@ export function createMockBabysit(host: MockBabysitHost) {
       const current = host.thread(threadId);
       if (!enabled) {
         const { babysit: _off, ...rest } = current;
-        // Like the server: turning babysit off stops its review monitor too.
         const thread: Thread =
           rest.boundPr === undefined
             ? rest

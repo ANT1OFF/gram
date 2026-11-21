@@ -182,7 +182,6 @@ export function PrStrip({ threadId, focused }: { threadId: ThreadId; focused: bo
 
 const hideLabel = (number: number) => `Hide #${number} from this thread's PR list`;
 
-/** The thread's own PR: the bound one, else the branch's. Its number opens the PR panel. */
 function OwnRow({
   threadId,
   row,
@@ -201,9 +200,7 @@ function OwnRow({
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const badgePr = git?.pr;
   const repo = row.fullRepo;
-  // A worker whose turn is over says here what its PR waits on, which its header leaves to this row.
   const wait = useWorkerPrWait(thread);
-  // Right-click has the menu the header's PR badge had, which hides while this row shows.
   return (
     <ContextMenu disabled={badgePr === undefined}>
       <ContextMenuTrigger render={<div data-testid="pr-row" className={ROW} />}>
@@ -230,7 +227,6 @@ function OwnRow({
           />
           <RepoLink threadId={threadId} place={row} />
           <BranchLink threadId={threadId} place={row} />
-          {/* The header badge's own marks (an armed merge, babysitting), which it hides for this row. */}
           {git !== undefined && badgePr?.number === row.number && (
             <span data-testid="pr-row-marks" className="flex shrink-0 items-center gap-1 px-1">
               <PrBadgeMarks threadId={threadId} git={git} thread={thread} />
@@ -260,10 +256,6 @@ function OwnRow({
   );
 }
 
-/**
- * A PR the thread follows beside its own: its number opens GitHub, since the PR panel isn't about
- * it. It shows its title only until the badge says which branch it is.
- */
 function ExtraRow({ threadId, row }: { threadId: ThreadId; row: ExtraPrRow }) {
   const api = useApi();
   return (
@@ -300,7 +292,6 @@ function ExtraRow({ threadId, row }: { threadId: ThreadId; row: ExtraPrRow }) {
   );
 }
 
-/** The merged PR's cleanup: the close dialog, preset to remove the worktree; the hover says what's due. */
 function CleanupChip({ cleanup }: { cleanup: MergedCleanup }) {
   return (
     <button
@@ -337,7 +328,6 @@ function DiffChip({
   );
 }
 
-/** Where the review bot stands on the PR; opens its findings. Nothing for a PR no bot has touched. */
 function ReviewChip({
   threadId,
   review,
@@ -354,22 +344,14 @@ function ReviewChip({
       data-state={status.kind}
       aria-label={status.label}
       title={`${status.label}\nOpen the review`}
-      // A phone's row has no room for its words, and a robot alone says nothing: the PR's own
-      // panel, a tap on the row away, has the review.
       className={cn(CHIP, FOCUS, "hover:bg-accent phone:hidden")}
       onClick={() => openPrReview(threadId)}
     >
-      {/* A pane in a grid has no room for the words; the icon's colour and the label still say it. */}
       <ReviewStatusLabel status={status} textClassName="@max-lg:hidden" />
     </button>
   );
 }
 
-/**
- * The row's one glyph (`prGlyphOf`), the sidebar's for the same PR; grey until the badge lands.
- * Failing checks lead with a red dot and their words instead of the ⊗, which at the start of a row
- * that ends in a hide button read as a close.
- */
 function StateIcon({ facts }: { facts: PrFacts | undefined }) {
   if (!facts) {
     return (
@@ -403,10 +385,6 @@ function StateIcon({ facts }: { facts: PrFacts | undefined }) {
   );
 }
 
-/**
- * Hide a row from the strip: the eye the strip's "N hidden" shows too, not an ✕, which beside a
- * failing PR's ⊗ read as a second close.
- */
 function RowClose({ label, run }: { label: string; run: () => Promise<unknown> }) {
   const action = useReviewAction();
   return (
@@ -416,7 +394,6 @@ function RowClose({ label, run }: { label: string; run: () => Promise<unknown> }
       title={action.notice?.tone === "error" ? action.notice.text : label}
       disabled={action.pending}
       className={cn(
-        // Not on a phone: hiding a PR from the strip is desk work, and an eye beside CI was a riddle.
         "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground disabled:opacity-50 phone:hidden",
         FOCUS,
       )}
@@ -432,7 +409,6 @@ function RowClose({ label, run }: { label: string; run: () => Promise<unknown> }
   );
 }
 
-/** The followed PR's CI menu: its one switch, the way to make it the thread's own PR, and unfollow. */
 function ExtraCiMenu({ threadId, row }: { threadId: ThreadId; row: ExtraPrRow }) {
   const api = useApi();
   const action = useReviewAction();
@@ -603,7 +579,6 @@ function CiMenu({
                 on={boundPr?.reviewMonitor === true}
                 label="Watch reviews"
                 hint="Queue each bot round's findings"
-                // Babysitting relies on the monitor; turn babysit off first.
                 disabled={action.pending || babysit}
                 onToggle={() =>
                   void action.run(async () => {

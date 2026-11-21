@@ -29,11 +29,6 @@ import { filesOn } from "./files.ts";
 import type { HostConnection } from "./protocol.ts";
 import { type MachineParts, throughHost } from "./routing.ts";
 
-/**
- * Starts this machine's host process in a scope of its own and connects to it: a host that doesn't
- * start or answer is closed at once, its reason logged, and `undefined` returned, so the server
- * keeps doing the work itself.
- */
 const startHostProcess = (keptTerminals: string | undefined) =>
   Effect.gen(function* () {
     const scope = yield* Scope.fork(yield* Effect.scope);
@@ -55,13 +50,10 @@ const startHostProcess = (keptTerminals: string | undefined) =>
     return started.value;
   });
 
-/** Where Gram keeps a kept-running host's record of its sessions (`kept-sessions.ts`). */
 const sessionsRecord = (dataDir: string) => join(dataDir, "local-host", "sessions.json");
 
-/** Whether the record names a session the host `pid` may still hold. */
 const recordHolds = (dataDir: string, pid: number): boolean => {
   try {
-    // Read plainly here: the record's own reader lives with the runtime that writes it.
     const record = JSON.parse(readFileSync(sessionsRecord(dataDir), "utf8")) as {
       hostPid?: unknown;
       sessions?: unknown;
@@ -72,15 +64,8 @@ const recordHolds = (dataDir: string, pid: number): boolean => {
   }
 };
 
-/**
- * This machine's host as the service kept running after Gram quits: the one running already, or
- * one started now. A host from another release, with nothing of a thread in it, is restarted on
- * this release's; one still running work is used as it is (between releases the protocol only
- * grows) and replaced once a later start finds it idle. `undefined` when it can't be had, with why.
- */
 const startKeptRunning = (spec: LocalServiceSpec, release: string | undefined) =>
   Effect.gen(function* () {
-    // Made by the app, read by the host: only an app that holds it is served.
     const secret = ensureLocalSecret(spec.paths.secretFile);
     const connect = (withinMs: number) =>
       Effect.gen(function* () {
@@ -175,8 +160,6 @@ export class LocalHostProcess extends Context.Service<
               Effect.orElseSucceed(() => false),
             ));
           const paths = localServicePaths(kept.dataDir, platform);
-          // A host whose data folder was moved or removed can't be reached by any Gram again:
-          // it is stopped, verified, whichever data folder this Gram runs on, setting on or off.
           const swept = yield* sweepAbandoned(platform);
           if (swept.stopped.length > 0)
             yield* Effect.logInfo("worker host: stopped hosts whose data folder is gone").pipe(
@@ -221,7 +204,6 @@ export class LocalHostProcess extends Context.Service<
               keptRunningProblem: problem,
             };
           }
-          // Turned off: a service left from when it was on stops, and whatever ran in it.
           if (existsSync(paths.serviceFile)) {
             yield* Effect.logInfo("worker host: stopping the host kept running after Gram quit");
             yield* stopLocalService(platform, paths).pipe(

@@ -1,10 +1,3 @@
-// The only door through which a file on disk reaches the Preview tab's page. The shell's preview
-// loads loopback http and nothing else (`@gram/shell` `preview-rules.ts`), so an HTML file a
-// thread wrote is served here, on a listener of its own, never the app's: the page is untrusted and
-// must not share the app's origin. Each folder shown gets an unguessable path prefix, under
-// contracts' `PREVIEW_FILES_SEGMENT`, and only files under that folder answer, read-only, with no
-// dotfiles and nothing `isCredentialPath` names, each opened through `openOutside`.
-
 import { InvalidState, isCredentialPath, NotFound, PREVIEW_FILES_SEGMENT } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -21,10 +14,8 @@ import { ServerConfig } from "../config.ts";
 import * as Option from "effect/Option";
 import { isInside, realPath, tryRealPath } from "@gram/git";
 
-/** How many folders keep a live prefix; showing another forgets the least recently shown. */
 const PREVIEW_FOLDERS_KEPT = 64;
 
-/** No file over this answers: a preview is a page and what it loads, not a file share. */
 const PREVIEW_FILE_MAX_BYTES = 50 * 1024 * 1024;
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
@@ -52,14 +43,8 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".wasm": "application/wasm",
 };
 
-/** The extensions `PreviewFiles.urlFor` opens as a page. */
 const isPreviewHtml = (path: string): boolean => /\.html?$/i.test(path);
 
-/**
- * What every response carries. The page may run its own scripts, load what sits beside it and fetch
- * from its own folder; nothing reaches another host (the shell's rules hold that too), it can't be
- * framed, and forms post nowhere.
- */
 const PREVIEW_HEADERS: Readonly<Record<string, string>> = {
   "content-security-policy": [
     "default-src 'self' data: blob:",
@@ -89,7 +74,6 @@ export interface PreviewFolders {
   readonly identity: Map<string, FolderIdentity>;
 }
 
-/** A directory's device and inode, as `stat` with `bigint` gives them. */
 interface FolderIdentity {
   readonly dev: bigint;
   readonly ino: bigint;
@@ -110,7 +94,6 @@ export function prefixFor(
 ): string {
   const known = folders.byFolder.get(folder);
   const prefix = known ?? mint();
-  // Re-inserted, so iteration order is least recently shown first.
   folders.byFolder.delete(folder);
   folders.byFolder.set(folder, prefix);
   folders.byPrefix.delete(prefix);
@@ -124,7 +107,6 @@ export function prefixFor(
   return prefix;
 }
 
-/** Drops `folder`'s prefix, so nothing loads under it again. */
 function forgetFolder(folders: PreviewFolders, folder: string): void {
   const prefix = folders.byFolder.get(folder);
   if (prefix !== undefined) folders.byPrefix.delete(prefix);
@@ -161,7 +143,6 @@ export function lookupPreview(
     } catch {
       return notFound;
     }
-    // An encoded separator would smuggle `..` past the split above.
     if (segment === "" || segment.startsWith(".") || /[/\\\0]/.test(segment)) return notFound;
     segments.push(segment);
   }
@@ -203,16 +184,10 @@ export const servedFrom = (folder: string, real: string): boolean =>
     .split(sep)
     .some((part) => part.startsWith("."));
 
-/** Why a request answers 404: missing, unreadable, a link out of its folder, or refused. */
 class PreviewMissing extends Data.TaggedError("PreviewMissing")<{}> {}
 
 const missing = () => new PreviewMissing();
 
-/**
- * Serves the file a lookup names, through `openOutside`, while its folder is still the directory
- * that was shown: its real path must be one `servedFrom` allows and no credential file, and the
- * handle is the file that was checked, so a swap after the check serves nothing. Over `PREVIEW_FILE_MAX_BYTES`, or not a regular file, it is missing.
- */
 const serveFile = (
   folders: PreviewFolders,
   lookup: Extract<PreviewLookup, { kind: "file" }>,
@@ -223,8 +198,6 @@ const serveFile = (
 ) =>
   Effect.gen(function* () {
     const { folder } = lookup;
-    // The folder must still be the directory that was shown, at its real path, before the open
-    // and after it: a link or another directory put in its place serves nothing.
     const unchanged = Effect.tryPromise({
       try: async () => {
         const shown = folders.identity.get(folder);
@@ -235,8 +208,6 @@ const serveFile = (
       catch: missing,
     }).pipe(Effect.flatMap((same) => (same ? Effect.void : Effect.fail(missing()))));
     yield* unchanged;
-    // Held on the very path `openOutside` resolves and opens, so a link swapped in after a check
-    // of our own can't take the open out of the folder.
     let path = "";
     const handle = yield* openOutside(resolve(folder, lookup.relative), {}, (real) => {
       path = real;
@@ -251,12 +222,9 @@ const serveFile = (
       "content-length": String(info.size),
     });
     if (req.method === "HEAD" || info.size === 0) return void res.end();
-    // The handle stays open, in this scope, until the response is done with it.
     yield* Effect.callback<void>((resume) => {
       if (res.destroyed) return resume(Effect.void);
-      // Ends at the size the headers promised, however the file grows meanwhile.
       const stream = handle.createReadStream({ start: 0, end: info.size - 1, autoClose: false });
-      // A file deleted mid-read ends the response; the page sees a short body.
       stream.on("error", () => res.destroy());
       res.once("close", () => resume(Effect.void));
       stream.pipe(res);
@@ -268,7 +236,6 @@ const serveFile = (
     ),
   );
 
-/** The Host header's host, when it is loopback: anything else is a rebound name and is refused. */
 const loopbackHost = (host: string | undefined): boolean => {
   if (host === undefined) return false;
   const name = host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0]!;
@@ -353,7 +320,6 @@ export class PreviewFiles extends Context.Service<PreviewFiles, PreviewFilesShap
     PreviewFiles,
     Effect.gen(function* () {
       const folders = emptyPreviewFolders();
-      // A deployment's secrets are served from no folder, whatever a page beside them links.
       const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
       const realSecrets = realSecretPaths(config?.secretPaths ?? []);
       const port = yield* fileListener(handleFileRequest(folders, PREVIEW_RULES, realSecrets));
@@ -405,7 +371,6 @@ export const pageFolderCheck = (target: string, outside: boolean, roots: Readonl
     ),
   );
 
-/** The tool calls that change a file, by the name their part carries (`tool-<name>`). */
 const FILE_WRITERS = new Set(["tool-Write", "tool-Edit", "tool-MultiEdit", "tool-NotebookEdit"]);
 
 /**
@@ -418,7 +383,6 @@ export function filesWrittenBy(message: { readonly parts: ReadonlyArray<unknown>
     if (typeof part !== "object" || part === null) continue;
     const type: unknown = Reflect.get(part, "type");
     if (typeof type !== "string" || !FILE_WRITERS.has(type)) continue;
-    // A call still running, refused or failed wrote nothing the thread may show.
     if (Reflect.get(part, "state") !== "output-available") continue;
     const input: unknown = Reflect.get(part, "input");
     if (typeof input !== "object" || input === null) continue;

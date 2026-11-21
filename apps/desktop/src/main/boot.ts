@@ -12,7 +12,6 @@ export function logLevelFromMessage(message: unknown): LogLevel | null {
     : null;
 }
 
-/** A loopback http URL carrying a non-empty launch token (`/?boot=<token>`), else null. */
 function launchUrl(candidate: unknown): string | null {
   if (typeof candidate !== "string") return null;
   try {

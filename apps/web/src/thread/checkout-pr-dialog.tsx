@@ -34,7 +34,6 @@ export function CheckoutPrDialog({
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
   });
-  // A pull request is checked out from a repository here, never a joined machine's project.
   const projects = listed.filter(isFolderProject);
   const [root, setRoot] = useState(projectRoot);
   const [value, setValue] = useState(prRef ?? "");

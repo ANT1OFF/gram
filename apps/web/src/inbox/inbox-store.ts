@@ -11,11 +11,6 @@ import {
 import { useDerivedAsks } from "@/orchestration/needs-you-store";
 import type { WidthBounds } from "@/stores/layout";
 
-// The Inbox's own state: whether it is open, the item it shows, the category its strip picked,
-// whether it lists what is put away for Later and how wide its list is. What it lists is
-// `useDerivedAsks`'s Needs you list, which every count in the window reads too; nothing here is a
-// second copy of it. It is a dialog over the work in every mode (`InboxView`). No React.
-
 /** The Inbox's request list, beside the detail. */
 export const INBOX_LIST_WIDTH: WidthBounds = { min: 160, max: 480, default: 352 };
 
@@ -33,28 +28,16 @@ export const inboxListWidth = (dragged: number | undefined): number =>
 
 interface InboxState {
   readonly open: boolean;
-  /**
-   * The item the detail pane shows, by key: kept while the Inbox is closed, so it opens where it
-   * was left, and what ⌘⇧U steps on from.
-   */
   readonly selected: string | undefined;
   readonly category: NeedsYouCategory;
-  /**
-   * The kind of the item last shown, so a plain open whose item is gone lands on the newest of the
-   * same kind rather than the list's first.
-   */
   readonly lastKind: NeedsYouSectionKey | undefined;
-  /** Whether it lists what is put away for Later instead. */
   readonly later: boolean;
-  /** Whether it closed to show a thread it opened, which keeps focus rather than its opener. */
   readonly leftForThread: boolean;
-  /** The request list's dragged width, for this session; undefined for its default. */
   readonly listWidth: number | undefined;
   select(key: string | undefined): void;
   setCategory(category: NeedsYouCategory): void;
   setLater(later: boolean): void;
   close(): void;
-  /** Closes to show a thread it opens, focus going with the thread. */
   leave(): void;
   setListWidth(width: number | undefined): void;
 }
@@ -106,7 +89,6 @@ export const showInbox = (target: InboxTarget = {}) => {
       : newestAsk(items.filter((item) => item.workspaceId === target.workspaceId));
   const cameFor = target.ask === true || target.workspaceId !== undefined;
   const item = byKey ?? inWorkspace ?? (cameFor ? newestAsk(items) : undefined);
-  // Quiet stays: the Inbox opens over it, as it does over the work.
   const base = { open: true, leftForThread: false, later: false } as const;
   if (item !== undefined) {
     useInboxStore.setState({
@@ -126,7 +108,6 @@ export const showInbox = (target: InboxTarget = {}) => {
     useInboxStore.setState(base);
     return;
   }
-  // The strip's pick stays unless it would hide the item it opens on.
   const shows = category === "all" || category === sectionOf(remembered);
   useInboxStore.setState({
     ...base,

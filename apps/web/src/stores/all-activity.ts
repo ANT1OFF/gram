@@ -2,7 +2,6 @@ import type { ThreadId } from "@gram/contracts";
 import { create } from "zustand";
 
 interface AllActivityState {
-  /** Orchestrator threads whose chat shows every digest and reply, unfolded. */
   readonly shown: ReadonlySet<ThreadId>;
   set(threadId: ThreadId, shown: boolean): void;
 }

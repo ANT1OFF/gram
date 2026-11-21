@@ -13,7 +13,6 @@ export const anthropicBaseUrl = (baseURL: string): string => {
   return base.endsWith("/v1") ? base.slice(0, -3) : base;
 };
 
-/** Claude Code's model aliases, each with the variable that names its model. */
 const FAMILIES = {
   opus: "ANTHROPIC_DEFAULT_OPUS_MODEL",
   sonnet: "ANTHROPIC_DEFAULT_SONNET_MODEL",
@@ -117,8 +116,6 @@ export const gatewayChildEnv = (
   key: Redacted.Redacted<string>,
   models: Record<string, string> = {},
 ): Record<string, string> => ({
-  // Subscription OAuth belongs to the local Claude workflow. A gateway child must receive only
-  // its separately selected key, including when a login shell exports a subscription token.
   ...Object.fromEntries(
     Object.entries(stripped).filter(
       ([name]) => !name.toUpperCase().startsWith("CLAUDE_CODE_OAUTH_"),
@@ -126,7 +123,6 @@ export const gatewayChildEnv = (
   ),
   ...models,
   ANTHROPIC_BASE_URL: anthropicBaseUrl(baseURL),
-  // Claude Code sends the token as `Authorization: Bearer` and the API key as `x-api-key`.
   ANTHROPIC_AUTH_TOKEN: Redacted.value(key),
   ANTHROPIC_API_KEY: Redacted.value(key),
 });

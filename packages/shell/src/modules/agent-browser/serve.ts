@@ -1,5 +1,3 @@
-// Answering the server's pane messages, shared by the desktop shell and the headless browser host.
-
 import {
   paneRequestMessage,
   paneCancelMessage,

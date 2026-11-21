@@ -1,6 +1,5 @@
 import { FindMyWay } from "../platform/unstable.ts";
 
-/** All paths with authentication/credential semantics, including the root boot exchange. */
 const protectedPaths = [
   "/",
   "/ws",
@@ -12,15 +11,12 @@ const protectedPaths = [
   "/remote/enable",
   "/remote/disable",
   "/remote/revoke",
-  // A joined machine's join, dial and app tools.
   "/host/join",
   "/host/connect",
   "/host/mcp",
   "/host/install",
-  // A workspace's bundle, out and in: the local app only, so no alias may slip past that check.
   "/workspaces/export",
   "/workspaces/import",
-  // A thread started from a profile: the platform's own service or the local app only.
   "/threads/from-profile",
   "/threads/move-to-machine",
   "/threads/machine-wait",
@@ -47,7 +43,6 @@ export const authTarget = (
   )
     return undefined;
   try {
-    // Validate percent escapes AND UTF-8, including the query. Do not use decoded text to route.
     const decoded = decodeURI(target);
     if (
       [...decoded].some(

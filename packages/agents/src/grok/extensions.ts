@@ -1,6 +1,3 @@
-// Grok Build's ACP extensions and payloads read as Gram's: its models, billing, permissions,
-// slash commands, MCP servers and replayed transcripts. Pure.
-
 import type {
   AgentModel,
   PermissionMode,

@@ -4,44 +4,16 @@ import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { MENU_DANGER, MENU_FITS, MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 
-/**
- * A menu hung from a button: the ⋯ at a row's end, a chip's choices. The popup and rows are the
- * ones Gram's own menus draw (`MENU_POPUP`, `MENU_ITEM`): the row cursor where the pointer or the
- * arrow keys are, a 16 px glyph before a row's words. Esc, a pick or a click outside closes it and
- * gives focus back to the trigger.
- *
- * ```tsx
- * <Menu>
- *   <MenuTrigger render={<Button size="icon-xs" variant="ghost" aria-label="Member actions" />}>
- *     <Ellipsis aria-hidden />
- *   </MenuTrigger>
- *   <MenuContent>
- *     <MenuItem onClick={rename}>Rename</MenuItem>
- *     <MenuSeparator />
- *     <MenuItem danger onClick={remove}>Remove</MenuItem>
- *   </MenuContent>
- * </Menu>
- * ```
- */
 const Menu = MenuPrimitive.Root;
 
-/** What opens the menu; give it a `render` (a `Button`) for Gram's look. */
 const MenuTrigger = MenuPrimitive.Trigger;
 
-/** A group of rows, named by its `MenuLabel` for a screen reader. */
 const MenuGroup = MenuPrimitive.Group;
 
-/** Rows of which one is picked; give it `value` and `onValueChange`. */
 const MenuRadioGroup = MenuPrimitive.RadioGroup;
 
-/** A submenu: its `MenuSubTrigger` row and its own `MenuSubContent`. */
 const MenuSub = MenuPrimitive.SubmenuRoot;
 
-/**
- * The menu's popup, under its trigger by default and lined up with its end edge. `side`, `align`
- * and `sideOffset` place it; every other prop goes to the popup. It never runs past the window: a
- * long menu scrolls and a long row wraps.
- */
 function MenuContent({
   className,
   side = "bottom",
@@ -72,7 +44,6 @@ function MenuContent({
   );
 }
 
-/** One row; `onClick` is its action. `danger` for one that removes something. */
 function MenuItem({
   className,
   danger = false,
@@ -87,10 +58,8 @@ function MenuItem({
   );
 }
 
-/** The tick a checked row shows; it keeps its width unchecked so the rows' words line up. */
 const INDICATOR = "flex size-3.5 shrink-0 items-center justify-center";
 
-/** A setting toggled from the menu. The menu stays open, so several can be changed in one visit. */
 function MenuCheckboxItem({ className, children, ...props }: MenuPrimitive.CheckboxItem.Props) {
   return (
     <MenuPrimitive.CheckboxItem
@@ -109,7 +78,6 @@ function MenuCheckboxItem({ className, children, ...props }: MenuPrimitive.Check
   );
 }
 
-/** One of a `MenuRadioGroup`'s rows, ticked while it is the group's value. A pick closes the menu. */
 function MenuRadioItem({ className, children, ...props }: MenuPrimitive.RadioItem.Props) {
   return (
     <MenuPrimitive.RadioItem
@@ -128,7 +96,6 @@ function MenuRadioItem({ className, children, ...props }: MenuPrimitive.RadioIte
   );
 }
 
-/** A group's heading, small and muted, over its rows. */
 function MenuLabel({ className, ...props }: MenuPrimitive.GroupLabel.Props) {
   return (
     <MenuPrimitive.GroupLabel
@@ -139,7 +106,6 @@ function MenuLabel({ className, ...props }: MenuPrimitive.GroupLabel.Props) {
   );
 }
 
-/** A hairline between groups of rows. */
 function MenuSeparator({ className, ...props }: MenuPrimitive.Separator.Props) {
   return (
     <MenuPrimitive.Separator
@@ -150,7 +116,6 @@ function MenuSeparator({ className, ...props }: MenuPrimitive.Separator.Props) {
   );
 }
 
-/** A row that opens its submenu, with the chevron at its end. */
 function MenuSubTrigger({ className, children, ...props }: MenuPrimitive.SubmenuTrigger.Props) {
   return (
     <MenuPrimitive.SubmenuTrigger
@@ -164,7 +129,6 @@ function MenuSubTrigger({ className, children, ...props }: MenuPrimitive.Submenu
   );
 }
 
-/** A submenu's popup, beside its row. */
 function MenuSubContent({ className, ...props }: MenuPrimitive.Popup.Props) {
   return (
     <MenuPrimitive.Portal>

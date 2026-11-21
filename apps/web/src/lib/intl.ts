@@ -1,8 +1,3 @@
-// Shared `Intl` formatters. Building one costs about 50 µs, and formatting with a built one about
-// 1 µs, so a list that builds one per row (a Usage table, a sidebar's clock times) spends nearly
-// all of its render building them. The options a caller passes are a handful of literals, so the
-// caches stay as small as the set of distinct calls.
-
 type Locales = string | readonly string[] | undefined;
 
 const dateFormats = new Map<string, Intl.DateTimeFormat>();

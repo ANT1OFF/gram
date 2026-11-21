@@ -3,7 +3,6 @@ import { BrowserWindow } from "electron";
 import { QUIT_NOW_TITLE, quitPage } from "./quit-page.ts";
 import { quitDetail, type QuitProgress } from "./quit.ts";
 
-/** Every progress window open, which a reload onto a fresh server must leave on its own page. */
 const progressWindows = new WeakSet<BrowserWindow>();
 
 /** Whether `win` is a progress window rather than one of the app's own. */
@@ -27,7 +26,6 @@ export function createQuitWindow(options: {
     if (win === undefined || win.isDestroyed()) return;
     void win.webContents
       .executeJavaScript(`window.setDetail(${JSON.stringify(detail)})`)
-      // The page may not have loaded yet; `did-finish-load` renders it then.
       .catch(() => {});
   };
   return {

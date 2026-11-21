@@ -25,7 +25,6 @@ export const showPanelTool = (hub: EventHub["Service"]) =>
           panel === "preview" && target !== undefined
             ? (previewUrl(target) ?? previewFileTarget(target))
             : target;
-        // A pinned page is the user's, in a session no agent reaches: never the Preview tab's.
         if (panel === "preview" && resolved !== undefined && isPinnedPageUrl(resolved)) {
           return yield* new AppToolError({
             tool: "show_panel",

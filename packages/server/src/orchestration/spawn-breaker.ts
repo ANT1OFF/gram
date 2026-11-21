@@ -1,5 +1,3 @@
-// A failed provider launch holds briefs in the ordinary outbox. One held worker is the recovery
-// probe; no extra model requests, worktrees, queue or credentials are created to test a provider.
 import type {
   AppToolError,
   ModelRef,
@@ -115,7 +113,6 @@ export const makeSpawnBreaker = (deps: Dependencies) =>
       | { type: "output"; model: ModelRef };
     const recovered = yield* Queue.unbounded<Observation>();
     const recorded = new Map<string, StoredSpawnBreaker>();
-    // Both failures and recovery receipts are durable. Held briefs also retain their cause.
     for (const workspace of yield* store.listWorkspaces) {
       const outbox = yield* readOutbox(workspace.workspace.id);
       for (const record of [
@@ -135,8 +132,6 @@ export const makeSpawnBreaker = (deps: Dependencies) =>
       }
     }
     for (const record of recorded.values()) if (record.cleared !== true) state.fail(record);
-    // Also catch a failure just before shutdown that had not held any brief yet. Only examine the
-    // failed turn, not previous productive turns. Synthetic error/data parts are not model output.
     const refreshFailures = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       for (const thread of yield* store.listThreads) {
@@ -301,7 +296,6 @@ export const makeSpawnBreaker = (deps: Dependencies) =>
           const projectName = yield* deps.projectName(input, workspace);
           if (projectName === undefined) return;
           const at = yield* Clock.currentTimeMillis;
-          // `unattended` stays: its release is admitted against the cap under the spawn lock as well.
           const { priority: _priority, atLimit: _atLimit, ...rest } = input;
           const stored: StoredHeldBrief = existing ?? {
             id: `held-${randomUUID().slice(0, 8)}`,

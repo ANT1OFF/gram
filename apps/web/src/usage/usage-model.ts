@@ -72,7 +72,6 @@ export function familiesOf(models: readonly UsageModelShare[]): FamilyTotals {
   return sums;
 }
 
-/** Input tokens of every kind: cached, written to cache, uncached and unsplit. */
 const inputOf = (t: UsageTotals): number =>
   t.uncachedInputTokens + t.cacheReadTokens + t.cacheWriteTokens + t.unclassifiedInputTokens;
 

@@ -1,12 +1,7 @@
-// The recurring-poll side of the rate-limit policy: how long until the next pass, given how many
-// passes in a row GitHub refused and how much quota is left. `@gram/git`'s `backoffDelayMs`
-// owns the ramp itself; this owns the per-loop counter, the pre-emptive slowdown and the logging.
-
 import { backoffDelayMs, type RateLimitSignal } from "@gram/git";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 
-/** What one poll's worth of quota headroom does to the cadence. */
 const QUOTA_LOW_FRACTION = 0.25;
 const QUOTA_CRITICAL_FRACTION = 0.1;
 export const QUOTA_LOW_MULTIPLIER = 4;
@@ -71,8 +66,6 @@ export const makePollBackoff = (
       limited: (signal) =>
         Effect.suspend(() => {
           consecutive += 1;
-          // Never below the base cadence: the ramp starts at a minute, and a poll that normally
-          // runs every five would otherwise speed up on being refused.
           const delay = Math.max(
             Duration.toMillis(base),
             backoffDelayMs(consecutive, {

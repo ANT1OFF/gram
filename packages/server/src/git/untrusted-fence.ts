@@ -1,4 +1,3 @@
-// The fence moved to contracts, where the notices Gram composes for agents are written too.
 export {
   defang,
   fence,

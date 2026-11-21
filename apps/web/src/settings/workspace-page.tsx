@@ -75,7 +75,6 @@ import {
 
 type Changes = ReturnType<typeof useWorkspaceChanges>;
 
-/** The orchestrator model a charter names itself, not a tier it follows. */
 const ownModel = (model: OrchestratorCharter["orchestratorModel"]) =>
   model === undefined || "tier" in model ? undefined : model;
 
@@ -159,7 +158,6 @@ export function WorkspaceSettingsPage({
         description="Which models the orchestrator and its workers run on."
         keywords={["roster", "worker models", "other models", "orchestrator model", "brief footer"]}
       >
-        {/* An orchestrator whose profile limits its models is offered only those. */}
         <ModelsAllowedBy profile={orchestrator?.profile}>
           {orchestrator !== undefined && (
             <SwitchOrchestratorAction
@@ -465,7 +463,6 @@ function Basics({
   );
 }
 
-/** The name, typed as a draft and saved when left or on Enter. */
 function NameField({ state, changes }: { state: WorkspaceState; changes: Changes }) {
   const { workspace } = state;
   const id = useId();
@@ -529,10 +526,6 @@ function NameField({ state, changes }: { state: WorkspaceState; changes: Changes
 
 function AutonomySection({ state, changes }: { state: WorkspaceState; changes: Changes }) {
   const charter = changes.charter ?? state.charter;
-  // A refused change of level is said by the selector, which never left the level it was on: the
-  // server names the threads in the way and the ways out, and that belongs beside the choice.
-  // Kept with the charter it was refused against: any later save gives a new charter, which
-  // clears it, as one that removes what was in the way should.
   const [refusal, setRefusal] = useState<{
     charter: OrchestratorCharter;
     message: string;
@@ -572,7 +565,6 @@ function AutonomySection({ state, changes }: { state: WorkspaceState; changes: C
         min={WORKERS_AT_ONCE.min}
         step={WORKERS_AT_ONCE.step}
         disabled={changes.busy}
-        // A draft committed while another charter save runs would build on stale props.
         onCommit={(value) => {
           if (!changes.busy) {
             void changes.saveCharter(
@@ -601,7 +593,6 @@ function AutonomySection({ state, changes }: { state: WorkspaceState; changes: C
   );
 }
 
-/** Connectors and automatic Dream, the rarely changed ones: folded under More options. */
 function MoreOptions({ state, changes }: { state: WorkspaceState; changes: Changes }) {
   const [open, setOpen] = useState(false);
   const id = useId();

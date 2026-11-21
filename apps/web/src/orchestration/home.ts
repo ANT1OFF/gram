@@ -21,9 +21,6 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { useWorkspacesQuery } from "./use-orchestration";
 
-// The orchestrator is home: a launch with a workspace opens one, the one used last first. With
-// Settings → General → Open at launch at Last thread, a launch opens the thread shown last instead.
-
 const LAST_KEY = "gram.lastOrchestratorWorkspace";
 const LAST_THREAD_KEY = "gram.lastThread";
 
@@ -39,12 +36,9 @@ export const readLast = (): WorkspaceId | undefined => {
 const writeLast = (workspaceId: WorkspaceId) => {
   try {
     localStorage.setItem(LAST_KEY, workspaceId);
-  } catch {
-    // Without storage, the most recently active orchestrator stands in.
-  }
+  } catch (_withoutStorageTheMostRecentlyActiveOrchestratorStandsIn) {}
 };
 
-/** The thread the window showed last, orchestrator or not, across launches. */
 const readLastThread = (): ThreadId | undefined => {
   try {
     return (localStorage.getItem(LAST_THREAD_KEY) ?? undefined) as ThreadId | undefined;
@@ -56,9 +50,7 @@ const readLastThread = (): ThreadId | undefined => {
 const writeLastThread = (threadId: ThreadId) => {
   try {
     localStorage.setItem(LAST_THREAD_KEY, threadId);
-  } catch {
-    // Without storage, a launch opens the orchestrator instead.
-  }
+  } catch (_withoutStorageALaunchOpensTheOrchestratorInstead) {}
 };
 
 /**
@@ -119,13 +111,7 @@ export function useRememberOrchestrator(): void {
 /** How long the home page waits for the workspaces before it shows itself anyway. */
 export const LANDING_WAIT_MS = 3_000;
 
-/**
- * The window's one launch landing: whether it opened on the home page (read once, so only that
- * launch lands anywhere), whether it is decided, and whether it is on its way to an orchestrator.
- */
 const launch: { home: boolean | undefined; landed: boolean; leaving: boolean } = {
-  // Read when first asked, not as the module loads: an app that serves this one under a path sets
-  // that path before anything renders, and after this module has loaded.
   home: undefined,
   landed: false,
   leaving: false,
@@ -169,14 +155,11 @@ export function useLandOnOrchestrator(): boolean {
   const [lastThread] = useState(readLastThread);
   const [lands] = useState(() => launchedHome() && !launch.landed);
   const [gaveUp, setGaveUp] = useState(false);
-  // The threads rank the workspaces by activity, which the one used last doesn't need.
   const known = workspaces.some(
     ({ workspace }) => workspace.id === last && workspace.orchestratorThreadId !== undefined,
   );
-  // The last thread is opened only once the threads say it is still there.
   const wantsThread = open === "thread" && lastThread !== undefined;
   const waiting = !settled || (!ready && (wantsThread || (!known && workspaces.length > 0)));
-  // Decided once: a workspace that turns up after a launch that found none lands nowhere.
   const target =
     lands && !launch.landed && !waiting
       ? launchThread(open, workspaces, byId, last, lastThread)

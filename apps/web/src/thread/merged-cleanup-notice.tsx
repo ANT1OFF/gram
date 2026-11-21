@@ -53,7 +53,6 @@ export function useMergedCleanup(threadId: ThreadId): MergedCleanup | undefined 
     merged === undefined ||
     thread.completedReason !== "prMerged" ||
     thread.checkout.kind !== "worktree" ||
-    // Gone already: the folder-missing notice offers the close.
     worktreeMissing(summary?.git)
   ) {
     return undefined;
@@ -83,7 +82,6 @@ export function useMergedCleanup(threadId: ThreadId): MergedCleanup | undefined 
   };
 }
 
-/** Whether the PR strip draws `pr` as the thread's own row: it is that PR and isn't hidden. */
 function stripShowsPr(
   summary: ThreadSummary | undefined,
   pr: { repo: string; number: number },

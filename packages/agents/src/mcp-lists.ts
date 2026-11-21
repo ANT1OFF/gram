@@ -1,8 +1,3 @@
-/**
- * How a session's MCP lists (`OpenSessionOptions.mcpAllowlist` and `mcpDenylist`) read for a
- * harness that has to apply them server by server: Claude Code takes the lists themselves, Codex
- * a switch per server they have configured.
- */
 import { connectorListed, type ConnectorIdentity } from "@gram/contracts";
 import type { OpenSessionOptions } from "./host.ts";
 

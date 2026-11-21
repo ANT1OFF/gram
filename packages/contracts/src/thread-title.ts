@@ -1,11 +1,8 @@
-/** The longest a starting title runs, in words and in characters. */
 const TITLE_WORDS = 8;
 const TITLE_CHARS = 60;
 
-/** A clause boundary a long sentence is cut at, when what comes before it still says something. */
 const CLAUSE = /[,;:–—]\s|\s(?:and|so|then|because|but)\s/i;
 
-/** Openers that ask rather than name the work: "Please add…", "Can you fix…". */
 const ASKING = /^(?:please|pls|hey|hi|ok|okay|so|can you|could you|would you|will you)[\s,]+/i;
 
 const words = (text: string): string[] => text.split(/\s+/).filter((word) => word !== "");
@@ -19,7 +16,6 @@ const words = (text: string): string[] => text.split(/\s+/).filter((word) => wor
 export const derivedTitle = (text: string | undefined): string => {
   const line = (text ?? "").split("\n").find((each) => each.trim() !== "") ?? "";
   let title = line.trim().replace(ASKING, "");
-  // The first sentence, when one ends before the line does.
   const sentence = /^(.+?[.!?])\s+\S/.exec(title)?.[1];
   if (sentence !== undefined && words(sentence).length >= 2) title = sentence;
   if (words(title).length > TITLE_WORDS) {

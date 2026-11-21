@@ -14,10 +14,6 @@ import {
 import type { SaveWorkspaceInput } from "@/api/types";
 import { projectNameOf, toggleDraftProject } from "@/settings/workspace-settings-model";
 
-// Pure logic behind the New workspace sheet: its name, repositories, what it should work on, and
-// autonomy. The stages wait for the workspace's settings. No React, so it is tested without
-// a browser.
-
 /** The sheet as it is filled in. */
 export interface NewWorkspaceDraft {
   /** The name typed; blank names it after the home repository (`workspaceNameFor`). */
@@ -112,8 +108,6 @@ export const createInput = (
     draft.homeProjectId !== undefined && draft.projectIds.includes(draft.homeProjectId)
       ? draft.homeProjectId
       : first;
-  // A typed name is the person's: kept as typed, never numbered, so one that is taken is refused
-  // here rather than by the save.
   const typed = draft.name.trim();
   if (
     typed !== "" &&
@@ -147,7 +141,6 @@ export const subscriptionWorkspaceCharter = (
   claude: readonly AgentModel[] | undefined,
   codex: readonly AgentModel[] | undefined,
 ): OrchestratorCharter => {
-  // With the recommended setup on, a new workspace follows Lead, with a roster of each tier.
   if (settings !== undefined && recommendedSetupOn(settings)) {
     return newWorkspaceCharter({
       workerModels: settings.agents.workerModels ?? [],

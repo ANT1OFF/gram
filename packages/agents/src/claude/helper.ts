@@ -153,8 +153,6 @@ export const makeClaudeHelper = (
               !localHelperEffortSupported(toAgentModel(model), call.effort)
             )
               return yield* Effect.fail(new HelperTransportError({ failure: "unavailable" }));
-            // No await between the scheduler's fresh authorization and prompt delivery. Keep this
-            // in the scoped fiber so cancellation also interrupts a pending authorization read.
             yield* call.authorize(() =>
               input.push({
                 type: "user",
@@ -228,7 +226,6 @@ export const makeClaudeHelper = (
           model: call.model,
           systemPrompt: call.system,
           ...(call.effort === undefined || call.effort === "none" ? {} : { effort: call.effort }),
-          // CLI-supported output bound, independent of subscription provider usage windows.
         },
         call.maxOutputTokens,
       ),

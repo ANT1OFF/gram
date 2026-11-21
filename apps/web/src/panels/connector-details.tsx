@@ -8,7 +8,6 @@ const READ_ONLY_HINT = "Read-only: the server says it changes nothing";
 const DESTRUCTIVE_HINT = "Destructive: the server says it may delete or overwrite";
 const ORG_MANAGED_HINT = "Your organisation manages its sign-in";
 
-/** A tool's hints as glyphs, each named on hover and to a screen reader. */
 function ToolHints({ tool }: { tool: ConnectorTool }) {
   return (
     <>

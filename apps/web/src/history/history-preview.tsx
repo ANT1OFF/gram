@@ -9,7 +9,6 @@ import { reportLine } from "@/orchestration/board-model";
 
 import type { HistoryEntry } from "./history-model";
 
-/** The most of a report or a first prompt the preview quotes. */
 const QUOTE_MAX = 600;
 
 /** What History knows of a row beyond its line, from what Gram already holds. */

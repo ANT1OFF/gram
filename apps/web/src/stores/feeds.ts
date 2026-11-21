@@ -21,7 +21,6 @@ import {
 } from "./threads";
 import { createThreadFeed, type ThreadFeed, type ThreadFeedState } from "./thread-feed";
 
-/** A feed and the api its history pages come from, which a replaced connection replaces. */
 interface Kept {
   feed: ThreadFeed;
   source: { api: Api };
@@ -31,24 +30,13 @@ interface Entry extends Kept {
   abort: AbortController;
   refs: number;
   evict: ReturnType<typeof setTimeout> | undefined;
-  /** Set while a gone feed waits for its thread to come back. */
   unwatch: (() => void) | undefined;
 }
 
-/**
- * How long a subscription may go without a word from the server before it is made again, doubling
- * each time up to the cap. A feed that hears nothing back, or whose stream ends in an error other
- * than the thread being gone, never stays on its loading line for good.
- */
 const FEED_QUIET_MS = 12_000;
 const FEED_QUIET_MAX_MS = 60_000;
 
-/** Feeds stay subscribed briefly after the last viewer leaves, so switching back is instant. */
 const KEEP_WARM_MS = 30_000;
-/**
- * How many feeds are kept, unsubscribed, after that, most recently left last: reopening one shows
- * what it held at once and resumes from its revision rather than being sent the whole history.
- */
 const KEEP_COLD = 8;
 const entries = new Map<string, Entry>();
 const cold = new Map<string, Kept>();
@@ -77,7 +65,6 @@ function entryFor(api: Api, threadId: ThreadId): Entry {
   if (entry) return entry;
   const source = { api };
   const revived = takeCold(threadId);
-  // What it held may have moved on while nothing listened.
   revived?.feed.resubscribing();
   const kept = revived ?? {
     source,
@@ -95,8 +82,6 @@ function entryFor(api: Api, threadId: ThreadId): Entry {
 
 function listen(api: Api, threadId: ThreadId, entry: Entry, quiet = FEED_QUIET_MS) {
   const { feed, abort } = entry;
-  // Taken before subscribing: the events feed runs apart from this one, so a reopened thread's
-  // summary can land before the refusal of the subscription made while it was closed.
   const before = useThreadsStore.getState().byId[threadId];
   let heard = false;
   const again = () => {
@@ -114,7 +99,6 @@ function listen(api: Api, threadId: ThreadId, entry: Entry, quiet = FEED_QUIET_M
   void (async () => {
     try {
       for await (const event of api.threadFeed(threadId, abort.signal, feed.resume)) {
-        // A cold feed lives on under a new subscription; this one's stragglers mustn't reach it.
         if (abort.signal.aborted) return;
         heard = true;
         clearTimeout(watch);
@@ -129,10 +113,7 @@ function listen(api: Api, threadId: ThreadId, entry: Entry, quiet = FEED_QUIET_M
         return;
       }
       feed.gone();
-      // Whatever the server sent about the thread before refusing it counts, held for a frame or not.
       flushServerEvents();
-      // The summary held since before the refusal is one the server no longer has, so the lists
-      // drop it rather than keep a row that opens onto this. One that came since is a reopen.
       if (before !== undefined && useThreadsStore.getState().byId[threadId] === before) {
         forgetClosedThread(threadId);
       }
@@ -141,13 +122,6 @@ function listen(api: Api, threadId: ThreadId, entry: Entry, quiet = FEED_QUIET_M
   })();
 }
 
-/**
- * A reopened thread keeps its id, so a gone feed subscribes again once the server sends the thread
- * anew: any summary other than `stale`, the one held before the refused subscription, whether an
- * upsert, a status or a snapshot after a reconnect that missed the removal. Not merely while the
- * list has it: the list can still hold a thread the server has just closed, and resubscribing then
- * would only fail again.
- */
 function resubscribeOnReturn(
   api: Api,
   threadId: ThreadId,
@@ -194,7 +168,6 @@ export function findMessage(
   return entry.feed.find(messageId);
 }
 
-/** Holds the thread's feed open, subscribing it if nothing else holds it. */
 function hold(api: Api, threadId: ThreadId): Entry {
   const entry = entryFor(api, threadId);
   entry.refs++;
@@ -202,7 +175,6 @@ function hold(api: Api, threadId: ThreadId): Entry {
   return entry;
 }
 
-/** Lets go of a feed `hold` gave; the last to let go leaves it warm for a while, then cold. */
 function release(threadId: ThreadId, entry: Entry) {
   entry.refs--;
   if (entry.refs > 0) return;
@@ -242,8 +214,6 @@ const EMPTY_FEED = createThreadFeed().store.getInitialState();
 /** Subscribes to a thread's message feed while mounted and selects from its store. */
 export function useThreadFeed<T>(threadId: ThreadId, selector: (state: ThreadFeedState) => T): T {
   const api = useApi();
-  // React can abandon a render without running effects or cleanup. Only the committed
-  // external-store subscription may open/retain a feed; reads never create entries.
   const store = useMemo(
     () => ({
       getState: () =>
@@ -283,15 +253,11 @@ export function useServerEvents() {
       (event) => {
         applyEvent(event);
         invalidateForEvent(queryClient, event, ledgerLive);
-        // A later snapshot means the feed resubscribed (a dropped socket, a server restart, or the
-        // server's buffer overflowing): the snapshot covers threads, but every other event sent in
-        // the gap is lost, so what they would have refreshed is read again.
         if (event.type === "threads.snapshot" && snapshots++ > 0) {
           invalidateAfterResync(queryClient, ledgerLive);
           void pullServerSettings();
           void loadKeybindings(api, () => abort.signal.aborted);
         }
-        // A change no window made (an approved `settings_propose`): every window takes it.
         if (event.type === "settings.changed") void pullServerSettings();
       },
       undefined,
@@ -304,7 +270,6 @@ export function useServerEvents() {
       } catch (error) {
         if (!abort.signal.aborted) console.error("event feed ended", error);
       } finally {
-        // What came before the feed ended or was replaced still lands.
         batch.flush();
       }
     })();
@@ -313,7 +278,5 @@ export function useServerEvents() {
       unregister();
       batch.flush();
     };
-    // A replaced connection brings a new `api`, which must resubscribe, and the query client is used
-    // inside; the rule treats both as stable context values and can't see that.
   }, [api, queryClient]);
 }

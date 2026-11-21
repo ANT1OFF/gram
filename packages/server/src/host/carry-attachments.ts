@@ -22,17 +22,12 @@ const failure = (error: unknown) =>
     ? String((error as { message: unknown }).message)
     : String(error);
 
-/**
- * An attachment's bytes on this machine, as base64: a regular file, never a credential file, and
- * only inside `within` when it is given, by its real path.
- */
 const readHere = (
   path: string,
   maxBytes: number,
   within: string | undefined,
 ): Effect.Effect<string, string> =>
   Effect.gen(function* () {
-    // The folder by its real path, as the file's is compared; one that doesn't resolve holds nothing.
     const root =
       within === undefined
         ? undefined
@@ -51,7 +46,6 @@ const readHere = (
     return bytes.toString("base64");
   }).pipe(
     Effect.scoped,
-    // Said without the path: on the other machine it would name a file that isn't there.
     Effect.mapError((error) =>
       typeof error === "string"
         ? error
@@ -79,11 +73,6 @@ export const carryAttachments = (
   machineName: string,
   store: AttachmentsOnMachine,
   maxBytes: number = MAX_ATTACHMENT_BYTES,
-  /**
-   * Gram's attachments folder, on a server with no local user: attachments are read only from
-   * this thread's own folder in it. Any other path a person names is one of the server's own
-   * files, or another thread's attachment.
-   */
   within?: string,
 ): Effect.Effect<UserInput> =>
   Effect.gen(function* () {

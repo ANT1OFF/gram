@@ -1,15 +1,3 @@
-// The only door to helper-model calls. Titles, plans, recaps, suggestions and Waiting on you all
-// come through `schedule`; isolated local adapters and the explicit gateway transport live behind it. That
-// is what makes three promises checkable in one place:
-//
-// - A helper call can't act: local adapters verify no tools/MCP; gateway requests offer no tools.
-// - Every call lands in the `helper_usage` ledger, which local call caps and the gateway estimate
-//   budget reads, and an output whose basis hasn't changed is served from `helper_outputs` with no
-//   call at all.
-// - No transcript text reaches a log: a line here says kind, thread, model, lane, time, tokens,
-//   cost and the failure's class and status, never a prompt, an output or an error's message or
-//   body, which can quote the request. `helper-leaks.test.ts` holds this to it.
-
 import { createHash } from "node:crypto";
 import { HelperTransportError, type HelperCall } from "@gram/agents";
 
@@ -153,11 +141,9 @@ export type HelperResult<A> =
       readonly model?: string | undefined;
     }
   | { readonly _tag: "Skipped"; readonly reason: HelperSkipReason }
-  /** A newer basis for the same kind, thread and request scope replaced the job before it ran. */
   | { readonly _tag: "Superseded" }
   | { readonly _tag: "Failed"; readonly failure: HelperFailureClass | "defect" };
 
-/** A thread's stored output of a kind, whatever basis it came from. */
 interface HelperLatest<A> {
   readonly value: A;
   readonly basis: string;
@@ -214,7 +200,6 @@ export const parseJsonOutput = (text: string): unknown => {
       try {
         return JSON.parse(text.slice(start, i + 1)) as unknown;
       } catch {
-        // Balanced but not JSON (a brace in prose): there is no second chance in the same text.
         return undefined;
       }
     }
@@ -224,7 +209,6 @@ export const parseJsonOutput = (text: string): unknown => {
 
 const CONCURRENCY: Readonly<Record<HelperLane, number>> = { interactive: 2, background: 1 };
 
-/** A kind's calls a UTC day. Titles have none: the watcher asks at most twice a thread. */
 const KIND_DAILY_CALLS: Readonly<Partial<Record<HelperKind, number>>> = {
   plan: 400,
   suggest: 600,
@@ -234,10 +218,8 @@ const KIND_DAILY_CALLS: Readonly<Partial<Record<HelperKind, number>>> = {
   stuck: 100,
 };
 
-/** The share of the daily budget past which the background lane stops, titles excepted. */
 const BACKGROUND_SHARE = 0.8;
 
-/** How long after a `typing: true` the pause lasts without another: the client's 2 s throttle. */
 const TYPING_THROTTLE_MS = 2_000;
 
 const RESTRICTED_MS = DAY_MS;
@@ -278,7 +260,6 @@ interface Entry {
   execution?: Fiber.Fiber<HelperResult<unknown>>;
 }
 
-/** Per model: transient failures in a row and when it may be asked again. */
 interface Health {
   failures: number;
   until: number;
@@ -293,12 +274,10 @@ const skipped = (reason: HelperSkipReason): HelperResult<never> => ({ _tag: "Ski
 const decode = <A, I>(output: Schema.Codec<A, I>, data: unknown) =>
   Schema.decodeUnknownOption(output as Schema.Codec<A, unknown>)(data);
 
-/** The job's reading of `text`; a parser that throws has read an answer that isn't one. */
 const parseOutput = (job: HelperJob<unknown, unknown>, text: string): unknown => {
   try {
     return (job.parse ?? parseJsonOutput)(text);
   } catch {
-    // The throw's message may quote the answer, so it goes no further than this.
     return undefined;
   }
 };
@@ -328,13 +307,9 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
     let keyDisabledUntil = 0;
     const health = new Map<string, Health>();
     const restrictedUntil = new Map<string, number>();
-    /** `model|effort` pairs the gateway refused deterministically this session. */
     const incompatible = new Set<string>();
-    /** Epoch ms of the last hour's calls, for the hourly cap. */
     let callTimes: Array<number> = [];
-    /** Calls admitted and not yet in the ledger, per kind, so concurrent workers count each other. */
     const inFlight = new Map<HelperKind, number>();
-    /** Admission is a read of the ledger and a reservation, which two workers mustn't interleave. */
     const admission = yield* Semaphore.make(1);
 
     const enqueue = (key: string, lane: HelperLane) =>
@@ -363,12 +338,10 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
           ),
         );
 
-    /** The route as it may be tried now, or nothing while its model is out of bounds. */
     const usable = (route: HelperRoute, now: number): HelperRoute | undefined => {
       if ((health.get(route.model)?.until ?? 0) > now) return undefined;
       if ((restrictedUntil.get(route.model) ?? 0) > now) return undefined;
       if (!incompatible.has(`${route.model}|${route.effort ?? ""}`)) return route;
-      // The model refused the effort, not necessarily the model: try it with none.
       return route.effort !== undefined && !incompatible.has(`${route.model}|`)
         ? { model: route.model }
         : undefined;
@@ -394,12 +367,6 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
         return kindCap !== undefined && kindCalls >= kindCap;
       });
 
-    /**
-     * Reserves one call against the caps, or says why not: the switch is off, the key is disabled
-     * or the budget is spent. Every transport call goes through here, the fallback's too, so a
-     * failed primary can't carry the job past a cap, a switch turned off or a key another job found
-     * disabled meanwhile.
-     */
     const admit = (
       entry: Entry,
       provider?: "claude" | "codex",
@@ -407,7 +374,6 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
     ): Effect.Effect<HelperSkipReason | undefined> =>
       admission.withPermits(1)(
         Effect.gen(function* () {
-          // The switches too: one turned off while the primary was out stops the fallback.
           const settings = yield* deps.store.getSettings;
           if (!helperOn(settings, entry.job.kind)) return "off";
           const source = helperSource(settings);
@@ -490,7 +456,6 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
         Effect.catch((error) => Effect.succeed<Attempt>({ ok: false, error })),
       );
 
-    /** What the model's failure means for the next call to it. */
     const noteFailure = (route: HelperRoute, error: ClassifiedFailure, now: number) =>
       Effect.sync(() => {
         switch (error.failure) {
@@ -592,7 +557,6 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
             }
             return [{ provider, model: saved ?? model.id, effort }];
           });
-          // An explicit saved primary is deliberate: it is never replaced implicitly.
           const primarySaved =
             settings.helpers?.[order[0] === "claude" ? "claudeModel" : "codexModel"];
           const primaryEffort =
@@ -634,8 +598,6 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
           }
           const refused = yield* admit(entry, route.provider, profile);
           if (refused !== undefined) return yield* logSkip(job, refused);
-          // The reservation is released however this ends, a defect or an interruption included,
-          // or a lost slot would count against the caps for the rest of the session.
           const { started, ended, inputTokens, outputTokens, cost, value, error } =
             yield* Effect.gen(function* () {
               const at = yield* Clock.currentTimeMillis;
@@ -657,7 +619,6 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
                           helperLocalFallback(current) !== helperLocalFallback(settings)
                         )
                           throw new HelperTransportError({ failure: "restriction" });
-                        // This check and the adapter's enqueue share one synchronous boundary.
                         sendPrompt();
                       },
                       catch: () => new HelperTransportError({ failure: "restriction" }),
@@ -759,10 +720,7 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
             continue;
           }
           const entry = pending.get(key);
-          // A key moved to the other lane, or already taken, stays behind in this queue.
           if (entry === undefined || entry.lane !== lane) continue;
-          // One execution per key at a time, so an older basis can't land after a newer one: this
-          // one waits in `pending` and is queued again when the running one ends.
           if (running.has(key)) continue;
           pending.delete(key);
           running.set(key, entry);
@@ -799,7 +757,6 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
         if (next !== undefined) yield* enqueue(entry.key, next.lane);
         const level = deps.activity === undefined ? "active" : yield* deps.activity.level;
         if (lane === "background" && level !== "active") {
-          // Half rate: as long a rest as the job took.
           yield* Effect.sleep((yield* Clock.currentTimeMillis) - started);
         }
       }).pipe(Effect.forever);
@@ -858,7 +815,6 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
           }
           return yield* awaitEntry(waiting);
         }
-        // Someone waits on the key interactively, so it stays in that lane under a newer basis.
         const lane: HelperLane = waiting?.lane === "interactive" ? "interactive" : job.lane;
         const entry: Entry = {
           job: job as HelperJob<unknown, unknown>,
@@ -968,7 +924,6 @@ export class HelperScheduler extends Context.Service<HelperScheduler, HelperSche
       return yield* makeHelperScheduler({
         store,
         helperStore,
-        // The lookup names an agent only for its error message, which is dropped here.
         key: (profile) =>
           Option.isNone(credentials)
             ? Effect.succeed(Option.none())

@@ -47,7 +47,6 @@ const hintOf = (wakes: readonly ThreadWake[], now: number) =>
     .map((wake) => `${wakeWhenText(wake, (at) => formatWakeTime(at, now))}: ${wake.note}`)
     .join("\n");
 
-/** A chip's label: what a wake on a condition or another PR waits on, or when a timed one is due. */
 const labelOf = (wake: ThreadWake, now: number) =>
   wake.condition !== undefined
     ? wakeConditionLabel(wake.condition)

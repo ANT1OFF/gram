@@ -45,7 +45,6 @@ export const isMac = () =>
 
 interface Chord {
   mod: boolean;
-  /** The Control key on every platform; off macOS it's the same key as `mod`. */
   ctrl: boolean;
   shift: boolean;
   alt: boolean;
@@ -103,7 +102,6 @@ export const EDIT_CHORDS: readonly string[] = [
   "mod+shift+v",
 ];
 
-/** Whether a yielding shortcut's keys are held by any other shortcut, active now or not. */
 const heldByOther = (keys: string, mac: boolean): boolean =>
   EDIT_CHORDS.some((chord) => sameKeys(chord, keys, mac)) ||
   registry.some((other) => {
@@ -112,14 +110,8 @@ const heldByOther = (keys: string, mac: boolean): boolean =>
     return theirs !== undefined && sameKeys(theirs, keys, mac);
   });
 
-/**
- * The zoom characters, which mean zoom wherever a layout puts them. They go by what was typed, ahead
- * of the physical-key rule below: a Nordic `-` sits on the key a US keyboard has `/` on, so by
- * position ⌘- opened the shortcuts overlay (⌘/) instead of zooming out.
- */
 const TYPED_FIRST: ReadonlySet<string> = new Set(["-", "+", "="]);
 
-/** Physical key for letters/digits/backslash/brackets (layout- and ⌥-independent), else `event.key`. */
 function eventKey(event: KeyboardEvent): string {
   if (TYPED_FIRST.has(event.key)) return event.key;
   const { code } = event;
@@ -134,7 +126,6 @@ function eventKey(event: KeyboardEvent): string {
   return event.key.toLowerCase();
 }
 
-/** A single character matched by what's typed rather than the physical key, e.g. `?`. */
 const byCharacter = (key: string) => key.length === 1 && !/[a-z0-9\\/.[\]]/.test(key);
 
 /**
@@ -145,11 +136,6 @@ const byCharacter = (key: string) => key.length === 1 && !/[a-z0-9\\/.[\]]/.test
 export const isAltGraphText = (event: KeyboardEvent, mac = isMac()): boolean =>
   !mac && event.ctrlKey && event.altKey && event.key.length === 1 && !/^[a-z0-9]$/i.test(event.key);
 
-/**
- * Keys strings for one modifier held alone, named as `KeyboardEvent.code` names its key, lowercased
- * (`altright` for Right ⌥): push-to-talk's binding. They are never a chord: `matches` and the
- * registry ignore them, and push-to-talk watches them itself.
- */
 const LONE_MODIFIERS: Readonly<Record<string, { readonly mac: string; readonly other: string }>> = {
   altright: { mac: "Right ⌥", other: "Right Alt" },
   altleft: { mac: "Left ⌥", other: "Left Alt" },
@@ -159,7 +145,6 @@ const LONE_MODIFIERS: Readonly<Record<string, { readonly mac: string; readonly o
   controlleft: { mac: "Left ⌃", other: "Left Ctrl" },
   shiftright: { mac: "Right ⇧", other: "Right Shift" },
   shiftleft: { mac: "Left ⇧", other: "Left Shift" },
-  // Where the app sees it at all: a keyboard may keep Fn to itself.
   fn: { mac: "Fn", other: "Fn" },
 };
 
@@ -178,16 +163,11 @@ export const loneModifierFromEvent = (event: Pick<KeyboardEvent, "code">): strin
 export function matches(keys: string, event: KeyboardEvent, mac = isMac()): boolean {
   if (isAltGraphText(event, mac) || loneModifier(keys) !== undefined) return false;
   const chord = parseKeys(keys);
-  // Off macOS, `mod` and `ctrl` are both the Control key.
   const wantMeta = mac && chord.mod;
   const wantCtrl = mac ? chord.ctrl : chord.mod || chord.ctrl;
   if (event.metaKey !== wantMeta || event.ctrlKey !== wantCtrl) return false;
   if (chord.alt !== event.altKey) return false;
-  // `+` is `=`'s shifted twin on a US keyboard and a key of its own, with `=` somewhere awkward, on
-  // a Nordic or German one. A binding on `=` is a zoom-in and means either, as in every browser;
-  // `+` can't be bound itself, being what separates a chord's keys.
   if (chord.key === "=") return event.key === "=" || event.key === "+";
-  // `?` and similar need shift to type; don't demand it be declared.
   if (byCharacter(chord.key)) return event.key === chord.key;
   if (chord.shift !== event.shiftKey) return false;
   return eventKey(event) === chord.key;
@@ -262,7 +242,6 @@ export function keyLabel(text: string, mac = isMac()): string {
     .replace(/[⏎↵]/g, "Enter");
 }
 
-/** Off macOS, keys are spelled out as Windows labels them. */
 const WORDS: Record<string, string> = {
   enter: "Enter",
   escape: "Esc",
@@ -285,13 +264,10 @@ export function formatKeys(keys: string, mac = isMac()): string {
     .join("+");
 }
 
-// ---------------------------------------------------------------------------------------------
-
 const registry: Shortcut[] = [];
 const listeners = new Set<() => void>();
 let snapshot: readonly Shortcut[] = [];
 
-// The snapshot shows effective keys; a shortcut the user turned off is hidden.
 const publish = () => {
   snapshot = registry.map((shortcut) => {
     const keys = effectiveKeys(shortcut.id, shortcut.keys);
@@ -346,9 +322,6 @@ const isActivatable = (target: EventTarget | null) =>
  * dialog button.
  */
 export function dispatchShortcut(event: KeyboardEvent, mac = isMac()): boolean {
-  // While an IME is composing, every key belongs to it: Enter accepts a candidate, and a chord on
-  // it (⌘Enter to send) would post half a word. `keyCode` 229 covers the browsers that report the
-  // key before `isComposing` is set.
   if (event.isComposing || event.keyCode === 229) return false;
   const typing = isTyping(event.target);
   const activating = event.key === "Enter" && isActivatable(event.target);
@@ -356,7 +329,6 @@ export function dispatchShortcut(event: KeyboardEvent, mac = isMac()): boolean {
     event.target instanceof Element
       ? event.target.closest("[role='dialog'], [role='alertdialog']")
       : null;
-  // A dialog on its way out still holds focus during its exit transition, but no longer the keys.
   const inDialog =
     dialog !== null &&
     !dialog.hasAttribute("data-closed") &&
@@ -373,7 +345,6 @@ export function dispatchShortcut(event: KeyboardEvent, mac = isMac()): boolean {
       if (ofPass !== pass) continue;
       const keys = effectiveKeys(shortcut.id, shortcut.keys);
       if (keys === undefined || !matches(keys, event, mac)) continue;
-      // Gram's own keys stay Gram's even where that shortcut doesn't apply right now.
       if (pass === "yielding" && heldByOther(keys, mac)) continue;
       if (inDialog && !shortcut.allowInDialogs) continue;
       if (typing && !shortcut.allowInInputs && !parseKeys(keys).mod) continue;

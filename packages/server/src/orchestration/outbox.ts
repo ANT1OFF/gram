@@ -1,11 +1,3 @@
-// The orchestration service's durable state for one workspace: what the last acknowledged digest
-// knew, the delivery in flight, the day's spend and what the ledger remembers of each worker.
-//
-// The store keeps it as an opaque JSON string (`getOutbox` / `putOutbox`); this module is the only
-// place that knows its shape, and every read and write goes through the codec here. Rows carry the
-// version of their shape (`OUTBOX_VERSION`), and a read tells a workspace with no row from one whose
-// row this build can't read, which the service reports and doesn't overwrite.
-
 import {
   AgentKind,
   AgentFailureKind,
@@ -35,7 +27,6 @@ import { createHash } from "node:crypto";
 import { decodeStored, type FieldPath } from "../persistence/stored.ts";
 import type { DigestSnapshot } from "./rules.ts";
 
-/** What the last acknowledged digest knew about one worker; `rules.ts`'s `WorkerSnapshot`. */
 const SnapshotEntry = Schema.Struct({
   state: WorkerState,
   feature: Schema.String,
@@ -118,16 +109,9 @@ export const InFlightDigest = Schema.Struct({
 });
 export type InFlightDigest = typeof InFlightDigest.Type;
 
-/**
- * The orchestrator waited out a provider limit, with its digests held meanwhile: the first digest
- * after the wait says how long it lasted and which workers resumed, and is acknowledged with it.
- */
 const OrchestratorLimit = Schema.Struct({
-  /** Epoch ms the orchestrator stopped on the limit. */
   since: Schema.Number,
-  /** Epoch ms the wait ended; absent while it lasts. */
   endedAt: Schema.optionalKey(Schema.Number),
-  /** Workers that resumed from a limit since, oldest first. */
   resumed: Schema.Array(ThreadId),
 });
 type OrchestratorLimit = typeof OrchestratorLimit.Type;
@@ -439,7 +423,6 @@ export type StoredHeldBrief = typeof StoredHeldBrief.Type;
 export const heldDueAt = (brief: Pick<StoredHeldBrief, "until" | "retryAt">): number =>
   Math.max(brief.until, brief.retryAt ?? 0);
 
-/** A wake as the ledger and the chips show it: when, the note, and the PR it waits on, if any. */
 const pendingWakeOf = (wake: {
   readonly id: string;
   readonly at: number;
@@ -475,7 +458,6 @@ export const withoutWakes = (
   return kept.length === 0 ? rest : { ...rest, wakes: kept };
 };
 
-/** How many `notes` an outbox keeps; past it the oldest are dropped unsent. */
 const NOTES_KEPT = 10;
 /** How many once-only note keys an outbox remembers; far more than a restart could repeat. */
 export const NOTE_KEYS_KEPT = 100;
@@ -733,7 +715,6 @@ export const outboxAfterHandoff = (previous: OutboxState): OutboxState => {
     contextNoted: _noted,
     tidyNoted: _tidy,
     interfacesRead: _read,
-    // A switch's handoff was for the session this one replaces; the caller sets its own.
     switchBoot: _switchBoot,
     ...rest
   } = previous;
@@ -772,9 +753,7 @@ export const outboxForNewOrchestrator = (
   ackedReportSeq: latestReportSeq,
   cost: previous.cost,
   ...(previous.spawnBreakers === undefined ? {} : { spawnBreakers: previous.spawnBreakers }),
-  // Held briefs are the workspace's, not the session's: the new orchestrator's release spawns them.
   ...(previous.heldBriefs === undefined ? {} : { heldBriefs: previous.heldBriefs }),
-  // So are the workers' questions: the new orchestrator triages what is left and gets the copies.
   ...(previous.questions === undefined ? {} : { questions: previous.questions }),
   ...(previous.questionSeq === undefined ? {} : { questionSeq: previous.questionSeq }),
   ...(previous.memoryQuestions === undefined ? {} : { memoryQuestions: previous.memoryQuestions }),

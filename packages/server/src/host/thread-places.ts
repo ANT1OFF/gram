@@ -1,6 +1,3 @@
-// A machine's places for threads started from a profile (`host.threadPlaces.*`): a folder of the
-// host's own for a thread that works in no repository, and a profile's files laid in a folder or
-// in a worktree of the host's clones. Everything here runs on the machine itself.
 import {
   InvalidState,
   PROFILE_FILES_MAX,
@@ -37,10 +34,6 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 const refuse = (message: string) => new InvalidState({ message });
 
-/**
- * The files as the host takes them: checked here again, whatever the control plane checked, since
- * these are paths written on this machine. The same bounds a profile has.
- */
 const checked = (files: ReadonlyArray<ProfileFile>): Effect.Effect<void, InvalidState> => {
   if (files.length > PROFILE_FILES_MAX)
     return Effect.fail(refuse(`A thread is given at most ${PROFILE_FILES_MAX} files.`));
@@ -81,9 +74,7 @@ export const threadPlacesOnHost = (proc: ProcShape, clones: string): HostThreadP
         const made = yield* Effect.tryPromise({
           try: async () => {
             await mkdir(root, { recursive: true, mode: 0o700 });
-            // A link left where the threads' folders go would send them elsewhere.
             if (!(await lstat(root)).isDirectory()) return "linked" as const;
-            // Not recursive: a folder already there is another start's, and is left alone.
             await mkdir(folder, { mode: 0o700 });
             const [real, base] = await Promise.all([realPath(folder), realPath(resolve(clones))]);
             if (real === join(base, HOST_THREADS_DIR, threadId)) return "made" as const;
@@ -111,24 +102,18 @@ export const threadPlacesOnHost = (proc: ProcShape, clones: string): HostThreadP
     lay: (checkout, files) =>
       Effect.gen(function* () {
         yield* checked(files);
-        // Only a folder really inside the host's clones, however the path spells it: a worktree
-        // the host made there. Never the clones folder itself, nor the threads' own folders.
         const inside = yield* Effect.tryPromise({
           try: async () => {
             const [real, base] = await Promise.all([realPath(checkout), realPath(resolve(clones))]);
             const below = relativeInside(base, real);
-            // Not the clones folder, not the threads' own folders, and nowhere in a `.git`.
             if (below === undefined || below === "") return undefined;
             const names = below.split(sep);
             if (names[0] === HOST_THREADS_DIR) return undefined;
             if (names.some((name) => name.toLowerCase() === ".git")) return undefined;
-            // A linked worktree's `.git` is a file; a clone's own folder, or any folder that is
-            // no checkout at all, is not where a thread's files go.
             return (await lstat(join(real, ".git"))).isFile() ? real : undefined;
           },
           catch: () => undefined,
         }).pipe(Effect.orElseSucceed(() => undefined));
-        // And git itself takes the folder for the top of that worktree.
         const top =
           inside === undefined
             ? undefined

@@ -6,7 +6,6 @@ import { useArrivals } from "@/motion";
 import { pickLabel, usePagePicks, usePagePicksStore, type PagePick } from "@/stores/page-picks";
 import { useLayoutStore } from "@/stores/layout";
 
-/** What a chip's hover says the agent gets with it. */
 const pickFacts = (pick: PagePick) =>
   [
     `${pick.selector} on ${pick.url}`,

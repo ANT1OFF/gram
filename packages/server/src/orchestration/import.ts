@@ -1,14 +1,3 @@
-/**
- * What a history import can read: discovery and the preview built
- * from it. It only lists and reads; nothing here writes outside what it returns.
- *
- * Only supported hosts with `listSessions` are asked: Claude and Codex (both homes).
- * A host that can only list is named as left out rather than counted. An agent's history is keyed by the folder a session ran in, so every project
- * is asked for its root **and** each path of `git worktree list`. The preview reports what was
- * found and how it was looked for, never more: sessions of a worktree that has since been removed
- * show up only when the agent happens to list them from the repo root, which Claude does and
- * Codex, which matches the folder exactly, doesn't.
- */
 import type { AgentHost } from "@gram/agents";
 import {
   AgentKind,
@@ -27,7 +16,6 @@ import { encodeCwdExact } from "./claude-project-path.ts";
 import type { AgentHosts } from "../runtime/agent-hosts.ts";
 import { DREAM_SEED_MAX_BYTES, DREAM_SEEDS_MAX } from "./dream-files.ts";
 
-/** How many of each repo's newest sessions an import reads unless told otherwise. */
 const IMPORT_PER_REPO = 30;
 /**
  * What one session is guessed to cost to read, in tokens. No agent's session listing says how long
@@ -36,19 +24,14 @@ const IMPORT_PER_REPO = 30;
  */
 export const IMPORT_TOKENS_PER_SESSION = 12_000;
 
-/** One past session an import would read. */
 interface DiscoveredSession extends DreamAgentSession {
   readonly projectId: Project["id"];
   readonly title: string;
-  /** Epoch ms. */
   readonly updatedAt: number;
 }
 
-/** One file of Claude Code's own memory for a folder of the workspace. */
 interface DiscoveredSeed {
-  /** The folder whose memory it is. */
   readonly cwd: string;
-  /** The file's name inside that memory directory. */
   readonly name: string;
   readonly text: string;
 }
@@ -92,16 +75,9 @@ const defaultConfigDirs = (): ReadonlyArray<string> => {
   ];
 };
 
-/**
- * The Markdown files of `<configDir>/projects/<encoded cwd>/memory/`, read-only. Nothing here is
- * trusted to be what it says: a symlink is skipped rather than followed, since the directory is
- * the user's and an import must not become a way to read an arbitrary file into a model's context.
- */
 const readSeeds = (configDirs: ReadonlyArray<string>, cwd: string) =>
   Effect.promise(async (): Promise<ReadonlyArray<DiscoveredSeed>> => {
     const seeds: Array<DiscoveredSeed> = [];
-    // Claude Code names the project directory after the real path, which on macOS is not the
-    // `/tmp/...` or `/var/...` spelling a project may have been opened by.
     const real = await realPathOrOwned(cwd);
     const spellings = [...new Set([cwd, real])];
     for (const configDir of configDirs) {
@@ -157,8 +133,6 @@ export const discoverHistory = (
           : yield* deps.worktrees
               .list(project.root, { openCheckouts: [] })
               .pipe(Effect.orElseSucceed(() => undefined));
-      // Every other checkout of the repo, the main one included when the project is itself a
-      // worktree: history is keyed by folder, whichever of them the project was opened as.
       const worktrees = (listed?.worktrees ?? [])
         .map((worktree) => worktree.path)
         .filter((path) => !samePath(path, project.root));
@@ -236,7 +210,6 @@ export const discoverHistory = (
     };
   });
 
-/** One row per project, agent and folder, in the order the projects were given, newest folder first. */
 const previewSources = (
   projects: ReadonlyArray<Project>,
   sessions: ReadonlyArray<DiscoveredSession>,

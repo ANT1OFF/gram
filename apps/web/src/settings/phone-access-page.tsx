@@ -41,7 +41,6 @@ export function deviceSeen(device: RemoteDevice, now = Date.now()): string {
   const paired =
     device.pairedAt === undefined ? "Paired" : `Paired ${formatDay(device.pairedAt, now)}`;
   if (device.lastSeenAt === undefined) return `${paired} · not seen since`;
-  // Last seen is kept to the hour, so anything inside it reads as this hour.
   const seen =
     now - device.lastSeenAt < 60 * 60_000
       ? "this hour"
@@ -69,7 +68,6 @@ export function PhoneAccessPage() {
     queryKey: PHONE_ACCESS_KEY,
     queryFn: phoneAccess.status,
     retry: false,
-    // The pairing dialog watches for the phone; otherwise a slow refresh keeps "last seen" honest.
     refetchInterval: pairing ? 1500 : 30_000,
   });
   const act = async (run: () => Promise<RemoteAccessStatus>) => {
@@ -353,7 +351,6 @@ function PairedList({
   onRemove,
 }: {
   status: RemoteAccessStatus;
-  /** When the status was read, which "last seen" counts from. */
   now: number;
   onPair: () => void;
   onRemove: (target: RemoteDevice | "all") => void;
@@ -445,7 +442,6 @@ export function QrCode({ text, label }: { text: string; label: string }) {
       className="size-56 rounded-md"
       data-testid="phone-access-qr"
     >
-      {/* Not palette colours: a camera reads dark modules on a light ground, whatever the theme. */}
       <rect width={full} height={full} fill="white" />
       <path d={path} fill="black" />
     </svg>
@@ -464,7 +460,6 @@ function PairDialog({ status, onClose }: { status: RemoteAccessStatus; onClose: 
     phoneAccess.pair().then(setLink, () => setLink("error"));
   };
   useEffect(() => {
-    // A newer link replaces an older one on the server, so only the last answer counts.
     let live = true;
     phoneAccess.pair().then(
       (next) => live && setLink(next),

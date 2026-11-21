@@ -1,14 +1,3 @@
-// The person's own machine in a hosted workspace, started for work they send there with none
-// running. A hosted server that runs no work itself places a sent thread on the person's own
-// machine; with none running it refuses the send. Where it lets this machine start one (it names
-// `machine_start_endpoint`), the send starts it first and waits for it to run, then sends.
-//
-// `ensureHostedMachine` is the one place Gram starts a hosted machine. Only a person's own request
-// reaches it (New task's send, `/threads/send-machine`): an agent, a skill or a repository's
-// instructions have no path to it, as on the hosted server itself (`embedding/on-demand.ts`). The
-// hosted server decides whether it starts, on what and within whose limits; this only asks and
-// waits. It never stops a machine.
-
 import { hostedMachineDown, hostedMachineReady, type HostedMachine } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -18,7 +7,6 @@ import type { SentWorkPortShape } from "./sent-work-port.ts";
 
 /** Where a start of the person's machine stands, as New task shows it. */
 export type HostedMachineProgress =
-  /** The server starts no machine from here: the send goes as it is, and says what it says. */
   | { readonly state: "unoffered" }
   | { readonly state: "starting"; readonly phase: string }
   | { readonly state: "ready"; readonly phase: string }
@@ -74,7 +62,6 @@ export const ensureHostedMachine = (
       yield* said(ready);
       return ready;
     }
-    // Starting already (from another send, or the hosted server's own page): only waited on.
     const startsAlready = first.machine.starting === true || !hostedMachineDown(first.machine);
     const asked = startsAlready ? first : yield* askMachine(port, target, "start");
     if (!asked.ok) return { state: "failed", why: asked.why } as const;
@@ -88,7 +75,6 @@ export const ensureHostedMachine = (
       const waited = (yield* Clock.currentTimeMillis) - startedAt;
       if (latest.phase === "failed" && latest.starting !== true)
         return { state: "failed", why: "Your machine there failed to start." } as const;
-      // Down a while after the start was asked: it isn't coming up from this start.
       if (hostedMachineDown(latest) && waited > settle)
         return { state: "failed", why: "Your machine there didn't start." } as const;
       if (waited > within)

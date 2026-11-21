@@ -1,10 +1,3 @@
-// Mocks shown as pictures rather than paths (docs/orchestration/playbooks/mock-first.md): the
-// screenshot and mock page an option of `ask_user` or `ask_question` may carry, the mock a question
-// names, and the card `show_mock` puts in a reply, built from the mock kit's `mock.json` and its
-// `shots/`. Every path here was confined to the asking thread's folders by the server before it was
-// kept; the web app reads them back through `fs.image` and `fs.preview`, which confine them again,
-// and shows only their file names. A leaf: no imports but Schema.
-
 import * as Schema from "effect/Schema";
 
 /** The record the mock kit's `new-mock.mjs` keeps beside a mock's version pages. */
@@ -117,9 +110,6 @@ export const visualsProblem = (
   return undefined;
 };
 
-// ---------------------------------------------------------------------------------------------
-// The mock card
-
 /** A direction's screenshots, by the theme they were taken in. */
 export const MockShots = Schema.Struct({
   dark: Schema.optionalKey(Schema.String),
@@ -228,7 +218,6 @@ export const parseMockRecord = (content: string): MockRecord | undefined => {
 
 const THEMED = /^(.*?)[-_.](dark|light)$/i;
 
-/** `a-inbox-empty` as a card names it: "A inbox empty". */
 const directionName = (stem: string): string => {
   const words = stem.replace(/[-_]+/g, " ").trim();
   return words === "" ? stem : `${words[0]!.toUpperCase()}${words.slice(1)}`;

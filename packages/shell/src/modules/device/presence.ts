@@ -114,7 +114,6 @@ export const watchPresence = (
  * app is ready, as `safeStorage` can't tell its backend before.
  */
 export const vaultSecrets = (crypto: VaultCrypto, store: VaultStore): DeviceSecrets => {
-  /** Strong once found so; a weak answer is asked again, as Linux's keyring may come up later. */
   let strong = false;
   const isStrong = async () => {
     if (!strong) {
@@ -124,7 +123,6 @@ export const vaultSecrets = (crypto: VaultCrypto, store: VaultStore): DeviceSecr
     }
     return strong;
   };
-  /** Writes go one at a time, each reading what the last one wrote. */
   let queue: Promise<unknown> = Promise.resolve();
   const change = (apply: (entries: Record<string, string>) => Promise<void>) => {
     const next = queue

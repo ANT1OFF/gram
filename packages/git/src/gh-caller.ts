@@ -1,8 +1,3 @@
-// Who a `gh` call is made for. An embedder that answers GitHub for each caller apart (one handle a
-// thread, say) sets `GhCallEnv` around the work done for that caller, and every `gh` run inside it
-// carries those variables. The caches and the PR resolver key their answers by it, so what was read
-// for one caller is never handed to another, and a batch never mixes two callers in one request.
-
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 

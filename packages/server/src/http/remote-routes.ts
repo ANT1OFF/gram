@@ -27,7 +27,6 @@ const refuse = (message: string, status = 403) => HttpServerResponse.text(messag
 
 const UNSAVED = "Removed, but it couldn't be saved, so it comes back when Gram restarts";
 
-/** Runs a removal, which takes effect at once; false when saving it failed. */
 const keepRemoval = (removal: () => unknown): boolean => {
   try {
     removal();
@@ -37,7 +36,6 @@ const keepRemoval = (removal: () => unknown): boolean => {
   }
 };
 
-/** A small JSON object body, or undefined for anything else. */
 const smallJson = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
   if (Number(request.headers["content-length"] ?? 0) > 256) return undefined;

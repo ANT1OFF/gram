@@ -1,5 +1,3 @@
-// What a host keeps of its threads' work when it stops, and what it puts back after.
-
 import * as Schema from "effect/Schema";
 import { ThreadId } from "../ids.ts";
 import { SavedDiff } from "../saved-work.ts";

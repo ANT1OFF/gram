@@ -31,7 +31,6 @@ export interface ConnectorGroups {
   readonly signedOut: ReadonlyArray<Connector>;
 }
 
-/** A managed runtime's server signs in through the runtime, never the agent, so it stays in use. */
 const signedOut = (c: Connector) => connectorHealth(c) === "needs-auth";
 
 /** The connectors matching `filter` by name, split by whether the user has signed in to them. */
@@ -78,7 +77,6 @@ export const elsewhereName = (name: string, _url: string): string => {
   return slug === "" ? "connector" : slug;
 };
 
-/** `base`, or `base-2`, `base-3` … : the first that no server in `taken` is called. */
 const freeName = (base: string, taken: ReadonlyArray<ConfiguredServer>) => {
   const names = new Set(taken.map((server) => server.name));
   for (let n = 1; ; n += 1) {
@@ -126,17 +124,12 @@ export const elsewhereDraft = (
   taken: ReadonlyArray<ConfiguredServer> = [],
   target?: McpTarget,
 ): ElsewhereCopy => {
-  // Codex signs in at an address derived from the exact URL, so a copy differing by so much as a
-  // trailing slash isn't this server for Codex, as in `catalogueRows`.
-  // A query may pick a tenant or carry a credential, and either side's arrives masked, so an
-  // address with one is never known to be the same server: the form opens instead.
   const same = (other: string) =>
     !other.includes("?") &&
     !url.includes("?") &&
     (target === "codex" ? other === url : addressKey(other) === addressKey(url));
   const present = taken.find((server) => server.url !== undefined && same(server.url));
   if (present !== undefined) return { kind: "present", name: present.name };
-  // A masked query is no use to the next agent; the form starts from the bare address.
   const bare = url.replace(/\?.*$/, "");
   const notes = [
     "The agent signs in to the server itself; your Claude sign-in isn't shared.",
@@ -285,7 +278,6 @@ export const copyTo = (
         : {
             name: row.name,
             transport: source.transport === "sse" ? "sse" : "http",
-            // A masked query is no use to the next agent; the form starts from the bare address.
             url: source.url.replace(/\?.*$/, ""),
           },
     note: source.carriesValues
@@ -296,7 +288,6 @@ export const copyTo = (
   };
 };
 
-/** A path from a folder (`./x`, `bin/x`), not one from the root or home, nor a bare name. */
 const isRelativePath = (command: string): boolean =>
   command.includes("/") && !command.startsWith("/") && !command.startsWith("~");
 
@@ -318,7 +309,6 @@ export const startCommand = (
   };
 };
 
-/** An address as one server's, whatever its case of host or a trailing slash. */
 const addressKey = (url: string) => {
   try {
     const parsed = new URL(url);
@@ -362,8 +352,6 @@ export const catalogueRows = (
       for (const { target, servers: configured } of agents) {
         const label = MCP_TARGET_LABEL[target];
         const copy = configured.find((c) => c.url !== undefined && addressKey(c.url) === key);
-        // Codex signs in at an address derived from the exact URL, so a copy differing by so much
-        // as a trailing slash is refused, and isn't this server for Codex.
         if (copy !== undefined && (target !== "codex" || copy.url === server.url)) {
           cells[target] = copy;
           continue;

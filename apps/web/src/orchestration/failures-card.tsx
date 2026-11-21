@@ -27,17 +27,8 @@ import { saveCleared, useSetAside } from "./inbox-set-aside";
 import { standingFailures, type FailureItem } from "./needs-you-model";
 import { useOrchestratorLedger } from "./use-orchestration";
 
-// Failures first: workers stopped on an error, from the shared needs-you model, in one compact card
-// above the Board's lines and the orchestrator's transcript. A worker's failing checks are never
-// here: its worker fixes them, or its orchestrator does, and an agent asks the user if it needs them.
-// Each row says the cause, the worker and its PR, and names the step that moves it. The worker's
-// name opens it; Dismiss sets the occurrence aside (`inbox.cleared`) behind the ask stack's Undo,
-// so it comes back only if it fails again.
-
-/** How many failures show before "Show n more". */
 const SHOWN = 3;
 
-/** The workspace's standing failures, less those dismissed, being dismissed or set aside. */
 function useFailures(workspaceId: WorkspaceId): readonly FailureItem[] {
   const ledger = useOrchestratorLedger(workspaceId).data;
   const byId = useThreadsStore((s) => s.byId);
@@ -66,13 +57,11 @@ const CAUSE_ICON: Record<FailureStep["kind"], LucideIcon> = {
   open: CircleX,
 };
 
-/** The glyph beside a failure's cause, so it reads without its colour. */
 function CauseIcon({ step }: { step: FailureStep }) {
   const Icon = CAUSE_ICON[step.kind];
   return <Icon aria-hidden className="mt-0.5 size-icon-row shrink-0 text-destructive" />;
 }
 
-/** The glyph on a failure's step button. */
 function StepIcon({ step }: { step: FailureStep }) {
   const Icon = STEP_ICON[step.kind];
   return <Icon aria-hidden />;
@@ -118,7 +107,6 @@ export function FailureRowView({
       data-testid="board-failure"
       data-kind={failure.kind}
       data-thread-id={failure.threadId}
-      // On a phone its words take the row and its buttons, 44 px tall, go under them.
       className="flex min-w-0 items-start gap-2 px-3 py-2 phone:flex-wrap"
     >
       <CauseIcon step={row.step} />

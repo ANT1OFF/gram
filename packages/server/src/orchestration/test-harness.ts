@@ -1,7 +1,3 @@
-// The orchestration tests' world: the real service, tools, runtimes, store and git checkouts over
-// the fake agent and a fake `GitStatePublisher` a test publishes through. The database is a file,
-// so a test can tear the layer down and build it again over the same rows (a restart).
-
 import { Conversations } from "../embedding/conversations.ts";
 import { EventSink } from "../embedding/event-sink.ts";
 import {
@@ -294,7 +290,6 @@ export const makeWorld = Effect.gen(function* () {
   return world;
 });
 
-/** The server's event hub, running `world.onPublish` first when a test set one. */
 const hubOf = (world: World) =>
   Layer.effect(
     EventHub,
@@ -310,7 +305,6 @@ const hubOf = (world: World) =>
     }),
   ).pipe(Layer.provide(EventHub.layer));
 
-/** The thread runtimes, running `world.afterCreate` before `create` returns when a test set one. */
 const runtimesOf = (world: World) =>
   Layer.effect(
     ThreadRuntimes,
@@ -360,8 +354,6 @@ const fakePublisher = (world: World) =>
     };
   });
 
-// The PR tools' own `Proc`, so `set_auto_merge` can be run to the end without a `gh` to answer it.
-// Every checkout's `origin` is acme/app.
 const fakeGh = (world: World) => {
   const fakeRun = (bin: string, args: ReadonlyArray<string>, cwd: string, token?: string) => {
     if (bin === "git") {
@@ -414,7 +406,6 @@ const fakeGh = (world: World) => {
       ).pipe(
         Effect.andThen(
           Effect.suspend(() =>
-            // As a real spawn does: nothing starts in a folder that isn't there.
             existsSync(cwd)
               ? Effect.succeed(fakeRun(bin, args, cwd, env?.["GH_TOKEN"]))
               : Effect.fail(new ProcSpawnError({ bin, message: `spawn ${bin} ENOENT` })),
@@ -430,20 +421,12 @@ const fakeGh = (world: World) => {
   });
 };
 
-/**
- * The git processes the server under test has started and not yet seen end. Module state, since
- * `settle` has no layer to ask and a test file runs one server at a time.
- */
 const gitActivity = { running: 0, started: 0 };
 
-/** Whether `args` read a repository's stored `origin` URL. */
 const readsOrigin = (args: ReadonlyArray<string>) =>
   (args.length === 3 && args.join(" ") === "config --get remote.origin.url") ||
   ["remote get-url --all origin", "remote get-url --push --all origin"].includes(args.join(" "));
 
-// Every git process of the server, the service's and the worktrees' alike, counted while it runs.
-// A repository with no `origin` of its own (`world.repo`) has the one the PR tools see
-// (`fakeGh`), so the origin Gram records as it makes a worktree is the world's.
 const countedProc = (world: World) =>
   Layer.effect(
     Proc,
@@ -471,7 +454,6 @@ const countedProc = (world: World) =>
     }),
   ).pipe(Layer.provide(ProcLive));
 
-/** Gram's own local checks, when the world asks for them, over the real git of its repos. */
 const localChecksOf = (world: World) =>
   (world.localCheckRunner === undefined
     ? Layer.empty
@@ -480,7 +462,6 @@ const localChecksOf = (world: World) =>
         Layer.provide(ProcLive),
       )) as Layer.Layer<never, never, SqlClient.SqlClient | ServerConfig | ThreadStore>;
 
-/** The condition wakes' engine over the real sources, reading GitHub, npm, versions and the machine from `world`. */
 const conditionsOf = (world: World) =>
   wakeConditionsLayer(
     Layer.mergeAll(
@@ -488,17 +469,12 @@ const conditionsOf = (world: World) =>
       fakeCiJobs(world),
       fakeMachine(world),
       fakeAutoMerges(world),
-      // Whose PR a freeze may take auto-merge down from is asked of `gh` as the PR tools ask it.
       fakeGh(world),
       fakeReleases(world),
       fakeInstalled(world),
     ),
   );
 
-/**
- * The machines as the PR tools and merges reach them: this one, and `world.joinedMachine` when a
- * test set one, whose host answers nothing but what its worktrees are, and their git state.
- */
 const machinesOf = (world: World) =>
   Layer.effect(
     WorkerHosts,
@@ -564,7 +540,6 @@ export const serverLayer = (
   store: Parameters<typeof ThreadStore.layerSqlite>[1] = {},
 ) =>
   Layer.mergeAll(
-    // The desktop app a sent worker goes through: none unless the test gives one.
     Layer.mergeAll(OrchestrationAppToolsLive, SentWorkersLive).pipe(
       Layer.provideMerge(Layer.succeed(SentWorkPort)(world.sentWork ?? NO_SENT_WORK)),
     ),
@@ -589,8 +564,6 @@ export const serverLayer = (
       Layer.provideMerge(conditionsOf(world)),
       Layer.provideMerge(OrchestrationMemory.layerAt(nodePath.join(world.dir, "memory"))),
       Layer.provideMerge(fakePublisher(world)),
-      // Beside the registry, an embedding host's conversations with no sink: what `spawn_worker`
-      // hands on. One merge: a pipe takes twenty.
       Layer.provideMerge(
         Layer.mergeAll(
           AppToolRegistry.layer,
@@ -598,7 +571,6 @@ export const serverLayer = (
         ),
       ),
       Layer.provideMerge(runtimesOf(world)),
-      // As the server has it: the runtime reads the limits (`limitedUntil`, early releases).
       Layer.provideMerge(
         ThreadRuntimes.layerOnLocalHost.pipe(Layer.provideMerge(UsageLimitReadings.layer)),
       ),
@@ -606,7 +578,6 @@ export const serverLayer = (
       Layer.provideMerge(hubOf(world)),
       Layer.provideMerge(ThreadStore.layerSqlite(nodePath.join(world.dir, "gram.db"), store)),
       Layer.provideMerge(agents),
-      // Who `world.owners` says each machine was started for, beside the hooks: a pipe takes twenty.
       Layer.provideMerge(
         Layer.mergeAll(
           TurnHooks.layerNoop,
@@ -648,9 +619,6 @@ export const serverLayer = (
       ),
       Layer.provideMerge(ServerConfig.layer({ ...TEST_CONFIG, ...config, dataDir: world.dir })),
       Layer.orDie,
-      // As the server runs: its own work holds the capability (`host/ownership.ts`), and a call
-      // made for someone says whom for over it. The bodies run in it too (`withServer`). Its own
-      // pipe: one takes twenty.
     )
     .pipe(Layer.provide(Layer.succeed(ServerWork)(true)));
 
@@ -680,7 +648,6 @@ const realPause = (ms: number) => Effect.promise(() => sleep(ms));
  */
 export const GIT_HEAVY = { timeout: 90_000 } as const;
 
-/** How long one `settle` or `waitReal` may take, in real time: well inside the test timeout, so the wait that gave up is named. */
 const REAL_WAIT_MS = 20_000;
 
 /**
@@ -744,7 +711,6 @@ export const waitSent = (threadId: ThreadId, count: number) =>
     );
   });
 
-/** How many turn ends the service has counted for a worker; `undefined` when nobody is listening to it. */
 const countedTurnEnds = (threadId: ThreadId) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
@@ -809,10 +775,6 @@ export const openProject = (world: World) =>
     return yield* store.ensureProject({ root: world.repo, name: "shop" });
   });
 
-/**
- * A workspace at `publish` with no models of its own, the charter these tests were written
- * against: a new one starts at `full`, where nothing asks and so there is no gate to test.
- */
 const atPublish = (state: WorkspaceState) =>
   Effect.gen(function* () {
     const orchestration = yield* Orchestration;
@@ -880,10 +842,6 @@ export const openOrchestratorAcross = (world: World) =>
     const project = yield* openProject(world);
     const root = makeRepo(nodePath.join(world.dir, "other"));
     run(root, "remote", "add", "origin", "https://github.com/acme/warehouse.git");
-    // A new worktree fetches its base from `origin` first, which would be github.com from a unit
-    // test: four round trips here, each refused, and on Windows by way of the credential manager.
-    // Rewritten to a path with nothing at it the fetch fails at once and offline, while
-    // `remote.origin.url` still reads as the GitHub repo.
     const nowhere = `${nodePath.join(world.dir, "no-remote").replaceAll("\\", "/")}/`;
     run(root, "config", `url.${nowhere}.insteadOf`, "https://github.com/");
     const other = yield* store.ensureProject({ root, name: "warehouse" });

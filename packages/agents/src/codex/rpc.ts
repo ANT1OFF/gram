@@ -126,7 +126,6 @@ interface Incoming {
  */
 export const makeCodexRpc = (
   io: CodexIo,
-  /** Permanent lifecycle observation in wire order, before replies wake callers or listeners queue. */
   observe: (message: ServerMessage) => void = () => {},
 ): Effect.Effect<CodexRpc, never, Scope.Scope> =>
   Effect.gen(function* () {
@@ -218,7 +217,6 @@ export const makeCodexRpc = (
           pending.set(id, { method, done });
           return (yield* sendFor(method, { id, method, params }).pipe(
             Effect.andThen(Deferred.await(done)),
-            // Failed writes and interrupted requests no longer retain an unreachable waiter.
             Effect.ensuring(Effect.sync(() => pending.delete(id))),
           )) as CodexMethods[typeof method][1];
         }),

@@ -1,8 +1,3 @@
-// Which repository a project is: the identity of its `origin` as it was when the project was added
-// (`Project.originIdentity`). A repository's reach (`git/repo-reach.ts`) and a merge freeze's
-// workspace (`git/merge-freezes.ts`) go by it, never by the origin the folder's git config names
-// later, which an agent working there can rewrite with `git remote set-url`.
-
 import { git, Proc, ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -26,7 +21,6 @@ export const originIdentityOfFolder = (dir: string): Effect.Effect<string | null
       Effect.map((out): string | null => {
         const url = out.stdout.trim();
         if (out.status === 0 && url !== "") return cloneIdentityOf(url) ?? NO_ORIGIN;
-        // `git config --get` exits 1 for a key that isn't set, in a repository or outside one.
         return out.status === 1 && url === "" ? NO_ORIGIN : null;
       }),
       Effect.orElseSucceed(() => null),

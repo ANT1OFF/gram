@@ -98,7 +98,6 @@ export function createPagesMock(world: MockWorld) {
     },
   };
 
-  /** An agent in `threadId` offers a new version of `id`, as `offer_page_version` would. */
   const simulateOfferPage = (threadId: ThreadId, id: PageId, title?: string): PageMeta => {
     const { thread } = world.summary(threadId);
     const workspaceId = thread.workspaceId;

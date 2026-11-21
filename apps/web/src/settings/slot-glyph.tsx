@@ -13,10 +13,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useServerSettings } from "@/settings-sync/store";
 
-// Whether a model slot follows the recommendation or is the user's own, as a glyph before its
-// chip with the words on hover, and the Follow recommended button after a pinned one's chip
-// (mock: recommended-setup v1, boards 3 and 4). Nothing shows while the mode is off.
-
 /** The words behind a following slot's glyph: "Recommended · Lead tier · updates with Gram". */
 export const followsWords = (tier: string): string =>
   `Recommended · ${(TIERS as readonly string[]).includes(tier) ? tierName(tier as Tier) : tier} tier · updates with Gram`;

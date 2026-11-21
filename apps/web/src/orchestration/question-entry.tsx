@@ -48,10 +48,6 @@ import { useFocusOnOpen } from "./use-focus-on-open";
 const INPUT =
   "rounded-md border border-input bg-transparent px-2 text-reading outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
-/**
- * A question's id, muted beside its text: a handle to refer to it by, not a label. Its hover and its
- * accessible name say what kind of question it is.
- */
 function IdChip({ id }: { id: string }) {
   const kind = questionKind(id);
   return (
@@ -69,10 +65,6 @@ function IdChip({ id }: { id: string }) {
   );
 }
 
-/**
- * The answer to a question with no choices: a text box, mounted when it opens so the focus lands in
- * it, labelled by the question already shown above it.
- */
 function FreeAnswer({
   labelledBy,
   value,
@@ -98,7 +90,6 @@ function FreeAnswer({
   );
 }
 
-/** A dismissal's optional reason, focused as it opens. */
 function DismissReason({
   labelledBy,
   value,
@@ -124,7 +115,6 @@ function DismissReason({
   );
 }
 
-/** Who asked a worker's question, linked to its thread. */
 function AskedBy({ asker }: { asker: NonNullable<QuestionCard["asker"]> }) {
   return (
     <>
@@ -217,7 +207,6 @@ export function OpenQuestion({
       data-answering={answering || undefined}
       className={cn(
         "flex flex-col gap-1",
-        // A card among cards, on a neutral edge: the amber is its mark, and the dock's.
         compact && "rounded-(--radius-md) border bg-card p-2",
         compact && (answering ? "border-primary/60" : "border-border"),
       )}
@@ -346,8 +335,6 @@ export function OpenQuestion({
           )}
         </form>
       </ExpandPresence>
-      {/* Outside the form, so it sticks to the foot of the whole question rather than only the
-          form: a long question pushes the form below the fold, and its Send must stay in sight. */}
       {inPlace && mode === "answering" && (
         <div
           data-testid={sheet ? "ask-sheet-answer-row" : undefined}
@@ -424,10 +411,6 @@ export function OpenQuestion({
   );
 }
 
-/**
- * Answer for a listed question, by its hold id: the Inbox, opened on it, is where it is answered.
- * One the Inbox doesn't list (put away for Later, say) opens the Inbox where it was left.
- */
 function useAnswerIn(workspaceId: WorkspaceId) {
   const asks = useDerivedAsks((s) => s.asks.find((w) => w.workspaceId === workspaceId)?.asks);
   return {
@@ -472,7 +455,6 @@ export function OpenQuestionList({
   className?: string;
 }) {
   const answerIn = useAnswerIn(workspaceId);
-  // An answered question closes and folds away, so what is below it doesn't jump.
   return (
     <ul className={className}>
       <PresenceList>
@@ -617,7 +599,6 @@ const CLOSED: ClosedLook = {
   className: "text-muted-foreground",
 };
 
-/** How a closed entry was closed, by icon and colour, with its word for a tooltip and a screen reader. */
 const closedLook = (closedAs: string | undefined): ClosedLook =>
   (closedAs === undefined ? undefined : CLOSED_LOOK[closedAs]) ?? CLOSED;
 

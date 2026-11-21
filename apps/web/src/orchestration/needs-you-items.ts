@@ -10,12 +10,6 @@ import {
 import type { Ask } from "./ask-model";
 import type { FailureItem } from "./needs-you-model";
 
-// Everything that needs the user, as one list the Inbox shows and the next and previous keys walk (docs/design/mocks/needs-you-home, direction C): every workspace's asks, its
-// standing failures and its threads' Waiting on you items, grouped by workspace, newest first, then
-// the threads outside any workspace with their requests, errors and waits. Each item names the
-// thread it opens and the message it scrolls to. Every answer still goes through its source's own
-// path. No React.
-
 type NeedsYouKind = "approval" | "question" | "plan" | "wait" | "failure" | "watch";
 
 export interface NeedsYouItem {
@@ -82,9 +76,7 @@ export interface NeedsYouThread {
 export const itemText = (item: Pick<NeedsYouItem, "title" | "command">): string =>
   item.command === undefined ? item.title : `${item.title} ${item.command}`;
 
-/** The longest a list row's title runs before it is cut at a word. */
 const BRIEF_MAX = 56;
-/** Where a question's words split into what it is about and what it asks. */
 const BRIEF_BREAK = /:\s|\s[—–]\s|;\s|[.?!]\s+(?=\S)/u;
 
 /**
@@ -104,7 +96,6 @@ export const briefTitle = (item: Pick<NeedsYouItem, "title" | "kind">): string =
   return `${(space > BRIEF_MAX / 2 ? cut.slice(0, space) : cut.slice(0, BRIEF_MAX)).replace(/[\s,;:—–-]+$/u, "")}…`;
 };
 
-/** One item for an ask, opening the thread that asked at its card. */
 const askItem = (
   ask: Ask,
   workspace: Pick<NeedsYouWorkspace, "orchestratorThreadId">,
@@ -144,7 +135,6 @@ const askItem = (
   };
 };
 
-/** One item for a stored Waiting on you item, opening its thread at the message that added it. */
 const waitItem = (summary: NeedsYouThread, item: WaitItem): NeedsYouItem => {
   const view = waitViewOf(summary.thread.id, item);
   return {
@@ -161,10 +151,6 @@ const waitItem = (summary: NeedsYouThread, item: WaitItem): NeedsYouItem => {
   };
 };
 
-/**
- * One item for a failure; `live` says whether its worker still runs to own it. A stopped Watch PR
- * (babysit) is its own `watch` kind, not an error: it stands apart from failing PRs in the list.
- */
 const failureItem = (failure: FailureItem, live: (id: ThreadId) => boolean): NeedsYouItem => ({
   key: failure.key,
   ids: failure.ids,
@@ -177,7 +163,6 @@ const failureItem = (failure: FailureItem, live: (id: ThreadId) => boolean): Nee
   failure,
 });
 
-/** Newest first; what keeps no time goes last, in the order it came. */
 const newestFirst = (items: readonly NeedsYouItem[]): NeedsYouItem[] =>
   items
     .map((item, index) => ({ item, index }))
@@ -279,10 +264,6 @@ export const CATEGORY_LABELS: Readonly<Record<NeedsYouSectionKey, string>> = {
   steps: "Steps",
 };
 
-/**
- * What stops work first: failures, then approvals that hold a worker, then what it asks, then what
- * waits on a read, and drafts, which hold nothing, last.
- */
 const SECTION_ORDER: readonly NeedsYouSectionKey[] = [
   "errors",
   "approvals",

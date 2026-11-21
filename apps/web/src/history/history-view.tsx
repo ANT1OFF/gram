@@ -17,12 +17,9 @@ export const HISTORY_TEST_ID = "history";
 
 interface HistoryState {
   readonly open: boolean;
-  /** The chip it shows; kept between opens, so it opens where it was left. */
   readonly filter: HistoryFilter;
   toggle: () => void;
-  /** What its search starts on when it next opens, then let go of: `show`'s `query`. */
   readonly seed?: string | undefined;
-  /** Opens it, on `filter` when given, searching `query` when given. */
   show: (filter?: HistoryFilter, query?: string) => void;
   close: () => void;
   setFilter: (filter: HistoryFilter) => void;
@@ -45,7 +42,6 @@ export const useHistoryStore = create<HistoryState>()((set) => ({
  */
 export function HistoryView() {
   const requested = useHistoryStore((s) => s.open);
-  // Opens once its body is in hand, which the shell preloads after first paint.
   const body = historyBody.useModule(requested);
   const open = requested && body !== undefined;
   const close = useHistoryStore((s) => s.close);
@@ -65,7 +61,6 @@ export function HistoryView() {
           data-testid={HISTORY_TEST_ID}
           data-surface="overlay"
           aria-label="History"
-          // A thread just opened takes focus in its pane; only a dismissal hands it back.
           finalFocus={() => (picked ? false : returnFocusTo(opener)())}
           className={cn(
             "fixed top-[6%] left-1/2 z-50 flex h-[86vh] w-[min(72rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-modal transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",

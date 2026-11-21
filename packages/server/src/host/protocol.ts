@@ -1,7 +1,3 @@
-// The host protocol over one byte stream: the control plane's client on one end, a worker host's
-// server on the other. Today the stream is a pipe to a child process on this machine; a paired
-// machine's will be a connection over the tailnet, with the same messages.
-
 import type {
   AgentSession,
   ConnectorSignInStart,
@@ -183,7 +179,6 @@ export interface HostUpdater {
   readonly start: (release: string) => Stream.Stream<HostUpdateProgress, HostUpdateRefused>;
 }
 
-/** What a host without a token store answers. */
 const NO_TOKEN_STORE = "This machine's host doesn't keep a Claude token.";
 
 /** The capabilities a host must serve for this build to use it. */
@@ -278,7 +273,6 @@ const commandToWire = (error: ProcError) =>
     message: error.message,
   });
 
-/** A connector's status for the wire, its optional keys absent rather than undefined. */
 const connectorToWire = (status: ConnectorStatus) => defined({ ...status });
 
 const seenToWire = (seen: ConnectorsSeen) => ({
@@ -287,14 +281,12 @@ const seenToWire = (seen: ConnectorsSeen) => ({
   connectors: seen.connectors.map(connectorToWire),
 });
 
-/** `A` with each key that may be `undefined` made optional instead. */
 type Defined<A> = {
   [K in keyof A as undefined extends A[K] ? never : K]: A[K];
 } & {
   [K in keyof A as undefined extends A[K] ? K : never]?: Exclude<A[K], undefined>;
 };
 
-/** Drops keys whose value is `undefined`, for a payload whose optional keys must be absent. */
 const defined = <A extends object>(value: A): Defined<A> =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
@@ -306,14 +298,11 @@ const noThreadPlaces = new HostFailed({
   message: "This host makes no folders for threads started from a profile.",
 });
 
-/** The protocol's handlers over a host's own folders, worktrees, git state and scan. */
 const handlersFor = (host: HostService) => {
-  /** New work, refused while an update has closed the gate. */
   const admitted = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     host.admission === undefined
       ? effect
       : host.admission.admit(effect, () => new HostFailed({ message: UPDATING }));
-  /** New work, refused too while the host is readied to stop. */
   const gated = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     Effect.suspend(() =>
       host.stop?.stopping() === true
@@ -374,7 +363,6 @@ const handlersFor = (host: HostService) => {
           : host.threadPlaces.lay(checkout, files),
       "host.threadPlaces.remove": ({ threadId }) =>
         host.threadPlaces === undefined ? Effect.void : host.threadPlaces.remove(threadId),
-      // Never a defect: one from a handler breaks the whole connection, not just this call.
       "host.status": () =>
         (host.status ?? Effect.succeed(UNKNOWN_STATUS)).pipe(
           Effect.catchCause(() => Effect.succeed(UNKNOWN_STATUS)),
@@ -396,7 +384,6 @@ const handlersFor = (host: HostService) => {
           ? Effect.fail(new HostFailed({ message: "This host can't be readied to stop." }))
           : host.stop.prepare(request),
       "host.stop.cancel": () => host.stop?.cancel ?? Effect.void,
-      // Says nothing until the host is about to go: a host that can't be readied never says.
       "host.stop.going": () => host.stop?.going ?? Stream.never,
       "host.stop.keep": (request) =>
         host.stop === undefined
@@ -449,13 +436,11 @@ const handlersFor = (host: HostService) => {
           host.terminals.terminals
             .open(request, path === undefined ? undefined : { settingsShell, path })
             .pipe(
-              // Every open names its folder, so no thread is looked up here.
               Effect.catchTag("ThreadNotFound", (error) =>
                 Effect.fail(new InvalidState({ message: `No thread ${error.threadId}` })),
               ),
             ),
         ),
-      // Typing into a shell can start a command in it.
       "host.terminals.input": ({ terminalId, data }) =>
         gated(host.terminals.terminals.input(terminalId, data)),
       "host.terminals.resize": ({ terminalId, cols, rows }) =>
@@ -546,7 +531,6 @@ const handlersFor = (host: HostService) => {
   ): Effect.Effect<A, E | HostFailed> {
     return Effect.flatMap(host.sessions.session(handle), f);
   }
-  /** Input for the session, taken once per delivery id when the caller named one. */
   function delivered(
     handle: string,
     deliveryId: string | undefined,
@@ -597,7 +581,6 @@ export const serveHost = (
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     const closed = yield* Deferred.make<void>();
-    /** Open, and no read has failed: a close can go out. Any other write waits for good. */
     let up = false;
     const downOnError = <A, E, R>(read: Effect.Effect<A, E, R>) =>
       Effect.tapError(read, () =>
@@ -631,7 +614,6 @@ export const serveHost = (
         Layer.provide(RpcSerialization.layerNdjson),
       ),
     );
-    // Run before the scope closes the server. Bounded, for a stream that went unseen.
     const closeFirst = Effect.suspend(() =>
       options.closeFirst === undefined || !up || options.socketEnded?.() === true
         ? Effect.void
@@ -914,7 +896,6 @@ export const HOST_TOKEN_UNANSWERED =
 /** What a token call says when the host refused it in words this side doesn't pass on. */
 export const HOST_TOKEN_REFUSED = "This machine's gram-host refused the token.";
 
-/** The file errors a joined host's token store reports, by code; any other code isn't passed on. */
 const STORE_ERROR_CODES: ReadonlySet<string> = new Set([
   "EACCES",
   "EPERM",
@@ -932,7 +913,6 @@ const STORE_ERROR_CODES: ReadonlySet<string> = new Set([
   "EBUSY",
 ]);
 
-/** How a joined host's store words a failed step: the step and a code, nothing else. */
 const STORE_REFUSAL = /^Couldn't (keep|delete) the Claude token: ([A-Z]{2,12}|file error)\.$/;
 
 /**
@@ -949,17 +929,11 @@ export const publicTokenRefusal = (message: string): string => {
   return `Couldn't ${step} the Claude token: ${code}.`;
 };
 
-/** How long a token call waits for the host. */
 const TOKEN_CALL_TIMEOUT = "20 seconds";
 
 /** What the Files panel shows when the host doesn't answer; the detail goes to the log. */
 export const HOST_NOT_ANSWERING = "This machine's host isn't answering.";
 
-/**
- * A file read the host couldn't answer reads as the Files panel's own refusal: a missing file
- * stays `NotFound` and a refused one `InvalidState`, with the host's words. A host that failed
- * says why; a stream that broke reads as the host not answering, its detail logged.
- */
 const asInvalid = (error: { readonly _tag: string; readonly message?: string }) =>
   error._tag === "HostFailed"
     ? Effect.succeed(
@@ -977,7 +951,6 @@ const keepFileErrors = <E extends { readonly _tag: string; readonly message?: st
     ? Effect.succeed(error)
     : asInvalid(error);
 
-/** A worktree call the host couldn't answer reads as the worktree layer's own error. */
 const worktreeFromWire = <E extends { readonly _tag: string; readonly message?: string }>(
   error: E,
 ): Effect.Effect<WorktreeError> =>
@@ -991,10 +964,6 @@ const worktreeFromWire = <E extends { readonly _tag: string; readonly message?: 
           new WorktreeError({ reason: "failed", message: invalid.message, dirty: false }),
       );
 
-/**
- * A git read the host couldn't answer reads as the command layer's own error: a host whose
- * command overran stays a timeout, so its state reads as unknown rather than clean.
- */
 const commandFromWire = <E extends { readonly _tag: string; readonly message?: string }>(
   error: E,
 ): Effect.Effect<ProcError> =>
@@ -1014,12 +983,10 @@ const keepInvalid = <E extends { readonly _tag: string; readonly message?: strin
 ): Effect.Effect<InvalidState> =>
   error instanceof InvalidState ? Effect.succeed(error) : asInvalid(error);
 
-/** For a session call that keeps none of the errors it can fail with. */
 const none = (error: unknown): error is never => error === none;
 const isAgentUnavailable = (error: unknown): error is AgentUnavailable =>
   error instanceof AgentUnavailable;
 
-/** How long a host's status (its `claude auth status`, its tools) gets before it reads as unknown. */
 const STATUS_TIMEOUT = "30 seconds";
 
 /** A host that can't say what it can run. */
@@ -1029,14 +996,10 @@ export const UNKNOWN_STATUS: HostStatus = { claudeSignIn: "unknown", tools: [] }
 export const HOST_STOP_UNANSWERED =
   "This machine's gram-host can't be readied to stop. It may be older than this Gram.";
 
-/** How long a host gets to commit and push its threads' work in progress before a stop. */
 const STOP_TIMEOUT = HOST_STOP_MS;
-/** How long a host gets to clone a repository again and put one thread's work back. */
 const RESTORE_TIMEOUT = HOST_RESTORE_MS;
-/** How long a host gets to delete one thread's kept work at its remote. */
 const DROP_TIMEOUT = HOST_DROP_MS;
 
-/** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";
 
 /** How often a connection pings its host, so a silent link is found and the host hears this side. */
@@ -1111,19 +1074,8 @@ export const connectHost = (
     const gone = (options.gone ?? Effect.never).pipe(
       Effect.tapError((error) => markEnded(error.message)),
     );
-    // Marks the host ended as soon as it goes, not only when a call next races against it.
     yield* Effect.forkScoped(Effect.ignore(gone));
-    /**
-     * A call the host interrupted itself reads as the host going: one built before it closed its
-     * socket first ends its calls that way as it stops (`serveHost`), over a connection still up
-     * for a moment. Taken as a session's own end, that failed the turn rather than wait for the
-     * redial. The connection isn't marked ended, since its socket says whether it is.
-     */
     const stoppedByHost = () => unavailable("The host stopped while it answered.");
-    /**
-     * A call raced against the host going. A broken stream ends the host too, since nothing
-     * reopens it; once it has ended, a call fails before it starts.
-     */
     const guarded = <A, E extends { readonly _tag: string }>(
       call: Effect.Effect<A, E>,
     ): Effect.Effect<A, E | HostUnavailable> =>
@@ -1131,8 +1083,6 @@ export const connectHost = (
         ended
           ? goneNow
           : Effect.raceFirst(call, gone).pipe(
-              // Only an interruption that came back from the host: one of the caller's own never
-              // reaches this.
               Effect.catchCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.fail(stoppedByHost())
@@ -1144,11 +1094,6 @@ export const connectHost = (
             ),
       );
 
-    // Pings every five seconds, and gives up on a host only after `HOST_PINGS_MISSED` of them
-    // went unanswered: left to itself the client gives up after one, which a host stalled for a
-    // few seconds under load misses, and its connection then flapped every minute or so. A host
-    // given up on is gone at once, its owner told, rather than left looking connected until it
-    // dials again. No retries: reopening would hand back the same closed stream.
     const pingEveryMs = options.pingEveryMs ?? HOST_PING_EVERY_MS;
     const silentMs = pingEveryMs * HOST_PINGS_MISSED;
     const protocol = yield* RpcClient.makeProtocolSocket({
@@ -1235,7 +1180,6 @@ export const connectHost = (
         guarded(client["host.files.fetch"]({ path, cwd, maxBytes })).pipe(
           Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
         ),
-      // Only from a host that says it reads one: an older host keeps the file to itself.
       ...(hostServes(hello, "file-parts")
         ? {
             part: (path, roots, outside, offset, length) =>
@@ -1260,7 +1204,6 @@ export const connectHost = (
         guarded(client["host.attachments.put"]({ threadId, name, data })).pipe(
           Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
         ),
-      // A host that went holds nothing more to delete now; its own prune takes the rest.
       remove: (threadId) =>
         guarded(client["host.attachments.remove"]({ threadId })).pipe(Effect.ignore),
     };
@@ -1299,7 +1242,6 @@ export const connectHost = (
         guarded(client["host.threadPlaces.lay"]({ checkout, files: laid })).pipe(
           Effect.catch((error) => Effect.flatMap(keepInvalid(error), Effect.fail)),
         ),
-      // A host that went keeps the folder; nothing runs in it, and its id is never used again.
       remove: (threadId) =>
         guarded(client["host.threadPlaces.remove"]({ threadId })).pipe(Effect.ignore),
     };
@@ -1358,8 +1300,6 @@ export const connectHost = (
         guarded(client["host.git.local"]({ cwd })).pipe(
           Effect.catch((error) => Effect.flatMap(commandFromWire(error), Effect.fail)),
         ),
-      // A host that can't say counts the folder as there, as an unreadable folder does: its git
-      // then says why.
       present: (cwd) =>
         guarded(client["host.git.present"]({ cwd })).pipe(Effect.orElseSucceed(() => true)),
       presence: (cwd) =>
@@ -1391,11 +1331,6 @@ export const connectHost = (
               ),
         ),
     };
-    /**
-     * A stream from the host that fails, rather than hangs, once the host has gone: a `NotFound`
-     * stays itself, anything else ends the host and reads as `HostUnavailable`, as does a stream
-     * the host interrupted itself (`stoppedByHost`).
-     */
     const hostStream = <A, E>(
       stream: Stream.Stream<A, E>,
     ): Stream.Stream<A, Extract<E, NotFound> | HostUnavailable> =>
@@ -1428,7 +1363,6 @@ export const connectHost = (
         Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
       );
     const loopback: HostLoopbackConnection = {
-      // A tunnel the host refused is that tunnel's failure; anything else is the host's.
       open: (tunnelId, address, port) =>
         Stream.suspend((): Stream.Stream<LoopbackEvent, HostFailed | HostUnavailable> =>
           ended
@@ -1458,7 +1392,6 @@ export const connectHost = (
             error._tag === "RpcClientError" ? unavailable(HOST_NOT_ANSWERING) : error,
           ),
         ),
-      // A host that went took its tunnels with it.
       end: (tunnelId) => guarded(client["host.loopback.end"]({ tunnelId })).pipe(Effect.ignore),
     };
     const terminals: HostTerminalsConnection = {
@@ -1481,7 +1414,6 @@ export const connectHost = (
       input: (terminalId, data) => fileCall(client["host.terminals.input"]({ terminalId, data })),
       resize: (terminalId, cols, rows) =>
         fileCall(client["host.terminals.resize"]({ terminalId, cols, rows })),
-      // A host that went took its shells with it, so there is nothing left to close.
       close: (terminalId) =>
         guarded(client["host.terminals.close"]({ terminalId })).pipe(
           Effect.catch((error) => (error instanceof NotFound ? Effect.fail(error) : Effect.void)),
@@ -1492,7 +1424,6 @@ export const connectHost = (
         ),
       subscribe: (terminalId) =>
         hostStream(client["host.terminals.subscribe"]({ terminalId })).pipe(
-          // A shell whose host went has ended too.
           Stream.catch((error): Stream.Stream<TerminalEvent, NotFound> =>
             error instanceof NotFound ? Stream.fail(error) : Stream.make({ type: "exit" }),
           ),
@@ -1503,10 +1434,6 @@ export const connectHost = (
         ),
       roots: hostStream(client["host.terminals.roots"]()),
     };
-    /**
-     * A session call: the agent's own errors pass as they are, and anything else (the host failing
-     * or not answering) reads as `HostFailed`, its detail logged.
-     */
     const sessionCall = <A, E extends { readonly _tag: string; readonly message?: string }, K>(
       call: Effect.Effect<A, E>,
       keep: (error: unknown) => error is K,
@@ -1630,9 +1557,7 @@ export const connectHost = (
             isAgentUnavailable,
           ),
       },
-      // A host that went took its sessions with it, so there is nothing left to close.
       close: (handle) => guarded(client["host.sessions.close"]({ handle })).pipe(Effect.ignore),
-      // A host that doesn't know the agent keeps no config of it to drop.
       reload: (agent, reload) =>
         !hostKnowsAgent(hello, agent)
           ? Effect.void
@@ -1645,11 +1570,6 @@ export const connectHost = (
             ).pipe(Effect.map((result) => result.scope))
           : Effect.succeed(undefined),
     };
-    /**
-     * A token call: the host's own refusal passes as it is; anything else (an older host's
-     * unknown-request defect, a broken stream, no answer in time) reads as `HOST_TOKEN_UNANSWERED`.
-     * Only the error's tag is logged, never its text, which could quote the request.
-     */
     const tokenCall = <A, E extends { readonly _tag: string }>(
       call: Effect.Effect<A, E>,
     ): Effect.Effect<A, HostFailed> =>
@@ -1693,11 +1613,6 @@ export const connectHost = (
           ),
         ),
     };
-    /**
-     * A stop call: the host's own refusal and a host that went are kept as they are, and a broken
-     * stream ends the host. Anything else is a host built before the call, whose unknown-request
-     * defect is a failed call, not a broken stream.
-     */
     const stopCall = <A, E extends { readonly _tag: string }>(call: Effect.Effect<A, E>) =>
       guarded(call).pipe(
         Effect.catchCause((cause): Effect.Effect<never, HostFailed | HostUnavailable> => {
@@ -1750,7 +1665,6 @@ export const connectHost = (
       terminals,
       sessions,
       scan: guarded(client["host.ports.scan"]()).pipe(Effect.map(scanFromWire)),
-      // An older host's unknown-request defect is a failed call, not a broken stream.
       status: guarded(client["host.status"]()).pipe(
         Effect.timeoutOrElse({
           duration: STATUS_TIMEOUT,
@@ -1794,7 +1708,6 @@ export const connectHost = (
                 ),
             }
           : {}),
-        // Only on a host that says it does: an older one leaves a missing folder missing.
         ...(hostServes(hello, "wip-restore")
           ? {
               restore: (request: RestoreRequest) =>
@@ -1808,8 +1721,6 @@ export const connectHost = (
                       remote: request.remote,
                       commit: request.commit,
                       caughtUp: request.caughtUp,
-                      // Only to a host that reads another machine's ref: an older one would
-                      // put back its own ref of the thread, or none.
                       ref: hostServes(hello, "wip-restore-ref") ? request.ref : undefined,
                       pending:
                         request.pending === true && hostServes(hello, "wip-restore-pending")
@@ -1856,7 +1767,6 @@ export const connectHost = (
                     : unavailable(`The host didn't answer: ${failureText(error)}`),
                 ),
               ),
-              // A refusal is the host's answer, not a broken stream: only the stream ending says so.
               start: (release: string) =>
                 Stream.suspend(() =>
                   ended

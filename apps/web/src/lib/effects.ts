@@ -1,11 +1,5 @@
-// The web app's effects, by what they are for. A raw `useEffect` takes any code and any
-// dependencies, and most of what gets written in one belongs in render or in an event handler, so
-// product code names its effect with one of these instead (`gram/no-raw-effect`; see
-// CONTRIBUTING.md#react-effects). Timers are in `timers.ts` and `use-now.ts`.
-
 import { useEffect, useLayoutEffect, useRef, type DependencyList, type RefObject } from "react";
 
-/** What an effect hands back to undo itself. */
 type Cleanup = () => void;
 
 /**

@@ -1,6 +1,3 @@
-// What an older or narrower host can't open or read: the refusals of a session it doesn't run,
-// and the orchestration digests rewritten for a host that doesn't know a worker's agent.
-
 import {
   type AgentKind,
   type HostFeature,
@@ -37,7 +34,6 @@ export const HOST_GROK_MISSING =
 export const HOST_ANTIGRAVITY_MISSING =
   "Its gram-host doesn't run Antigravity sessions: it is older than this Gram, or has no Antigravity CLI. Update Gram there (Settings → Machines), then try again.";
 
-/** The feature a host names once it knows an agent kind that older releases don't. */
 const AGENT_FEATURES: Partial<Record<AgentKind, HostFeature>> = {
   opencode: "agent-opencode",
   grok: "agent-grok",
@@ -102,8 +98,6 @@ export const openRefusal = (
   if (request.agent === "grok" && !hostServes(hello, "agent-grok")) return HOST_GROK_MISSING;
   if (request.agent === "antigravity" && !hostServes(hello, "agent-antigravity"))
     return HOST_ANTIGRAVITY_MISSING;
-  // An older host would drop the field and open an ordinary session, with its native tools,
-  // where the dream's prompt asks it to write.
   if (
     (request.dreamFilesOnly === true || request.audience === "dream") &&
     !hostServes(hello, "dream-sessions")

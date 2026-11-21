@@ -19,7 +19,6 @@ export interface MachineHealth {
   readonly update?: { readonly from?: string; readonly to: string };
 }
 
-/** Why no machine can dial in while access over Tailscale is on, and what brings them back. */
 const downHealth = (cause: TailscaleDown): { why: string; fix: string } => {
   const here = isMac() ? "this Mac" : "this computer";
   const back = "and Gram will reconnect machines by itself.";
@@ -44,7 +43,6 @@ const downHealth = (cause: TailscaleDown): { why: string; fix: string } => {
 
 const minutes = (ms: number) => Math.max(1, Math.round(Math.abs(ms) / 60_000));
 
-/** Negative when release `a` is earlier than `b`, as the server orders them. */
 const splitRelease = (release: string) => {
   const at = release.indexOf("-");
   return {
@@ -92,7 +90,6 @@ export type MachineHealthFacts = Pick<
   "name" | "confirmed" | "onlineSince" | "offline" | "release" | "selfUpdate"
 >;
 
-/** Whether `machine` runs an earlier release than this Gram's (or one too old to say). */
 const behind = (machine: MachineHealthFacts, mine: string | undefined) =>
   mine !== undefined &&
   (machine.release === undefined || compareReleases(machine.release, mine) < 0);
@@ -110,7 +107,6 @@ export function machineHealth(
   const name = machine.name;
   const at = (time: number) => formatStamp(time, now);
   const mine = status.release;
-  // An earlier release is worth offering an update for; without one here there is none to move to.
   const update =
     mine !== undefined && behind(machine, mine)
       ? { ...(machine.release === undefined ? {} : { from: machine.release }), to: mine }
@@ -210,7 +206,6 @@ export function machineHealth(
     case "tailscale-down":
       return { tone: "offline", label: "offline", ...downHealth(offline.cause) };
     case "unconfirmed":
-      // Refused before it was confirmed; it dials again within half a minute.
       return {
         tone: "offline",
         label: "offline",
@@ -251,7 +246,6 @@ export const busyText = (busy: MachineBusy): string => {
     : `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
 };
 
-/** How long a finished update still shows on its row. */
 const UPDATED_SHOWN_MS = 10 * 60_000;
 
 /**

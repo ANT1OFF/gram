@@ -101,7 +101,6 @@ export function RoleGlyph({
   spoken?: boolean;
 }) {
   const info = useThreadRole(thread);
-  // An orchestrator's glyph takes the colour the user gave its workspace, over the accent.
   const accent = useWorkspaceAccent(
     thread.role === "orchestrator" ? thread.workspaceId : undefined,
   );
@@ -121,8 +120,6 @@ export function RoleGlyph({
       render={
         <span
           data-testid={testId}
-          // Muted as the chrome's other glyphs are, but for the orchestrator's, which takes its
-          // accent.
           className={cn(
             "flex shrink-0 text-muted-foreground",
             ROLE_TONE[info.role.kind],
@@ -132,7 +129,6 @@ export function RoleGlyph({
         />
       }
     >
-      {/* A header's mark, so a chrome glyph. */}
       <Icon aria-hidden className="size-icon-row" />
       <span className="sr-only">{info.name}</span>
     </Hint>

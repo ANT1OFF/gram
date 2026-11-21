@@ -32,7 +32,6 @@ export function useMentions({
   const [caret, setCaret] = useState(0);
   const [hasFocus, setHasFocus] = useState(false);
   const [index, setIndex] = useState(0);
-  /** The `@` whose file list was closed, so it stays closed until another `@` is typed. */
   const [dismissedAt, setDismissedAt] = useState<number | undefined>();
   const pendingCaret = useRef<number | undefined>(undefined);
   const pasting = useRef(false);
@@ -52,7 +51,6 @@ export function useMentions({
   const open = entries.length > 0;
   const activeIndex = Math.min(index, entries.length - 1);
 
-  // A choice rewrites the text; the caret lands after what was inserted once React has rendered it.
   useLayoutEffect(() => {
     const next = pendingCaret.current;
     if (next === undefined) return;
@@ -60,7 +58,6 @@ export function useMentions({
     textarea.current?.setSelectionRange(next, next);
   });
 
-  /** Text that arrives whole (a paste, a recalled prompt) doesn't pop the file list open. */
   const quiet = (value: string, at: number) => {
     setCaret(at);
     setDismissedAt(mentionTrigger(value, at)?.start);
@@ -75,7 +72,6 @@ export function useMentions({
     setIndex(0);
   };
 
-  /** The list's keys while it's open; true when the event was one of them. */
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
     if (!open || event.metaKey || event.ctrlKey || event.altKey || imeComposing(event))
       return false;

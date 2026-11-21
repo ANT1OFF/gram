@@ -1,13 +1,3 @@
-// Which pull request something is about. The thread's binding, the badge in `git.state` and the PR
-// detail each describe "a PR", and they change at different moments across bind, rebind, unbind and
-// merge. Every place that lines them up goes through here, so they can't disagree about what counts
-// as the same PR or about which source wins.
-//
-// Identity is `owner/repo` plus number: numbers are local to a repository. Precedence is
-// binding > badge > detail. The binding decides WHICH PR the thread is about (the server resolves
-// every PR call from it); the badge is the freshest word on its state, because it rides every sweep;
-// the detail only adds what the badge doesn't carry.
-
 import type { BoundPr, PrStatus } from "@gram/contracts";
 
 /** The two `GitState` fields identity is read from. */

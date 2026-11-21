@@ -20,16 +20,8 @@ import type { DreamPreviewInput } from "@/api/types";
 import { canonicalJson } from "@/lib/canonical-json";
 import { known, type StatePresentation } from "@/thread/orchestration-model";
 
-// Pure logic behind the Memory view: the caps a file is held to, the open
-// questions read out of `questions.md`, and what a dream's review lets the user do. No React.
-
-/** The index every orchestrator session starts from, which has the smaller cap. */
 const MEMORY_INDEX = "MEMORY.md";
 export { QUESTIONS_FILE } from "@gram/contracts";
-/**
- * The server's caps, held here too so a save that would be refused
- * never leaves.
- */
 const MEMORY_INDEX_MAX_BYTES = 8 * 1024;
 const MEMORY_FILE_MAX_BYTES = 32 * 1024;
 const MEMORY_MAX_FILES = 40;
@@ -38,7 +30,6 @@ const MEMORY_MAX_FILES = 40;
 export const memoryCapFor = (path: string): number =>
   path === MEMORY_INDEX ? MEMORY_INDEX_MAX_BYTES : MEMORY_FILE_MAX_BYTES;
 
-/** The size the server will count: UTF-8 bytes, not characters. */
 const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length;
 
 /** Why a new file's name won't do, as the server would say it; `undefined` for one that will. */
@@ -80,13 +71,7 @@ export const memorySize = (
 export const memoryIsEmpty = (files: readonly Pick<MemoryFileInfo, "path">[]): boolean =>
   files.every((file) => file.path === MEMORY_INDEX);
 
-// ---------------------------------------------------------------------------------------------
-// questions.md: read by the parser the server writes it back with.
-
 export { openQuestions, parseQuestions, type MemoryQuestion } from "@gram/contracts";
-
-// ---------------------------------------------------------------------------------------------
-// Dreams
 
 const DREAM_STATUS: Record<DreamStatus, StatePresentation> = {
   pending: { label: "Starting", tone: "muted" },
@@ -203,7 +188,6 @@ export const reviewFiles = (files: readonly DreamFileDiff[]): DreamFileDiff[] =>
     removed: 1,
     unchanged: 2,
   };
-  // A status with no rank sorts with the changes rather than making the comparison `NaN`.
   const rankOf = (file: DreamFileDiff) => known(rank, file.status) ?? 1;
   return files.toSorted((a, b) => rankOf(a) - rankOf(b) || a.path.localeCompare(b.path));
 };
@@ -355,9 +339,6 @@ export const diffSides = (
 export const sideLabel = (side: DreamResolution): string =>
   side === "output" ? "update's" : side === "merged" ? "merged" : "current";
 
-// ---------------------------------------------------------------------------------------------
-// Import preview
-
 export interface PreviewTotals {
   readonly sessions: number;
   readonly estimatedTokens: number;
@@ -413,7 +394,6 @@ export const budgetOf = (raw: string): number | undefined => {
     : undefined;
 };
 
-/** `3 threads (≈40k tokens)`, or `nothing`. */
 const threadsText = (threads: number, tokens: number): string =>
   threads === 0
     ? "nothing"

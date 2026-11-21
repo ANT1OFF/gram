@@ -36,7 +36,6 @@ const windowInfo = parseWindowArg(process.argv);
 
 const ipc = preloadIpc(ipcRenderer);
 
-/** The desktop's own members; the shell modules' come with them in `bridge` below. */
 const base = {
   platform: process.platform,
   ...(windowInfo === undefined ? {} : { window: windowInfo }),
@@ -50,8 +49,6 @@ const base = {
   withdrawNotification: (id) => ipcRenderer.send(Channels.notificationWithdraw, id),
   setTitleBarTheme: (theme) => ipcRenderer.send(Channels.setTitleBarTheme, theme),
   setVibrancy: (enabled) => ipcRenderer.send(Channels.setVibrancy, enabled),
-  // The zoom the View menu's roles drive, in their half-level steps and Chromium's own range, so a
-  // press handled here and one the menu caught land on the same scale, remembered per origin.
   zoom: (step) =>
     webFrame.setZoomLevel(
       step === "reset"

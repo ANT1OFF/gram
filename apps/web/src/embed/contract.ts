@@ -1,23 +1,7 @@
-// What an app in front of Gram writes against: the whole web app mounted in an element of its own
-// page, and the few places it may add to. Nothing here imports the app, so this file's declarations
-// are the package's types as they stand.
-
 import type { ComponentType, CSSProperties, ReactNode } from "react";
 
 /** Where a slot's component is drawn, so it can fit the room it has. */
-export type ShellPlacement =
-  /** The open sidebar, or a phone's drawer: a full row. */
-  | "sidebar"
-  /** The compact sidebar: a 32 px tile, an icon and no words. */
-  | "rail"
-  /** The title bar, while no sidebar shows: one short button. */
-  | "titlebar"
-  /**
-   * A phone's menu in the `roomy` look: the header as a large name at the menu's head, and the
-   * account as a round avatar alone (Gram draws it in a button with `accountName` and the word
-   * Settings, which opens the account sheet).
-   */
-  | "drawer";
+export type ShellPlacement = "sidebar" | "rail" | "titlebar" | "drawer";
 
 /** What every component the embedding app supplies is given. */
 export interface ShellSlotProps {

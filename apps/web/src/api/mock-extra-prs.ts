@@ -11,9 +11,6 @@ import {
 
 import { MockInvalidState } from "./mock-fs";
 
-// `Thread.extraPrs` and `Thread.hiddenPrs` for MockApi: the server's refusals, and a badge per
-// followed PR.
-
 const CHECKS: readonly PrStatus["checks"][] = ["passing", "failing", "pending"];
 
 /** A followed PR's badge; its checks depend only on the number, so a spec can pick an outcome. */

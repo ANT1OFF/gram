@@ -76,37 +76,24 @@ export const MAX_LISTED = 500;
 export const MAX_SCANNED = 5_000;
 /** How long a listing, a check or a gate may take before it is given up, a mount stuck say. */
 export const FOLDER_DEADLINE = "10 seconds";
-/** How long one listed folder's `.git` probe may take; past it, the folder isn't marked a repo. */
 const PROBE_DEADLINE = "2 seconds";
-/** How many listed folders are probed at once. */
 const PROBES = 8;
 
-/** What a use of a folder may do there. */
-type Use =
-  /** List it in the picker: the whole filesystem may be browsed through. */
-  | "browse"
-  /** Run a one-off chat in it. */
-  | "run"
-  /** Open a session in it: a one-off chat's, or a worker's in a worktree of the host's clones. */
-  | "session";
+type Use = "browse" | "run" | "session";
 
-/** A folder no thread may use, as it really is on the machine. */
 interface Protected {
-  /** Its device and inode: one folder, however a path spells it or a link reaches it. */
   readonly id: string;
   readonly kind: "credentials" | "own" | "clones";
 }
 
 const identity = (info: Stats) => `${info.dev}:${info.ino}`;
 
-/** Which protection wins where one folder is two protected folders at once. */
 const STRICTNESS: Readonly<Record<Protected["kind"], number>> = {
   clones: 0,
   own: 1,
   credentials: 2,
 };
 
-/** Whether a stat failed because nothing is there, rather than because it couldn't be read. */
 const absent = (error: unknown) => {
   const code = (error as { readonly code?: unknown } | undefined)?.code;
   return code === "ENOENT" || code === "ENOTDIR";
@@ -123,11 +110,9 @@ export const olderHost = (machine: { readonly name: string }) =>
 
 const refused = (message: string) => new InvalidState({ message });
 
-/** A filesystem call about `path`, its failure worded for the user. */
 const attempt = <A>(path: string, run: () => Promise<A>) =>
   Effect.tryPromise({ try: run, catch: (error) => folderError(error, path) });
 
-/** What is at `path`, or nothing when it isn't there or doesn't answer in time. */
 const probe = (io: FolderIo, path: string) =>
   Effect.tryPromise(() => io.stat(path)).pipe(Effect.timeout(PROBE_DEADLINE), Effect.option);
 
@@ -158,10 +143,6 @@ export interface Admitted {
  * ownership comes only from what the main Gram recorded as it made it (`checkWorkerPr`).
  */
 export const folderGate = (bounds: FolderBounds, io: FolderIo = NODE_IO) => {
-  /**
-   * The protected folders as they are now. One that isn't there protects nothing; one whose
-   * identity can't be read refuses every use until it can be, since it may be the very folder.
-   */
   const protectedNow = Effect.forEach(
     [
       ...CREDENTIAL_FOLDERS_IN_HOME.map((parts) => ({
@@ -188,10 +169,6 @@ export const folderGate = (bounds: FolderBounds, io: FolderIo = NODE_IO) => {
     { concurrency: 8 },
   ).pipe(Effect.map((found) => found.flat()));
 
-  /**
-   * The protected folders by identity, as they are now. A folder that is two of them at once (an
-   * agent's login folder that is also the host's clones, say) keeps the strictest.
-   */
   const guardedNow = Effect.map(protectedNow, (found) => {
     const kinds = new Map<string, Protected["kind"]>();
     for (const folder of found) {
@@ -205,11 +182,9 @@ export const folderGate = (bounds: FolderBounds, io: FolderIo = NODE_IO) => {
   const admit = (
     input: string,
     use: Use,
-    /** The protected folders when the caller already read them, as one listing does. */
     known?: ReadonlyMap<string, Protected["kind"]>,
   ): Effect.Effect<Admitted, NotFound | InvalidState> =>
     Effect.gen(function* () {
-      // A relative path is the machine's home's, never the host process's own folder.
       const typed = resolve(bounds.home, expandHome(input.trim(), bounds.home));
       if (isCredentialFolder(typed)) return yield* refused(credentials(typed));
       const real = yield* attempt(typed, () => io.realpath(typed));
@@ -217,8 +192,6 @@ export const folderGate = (bounds: FolderBounds, io: FolderIo = NODE_IO) => {
       if (use !== "browse" && dirname(real) === real) return yield* refused(WHOLE);
       const kinds = known ?? (yield* guardedNow);
       let info: Stats | undefined;
-      // From the folder up: the first protected folder met decides, except that a worker's
-      // worktree in the host's clones is let through to a session above Gram Host's own folder.
       let inClones = false;
       for (let at = real; ; at = dirname(at)) {
         const here = yield* attempt(at, () => io.stat(at));
@@ -246,13 +219,6 @@ export const folderGate = (bounds: FolderBounds, io: FolderIo = NODE_IO) => {
 
 export type FolderGate = ReturnType<typeof folderGate>;
 
-/**
- * Lists `input` as `fs.browse` does (a path ending in a separator, or `~`, lists that folder;
- * otherwise its last segment is a prefix completed in its parent; dotfolders only for a `.`
- * prefix), bounded: the folder passes the gate before anything in it is read, at most
- * `MAX_SCANNED` of its entries are read and `MAX_LISTED` listed, each listed folder's `.git` is
- * probed off the event loop with a deadline, and the whole listing has one.
- */
 const browseOn = (
   gate: FolderGate,
   io: FolderIo,
@@ -263,7 +229,6 @@ const browseOn = (
     const listed = Math.max(1, Math.min(limit, MAX_LISTED));
     const trimmed = input.trim() === "" ? "~/" : input.trim();
     const whole = trimmed === "~" || trimmed.endsWith("/") || trimmed.endsWith(sep);
-    // Split as typed, so `~/.` completes dotfolders in home rather than normalizing to home.
     const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf(sep));
     const listedIn = whole ? trimmed : cut >= 0 ? trimmed.slice(0, cut + 1) : "~/";
     const prefix = whole ? "" : trimmed.slice(cut + 1).toLowerCase();
@@ -286,7 +251,6 @@ const browseOn = (
             if (entry.name.toLowerCase().startsWith(prefix)) names.push(entry.name);
           }
         } finally {
-          // Breaking out of the loop closes it; reading to the end closes it too.
           await dir.close().catch(() => undefined);
         }
       },
@@ -300,8 +264,6 @@ const browseOn = (
       (name) =>
         Effect.gen(function* () {
           const path = join(folder, name);
-          // Only plain folders are listed, never links, and their parents passed the gate with
-          // the folder: each is offered unless its name or itself is a refused folder.
           if (isCredentialFolder(path)) return [];
           const itself = yield* probe(io, path);
           if (itself._tag === "None" || guarded.has(identity(itself.value))) return [];
@@ -346,7 +308,6 @@ export const foldersOn = (
             const name = out.stdout.trim();
             return out.status === 0 && name !== "" && name !== "HEAD" ? name : undefined;
           }),
-          // No git there, or not a repository: a folder like any other.
           Effect.orElseSucceed(() => undefined),
           Effect.provideService(Proc, proc),
         );
@@ -367,8 +328,6 @@ export const gatedSessions = (
 ): HostSessionsService => ({
   ...sessions,
   open: (request) =>
-    // A memory update opens in an empty folder the host makes for it, whatever `cwd` names
-    // (`sessionFolder`): no folder of this machine's is asked for, so there is none to admit.
     request.dreamFilesOnly === true
       ? sessions.open(request)
       : gate.admit(request.cwd, "session").pipe(

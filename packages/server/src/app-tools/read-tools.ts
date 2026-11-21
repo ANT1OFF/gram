@@ -35,11 +35,9 @@ import { searchThreads } from "../search/search.ts";
 import { defineAppTool } from "./definition.ts";
 import { AppToolRegistry } from "./registry.ts";
 
-/** Why a thread on another machine has no turn diffs: checkpoints are taken on this one. */
 const REMOTE_CHECKPOINTS =
   "This thread runs on another machine, where Gram keeps no per-turn checkpoints. Ask its git there instead.";
 
-/** The sender of a stored message another thread sent, when it is one. */
 const originOf = (message: GramUIMessage): MessageOrigin | undefined => {
   for (const part of message.parts) {
     if (part.type === "data-thread-origin") return part.data;
@@ -47,18 +45,15 @@ const originOf = (message: GramUIMessage): MessageOrigin | undefined => {
   return undefined;
 };
 
-/** Who sent another thread's message, as a read tool returns it: every field sanitised. */
 const senderOf = (origin: MessageOrigin) => {
   const { label: _, ...sender } = threadSender(origin);
   return sender;
 };
 
-/** Patch text one `turn_diff` call returns, unless the caller asks for more (up to the max). */
 const TURN_DIFF_PATCH_CAP = 20_000;
 const TURN_DIFF_PATCH_MAX = 100_000;
 const MESSAGE_TEXT_CAP = 1_000;
 const THREAD_TEXT_CAP = 8_000;
-/** Status, queue and PR events kept per thread for `list_events`. */
 const EVENT_LOG_CAPACITY = 200;
 
 export interface LoggedEvent {
@@ -82,10 +77,6 @@ const firstLine = (text: string) =>
     120,
   );
 
-/**
- * A message as plain text: its text parts, with tool calls as `[tool Name]` and a failed turn's
- * error as `[turn failed: …]`.
- */
 const messageText = (message: GramUIMessage): string =>
   message.parts
     .flatMap((part) =>
@@ -99,7 +90,6 @@ const messageText = (message: GramUIMessage): string =>
     )
     .join("\n");
 
-/** The fields an agent needs from a git state, without fingerprints and oids. */
 const compactGitState = (state: GitState) =>
   state.repo
     ? {
@@ -128,7 +118,6 @@ const compactGitState = (state: GitState) =>
       }
     : { repo: false };
 
-/** An AppToolError with the failure's own message where it has one. */
 const toolError =
   (tool: string) =>
   (e: unknown): AppToolError =>
@@ -168,7 +157,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
         Effect.provideService(Checkpoints, checkpoints),
       );
 
-    // In memory since the server started; `list_events` says so.
     const log = new Map<ThreadId, Array<LoggedEvent>>();
     const lastPr = new Map<ThreadId, string>();
     const record = (
@@ -253,8 +241,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
           project: projects.get(thread.projectId)?.name ?? "",
           path: checkout.path,
           ...(thread.id === caller ? { self: true } : {}),
-          // What it is in a workspace, so a thread with work for one finds who to hand it to: its
-          // orchestrator, by the workspace's name, or a worker by the orchestrator it reports to.
           ...(thread.role === "orchestrator"
             ? {
                 role: "orchestrator" as const,
@@ -281,10 +267,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
       Effect.map((projects) => new Map(projects.map((p) => [p.id as string, p]))),
     );
 
-    /**
-     * The thread a read is about: the caller, or the one `threadId` names. Any thread may read any
-     * other, as `get_thread` already lets it; an orchestrator reads its workers' diffs this way.
-     */
     const threadOf = (tool: string, caller: ThreadId, threadId: string | undefined) =>
       store
         .getThread((threadId ?? caller) as ThreadId)
@@ -311,8 +293,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
           const thread = yield* threadOf(tool, caller, other);
           const checkout = effectiveCheckout(thread);
           const cwd = checkout.path;
-          // On another machine, whether the folder is there is that machine's to say: the
-          // publisher asks it.
           if (isLocalHost(checkout) && !(yield* folderExists(cwd))) {
             return yield* new AppToolError({ tool, message: missingThreadFolder(cwd) });
           }
@@ -356,8 +336,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
           }
           const checkout = effectiveCheckout(thread);
           const cwd = checkout.path;
-          // Checkpoints are read with this machine's git, and a thread on another machine keeps
-          // none here.
           if (!isLocalHost(checkout)) {
             return yield* new AppToolError({ tool, message: REMOTE_CHECKPOINTS });
           }
@@ -415,9 +393,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
           const cwd = checkout.path;
           const all = yield* store.listTurns(threadId);
           const turns = all.slice(-clamp(limit, 1, 100));
-          // Only prompts are named; a long thread's replies are most of its history. Read from the
-          // newest, keeping the listed turns' messages, until one of an earlier turn shows each
-          // listed turn's first prompt was passed: turns run one at a time, so theirs are contiguous.
           const listed = new Set<string>(turns.map((turn) => turn.id));
           const unseen = new Set(listed);
           const messages = yield* findUserMessages(store, threadId, {
@@ -434,7 +409,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
               return true;
             },
           });
-          // A thread on another machine has no checkpoints here (`REMOTE_CHECKPOINTS`).
           const top =
             isLocalHost(checkout) && (yield* folderExists(cwd))
               ? yield* provideGit(tryRepoTop(cwd)).pipe(Effect.orElseSucceed(() => undefined))
@@ -462,7 +436,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
                       Effect.orElseSucceed(() => undefined),
                     )
                   : undefined;
-              // A turn another thread's message opened names that thread, not the user, as its sender.
               const origin = prompt === undefined ? undefined : originOf(prompt);
               const line = prompt === undefined ? "" : redactText(firstLine(messageText(prompt)));
               return {
@@ -501,7 +474,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
         Effect.gen(function* () {
           const projects = yield* projectsById;
           const needle = project?.trim().toLowerCase() ?? "";
-          // None the caller's reader may not see (`embedding/readable-by.ts`).
           const readable = yield* readableOnly(
             yield* runtimes.snapshot,
             (summary) => summary.thread,
@@ -560,10 +532,6 @@ export const ReadAppToolsLive = Layer.effectDiscard(
               redactText(messageText(message)),
               Math.min(MESSAGE_TEXT_CAP, budget),
             );
-            // Another thread's message isn't the user's: its own role, its sender, and its text
-            // fenced, cut before the fence so the block stays whole. Only its own words, or a
-            // worker reading back what its orchestrator told it, come as written: those are the
-            // reader's instructions, as its agent first read them, and to anyone else material.
             const origin = message.role === "user" ? originOf(message) : undefined;
             const asWritten =
               origin !== undefined &&

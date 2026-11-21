@@ -31,8 +31,6 @@ import { UpdateNotice } from "@/updates/update-notice";
 import { QuietLayer, ViewOutlet } from "@/views/view-frame";
 import { useViewStore } from "@/views/view-store";
 
-// The dock and the auto-hidden navigation, loaded only where an app or a person picks them: Gram's
-// own sidebar needs none of it before first paint.
 const loadNavAway = () => import("@/shell/nav-away");
 const DockRow = lazy(() => loadNavAway().then((m) => ({ default: m.DockRow })));
 const AutoHideDock = lazy(() => loadNavAway().then((m) => ({ default: m.AutoHideDock })));
@@ -77,14 +75,10 @@ export function AppShell() {
     chatWidth,
   } = useShellLayout();
   useWorkspaceKeys();
-  // On a phone, a workspace's place (its orchestrator, Board, Memory) has the row of the three.
   const atPlace = useWorkspacePlaces(false)?.some((place) => place.current) === true;
-  // Settings has no overview: entering or leaving it swaps nothing to carry.
   useCarryOverviewFocus(settings ? "none" : fit.sidebar);
-  // A review that runs too narrow to read beside the conversation takes the window on its own.
   useAutoReviewFocus();
 
-  // Settings, a new task and the board live in the chat's place, so going there brings it back.
   useEffect(() => {
     if (!hasThread) setPanelExpanded(false);
   }, [hasThread, setPanelExpanded]);
@@ -94,12 +88,10 @@ export function AppShell() {
     keys: "escape",
     label: "Restore expanded right panel or review",
     group: "App",
-    // Ahead of Escape's unscoped uses, which belong to the chat hidden behind the panel.
     focusScope: () => expanded || reviewFocus,
     run: () => (reviewFocus ? setReviewFocus(false) : setPanelExpanded(false)),
   });
 
-  // The Diff and PR tabs keep a width of their own, so a review dragged wide leaves the others be.
   const resizePanel = (width: number) => {
     setPanelExpanded(false);
     if (reviewTab) setReviewWidth(clampWidth(width, bounds));
@@ -108,8 +100,6 @@ export function AppShell() {
   const chatCovered = expanded || reviewFocus;
   const setToastDock = useToastDock((s) => s.setNode);
   const dock = nav.position === "side" ? undefined : nav.position;
-  // The navigation is somewhere other than the sidebar's column: the title bar leaves out what it
-  // carries for a hidden sidebar (its Show sidebar and Settings).
   const navAway = dock !== undefined ? "dock" : autoHidden !== "none" ? "sidebar" : undefined;
   const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
 
@@ -155,7 +145,6 @@ export function AppShell() {
         ref={content}
         tabIndex={-1}
         inert={chatCovered}
-        // Its own stacking context, so nothing layered inside the chat rises over the panel above it.
         className={cn(
           "relative isolate flex min-h-0 min-w-0 flex-col bg-thread outline-none",
           panelLeft ? "order-3" : "order-2",
@@ -165,7 +154,6 @@ export function AppShell() {
         <ShellTitlebar
           sidebarShown={sidebarShown}
           navAway={navAway}
-          // Settings' sections carry the pill where the overview does, and so does the dock.
           needsYouPill={sidebarShown || settings || navAway !== undefined}
           settings={settings}
           compactRail={fit.sidebar === "compact"}
@@ -183,11 +171,6 @@ export function AppShell() {
         <ViewOutlet>
           <Outlet />
         </ViewOutlet>
-        {/*
-         * Toasts sit at the chat's top right, under the title bar: over the transcript's least-read
-         * corner, never in the right panel's worker or tabs. A covered chat is inert, so they float
-         * over the window then.
-         */}
         {!chatCovered && (
           <div
             ref={setToastDock}
@@ -196,7 +179,6 @@ export function AppShell() {
           />
         )}
       </main>
-      {/* Over the inert chat, not in it, so its way back can be clicked. */}
       {reviewFocus && <ReviewStrip side={panelLeft ? "right" : "left"} />}
       <div
         className={cn(
@@ -223,12 +205,8 @@ export function AppShell() {
     </div>
   );
 
-  // The panel's column moves with `panel.side`; CSS `order` keeps the DOM, so nothing remounts.
-  // Expanding keeps the template's shape so the column widths animate: the chat's track shrinks to
-  // nothing while the chat keeps its width under the panel, so the transcript isn't laid out anew.
   return (
     <>
-      {/* The keyboard's first stop: past the sidebar to the page. Seen only while it has focus. */}
       <a
         href="#content"
         data-testid="skip-to-content"

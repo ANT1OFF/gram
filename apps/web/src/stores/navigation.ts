@@ -33,23 +33,16 @@ export const DEFAULT_NAVIGATION: NavigationLayout = {
 };
 
 interface NavigationState {
-  /** The embedding app's default, from `MountOptions.layout.navigation`. Not persisted. */
   readonly host: NavigationPrefs;
-  /** What the person picked in Settings → Appearance, over the host's default. */
   readonly picked: NavigationPrefs;
-  /** An auto-hidden navigation held in view by ⌘B until it is hidden again. Not persisted. */
   readonly revealed: boolean;
-  /** Whether an auto-hidden navigation is in view now, for whatever reason. Not persisted. */
   readonly shown: boolean;
-  /** Counts the times it was hidden on purpose (⌘B, Escape), which drops what held it. */
   readonly hideTick: number;
-  /** The dock's Overview sheet, the sidebar's list over the page. Not persisted. */
   readonly sheet: boolean;
   setHost(host: NavigationDefaults | undefined): void;
   pick(prefs: NavigationPrefs): void;
   setRevealed(revealed: boolean): void;
   setShown(shown: boolean): void;
-  /** Slides an auto-hidden navigation away, whatever held it in view. */
   hide(): void;
   setSheet(sheet: boolean): void;
 }

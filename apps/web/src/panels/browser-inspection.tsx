@@ -15,7 +15,6 @@ import { formatLogTime } from "@/lib/time";
 
 const time = (at: number) => formatLogTime(at);
 
-/** Fits measured CSS geometry to the actual displayed image, independently of its pixel density. */
 function annotationStyle(region: BrowserRegion, capture: BrowserCapture) {
   const { width, height } = capture.viewport;
   const left = Math.max(0, region.x);

@@ -188,28 +188,14 @@ import { reloadOnto } from "./window-reload.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const WEB_DEV_URL = process.env["GRAM_WEB_URL"] ?? "http://localhost:5173";
-/** The fixed dev server port the web Vite proxy targets (see scripts/dev.mjs). */
 const DEV_SERVER_PORT = process.env["GRAM_PORT"] ?? "4317";
 
-/**
- * `--smoke`: boot the server, load its URL in a hidden window, check the speech process loads its
- * native runtime, print `SMOKE OK` and exit 0; exit 1 on a load failure, a server crash or timeout.
- * CI runs it against the packaged app.
- */
 const SMOKE = process.argv.includes("--smoke");
 
-/**
- * `--journey`: the full app for a packaged journey check (`scripts/verify-hosted-journey.ts`),
- * which drives it to the end and quits it. As `--smoke` does, it keeps the echo fake agents a
- * check's environment names (`inheritedServerEnv`) and checks for no update; unlike it, the app
- * runs as it always does. Without the fake's variables in the environment it changes nothing else.
- */
 const JOURNEY = process.argv.includes("--journey");
 
-/** What the shared shell code calls this app. */
 const PRODUCT: ShellProduct = { name: "Gram" };
 
-/** What the desktop's windows are made with: its preload, its name, and its link trust. */
 const WINDOW_CONTEXT: WindowContext = {
   preloadPath: join(__dirname, "../preload/index.js"),
   title: "Gram",
@@ -217,14 +203,10 @@ const WINDOW_CONTEXT: WindowContext = {
 };
 const SMOKE_TIMEOUT_MS = 60_000;
 
-// Before the data dir or anything else reads HOME. Packaged macOS only: a dev run keeps whatever
-// HOME its terminal gives it.
 const replacedEnv =
   process.platform === "darwin" && app.isPackaged ? normaliseUserEnv(app.getPath("temp")) : {};
 const dataDir = defaultDataDir();
-// Owner-only before the shell's log or the server writes anything under it.
 const dataDirTightened = securePrivateDir(dataDir);
-/** The shell's log, next to the server's; development also echoes it to stdout. */
 const { logger: log } = createLogger({
   dir: logDirFor(dataDir),
   name: "desktop",
@@ -239,13 +221,9 @@ if (Object.keys(replacedEnv).length > 0) {
   );
 }
 
-// The server's gateway keys live in safeStorage, which only main can use.
 const vaultStore = fileVaultStore(join(app.getPath("userData"), "gateway-keys.json"));
 const vaultCrypto: VaultCrypto = {
   available: () => safeStorage.isEncryptionAvailable(),
-  // Electron 45 no longer falls back to `basic_text` without a keyring daemon: it still names the
-  // desktop's keyring and only reports encryption unavailable, which the vault and Settings read
-  // as `unavailable` rather than as a keyring.
   backend: () =>
     process.platform !== "linux"
       ? undefined
@@ -256,17 +234,11 @@ const vaultCrypto: VaultCrypto = {
   decrypt: (encrypted: Buffer) => safeStorage.decryptString(encrypted),
 };
 
-/**
- * This machine as a personal device of a hosted control plane, made only while the hosted
- * features setting is on (the server says so) and closed when it goes off or the app quits.
- */
-/** Tells Settings the device changed; set once the bridge is served. */
 let deviceChanged = (): void => undefined;
 const deviceHost = createDeviceHost({
   ready: () => app.whenReady(),
   changed: () => {
     deviceChanged();
-    // Signed out, the sign-in ended, or hosted features off: no relay outlives what covered it.
     workerMachineRelays.revalidate();
   },
   failed: (error) =>
@@ -282,7 +254,6 @@ const deviceHost = createDeviceHost({
         gone: (show) => queue.gone(show),
       }),
       view: (request) => askView({ request, machine: machineWord(process.platform) }),
-      // Only the kind of ask: the server's words are shown in the ask itself, never here.
       notify: (view) => {
         if (Notification.isSupported())
           new Notification({ title: "Gram is asking", body: view.heading }).show();
@@ -302,7 +273,6 @@ const deviceHost = createDeviceHost({
         ),
         fetch: globalThis.fetch,
         openBrowser: (url) => shell.openExternal(url),
-        // A server not signed in to before: the person accepts it in a dialog main owns.
         confirmServer: async (server) =>
           (await dialog.showMessageBox(confirmServerDialog(server))).response === 0,
         ask: queue.ask,
@@ -325,7 +295,6 @@ const deviceHost = createDeviceHost({
         elapsed: () => performance.now(),
         changed: () => {
           deviceChanged();
-          // Signed out, the sign-in ended, or hosted features off: no relay outlives what covered it.
           workerMachineRelays.revalidate();
         },
       });
@@ -337,14 +306,8 @@ const deviceHost = createDeviceHost({
   },
 });
 
-/**
- * What the server opened for the user (an editor, a file manager), which a kill of its tree spares,
- * by pid with the start time read when it was reported: a pid since reused by another process is
- * no longer spared, and one whose start couldn't be read refuses an update's tree check.
- */
 const launched = new Map<number, string | undefined>();
 
-/** A bounded synchronous run of `ps`/PowerShell/`taskkill`; undefined if it failed to run. */
 const runSync: RunSync = (file, args, timeoutMs) => {
   const result = spawnSync(file, args, { encoding: "utf8", timeout: timeoutMs, windowsHide: true });
   return result.error === undefined ? result : undefined;
@@ -357,20 +320,13 @@ const treeCheckDeps: TreeCheckDeps = {
   now: () => Date.now(),
 };
 
-/** Agents' pane commands, served once the app is up; until then a command finds no pane. */
 let agentPanes: AgentPanes | undefined;
 
-/** Pinned pages, once installed, and the page listener's origin as the server last announced it. */
 let pages: PagesHost | undefined;
 let pagesOrigin: unknown;
 
 const keepAwake = createKeepAwake(powerSaveBlocker);
 
-/** The server process (src/server); see `server-host.ts`. */
-/**
- * The connections of machines of a worker's own, from a hosted server, carried to the server as
- * frames (`docs/design/desktop-worker-machines.md`). Posted to whichever server child runs now.
- */
 const workerMachineRelays = makeWorkerMachineRelays({
   device: () => deviceHost.device(),
   post: (message) => server.post(message),
@@ -384,39 +340,31 @@ const server = createServerHost({
         ...inheritedServerEnv(process.env, { packaged: app.isPackaged, smoke: SMOKE || JOURNEY }),
         GRAM_DATA_DIR: dataDir,
         GRAM_APP_VERSION: app.getVersion(),
-        // Which build runs, for orchestrators to tell whether a merged fix is live yet.
         ...appBuildEnv(runningBuildInfo(app.getVersion(), app.isPackaged)),
-        // Has the server prove what only a packaged build can get wrong before it reports boot.
         ...(SMOKE ? { GRAM_SMOKE: "1" } : {}),
         ...(app.isPackaged
-          ? // Packaged builds serve the renderer from the server.
-            { GRAM_WEB_ROOT: join(process.resourcesPath, "web") }
-          : // In dev, Vite serves it and proxies `/ws` and `/?boot` to this fixed port.
-            {
+          ? { GRAM_WEB_ROOT: join(process.resourcesPath, "web") }
+          : {
               GRAM_PORT: DEV_SERVER_PORT,
               GRAM_ALLOWED_ORIGINS:
                 process.env["GRAM_ALLOWED_ORIGINS"] ?? devAllowedOrigins(WEB_DEV_URL),
             }),
       },
     });
-    // An exit must release the blocker even if the server never sent its final idle state.
     child.on("exit", keepAwake.dispose);
     return child;
   },
-  // Unpackaged builds also accept a tokenised stdout boot line, for servers that still print one.
   bootFromStdout: !app.isPackaged,
   onMessage: (message, reply) => {
     keepAwake.accept(message);
     const level = logLevelFromMessage(message);
     if (level) log.level = level;
-    // Agents left running in the host kept running after Gram quits: said once, as it quits.
     const kept = keptRunningFromMessage(message);
     if (kept !== null && Notification.isSupported())
       new Notification(keptRunningNotice(kept)).show();
     const shutdown = serverShutdownFromMessage(message);
     if (shutdown) {
       quit.report(shutdown);
-      // An update's stop says what it is stopping too.
       if (updateWindow.open()) updateWindow.show({ step: "server", ...shutdown });
     }
     const opened = launchedPidFromMessage(message);
@@ -427,9 +375,7 @@ const server = createServerHost({
       if (response) reply(response);
     });
     servePaneMessage(message, agentPanes, reply);
-    // Work an orchestrator sends to a hosted server: the app holds the sign-in, so it calls.
     serveSentWorkMessage(message, deviceHost.device(), reply);
-    // Machines of a worker's own from a hosted server, and their connections, carried here.
     serveWorkerMachineMessage(message, deviceHost.device(), workerMachineRelays, reply);
     const announced = pagesOriginFromMessage(message);
     if (announced !== undefined) {
@@ -437,7 +383,6 @@ const server = createServerHost({
       pages?.setOrigin(announced);
     }
   },
-  // With its agents, terminals and their children: killed outright, it can end none of them.
   forceKill: (pid) => {
     const killed = killTree(
       pid,
@@ -454,8 +399,6 @@ const server = createServerHost({
     );
     return killed;
   },
-  // An update that killed the rest of a server past its essentials replaces nothing until this
-  // proves none of that tree left; what it opened for the user is spared, as from the kill.
   ...(process.platform === "win32"
     ? {}
     : {
@@ -465,9 +408,7 @@ const server = createServerHost({
   setTimeout: (callback, ms) => setTimeout(callback, ms),
   clearTimeout: (timer) => clearTimeout(timer as NodeJS.Timeout),
   now: () => Date.now(),
-  // A smoke run reports a crash rather than hiding it behind a restart.
   recovery: SMOKE ? NO_RECOVERY : DEFAULT_RECOVERY,
-  // Any answer will do, a 401 included: it only asks whether the event loop still turns.
   ...(SMOKE
     ? {}
     : {
@@ -483,10 +424,8 @@ const server = createServerHost({
         },
       }),
 });
-/** Set once the smoke result is reported; later teardown errors mustn't change the exit code. */
 let exiting = false;
 
-// Automation must never stall on Electron's modal error dialog: log and exit non-zero instead.
 if (SMOKE || process.env["CI"]) {
   const crash = (kind: string) => (error: unknown) => {
     const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -495,7 +434,6 @@ if (SMOKE || process.env["CI"]) {
       return;
     }
     exiting = true;
-    // Best effort: the exit doesn't wait, but lending's commands are asked to stop first.
     void deviceHost.close();
     workerMachineRelays.close();
     log.fatal({ kind, detail }, "crash");
@@ -507,18 +445,14 @@ if (SMOKE || process.env["CI"]) {
   process.on("unhandledRejection", crash("unhandled rejection"));
 }
 
-// Windows shows toasts only for the AppUserModelID the Start menu shortcut carries.
 if (process.platform === "win32") app.setAppUserModelId(APP_ID);
 
-/** The speech process, started on the first dictation; see the shell's `modules/speech`. */
 const speech = createSpeechHost({
   fork: () => {
     const child = utilityProcess.fork(join(__dirname, "../speech/speech.js"), [], {
       serviceName: "gram-speech",
       stdio: "pipe",
     });
-    // Its lines are an event name and numbers (the shell's `speech-process/main.ts`); stderr is
-    // the native runtime's own diagnostics.
     if (child.stdout) {
       createInterface({ input: child.stdout }).on("line", (line) => {
         log.info({ source: "speech" }, line);
@@ -539,21 +473,9 @@ const speech = createSpeechHost({
   log: (fields, message) => log.info(fields, message),
 });
 
-/**
- * Local dictation's models, in `<dataDir>/speech` where the server kept them; opened by `runApp`, so
- * only the instance holding the single-instance lock recovers or writes them.
- */
 let speechModels: Promise<SpeechModelStore> | undefined;
 const updateFinalizer = createUpdateFinalizer();
-/**
- * Set once Squirrel.Mac has staged a signed update past Gram's stop fence: the quit that follows
- * is the update's, so it exits at once and Squirrel.Mac's installer runs.
- */
 let nativeUpdateQuit = false;
-/**
- * A signed Mac's updater, or the Linux AppImage's or .deb's, once `runApp` has made it; the quit
- * handlers ask it.
- */
 let nativeUpdates: NativeUpdates | undefined;
 let signedUpdateStarting =
   ((process.platform === "darwin" && process.arch === "arm64") ||
@@ -564,7 +486,6 @@ let signedUpdateStarting =
   UPDATE_REPO !== null;
 let quitAfterSignedStartup = false;
 
-/** Quit has committed with services fenced; release any snapshot not still owned by staging. */
 function exitSignedUpdate() {
   void deviceHost
     .close()
@@ -573,16 +494,12 @@ function exitSignedUpdate() {
     .finally(() => app.exit(0));
 }
 
-/** Brings a window forward, or opens one; set once the windows exist. */
 let showWindow = () => {};
-/** "Keep running in the tray", which is the menu bar item on macOS; see `tray-mode.ts`. */
 const trayMode = createTrayMode({
   product: PRODUCT,
   path: join(app.getPath("userData"), "tray.json"),
   show: () => showWindow(),
   quit: () => app.quit(),
-  // Linux executables carry no icon for the tray to borrow; the bundled PNG, at a size every
-  // StatusNotifierItem host scales cleanly.
   ...(process.platform === "linux"
     ? {
         icon: () => {
@@ -593,16 +510,12 @@ const trayMode = createTrayMode({
     : {}),
 });
 
-/** The quit, from the first ⌘Q to `app.exit`; see `quit.ts`. */
 const quit = createQuit({
   steps: [
-    // Lending ends first: no ask outlives the app, and no command starts while it quits.
     { name: "personal device", timeoutMs: 3_000, run: () => deviceHost.close() },
     { name: "signed update", timeoutMs: 3_000, run: async () => nativeUpdates?.dispose() },
-    // The server's own bound (`STOP_TIMEOUT_MS` and a forced kill) runs past the quit's deadline.
     { name: "server", timeoutMs: QUIT_DEADLINE_MS, run: () => server.stop("quit") },
     { name: "speech", timeoutMs: 3_000, run: () => speech.shutdown() },
-    // Stops a download, so its partial file is whole up to where it stopped and the next resumes.
     {
       name: "speech models",
       timeoutMs: 3_000,
@@ -621,18 +534,12 @@ const quit = createQuit({
   now: () => Date.now(),
 });
 const quitWindow = createQuitWindow({ colors: themeColors, onForce: () => quit.force("user") });
-/** What an update's stop shows while every window is hidden for it. */
 const updateWindow = createQuitWindow({
   colors: themeColors,
   heading: "Restarting to update…",
   title: "Restarting Gram",
 });
 
-/**
- * The boot navigation for a window, which carries the launch token to the server's own origin;
- * undefined until the server first boots. In dev it goes through Vite, so the auth cookie lands on
- * the Vite origin.
- */
 const windowUrl = (): string | undefined => {
   const bootUrl = server.url();
   if (bootUrl === "") return undefined;
@@ -647,17 +554,12 @@ function trustedOrigins(): ReadonlySet<string> {
   return origins;
 }
 
-/**
- * A fresh server has a new port and token, so every window reloads onto it; a progress window
- * keeps its own page (`window-reload.ts`).
- */
 function reloadWindows() {
   const url = windowUrl();
   if (url === undefined) return;
   reloadOnto(url, appWindows(), isProgressWindow);
 }
 
-/** Starts the server again after a failed update launch, and reloads every window onto it. */
 async function restartServer() {
   try {
     await server.start();
@@ -670,10 +572,6 @@ async function restartServer() {
 
 let recoveryPrompt = false;
 
-/**
- * Tells the user the server is down and won't come back by itself, and offers to start it again,
- * relaunch the app or quit. One prompt at a time; dismissing it tries again.
- */
 function offerRecovery(problem: string) {
   if (recoveryPrompt) return;
   recoveryPrompt = true;
@@ -692,7 +590,6 @@ function offerRecovery(problem: string) {
     .then(({ response }) => {
       recoveryPrompt = false;
       if (response === 1) {
-        // Relaunches once this instance has quit, so the single-instance lock is free by then.
         app.relaunch();
         app.quit();
       } else if (response === 2) {
@@ -709,7 +606,6 @@ function broadcast(progress: UpdateProgress) {
   }
 }
 
-/** Hides every window and returns a function that shows them again. */
 function hideWindows() {
   const allWindows = appWindows();
   for (const win of allWindows) win.hide();
@@ -721,7 +617,6 @@ function hideWindows() {
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 async function runApp() {
-  // Before any window: open on the page background of the theme the renderer last synced.
   loadStoredAppearance(join(app.getPath("userData"), "appearance.json"));
   loadLinkTrust(join(app.getPath("userData"), "trusted-link-hosts.json"));
   const appIcon = createAppIcon({
@@ -729,7 +624,6 @@ async function runApp() {
     dir: appIconDir(),
   });
   appIcon.start();
-  // What a login launch would start; none from an AppImage mount without its `$APPIMAGE`.
   const loginExec =
     process.platform === "linux" ? autostartExec(process.env, process.execPath) : undefined;
   const loginItem = createLoginItem({
@@ -738,8 +632,6 @@ async function runApp() {
     packaged: app.isPackaged,
     argv: process.argv,
     openExternal: (url) => shell.openExternal(url),
-    // An AppImage runs from a mount that changes every launch; `$APPIMAGE` is the file itself.
-    // Without anything lasting to start, Linux doesn't offer the setting.
     ...(loginExec === undefined
       ? {}
       : {
@@ -768,8 +660,6 @@ async function runApp() {
     app.isPackaged &&
     personalMacTargets().includes(destination) &&
     (await writableMacTarget(destination));
-  // A Developer ID signed install updates through Electron's updater. Unsigned ones, and any whose
-  // signature macOS can't read, have no in-app updater: their checks answer unavailable.
   const signedByPublisher =
     process.platform === "darwin" &&
     process.arch === "arm64" &&
@@ -779,9 +669,6 @@ async function runApp() {
     UPDATE_REPO !== null &&
     validTeamId(GRAM_MAC_TEAM_ID) &&
     (await macBundleTeam(destination).catch(() => undefined)) === GRAM_MAC_TEAM_ID;
-  // The Linux x64 AppImage replaces its own file; the .deb only checks. Neither touches
-  // Squirrel.Mac or ShipIt, which are made for a signed Mac alone. An AppImage counts only when
-  // this process runs from its mount: a .deb never takes an inherited `$APPIMAGE` for its own.
   const appImage =
     process.platform === "linux" ? await locateAppImage(process.env, process.execPath) : undefined;
   const linuxTarget = linuxUpdateTarget({
@@ -808,7 +695,6 @@ async function runApp() {
           warn: (message) => log.warn({ source: "update" }, message),
           readPrefs: () => readUpdatePrefs(dataDir),
         });
-  // Without handlers Electron grants every permission to every page; see `grantPermission`.
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
     callback(
       grantPermission(
@@ -823,7 +709,6 @@ async function runApp() {
   const ipc = createShellIpc(ipcMain, (event) =>
     isTrustedSenderUrl(event.senderFrame?.url, trustedOrigins()),
   );
-  // Settings → Machines reads the personal device here; its decisions open dialogs the shell draws.
   deviceChanged = installHostedDeviceIpc(ipc, {
     device: () => deviceHost.device(),
     decisions: (sender) =>
@@ -833,13 +718,9 @@ async function runApp() {
       }),
     machine: machineWord(process.platform),
   }).changed;
-  // Reports are read from the windows made below, by then.
   const connections = installConnection(ipc, {
     log,
     windowIdFor: (sender) => windows.windowIdFor(sender),
-    // A window the server refused while it still runs, such as after Chromium's network service
-    // restarted and took the launch cookie with it: loaded onto the boot address, which sets the
-    // cookie again, as a restart of Gram would have.
     renewSession: (sender) => {
       const url = windowUrl();
       const win = BrowserWindow.fromWebContents(sender);
@@ -850,8 +731,6 @@ async function runApp() {
     },
   });
   installFonts(ipc);
-  // Agents' pages are the preview's, so each asks the other: the panes create a thread's page
-  // through the preview, and the preview asks the panes before an agent's page goes anywhere.
   let preview: PreviewHost | undefined;
   agentPanes = createAgentPanes({
     hosts: installAgentBrowse(ipc, {
@@ -865,21 +744,16 @@ async function runApp() {
     decodeFrame,
   });
   preview = installPreview(ipc, { openLink, log, agent: agentPanes, appOrigins: trustedOrigins });
-  // Pinned pages, in a session of their own that no agent reaches; the server says where they load.
   pages = installPages(ipc, {
     log,
     guardPreload: join(__dirname, "../page-guard/page-guard.js"),
   });
   if (pagesOrigin !== undefined) pages.setOrigin(pagesOrigin);
   installTray(ipc, trayMode);
-  // Downloaded through Chromium's network stack (`net`), so the system proxy, PAC, Kerberos and the
-  // keychain's roots apply.
   const openModels = () =>
     openSpeechModelStore({
       dataDir,
       base: speechModelBase(process.env),
-      // `ElectronNet` is the slice the store uses, typed without Electron, whose overloaded
-      // `ClientRequest.on` TypeScript can't match against it; the calls it makes are Electron's own.
       fetch: electronFetch(net as unknown as ElectronNet),
       log,
     });
@@ -891,12 +765,10 @@ async function runApp() {
     try {
       await modelScope.restore();
     } finally {
-      // Ordinary quit still owns a replacement whose open finishes after recovery timeout.
       speechModels = modelScope.owned();
     }
     speech.resumeAfterUpdate();
   };
-  // Its calls fail with this too; caught here so it isn't an unhandled rejection, which is fatal.
   speechModels.catch((error: unknown) => log.error({ err: error }, "speech models didn't open"));
   installSpeech(ipc, {
     host: speech,
@@ -916,7 +788,6 @@ async function runApp() {
         windowId,
         log,
         product: PRODUCT,
-        // Before the first boot there is nothing to reload; `loadPending` loads it then.
         reload: () => {
           const url = windowUrl();
           if (url !== undefined) void win.loadURL(url);
@@ -944,7 +815,6 @@ async function runApp() {
     notificationStatus,
     updates: createUpdateService({
       updater,
-      // Lending ends before the server: no command it started outlives the update.
       stopServer: async () => {
         await deviceHost.stop();
         return stopForUpdate(server);
@@ -974,7 +844,6 @@ async function runApp() {
     },
   });
   watchSystemAppearance();
-  // A server starts out awake, so one that boots while the Mac sleeps or is locked is told so.
   let power: PowerState = "awake";
   server.onBoot(() => {
     if (power === "suspended") server.post({ type: "power", state: power });
@@ -1008,13 +877,9 @@ async function runApp() {
 
   server.onRecovered(reloadWindows);
   server.onGiveUp(offerRecovery);
-  // The windows, and so their renderer processes, start while the server boots. They stay hidden
-  // with nothing loaded, so no page runs in them before the boot navigation takes the launch token
-  // to the server's own origin, and a server that never boots leaves nothing on screen.
   const booting = server.start();
   windows.restore();
   await booting;
-  // A quit asked for meanwhile has hidden the windows; loading them would show them again.
   if (quit.state() === "idle") windows.loadPending();
   void native
     ?.start()
@@ -1027,24 +892,18 @@ async function runApp() {
     windows.open();
   };
   showWindow = () => {
-    // Nothing brings a window back once the quit has hidden them.
     if (quit.state() === "idle" && !windows.revealHeld()) surfaceWindow(appWindows(), openWindow);
   };
-  // A Start menu or taskbar relaunch, the way back from the tray too.
   app.on("second-instance", () => showWindow());
   trayMode.start();
   app.on("activate", () => {
     if (quit.state() !== "idle") return;
-    // The Dock icon of a login launch, whose windows wait hidden.
     if (windows.revealHeld()) return;
     if (appWindows().length === 0) openWindow();
   });
-  // Windows still open at quit come back at the next launch.
   app.on("before-quit", () => {
     if (!updateFinalizer.active()) windows.markQuitting();
   });
-  // A helper that ended on its own, said in the log: the network service's restart drops every
-  // window's socket and the launch cookie with it, which the log would otherwise not explain.
   app.on("child-process-gone", (_event, details) => {
     if (details.reason === "clean-exit") return;
     log.warn(
@@ -1062,18 +921,12 @@ async function runApp() {
   if (process.platform === "win32") void sweepStaleUpdateDirs(tmpdir(), SWEEP_MIN_AGE_MS);
 }
 
-/** What the stop fence, recovery and quits need of the app, for every self-replacing install. */
 interface FencedDeps {
   readonly restoreNative: () => Promise<void>;
   readonly windows: { flushForUpdate(): void };
   readonly modelScope: { close(): Promise<void> };
 }
 
-/**
- * The parts of an updater that are the app's, whatever replaces it: preferences, timers, Gram's
- * stop fence (the server's attested teardown, speech, voice models and window state), recovery
- * after a refused stop, the update quit, the install record and the broadcast to every window.
- */
 function fencedUpdateOptions(
   deps: FencedDeps,
 ): Omit<
@@ -1109,7 +962,6 @@ function fencedUpdateOptions(
       await updateFinalizer.run((signal) => work(signal), retry);
     },
     recover: async () => {
-      // A shutdown still settling holds recovery.
       try {
         await updateFinalizer.settle();
       } catch (error) {
@@ -1141,7 +993,6 @@ function fencedUpdateOptions(
       const restore = hideWindows();
       updateWindow.show("Stopping threads and agents…");
       return () => {
-        // Back first, so closing the progress window never closes the last one.
         restore();
         updateWindow.close();
       };
@@ -1159,11 +1010,6 @@ const broadcastNativeUpdate = (state: AppUpdateState) => {
   }
 };
 
-/**
- * Electron's updater for a signed install: the repo's public feed, read anonymously, the stop
- * fence before Squirrel.Mac's restart, and the install record that tells the next launch whether
- * the update applied.
- */
 function createSignedUpdates(
   repo: string,
   deps: FencedDeps & { readonly canInstall: boolean },
@@ -1187,11 +1033,8 @@ function createSignedUpdates(
     currentVersion: app.getVersion(),
     canInstall: deps.canInstall,
     verifyDownload: async (file, version, channel) => {
-      // From here on only this private, descriptor-held copy counts: electron-updater's cache is
-      // a shared path, and Squirrel.Mac is served the snapshot, never that path.
       const snapshot = await snapshotCandidate(file, tmpdir());
       try {
-        // The feed picked the release from GitHub's API, which gives each asset's digest.
         const picked = feed.picked();
         if (picked?.version !== version)
           throw new Error("The download no longer matches the release it was checked against.");
@@ -1199,8 +1042,6 @@ function createSignedUpdates(
           throw new Error(
             `The downloaded ${picked.payload.name} doesn't match GitHub's SHA-256 for it.`,
           );
-        // Squirrel.Mac checks only the signature against this app's requirement: notarization,
-        // the staple and the version the feed offered are checked here, on the snapshot.
         if (!validTeamId(GRAM_MAC_TEAM_ID)) throw new Error("This build names no publisher team.");
         await verifyNativeCandidate({
           snapshot,
@@ -1221,11 +1062,6 @@ function createSignedUpdates(
   });
 }
 
-/**
- * The Linux AppImage's updater: the same public feed for `latest-linux.yml` and the AppImage,
- * electron-updater's download and SHA-512 check, Gram's own checks on a private copy, and after the
- * stop fence one rename over the running AppImage, then Electron's relaunch into it.
- */
 function createAppImageUpdates(
   repo: string,
   appImage: AppImageLocation,
@@ -1245,7 +1081,6 @@ function createAppImageUpdates(
       feed,
       appImage: appImage.path,
       relaunch: (path) => {
-        // Electron starts it once this process has exited, so the single-instance lock is free.
         app.relaunch({ execPath: path });
         app.quit();
       },
@@ -1255,8 +1090,6 @@ function createAppImageUpdates(
     currentVersion: app.getVersion(),
     canInstall: appImage.writable,
     verifyDownload: async (file, version, channel) => {
-      // As on macOS, only this private, descriptor-held copy counts from here on; it is what gets
-      // written over the AppImage, digest-checked as it streams.
       const snapshot = await snapshotCandidate(file, tmpdir());
       try {
         const picked = feed.picked();
@@ -1285,7 +1118,6 @@ function createAppImageUpdates(
   });
 }
 
-/** The Linux .deb's updater: checks only, linking to the release; apt installs it. */
 function createDebUpdates(repo: string): NativeUpdates {
   const feed = createPublicFeed({
     fetch: anonymousFetch,
@@ -1310,7 +1142,6 @@ function createDebUpdates(repo: string): NativeUpdates {
   });
 }
 
-/** The Terminal tab's emulator as the packaged web app ships it, under its hashed name. */
 const emulatorAsset = (): string | undefined => {
   if (!app.isPackaged) return undefined;
   const name = readdirSync(join(process.resourcesPath, "web", "assets")).find((file) =>
@@ -1319,12 +1150,6 @@ const emulatorAsset = (): string | undefined => {
   return name === undefined ? "" : `/assets/${name}`;
 };
 
-/**
- * Runs in the smoke window and returns what is wrong, "" for nothing. Besides the shell's #root it
- * compiles the terminal emulator the way the Terminal tab does, because that is the one thing in
- * the renderer that the server's CSP can refuse (`'wasm-unsafe-eval'`) and only a served page shows.
- * `asset` is undefined for an unpackaged run, whose page Vite serves with no such file to name.
- */
 const smokeProbe = async (asset: string | undefined): Promise<string> => {
   if (document.getElementById("root") === null) return "the page has no #root";
   try {
@@ -1351,7 +1176,6 @@ const smokeProbe = async (asset: string | undefined): Promise<string> => {
 async function runSmoke() {
   app.dock?.hide();
   const finish = (code: number, line: string) => {
-    // Killing the server rejects a pending start, which would report a second time.
     if (exiting) return;
     exiting = true;
     clearTimeout(timer);
@@ -1365,7 +1189,6 @@ async function runSmoke() {
     SMOKE_TIMEOUT_MS,
   );
 
-  // Made before the server boots, as the app's windows are, so the smoke covers that order.
   const booting = server.start();
   installSmokeIpc(
     createShellIpc(ipcMain, (event) =>
@@ -1383,17 +1206,14 @@ async function runSmoke() {
   }
   server.onUnexpectedExit(({ code }) => finish(1, `SMOKE FAIL: server exited with code ${code}`));
   win.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
-    // -3 (ERR_ABORTED) is a navigation superseded by the next one, not a failure.
     if (isMainFrame && code !== -3) finish(1, `SMOKE FAIL: load failed: ${description} (${code})`);
   });
   win.webContents.once("did-finish-load", () => {
     if (win.isDestroyed()) return;
-    // A 401/404 page also "finishes loading"; only the web app's shell has #root.
     void win.webContents
       .executeJavaScript(`(${smokeProbe.toString()})(${JSON.stringify(emulatorAsset())})`)
       .then(async (problem: unknown) => {
         if (problem !== "") return finish(1, `SMOKE FAIL: ${String(problem)}`);
-        // Local dictation's native addon has to load in the speech process, unpacked and signed.
         const speechRuntime = await speech.probe();
         return speechRuntime.ok
           ? finish(0, "SMOKE OK")
@@ -1404,7 +1224,6 @@ async function runSmoke() {
   void win.loadURL(bootUrl);
 }
 
-// A smoke run probes a build on its own, so it neither takes nor waits for the instance lock.
 const primary = SMOKE || claimSingleInstance(app);
 
 void app
@@ -1417,20 +1236,14 @@ void app
   });
 
 app.on("window-all-closed", () => {
-  // A quit closes the windows on its way out; that isn't the user closing the last one. Neither is
-  // Squirrel.Mac's restart, which closes them before it relaunches.
   if (quit.state() !== "idle" || nativeUpdateQuit) return;
   const next = lastWindowClosed(process.platform, trayMode.keepInTray());
   if (next === "quit") app.quit();
   else if (next === "tray") trayMode.closedToTray();
 });
 
-// Every quit (⌘Q, a menu's or the Dock's Quit, the last window closing off macOS, an update's
-// relaunch) runs `quit` and ends in `app.exit`, so Electron's own quit never runs: it would close
-// each window the slow way. A quit asked for while one runs forces it.
 app.on("before-quit", (event) => {
   if (quit.state() === "exited") return;
-  // The stop fence already ran and Squirrel.Mac staged the update: exiting runs its installer.
   if (nativeUpdateQuit) {
     event.preventDefault();
     exitSignedUpdate();
@@ -1441,7 +1254,6 @@ app.on("before-quit", (event) => {
     quitAfterSignedStartup = true;
     return;
   }
-  // Join launch/pending settlement before the generic cancellation route can cancel its stop.
   if (nativeUpdates?.quitNeedsFence()) {
     void nativeUpdates.quitThroughFence();
     return;
@@ -1456,7 +1268,6 @@ app.on("before-quit", (event) => {
   quit.request();
 });
 
-// systemd and terminal shutdown follow the same backend/provider ownership fence as Quit.
 if (process.platform === "linux") {
   const signalQuit = createSignalQuit(
     () => quit.state() === "idle",

@@ -27,11 +27,6 @@ export const parentFolder = (root: string): string | undefined => {
 
 const fail = (message: string) => useThreadDialogs.getState().fail(message);
 
-/**
- * Adds a registered project to the workspace, once. The workspace is read again first: a clone
- * takes long enough for it to have changed since the dialog opened, and saving that older copy
- * would drop whatever joined meanwhile.
- */
 async function addWorkspaceRepo(
   api: Pick<Api, "listWorkspaces" | "saveWorkspace">,
   queryClient: QueryClient,

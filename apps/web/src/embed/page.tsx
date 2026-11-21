@@ -46,8 +46,6 @@ export function Page({
   const Heading = headingLevel === 2 ? "h2" : "h1";
   const header = (
     <header className="flex flex-wrap items-start gap-x-3 gap-y-2">
-      {/* With the title left to the phone's bar, the line takes the row there and the actions
-          go under it, rather than beside it in half the width. */}
       <div
         data-slot="page-heading"
         className={cn("flex min-w-0 flex-1 flex-col gap-1", hideTitleOnPhone && "phone:basis-full")}
@@ -69,8 +67,6 @@ export function Page({
   );
   return (
     <div className="@container/settings">
-      {/* Keyed by its name, so a new page arrives anew: its title, then each part 40 ms after the
-          last, under the Motion setting. */}
       <div
         key={title}
         data-slot="page"

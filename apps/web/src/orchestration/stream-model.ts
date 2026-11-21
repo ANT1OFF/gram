@@ -11,10 +11,6 @@ import { formatStamp } from "@/lib/time";
 import { digestTitle } from "@/thread/orchestration-model";
 import { isToolPart, toolNameOf } from "@/thread/parts";
 
-// The orchestrator's calm stream (buildout "Make the stream live"): each feature once, as a live
-// card that updates in place, and one line for each event the budget lets speak. Pure, so where a
-// card sits and what a digest says are tested without a browser.
-
 /** One digest of the orchestrator's transcript, as its quiet line tells it. */
 export interface StreamDigest {
   /** The digest's message; its text is what the agent was sent. */
@@ -31,28 +27,11 @@ export interface TimedLine {
   readonly at: number | undefined;
 }
 
-/** What a message of the orchestrator's transcript shows besides, or instead of, itself. */
 interface StreamExtras {
-  /** The lines its run of digests speaks, oldest first; empty for any other message. */
   readonly lines: readonly TimedLine[];
-  /** The features whose cards sit here, in the order they were first seen. */
   readonly cards: readonly string[];
-  /**
-   * The digests its one update stands for, oldest first: on the last digest of a run of digests
-   * with no other message between them, the whole run; empty on any other message.
-   */
   readonly digests: readonly StreamDigest[];
-  /**
-   * In a quiet stream, the orchestrator's replies folded into this update because nothing in their
-   * episodes changed for the user, oldest first; absent everywhere else.
-   */
   readonly replies?: readonly GramUIMessage[];
-  /**
-   * In a quiet stream, the run of quiet rows this message's one row stands for (`foldRuns`), in the
-   * order they stood: shown as one line, "Updates · 3 merged · 1 report", that opens on each. Its
-   * own update is among them, so `lines` and `digests` are then empty, and `cards` are only those
-   * that came after the run.
-   */
   readonly run?: readonly RunPart[];
 }
 
@@ -171,7 +150,6 @@ export function planStream(
   const kept: GramUIMessage[] = [];
   const digests: DeliveredDigest[] = [];
   let previous: OrchestrationDigest | undefined;
-  /** The digests since the last other message, with the lines and cards each brought. */
   let run: {
     readonly entry: StreamDigest;
     readonly lines: readonly TimedLine[];
@@ -243,16 +221,6 @@ export function planRuns(plan: StreamPlan, cards: readonly FeatureCard[]): Strea
   return messages === undefined ? plan : { ...plan, messages, extras, foldedInto };
 }
 
-/**
- * A run of quiet rows as one row (the quiet stream only). The rows of the stream, in order, are each
- * message's own (a reply or the user's, never quiet), a digest's update, then the feature cards it
- * anchors; an update and a merged feature's line are quiet. Two or more quiet rows in a row, at
- * least one an update, with no reply or message of the user's between them, become one row on the
- * last update's message, and every message the run took whole leaves the stream (a search for one
- * opens all activity, as for a folded reply). A lone update stays as it is, and so does a merged
- * line beside a reply only; a live card ends a run, since it is not quiet. Undefined when it found
- * no run, and changed nothing.
- */
 function foldRuns(
   messages: readonly GramUIMessage[],
   extras: Map<string, StreamExtras>,
@@ -260,9 +228,7 @@ function foldRuns(
   foldedInto: Map<string, string>,
 ): readonly GramUIMessage[] | undefined {
   let runs = 0;
-  /** The quiet rows so far, each with the message it came from. */
   let pending: { readonly part: RunPart; readonly from: string }[] = [];
-  /** Each message a run took whole, with the message its row went to. */
   const removed = new Map<string, string>();
   const flush = () => {
     const run = pending;
@@ -279,7 +245,6 @@ function foldRuns(
         taken.set(from, features);
       }
     }
-    // A message the run took part of keeps what wasn't quiet: a reply, a live card, a later line.
     for (const [from, features] of taken) {
       if (removed.has(from) || from === anchor) continue;
       const own = extras.get(from);
@@ -318,7 +283,6 @@ function foldRuns(
   }
   flush();
   if (runs === 0) return undefined;
-  // What a quiet update had folded goes where that update went.
   for (const [id, target] of foldedInto) {
     const moved = removed.get(target);
     if (moved !== undefined) foldedInto.set(id, moved);
@@ -330,10 +294,8 @@ function foldRuns(
   return messages.filter((message) => !removed.has(message.id));
 }
 
-/** What makes an update one the user should read: a merge, a delivery, a failure, a question. */
 const NOTABLE: ReadonlySet<StreamLine["kind"]> = new Set(["merged", "delivered", "failed", "ask"]);
 
-/** A reply that asks the user something is never folded, whatever its digest said. */
 const asksUser = (message: GramUIMessage): boolean =>
   message.parts.some((part) => isToolPart(part) && toolNameOf(part).endsWith("ask_user"));
 
@@ -353,20 +315,12 @@ export const quietEpisode = (extras: StreamExtras, replies: readonly GramUIMessa
   ) &&
   !replies.some(asksUser);
 
-/**
- * The quiet stream: each digest's episode (its run of digests and the orchestrator's replies up to
- * the next message of the user's) that changed nothing for the user folds into its update, and
- * quiet episodes in a row share one update, on the last digest of the last of them. Their lines,
- * cards, digests and replies all go with it, so the update opens on everything; only where it
- * shows changes. An episode with a merge, a failure or a question stands as it is.
- */
 function foldQuiet(
   messages: readonly GramUIMessage[],
   extras: Map<string, StreamExtras>,
   foldedInto: Map<string, string>,
 ): readonly GramUIMessage[] {
   const shown: GramUIMessage[] = [];
-  /** The quiet episodes in a row so far: their digests (the anchors) and replies, in order. */
   let group: GramUIMessage[] = [];
   const closeGroup = () => {
     const anchors = group.filter((message) => digestOf(message) !== undefined);
@@ -387,7 +341,6 @@ function foldQuiet(
         extras.delete(message.id);
       }
     }
-    // Digests no reply answered read as they did: only replies make the update a quiet one.
     extras.set(anchor.id, { lines, cards, digests, ...(replies.length > 0 ? { replies } : {}) });
     shown.push(anchor);
     group = [];
@@ -401,7 +354,6 @@ function foldQuiet(
       index += 1;
       continue;
     }
-    // The episode: this digest and the replies after it, up to the next message of the user's.
     let end = index + 1;
     while (end < messages.length && messages[end]!.role !== "user") end += 1;
     const replies = messages.slice(index + 1, end);
@@ -528,7 +480,6 @@ export interface RunWords {
 export function runWords(
   parts: readonly RunPart[],
   clock: (at: number) => string = formatStamp,
-  /** A finished feature's word: `delivered` when nothing of it merged. Left out, `merged`. */
   endWord?: (feature: string) => "merged" | "delivered",
 ): RunWords {
   const updates = parts.flatMap((part) => (part.kind === "update" ? [part] : []));
@@ -566,7 +517,6 @@ export function runWords(
   };
 }
 
-/** The longest preview a quiet update's header carries; the line truncates it further to fit. */
 const PREVIEW_MAX = 160;
 
 /**

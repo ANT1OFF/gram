@@ -1,11 +1,3 @@
-// Workspace routines (docs/AGENTS_AND_FEATURES.md#routines): a brief kept in the workspace's charter
-// and run on a schedule, or when something happens (`on`). Each time one comes due it starts a fresh
-// worker in one of the workspace's
-// projects, or puts its brief in the orchestrator's next digest. What a routine is lives in the
-// charter (`OrchestratorCharter.routines`), so every way of changing it goes through the charter's
-// one write path; how its runs went lives in the workspace's outbox (`RoutineState`), and the
-// server's engine (`packages/server/src/routines/`) reckons when it next runs.
-
 import * as Schema from "effect/Schema";
 import { ModelRef } from "./domain.ts";
 import { ProjectId, ThreadId } from "./ids.ts";
@@ -63,9 +55,6 @@ export const IntervalSchedule = Schema.Struct({
 });
 export const RoutineSchedule = Schema.Union([DailySchedule, WeeklySchedule, IntervalSchedule]);
 export type RoutineSchedule = typeof RoutineSchedule.Type;
-
-// Event triggers (docs/design/event-routines-sources.md): what a routine can start on beside a clock.
-// Each is seen by polling, never by a webhook, and closed: an unknown kind doesn't decode.
 
 /** The longest an event routine waits after a run before it fires again. */
 export const ROUTINE_EVENT_COOLDOWN_MINUTES = 15;
@@ -198,7 +187,6 @@ export const routineWhenKey = (routine: RoutineWhen): string =>
     ? JSON.stringify({ on: normalTrigger(routine.on) })
     : JSON.stringify(routine.schedule);
 
-/** The trigger with its defaults filled in, so leaving one out and giving it key alike. */
 const normalTrigger = (on: RoutineTrigger): RoutineTrigger =>
   on.event === "releasePublished"
     ? { ...on, minAgeDays: on.minAgeDays ?? RELEASE_MIN_AGE_DAYS }
@@ -281,7 +269,6 @@ export const routineScheduleText = (schedule: RoutineSchedule): string => {
   }
 };
 
-/** `9:05` or `09:05` as `09:05`; `undefined` for anything else. */
 const timeOf = (word: string | undefined) => {
   const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(word ?? "");
   return match === null ? undefined : `${match[1]!.padStart(2, "0")}:${match[2]}`;
@@ -368,7 +355,6 @@ export const parseRoutineTrigger = (
 
 /** A routine's slug, for the feature its workers go under: `routine-ci-triage`. */
 export const routineSlug = (name: string): string => {
-  // Split into words and cut by hand: a name is input, and `-+$` backtracks on long dash runs.
   let words = name
     .toLowerCase()
     .normalize("NFKD")

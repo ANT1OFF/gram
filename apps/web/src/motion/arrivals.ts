@@ -24,7 +24,6 @@ export function useArrivals(ids: readonly string[], fromEmpty = false): Readonly
   const key = ids.join("\n");
   const [seen, setSeen] = useState({ key, ids: new Set(ids), arrivals: NONE });
   if (seen.key === key) return seen.arrivals;
-  // Derived during render, so the answer is there on the very render that mounts the new item.
   const arrivals = arrivalsOf(seen.ids, ids, fromEmpty);
   setSeen({ key, ids: new Set(ids), arrivals });
   return arrivals;

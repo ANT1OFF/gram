@@ -30,7 +30,6 @@ export function Foldable({
       inert={folded}
       className={cn(
         "flex shrink-0 items-center",
-        // At the row's end, where it can't widen what it overhangs.
         folded && "pointer-events-none invisible absolute top-0 right-0",
         className,
       )}

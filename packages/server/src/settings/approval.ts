@@ -1,6 +1,3 @@
-// What changes by chat share (docs/design/settings-by-chat.md): the user's card, raised by the
-// tool's own handler on every call, and the check of the models a change names.
-
 import {
   AppToolError,
   AgentKind,
@@ -53,7 +50,6 @@ export const askUser = (
         scopes: ["once"],
       })
       .pipe(
-        // The timeout interrupts the wait, which withdraws the card.
         Effect.timeoutOption(ttl),
         Effect.catchTag("ThreadNotFound", () =>
           Effect.fail(fail(tool, "Gram couldn't show the card: this thread is gone.")),
@@ -139,7 +135,6 @@ export const checkModels = (
     return notes;
   });
 
-/** The list keys whose items are worker models, which `canonicalRosterChanges` names as stored. */
 const ROSTER_KEYS: ReadonlySet<string> = new Set(["workspace.workerModels", "agents.workerModels"]);
 
 /**

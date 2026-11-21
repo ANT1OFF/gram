@@ -8,7 +8,6 @@ interface DataDirEnv {
   readonly homeDir: string | undefined;
 }
 
-/** Preserve the base's separators when computing paths for a different platform in tests. */
 const joinDataPath = (base: string, ...parts: readonly string[]): string => {
   const sep = base.includes("\\") && !base.includes("/") ? "\\" : "/";
   return [base.replace(/[\\/]+$/, ""), ...parts].join(sep);

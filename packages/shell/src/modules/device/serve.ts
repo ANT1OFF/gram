@@ -35,10 +35,6 @@ export type DeviceServeEnd = "closed" | "no-token";
 /** How long a fresh token may take before the connection ends without one. */
 export const DEVICE_TOKEN_WAIT_MS = 30_000;
 
-/**
- * One token asked for at a time, however many calls ask: they all wait on the same one. A token
- * that doesn't come in time is none.
- */
 const sharedToken = (token: () => Promise<string | undefined>, waitMs: number) => {
   let pending: Promise<string | undefined> | undefined;
   return (): Promise<string | undefined> => {
@@ -84,7 +80,6 @@ const handlersFor = (
                   },
                   left.signal,
                 )
-                // The gate answers every refusal as an event; a throw is a bug, and ends the call.
                 .catch(() => undefined)
                 .finally(() => {
                   over = true;
@@ -92,13 +87,9 @@ const handlersFor = (
                 });
               return left;
             }),
-            // The control plane stopped listening (it cancelled the call, or the connection
-            // went): the request is taken back, as a `device.cancel` would, once no other call
-            // is waiting on it.
             (left) => Effect.sync(() => left.abort()),
           ),
         ),
-      // Interrupted, the promise's signal aborts, and the gate takes the request back.
       "device.files.list": (payload) =>
         Effect.promise((left) => connection.gate.list(payload, left)),
       "device.files.read": (payload) =>
@@ -108,8 +99,7 @@ const handlersFor = (
         Effect.promise(freshToken).pipe(
           Effect.flatMap((token) =>
             token === undefined
-              ? // No answer: the connection ends, and the call with it.
-                Deferred.succeed(end, "no-token").pipe(Effect.andThen(Effect.never))
+              ? Deferred.succeed(end, "no-token").pipe(Effect.andThen(Effect.never))
               : Effect.succeed({ accessToken: Redacted.make(token) }),
           ),
         ),
@@ -151,13 +141,7 @@ export const serveDevice = (
         Layer.provide(RpcSerialization.layerNdjson),
       ),
     );
-    // Finalizers run last first: this one runs before the calls are interrupted, so what was
-    // waiting on the person is stopped as "away", not taken back by the server.
     yield* Effect.addFinalizer(() => stopAll);
     return yield* Deferred.await(end);
-  }).pipe(
-    Effect.scoped,
-    // However it ends, nothing it started keeps running or waiting on the person.
-    Effect.ensuring(stopAll),
-  );
+  }).pipe(Effect.scoped, Effect.ensuring(stopAll));
 };

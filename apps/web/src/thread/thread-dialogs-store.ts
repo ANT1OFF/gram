@@ -9,7 +9,6 @@ export interface ClosePreset {
 
 export type ThreadDialog =
   | { kind: "rename"; threadId: ThreadId }
-  /** A custom time to snooze the thread until. */
   | { kind: "snooze"; threadId: ThreadId }
   | { kind: "close"; threadId: ThreadId; preset?: ClosePreset }
   | { kind: "closeAll" }
@@ -18,25 +17,17 @@ export type ThreadDialog =
   | { kind: "bindPr"; threadId: ThreadId }
   | { kind: "checkoutPr"; projectRoot?: string; prRef?: string }
   | { kind: "fork"; threadId: ThreadId; notice?: string }
-  /** Only when the restart would cut a turn or background work off; at rest it just runs. */
   | { kind: "restartSession"; threadId: ThreadId }
-  /** "Continue in Codex": `model` is the one picked in the chip's group, else the default target. */
   | { kind: "continueIn"; threadId: ThreadId; model?: string }
-  /** Without a workspace, the repository added opens on New thread. */
   | { kind: "addRepo"; workspaceId?: WorkspaceId }
   | { kind: "removeWorkspace"; workspaceId: WorkspaceId }
-  /** Its move to a server signed in to, where the desktop app can move one. */
   | { kind: "moveWorkspace"; workspaceId: WorkspaceId }
-  /** One thread's move to a server signed in to, where the desktop app can send one. */
   | { kind: "moveThread"; threadId: ThreadId }
-  /** A thread that moved to a server, back to this computer. */
   | { kind: "bringThread"; threadId: ThreadId }
-  /** The project's scripts to add and edit, opened from the thread it was asked from. */
   | { kind: "projectScripts"; projectId: ProjectId; threadId?: ThreadId };
 
 interface ThreadDialogsState {
   dialog: ThreadDialog | undefined;
-  /** A failed one-click action (pin, park, label, inline rename), shown until dismissed. */
   error: string | undefined;
   open: (dialog: ThreadDialog) => void;
   dismiss: () => void;

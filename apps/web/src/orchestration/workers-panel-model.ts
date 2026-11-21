@@ -19,13 +19,6 @@ import type { RailTone } from "./rail-model";
 import { glyphState, STARTING, STATUS_WORDS, type DotState } from "./status-words";
 import { searchRows, type WorkerRow, type WorkersByTab } from "./workers-model";
 
-// The panel's Workers tab: a workspace's workers by where they stand, in the few states every view
-// says (`STATUS_WORDS`). Its rows are ⌘J's (`workersByTab`), so each worker's tone, and so its group,
-// is the one selector the sidebar and the Board read (`liveWorkerTone`); what puts a worker under
-// Needs you is the one needs-you selector the pill, the badges and the Inbox count by (`needsYouIn`),
-// so Needs you here lists exactly the workers the workspace's badge counts items for. Pure, so it is
-// tested without a browser. No React.
-
 export type StatusGroupId = "needs" | "running" | "waiting" | "stopped" | "done";
 
 export interface StatusGroupSpec {
@@ -49,12 +42,6 @@ export const FOLDED_BY_DEFAULT: readonly StatusGroupId[] = ["done"];
 /** How many of Done's rows show before the rest fold behind "N more", as in the sidebar. */
 export const DONE_SHOWN = 5;
 
-/**
- * A live worker's group by its tone, once Needs you has taken the workers the needs-you list has an
- * item for (`groupOf`). One whose tone still says needs or error without an item (its ask put away
- * for Later, its failure dismissed, a report the orchestrator answers) is at rest: Stopped, its dot
- * still saying why. One stalled on its own next step (attention) has stopped too.
- */
 const TONE_GROUP: Readonly<Record<RailTone, StatusGroupId>> = {
   needs: "stopped",
   error: "stopped",
@@ -99,10 +86,8 @@ export interface StatusGroup extends StatusGroupSpec {
   readonly rows: readonly PanelRow[];
 }
 
-/** A row's dot: its live tone, or for finished work the done dot its glyph says. */
 const dotOf = (row: WorkerRow): DotState => (row.tab === "done" ? glyphState(row.glyph) : row.tone);
 
-/** When a row last moved: when it finished, else its thread's last activity. */
 const lastAt = (row: WorkerRow, summary: ThreadSummary | undefined): number | undefined =>
   row.finishedAt ?? summary?.thread.lastActivityAt;
 
@@ -114,7 +99,6 @@ export const lineOf = (status: string, dot: DotState): string => {
   return rest.charAt(0).toUpperCase() + rest.slice(1);
 };
 
-/** The joined machine a thread's checkout is on, or `undefined` for this one. */
 const hostOfSummary = (summary: ThreadSummary | undefined): HostId | undefined => {
   const checkout = summary === undefined ? undefined : effectiveCheckout(summary.thread);
   return checkout === undefined || isLocalHost(checkout) ? undefined : checkout.hostId;
@@ -129,7 +113,6 @@ export const panelRow = (
   const dot = dotOf(row);
   const at = lastAt(row, summary);
   const word = row.waiting?.label ?? STATUS_WORDS[dot];
-  // Starting is the whole of what it says: its now line says it too.
   const status =
     row.starting === true
       ? STARTING
@@ -147,7 +130,6 @@ export const panelRow = (
     mainOnly: row.cleanedUp === true || row.solo === true,
     hostId: hostOfSummary(summary),
     sent: summary?.thread.sentTo,
-    // A sent worker's mark names where it went; its placement would say it twice.
     placement:
       summary?.thread.sentTo === undefined ? summary?.thread.spawnedBy?.placement : undefined,
     atMs: at,

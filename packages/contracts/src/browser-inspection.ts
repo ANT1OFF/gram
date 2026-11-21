@@ -1,4 +1,3 @@
-// Observations from Gram's attached page driver, never a claim about an agent/provider's tools.
 export interface BrowserInspectionCapabilities {
   readonly version: 1;
   readonly screenshotMetadata: true;

@@ -21,7 +21,6 @@ interface Generation {
   readonly scope: Scope.Closeable;
   connection: OwnedConnection;
   poisoned: boolean;
-  /** Whether the connection's worker thread has stopped (`writer-worker.ts`); never, on the loop. */
   readonly stopped: () => boolean;
 }
 
@@ -38,7 +37,6 @@ export const durableSqliteLayer = (
     | (Pick<SqliteClient.SqliteClientConfig, "filename" | "readonly" | "busyTimeout"> & {
         readonly offLoop?: false | undefined;
       })
-    // The writer worker opens read-write with its own busy timeout.
     | (Pick<SqliteClient.SqliteClientConfig, "filename"> & { readonly offLoop: true }),
   initialize?: (sql: SqlClient.SqlClient) => Effect.Effect<void, SqlError>,
 ): Layer.Layer<SqlClient.SqlClient, SqlError> =>
@@ -53,7 +51,6 @@ export const durableSqliteLayer = (
         current = undefined;
         return old === undefined ? Effect.void : Scope.close(old.scope, Exit.void);
       });
-      // As with the native layer, teardown closes the database even if an update sealed its lease.
       yield* Effect.addFinalizer(() =>
         Effect.suspend(() => {
           closed = true;
@@ -78,7 +75,6 @@ export const durableSqliteLayer = (
           );
         if (current !== undefined && !current.stopped()) return Effect.succeed(current);
         return Effect.gen(function* () {
-          // A generation whose worker stopped while idle: close its scope before replacing it.
           yield* closeCurrent;
           const scope = yield* Scope.make();
           return yield* Effect.gen(function* () {
@@ -124,15 +120,12 @@ export const durableSqliteLayer = (
       const acquire = Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const scope = yield* Effect.scope;
-          // Held until the scope closes. The finalizer added after it runs first, so a poisoned
-          // connection is closed while the gate is still held.
           yield* restore(gate.takeScoped(1));
           yield* Scope.addFinalizer(scope, closePoisoned);
           return (yield* available).connection;
         }),
       );
       return yield* SqlClient.make({
-        // Gram's own client over sqlite-node connections, with its own commit gate.
         driver: "gram-durable-commit",
         acquirer: acquire,
         transactionAcquirer: acquire,

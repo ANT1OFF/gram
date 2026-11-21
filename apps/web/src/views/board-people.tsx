@@ -16,11 +16,6 @@ import {
 } from "@/orchestration/board-people";
 import { StatusDot } from "@/orchestration/status-dot";
 
-// The Board's top once more than one person's work is on it (docs/design/mocks/board-directions,
-// v2): where two people's work changes the same files, then a card per person saying what they
-// are on and what waits on them, which also picks whose lines show. Nothing of it shows on a
-// Board that is all one person's work.
-
 /** The names of the people the Board's threads work for, where the server can say. */
 export function usePeopleNames(keys: readonly PersonKey[]): PeopleNames | undefined {
   const api = useApi();
@@ -49,7 +44,6 @@ export function OwnerMark({ text, testId }: { text: string; testId?: string }) {
   );
 }
 
-/** A clash's key: its two workers. */
 const keyOf = (clash: BoardClash) => `${clash.a.worker} ${clash.b.worker}`;
 
 /** The first clash on the Board, with the two lines it names a click away; dismissed per pair. */

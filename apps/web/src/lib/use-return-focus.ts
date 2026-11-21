@@ -22,7 +22,6 @@ const focusedElement = (): HTMLElement | null =>
  * opener is gone as well, focus goes to `fallback()`.
  */
 export function useReturnFocus(fallback?: () => Element | null | undefined) {
-  // Read during the first render, before the surface's `autoFocus` moves focus.
   const [opener] = useState(() => (typeof document === "undefined" ? null : focusedElement()));
   const latestFallback = useRef(fallback);
 
@@ -32,7 +31,6 @@ export function useReturnFocus(fallback?: () => Element | null | undefined) {
 
   useEffect(
     () => () => {
-      // The surface's nodes leave the page after this cleanup; look once they have.
       setTimeout(() => {
         if (!focusLost()) return;
         if (!focusIfConnected(opener)) focusIfConnected(latestFallback.current?.());

@@ -1,27 +1,3 @@
-/**
- * Moving a workspace from one Gram to another: `exportWorkspace` writes a workspace as a bundle
- * (`WorkspaceBundle`), and `importWorkspace` on another server takes one in. Both sit behind the
- * hosted features setting and do nothing while it is off.
- *
- * What moves is what can live anywhere: the charter, stages and groups, the orchestrator's
- * conversation, its memory, the feature cards, the audit, and each worker's transcript. What is
- * tied to the machine stays there and is never in a bundle: agent sessions, worktrees and what was
- * not pushed from them, folder grants, approvals in flight, file checkpoints, credentials.
- *
- * So the orchestrator arrives as its own thread, under its own id and with its conversation, on a
- * new session that boots from its memory as a handoff's does, and is told in its first digest what
- * came with it and what did not. Workers arrive as finished ones: their transcripts go to the
- * archive, where the Workers tab reads them, and the orchestrator is told what each was doing and
- * on which branch, so it can start a worker here to carry one on.
- *
- * Invariants. An import replaces nothing: a workspace, thread or turn that is already here refuses
- * it before anything is written. A bundle is input from somewhere else and is trusted for nothing:
- * every id that names a folder is checked, the memory set meets the caps a dream's does, text is
- * scrubbed on the way out and again by the archive and memory on the way in, and the orchestrator
- * opens on the model and mode this server decides for the bundle's charter, in the folders this
- * server was told, never on the bundle's. The charter itself is the bundle's, autonomy included,
- * so a bundle is trusted as the workspace it is; its routines arrive switched off.
- */
 import { notePrivacy } from "../embedding/readable-by.ts";
 import {
   availableWorkspaceName,
@@ -73,13 +49,10 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 export const TRANSFER_OFF =
   "Moving a workspace between servers is a hosted feature, and hosted features are off here.";
 
-/** How many schema migrations this build's database has run. */
 const SCHEMA = Object.keys(migrations).length;
 
-/** An id that may name a folder or a file: what Gram's own ids are, and nothing a path could use. */
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
-/** The statuses in which a thread is in the middle of a turn, which no bundle can carry. */
 const MID_TURN: ReadonlySet<ThreadStatus> = new Set([
   "starting",
   "running",
@@ -87,12 +60,10 @@ const MID_TURN: ReadonlySet<ThreadStatus> = new Set([
   "needsInput",
 ]);
 
-/** A workspace's id, which names its memory folder: no longer than that folder's name may be. */
 const WORKSPACE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 const refuse = (message: string) => new InvalidState({ message });
 
-/** The keys under which a message keeps what a tool was given and what it answered. */
 const TOOL_PAYLOAD: ReadonlySet<string> = new Set(["input", "output", "rawInput", "result"]);
 
 /**
@@ -130,14 +101,12 @@ export const portableThread = (thread: Thread): Thread => ({
   model: thread.model,
   mode: thread.mode,
   checkout: { kind: "main", path: effectiveCheckout(thread).path },
-  // Labels are this server's own, by id.
   labels: [],
   pinned: false,
   parked: false,
   unread: false,
   ...(thread.role === undefined ? {} : { role: thread.role }),
   ...(thread.workspaceId === undefined ? {} : { workspaceId: thread.workspaceId }),
-  // Readable by the one person it was readable by, wherever it goes (`embedding/readable-by.ts`).
   ...(thread.readableBy === undefined ? {} : { readableBy: thread.readableBy }),
   createdAt: thread.createdAt,
   lastActivityAt: thread.lastActivityAt,
@@ -150,7 +119,6 @@ export const cut = (text: string, max: number) => {
 
 const stamp = (at: number) => new Date(at).toISOString().slice(0, 16).replace("T", " ");
 
-/** How many workers and wakes the orchestrator's first digest names; the rest are counted. */
 const NOTE_LISTED = 30;
 
 /**
@@ -295,7 +263,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
       const memory = yield* OrchestrationMemory;
       const archive = yield* ThreadArchive;
       const config = yield* ServerConfig;
-      // Absent in a server without git: a bundle then says nothing of remotes or changed files.
       const publisher = Option.getOrUndefined(yield* Effect.serviceOption(GitStatePublisher));
       const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
       const reopener = yield* makeClosedReopener();
@@ -304,7 +271,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
         if (!embeddingOn(yield* store.getSettings)) return yield* refuse(TRANSFER_OFF);
       });
 
-      /** As a thread's move names it: by its project's recorded origin (`recordedOriginUrl`). */
       const remoteOf = (root: string) =>
         proc === undefined
           ? Effect.succeed(undefined)
@@ -488,7 +454,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           const outbox = decodeOutbox(yield* store.getOutbox(workspaceId));
           const events = yield* store.listOrchestrationEvents(workspaceId, 0);
           const settings = yield* store.getSettings;
-          // Every string that leaves is scrubbed, whatever part of the workspace it came from.
           return scrubbed({
             format: WORKSPACE_BUNDLE_FORMAT,
             app: { version: config.appVersion ?? "0.0.0", schema: SCHEMA },
@@ -523,7 +488,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           const pauseHere = input.pause !== false && before.paused === undefined;
           if (pauseHere) yield* orchestration.setPaused(input.workspaceId, true);
           const bundle = yield* snapshot(input.workspaceId).pipe(
-            // A refused export moved nothing, so the pause it made goes with it.
             Effect.onError(() =>
               pauseHere
                 ? orchestration.setPaused(input.workspaceId, false).pipe(Effect.ignore)
@@ -538,7 +502,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           return bundle;
         });
 
-      /** Each of the workspace's repositories as a project of this server, by its id in the bundle. */
       const placeProjects = (bundle: WorkspaceBundle, places: ImportWorkspaceInput["projects"]) =>
         Effect.gen(function* () {
           const wanted = bundle.projects.filter((project) =>
@@ -571,8 +534,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           return placed;
         });
 
-      // One at a time: two imports of one workspace would each write its memory before either
-      // was refused.
       const importing = yield* Semaphore.make(1);
       const importWorkspace: WorkspaceTransferShape["importWorkspace"] = (input) =>
         importing.withPermits(1)(importOne(input));
@@ -590,7 +551,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           const source = bundle.workspace;
           const workspaceId = source.workspace.id;
           yield* refuseConnectorEntries(source.charter);
-          // Before any file is written, so a bundle that can't land leaves nothing behind.
           const conflict = yield* store.movedConflict(
             workspaceId,
             bundle.orchestrator?.thread.id,
@@ -616,8 +576,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           const home = placed.get(source.workspace.homeProjectId)!;
           const others = [...placed.values()].filter((project) => project.id !== home.id);
           const notes: Array<string> = opening?.note === undefined ? [] : [opening.note];
-          // Routines arrive switched off, in this server's projects: what starts workers on a
-          // schedule here is turned on here, by whoever runs this server.
           const routines = source.charter.routines?.map((routine) => {
             const { project, ...rest } = routine;
             return {
@@ -634,8 +592,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           const charter = routines === undefined ? source.charter : { ...source.charter, routines };
           const now = yield* Clock.currentTimeMillis;
 
-          // Files first: a memory tree for a workspace the database then refuses is only a folder
-          // nothing names, while a workspace without its memory would boot knowing nothing.
           if (bundle.memory.length > 0) {
             yield* memory
               .adopt(workspaceId, bundle.memory)
@@ -647,7 +603,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           } else {
             yield* memory.init(workspaceId).pipe(Effect.ignore);
           }
-          // Oldest first, so what the archive's caps prune is the oldest.
           const transcripts = [
             ...bundle.archive.toSorted((a, b) => a.archivedAt - b.archivedAt),
             ...bundle.workers
@@ -686,7 +641,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
               },
             };
             const moved = bundle.orchestrator;
-            // The workspace it arrives as is its reader's alone, before anything of it is shown.
             if (moved?.thread.readableBy !== undefined)
               notePrivacy({
                 id: moved.thread.id,
@@ -765,11 +719,6 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           } satisfies ImportWorkspaceResult;
         });
 
-      /**
-       * The staged orchestrator opened as a closed thread is: taken off the closed list and made
-       * again under its id with its conversation, its slot claimed and its first digest asked for.
-       * One that can't be opened goes back on the list, where the user can reopen it.
-       */
       const openOrchestrator = (threadId: Thread["id"]) =>
         Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {

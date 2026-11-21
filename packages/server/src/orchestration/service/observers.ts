@@ -1,7 +1,3 @@
-// Observers: what the service does with each signal the runtime,
-// the git publisher and the hub send, from turn starts and ends, context and limit waits, the user's
-// input and git state, to drift, overlapping changes, dragging dependencies, requests that age and
-// threads that come and go.
 import {
   isOpenQuestion,
   effectiveCheckout,
@@ -79,11 +75,8 @@ import type { Pauses } from "./pauses.ts";
 import type { Adoption } from "./adoption.ts";
 import type { OrchestrationShape } from "./shape.ts";
 
-/** The wake an orchestrator's limit wait leaves, which the digest its resume delivers carries. */
 const LIMIT_REASON = "your usage limit has reset";
-/** The `sendNotice` key of the one continuation a restart sends a cut-off worker. */
 const RESTART_CONTINUE_KEY = "restart-continue";
-/** The `sendNotice` key of the one wrap-up turn a silent stop is sent (`wrapUp`). */
 const WRAP_UP_KEY = "wrap-up";
 
 /** What the observers take from the rest of the service. */
@@ -165,10 +158,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
     withdrawQuestionsOf,
   } = deps;
 
-  // ---------------------------------------------------------------------------------------
-  // What the service watches
-  // ---------------------------------------------------------------------------------------
-
   const rootsOf = (state: WorkspaceState) =>
     store.listProjects.pipe(
       Effect.map((projects) =>
@@ -186,7 +175,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       return marks;
     });
 
-  /** What the orchestrator's own turn changed in the workspace's checkouts. */
   const measureDrift = (thread: Thread, state: WorkspaceState) =>
     Effect.gen(function* () {
       const before = driftBefore.get(thread.id);
@@ -236,12 +224,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       });
     });
 
-  /**
-   * Ends the context note's crossing, so the next one is noted. A digest sees only the reading it
-   * is built with, and a compaction can drop the context below the threshold and refill it within
-   * one turn, or in a turn of the user's with no digest after it: so every reading the
-   * orchestrator reports below the threshold comes here, and so does its turn's last one.
-   */
   const rearmContextNote = (workspaceId: WorkspaceId) =>
     updateOutbox(workspaceId, (outbox) => [outboxContextRearmed(outbox), undefined]);
 
@@ -251,12 +233,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       if (!contextNote(pct, true).noted) yield* rearmContextNote(workspaceId);
     });
 
-  /**
-   * A turn on `agent`'s own login went through: a limit it refused turns at no longer applies,
-   * so its held briefs fall due, oldest first, in the batches a limit's resume takes
-   * (`releaseBatchAt`). `releaseDue` asks each again, and one the workspace's own threshold still
-   * holds waits on for its reset.
-   */
   const heldAgentTookTurn = (agent: string) =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
@@ -282,12 +258,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       }
     });
 
-  /**
-   * Sends a worker whose stop the ledger reads as silent its one wrap-up turn (`wrapUpDue`), and
-   * marks it, so the digest waits for the report that turn files instead of calling the stop
-   * silent, and the stop that ends it gets none. `true` once the turn is on its way, which takes
-   * the turn end's wake with it: the worker isn't finished.
-   */
   const wrapUp = (
     state: WorkspaceState,
     thread: Thread,
@@ -313,9 +283,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
           afterWrapUp: memo?.wrapUp === true,
           ledgerQuiet,
         });
-      // What costs nothing first, so most turn ends read no more than they did.
       if (due([], true) === undefined) return false;
-      // The live session's own word on what still runs, beside what the memo last heard of it.
       const live = yield* runtimes.summaryOf(thread.id);
       const pending: Array<WrapUpFacts["pending"][number]> = [];
       if (waitingOnAutomation(thread, wakesOf(facts.outbox, thread.id))) pending.push("automation");
@@ -332,7 +300,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       )
         pending.push("question");
       if ((live?.pendingRequests.length ?? 0) > 0) pending.push("request");
-      // Everything but the ledger first, so most turn ends never survey it.
       if (due(pending, true) === undefined) return false;
       const row = (yield* survey(state, false)).features
         .flatMap((feature) => feature.workers)
@@ -374,10 +341,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       const stopAsked = stopsAsked.delete(thread.id);
       const state = yield* listeningWorkspace(thread);
       if (state === undefined) return;
-      // A worker stopped by a limit waits to resume on its own: the ledger shows it waiting, and
-      // nothing wakes the orchestrator, so workers on one limit don't each send a digest.
       if (thread.limitWait !== undefined) return yield* orchestrationChanged(state.workspace.id);
-      // Nothing else looks at a worker's other repos, and a turn is when they change.
       if (yield* sampleExtras(thread)) yield* noteOverlaps(thread, state);
       const before = yield* readOutbox(state.workspace.id);
       const deliberateWait =
@@ -400,7 +364,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         return { ...rest, turnEnds, ...(end.queueEmpty ? { turnEndsAtReport: turnEnds } : {}) };
       });
       if (yield* wrapUp(state, thread, end, { stopAsked, outbox: before })) return;
-      // The idle status can reach subscribers before extra-repo sampling and this memo write.
       yield* orchestrationChanged(state.workspace.id);
       if (end.queueEmpty) {
         const memo = (yield* readOutbox(state.workspace.id)).workers[thread.id];
@@ -418,12 +381,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       );
     });
 
-  /**
-   * A thread began or stopped waiting out a provider limit. Nothing here wakes for a worker: its
-   * ledger row says it waits, and when it resumes. The orchestrator's own wait is kept on its
-   * outbox, and a wake leaves a digest waiting at the thread, which the resume delivers as its
-   * first turn, saying how long the wait lasted and which workers resumed.
-   */
   const onLimitWait = (
     thread: Thread,
     wait: LimitWait,
@@ -481,8 +438,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         userInputAt: now,
         lastInputAt: now,
       }));
-      // The user writing to an archived worker brings it back as its orchestrator's live worker:
-      // it is working again, so it reports, messages and merges as one. Its binding never left.
       if (thread.parked) {
         yield* runtimes
           .updateThread(thread.id, (current) =>
@@ -496,13 +451,10 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
             ),
           );
       }
-      // Armed here as well as at a turn's end: an input whose turn never ends (an agent that
-      // failed to open) must lapse too. The due check leaves a worker still in a turn alone.
       yield* armHold(thread.id, USER_HOLD_IDLE_MS);
       yield* orchestrationChanged(state.workspace.id);
     });
 
-  /** A thread's changed files by the project they are in: its own, and each repo it spans. */
   const filesByProject = (
     thread: Thread,
     projects: ReadonlyArray<Project>,
@@ -530,11 +482,9 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
     return found;
   };
 
-  /** Whether either worker of an `overlapPairs` key has yet to be sampled since boot. */
   const unsampled = (pair: string) =>
     pair.split(" ").some((id) => !changedFiles.has(id as ThreadId));
 
-  /** A pair that starts overlapping wakes the orchestrator once; the ledger carries it after. */
   const noteOverlaps = (thread: Thread, state: WorkspaceState) =>
     Effect.gen(function* () {
       const workspaceId = state.workspace.id;
@@ -554,16 +504,12 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         ].filter(([pair]) => involving(pair)),
       );
       const known = knownOverlaps.get(workspaceId) ?? new Set<string>();
-      // Only a new pair costs a survey: a worker that is finished takes no part in overlap, in the
-      // ledger (`featuresOf`) or here, and whether it is finished is the ledger's to say.
       if ([...pairs.keys()].some((pair) => !known.has(pair))) {
         const finished = finishedWorkers((yield* survey(state, false)).features);
         for (const pair of pairs.keys()) {
           if (pair.split(" ").some((id) => finished.has(id as ThreadId))) pairs.delete(pair);
         }
       }
-      // A pair seeded at boot stands until both of its workers have been sampled since, or the
-      // first of them to be would drop it and the second would tell it again as new.
       knownOverlaps.set(
         workspaceId,
         new Set([
@@ -582,10 +528,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       }
     });
 
-  /**
-   * Keeps when a worker's PR, while it depends on another, started conflicting with its base, and
-   * looks again once that has lasted long enough to count as dragging on.
-   */
   const noteConflict = (thread: Thread, git: GitState) =>
     Effect.gen(function* () {
       const bound = thread.boundPr;
@@ -612,10 +554,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       yield* onDragCheck(thread.id);
     });
 
-  /**
-   * Wakes the orchestrator once over each dependency of a worker's PR that has started to drag
-   * on; one that stops dragging is told again if it starts again.
-   */
   const onDragCheck = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* findThread(threadId);
@@ -647,13 +585,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       }
     });
 
-  /**
-   * A worker's own PR just merged. Every other live worker with an open PR in that repo has it looked
-   * up again now rather than at its next sweep, since GitHub measures a PR's mergeability again only
-   * once asked, so a conflict the merge made shows within seconds. Each worker whose changes share a
-   * file with the merged PR's is told to bring the new base in, even when git reports no conflict:
-   * two sides that merge cleanly can still no longer agree.
-   */
   const onWorkerMerged = (thread: Thread, state: WorkspaceState, merged: PrStatus) =>
     Effect.gen(function* () {
       const threads = yield* store.listThreads;
@@ -707,8 +638,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       const state = yield* listeningWorkspace(thread);
       if (state === undefined) return;
       const workspaceId = state.workspace.id;
-      // The worker's own PR under its thread id, each extra one under its URL as well, and its
-      // branch's own PR when it is bound to another, which what it is sent doesn't carry.
       const branchPr = branchPrOf(
         thread,
         yield* publisher.stateFor(effectiveCheckout(thread).path),
@@ -726,9 +655,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         const mark = prMarkOf(badge);
         const repo =
           key === thread.id || badge === undefined ? undefined : repoFromPrUrl(badge.url);
-        // The worker's own PR is first heard of with its first git state, which is no news. An
-        // extra one is first heard of when its badge arrives, which is: it was just bound. Its
-        // branch's is news once the worker's state has been heard of before: it opened another.
         const news = key === branchKey ? seenBefore : key !== thread.id;
         if (prMarks.has(key) || news) {
           yield* wakeFor(
@@ -753,8 +679,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       }
       extraBadges.set(thread.id, git.extraPrs ?? []);
       yield* noteConflict(thread, git);
-      // An idle or cold worker whose folder goes ends no turn, so nothing else would wake the
-      // orchestrator to read the ledger row that says so.
       if (git.missing === true) {
         if (!worktreesGone.has(thread.id)) {
           worktreesGone.add(thread.id);
@@ -766,8 +690,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       const ownMoved = git.repo && changedFiles.get(thread.id)?.token !== token;
       if (ownMoved) {
         const checkout = effectiveCheckout(thread);
-        // Read with git here, so only a checkout here: another machine's would be read as
-        // whatever this one has at that path, if anything.
         const changed = isLocalHost(checkout)
           ? yield* provideProc(changedPaths(checkout.path, git.base), noChangedPaths)
           : noChangedPaths;
@@ -777,15 +699,8 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       if (ownMoved || extrasMoved) yield* noteOverlaps(thread, state);
     });
 
-  /**
-   * A model with no Auto answers an `auto` open by reporting `default`. Only the first
-   * report after an open this service started in `auto` is acted on, and only until that
-   * thread's first turn ends, so a user who picks `default` by hand later is left alone.
-   */
   const onUpsert = (thread: Thread) =>
     Effect.gen(function* () {
-      // A switch's release makes this move itself before its queue goes (`modeAfterSwitch`). A
-      // report it didn't see waits for the release's upsert, not spent on a refused `setMode`.
       if (
         openedInAuto.has(thread.id) &&
         thread.mode !== "auto" &&
@@ -823,7 +738,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       const newlyParked = thread.parked && !parkedWorkers.has(thread.id);
       if (thread.parked) parkedWorkers.add(thread.id);
       else parkedWorkers.delete(thread.id);
-      // An archived worker answers nothing: its open questions are withdrawn, not left waiting.
       if (newlyParked) yield* withdrawQuestionsOf(workspaceId, thread.id, "archived");
       if (thread.parked) return;
       if (thread.completedAt === undefined) {
@@ -832,15 +746,12 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         completedSeen.add(thread.id);
         yield* wakeFor(workspaceId, { type: "completed", worker: thread.title }, thread);
       }
-      // A dependency declared on a PR conflicting already moves no git state, which the
-      // publisher only sends when it changes: its conflict is measured from the badge it has.
       if ((thread.boundPr?.dependsOn ?? []).length > 0 || conflictedSince.has(thread.id)) {
         const git = yield* publisher.stateForThread(thread);
         if (git !== undefined) yield* noteConflict(thread, git);
       }
     });
 
-  /** The store already emptied the slot and cut the workers loose; say so. */
   const onRemoved = (threadId: ThreadId) =>
     Effect.gen(function* () {
       retrying.delete(threadId);
@@ -850,8 +761,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       for (const key of sends.keys()) {
         if (key.split(" ").includes(threadId)) sends.delete(key);
       }
-      // The worktrees it held in other repos went with it: keep only the samples a thread still
-      // holds. Keyed by folder, so a folder another worker took over keeps its sample.
       if (extraFacts.size > 0) {
         const held = new Set(
           (yield* store.listThreads).flatMap((thread) =>
@@ -872,7 +781,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       forgetReasons(workspaceId);
       bootWhilePaused.delete(workspaceId);
       knownOverlaps.delete(workspaceId);
-      // The park went with the thread; a vacant workspace isn't parked.
       yield* store
         .updateWorkspace(workspaceId, (current) => {
           if (current.paused?.reason !== "parked") return current;
@@ -887,7 +795,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         yield* withdrawQuestionsOf(workspaceId, orphan.id, "detached");
         workerWorkspaces.delete(orphan.id);
         parkedWorkers.delete(orphan.id);
-        // The store stripped `spawnedBy` without publishing; an unchanged update republishes.
         yield* runtimes.updateThread(orphan.id, (thread) => thread).pipe(Effect.ignore);
         yield* reload(orphan.id);
       }
@@ -922,7 +829,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       if (seen === undefined || workspaceId === undefined || request === undefined) return;
       const pendingMs = (yield* Clock.currentTimeMillis) - seen.at;
       const dueAfter = requestWakeMs(request.kind);
-      // A timer that ran short of its time (a restart re-arms from what is left) waits out the rest.
       if (pendingMs <= dueAfter) {
         return yield* armRequestTimer(threadId, requestId, dueAfter - pendingMs);
       }
@@ -938,12 +844,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       );
     });
 
-  /**
-   * Tells the away digest which workers the restart cut off mid-turn and what background work it
-   * stopped, and with `continuing` asks each cut-off worker once to go on, unless the workspace is
-   * paused, the user holds the worker, or something is queued for it already. `true` when it
-   * left a note.
-   */
   const noteRestart = (
     state: WorkspaceState,
     threads: ReadonlyArray<Thread>,
@@ -960,15 +860,11 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       for (const worker of mine) {
         const touched = cutOff.has(worker.id) || (workers[worker.id]?.background ?? []).length > 0;
         if (!touched || worker.parked || worker.completedAt !== undefined) continue;
-        // A worker on another machine has no folder here to look for: it is that machine's.
         const checkout = effectiveCheckout(worker);
         if (!isLocalHost(checkout) || (yield* Effect.sync(() => existsSync(checkout.path)))) {
           candidates.push(worker);
         }
       }
-      // Nothing has looked a PR up yet this early in a boot, and one that merged while the app was
-      // down would read as work under way: each candidate's is looked up now, and one that still
-      // can't be is asked nothing, since it may well be finished.
       yield* Effect.forEach(
         candidates,
         (worker) =>
@@ -988,8 +884,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         const lost = memo?.background ?? [];
         const cut = cutOff.has(worker.id);
         if (lost.length > 0) stopped.push(worker.id);
-        // What a restart cut short in a worker whose work is over, or whose worktree has gone, is
-        // nobody's to pick up: an open turn row or a dev server left from long ago.
         if (!candidates.includes(worker) || finished.has(worker.id)) continue;
         const prUnknown =
           worker.boundPr !== undefined && (yield* publisher.badgeFor(worker)) === undefined;
@@ -1020,7 +914,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       }
       const note = restartNote(costs);
       if (note === undefined && stopped.length === 0) return false;
-      // The process that ran it is gone, so no restart after this one stops it again.
       yield* updateOutbox(workspaceId, (outbox) => {
         const next = { ...outbox.workers };
         for (const id of stopped) {
@@ -1037,12 +930,10 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       return note !== undefined;
     });
 
-  /** Keeps a worker's background work in its memo, for what a restart stops (`noteRestart`). */
   const onBackground = (threadId: ThreadId, tasks: ReadonlyArray<BackgroundTask>) =>
     Effect.gen(function* () {
       const workspaceId = workerWorkspaces.get(threadId);
       if (workspaceId === undefined) return;
-      // Redacted before it is stored: a command line can carry a token, and this row outlives it.
       const background = tasks.map((task): BackgroundWork => ({
         kind: task.kind,
         description: redactText(task.description),

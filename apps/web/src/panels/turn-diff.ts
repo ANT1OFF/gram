@@ -18,10 +18,6 @@ const firstLine = (message: GramUIMessage) =>
 
 const topLevel = (message: GramUIMessage) => message.metadata?.parentToolUseId === undefined;
 
-/**
- * The top-level assistant replies with the turn each belongs to. The server stamps the turn on the
- * user message that starts it; replies inherit it unless they carry their own.
- */
 function repliesByTurn(
   messages: readonly GramUIMessage[],
 ): Array<{ message: GramUIMessage; turnId: TurnId; prompt: string }> {

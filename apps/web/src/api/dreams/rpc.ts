@@ -2,7 +2,6 @@ import { run, type RpcContext } from "../rpc-client";
 import type { DreamPreviewInput } from "../types";
 import type { DreamsApi } from "./types";
 
-/** The optional fields `dream.preview` and `dream.start` share, without `undefined` values. */
 const dreamScope = ({ projectIds, perRepo, includeMemory, budgetTokens }: DreamPreviewInput) => ({
   ...(projectIds === undefined ? {} : { projectIds: [...projectIds] }),
   ...(perRepo === undefined ? {} : { perRepo }),

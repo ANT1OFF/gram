@@ -1,7 +1,3 @@
-// Adding a project by its remote: clones it into the clone folder and registers it, or adopts the
-// clone already there. The clone lands in a hidden sibling of its folder and is renamed into place
-// only once it succeeded, so a failed, timed-out or interrupted clone leaves nothing behind.
-
 import {
   GitError,
   InvalidState,
@@ -43,7 +39,6 @@ export const cloneFailure = (out: ProcOutput): string => {
   return lines.join(" ") || `exited with ${out.status}`;
 };
 
-/** What `gh` says when it has no GitHub login to clone with. */
 const GH_SIGNED_OUT = /gh auth login|GH_TOKEN environment variable/;
 
 /**
@@ -55,9 +50,7 @@ export const cloneFailureMessage = (label: string, out: ProcOutput): string =>
     ? `Couldn't clone ${label}: the GitHub CLI on the machine running Gram's server isn't signed in. Run \`gh auth login\` there, or paste the repository's git URL to clone with git's own credentials.`
     : `Couldn't clone ${label}: ${cloneFailure(out)}`;
 
-/** Which repositories the clone at `root` has as remotes, as `remoteKey`s; empty when unreadable. */
 const remotesOf = (root: string): Effect.Effect<ReadonlySet<string>, never, Proc> =>
-  // `config`, not `remote get-url`: that applies `insteadOf`, which can rewrite the URL past knowing.
   git(root, ["config", "--get-regexp", "^remote\\..*\\.url$"]).pipe(
     Effect.map((out) => {
       const keys = new Set<string>();
@@ -71,13 +64,11 @@ const remotesOf = (root: string): Effect.Effect<ReadonlySet<string>, never, Proc
     Effect.orElseSucceed(() => new Set<string>()),
   );
 
-/** What is at `path`: nothing, a folder, or a file. */
 const occupant = (path: string): "none" | "folder" | "file" => {
   try {
     const info = statSync(path, { throwIfNoEntry: false });
     return info === undefined ? "none" : info.isDirectory() ? "folder" : "file";
   } catch {
-    // Unreadable counts as taken: refusing is safe, and cloning over it isn't.
     return "folder";
   }
 };
@@ -90,35 +81,25 @@ const isEmpty = (path: string): boolean => {
   }
 };
 
-/** Which folder is at `path`, by device and inode, so a replacement is told from the original. */
 const identityOf = (path: string): string | undefined => {
   try {
     const info = statSync(path, { bigint: true, throwIfNoEntry: false });
     return info?.isDirectory() === true ? `${info.dev}:${info.ino}` : undefined;
   } catch {
-    // Unreadable is no identity, which matches nothing, so the folder is left alone.
     return undefined;
   }
 };
 
 const cloneCommand = (remote: RepoRemote, into: string, cwd: string) =>
   remote.kind === "github"
-    ? // `gh` so the user's own GitHub login is used; no token passes through Gram.
-      gh(cwd, ["repo", "clone", `${remote.owner}/${remote.repo}`, into], {
+    ? gh(cwd, ["repo", "clone", `${remote.owner}/${remote.repo}`, into], {
         timeoutMs: TIER_MILLIS.slow,
       })
     : remoteGit(cwd, ["clone", "--", remote.url, into], {
         tier: "slow",
-        // The URL was parsed as https or ssh; this keeps git itself to those two for anything it
-        // fetches on the way, so no `ext::` or `file://` transport can be reached through it.
         env: { GIT_ALLOW_PROTOCOL: "https:ssh" },
       });
 
-/**
- * Windows can hold a just-written tree open for a moment (the indexer, antivirus); retry briefly.
- * Not when `to` exists: Windows refuses to rename onto a folder with the same `EPERM`, and that
- * refusal is final.
- */
 const renameIntoPlace = (from: string, to: string) =>
   Effect.tryPromise({ try: () => rename(from, to), catch: (error) => error }).pipe(
     Effect.retry({
@@ -188,11 +169,6 @@ export const cloneRepo = (
       try: () => mkdir(base, { recursive: true }),
       catch: () => new InvalidState({ message: `Couldn't create ${base} to clone into.` }),
     });
-    // The folder is reserved before cloning, by making it: nothing else's folder, another clone's
-    // reservation included, is taken over. The clone replaces the reservation only while it is
-    // still that same empty folder, and the reservation is removed on the way out only then too.
-    // Making it is the acquisition of the scope that removes it, so no exit, an interruption
-    // before the clone has started included, leaves it behind.
     const reserve = Effect.tryPromise({ try: () => mkdir(target), catch: codeOf }).pipe(
       Effect.map(() => ({ identity: identityOf(target), held: true })),
       Effect.catch((code) =>
@@ -233,9 +209,6 @@ export const cloneRepo = (
               });
             }
             if (!stillReserved(reservation)) return false;
-            // POSIX `rename` replaces an empty folder (the reservation) and refuses any other.
-            // Windows' refuses every folder, so the reservation goes first there, and whatever
-            // takes its place meanwhile makes the rename fail rather than being replaced.
             if (process.platform === "win32") {
               const released = yield* Effect.tryPromise(() => rmdir(target)).pipe(
                 Effect.as(true),
@@ -251,7 +224,6 @@ export const cloneRepo = (
             if (promoted) reservation.held = false;
             return promoted;
           }),
-        // Gone already after the rename; otherwise whatever the clone wrote goes with it.
         (temp) =>
           Effect.tryPromise(() => rm(temp, { recursive: true, force: true })).pipe(Effect.ignore),
       );
@@ -261,18 +233,13 @@ export const cloneRepo = (
       (reservation) => (reservation === undefined ? Effect.succeed(false) : cloneInto(reservation)),
       (reservation) =>
         reservation !== undefined && stillReserved(reservation)
-          ? // `rmdir` takes only an empty folder, so nothing put in it meanwhile goes with it.
-            Effect.tryPromise(() => rmdir(target)).pipe(Effect.ignore)
+          ? Effect.tryPromise(() => rmdir(target)).pipe(Effect.ignore)
           : Effect.void,
     );
     if (!cloned) return yield* adoptOrRefuse(adopt, target, label);
     return yield* register;
   });
 
-/**
- * What a clone whose folder was taken meanwhile comes to: the clone there if it is of the same
- * repository (another clone of it won the race), else a refusal.
- */
 const adoptOrRefuse = <E, R>(
   adopt: Effect.Effect<Project | undefined, E, R>,
   target: string,
@@ -290,14 +257,8 @@ const adoptOrRefuse = <E, R>(
     ),
   );
 
-/** How long a list of suggestions is reused: it changes when someone pushes, not by the second. */
 const SUGGESTIONS_TTL_MS = 10 * 60_000;
 
-/**
- * The most pages of 100 asked for. A member of a large organisation reaches every one of its
- * repositories, internal ones included: EXAMPLE's 691 came to seven pages, and only the first was read
- * when this asked for one, so a repository not pushed to lately was never offered.
- */
 const SUGGESTION_PAGES = 20;
 
 const repoPage = (page: number) => `user/repos?sort=pushed&per_page=100&page=${page}`;
@@ -328,7 +289,6 @@ export const makeCloneSuggestions = (cwd: string) => {
     const now = Date.now();
     if (cached !== undefined && now - cached.at < SUGGESTIONS_TTL_MS)
       return { repos: cached.repos };
-    // `gh` itself, not `ghApi`, whose stripping of the headers would take the `Link` with them.
     const first = yield* gh(cwd, ["api", repoPage(1), "--jq", ".[].full_name", "--include"], {
       timeoutMs: 15_000,
     }).pipe(Effect.option);
@@ -344,7 +304,6 @@ export const makeCloneSuggestions = (cwd: string) => {
         ),
       { concurrency: 4 },
     );
-    // A push between two pages moves a repository up and onto the page already read, twice over.
     const repos = [...new Set([...fullNames(body), ...rest.flatMap((names) => names ?? [])])];
     if (rest.every((names) => names !== undefined)) cached = { at: now, repos };
     return { repos } satisfies CloneSuggestions;

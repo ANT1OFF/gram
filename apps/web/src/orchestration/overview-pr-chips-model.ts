@@ -6,10 +6,6 @@ import { prGlyphLabel, prGlyphOf, type PrGlyphKind } from "@/components/pr-glyph
 import { prMarksOf, prUrlOf, type PrMarks } from "@/components/pr-marks-model";
 import type { ReviewGlyphKind } from "@/components/review-glyph";
 
-// A worker's pull requests as the overview's chips:
-// one per PR with its number, its checks and the review bot, grey while nothing needs anyone and
-// tinted when something does. No React.
-
 /** How many chips a row shows before the rest fold into a count. */
 export const MAX_PR_CHIPS = 3;
 
@@ -83,11 +79,6 @@ export const prChipTone = (
 
 const lower = (text: string) => `${text[0]!.toLowerCase()}${text.slice(1)}`;
 
-/**
- * What the chip shows, in words: the glyph's name (`prGlyphLabel`), saying failing CI its worker
- * fixes, then people's decision, the bot and people's threads, and where its merge stands, unless
- * merged.
- */
 const chipLabel = (entry: PrGlyphEntry, settled: boolean, marks: PrMarks) => {
   const fixing = marks.checks?.kind === "fixing";
   const parts = [prGlyphLabel(entry.number, entry.facts, { fixing })];
@@ -98,10 +89,6 @@ const chipLabel = (entry: PrGlyphEntry, settled: boolean, marks: PrMarks) => {
   return parts.join(", ");
 };
 
-/**
- * The card's PRs as entries, for a worker whose thread the window hasn't read: state and checks
- * only, since the card has no review. The first is the worker's own, as the card orders them.
- */
 const cardEntries = (prs: readonly FeatureCardPr[]): PrGlyphEntry[] =>
   prs.map((pr, index) => {
     const facts = prFactsOfCard(pr);
@@ -161,7 +148,6 @@ export function prChipsOf(
           ? {}
           : {
               ciFixing: more.ciFixing,
-              // The binding's own read wins; the ledger speaks for a worker the window hasn't read.
               intent: entry.facts.intent ?? more.intent,
               dependsOn: more.dependsOn ?? entry.facts.dependsOn,
               mergeState: entry.facts.mergeState ?? more.mergeState,

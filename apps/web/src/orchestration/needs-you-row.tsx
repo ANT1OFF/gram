@@ -27,11 +27,6 @@ import { useAskStackStore } from "./ask-stack-store";
 import { saveSetAside, SNOOZE_MS } from "./inbox-set-aside";
 import type { NeedsYouItem } from "./needs-you-items";
 
-// What the Inbox draws and does for a Needs you item beyond its answer form: the kind's glyph and
-// words, a section's heading, the Undo line, and the item's actions. Every answer goes through its
-// source's own path: an ask's through `holdAnswer` with Undo, a wait's Done through `resolveWait`, a
-// dismissed failure into `inbox.cleared` and Later into `inbox.snoozed`.
-
 const WAIT_ICONS: Partial<Record<WaitViewKind, LucideIcon>> = {
   draft: PenLine,
   review: Eye,

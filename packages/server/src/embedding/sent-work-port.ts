@@ -1,9 +1,3 @@
-// The server's door to the desktop app for work sent to a hosted server (`send_worker`). The app
-// holds the person's sign-in to each server, so the server asks it, over Electron's utilityProcess
-// `parentPort`, to list where work may go and to send, follow, answer and stop what was sent. The
-// app decides nothing for the server's sake: the hosted server checks every call again. Without the
-// desktop app there is nowhere to send work, and every call says so.
-
 import { randomUUID } from "node:crypto";
 
 import {
@@ -93,7 +87,6 @@ export interface SentWorkMessagePort {
 const NO_APP = "Work is sent to a server only from the Gram desktop app.";
 const NO_ANSWER = "The desktop app didn't answer.";
 
-/** How long the app is given: a send places the thread there first, and a wait waits. */
 const timeoutFor = (op: SentWorkOp): number =>
   op.op === "send" ? 210_000 : op.op === "wait" ? 60_000 : 45_000;
 
@@ -105,7 +98,6 @@ const isResponse = (message: unknown): message is SentWorkResponseMessage =>
   typeof (message as { result?: unknown }).result === "object" &&
   (message as { result?: unknown }).result !== null;
 
-// Each answer is read for the fields its op gives; one that lacks them is no answer.
 const refusedOf = (result: SentWorkResult): Refused =>
   result.ok ? { ok: false, why: "The desktop app's answer isn't one the server reads." } : result;
 
@@ -143,7 +135,6 @@ export const bridgeSentWork = (
           settle({
             ok: false,
             why: NO_ANSWER,
-            // A send or a message may have gone; its key makes the next one the same.
             ...(op.op === "send" || op.op === "message" ? { unknown: true as const } : {}),
           }),
         timeoutOf(op),

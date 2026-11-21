@@ -1,24 +1,3 @@
-/**
- * Checkpoints the database's WAL on a worker thread, so the fsyncs a checkpoint makes never block
- * the event loop. This module is the only thing that changes the main connection's
- * `wal_autocheckpoint`.
- *
- * `node:sqlite` is synchronous, and SQLite's autocheckpoint runs inside the commit that crosses
- * 1000 pages: on the event loop, syncing the WAL and the database file. On a loaded disk those
- * syncs take seconds: in a cloud VM on 2026-10-07, `pnpm install` and `pnpm check` running beside
- * the server held one `statement.run` for 4.7 s and the UI lost the server. Here the main
- * connection's autocheckpoint is off and a second connection, on a worker, runs a PASSIVE
- * checkpoint every second, which never waits on or blocks the server's reads and writes. While
- * nothing is written the worker backs off, doubling the wait up to {@link MAX_IDLE_INTERVAL_MS}, so
- * an idle server isn't woken every second; the first checkpoint after a write brings it back to 1 s.
- *
- * If the worker dies, stops reporting, fails a checkpoint, or falls behind until the WAL passes
- * {@link WAL_CAP_FRAMES}, the main connection's autocheckpoint comes back on, as it was before this
- * module, and stays on until a checkpoint succeeds with the WAL short again (for good if it died).
- * The WAL is never left to grow unbounded. A worker that can't start leaves it on from the outset.
- *
- * The worker is plain JavaScript in a string, so a bundler has nothing to resolve or rewrite in it.
- */
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -26,24 +5,14 @@ import * as Queue from "effect/Queue";
 import { Worker } from "node:worker_threads";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 
-/** How often the worker checkpoints. An idle WAL's checkpoint copies nothing and syncs nothing. */
 const CHECKPOINT_INTERVAL_MS = 1_000;
 
-/**
- * The longest the worker waits while idle: nothing committed since its last checkpoint, which
- * copied the whole WAL. Well inside {@link STALE_MS}, so an idle worker never reads as stale. A
- * write after a long idle waits this long at most for its checkpoint, far short of what fills
- * {@link WAL_CAP_FRAMES}.
- */
 const MAX_IDLE_INTERVAL_MS = 8_000;
 
-/** The WAL length, in frames (pages), past which the main connection checkpoints as well: ~40 MB. */
 const WAL_CAP_FRAMES = 10_000;
 
-/** How long the worker may go without reporting before the main connection checkpoints as well. */
 const STALE_MS = 30_000;
 
-/** How long shutdown waits for the worker's last checkpoint before terminating it. */
 const STOP_TIMEOUT_MS = 5_000;
 
 const WORKER_SOURCE = String.raw`
@@ -134,9 +103,6 @@ export const makeConnectionPolicy = (): ConnectionPolicy => {
       Effect.scoped(
         Effect.uninterruptible(
           Effect.gen(function* () {
-            // Complete the controller's state transition before the first fallible operation.
-            // Opening a replacement can fail too; the next successful generation must still
-            // replay this target even when the controller already considers it selected.
             frames = next;
             const connection = yield* sql.reserve;
             yield* connection.executeUnprepared(
@@ -195,7 +161,6 @@ export const layer = (
             intervalMs,
             Math.max(intervalMs, options.maxIntervalMs ?? MAX_IDLE_INTERVAL_MS),
           );
-          // The scope stops it; an open interval in it must not keep the process up.
           w.unref();
           w.on("message", emit);
           w.on("error", (e) =>
@@ -224,13 +189,11 @@ export const layer = (
       );
 
       if (Option.isNone(started)) {
-        // The worker is an optimisation: without one, SQLite's autocheckpoint stays on, as before.
         yield* Effect.orDie(policy.update(sql, 1000));
         yield* Effect.logWarning("wal checkpointer didn't start; the server checkpoints itself");
         return;
       }
       yield* Effect.orDie(policy.update(sql, 0));
-      // Whether the main connection is checkpointing too, and whether it is for good.
       let fallback = false;
       let lost = false;
       const fallBack = (why: string, detail: Record<string, unknown>) =>
@@ -238,7 +201,6 @@ export const layer = (
           ? Effect.void
           : Effect.gen(function* () {
               fallback = true;
-              // SQLite's own default: the main connection checkpoints as it did before this module.
               yield* policy.update(sql, 1000);
               yield* Effect.logWarning(
                 `wal checkpointer ${why}; the server checkpoints itself`,
@@ -266,11 +228,8 @@ export const layer = (
             return e.log <= capFrames / 2 ? resume(e.log) : Effect.void;
           case "error":
           case "failed":
-            // Only a successful checkpoint with a short WAL hands checkpointing back to the worker.
             return fallBack("failed to checkpoint", { error: e.message });
           case "exit":
-            // Shutdown interrupts this fiber before it stops the worker, so an exit seen here is a
-            // death, not a stop.
             lost = true;
             return fallBack("exited", { code: e.code });
         }

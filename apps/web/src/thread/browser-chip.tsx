@@ -9,7 +9,6 @@ import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 
-/** What the thread's agent calls the browser it drives. */
 const browserName = (thread: Pick<Thread, "model">) =>
   thread.model.agent === "claude" ? "Claude in Chrome" : "Codex computer use";
 
@@ -47,8 +46,6 @@ export function useThreadBrowser(threadId: ThreadId | undefined): ThreadBrowserS
     queryFn: () => api.threadBrowserStatus(threadId!),
     enabled: threadId !== undefined && thread !== undefined,
     staleTime: 0,
-    // Whether a lent browser is ready is the running session's to say, and changes without
-    // anything here changing: the extension connects, the session reopens.
     refetchInterval: (query) => (query.state.data?.state === "on" ? 30_000 : false),
   });
   return data;

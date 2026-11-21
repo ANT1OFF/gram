@@ -11,13 +11,6 @@ import { numberField, rawOutput, tail } from "@/orchestration/last-command";
 import { isToolPart, toolPhase, type AnyToolPart } from "./parts";
 import { toolInputField } from "./tool-group-model";
 
-// The right panel's Command tab: one command the agent ran, opened from its line above the
-// composer. Nothing here starts, reads or stops a process. Its output is what already reaches the
-// client: Codex streams a command's output into its tool call as it grows; the Claude adapter reads
-// a running shell's output back from the CLI (on the thread's own machine, through its session) and
-// sends it as preliminary output for a call still waiting, or beside the transcript
-// (`thread.backgroundOutput`) for a shell in the background, whose call already has its result.
-
 /** The command the Command tab shows, as its line in the strip named it when it was opened. */
 export interface OpenCommand {
   readonly threadId: ThreadId;
@@ -113,8 +106,6 @@ export function commandSnapshot({
           (exitCode !== undefined && exitCode !== 0)
         ? "failed"
         : "done";
-  // A shell in the background writes beside the transcript: its call's own result only said it
-  // started. Anywhere else the call carries the output, interim while it runs and final once done.
   const output =
     beside !== undefined ? tail(beside.output) : part === undefined ? "" : tail(rawOutput(part));
   const command =

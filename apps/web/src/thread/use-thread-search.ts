@@ -6,7 +6,6 @@ import { errorMessage, isNotImplemented } from "@/api/errors";
 import { useDebounced } from "@/lib/timers";
 
 const SEARCH_DEBOUNCE_MS = 200;
-/** Shorter queries don't search. */
 const MIN_QUERY_LENGTH = 2;
 
 export type ThreadSearchState =

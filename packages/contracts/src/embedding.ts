@@ -1,8 +1,3 @@
-// The wire shapes of the two endpoints an embedding deployment can point a server at: a decision
-// hook asked before each outward action, and an event sink that is sent what happens, in order.
-// Both are off unless configured (`ServerConfigShape.decisionHook`, `.eventSink`), and both are
-// version 1: a receiver ignores fields, actions and event types it doesn't know.
-
 import * as Schema from "effect/Schema";
 
 export const EMBEDDING_WIRE_VERSION = 1;
@@ -21,13 +16,7 @@ export const DecisionAction = Schema.Literals([
   "workflow.run",
   "repo.delete",
   "connector.call",
-  /**
-   * Placing work on a machine: a session opened or a command run there. `detail.host` says which
-   * (`{id, kind: "provisioned" | "joined" | "personal", ownerId?}`), with `command` and `folder`
-   * for a command. Named here so the set is stable; nothing in this build asks it yet.
-   */
   "host.place",
-  /** A shell command that reaches a remote in a way too strange to name. */
   "outward",
 ]);
 export type DecisionAction = typeof DecisionAction.Type;

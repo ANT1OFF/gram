@@ -7,7 +7,6 @@ import { Dialog, OverlayBackdrop, OverlayContent, SHEET_POPUP } from "@/thread/d
 
 import { useFeatureSheet } from "./feature-sheet-store";
 
-/** The sheet's stations, PRs and workers, with the feature's menu and dialogs. */
 const featureSheetBody = lazyPart(() => import("./feature-sheet"));
 
 const FEATURE_SHEET_TEST_ID = "feature-sheet";
@@ -15,7 +14,6 @@ const FEATURE_SHEET_TEST_ID = "feature-sheet";
 /** The feature sheet, mounted once. Esc, the close button or going anywhere else closes it. */
 export function FeatureSheet() {
   const requested = useFeatureSheet((s) => s.open);
-  // Opens once its body is in hand, which the shell preloads after first paint.
   const body = featureSheetBody.useModule(requested);
   const open = requested && body !== undefined;
   const target = useFeatureSheet((s) => s.target);
@@ -37,7 +35,6 @@ export function FeatureSheet() {
           data-surface="overlay"
           data-feature={target?.feature}
           aria-labelledby={titleId}
-          // Asking about it or opening a worker moves focus on purpose.
           finalFocus={() =>
             useFeatureSheet.getState().returnFocus ? returnFocusTo(opener)() : false
           }
@@ -58,7 +55,6 @@ export function FeatureSheet() {
   );
 }
 
-/** Closes the sheet when the route changes under it. */
 function useCloseOnNavigate(open: boolean, close: () => void) {
   const pathname = useLocation({ select: (location) => location.pathname });
   const openedAt = useRef<string | undefined>(undefined);

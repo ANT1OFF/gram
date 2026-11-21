@@ -4,7 +4,6 @@ import { createMockGateways } from "../mock-gateways";
 import type { MockWorld } from "../mock-world";
 import type { ProfilesApi } from "./types";
 
-/** What the mock's Claude Code lists, as its SDK does, until a spec seeds the account's own. */
 const CLAUDE_MODELS: readonly AgentModel[] = [
   {
     id: "opus",
@@ -34,7 +33,6 @@ export function createProfilesMock(world: MockWorld, agents: readonly AgentKind[
     onChange: () => world.emit({ type: "profiles.changed" }),
   });
   const claude = { models: CLAUDE_MODELS };
-  /** Each window's threads with a draft, as last reported. */
   const drafts = new Map<string, readonly string[]>();
   const api: ProfilesApi = {
     listProfiles: () => gateways.listProfiles(),
@@ -60,7 +58,6 @@ export function createProfilesMock(world: MockWorld, agents: readonly AgentKind[
           _tag: "AgentUnavailable",
           agent,
         });
-      // Like the server, the user's own models follow whichever list the agent has.
       const custom = customModelsOf(await world.settings(), agent);
       if (agent !== "claude" || profileId !== undefined) {
         const listed = await gateways.listAgentModels(agent, profileId);
@@ -73,7 +70,6 @@ export function createProfilesMock(world: MockWorld, agents: readonly AgentKind[
         const { agent, model, profileId } = thread.model;
         return agent === "claude" && profileId === undefined ? [model] : [];
       });
-      // One the mock's Claude already lists, which the UI must leave out, and one it doesn't.
       return {
         suggestions: [
           { agent: "claude" as const, id: "opus", source: "Claude Code settings" },

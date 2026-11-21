@@ -29,13 +29,10 @@ export const RELEASE_AGE_MS = DAY_MS;
 
 const AGENTS: ReadonlyArray<RuntimeAgent> = ["claude", "codex"];
 
-/** Gram's managed store, as the managed-runtime service shows it to the resolver. */
 interface ManagedRuntimesView {
-  /** The store can install this agent on this machine; only those rows get a `managed` offer. */
   readonly serves: (agent: RuntimeAgent) => boolean;
   readonly active: (agent: RuntimeAgent) => Effect.Effect<ManagedInstall | undefined>;
   readonly source: (agent: RuntimeAgent) => Effect.Effect<RuntimeSourceChoice>;
-  /** The versions the store would install now (qualified, past their wait), newest first. */
   readonly allowed: (
     agent: RuntimeAgent,
   ) => Effect.Effect<ReadonlyArray<{ readonly version: string; readonly channel: RuntimeChannel }>>;
@@ -63,16 +60,11 @@ export interface ResolveInput {
 
 const isStable = (version: string) => parseSemver(version)?.prerelease === undefined;
 
-/**
- * One agent's runtime: the executable the launch checks resolved (or the managed store's, when the
- * user chose it), its verdict, the newest release past it, and the steps to a supported version.
- */
 const resolveOne = (input: ResolveInput, agent: RuntimeAgent) =>
   Effect.gen(function* () {
     const baseline = BASELINES[agent];
     const tool: ToolCheck | undefined = input.checks.tools.find((t) => t.tool === agent);
     const source = input.managed === undefined ? "path" : yield* input.managed.source(agent);
-    // What the store holds, whichever source is chosen: Update offers only something newer.
     const installed = input.managed === undefined ? undefined : yield* input.managed.active(agent);
     const active = source === "managed" ? installed : undefined;
 
@@ -124,8 +116,6 @@ const resolveOne = (input: ResolveInput, agent: RuntimeAgent) =>
       };
     }
 
-    // The version to point the user at: the newest release once it's past its wait and supported,
-    // else the baseline when it is itself supported; with neither, there is nothing to suggest.
     const newerTarget = newer !== undefined && newer.eligible && newer.verdict === "supported";
     const realPath = resolved?.source === "path" ? input.realpath(resolved.path) : undefined;
     const installer =
@@ -160,20 +150,12 @@ const resolveOne = (input: ResolveInput, agent: RuntimeAgent) =>
       resolved?.source === "managed" ||
       target === undefined
         ? []
-        : installSteps(
-            agent,
-            installer,
-            target,
-            input.platform,
-            // `newer` is the registry's latest, so a "latest" command gets only what was checked.
-            newerTarget,
-          );
+        : installSteps(agent, installer, target, input.platform, newerTarget);
 
     const allowed =
       input.pinnedCli === true || input.managed === undefined || !input.managed.serves(agent)
         ? undefined
         : yield* input.managed.allowed(agent);
-    // Update offers only what's newer than both the store's install and the CLI the user runs.
     const running = [installed?.version, resolved?.version].filter(
       (version): version is string => version !== undefined,
     );

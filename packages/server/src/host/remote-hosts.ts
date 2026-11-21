@@ -57,17 +57,12 @@ import {
 
 export type { AutomaticStore, MarksStore } from "./remote-hosts-stores.ts";
 
-/** A joined machine's host while it is dialled in. */
 interface Online {
   readonly connection: HostConnection;
   readonly since: number;
-  /** The tailnet address it dialled, which stops being valid when access is turned off. */
   readonly origin: string;
-  /** Ends the connection: its socket closes and its calls fail. */
   readonly close: () => void;
-  /** What it can run (its Claude sign-in, its tools) as last checked here, and when. */
   status?: { readonly status: HostStatus; readonly at: number };
-  /** A check running now, so a burst of listings starts one. */
   checking?: Promise<HostStatus | undefined> | undefined;
 }
 
@@ -190,7 +185,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
     store: PairedMachineStore,
     now: () => number = Date.now,
     nonces?: DialNonceStore,
-    /** This Gram's release, which machines update to; undefined when it runs from source. */
     options: {
       readonly release?: string | undefined;
       readonly retryMs?: number;
@@ -208,17 +202,13 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
     } = {},
   ) =>
     Effect.gen(function* () {
-      /** Told when `states` may have changed; one that throws doesn't stop the others. */
       const watchers = new Set<() => void>();
-      /** What runs when a machine says it is about to be taken away (`onGoing`). */
       const goingReady = new Set<(id: HostId, withinMs: number) => Effect.Effect<void>>();
       const changed = () => {
         for (const watcher of watchers) {
           try {
             watcher();
-          } catch {
-            // A watcher's failure is its own.
-          }
+          } catch (_aWatchersFailureIsItsOwn) {}
         }
       };
       const machines = createPairedMachines(store, now, nonces, changed);
@@ -226,14 +216,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const logos = new Map<string, string>();
       let readAccess: (() => DialAccess) | undefined;
       const root = yield* Effect.scope;
-      // The server's own logger and the rest, for a check started outside an effect.
       const context = yield* Effect.context<never>();
       const runPromise = Effect.runPromiseWith(context);
-      /** Updates and their checks, which outlive the dial or request that started them. */
       const runFork = yield* FiberSet.makeRuntime<never>();
-      // What was kept of the machines' stops and disks. A machine whose record can't be read,
-      // or every machine when the file can't be, is owed a resume: its sessions wait for one
-      // rather than open over folders nobody can say are there. Never a reason not to start.
       const marksStore = options.marks;
       const confirmed = () =>
         machines
@@ -253,7 +238,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                       "machines: some machines' records couldn't be read; they owe a resume",
                     ).pipe(Effect.annotateLogs({ dropped: dropped.length })),
               ),
-              // A machine removed since (its record outlived it in a crash) starts over if it joins.
               Effect.map((read) =>
                 Object.fromEntries(
                   Object.entries({ ...read.machines, ...unknownOf(read.dropped) }).filter(
@@ -267,24 +251,18 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 ).pipe(
                   Effect.annotateLogs({ reason: String(error.cause) }),
                   Effect.andThen(Effect.sync(() => marksStore.quarantine?.())),
-                  // Written over what couldn't be read at once: a restart before any other write
-                  // finds every machine owed again, never an empty record. Not written, the file
-                  // stays unreadable, and the next start finds the same.
                   Effect.andThen(
                     Effect.sync(() => {
                       const unknown = unknownOf(confirmed());
                       try {
                         marksStore.write(unknown);
-                      } catch {
-                        // Read as unreadable again at the next start: owed again.
-                      }
+                      } catch (_readAsUnreadableAgainAtTheNextStartOwed) {}
                       return unknown;
                     }),
                   ),
                 ),
               ),
             );
-      // A machine waited on or no longer is news to the threads that run on it (`starting`).
       const stops = makeStopMarks(
         now,
         undefined,
@@ -295,8 +273,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           : {
               initial: keptMarks,
               save: (all) => marksStore.write(all),
-              // What only adds caution holds in memory meanwhile and is written at the next change;
-              // what lifts a debt, or admits a host, didn't happen (`MarksNotKept`).
               failed: (error) =>
                 runFork(
                   Effect.logError("machines: the stop marks couldn't be kept").pipe(
@@ -312,7 +288,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           automaticMemory = on;
         },
       };
-      /** On unless turned off; a switch it can't read counts as off, so nothing installs unasked. */
       const automaticOn = () => {
         try {
           return automaticStore.read() !== false;
@@ -349,13 +324,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           for (const id of online.keys()) close(id);
         }),
       );
-      /**
-       * Each machine's generation, bumped when it is removed or its connections are closed, so a
-       * dial still saying hello when that happens is dropped rather than put online after it.
-       */
       const generations = new Map<HostId, number>();
       const generationOf = (id: HostId) => generations.get(id) ?? 0;
-      /** Each machine's dials still saying hello, ended when its generation is bumped. */
       const pending = new Map<HostId, Set<() => void>>();
       const bump = (id: HostId) => {
         generations.set(id, generationOf(id) + 1);
@@ -363,20 +333,12 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         pending.delete(id);
         for (const end of ends ?? []) end();
       };
-      /**
-       * The address access was last kept on (`null` when it was turned off), so a dial admitted
-       * over another address never comes online; undefined until access is first kept or moved.
-       */
       let kept: string | null | undefined;
-      /** Whether the access a dial was admitted under still holds. */
       const stillAdmitted = ({ machine, origin, generation }: AdmittedDial) => {
         const current = machines.get(machine.id);
         return (
           generationOf(machine.id) === generation &&
           current?.confirmedAt !== undefined &&
-          // A provisioned host on its own listener's address, whatever access over Tailscale is;
-          // a joined machine on the address that access is kept on.
-          // A relayed host on the hosted server it came through, and nowhere else.
           (current.via !== undefined
             ? origin === current.via
             : isProvisioned(current)
@@ -387,7 +349,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const attach = (dial: AdmittedDial, socket: Socket.Socket) =>
         Effect.gen(function* () {
           const { machine, origin } = dial;
-          // Access turned off or moved, or the machine removed, while the dial was upgraded.
           if (!stillAdmitted(dial)) return;
           const scope = yield* Scope.fork(root);
           let entry: Online | undefined;
@@ -401,22 +362,14 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               Exit.fail(new HostUnavailable({ hostId: machine.id, message })),
             );
           };
-          /**
-           * Its connection went while online (its socket closed, its stream broke, or it stopped
-           * answering pings): noted as lost once, however it was found. One replaced or removed
-           * has left `online` first, so isn't.
-           */
           const lose = (message: string) => {
             if (!over && entry !== undefined && online.get(machine.id) === entry)
               machines.note(machine.id, { kind: "lost", at: now() });
             end(message);
           };
-          // Ended while it says hello when the machine is removed or access is turned off or moved.
           const endPending = () => end("The machine was removed, or access to it moved.");
           const saying = pending.get(machine.id) ?? new Set<() => void>();
           pending.set(machine.id, saying.add(endPending));
-          // Whichever way the dial ends (its socket closed, it was replaced or removed, or the
-          // request was interrupted), its entry and scope go with it.
           const cleanUp = Effect.suspend(() => {
             pending.get(machine.id)?.delete(endPending);
             if (entry !== undefined && online.get(machine.id) === entry) {
@@ -434,8 +387,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               {
                 hostId: machine.id,
                 gone: Deferred.await(ended),
-                // A host that stopped answering, or whose stream broke, goes offline now: left
-                // online it looked connected while every call to it failed, until it dialled again.
                 onEnded: (reason) => Effect.sync(() => lose(reason)),
                 ...(options.pingEveryMs === undefined ? {} : { pingEveryMs: options.pingEveryMs }),
                 onHello: (said) => {
@@ -477,11 +428,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               );
               return;
             }
-            // Removed, or its connections closed, while it said hello: it doesn't come online.
             if (!stillAdmitted(dial)) return;
-            // Once a host of the machine has said its disk, one that says none is refused: it
-            // can't say it isn't an old disk's host. A machine none of whose hosts ever said one
-            // comes online as before; removing the machine and joining it again starts over.
             const said = opened.value.hello;
             if (said.diskId === undefined && stops.disk(machine.id) !== undefined) {
               yield* Effect.logWarning(
@@ -489,9 +436,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               ).pipe(Effect.annotateLogs({ hostId: machine.id, online: online.has(machine.id) }));
               return;
             }
-            // The disk it says it is on: the same, or another, which owes a resume before any
-            // session opens there, written as one change with the disk before the host comes
-            // online. A record that can't be written keeps it out: it dials again.
             const arrived = yield* Effect.try({
               try: () => stops.arrive(machine.id, said),
               catch: (error) => error,
@@ -503,12 +447,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               return;
             }
             const disk = arrived.value;
-            // A disk the machine was replaced from, or the one it leaves while told it comes back
-            // on another: an old host, cut off, that dialled in again with the machine's key. It
-            // isn't the machine any more, so it is refused whatever is online, and the machine
-            // that replaced it stays. The old host's own grace ends what it kept for the machine,
-            // and the close says how a person makes that disk the machine again: its host says a
-            // disk this Gram hasn't seen (`gram-host new-disk`), which owes a resume like any.
             if (disk.kind === "fenced") {
               yield* Effect.logWarning(
                 "machines: refused a joined machine's host on a disk it was replaced from",
@@ -544,11 +482,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               }),
             );
             void checkSignIn(machine.id);
-            // How its last update went, which also confirms one that brought it back, then
-            // whether it updates now.
             runFork(updates.connected(machine.id, opened.value));
-            // Listened to while it is online, and let go of once it was readied to stop as it said
-            // it goes: the host holds its exit until then.
             const going = opened.value.stop.going;
             if (going !== undefined)
               runFork(
@@ -603,7 +537,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         live.checking = checking;
         return checking;
       };
-      /** The listing's view of each machine, asking again about any sign-in gone stale. */
       const view = (machine: PairedMachine, tailscale: DialAccess | undefined) => {
         const live = online.get(machine.id);
         if (live !== undefined && (live.status?.at ?? 0) + SIGN_IN_FRESH_MS <= now())
@@ -690,7 +623,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         provisionedOrigin: options.provisionedOrigin,
         closeProvisioned: () => {
           for (const machine of machines.list()) {
-            // A relayed host dials through a hosted server, not the provisioned-host listener.
             if (!isProvisioned(machine) || machine.via !== undefined) continue;
             if (online.has(machine.id)) machines.note(machine.id, { kind: "lost", at: now() });
             bump(machine.id);
@@ -708,11 +640,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           bump(id);
           updates.forget(id);
           try {
-            // Its registration goes first, and its record only once that is written. A removal
-            // whose write fails still takes the machine out of this process, as before, but leaves
-            // its record: the restart that finds it joined again finds its disk and debt with it.
-            // A crash between the two leaves the record of a machine that isn't joined, dropped
-            // at the next start.
             const removed = machines.remove(id);
             stops.forget(id);
             return removed;
@@ -723,12 +650,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         keepOrigin: (origin) => {
           kept = origin ?? null;
           for (const machine of machines.list()) {
-            // Its listener isn't the tailnet's: access turned off or moved leaves it connected.
             if (isProvisioned(machine)) continue;
             const live = online.get(machine.id);
             if (live !== undefined && live.origin === origin) continue;
-            // Onto another address, which it doesn't dial. Turned off, the list says so itself, and
-            // once it is back on, this connection was lost then.
             if (live !== undefined)
               machines.note(machine.id, {
                 kind: origin === undefined ? "lost" : "moved",
@@ -737,7 +661,6 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             bump(machine.id);
             close(machine.id);
           }
-          // Access turned off, on or moved: an offline machine's reason follows it.
           changed();
         },
       });

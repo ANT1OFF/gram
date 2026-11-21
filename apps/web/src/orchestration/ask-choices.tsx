@@ -8,9 +8,6 @@ import { cn } from "@/lib/utils";
 
 import { answerRule, choiceLayout, type AskOption } from "./ask-model";
 
-// An ask's options and its longer words, as the ask stack and Quiet show them: every
-// option whole, whatever its length or number, and words past their lines one click away.
-
 /** The key that answers, beside what it answers. */
 export function Kbd({
   children,
@@ -27,7 +24,6 @@ export function Kbd({
       data-testid="ask-kbd"
       aria-hidden={hidden || undefined}
       className={cn(
-        // A phone has no keys to press: no legend.
         "rounded-2xs border border-border-strong/60 px-1 font-mono text-caption leading-4 text-muted-foreground phone:hidden",
         className,
       )}
@@ -68,7 +64,6 @@ export function MoreText({
   const ref = useRef<HTMLParagraphElement>(null);
   const [open, setOpen] = useState(false);
   const [clipped, setClipped] = useState(false);
-  // Whether the words run past their lines: after every render, as new words may, and on a resize.
   const measure = () => {
     const element = ref.current;
     if (element !== null && !open) setClipped(element.scrollHeight > element.clientHeight + 1);
@@ -108,7 +103,6 @@ export function MoreText({
   );
 }
 
-/** A choice's radio mark: a ring, filled with the accent once it is picked. */
 function RadioMark({ checked }: { checked: boolean }) {
   return (
     <span
@@ -135,10 +129,6 @@ export interface OtherAnswer {
   readonly question: string;
 }
 
-/**
- * The last of a question's choices: a radio like the others, with a field for the user's own words.
- * Typing in it, or focusing it, picks it; Enter sends what is typed.
- */
 function OtherChoice({
   other,
   index,
@@ -161,7 +151,6 @@ function OtherChoice({
     if (event.key !== "Enter" || event.shiftKey || event.altKey || event.nativeEvent.isComposing)
       return;
     event.preventDefault();
-    // Handled here, so the surface's own ⌘⏎ doesn't send it a second time.
     event.stopPropagation();
     if (other.value.trim() !== "") other.onSend();
   };
@@ -270,7 +259,6 @@ export function SendAnswer({
         <span
           id={whyId}
           data-testid="send-answer-why"
-          // Why Send waits stays on one line beside it: what is left of the row gives way first.
           className="shrink-0 text-meta whitespace-nowrap text-muted-foreground phone:shrink phone:whitespace-normal"
         >
           {why}
@@ -322,7 +310,6 @@ export function AskChoices({
 }) {
   if (options.length === 0) return null;
   const pickRule = answerRule(options) === "pick" && onPick !== undefined;
-  // A field for words sits on a line of its own, so the choices before it do too.
   const layout = pickRule && other !== undefined ? "list" : choiceLayout(options);
   if (pickRule) {
     return (
@@ -340,10 +327,7 @@ export function AskChoices({
           role="radiogroup"
           aria-label="Choices"
           className={cn(
-            layout === "row"
-              ? "flex flex-wrap items-center gap-1"
-              : // Two to a line where there is room for both, so a wide stack stays short.
-                "grid gap-1 @2xl:grid-cols-2",
+            layout === "row" ? "flex flex-wrap items-center gap-1" : "grid gap-1 @2xl:grid-cols-2",
           )}
         >
           {options.map((option, index) => {

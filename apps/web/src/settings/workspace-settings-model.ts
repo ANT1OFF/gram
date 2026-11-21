@@ -25,9 +25,6 @@ import { admittedAgents } from "@/orchestration/admitted";
 
 import type { ConnectorSuggestion } from "./connector-entries";
 
-// Pure logic behind Settings → Workspaces: the workspace form and the charter's worker cap. No
-// React, so it is tested without a browser.
-
 /** The one limit a charter carries: how many workers run at once. */
 export const WORKERS_AT_ONCE = {
   label: "Workers at once",
@@ -312,8 +309,6 @@ export const connectorSuggestions = (
   for (const { target, servers } of agents) {
     for (const server of servers) {
       const entry = server.scope === "claudeai" ? server.url : server.name;
-      // A shown address may come masked: a query value or a token in its path replaced, which
-      // matches no server. An entry with a query is refused anyway; such a one can still be typed.
       if (
         entry === undefined ||
         entry.includes("•") ||
@@ -418,7 +413,6 @@ export interface WorkerModelContext {
 
 /** Local entries use the local CLI; only an explicit profile uses a gateway. Warn without blocking saves. */
 export const workerModelIssues = (
-  /** The roster as it runs here (`useRosterHere`), entries that follow a tier resolved. */
   charter: Pick<OrchestratorCharter, "autonomy"> & {
     readonly workerModels?: readonly PinnedWorkerModel[] | undefined;
   },
@@ -458,7 +452,6 @@ export const workerModelIssues = (
           },
         ];
       }
-      // A profile whose models were never fetched lists none, which says nothing against it.
       if ((profile.models ?? []).length > 0 && !lists(profile, model)) {
         return [
           {
@@ -511,11 +504,6 @@ export const sameRoster = (
   );
 };
 
-/**
- * How a harness differs from Claude in an orchestration role, as the server holds it.
- * Shown only while that harness is relevant, so a Claude-only user reads
- * none of it.
- */
 const HARNESS_NOTES: Partial<Record<AgentKind, readonly string[]>> = {
   codex: [
     "Uses your local Codex login without a gateway. Supervised and Publish use Gram's own approval home, linked to your CLI login. Preparation must succeed before a gated session starts; existing sessions in your own CLI home need a fresh gated session.",

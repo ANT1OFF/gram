@@ -1,10 +1,3 @@
-/*
- * Idle compaction (docs/AGENTS_AND_FEATURES.md#idle-compaction): a large thread that has sat idle
- * is compacted with its agent's own `/compact` just before its prompt cache expires, so the next
- * wake starts from a summary instead of rewriting the whole conversation into the cache. It is a turn nobody asked
- * for, so it runs only for Claude, on a thread wholly at rest, when the cache's lifetime is known
- * to be an hour, and never while the user may be about to type into it.
- */
 import type {
   CacheWriteSplit,
   IdleCompactKind,
@@ -27,11 +20,9 @@ import type {
   ThreadRuntimesShape,
 } from "../runtime/thread-runtimes.ts";
 
-/** The delivery key: one idle compaction waits per thread at most. */
 const IDLE_COMPACT_KEY = "idle-compact";
 /** Below this much context compaction can't pay for itself; see `idleCompactionSaving`. */
 export const IDLE_COMPACT_MIN_CONTEXT = 150_000;
-/** The one-hour TTL Claude Code asks for while usage is within a subscription's limits. */
 const ONE_HOUR_TTL_MS = 60 * 60_000;
 /** Compact this long after the anchor: five minutes before the cache entry can expire. */
 export const IDLE_COMPACT_AFTER_MS = 55 * 60_000;
@@ -43,14 +34,8 @@ export const IDLE_COMPACT_LATEST_MS = ONE_HOUR_TTL_MS - 60_000;
 export const IDLE_COMPACT_RETRY_MS = 30_000;
 /** The longest a stop waits on one compaction it asked for: past it, its end went unseen. */
 export const IDLE_COMPACT_STOP_WAIT_MS = 10 * 60_000;
-/** After one that didn't complete, another needs the context to have grown by this share. */
 const IDLE_COMPACT_REGROWTH = 1.1;
 
-/**
- * The cost model in input-token equivalents, at Anthropic's ratios to the uncached input price for a
- * one-hour cache: reads 0.1× (0.05× on Opus 5.5; 0.1× is the conservative case), writes 2×, output
- * 5×. `S` is the context left after compaction, `O` the summary written and `A` the request.
- */
 const COST = {
   read: 0.1,
   write: 2,
@@ -58,7 +43,6 @@ const COST = {
   after: 50_000,
   summary: 12_000,
   request: 2_000,
-  /** Idle periods over 45 minutes that ended with another turn, measured 14–20 October 2026. */
   returnRate: 0.97,
 } as const;
 
@@ -120,7 +104,6 @@ export const planIdleCompact = (input: {
   if (scope === undefined || !scope.enabled) return { skip: "disabled" };
   if (!scope.kinds.includes(scope.kind)) return { skip: "kind" };
   if (thread.model.agent !== "claude") return { skip: "agent" };
-  // The compaction's own end: its context is the summary, and this generation is done.
   if (end.idleCompaction !== undefined) return { skip: "idleCompaction" };
   const context = usage?.contextTokens;
   if (usage === undefined || context === undefined || usage.lastRequestAt === undefined) {
@@ -182,23 +165,14 @@ export const makeIdleCompactor = (
 ): Effect.Effect<IdleCompactor, never, Scope.Scope> =>
   Effect.gen(function* () {
     const timers = yield* FiberMap.make<ThreadId>();
-    /** The turn each thread's waiting compaction was planned after. */
     const planned = new Map<ThreadId, TurnId>();
-    /** The context each thread's last compaction that didn't complete started from. */
     const attempts = new Map<ThreadId, number>();
-    /** Each waiting compaction's plan, so `compactBeforeStop` can bring it forward. */
     const waiting = new Map<
       ThreadId,
       { thread: Thread; scope: IdleCompactScope; plan: IdleCompactPlan; after: TurnId }
     >();
-    /**
-     * Threads whose compaction was asked for and hasn't ended its turn or been dropped, each with
-     * when. One older than `IDLE_COMPACT_STOP_WAIT_MS` isn't counted: a host never waits on a
-     * compaction whose end went unseen.
-     */
     const asked = new Map<ThreadId, number>();
 
-    /** Everything but the runtime's own state, which only the delivery sees under its lock. */
     const holdNow = (threadId: ThreadId, after: TurnId) =>
       Effect.gen(function* () {
         if (planned.get(threadId) !== after) return "turn" as const;
@@ -226,7 +200,6 @@ export const makeIdleCompactor = (
         ),
         Effect.andThen(
           deps.runtimes
-            // Never steered (no `steer`): compaction is for a thread wholly at rest.
             .requestSystemDelivery(thread.id, IDLE_COMPACT_KEY, {
               build: (_turnId, rest) =>
                 Effect.gen(function* () {
@@ -260,12 +233,10 @@ export const makeIdleCompactor = (
                   asked.delete(thread.id);
                 }).pipe(Effect.andThen(log("idle compaction not sent", thread.id, { reason }))),
             })
-            // Not asked for (the thread went): nothing to wait for.
             .pipe(Effect.catchCause(() => Effect.sync(() => asked.delete(thread.id)))),
         ),
       );
 
-    /** Waits for `plan.at`, then sends unless something holds it; a passing hold is waited out. */
     const arm = (thread: Thread, scope: IdleCompactScope, plan: IdleCompactPlan, after: TurnId) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
@@ -298,7 +269,6 @@ export const makeIdleCompactor = (
         }),
       compactBeforeStop: Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
-        /** Brought forward now; one something holds keeps its time and isn't waited for. */
         const going = new Set<ThreadId>();
         for (const [threadId, entry] of waiting) {
           if (now > entry.plan.deadline) {

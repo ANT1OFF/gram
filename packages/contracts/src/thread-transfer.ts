@@ -1,13 +1,3 @@
-// Moving one thread to another Gram, with its conversation and its work in progress, and back
-// (docs/design/move-a-thread.md). Behind the hosted features setting (`embeddingOn`), as the
-// workspace move is.
-//
-// What goes is what lets it carry on: the conversation and its turns, scrubbed; its repository's
-// shareable remote and its branch; and where its edits are, a hidden ref the machine it ran on
-// pushed (`refs/gram/wip/…`), never the branch. No agent's own session file goes: the other side
-// opens a fresh session that reads the recent turns. Sign-ins, keys, ignored files, this machine's
-// hooks and MCP servers, terminals and approvals in flight never go.
-
 import * as Schema from "effect/Schema";
 import { MovedToServer, PlanItem, Thread } from "./domain.ts";
 import { ThreadId } from "./ids.ts";
@@ -19,7 +9,6 @@ export const THREAD_BUNDLE_FORMAT = 1;
 
 const Line = Schema.String.check(Schema.isMaxLength(2_000));
 const Oid = Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/));
-/** A hidden ref a host keeps a thread's work under: `refs/gram/wip/<thread>`, or under a name. */
 const WipRefName = Schema.String.check(
   Schema.isPattern(
     /^refs\/gram\/wip\/(?:[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}\/)?[A-Za-z0-9_-]{1,128}$/,

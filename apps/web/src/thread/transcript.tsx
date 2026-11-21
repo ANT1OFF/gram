@@ -53,28 +53,18 @@ import {
   type ScrollGesture,
 } from "./transcript-scroll";
 
-/** Statuses in which the latest turn is still under way, so its files aren't final. */
 const TURN_IN_PROGRESS = new Set(["starting", "running", "needsApproval", "needsInput"]);
 
-/** Statuses in which the agent itself is at work, not waiting on the reader. */
 const WORKING = new Set(["starting", "running"]);
 
-/** Distance from the bottom (px) tolerated while already following new content. */
 const FOLLOW_THRESHOLD = 64;
-/** Only a clamped/subpixel bottom viewport overrides the actual reading-edge chapter. */
 const CURRENT_BOTTOM_TOLERANCE = 1.5;
 
-/** Distance from the top (px) within which scrolling pages in earlier history. */
 const EARLIER_THRESHOLD = 600;
-/** The height of the row above the first message while there's earlier history. */
 const EARLIER_ROW = 40;
-/** How far the transcript fades into the composer: `mask-b-from-[calc(100%-1.5rem)]` below. */
 const FADE_PX = 24;
-/** How long a search hit in a fold keeps its place while the opened row settles. */
 const REVEAL_SETTLE_FRAMES = 12;
-/** How long a transcript back from Settings keeps putting its view back while its rows settle. */
 const RETURN_SETTLE_MS = 2000;
-/** The live compaction line's room under the last row until it is measured: one line and `my-3`. */
 const COMPACTING_ROW = 40;
 
 const NO_SUBAGENTS: ReadonlyMap<string, readonly GramUIMessage[]> = new Map();
@@ -115,10 +105,6 @@ export function estimateRowHeight(message: GramUIMessage, closed?: MessageFold):
   return estimate;
 }
 
-/**
- * The virtualizer re-estimates every row whenever its options change, which is each render; stored
- * messages keep their identity, so each is estimated once.
- */
 const estimates = new WeakMap<GramUIMessage | MessageFold, number>();
 
 export interface JumpRequest {
@@ -144,7 +130,6 @@ export function revealCard(root: ParentNode, chain: readonly string[]): boolean 
     if (!card) return false;
     const trigger = card.querySelector<HTMLElement>("button");
     if (i < chain.length - 1) {
-      // A closed card's transcript is inert, so nothing in it can take focus.
       if (trigger && !trigger.hasAttribute("data-panel-open")) {
         trigger.click();
         return false;
@@ -238,12 +223,7 @@ export function Transcript({
   /** The first message the user hasn't seen, which a "New" line goes over; see `firstUnseen`. */
   unreadFrom?: string | undefined;
 }) {
-  // The virtualizer is a mutable instance; the compiler must not memoize around it.
   "use no memo";
-  // Rows wait for the markdown renderer as they wait for the messages, so none is laid out as
-  // plain text first and measured again. A failed load shows them plain rather than never, and a
-  // slow link shows them plain until the renderer arrives: there the wait is seconds, and the
-  // renderer is asked for once the messages are in, so it doesn't go ahead of them on the link.
   const markdown = useMarkdown(!loadingMessages);
   const markdownPending =
     markdown.module === undefined && markdown.failed === undefined && markdown.plain === undefined;
@@ -257,33 +237,12 @@ export function Transcript({
   const scrollbarPointer = useRef<{ id: number; y: number }>(undefined);
   const touchPosition = useRef<{ id: number; y: number }>(undefined);
   const lastScrollTop = useRef(0);
-  /**
-   * A press that began in the transcript and hasn't ended. Pressing pauses following, which shows
-   * the jump pill at the bottom; under the pointer mid-press it would take the release, and the
-   * click on whatever was pressed (a tool row's toggle at the end, say) would be lost.
-   */
   const [pressing, setPressing] = useState(false);
-  /**
-   * Since following last stopped, the reader scrolled (a wheel, a touch, a key, the scrollbar):
-   * a pause they chose, which "Jump to latest" says even at the end. Anything else that pauses
-   * (a press on a fold or a card, a jump, rows reflowing) leaves the pill to what is below the view.
-   */
   const [readerPaused, setReaderPaused] = useState(false);
-  /**
-   * The scrollport stands exactly at its end, read off the DOM after each commit and on each
-   * scroll: a fold closing at the end shrinks the page with no scroll, and the render that closed
-   * it still saw the open fold's height.
-   */
   const [scrolledEnd, setScrolledEnd] = useState(true);
-  /**
-   * The row of an actionable card under the pointer (`HOLD_UNDER_POINTER`), by its message id. While
-   * there is one, rows above it that change size move the scroll with them and following holds off,
-   * so the card stays where the pointer is rather than sliding from under a click.
-   */
   const held = useRef<string>(undefined);
   const inProgress = useThreadsStore((s) => TURN_IN_PROGRESS.has(s.byId[threadId]?.status ?? ""));
   const compaction = useThreadsStore((s) => s.byId[threadId]?.compaction);
-  // A fresh thread's start, Branch › Worktree › Starting its CLI › First tool, until it has output.
   const orchestratedStream = useOrchestratorStreamContext() !== undefined;
   const startStatus = useThreadsStore((s) => s.byId[threadId]?.status);
   const startCheckout = useThreadsStore((s) => s.byId[threadId]?.thread.checkout);
@@ -293,7 +252,6 @@ export function Transcript({
   );
   const startSteps = useMemo(
     () =>
-      // An orchestrator's stream is a digest of its turns, which may say nothing for a while.
       orchestratedStream
         ? undefined
         : startingSteps({
@@ -305,7 +263,6 @@ export function Transcript({
           }),
     [orchestratedStream, startStatus, startCheckout, startAgent, startActivity, messages],
   );
-  // Measured: in a narrow pane the line wraps, and the room under the last row must grow with it.
   const [compactingRow, setCompactingRow] = useState(COMPACTING_ROW);
   const measureCompacting = useCallback((element: HTMLDivElement | null) => {
     if (element === null || typeof ResizeObserver === "undefined") return;
@@ -313,16 +270,10 @@ export function Transcript({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  // A stopped turn's receipt follows the last thing it said, not the composer far below it.
   const stopReceipt = useStopReceipt(threadId);
-  // So does a wait on a provider limit, and the line that says one ended early.
   const limitWait = useThreadsStore((s) => s.byId[threadId]?.thread.limitWait);
   const limitCleared = useThreadsStore((s) => s.byId[threadId]?.thread.limitCleared);
   const limitLine = limitWait !== undefined || limitCleared !== undefined;
-  // One line under the last row at a time: a compaction under way, else a fresh thread's start,
-  // else where a stopped turn ended, else a limit's wait.
-  // "Conversation only" leaves a running turn's calls out, so one line says the agent is at work.
-  // Not while it waits on the reader: the card above the composer says that.
   const conversationOnly = useConversationOnly((s) => s.on);
   const working = useThreadsStore(
     (s) => conversationOnly && WORKING.has(s.byId[threadId]?.status ?? ""),
@@ -330,8 +281,6 @@ export function Transcript({
   const workingSince = working
     ? (loadedMessages.findLast((message) => message.role === "user")?.metadata?.createdAt ?? 0)
     : undefined;
-  // The mode is a focused one: a compaction, a start's steps and a stop's receipt are the agent's
-  // housekeeping, so the working line stands for the first two and the third leaves nothing.
   const compactingLine = conversationOnly ? undefined : compaction;
   const startLine = conversationOnly ? undefined : startSteps;
   const stopLine = conversationOnly ? undefined : stopReceipt;
@@ -342,15 +291,12 @@ export function Transcript({
     limitLine ||
     workingSince !== undefined;
   const endRoom = FADE_PX + (tailLine ? compactingRow : 0);
-  // An orchestrator's stream is its own digest of the thread, with no turns to fold.
   const orchestrated = useOrchestratorStreamContext() !== undefined;
   const background = useThreadsStore((s) => s.byId[threadId]?.background);
-  // Calls that returned and go on: a backgrounded subagent or shell stays in view until it's done.
   const workingCalls = useStable(
     useMemo(
       () =>
         new Set([
-          // Not the usage alone: a finished run's last snapshot can still say it's running.
           ...runningSubagents({
             top: messages,
             children: subagents,
@@ -364,13 +310,10 @@ export function Transcript({
     sameIds,
   );
   const builtFolds = useMemo(
-    // "Conversation only" shows every word and none of the work, which leaves nothing to fold.
     () =>
       orchestrated || conversationOnly ? NO_FOLDS : turnFolds(messages, inProgress, workingCalls),
     [messages, inProgress, orchestrated, conversationOnly, workingCalls],
   );
-  // A run of retries reads as one card: each retry's repeat of the words, and a reply that is only a
-  // failure that card lists among its earlier attempts, draw nothing.
   const retryHidden = useMemo(
     () => (orchestrated ? NO_RETRY_HIDDEN : retryHiddenOf(messages)),
     [messages, orchestrated],
@@ -385,7 +328,6 @@ export function Transcript({
     const fold = folds.get(messageId);
     return fold === undefined || isFoldOpen(openFolds, threadId, fold.turn) ? undefined : fold;
   };
-  /** What a jump or a search hit lands on mustn't stay folded away. True when it opened a fold. */
   const revealFold = useCallback(
     (messageId: string | undefined) => {
       const fold = messageId === undefined ? undefined : keptFolds.current.get(messageId);
@@ -403,9 +345,6 @@ export function Transcript({
     return inProgress && turnId === latestTurn ? undefined : turnId;
   };
 
-  // Record widths only alongside actual ResizeObserver measurements, never a cached height.
-  // A backward jump leaves a backward scroll direction behind; that must not suppress anchoring
-  // when rows above the reading edge subsequently reflow at a different width.
   const measuredWidths = useRef(new Map<VirtualItem["key"], number>());
   const widthChanged = useRef(false);
   const measureRow = useCallback(
@@ -442,18 +381,11 @@ export function Transcript({
       return message ? estimateRowHeight(message, closedFold(message.id)) : 96;
     },
     overscan: 6,
-    // The virtualizer preserves the visible key/offset through prepend and trim.
-    // Transcript's following ref still decides whether to follow new content.
     anchorTo: "end",
     followOnAppend: false,
-    // End anchoring also follows row remeasurement, independently of followOnAppend and the
-    // size-change predicate below. A negative threshold disables that while the reader is paused,
-    // including the frame between an upward gesture and its native scroll event.
     scrollEndThreshold: following.current && held.current === undefined ? 1 : -1,
     getItemKey: (index) => messages[index]?.id ?? index,
     paddingStart: earlier ? EARLIER_ROW : 0,
-    // Room under the last row, and in what following scrolls to, so the newest line sits clear of
-    // the fade into the composer; a compaction under way takes its line's room there too.
     paddingEnd: endRoom,
     scrollPaddingEnd: endRoom,
   });
@@ -461,7 +393,6 @@ export function Transcript({
   const setFollowing = useCallback(
     (value: boolean) => {
       following.current = value;
-      // ResizeObserver may run before React commits this input event's state update.
       virtualizer.options.scrollEndThreshold = value && held.current === undefined ? 1 : -1;
       setIsFollowing(value);
       if (value) setReaderPaused(false);
@@ -470,22 +401,17 @@ export function Transcript({
   );
 
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
-    // A row above a held card moves the scroll by what it grew or shrank, so the card stays put.
     const hold = held.current;
     if (hold !== undefined) {
       const card = instance.measurementsCache.find((each) => each.key === hold);
       if (card !== undefined && item.index < card.index) return true;
     }
     const offset = (instance.scrollOffset ?? 0) + instance.scrollAdjustments;
-    // Keep the default first-measure and spanning-row rules. Width reflow above the fold
-    // preserves the reader's current position even after backward navigation or manual input.
     return !instance.itemSizeCache.has(item.key)
       ? item.start < offset
       : item.end <= offset && (widthChanged.current || instance.scrollDirection !== "backward");
   };
 
-  // History changes can shift numeric indices. The virtualizer owns the visible key/offset;
-  // retire an in-flight index jump whenever that mapping changes.
   const pendingJump = useRef<JumpRequest>(undefined);
   const previousMessages = useRef(messages);
   useLayoutEffect(() => {
@@ -501,8 +427,6 @@ export function Transcript({
         if (typeof key !== "string" || !keys.has(key)) measuredWidths.current.delete(key);
       }
       virtualizer.cancelScroll();
-      // A requested stable anchor can move while estimates settle or a history page arrives.
-      // Re-resolve only the active jump, never a retired request after the reader moves on.
       const target = pendingJump.current?.messageId;
       const index =
         target === undefined ? -1 : messages.findIndex((message) => message.id === target);
@@ -517,8 +441,6 @@ export function Transcript({
     if (short || scroller.scrollTop < EARLIER_THRESHOLD) onLoadEarlier();
   };
 
-  // A window that doesn't fill the view can't be scrolled up to ask for more. Checked only while
-  // there is more, since reading the height forces a layout, which on every streamed render adds up.
   const count = messages.length;
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -526,8 +448,6 @@ export function Transcript({
     if (scroller.scrollHeight <= scroller.clientHeight) onLoadEarlier?.();
   }, [earlier, loading, loadingEarlier, earlierFailed, count, onLoadEarlier]);
 
-  // A compaction starting, or its line wrapping, takes room under the last row, which following
-  // brings into view.
   const compactingSince = compaction?.startedAt;
   useEffect(() => {
     if (following.current && held.current === undefined && messages.length > 0) {
@@ -555,8 +475,6 @@ export function Transcript({
     setFollowing(false);
     revealFold(previousMessages.current[targetIndex]?.id);
     virtualizer.scrollToIndex(targetIndex, { align: "start" });
-    // Keep an outline request alive through measurement/paging reconciliation, then retire it.
-    // Replaying the last clicked ID on every later append would fight manual reading.
     let settleFrame = 0;
     if (jump.messageId !== undefined) {
       pendingJump.current = jump;
@@ -595,8 +513,6 @@ export function Transcript({
     const { toolCallId, ancestors = [] } = jump;
     if (toolCallId === undefined) return finish;
     const chain = [...ancestors, toolCallId];
-    // The row may not be rendered until the virtualizer has scrolled to it, and each closed card on
-    // the way takes a render to open.
     let frames = 10 + 2 * chain.length;
     let frame = 0;
     const focusCard = () => {
@@ -609,8 +525,6 @@ export function Transcript({
       cancelAnimationFrame(frame);
       finish();
     };
-    // A stable-ID jump is reconciled by the layout effect while it is active. Its changed numeric
-    // index must not clean up that active request before the new mapping is applied.
   }, [jump, numericJumpIndex, jumpAvailable, virtualizer, setFollowing, revealFold]);
 
   useEffect(() => {
@@ -623,8 +537,6 @@ export function Transcript({
       virtualizer.scrollToIndex(reveal.index, { align: "center" });
       return;
     }
-    // The opened row is taller than the one measured, and likely than the view: its start is where
-    // the turn's story is, and a few frames bring that back as the row settles at its new height.
     pendingJump.current = reveal;
     let frames = REVEAL_SETTLE_FRAMES;
     let frame = 0;
@@ -638,8 +550,6 @@ export function Transcript({
     return () => cancelAnimationFrame(frame);
   }, [reveal, virtualizer, setFollowing, revealFold]);
 
-  // Back to where find opened: the bottom, following again, or the row that was first in view at
-  // the same height, which a few frames keep there while rows above settle at their measured size.
   useEffect(() => {
     if (!restore) return;
     const { anchor } = restore;
@@ -676,9 +586,6 @@ export function Transcript({
     return () => cancelAnimationFrame(frame);
   }, [restore, virtualizer, setFollowing]);
 
-  // Settings takes the window's place, so a transcript left for it holds where it was being read
-  // and comes back there, rather than at its end. One read at the bottom just follows again. Read
-  // off the rows on screen as they leave, since the virtualizer has let go of its measures by then.
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     return () => {
@@ -703,13 +610,11 @@ export function Transcript({
       previousMessages.current.findIndex((message) => message.id === comingBack.key);
     const index = rowOf();
     if (index < 0) return;
-    // Held like a jump, so reading on (a wheel, a key, a jump) lets it go.
     const request: JumpRequest = { index, messageId: comingBack.key, nonce: -1 };
     pendingJump.current = request;
     manualGesture.current = undefined;
     setFollowing(false);
     virtualizer.scrollToIndex(index, { align: "start" });
-    // Rows settle at their measured heights over a few frames; each puts the view back on the row.
     const started = performance.now();
     let stableFrames = 0;
     let frame = 0;
@@ -739,7 +644,6 @@ export function Transcript({
     };
   }, [comingBack, hasMessages, virtualizer, setFollowing]);
 
-  // This pane's transcript answers ⌥↑ / ⌥↓ while focus is in the pane, or nowhere in the focused one.
   const inPane = () => {
     const pane = scrollRef.current?.closest<HTMLElement>("[data-pane-index]");
     if (!pane) return false;
@@ -788,20 +692,17 @@ export function Transcript({
     run: () => step(1),
   });
 
-  // On each new height, after it commits: a page that shrinks or grows needn't scroll at all.
   const totalSize = virtualizer.getTotalSize();
   useLayoutEffect(() => {
     setScrolledEnd(scrolledToEnd(scrollRef.current));
   }, [totalSize, isFollowing]);
 
-  /** `reader`: a scroll gesture paused it; a press on the content isn't one (see `readerPaused`). */
   const interruptJump = (reader = true) => {
     pendingJump.current = undefined;
     virtualizer.cancelScroll();
     manualGesture.current = undefined;
     lastScrollTop.current = scrollRef.current?.scrollTop ?? 0;
     setFollowing(false);
-    // A press after the reader scrolled away leaves their pause as it was.
     if (reader) setReaderPaused(true);
   };
 
@@ -812,14 +713,12 @@ export function Transcript({
       layoutRevision.current,
       performance.now(),
     );
-    // Explicit downward input at the outer clamped end produces no native scroll event.
     if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 1) {
       manualGesture.current = undefined;
       setFollowing(true);
     }
   };
 
-  /** Holds the actionable card the pointer is on, if any, and lets go of the one it left. */
   const holdUnder = (target: EventTarget | null) => {
     const card = target instanceof Element ? target.closest(`[${HOLD_UNDER_POINTER}]`) : null;
     const row = card?.closest<HTMLElement>("[data-index]");
@@ -828,7 +727,6 @@ export function Transcript({
     const released = held.current !== undefined && key === undefined;
     held.current = key;
     virtualizer.options.scrollEndThreshold = following.current && key === undefined ? 1 : -1;
-    // What arrived below while the card was held comes into view once the pointer has left it.
     if (released && following.current && messages.length > 0)
       virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
   };
@@ -841,19 +739,9 @@ export function Transcript({
     virtualizer.scrollToEnd();
   };
 
-  // Fades into the composer with a mask, not a blur: backdrop-filter stays off
-  // streaming content. The virtualizer's end padding keeps the newest line clear of the fade.
   const firstVisible = virtualizer
     .getVirtualItems()
     .find((item) => item.end > (virtualizer.scrollOffset ?? 0))?.index;
-  // The newest prompt can be below the top of a clamped final viewport. At the bottom, name that
-  // last turn; everywhere else the row at the reading edge determines the current chapter.
-  // A press pauses following (so what was pressed stays put), which at the bottom left "Jump to
-  // latest" offering a jump to where the view already is. Paused by anything but the reader's own
-  // scroll and still exactly at the end, the pill stays hidden, and shows once anything arrives
-  // under the view. A pause the reader scrolled into keeps its pill, even clamped to the end.
-  // Read off the scrollport itself (`scrolledEnd`): the virtualizer's own distance can lag a clamp
-  // (a fold closing at the end leaves it a few px short while the view is there).
   const quietAtEnd = !isFollowing && !readerPaused && scrolledEnd;
   const currentId = virtualizer.isAtEnd(CURRENT_BOTTOM_TOLERANCE)
     ? chapters.at(-1)?.id
@@ -899,13 +787,10 @@ export function Transcript({
         ref={scrollRef}
         data-testid="transcript"
         data-transcript=""
-        // Scrolled, it fades under what sits above it too (a catch-up, the plan strip), so the
-        // first line in view is never cut hard at their edge as if covered.
         className="h-full min-h-0 overflow-y-auto mask-b-from-[calc(100%-1.5rem)] [overflow-anchor:none] data-under:mask-t-from-[calc(100%-1rem)]"
         onWheel={(event) => {
           if (event.deltaY === 0) return;
           const el = event.currentTarget;
-          // Over a transcript too short to scroll, a wheel moves nothing: no reader's pause.
           interruptJump(canScroll(el));
           if (
             !event.defaultPrevented &&
@@ -915,7 +800,6 @@ export function Transcript({
             forwardGesture("wheel", el);
         }}
         onTouchStart={(event) => {
-          // A touch may be a tap on a control: only its move (below) is the reader scrolling.
           interruptJump(false);
           const touch = event.touches[0];
           touchPosition.current = touch ? { id: touch.identifier, y: touch.clientY } : undefined;
@@ -958,12 +842,10 @@ export function Transcript({
           scrollbarPointer.current = undefined;
           const el = event.currentTarget;
           const bounds = el.getBoundingClientRect();
-          // Only a drag of this viewport's actual scrollbar owns a pointer scroll gesture.
           const scrollbar =
             event.target === el &&
             event.button === 0 &&
             event.clientX >= bounds.left + el.clientWidth;
-          // A press on the content pauses as a reader's scroll does, but isn't one.
           interruptJump(scrollbar);
           if (scrollbar) {
             scrollbarPointer.current = { id: event.pointerId, y: event.clientY };
@@ -994,8 +876,6 @@ export function Transcript({
           )
             return;
           const target = event.target instanceof Element ? event.target : null;
-          // A key that works a control (Space on a fold, typing, arrows in a radio group or a
-          // list) still pauses following, but isn't the reader scrolling away.
           const operatesControl =
             event.defaultPrevented ||
             target?.closest(
@@ -1007,7 +887,6 @@ export function Transcript({
           const forward =
             !["ArrowUp", "PageUp", "Home"].includes(event.key) &&
             !(event.key === " " && event.shiftKey);
-          // Keyboard navigation belongs to the focused scrollport, even at an inner boundary.
           if (forward && scrollOwner(event.target, event.currentTarget, 0) === event.currentTarget)
             forwardGesture("key", event.currentTarget);
         }}
@@ -1022,16 +901,12 @@ export function Transcript({
             performance.now(),
           );
           manualGesture.current = input.gesture;
-          // A scroll toward the end never leaves it, even when rows grew faster than it moved:
-          // only a scroll that stayed or went up pauses.
           if (
             following.current &&
             el.scrollTop <= lastScrollTop.current &&
             (bottom >= FOLLOW_THRESHOLD || (el.scrollTop < lastScrollTop.current && bottom > 1))
           )
             setFollowing(false);
-          // Near the bottom is still a reading position. Only returning to the actual end resumes
-          // follow; an upward gesture must stay paused even for a subpixel movement.
           else if (!following.current && input.resume) setFollowing(true);
           lastScrollTop.current = el.scrollTop;
           setScrolledEnd(bottom <= 0);
@@ -1078,12 +953,9 @@ export function Transcript({
                     const id = messages[item.index]!.id;
                     const closed = closedFold(id);
                     const retried = retryHidden.has(id);
-                    // A reply of nothing but work, in "Conversation only": no row, so no room.
                     const workOnly =
                       conversationOnly && !showsInConversation(messages[item.index]!);
                     return (
-                      // Paint containment clips 16 px out, like a reply's content, so a raised
-                      // card's shadow at the row's edge keeps its rounded shape.
                       <div
                         key={item.key}
                         data-index={item.index}
@@ -1118,7 +990,6 @@ export function Transcript({
                   {tailLine && (
                     <div
                       ref={measureCompacting}
-                      // `flow-root` keeps the line's own margins inside what is measured.
                       className="absolute left-0 flow-root w-full px-6"
                       style={{ top: virtualizer.getTotalSize() - endRoom }}
                     >
@@ -1153,14 +1024,6 @@ export function Transcript({
   );
 }
 
-/**
- * A transcript row. Only rows with a subagent card, or streaming themselves, see the live subagent
- * map and streaming set; the rest get constants, so a streamed chunk doesn't re-render them.
- */
-/**
- * "New", over the first message the user hasn't seen: a hairline in the accent, which marks where
- * they are, with the word at its start. Inside the row, so the list measures it with the message.
- */
 function UnreadDivider() {
   return (
     <div
@@ -1175,14 +1038,11 @@ function UnreadDivider() {
   );
 }
 
-/** Whether a scrollport shows its very end (or there is none yet to show). */
 const scrolledToEnd = (el: HTMLElement | null) =>
   el === null || el.scrollHeight - el.scrollTop - el.clientHeight <= 0;
 
-/** Whether a scrollport has anything to scroll: a gesture over one that hasn't moves nothing. */
 const canScroll = (el: HTMLElement) => el.scrollHeight - el.clientHeight > 1;
 
-/** A message counts as just sent for this long, which is when it animates in. */
 const ARRIVAL_MS = 3000;
 
 const NO_TURN_UNDOS: ReadonlyMap<TurnId, TurnUndoData> = new Map();
@@ -1212,17 +1072,12 @@ function Row({
   foldOpen: boolean;
 }) {
   const live = hasSubagentTool(message);
-  // Decided once, at mount: what you just sent lands in the transcript you are watching, and the
-  // same message scrolled back into view later, or met in a pane you aren't in, is simply there.
-  // A reply needs none of this, since its text streams in.
   const [arriving] = useState(
     () =>
       animate &&
       message.role === "user" &&
       Date.now() - (message.metadata?.createdAt ?? 0) < ARRIVAL_MS,
   );
-  // In an orchestrator's stream a digest is its lines, its cards and one quiet digest line, never
-  // the digest's own card.
   const stream = useOrchestratorStreamContext();
   const streamed = stream !== undefined && digestOf(message) !== undefined;
   return (
@@ -1244,7 +1099,6 @@ function Row({
       <StreamExtrasView
         messageId={message.id}
         renderReply={(reply) => (
-          // A reply a quiet update folded, drawn as it was: its own turn, streaming if it still is.
           <MessageBlock
             threadId={threadId}
             message={reply}
@@ -1263,24 +1117,15 @@ function Row({
   );
 }
 
-/**
- * The pill floating over the transcript's foot: raised off the page with an edge and a shadow, so
- * it never reads as one more message under it.
- */
 const PILL =
   "absolute bottom-6 thread-column-center z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-edge bg-popover px-2.5 py-1 text-meta shadow-raised";
 
-/**
- * The pill as a button, back to the end of the thread. On a phone it is a 44 px round ↓ at the
- * right edge, as messaging apps have it: centred, it sat on the last message's words and actions.
- */
 const JUMP_PILL = cn(
   PILL,
   "text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
   "phone:right-4 phone:left-auto phone:size-11 phone:translate-x-0 phone:justify-center phone:px-0",
 );
 
-/** A jump button's words, which a phone's round button keeps for its name only. */
 function JumpLabel({ children }: { children: string }) {
   return (
     <>
@@ -1290,11 +1135,6 @@ function JumpLabel({ children }: { children: string }) {
   );
 }
 
-/**
- * A live worker's pill: "Following live" while the view keeps up with it, its dot breathing only
- * while text streams in; scrolled up, "Jump to live" brings the view back and follows again.
- * Following or not is the reader's; the worker never hears of it.
- */
 function FollowingLive({
   following,
   streaming,
@@ -1303,7 +1143,6 @@ function FollowingLive({
 }: {
   following: boolean;
   streaming: boolean;
-  /** A press in the transcript is under way: the pill lets its release through. */
   pressing: boolean;
   onJump: () => void;
 }) {

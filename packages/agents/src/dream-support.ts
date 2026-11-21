@@ -1,6 +1,5 @@
 import type { AgentKind } from "@gram/contracts";
 import { codexVersionWarning, compareCodexVersion } from "./codex/version.ts";
-// Pinned independently of the generated protocol bindings; regeneration is not verification.
 const VERIFIED_CODEX_DREAM_VERSION = "0.166.0";
 
 export type DreamSupportEvidence =
@@ -49,7 +48,6 @@ export const dreamSupportFor = (agent: AgentKind, evidence: DreamSupportEvidence
           .filter(Boolean)
           .join(" "),
       };
-    // A kind this build doesn't name gets no Dream, whatever reached it.
     default:
       return { mode: "unsupported", reason: "Gram has no memory update mode for this agent." };
   }

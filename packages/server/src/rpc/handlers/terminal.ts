@@ -50,34 +50,19 @@ export const SHARED_MACHINE =
 /** Why a script from a folder the user hasn't trusted doesn't run. */
 export const UNTRUSTED_SCRIPTS = "Trust this folder to run its scripts.";
 
-/** `terminal.*`: the Terminal tab, over the host's pseudo-terminals. */
 const terminalHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
-  // This machine's terminals; a thread on another machine will reach that machine's instead.
   const workerHosts = yield* WorkerHosts;
   const { terminals } = workerHosts.placed;
   const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
 
-  // The agent tool that reads a terminal registers with the handlers, as it always has.
   yield* (yield* AppToolRegistry).register([readTerminalTool(terminals)]);
 
-  // Whether people sign in through a proxy. Absent in test layers with no actor guard.
   const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
 
-  /**
-   * Who opened each terminal that is no thread's, by their subject (`undefined` for no one): its
-   * shell, its output and its keystrokes are theirs alone once any thread is readable by one person.
-   */
   const openedBy = new Map<string, string | undefined>();
-  /** The machine each terminal opened since the server started runs on (`undefined`: this one). */
   const openedOn = new Map<string, string | undefined>();
 
-  /**
-   * Once a thread readable by one person is placed on a machine, behind a proxy, the shells
-   * already open there for anyone else close: a shell reads that thread's folder whatever opened
-   * it. On this machine, which holds the database, every shell closes; a terminal whose machine
-   * isn't known (one kept from before the server started) is taken to be on this one.
-   */
   const placements = yield* Queue.unbounded<{ reader: string; machine: string | undefined }>();
   const stopListening = onPrivatePlaced((reader, machine) =>
     Queue.offerUnsafe(placements, { reader, machine }),
@@ -108,12 +93,6 @@ const terminalHandlers = Effect.gen(function* () {
     ),
   );
 
-  /**
-   * Whether `reader` may see a terminal (`embedding/readable-by.ts`): a thread's when it may see
-   * that thread, one that is no thread's when it opened it, and neither when it runs in a folder
-   * of a thread it may not see. A terminal that is no thread's and whose opener isn't known (one
-   * opened before this server started) is judged by its folder alone.
-   */
   const mayUse = (reader: Reader | undefined, info: TerminalInfo): boolean => {
     if (!anyPrivate() || reader === undefined) return true;
     if (touchesUnreadable(reader, [info.cwd])) return false;
@@ -121,7 +100,6 @@ const terminalHandlers = Effect.gen(function* () {
     return !openedBy.has(info.terminalId) || openedBy.get(info.terminalId) === reader.subject;
   };
 
-  /** `effect` refused when the caller may not use the terminal (`mayUse`). */
   const ofReadable = <A, E, R>(terminalId: TerminalId, effect: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
       if (anyPrivate()) {
@@ -132,11 +110,6 @@ const terminalHandlers = Effect.gen(function* () {
       return yield* effect;
     });
 
-  /**
-   * Refused, behind a proxy, where a shell would run on a machine that holds a thread the caller
-   * may not see: a shell there reads that thread's folder and this server's own files whatever the
-   * API refuses. Otherwise the terminal, once open, is noted as the caller's when it is no thread's.
-   */
   const opened = <A extends { readonly terminalId: TerminalId }, E, R>(
     hostId: string | undefined,
     threadless: boolean,
@@ -144,8 +117,6 @@ const terminalHandlers = Effect.gen(function* () {
   ) =>
     Effect.gen(function* () {
       const reader = yield* currentReader;
-      // This server's own machine holds its database, every transcript a private thread's
-      // included, wherever that thread's checkouts are: no one gets a shell here behind a proxy.
       if (
         anyPrivate() &&
         fronted !== undefined &&
@@ -166,14 +137,12 @@ const terminalHandlers = Effect.gen(function* () {
           Effect.orElseSucceed(() => undefined),
         );
 
-  /** A project script's command and folder, read from the project's own scripts file now. */
   const scriptRun = (threadId: ThreadId, name: string) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(threadId);
       const project = (yield* store.listProjects).find((each) => each.id === thread.projectId);
       if (project === undefined)
         return yield* new NotFound({ entity: "project", id: thread.projectId });
-      // A folder's own scripts run only once the user trusts the folder they came with.
       if (!projectFolderTrusted(project, folderBringsNothing(project.root)))
         return yield* new InvalidState({ message: UNTRUSTED_SCRIPTS });
       return yield* Effect.tryPromise({

@@ -28,10 +28,6 @@ import {
 
 import { PendingRing } from "@/motion/spinner";
 
-// Gram's one visual vocabulary for pull requests: what a PR's state, its checks, its review and its
-// merge look like, wherever a PR is drawn. A mark is an icon and a tone, so shape carries the state
-// without colour; its words go in the tooltip and the accessible name. No React beyond the icons.
-
 export interface PrMarkDisplay {
   readonly icon: LucideIcon;
   readonly tone: string;
@@ -45,10 +41,6 @@ export interface PrMark<K extends string = string> {
   /** The tooltip's line, with the detail the word leaves out; the word when there is none. */
   readonly detail: string;
 }
-
-// ---------------------------------------------------------------------------------------------
-// State: open, draft, merged, closed, as GitHub draws them
-// ---------------------------------------------------------------------------------------------
 
 export type PrLifecycle = "open" | "draft" | "merged" | "closed";
 
@@ -88,10 +80,6 @@ export const prStateMarkOf = (pr: PrLifecycleSource): PrMark<PrLifecycle> => {
   const kind = prLifecycleOf(pr);
   return { kind, word: STATE_WORD[kind], detail: STATE_WORD[kind] };
 };
-
-// ---------------------------------------------------------------------------------------------
-// Checks
-// ---------------------------------------------------------------------------------------------
 
 /** `fixing`: failing, and the PR's worker will act on it (CI ownership), so not the user's. */
 export type ChecksMarkKind = ChecksRollup | "fixing" | "unknown";
@@ -134,10 +122,6 @@ export function checksMarkOf(
     detail: kind === "fixing" ? `${said}; its worker is fixing them` : said,
   };
 }
-
-// ---------------------------------------------------------------------------------------------
-// Review: people's decision, and the review bot's
-// ---------------------------------------------------------------------------------------------
 
 export type ReviewMarkKind = "waiting" | "approved" | "changes" | "threads";
 
@@ -232,10 +216,6 @@ export const BOT_DISPLAY: Record<BotMarkKind, PrMarkDisplay> = {
   reviewerThreads: REVIEW_DISPLAY.threads,
 };
 
-// ---------------------------------------------------------------------------------------------
-// Merge readiness
-// ---------------------------------------------------------------------------------------------
-
 /**
  * What stands between an open PR and its merge, or what will merge it:
  * - `conflicts` with its base, `refused` by GitHub on this head, `behind` a base that requires
@@ -317,7 +297,6 @@ export function mergeWaitsOn(pr: MergeSource): readonly PrRefSource[] {
   for (const dependency of pr.dependsOn ?? []) {
     const state = dependency.state?.toLowerCase();
     if (state === "merged" || state === "closed") continue;
-    // Without an armed merge a dependency still holds the work, whether or not a merge waits on it.
     if (pr.intent !== undefined && dependency.mergeAfter === false) continue;
     add(dependency);
   }
@@ -359,7 +338,6 @@ export function mergeMarksOf(pr: MergeSource): readonly PrMark<MergeMarkKind>[] 
     );
   }
   if (pr.mergeState === "BEHIND") add("behind", "Out of date", `Behind ${base}`);
-  // An armed merge waits out what blocks it; without one, say what does.
   if (pr.mergeState === "BLOCKED" && intent === undefined) {
     add("blocked", "Blocked", "Required reviews or checks are missing");
   }
@@ -384,9 +362,6 @@ export function mergeMarkOf(pr: MergeSource): PrMark<MergeMarkKind> | undefined 
   return { ...first, detail: marks.map((mark) => mark.detail).join("\n") };
 }
 
-// ---------------------------------------------------------------------------------------------
-// The rest of a PR's facts
-
 /** `+120 −14 · 6 files`, each part only when known; `undefined` when none is. */
 export function diffText(diff: {
   readonly additions?: number | undefined;
@@ -401,10 +376,6 @@ export function diffText(diff: {
   const text = [lines, files].filter((part) => part !== undefined && part !== "").join(" · ");
   return text === "" ? undefined : text;
 }
-
-// ---------------------------------------------------------------------------------------------
-// A whole PR
-// ---------------------------------------------------------------------------------------------
 
 /** Everything a surface may know of one PR; each mark is drawn from what is there. */
 export interface PrFacts extends MergeSource, ReviewSource, PrRefSource {

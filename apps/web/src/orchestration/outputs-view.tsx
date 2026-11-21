@@ -60,7 +60,6 @@ const KIND_ICONS: Record<WorkspaceOutput["kind"], LucideIcon> = {
   other: File,
 };
 
-/** A row of one-word choices, one picked, as the view switcher draws them. */
 function Segments<T extends string>({
   label,
   values,
@@ -103,7 +102,6 @@ function Segments<T extends string>({
   );
 }
 
-/** True once `anchor` has come near the viewport, so a thumbnail reads its bytes only then. */
 function useSeen(anchor: RefObject<Element | null>): boolean {
   const [seen, setSeen] = useState(() => typeof IntersectionObserver === "undefined");
   useSubscription(() => {
@@ -121,7 +119,6 @@ function useSeen(anchor: RefObject<Element | null>): boolean {
   return seen;
 }
 
-/** The entry's picture as a data URL, read through its thread's own scoped path. */
 function useOutputImage(output: WorkspaceOutput, enabled: boolean): string | undefined {
   const viewer = outputViewer(output);
   const attachment = useAttachmentImage(
@@ -145,13 +142,11 @@ function Thumb({ output, seen }: { output: WorkspaceOutput; seen: boolean }) {
   );
 }
 
-/** The folders of `threadId` as the sidebar knows them; none for a thread it doesn't have. */
 const rootsOf = (threadId: ThreadId) => {
   const thread = useThreadsStore.getState().byId[threadId]?.thread;
   return thread === undefined ? [] : checkoutRoots(thread);
 };
 
-/** Where the thread is, and the file in its Files panel when it opens there. */
 function useOutputActions() {
   const navigate = useNavigate();
   const reveal = useRevealInFileManager();
@@ -165,7 +160,6 @@ function useOutputActions() {
       openThread(output.threadId);
       showFileAt(output.threadId, rootsOf(output.threadId), output.path);
     },
-    // Scoped to the thread when it's in its folders; a stored image is shown where Gram keeps it.
     reveal: (output: WorkspaceOutput) => {
       const inRoots = insideRoots(output.path, rootsOf(output.threadId));
       void reveal(output.path, inRoots ? { threadId: output.threadId } : {});
@@ -249,7 +243,6 @@ function Tile({
   );
 }
 
-/** A picture at full size, with the thread that made it one click away. */
 function Viewer({
   output,
   canReveal,

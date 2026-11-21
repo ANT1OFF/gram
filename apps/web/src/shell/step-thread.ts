@@ -2,7 +2,6 @@ import type { ThreadId, ThreadSummary } from "@gram/contracts";
 
 import { useThreadsStore } from "@/stores/threads";
 
-/** The sidebar's rows that open a thread, top to bottom: a workspace's line opens its orchestrator. */
 const ROWS = [
   '[data-testid="overview-workspace-row"]',
   '[data-testid="overview-worker"]',
@@ -10,14 +9,12 @@ const ROWS = [
   '[data-testid="overview-done"]',
 ].join(", ");
 
-/** A row's place in the order: its thread, or for a workspace's line, `ws:` and the workspace. */
 const rowKey = (row: HTMLElement): string | undefined => {
   if (row.dataset.threadId) return row.dataset.threadId;
   const workspaceId = row.closest<HTMLElement>("[data-workspace-id]")?.dataset.workspaceId;
   return workspaceId === undefined ? undefined : `ws:${workspaceId}`;
 };
 
-/** The current thread's key in the same terms: an orchestrator stands for its workspace's line. */
 const currentKey = (summary: ThreadSummary | undefined): string | undefined => {
   if (summary === undefined) return undefined;
   const { thread } = summary;
@@ -34,7 +31,6 @@ export const stepIndex = (keys: readonly string[], current: string | undefined, 
   return (at + delta + keys.length) % keys.length;
 };
 
-/** Visible rows, a thread listed twice (a card and its row) counted once. */
 const sidebarRows = (root: ParentNode): HTMLElement[] => {
   const seen = new Set<string>();
   return [...root.querySelectorAll<HTMLElement>(ROWS)].filter((row) => {
@@ -63,7 +59,6 @@ export function stepThread(
     const keys = rows.map((row) => rowKey(row)!);
     const next = rows[stepIndex(keys, currentKey(current), delta)];
     if (next === undefined) return;
-    // A thread's row opens it; a workspace's line switches to it, as its own click does.
     if (next.dataset.threadId) open(next.dataset.threadId as ThreadId);
     else next.click();
     return;

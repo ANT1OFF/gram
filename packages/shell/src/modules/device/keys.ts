@@ -36,7 +36,6 @@ export const devicePublicKeyText = (key: KeyObject): string => {
   return jwk.x;
 };
 
-/** The encodings of Ed25519's points of small order, canonical and not. */
 const SMALL_ORDER = new Set(
   [
     ["01", "00", "00"],
@@ -62,7 +61,6 @@ const SMALL_ORDER = new Set(
 /** The public key from its text, or undefined for anything that isn't a 32-byte Ed25519 key. */
 export const devicePublicKeyFrom = (text: string): KeyObject | undefined => {
   if (typeof text !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(text)) return undefined;
-  // A point of small order verifies a forged signature over anything, so it is no identity.
   if (SMALL_ORDER.has(Buffer.from(text, "base64url").toString("hex"))) return undefined;
   try {
     const key = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: text }, format: "jwk" });
@@ -110,7 +108,6 @@ const verifyText = (key: KeyObject, bytes: Uint8Array, signature: string): boole
   if (typeof signature !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signature)) return false;
   try {
     const raw = Buffer.from(signature, "base64url");
-    // One spelling per signature: the last character's spare bits must be zero.
     if (raw.toString("base64url") !== signature) return false;
     return verify(null, bytes, key, raw);
   } catch {
@@ -153,13 +150,11 @@ export const turnGrantHolds = (
   if (grant.workspace !== expected.workspace) return false;
   if (grant.thread !== expected.thread) return false;
   if (grant.expiresAt !== grant.issuedAt + DEVICE_GRANT_TTL_MS) return false;
-  // A clock that isn't a number proves nothing, and neither comparison below would refuse it.
   if (!Number.isSafeInteger(now) || !Number.isSafeInteger(grant.issuedAt)) return false;
   if (grant.issuedAt < 0 || !(now >= grant.issuedAt && now < grant.expiresAt)) return false;
   try {
     return verifyText(publicKey, turnGrantBytes(grant), signed.signature);
   } catch {
-    // Fields that aren't text have no bytes to sign.
     return false;
   }
 };

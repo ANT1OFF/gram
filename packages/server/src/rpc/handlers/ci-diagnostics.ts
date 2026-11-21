@@ -41,11 +41,9 @@ export const ciDiagnosticHandlers = Effect.gen(function* () {
               "Thread PR or checkout changed while reading CI evidence. Refresh the pull request.",
             threadId,
           });
-        // Remote head/attempt checks cannot establish that this thread still owns that PR.
         const current = yield* store.getThread(threadId);
         if (ownershipChanged(current)) return yield* changed();
         const currentTarget = yield* lookup.target(current, cwd);
-        // An unbound target lookup may itself await provider metadata; finish with a store reread.
         const settled = yield* store.getThread(threadId);
         if (
           ownershipChanged(settled) ||

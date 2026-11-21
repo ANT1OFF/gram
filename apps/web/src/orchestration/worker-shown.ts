@@ -1,10 +1,5 @@
 import type { FeatureCardWorker, ThreadId, WorkerState } from "@gram/contracts";
 
-// Whether a worker shows: the one rule the overview sidebar's rows, its orchestrator line's count,
-// the compact rail and the Board's lines all go by, so the sidebar and the Board list the same
-// workers. Finished work lives in Done (⌘J's and the sidebar's), and Show finished brings it back
-// on the Board. No React.
-
 /** What the window knows beside a worker's card. */
 export interface ShownFacts {
   /** Workers whose thread is at work now (`workingWorkerThreads`). */

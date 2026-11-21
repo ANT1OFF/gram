@@ -1,9 +1,3 @@
-// What GitHub's own response headers say is left of an hour's allowance. GitHub's guidance is to pace
-// from these rather than ask `GET /rate_limit`, and on at least one account that endpoint reported a
-// full GraphQL allowance at the moment every GraphQL request was being refused with 5,000 of 5,000
-// used. They come on every response, REST and GraphQL, a refusal included, which is exactly when the
-// reset time matters. `gh api --include` prints them ahead of the body.
-
 /** One response's account of the allowance it was counted against. */
 export interface RateLimitReading {
   /** `x-ratelimit-resource`: `core`, `graphql`, `search`, … Each is an allowance of its own. */

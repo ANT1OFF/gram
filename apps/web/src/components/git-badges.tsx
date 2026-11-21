@@ -41,10 +41,6 @@ export type PrBadgeSource = Pick<PrStatus, "state" | "isDraft" | "checks" | "hea
   readonly requiredChecks?: PrStatus["requiredChecks"] | undefined;
 };
 
-/**
- * A red or amber checks glyph no required check accounts for is drawn dimmed, since GitHub would
- * merge past it.
- */
 const checksTone = (tone: string, pr: PrBadgeSource): string =>
   pr.requiredChecks === undefined ? tone : cn(tone, "opacity-50");
 
@@ -92,14 +88,9 @@ export function prCue(
   return undefined;
 }
 
-/**
- * `git.pr` as the badge should paint it: anchored when the thread is bound to that very PR, by
- * repository as well as number, so its merge shows even after the branch moved on or was deleted.
- */
 const painted = (git: GitState, pr: PrStatus, thread: PrBadgeThread | undefined): PrStatus =>
   targetBadge(git, thread?.boundPr) ?? pr;
 
-/** The badge's PR as facts, with what the thread's binding adds, for its one glyph. */
 const badgeFacts = (git: GitState, pr: PrStatus, thread: PrBadgeThread | undefined): PrFacts =>
   prFactsOfBadge(repoOfPrUrl(pr.url) ?? git.origin ?? "", pr.number, pr, thread?.boundPr);
 
@@ -141,10 +132,6 @@ export function prBadgeTitle(git: GitState, pr: PrStatus, thread?: PrBadgeThread
 
 const INTENT_KINDS = new Set(["refused", "held", "waiting", "armed"]);
 
-/**
- * Where the thread's own `merge_when_ready` and `depends_on` stand, for the badge: refused, held,
- * waiting on a dependency, or armed. What GitHub says of the merge has the pane header's chip.
- */
 function mergeIntentMarkOf(pr: PrStatus, thread: PrBadgeThread | undefined) {
   if (thread?.boundPr === undefined) return undefined;
   const facts = prFactsOfBadge(thread.boundPr.repo, pr.number, pr, thread.boundPr);
@@ -229,7 +216,6 @@ export function PrBadge({
         className,
       )}
     >
-      {/* Merging is the one change here worth a small celebration; it plays once, as it happens. */}
       <PulseOnce trigger={glyph.kind} when={glyph.kind === "merged"} tone="merged" burst>
         <Swap swapKey={glyph.kind}>
           <state.icon
@@ -323,7 +309,6 @@ const BABYSIT_DISPLAY: Record<BabysitPhase, { icon: LucideIcon; tone: string }> 
   stopped: { icon: ShieldAlert, tone: "text-status-needs-mark" },
 };
 
-/** A shield beside the PR number while babysit mode is on; its label carries the phase. */
 function BabysitGlyph({ threadId }: { threadId: ThreadId }) {
   const babysit = useThreadsStore((s) => s.byId[threadId]?.thread.babysit);
   if (!babysit) return null;
@@ -344,7 +329,6 @@ function BabysitGlyph({ threadId }: { threadId: ThreadId }) {
   );
 }
 
-/** What GitHub's `mergeStateStatus` puts between an open PR and its merge. */
 const GITHUB_MERGE_KINDS: ReadonlySet<MergeMarkKind> = new Set([
   "conflicts",
   "behind",
@@ -363,7 +347,6 @@ export function mergeStateMarkOf(
   bound?: PrBadgeThread["boundPr"],
 ): PrMark<MergeMarkKind> | undefined {
   if (pr === undefined) return undefined;
-  // The bound PR itself is anchored, as `targetBadge` has it, so its merge or close stands.
   const shown = bound?.number === pr.number ? { ...pr, headMatches: true } : pr;
   const facts = prFactsOfBadge(repoOfPrUrl(pr.url) ?? "", pr.number, shown, bound);
   return mergeMarksOf(facts).find((mark) => GITHUB_MERGE_KINDS.has(mark.kind));

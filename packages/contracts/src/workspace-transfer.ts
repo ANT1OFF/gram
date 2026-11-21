@@ -1,11 +1,3 @@
-// Moving a workspace to another Gram: the bundle one server exports and another imports, and what
-// an import is told and answers. Behind the hosted features setting (`embeddingOn`).
-//
-// A bundle is everything of a workspace that can live somewhere else: its charter and stages, its
-// orchestrator's conversation, its memory, its feature cards and audit, and what its workers did.
-// What is tied to the machine it came from stays there: agent sessions, worktrees, folder grants,
-// approvals in flight and credentials are never in one.
-
 import * as Schema from "effect/Schema";
 import { PlanItem, Thread, UsageSummary } from "./domain.ts";
 import { FeatureCard } from "./feature-cards.ts";

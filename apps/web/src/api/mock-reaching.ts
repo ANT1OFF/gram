@@ -12,10 +12,6 @@ import {
 import type { MockOrchestrationHost } from "./mock-orchestration";
 import type { MockWorkersSimulation } from "./mock-workers";
 
-// Reaching workers, beside the ⌘J scenario: a worker whose worktree the sweep cleaned up, kept
-// read-only as the server's closed list keeps it, and one that hasn't moved in two hours, with the
-// helper's "Why is it stuck?" sentence armed and a PR whose checks fail.
-
 export interface MockReachingDeps {
   readonly host: MockOrchestrationHost;
   readonly home: (workspaceId: WorkspaceId) => { readonly id: ProjectId; readonly root: string };
@@ -45,7 +41,6 @@ export async function simulateReaching(
   const home = deps.home(workspaceId);
   const now = Date.now();
 
-  // Cleaned up: merged as #428 within the hour, closed with its worktree ten minutes later.
   const midnight = new Date(now);
   midnight.setHours(0, 0, 0, 0);
   const closedAt = Math.max(now - 25 * MINUTE, midnight.getTime() + MINUTE);
@@ -108,7 +103,6 @@ export async function simulateReaching(
     earlierOmitted: 0,
   });
 
-  // Stuck: idle two hours on a feature of its own, its PR's checks failing.
   const created = await host.createThread({
     projectRoot: home.root,
     title: "Audit log paging",
@@ -132,7 +126,6 @@ export async function simulateReaching(
       },
     ]),
   );
-  // After its messages, which would count as moving.
   host.replace({
     ...created,
     workspaceId,

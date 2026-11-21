@@ -9,12 +9,7 @@ import { defineAppTool } from "./definition.ts";
 
 const DEFAULT_LINES = 200;
 const MAX_LINES = 500;
-/** How far back from the end of today's log one call scans for matching lines. */
 const SCAN_BYTES = 4 * 1_048_576;
-/**
- * Characters one call may put in front of the model. Lines alone don't bound it: a line carrying a
- * pretty-printed cause can be most of a screen.
- */
 const OUTPUT_BUDGET = 48_000;
 /** The most of one line a call returns, so a single huge entry can't take the whole budget. */
 export const MAX_LINE_CHARS = 8_000;
@@ -23,19 +18,12 @@ const LEVELS = { info: 30, warn: 40, error: 50 } as const;
 
 const LogLevelFilter = Schema.Literals(["info", "warn", "error"]);
 
-/** What `read_app_logs` keeps of the log; every field absent keeps every line. */
 interface LogFilter {
   readonly threadId?: ThreadId | undefined;
-  /** The lowest pino level kept. */
   readonly minLevel?: number | undefined;
-  /** Epoch ms; lines stamped earlier are dropped. */
   readonly since?: number | undefined;
 }
 
-/**
- * Whether a raw log line passes `filter`. A line that isn't pino JSON carries no thread, level or
- * time, so it passes only a filter that asks for none of them.
- */
 function logLineMatches(line: string, filter: LogFilter): boolean {
   let entry: unknown;
   try {
@@ -58,11 +46,9 @@ function logLineMatches(line: string, filter: LogFilter): boolean {
   return true;
 }
 
-/** `line` cut to `MAX_LINE_CHARS`, saying so; it is already redacted, so a cut can't expose a token. */
 const capLine = (line: string): string =>
   line.length <= MAX_LINE_CHARS ? line : `${line.slice(0, MAX_LINE_CHARS)} …[cut]`;
 
-/** The newest of `lines` that fit in `budget` characters, oldest first. */
 const newestWithin = (lines: ReadonlyArray<string>, budget: number): ReadonlyArray<string> => {
   let used = 0;
   let start = lines.length;
@@ -114,16 +100,12 @@ export const readAppLogsTool = (logDir: string) =>
           ...(sinceMs === undefined ? {} : { since: sinceMs }),
         };
         const count = Math.min(Math.max(lines, 1), MAX_LINES);
-        // Nothing of a thread this thread's reader may not see: no line naming it or its folder
-        // (`embedding/readable-by.ts`), before the count is taken.
         const reader = yield* currentReader;
         const { matching, olderNotRead } = yield* Effect.sync(() => {
           let size = 0;
           try {
             size = statSync(file).size;
-          } catch {
-            // Gone between the listing and the read: tailLines reads it as empty too.
-          }
+          } catch (_goneBetweenTheListingAndTheReadTaillinesReads) {}
           return {
             matching: logLinesFor(
               reader,

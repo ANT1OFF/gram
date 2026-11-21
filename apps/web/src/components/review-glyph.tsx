@@ -19,7 +19,6 @@ export interface ReviewGlyphState {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** The bot's part of the glyph, before people's threads are added. */
 function botGlyphOf(review: PrReviewState): ReviewGlyphState | undefined {
   const { blockers, unresolved } = review.threads;
   if (review.roundInFlight) return { kind: "inFlight", label: "Review bot: round in progress" };
@@ -69,7 +68,6 @@ export function reviewGlyphOf(review: PrReviewState | undefined): ReviewGlyphSta
   return undefined;
 }
 
-/** `quiet` is a bot that has been on the PR and has nothing open, which only a chip has room to say. */
 type ReviewStatusKind = ReviewGlyphKind | "quiet";
 
 export interface ReviewStatus {
@@ -84,7 +82,6 @@ const textOf = ({ kind, count = 0 }: ReviewGlyphState): string => {
     case "inFlight":
       return "reviewing";
     case "blockers":
-      // Findings the bot tagged as blocking, never "blockers": that count is the merge reasons'.
       return `${count} blocking`;
     case "approved":
       return "approved";
@@ -115,7 +112,6 @@ export function reviewStatusOf(review: PrReviewState | undefined): ReviewStatus 
       };
 }
 
-/** The PR vocabulary's bot marks. */
 const DISPLAY = BOT_DISPLAY;
 
 /** A small bot glyph beside a PR badge; renders nothing without a bot review. */

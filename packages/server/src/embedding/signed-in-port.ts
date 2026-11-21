@@ -1,7 +1,3 @@
-// The door to the desktop app for `signed-in-workers.ts`: each call to a hosted server's worker
-// machines, asked of the app over Electron's `parentPort` and answered by id, and each connection
-// the app relays from a machine's host, as a socket here.
-
 import { randomUUID } from "node:crypto";
 
 import {
@@ -121,14 +117,11 @@ const isResponse = (message: unknown): message is WorkerMachineResponseMessage =
   Reflect.get(message, "result") !== null;
 
 const CONN = /^[A-Za-z0-9_-]{8,64}$/;
-/** A sign-in's mark (`WorkerMachineServer.account`), as the app makes them. */
 const MARK = /^[A-Za-z0-9_-]{8,64}$/;
-/** The most sign-ins the app keeps, and so the most marks it tells. */
 const MARKS_MOST = 64;
 
 const isMark = (value: unknown): value is string => typeof value === "string" && MARK.test(value);
 
-/** The `marks` answer's list, read entry by entry: one malformed entry is left out alone. */
 const marksOf = (value: unknown): ReadonlyArray<WorkerMachineMarks> => {
   if (!Array.isArray(value)) return [];
   return value.slice(0, MARKS_MOST).flatMap((each: unknown): WorkerMachineMarks[] => {
@@ -148,7 +141,6 @@ const marksOf = (value: unknown): ReadonlyArray<WorkerMachineMarks> => {
 };
 const HEADER = /^x-gram-host-[a-z]{2,16}$/;
 
-/** A relay message from the app, read field by field; anything else is no relay message. */
 const relayMessageOf = (message: unknown): WorkerMachineRelayMessage | undefined => {
   if (typeof message !== "object" || message === null) return undefined;
   const type = Reflect.get(message, "type");
@@ -194,15 +186,10 @@ const relayMessageOf = (message: unknown): WorkerMachineRelayMessage | undefined
 const OPEN = 1;
 const CLOSED = 3;
 
-/**
- * One relayed connection as a WebSocket the socket layer reads: frames from the app are its
- * messages, and what is sent on it goes back to the app as frames for the host.
- */
 const portWebSocket = (conn: string, post: (message: WorkerMachineRelayMessage) => void) => {
   const listeners = new Map<string, Set<(event: unknown) => void>>();
   let readyState = OPEN;
   const emit = (type: string, event: unknown) => {
-    // A copy, so a listener added or removed as one runs changes nothing until the next event.
     for (const listener of Array.from(listeners.get(type) ?? [])) listener(event);
   };
   const closed = (code: number, reason: string) => {

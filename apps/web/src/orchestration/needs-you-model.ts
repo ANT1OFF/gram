@@ -27,30 +27,14 @@ export const watchStoppedText = (
 ): string =>
   `Watching ${number === undefined ? "the PR" : `#${number}`} stopped${reason === undefined ? "" : `: ${STOP_REASON_TEXT[reason]}`}`;
 
-// What needs the user beside the asks, shared by every view that counts it: workers stopped on an
-// error. The Board and the orchestrator's chat lead with them in their failure card, and Needs you
-// counts them with the asks, with the errors of threads outside any workspace. Dismissing one
-// (`inbox.cleared`) holds for that occurrence only.
-//
-// A worker's failing checks are never one: a live worker is told of them and fixes them
-// (`workerOwnsCiFix`), and one no live worker owns is its orchestrator's, in its digest. The user
-// hears of a failing check only when an agent asks them about it. No React.
-
-/**
- * A worker stopped on an error; or a thread that needs the user for what has no item of its own:
- * its PR's attention unseen, or its babysit stopped.
- */
 interface NeedsYouFailure {
   readonly kind: "error" | "checks" | "review" | "babysit" | "thread";
   readonly threadId: ThreadId;
   readonly title: string;
   readonly project: string;
-  /** A few words: "Spending limit", "#412 checks failing". */
   readonly tag: string;
   readonly error?: WorkerError | undefined;
-  /** The PR its attention is on, for a thread's unseen PR attention. */
   readonly pr?: { readonly number: number } | undefined;
-  /** Epoch ms the turn failed, when the thread's own error says. */
   readonly at?: number | undefined;
 }
 
@@ -67,10 +51,6 @@ export interface FailureItem {
   readonly failure: NeedsYouFailure;
 }
 
-/**
- * A thread stopped on `error`, as one failure: its id names the failed turn by when it failed (the
- * thread's own error says), so a dismiss holds only until it fails again.
- */
 const errorItem = (
   where: Pick<FailureItem, "workspaceId" | "feature">,
   failure: Pick<NeedsYouFailure, "threadId" | "title" | "project">,
@@ -79,7 +59,6 @@ const errorItem = (
   saved?: SavedWork | undefined,
 ): FailureItem => {
   const id = `failure:error:${failure.threadId}:${at ?? error.text}`;
-  // A lost machine is said as one, with what of the work comes back, rather than as a turn failed.
   const lost =
     ("machineLost" in error && error.machineLost !== undefined) ||
     ("lostMachine" in error && error.lostMachine === true);
@@ -106,10 +85,6 @@ const errorItem = (
   };
 };
 
-/**
- * A ledger's failures: workers whose live state is `error` (as the board shows them). Each id names
- * the failed turn by when it failed, so a clear holds only until it fails again.
- */
 const failuresOf = (
   ledger: OrchestratorLedger,
   byId: Readonly<Record<string, ThreadSummary>>,
@@ -154,7 +129,6 @@ export const standingFailures = (
   });
 };
 
-/** What a thread in error without an error of its own says: a turn failed, nobody said how. */
 const UNEXPLAINED: WorkerError = { kind: "unknown", text: "" };
 
 /**
@@ -222,9 +196,7 @@ export const threadNeedsItems = (
               watchStoppedText(pr?.number, thread.babysit.stopReason),
               `babysit:${thread.lastActivityAt}`,
             ]
-          : // Started before its machine, and none came: named by that failure, so a dismiss
-            // holds until the next try fails.
-            thread.awaitingMachine?.failed !== undefined
+          : thread.awaitingMachine?.failed !== undefined
             ? ["thread", NO_MACHINE_TAG, `machine:${thread.awaitingMachine.failed.at}`]
             : ["thread", "Needs you", `${summary.status}:${thread.lastActivityAt}`];
     const id = `failure:${kind}:${thread.id}:${occurrence}`;

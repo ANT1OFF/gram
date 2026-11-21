@@ -40,10 +40,6 @@ const IDLE_MINUTES = { min: 1, max: 1440 } as const;
 
 type AgentsKey = keyof typeof AGENTS_DEFAULTS;
 
-/**
- * What the default harness can do beyond a plain session: browser tools, compaction, images, Dream.
- * Setup detail, so it lives here rather than on the page work starts from.
- */
 function DefaultHarnessSupport({ model }: { model: ModelRef | undefined }) {
   const preflight = useHarnessPreflight(model, "session");
   const models = useModels(model?.agent ?? "claude", model?.profileId);
@@ -66,7 +62,6 @@ export function AgentsSection() {
 
   if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   const agents = settings.agents;
-  // What a new chat starts on: saved, or while the recommended setup is on, Lead at low.
   const slot = defaultSlotOf(settings);
   const following = slot !== undefined && isTierRef(slot);
   const choice = defaultHere === undefined ? local.choice : choiceFromModel(defaultHere);
@@ -152,7 +147,6 @@ export function AgentsSection() {
         </Select>
       </SettingRow>
       <IdleMinutesField
-        // A value saved elsewhere resets the draft.
         key={agents.idleEvictMinutes}
         value={agents.idleEvictMinutes}
         onSave={(idleEvictMinutes) => applyTo("idleEvictMinutes")({ agents: { idleEvictMinutes } })}
@@ -180,7 +174,6 @@ export function AgentsSection() {
   );
 }
 
-/** The idle timeout's field, and the key its Undo outlives the field's remount by. */
 const IDLE_MINUTES_ID = "settings-idle-minutes";
 
 function IdleMinutesField({

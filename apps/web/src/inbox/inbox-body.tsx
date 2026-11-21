@@ -50,15 +50,6 @@ import {
   useInboxStore,
 } from "./inbox-store";
 
-// The Inbox: everything that needs the user, across every workspace, in one place. A list by kind
-// (errors, approvals, questions, reviews, steps, drafts) with the category strip above it, and the
-// picked item in a pane beside it with everything it takes to answer it. It is a dialog over the
-// work (`InboxView`), the same in Quiet and out of it, at every window size. Every count in the
-// window is this list's (`needsYouCounts`): the title bar's button, the sidebar's pill, each
-// workspace's badge, the window title and the dock badge. Keys: j/k or ↓/↑ move, ⏎ opens the
-// item's thread, 1–9 pick, ⌘⏎ sends, ⌘Z takes the last answer back, esc closes.
-
-/** The item `selected` names, or the one now in its place (`lastIndex`) once it is gone. */
 const selectedIn = (
   items: readonly NeedsYouItem[],
   selected: string | undefined,
@@ -86,7 +77,6 @@ const CLOSE = {
 
 /** The Inbox's list and detail, in its dialog, which titles and closes it; loaded apart from the shell. */
 export function InboxBody() {
-  // On a phone the dialog is a full-screen sheet: one column of cards, answered by touch.
   const phone = usePhone();
   const { sections, later } = useNeedsYouList();
   const category = useInboxStore((s) => s.category);
@@ -100,15 +90,12 @@ export function InboxBody() {
   const now = useNow(true, undefined, 60_000);
   const unread = useNotificationHistory(unreadNotifications);
   const listRef = useRef<HTMLDivElement>(null);
-  // The request list beside the detail: full (two lines a request) or compact (one), by its width,
-  // which its divider drags and Compact list toggles.
   const listWidth = inboxListWidth(useInboxStore((s) => s.listWidth));
   const compact = listWidth < INBOX_LIST_COMPACT_BELOW;
   const setListWidth = useInboxStore((s) => s.setListWidth);
   const total = sections.reduce((n, section) => n + section.items.length, 0);
   const shown = sectionsIn(sections, category);
   const items = shown.flatMap((section) => section.items);
-  // Where the selection was, so an answered item gives way to the one after it.
   const [lastIndex, setLastIndex] = useState(0);
   const current = selectedIn(items, selected, lastIndex);
   const index = current === undefined ? -1 : items.indexOf(current);
@@ -131,7 +118,6 @@ export function InboxBody() {
   const undo = () => {
     const answer = useAskStackStore.getState().undo();
     if (answer === undefined) return false;
-    // The ask comes back: show it again, where it was answered.
     select(items.some((item) => item.key === answer.key) ? answer.key : `ask:${answer.key}`);
     return true;
   };
@@ -151,7 +137,6 @@ export function InboxBody() {
       return;
     }
     if (typing || mod || event.altKey || event.shiftKey) return;
-    // A button or a link keeps its own Enter and Space.
     const activates = target?.closest("button, a, [role='radio'], [role='checkbox']") != null;
     if (event.key === "j" || event.key === "ArrowDown") {
       take();
@@ -184,10 +169,6 @@ export function InboxBody() {
       {later.length > 0 && <span className="tabular-nums">{later.length}</span>}
     </Hint>
   );
-  // The strip, when it shows, sits right under the header: one line between the two, under it.
-  // It is there so a long list never hides a category below the fold; a short one has every
-  // section's heading in sight already, and the strip only said them twice. A pick keeps it, as
-  // the way back to All.
   const strip =
     !showLater && sections.length > 1 && (total >= STRIP_FROM || shown.length < sections.length);
   return (
@@ -234,8 +215,6 @@ export function InboxBody() {
               {compact ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
             </Hint>
           )}
-          {/* A way out to the history, not a peer of the Inbox's own controls: its glyph, named on
-            hover, with the unread count beside it while there is one. */}
           <Hint
             label="Notification history, in the side panel"
             side="bottom"
@@ -300,7 +279,6 @@ export function InboxBody() {
         </div>
       ) : (
         <div className="relative flex min-h-0 flex-1">
-          {/* The detail keeps room for an answer's choices however wide the list is dragged. */}
           <div
             className="flex min-h-0 max-w-[calc(100%-18rem)] shrink-0 flex-col border-r border-shell-divider"
             style={{ width: listWidth }}
@@ -342,7 +320,6 @@ export function InboxBody() {
           <div className="flex min-w-0 flex-1 flex-col">
             {current !== undefined && <InboxDetail item={current} now={now} onOpenThread={jump} />}
           </div>
-          {/* The list's divider, over its edge; after the detail, so Tab goes list, detail, it. */}
           <div
             className="pointer-events-none absolute inset-y-0 left-0 max-w-[calc(100%-18rem)] *:pointer-events-auto"
             style={{ width: listWidth }}
@@ -367,7 +344,6 @@ export function InboxBody() {
           data-testid="inbox-keys"
           className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-shell-divider px-3 py-1.5 text-caption text-muted-foreground"
         >
-          {/* With nothing listed there is nothing to move through, pick or send: only close. */}
           {total > 0 && (
             <>
               <span>
@@ -396,11 +372,6 @@ export function InboxBody() {
   );
 }
 
-/**
- * What a row says of its kind, in words, where its section's heading doesn't already say it: not
- * "Approval" under Approvals, nor "Plan to review" when its title says it, but "Worker question"
- * under Questions, which is more than the heading says. An error's heading says it.
- */
 const rowKind = (
   item: NeedsYouItem,
   section: NeedsYouSection,
@@ -413,13 +384,6 @@ const rowKind = (
   return said || title.startsWith(label) ? undefined : label;
 };
 
-/**
- * One row of the list, two lines: what it is about, wrapping to a second line before it is cut,
- * then where it is from (its workspace, its kind where the heading doesn't say it, its thread) with
- * its age at the line's end. Its hover says the whole of it. The whole question, its choices and
- * its command's arguments are the detail pane's. A click shows it. Compact, a row is its title
- * alone, one line.
- */
 function InboxRow({
   item,
   section,
@@ -434,7 +398,6 @@ function InboxRow({
   index: number;
   now: number;
   selected: boolean;
-  /** One line: its kind and title; where it is from is its tooltip and the detail's. */
   compact: boolean;
   onSelect: () => void;
 }) {
@@ -449,7 +412,6 @@ function InboxRow({
     .filter((part) => part !== undefined && part !== "")
     .join(" · ");
   const age = item.at === undefined ? undefined : formatRelative(item.at, now);
-  // The hover says the whole of it: the full request, not the list's short form, and where from.
   const whole = [
     [item.title, item.command].filter(Boolean).join(" "),
     [where, age].filter(Boolean).join(" · "),
@@ -517,7 +479,6 @@ function InboxRow({
           >
             {where}
           </span>
-          {/* The other machine its thread runs on, if any; its hover says its state. */}
           {item.threadId !== undefined && (
             <ThreadMachineMarker
               threadId={item.threadId}
@@ -593,7 +554,6 @@ function LaterList({
 }
 
 function Empty({ laterCount }: { laterCount: number }) {
-  // What is put away comes first; with nothing put away, what finished is the next place to look.
   const action: EmptyAction =
     laterCount > 0
       ? {
