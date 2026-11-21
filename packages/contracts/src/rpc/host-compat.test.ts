@@ -79,37 +79,47 @@ const OPENCODE_BREAKS: ReadonlyArray<
  */
 /**
  * Grok Build and Antigravity, the fourth and fifth agent kinds, at each place OpenCode's grew: no
- * release speaks them. A control plane opens a session, reloads config or names a worker of either
+ * release before 1.33.0 speaks them. A control plane opens a session, reloads config or names a worker of either
  * only to a host that names `agent-grok` or `agent-antigravity` (host/session-gates.ts,
  * `withoutAgents`), which no released host does.
  */
 const GROK_BECAUSE =
   "A control plane sends Grok Build only to a host that names agent-grok, and Antigravity only to one that names agent-antigravity, which no host of that release does, and never opens a session of either there.";
 
-/** The agent kinds no release speaks. */
-const UNRELEASED_KINDS = ["grok", "antigravity"];
+/** Grok Build's and Antigravity's agent kinds. */
+const GROK_KINDS = ["grok", "antigravity"];
+/** The first release that speaks Grok Build and Antigravity: its protocol already takes them. */
+const FIRST_WITH_GROK = "1.33.0";
+
+/** Whether `released` predates Grok Build and Antigravity. */
+const beforeGrok = (released: Released): boolean =>
+  byRelease(released.release, FIRST_WITH_GROK) < 0;
 
 /** The agent kinds `released` doesn't know, as a break names them. */
 const unknownKinds = (released: Released): ReadonlyArray<string> => [
   ...(byRelease(released.release, FIRST_WITH_OPENCODE) < 0 ? ["opencode"] : []),
-  ...UNRELEASED_KINDS,
+  ...(beforeGrok(released) ? GROK_KINDS : []),
 ];
 
-/** Calls whose agent grew only by the unreleased kinds, as every release with them took OpenCode. */
+/** Calls whose agent grew only by Grok's kinds, as every release with them took OpenCode. */
 const GROK_ONLY_BREAKS: ReadonlyArray<readonly [call: string, at: string]> = [
   ["host.sessions.accountScope", "payload.agent"],
   ["host.sessions.accountScope", 'error(_tag "AgentUnavailable").agent'],
 ];
 
 const ACCEPTED = (released: Released): ReadonlyArray<Accepted> => [
-  ...GROK_ONLY_BREAKS.filter(([call]) => call in released.calls).map(([call, at]) => ({
-    at: `${call} ${at}`,
-    what: `it now also takes ${UNRELEASED_KINDS.map((kind) => JSON.stringify(kind)).join(", ")}`,
-    because: GROK_BECAUSE,
-  })),
+  ...GROK_ONLY_BREAKS.filter(([call]) => beforeGrok(released) && call in released.calls).map(
+    ([call, at]) => ({
+      at: `${call} ${at}`,
+      what: `it now also takes ${GROK_KINDS.map((kind) => JSON.stringify(kind)).join(", ")}`,
+      because: GROK_BECAUSE,
+    }),
+  ),
   ...OPENCODE_BREAKS.filter(
     ([call, , , since]) =>
-      call in released.calls && (since === undefined || byRelease(released.release, since) >= 0),
+      unknownKinds(released).length > 0 &&
+      call in released.calls &&
+      (since === undefined || byRelease(released.release, since) >= 0),
   ).map(([call, at, because]) => {
     const kinds = unknownKinds(released);
     return {
