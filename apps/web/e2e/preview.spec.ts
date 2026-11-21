@@ -329,9 +329,11 @@ test("the user lets a local page they typed use WebRTC, and an agent can't keep 
   const webRtc = page.getByTestId("preview-webrtc");
   await expect(webRtc).toHaveCount(0);
   const address = page.getByTestId("preview-address");
+  // Another address on the same origin: Enter on the address as it stands opens nothing.
   const typeIt = async () => {
-    await address.fill(`http://localhost:${port}/`);
+    await address.fill(`http://localhost:${port}/other`);
     await address.press("Enter");
+    await expect(address).toHaveValue(`http://localhost:${port}/other`);
   };
   await typeIt();
   await expect(webRtc).toHaveAttribute("aria-pressed", "false");
