@@ -856,6 +856,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         fetch: options.fetch,
         now: options.elapsed,
         signal: signal === undefined ? closing.signal : AbortSignal.any([signal, closing.signal]),
+        deviceName: options.machineName,
       });
       if (closed) return await giveUp(CLOSING);
       if (!signed.ok) return await giveUp(signed);
