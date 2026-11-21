@@ -1014,13 +1014,12 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     opens: true,
     disabled: offer.offered && offer.refusal !== undefined,
   });
-  // Signed out, it lists no models: one greyed row stands for them, its mark saying why.
   const otherChoices: PickerOption<string>[] =
     otherAgent === undefined
       ? []
       : otherModels !== undefined && otherModels.length > 0
         ? otherModels.map((m) => otherRow(m.id, m.displayName))
-        : [otherRow("", agentLabel(otherAgent))];
+        : [{ ...otherRow("", agentLabel(otherAgent)), headingOnly: true }];
   const heads =
     model === undefined || otherAgent === undefined || otherChoices.length === 0
       ? undefined
@@ -1028,6 +1027,7 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
           [provider]: {
             mark: <AgentIcon agent={model.agent} className="size-icon-chip" />,
             hint: provider,
+            words: provider,
           },
           [agentLabel(otherAgent)]: {
             mark: <AgentIcon agent={otherAgent} className="size-icon-chip" />,

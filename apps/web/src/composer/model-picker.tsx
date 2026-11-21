@@ -357,6 +357,7 @@ function ModelSearchBody({
               ))}
             <Combobox.Collection>
               {(option: Option) => {
+                if (option.headingOnly === true) return null;
                 const starred = favourite(option.value);
                 return (
                   // Named by the model alone: the star inside would otherwise join its name.

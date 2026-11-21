@@ -74,16 +74,16 @@ test("greys the group and the menu item with the server's words", async ({ page 
   await bothAgents(page, { codexSignIn: "notSignedIn" });
   await page.goto("/t/t-deps");
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
-  // Signed out, Codex lists no models: one greyed row under its mark, which says why.
+  // Signed out, Codex lists no models: its heading alone says why, with no row to pick.
   const popup = await openChoices(page);
   await expect(popup.getByTestId("model-group-mark").last()).toHaveAttribute(
     "aria-label",
     "Sign in to Codex in Settings → Agents.",
   );
-  await expect(popup.getByRole("option", { name: "Codex…" })).toHaveAttribute(
-    "aria-disabled",
-    "true",
+  await expect(popup.getByTestId("model-group-note")).toHaveText(
+    "Sign in to Codex in Settings → Agents.",
   );
+  await expect(popup.getByRole("option", { name: "Codex…" })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(popup).toBeHidden();
   const menu = await openThreadMenu(page);

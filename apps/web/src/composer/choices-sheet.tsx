@@ -177,33 +177,35 @@ function ModelRows({
                 </span>
               </div>
             )}
-            <button
-              type="button"
-              role="option"
-              aria-selected={selected}
-              aria-disabled={option.disabled || undefined}
-              data-choice-row
-              onClick={() => onPick(option)}
-              className={cn(
-                "flex min-h-13 w-full items-center gap-3 border-b border-border px-1 py-1.5 text-left outline-none last:border-b-0 focus-visible:focus-ring-inset",
-                option.disabled && "pointer-events-none opacity-50",
-              )}
-            >
-              {icon !== undefined && (
-                <span aria-hidden className="flex shrink-0 items-center text-muted-foreground">
-                  {icon}
-                </span>
-              )}
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-reading font-medium">{option.label}</span>
-                {option.description !== undefined && (
-                  <span className="truncate text-meta text-muted-foreground">
-                    {option.description}
+            {option.headingOnly !== true && (
+              <button
+                type="button"
+                role="option"
+                aria-selected={selected}
+                aria-disabled={option.disabled || undefined}
+                data-choice-row
+                onClick={() => onPick(option)}
+                className={cn(
+                  "flex min-h-13 w-full items-center gap-3 border-b border-border px-1 py-1.5 text-left outline-none last:border-b-0 focus-visible:focus-ring-inset",
+                  option.disabled && "pointer-events-none opacity-50",
+                )}
+              >
+                {icon !== undefined && (
+                  <span aria-hidden className="flex shrink-0 items-center text-muted-foreground">
+                    {icon}
                   </span>
                 )}
-              </span>
-              {selected && <CheckIcon aria-hidden className="size-icon-row shrink-0 text-link" />}
-            </button>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-reading font-medium">{option.label}</span>
+                  {option.description !== undefined && (
+                    <span className="truncate text-meta text-muted-foreground">
+                      {option.description}
+                    </span>
+                  )}
+                </span>
+                {selected && <CheckIcon aria-hidden className="size-icon-row shrink-0 text-link" />}
+              </button>
+            )}
           </Fragment>
         );
       })}

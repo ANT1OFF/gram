@@ -634,10 +634,11 @@ shows.
 
 ### Where to switch
 
-- **The choices chip.** Under Model, the other agent's models follow the current agent's, under
-  its mark and the words "Continue in Codex: new session with a handoff". Each ends in "…": picking
-  one opens the confirm sheet and changes nothing by itself. When the thread can't move now, the
-  rows are greyed and a line under those words says why.
+- **The choices chip.** Under Model, each agent's models sit under its mark and name; the other
+  agent's follow the current agent's, headed "Continue in Codex: new session with a handoff". Each
+  ends in "…": picking one opens the confirm sheet and changes nothing by itself. When the thread
+  can't move now, the heading reads "Continue in Codex" with why on a line under it, and the rows
+  are greyed; when Codex lists no models, the heading and its reason stand alone.
 - **The thread menu.** "…" → Thread → **Continue in Codex…** (or **Continue in Claude Code…**).
 - **The orchestrator.** Its "…" menu has the same item, and so does Settings → Workspaces →
   Models, beside "Current orchestrator". The chip's group isn't offered on the orchestrator.
