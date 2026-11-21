@@ -231,6 +231,15 @@ export const makeFeedWriter = ({
       let chunk = incoming;
       let inFlight = rt.open.get(messageId);
       if (inFlight === undefined) {
+        // A reply opens or goes on only as a reply: never over a person's message, nor Gram's
+        // notice, whose id an agent was handed.
+        const stored = yield* store.getMessage(rt.threadId, messageId);
+        if (stored !== undefined && stored.role !== "assistant") {
+          yield* Effect.logWarning("a reply named a message that isn't one").pipe(
+            Effect.annotateLogs({ threadId: rt.threadId, messageId }),
+          );
+          return;
+        }
         // No agent dates its replies, so the transcript's hover time for one is when it began
         // streaming, stamped on the chunk that opens it so live subscribers see it too.
         if (chunk.type === "start" && chunk.messageMetadata?.createdAt === undefined) {

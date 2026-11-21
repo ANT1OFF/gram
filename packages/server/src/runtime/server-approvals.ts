@@ -35,7 +35,7 @@ import {
   type Decided,
   type DecisionHookShape,
 } from "../embedding/decision-hook.ts";
-import type { HookedRequests } from "../embedding/hooked-requests.ts";
+import { hookedKey, type HookedRequests, requestActions } from "../embedding/hooked-requests.ts";
 
 /** Why one answer of `respondMany` wasn't given, in words a row of the inbox can show. */
 export const respondFailure = (cause: Cause.Cause<unknown>): string => {
@@ -273,7 +273,7 @@ export const makeServerApprovals = ({
    * so the note (and the signed request it may carry) is always the delivered answer's. Taken back
    * when the delivery fails.
    */
-  const noteAnswer = (requestId: RequestId, answer: RequestAnswer) =>
+  const noteAnswer = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
     Effect.gen(function* () {
       if (eventSink === undefined) return;
       const answeredBy = yield* ActingPerson;
@@ -284,14 +284,18 @@ export const makeServerApprovals = ({
           : answer.decision === "allow" || answer.decision === "approve"
             ? ("approve" as const)
             : ("reject" as const);
-      yield* eventSink.noteAnswer(requestId, {
-        ...(decision === undefined ? {} : { decision }),
-        ...(answeredBy === undefined ? {} : { answeredBy }),
-        ...(proof === undefined ? {} : { proof }),
-      });
+      yield* eventSink.noteAnswer(
+        requestId,
+        {
+          ...(decision === undefined ? {} : { decision }),
+          ...(answeredBy === undefined ? {} : { answeredBy }),
+          ...(proof === undefined ? {} : { proof }),
+        },
+        threadId,
+      );
     });
-  const unnoteAnswer = (requestId: RequestId) =>
-    eventSink === undefined ? Effect.void : eventSink.noteAnswer(requestId, undefined);
+  const unnoteAnswer = (threadId: ThreadId, requestId: RequestId) =>
+    eventSink === undefined ? Effect.void : eventSink.noteAnswer(requestId, undefined, threadId);
 
   /** Answers a card the server raised with `requestApproval`. */
   const respondToServer = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
@@ -314,10 +318,10 @@ export const makeServerApprovals = ({
             }
             serverRequests.delete(requestId);
             const answeredBy = yield* ActingPerson;
-            yield* noteAnswer(requestId, answer);
+            yield* noteAnswer(threadId, requestId, answer);
             yield* Effect.gen(function* () {
               if (!(yield* store.removeRequest(threadId, requestId))) {
-                yield* unnoteAnswer(requestId);
+                yield* unnoteAnswer(threadId, requestId);
                 return yield* new RequestNotFound({ threadId, requestId });
               }
               serverApprovalOrigins.delete(requestId);
@@ -369,14 +373,29 @@ export const makeServerApprovals = ({
    */
   const confirmedByHook = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
     Effect.gen(function* () {
-      const asked = hooked.asked.get(requestId);
-      if (
-        asked === undefined ||
-        decisions === undefined ||
-        answer.kind !== "approval" ||
-        answer.decision !== "allow"
-      ) {
+      const asked = hooked.asked.get(hookedKey(threadId, requestId));
+      if (decisions === undefined || answer.kind !== "approval" || answer.decision !== "allow") {
         return answer;
+      }
+      if (asked === undefined) {
+        // A card for what the hook governs, with nothing kept of what it said: never let through
+        // unasked, however the hook's word on it was lost.
+        const card = yield* store.listRequests(threadId).pipe(
+          Effect.map((requests) => requests.find((request) => request.id === requestId)),
+          Effect.orElseSucceed(() => undefined),
+        );
+        const governed =
+          card === undefined ||
+          (card.kind === "approval" &&
+            requestActions(card).length > 0 &&
+            (yield* decisions.enabled));
+        if (!governed) return answer;
+        return {
+          kind: "approval",
+          decision: "deny",
+          scope: "once",
+          message: DECISION_UNAVAILABLE,
+        } satisfies RequestAnswer;
       }
       const thread = yield* store.getThread(threadId).pipe(Effect.option);
       // This runs in the call of whoever answered the card.
@@ -432,16 +451,16 @@ export const makeServerApprovals = ({
         if (!waiting.some((request) => request.id === requestId)) {
           return yield* new RequestNotFound({ threadId, requestId });
         }
-        yield* noteAnswer(requestId, given);
+        yield* noteAnswer(threadId, requestId, given);
         // Removed only once the agent has the answer: one that didn't arrive leaves the card up,
         // to be answered again, rather than a thread that reads running while the agent waits.
         yield* session.respond(requestId, answer).pipe(
           Effect.mapError(
             (error) => new InvalidState({ message: error.message, threadId, status: rt.status }),
           ),
-          Effect.tapError(() => unnoteAnswer(requestId)),
+          Effect.tapError(() => unnoteAnswer(threadId, requestId)),
         );
-        hooked.asked.delete(requestId);
+        hooked.asked.delete(hookedKey(threadId, requestId));
         // The adapter may have reported it resolved already, which published the event.
         if (yield* store.removeRequest(threadId, requestId)) {
           yield* hub.publish({ type: "thread.requestResolved", threadId, requestId });
