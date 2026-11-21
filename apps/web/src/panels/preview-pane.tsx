@@ -43,7 +43,7 @@ import { showPage } from "@/pages/page-pane-store";
 import { useCoveredByOverlay } from "./preview-cover";
 import { AgentActivity, DriverButton, ToolButton } from "./preview-strip";
 import { ServerPreview, useServerPage } from "./server-preview";
-import { turnUnderWay } from "./preview-webrtc";
+import { folderBusy } from "./preview-webrtc";
 
 /** The shell's preview, or the mock API's stand-in for it; absent where neither has one. */
 const previewBridge = (): DesktopPreview | undefined =>
@@ -131,8 +131,9 @@ function ShellPreview({
   const adoptPreviewPage = useLayoutStore((s) => s.adoptPreviewPage);
   const ports = useThreadsStore((s) => s.byId[threadId]?.ports);
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
-  // The WebRTC switch stays off while the agent works: what it writes is served at that address.
-  const working = useThreadsStore((s) => turnUnderWay(s.byId[threadId]?.status));
+  // The WebRTC switch stays off while any agent works in the thread's folders: what it writes is
+  // served at that address.
+  const working = useThreadsStore((s) => folderBusy(s.byId, threadId));
   const roots = useMemo(
     () =>
       thread === undefined
@@ -410,8 +411,8 @@ function ShellPreview({
                 current.webRtc === true
                   ? "Turn WebRTC off for this page"
                   : working
-                    ? "WebRTC stays off while the agent works"
-                    : "Let this address use WebRTC: it reloads, and anything served here gets it, code the agent writes included. It ends when the agent next starts."
+                    ? "WebRTC stays off while an agent works in this folder"
+                    : "Let this address use WebRTC: it reloads, and anything served here gets it, including code any agent working in this folder writes and processes one left running. It ends when an agent here next starts a turn."
               }
               disabled={current.webRtc !== true && working}
               pressed={current.webRtc === true}

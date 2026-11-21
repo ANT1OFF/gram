@@ -290,9 +290,9 @@ export interface DesktopPreview {
    * Lets `threadId`'s local page use WebRTC, or takes it away again: the page is made again, in a
    * session of its own with nothing in it, and re-opened at its address. Only the user's own switch
    * calls it, and only where `PreviewState.webRtcOffered` says; an agent's page never has WebRTC,
-   * and an agent taking the pane turns it off. Everything served at that origin gets it, code an
-   * agent writes into the app included, so the app turns it off as the thread's agent starts a
-   * turn. False where it is refused, for a web page, or no page. Absent from shells that predate it.
+   * and an agent taking the pane turns it off. Everything served at that origin gets it, code any
+   * agent working in the thread's folder writes and processes one left running included, so the
+   * app turns it off whenever it hears of a turn under way in a thread sharing that folder. False where it is refused, for a web page, or no page. Absent from shells that predate it.
    */
   setWebRtc?(threadId: string, allowed: boolean): Promise<boolean>;
   /** Subscribes to `threadId`'s page changing; returns the unsubscribe function. */

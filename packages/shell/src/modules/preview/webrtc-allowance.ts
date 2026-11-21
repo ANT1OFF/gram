@@ -4,8 +4,8 @@
 // It is offered only for a page the user opened by typing its address in the address strip, while
 // the page is still on that address's origin: never for a page an agent opened (`show_panel`, the
 // agent browser), a port chip's, a file preview, or any of Gram's own origins. Whatever then serves
-// that origin has WebRTC, code an agent writes into the app included, so the renderer also ends it
-// as the thread's agent starts a turn.
+// that origin has WebRTC, code any agent working in that folder writes and processes one left
+// running included, so the renderer also ends it on a turn under way in any thread on that folder.
 
 import type { WebContents } from "electron";
 
