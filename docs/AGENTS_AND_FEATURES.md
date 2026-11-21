@@ -1697,7 +1697,9 @@ nothing with the app's session, its launch cookie or your browser, sandboxed and
 every permission, download, client certificate and external-app launch refused:
 
 - **Local**: loopback pages and every page an agent drives. It loads nothing off loopback but what
-  an agent was allowed (below).
+  an agent was allowed (below). Its pages have no WebRTC, in any of their frames: WebRTC looks up
+  the names a page hands it past every other control here, which would let a page send data out in
+  DNS queries.
 - **Web**: the pages you open anywhere else. No agent ever reads or drives one; when an agent
   starts browsing in that thread, your page there closes for a fresh one of its own, so what you
   sign in to on the web stays yours. Pages on the internet share one web session, which never

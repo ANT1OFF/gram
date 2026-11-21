@@ -67,7 +67,7 @@ export const hostProcessPlugin = (): Plugin =>
 /**
  * Emits the release checks' native probe beside the host: the packaged app, whose RunAsNode fuse
  * is off, runs a probe it ships and no other (src/main/entry.ts). It loads the natives from the
- * app.asar it is pointed at, so nothing of theirs is bundled.
+ * app.asar it ships in, so nothing of theirs is bundled.
  */
 export const nativeProbePlugin = (): Plugin =>
   besideServer("native-probe", new URL("./src/main/native-probe.cjs", import.meta.url));
