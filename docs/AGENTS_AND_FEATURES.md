@@ -1051,6 +1051,15 @@ pass on the old tip: N of them cost N checks in a row, not N side by side. A mer
 check, ends a turn at once; a pass that doesn't merge ends it after two minutes, so one pull
 request can't hold up the rest. `local_check` asks for its own check and doesn't queue.
 
+One head runs one check at a time on this machine: a second ask for it joins the running one,
+and a check on a base the new ask's base descends from is cancelled for it, since its pass
+would count for nothing. A running check is also cancelled once its result can't be used: its
+`merge_when_ready` is dropped, its pull request merges or closes, or its head moves past the
+checked commit. A cancel stops the check's process group, removes its worktree and records it
+failed with why; asked again, it runs again. A worker can cancel its own with
+`local_check cancel: true`, unless its armed merge would start it again. A joined machine's
+check runs on its host and isn't cancelled from here.
+
 Before invoking `gh pr merge`, Gram records a durable fence for the base, the expected PR head
 and the checked tip. Only fence commits reserve the SQLite connection and temporarily use
 `synchronous=FULL`; each returns after its WAL sync, then restores `NORMAL` before ordinary

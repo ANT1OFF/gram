@@ -47,6 +47,7 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { isBadgeOf } from "./extra-prs.ts";
 import { type CheckSite, checkSiteOf } from "./check-site.ts";
 import { LocalChecks, type LocalCheck } from "./local-checks.ts";
+import { makeCheckSettle } from "./merge-check-cancel.ts";
 import { MergeFreezes } from "./merge-freezes.ts";
 import { GitRefresh } from "./platform.ts";
 import { GitStatePublisher } from "./publisher.ts";
@@ -62,7 +63,13 @@ import {
   withMachines,
 } from "./worker-pr.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
-import { localCheckFailedText, localCheckPassedText, prName } from "./check-texts.ts";
+import {
+  localCheckCancelledText,
+  localCheckFailedText,
+  localCheckPassedText,
+  prName,
+} from "./check-texts.ts";
+import { mergedText, refusedText, uncertaintyText, waitingText } from "./merge-texts.ts";
 export { localCheckFailedText, prName } from "./check-texts.ts";
 import { makeKeyedLock } from "./keyed-lock.ts";
 
@@ -173,30 +180,8 @@ const checkSiteFor = (thread: Thread, here: Effect.Effect<string>): Effect.Effec
 
 const ghDirOf = (thread: Thread) => ghFolderOf(thread.checkout);
 
-const mergedText = (
-  bound: BoundPr,
-  intent: MergeIntent,
-  head: string,
-  localCheck?: LocalCheck,
-  gateNotice?: string,
-) =>
-  `Gram merged ${prName(bound)} (${intent.method}) at ${head.slice(0, 7)}: the workspace merge review policy was satisfied, ${
-    localCheck === undefined
-      ? "the required checks were green"
-      : `Gram's own full check passed on this head merged onto ${localCheck.base.slice(0, 7)} (${localCheck.host}, ${new Date(localCheck.finishedAt ?? 0).toISOString()})`
-  } and GitHub allowed the merge.${gateNotice === undefined ? "" : ` Local gate OFF: ${gateNotice}.`}`;
-
-const waitingText = (bound: Pick<BoundPr, "repo" | "number">, why: string) =>
-  `merge_when_ready hasn't merged ${prName(bound)} yet and keeps checking: ${why}.`;
-
 const fenceRefusal = (message: string) =>
   new AppToolError({ tool: "resolve_merge_fence", message });
-
-const uncertaintyText = (pending: PendingMerge) =>
-  `merge outcome for ${prName(pending.pr)} at ${pending.head.slice(0, 7)} isn't known; its base is fenced across restarts. Inspect the PR on GitHub. Automatic reconciliation requires that head merged, or a confirmed rejection with it still open. For a terminal PR at another head, the user or owning orchestrator must explicitly call resolve_merge_fence with pr=${prName(pending.pr)}; Gram re-reads GitHub, retires old passes and verifies the base`;
-
-const refusedText = (bound: BoundPr, head: string, why: string) =>
-  `merge_when_ready couldn't merge ${prName(bound)} at ${head.slice(0, 7)}: ${why.split("\n")[0]!.slice(0, 300)}. It tries again once the head moves; call merge_when_ready again to retry this head.`;
 
 export interface MergeWhenReadyShape {
   /** Explicit, approved reconciliation only; Github terminal state is always read by Gram. */
@@ -239,6 +224,8 @@ export interface MergeWhenReadyShape {
     options?: {
       /** False only reports the check Gram has of the pair, starting none. */
       readonly start?: boolean | undefined;
+      /** Cancels the PR's running checks instead, unless an armed merge would start them again. */
+      readonly cancel?: boolean | undefined;
     },
   ) => Effect.Effect<LocalCheckStart>;
 }
@@ -255,7 +242,8 @@ type LocalCheckStart =
       readonly check: LocalCheck | undefined;
       readonly reused: boolean;
     }
-  | { readonly refused: string };
+  | { readonly refused: string }
+  | { readonly cancelled: ReadonlyArray<LocalCheck> };
 
 export class MergeWhenReady extends Context.Service<MergeWhenReady, MergeWhenReadyShape>()(
   "@gram/server/MergeWhenReady",
@@ -276,6 +264,7 @@ export const MergeWhenReadyLive = Layer.effect(
     const recheck = Effect.sleep(Duration.millis(recheckMs));
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
+    const settleChecks = makeCheckSettle(localChecks);
     const freezes = yield* MergeFreezes;
     const frozenFor = (by: Thread, pr: Pick<BoundPr, "repo" | "number">, base?: string) =>
       freezes
@@ -1381,12 +1370,13 @@ export const MergeWhenReadyLive = Layer.effect(
         const found = yield* localChecks
           .ensure(dir, head, base, {
             projectId: thread.projectId,
+            pr: bound,
             since: intent.setAt,
             ...(verificationAfter.has(key) ? { after: verificationAfter.get(key)! } : {}),
             onDone: (done) =>
               Effect.sync(() => listening.delete(listener)).pipe(
                 Effect.andThen(
-                  done.status === "passed"
+                  done.status === "passed" || done.cancelled !== undefined
                     ? Effect.void
                     : tell(thread, bound, localCheckFailedText(bound, done), "local-check"),
                 ),
@@ -1414,6 +1404,7 @@ export const MergeWhenReadyLive = Layer.effect(
 
     const evaluate = (thread: Thread, badge: PrStatus | undefined): Effect.Effect<void> =>
       Effect.gen(function* () {
+        yield* settleChecks(thread, badge);
         const bound = thread.boundPr;
         const intent = bound?.mergeWhenReady;
         if (bound === undefined || intent === undefined) return yield* stop(thread.id);
@@ -1556,8 +1547,13 @@ export const MergeWhenReadyLive = Layer.effect(
         const bound = thread.value.boundPr;
         if (bound === undefined)
           return { refused: "this thread has no bound pull request: push, open it and pr_bind it" };
+        const cancel = options?.cancel === true;
+        if (cancel && bound.mergeWhenReady !== undefined)
+          return {
+            refused: `merge_when_ready is armed on ${prName(bound)} and would start it again; drop it with enabled: false, which cancels the check too`,
+          };
         const { policy } = yield* policyFor(thread.value, bound.repo);
-        if (policy !== "solo")
+        if (policy !== "solo" && !cancel)
           return {
             refused: `the workspace's merge review policy for ${bound.repo} is ${policy}, and only solo accepts Gram's own check in place of CI`,
           };
@@ -1567,8 +1563,8 @@ export const MergeWhenReadyLive = Layer.effect(
             : yield* store
                 .getWorkspace(thread.value.workspaceId)
                 .pipe(Effect.orElseSucceed(() => undefined));
-        if (workspace?.paused !== undefined) return { refused: PAUSED_BLOCKER };
-        if (workspace !== undefined && featurePaused(workspace, thread.value))
+        if (workspace?.paused !== undefined && !cancel) return { refused: PAUSED_BLOCKER };
+        if (!cancel && workspace !== undefined && featurePaused(workspace, thread.value))
           return { refused: `the user paused feature ${thread.value.spawnedBy?.feature}` };
         const cwd = yield* ghDirOf(thread.value);
         const badge = yield* providerPr
@@ -1595,6 +1591,7 @@ export const MergeWhenReadyLive = Layer.effect(
             refused: `${prName(bound)} isn't this worker's own pull request: ${reason}${unblocks ? `. ${fix.replace(/\.$/, "")}` : ""}`,
           };
         }
+        if (cancel) return { cancelled: yield* localChecks.cancel(bound, "its thread asked") };
         const site = yield* checkSiteFor(thread.value, Effect.succeed(cwd));
         const configuration = yield* localChecks.configuration(site, thread.value.projectId);
         if (configuration.config === undefined) return { refused: configuration.reason };
@@ -1605,6 +1602,7 @@ export const MergeWhenReadyLive = Layer.effect(
         const requestedAt = yield* Clock.currentTimeMillis;
         const found = yield* localChecks.ensure(site, head, base, {
           projectId: thread.value.projectId,
+          pr: bound,
           since: requestedAt,
           ...(verificationAfter.has(baseKey(bound.repo, badge.baseRef))
             ? { after: verificationAfter.get(baseKey(bound.repo, badge.baseRef))! }
@@ -1618,7 +1616,9 @@ export const MergeWhenReadyLive = Layer.effect(
                   text:
                     done.status === "passed"
                       ? localCheckPassedText(bound, done)
-                      : localCheckFailedText(bound, done),
+                      : done.cancelled !== undefined
+                        ? localCheckCancelledText(bound, done)
+                        : localCheckFailedText(bound, done),
                 })
                 .pipe(Effect.ignore);
               if (now.boundPr?.mergeWhenReady !== undefined)

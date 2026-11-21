@@ -117,6 +117,7 @@ const armed = (intent: MergeIntent, first: PrStatus) =>
       status: () => Effect.sync(() => world.badge),
     } as unknown as Pr["Service"]);
     const checks = Layer.succeed(LocalChecks, {
+      cancel: () => Effect.succeed([]),
       configuration: () =>
         Effect.succeed({
           project: "invented",

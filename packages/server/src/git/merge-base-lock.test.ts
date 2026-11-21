@@ -113,6 +113,7 @@ describe("merges onto one base from two workspaces", () => {
         return passes.get(key)!;
       };
       const checks = Layer.succeed(LocalChecks, {
+        cancel: () => Effect.succeed([]),
         configuration: () =>
           Effect.succeed({
             project: "invented",

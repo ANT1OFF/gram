@@ -421,6 +421,9 @@ export const PrAppToolsLive = Layer.effectDiscard(
                     ...(localCheck.reason === undefined ? {} : { reason: localCheck.reason }),
                     ...(localCheck.failure === undefined ? {} : { failure: localCheck.failure }),
                     ...(localCheck.log === undefined ? {} : { log: localCheck.log }),
+                    ...(localCheck.status === "running"
+                      ? { stop: "local_check cancel: true" }
+                      : {}),
                   },
                 }),
             ...(thread.boundPr === undefined ? {} : { bound: thread.boundPr }),
@@ -1311,12 +1314,16 @@ export const PrAppToolsLive = Layer.effectDiscard(
         name: LOCAL_CHECK,
         class: "outward",
         description:
-          "Under the solo merge review policy, have Gram run its own full check of your bound PR now, ahead of merge_when_ready: the head GitHub has, merged onto its base's current tip, in a clean worktree on this machine. It runs the PR's code outside your sandbox, so the user approves the call, except on your own PR (the one your worktree's branch opened) in a workspace whose autonomy is `full`. A pass recorded for that exact head, base and check is reused, and merge_when_ready accepts it in place of CI; a failure is run again unless `rerun: false`, which only reports the record. You are told how it ends, and why it failed. A push, a moved base or a changed command, setup or timeout needs a new check. With no configured command the local gate is OFF; CI and GitHub rules apply. Self-reported checks never count. Unverified ownership at full refuses with repair steps, never a card.",
+          "Under the solo merge review policy, have Gram run its own full check of your bound PR now, ahead of merge_when_ready: GitHub's head merged onto its base's current tip, in a clean worktree on this machine. It runs the PR's code outside your sandbox, so the user approves the call, except on your own PR (the one your worktree's branch opened) in a workspace whose autonomy is `full`. A pass recorded for that exact head, base and check is reused, and merge_when_ready accepts it in place of CI; a failure is run again unless `rerun: false`, which only reports it. You are told how it ends and why. A push, a moved base or a changed command, setup or timeout needs a new check. With no configured command the local gate is OFF; CI and GitHub rules apply. Self-reported checks never count. Unverified ownership at full refuses with repair steps, never a card.",
       },
-      input: Schema.Struct({ rerun: Schema.optionalKey(Schema.Boolean) }),
+      input: Schema.Struct({
+        rerun: Schema.optionalKey(Schema.Boolean),
+        cancel: Schema.optionalKey(Schema.Boolean),
+      }),
       audience: OWN_PR_AUDIENCE,
-      delegatedAtFullAutonomy: (caller) =>
+      delegatedAtFullAutonomy: (caller, input) =>
         Effect.gen(function* () {
+          if (input.cancel === true) return true;
           const thread = yield* store.getThread(caller);
           const bound = thread.boundPr;
           if (bound === undefined || !(yield* mergeDelegated(caller, thread))) return false;
@@ -1329,18 +1336,20 @@ export const PrAppToolsLive = Layer.effectDiscard(
           if (bound === undefined) return undefined;
           return yield* refusalForAgent(caller, thread, bound, LOCAL_CHECK, "runs it", false);
         }).pipe(Effect.orElseSucceed(() => undefined)),
-      describe: (caller) =>
+      describe: (caller, { cancel }) =>
         store.getThread(caller).pipe(
           Effect.map((thread) =>
-            thread.boundPr === undefined
-              ? "Run the project's configured local check of this thread's pull request on this machine"
-              : `Run the project's configured local check of ${prName(thread.boundPr)} (its head merged onto its base) on this machine`,
+            cancel === true
+              ? `Cancel Gram's running local check of ${thread.boundPr === undefined ? "this thread's pull request" : prName(thread.boundPr)}`
+              : thread.boundPr === undefined
+                ? "Run the project's configured local check of this thread's pull request on this machine"
+                : `Run the project's configured local check of ${prName(thread.boundPr)} (its head merged onto its base) on this machine`,
           ),
           Effect.orElseSucceed(
             () => "Run the project's configured local check of a pull request on this machine",
           ),
         ),
-      handle: (caller, { rerun = true }) =>
+      handle: (caller, { rerun = true, cancel = false }) =>
         Effect.gen(function* () {
           const thread = yield* store.getThread(caller);
           yield* refuseOrchestratorPr(LOCAL_CHECK, thread);
@@ -1349,12 +1358,21 @@ export const PrAppToolsLive = Layer.effectDiscard(
               tool: LOCAL_CHECK,
               message: "Gram's local checks aren't available here.",
             });
-          const result = yield* mergeWhenReady.runLocalCheck(thread.id, { start: rerun });
+          const result = yield* mergeWhenReady.runLocalCheck(thread.id, { start: rerun, cancel });
           if ("refused" in result)
             return yield* new AppToolError({
               tool: LOCAL_CHECK,
-              message: `No local check: ${result.refused}.`,
+              message: `No local check${cancel ? " cancelled" : ""}: ${result.refused}.`,
             });
+          if ("cancelled" in result)
+            return {
+              status: "cancelled",
+              cancelled: result.cancelled.map((check) => ({ head: check.head, base: check.base })),
+              next:
+                result.cancelled.length === 0
+                  ? "No check of this PR was running here."
+                  : "Its processes are stopped and nothing of it counts; call local_check to run it again.",
+            };
           if (result.check === undefined)
             return {
               status: "none",
@@ -1374,7 +1392,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
             ...(check.log === undefined ? {} : { log: check.log }),
             next:
               check.status === "running"
-                ? "Gram tells you when it ends; end your turn rather than wait."
+                ? "Gram tells you when it ends; end your turn rather than wait. cancel: true stops it."
                 : check.status === "passed"
                   ? "merge_when_ready uses this pass while the head and base stay."
                   : "It failed for this head and base: see reason, then push a fix or call local_check again.",
