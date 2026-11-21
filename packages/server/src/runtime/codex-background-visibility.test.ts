@@ -77,6 +77,7 @@ const idle: Notification = {
 const setup = () => {
   let count = 0;
   const mapper = makeCodexMapper({
+    requestScope: "s",
     threadId: "provider-parent",
     now: () => 1_000,
     newMessageId: () => MessageId.make(count++ === 0 ? "codex-parent" : `message-${count}`),
@@ -393,7 +394,10 @@ it.each(["failed", "interrupted"] as const)(
 
 it("persists invocation completion and reported child state separately, with completion-only receiver metadata", () => {
   const acc = new MessageAccumulator("codex-collaboration");
-  const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("codex-collaboration") });
+  const mapper = makeCodexMapper({
+    requestScope: "s",
+    newMessageId: () => MessageId.make("codex-collaboration"),
+  });
   const collab: Item = {
     type: "collabAgentToolCall",
     id: "spawn-1",

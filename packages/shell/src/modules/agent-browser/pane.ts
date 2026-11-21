@@ -34,6 +34,7 @@ import {
   AGENT_INPUT_GRACE_MS,
   agentNavigation,
   agentRequest,
+  isAppPage,
   isWrite,
   isUserInput,
   parsePaneRequest,
@@ -423,10 +424,7 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     if (!contents.debugger.isAttached()) contents.debugger.attach("1.3");
     // A page the agent may not read, such as a file preview the user opened here, logs nothing it
     // can read later: held from the moment its navigation starts until another page commits.
-    const unreadable = (url: string) => {
-      const decision = agentNavigation(url, contextOf(threadId));
-      return decision.kind === "refuse" && decision.reason === "app";
-    };
+    const unreadable = (url: string) => isAppPage(url, contextOf(threadId));
     let held: number | null = unreadable(contents.getURL()) ? 0 : null;
     let attached: PageDriver | undefined;
     const hold = (from: number | null) => {
@@ -949,7 +947,7 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
           return {
             ok: true,
             page: pageOf(page),
-            console: driver.console(command.onlyErrors === true),
+            console: driver.console(command.onlyErrors === true, contextOf(threadId)),
           };
         // Reading a page's own requests and running code in it are for local pages only: a
         // public page's responses may carry the user's data, and its code is someone else's.

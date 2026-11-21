@@ -34,11 +34,11 @@ import { detectRateLimit, type RateLimitSignal } from "./rate-limit.ts";
 import { originTips } from "./refs.ts";
 import { cachedCheckoutHead, cachedOriginUrl, type CheckoutHead } from "./repo-facts.ts";
 import {
-  BADGE_COMMENTS_READ,
-  BADGE_REVIEWS_READ,
   buildReviewState,
   personCommentsFromOf,
+  verdictsCutOff,
   personCommentsOf,
+  REVIEW_GQL_FIELDS,
 } from "./review.ts";
 import { ReviewBots } from "./review-bots.ts";
 import { mergeCiForLaunch } from "./merge-ci.ts";
@@ -459,7 +459,7 @@ const toPrStatus = (
     ...Object.fromEntries(Object.entries(optional).filter(([, v]) => v !== undefined)),
     ...(requested.length === 0 ? {} : { reviewRequests: requested }),
     ...(review === undefined ? {} : { review }),
-    ...(isJson(read) ? {} : { reviewUnread: true }),
+    ...(isJson(read) && !verdictsCutOff(read) ? {} : { reviewUnread: true }),
     ...(personComments.length === 0 ? {} : { personComments }),
     ...(personCommentsFrom === undefined ? {} : { personCommentsFrom }),
   };
@@ -577,12 +577,6 @@ const badgeGqlFields = (number: string) =>
  */
 const DISCOVERY_GQL_FIELDS = "number state headRefOid isCrossRepository";
 
-// Review-bot state: summary reviews and progress comments, and bot-started threads.
-// The reviews and comments are everyone's, so people's verdicts and the ids of their comments come
-// from the same connections at no extra cost: scalar fields add nothing to a document's price.
-const REVIEW_GQL_FIELDS =
-  `reviews(last:${BADGE_REVIEWS_READ}){nodes{id author{login __typename} authorAssociation state submittedAt commit{oid} body}} ` +
-  `comments(last:${BADGE_COMMENTS_READ}){nodes{id author{login __typename} createdAt body}}`;
 const THREADS_GQL_FIELD =
   "reviewThreads(first:50){nodes{isResolved isOutdated comments(first:3){nodes{author{login __typename} body}}}}";
 
@@ -688,6 +682,7 @@ export const reshapePrNode = (
   review: {
     headRefOid: node["headRefOid"],
     reviews: node["reviews"],
+    latestOpinionatedReviews: node["latestOpinionatedReviews"],
     reviewThreads,
     comments: node["comments"],
   },

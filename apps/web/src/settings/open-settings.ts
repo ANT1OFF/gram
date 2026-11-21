@@ -15,8 +15,20 @@ export type SettingsEntry = "/settings" | "/settings/diagnostics";
  * Back leaves Settings. `gram/settings-entry` keeps every link to `/settings` on this.
  */
 export function useSettingsLink(to: SettingsEntry = "/settings") {
-  const replace = useLocation({ select: (location) => isSettingsPath(location.pathname) });
-  return { to, replace };
+  const pathname = useLocation({ select: (location) => location.pathname });
+  return { to: settingsTarget(to, pathname), replace: isSettingsPath(pathname) };
+}
+
+/**
+ * Where a Settings link goes from `pathname`. With Settings open, `/settings` is its open page (a
+ * sub-page's own page): where the index's redirect to the tab open last time lands anyway, and
+ * going by the index drew Settings with no page, its list gone and its picker saying "Section", for
+ * a frame on the way.
+ */
+export function settingsTarget(to: SettingsEntry, pathname: string): SettingsEntry {
+  if (to !== "/settings" || !isSettingsPath(pathname)) return to;
+  // A route of its own under `/settings`, which the typed `to` has no name for.
+  return (/^\/settings\/[^/]+/.exec(pathname)?.[0] ?? to) as SettingsEntry;
 }
 
 /**
@@ -25,8 +37,8 @@ export function useSettingsLink(to: SettingsEntry = "/settings") {
  */
 export function useOpenSettings(): () => void {
   const navigate = useNavigate();
-  return useCallback(
-    () => void navigate({ to: "/settings", replace: isSettingsPath(appPathname()) }),
-    [navigate],
-  );
+  return useCallback(() => {
+    const pathname = appPathname();
+    void navigate({ to: settingsTarget("/settings", pathname), replace: isSettingsPath(pathname) });
+  }, [navigate]);
 }

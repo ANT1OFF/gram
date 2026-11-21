@@ -16,6 +16,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { openOutside } from "../fs/files.ts";
+import { insideSecret, realSecretPaths } from "../fs/secret-paths.ts";
+import { ServerConfig } from "../config.ts";
+import * as Option from "effect/Option";
 import { isInside, realPath, tryRealPath } from "@gram/git";
 
 /** How many folders keep a live prefix; showing another forgets the least recently shown. */
@@ -216,6 +219,7 @@ const serveFile = (
   req: IncomingMessage,
   res: ServerResponse,
   headers: Readonly<Record<string, string>>,
+  realSecrets: ReadonlyArray<string>,
 ) =>
   Effect.gen(function* () {
     const { folder } = lookup;
@@ -236,7 +240,7 @@ const serveFile = (
     let path = "";
     const handle = yield* openOutside(resolve(folder, lookup.relative), {}, (real) => {
       path = real;
-      return servedFrom(folder, real);
+      return servedFrom(folder, real) && !insideSecret(real, realSecrets);
     }).pipe(Effect.mapError(missing));
     yield* unchanged;
     const info = yield* Effect.tryPromise({ try: () => handle.stat(), catch: missing });
@@ -273,7 +277,11 @@ const loopbackHost = (host: string | undefined): boolean => {
 
 /** One request to a file listener: GET or HEAD, on a loopback Host, for a file it may serve. */
 export const handleFileRequest =
-  (folders: PreviewFolders, rules: FileListenerRules = PREVIEW_RULES) =>
+  (
+    folders: PreviewFolders,
+    rules: FileListenerRules = PREVIEW_RULES,
+    realSecrets: ReadonlyArray<string> = [],
+  ) =>
   (req: IncomingMessage, res: ServerResponse): void => {
     const headers = rules.headers(req.headers.origin);
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -282,7 +290,7 @@ export const handleFileRequest =
     if (!loopbackHost(req.headers.host)) return answer(res, headers, 403, "not here");
     const lookup = lookupPreview(folders, req.url ?? "/", rules.segment);
     if (lookup.kind === "notFound") return answer(res, headers, 404, "not found");
-    void Effect.runPromise(serveFile(folders, lookup, req, res, headers)).catch(() => {
+    void Effect.runPromise(serveFile(folders, lookup, req, res, headers, realSecrets)).catch(() => {
       if (!res.headersSent) answer(res, headers, 500, "unreadable");
       else res.destroy();
     });
@@ -345,7 +353,10 @@ export class PreviewFiles extends Context.Service<PreviewFiles, PreviewFilesShap
     PreviewFiles,
     Effect.gen(function* () {
       const folders = emptyPreviewFolders();
-      const port = yield* fileListener(handleFileRequest(folders));
+      // A deployment's secrets are served from no folder, whatever a page beside them links.
+      const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
+      const realSecrets = realSecretPaths(config?.secretPaths ?? []);
+      const port = yield* fileListener(handleFileRequest(folders, PREVIEW_RULES, realSecrets));
       return PreviewFiles.of({
         origin: `http://127.0.0.1:${port}`,
         urlFor: (real) =>
@@ -353,7 +364,8 @@ export class PreviewFiles extends Context.Service<PreviewFiles, PreviewFilesShap
             try: async () => {
               if (!isAbsolute(real) || !isPreviewHtml(real)) throw new Error("not an HTML file");
               if ((await realPath(real)) !== real) throw new Error("changed since it was checked");
-              if (isCredentialPath(real)) throw new Error("may hold credentials");
+              if (isCredentialPath(real) || insideSecret(real, realSecrets))
+                throw new Error("may hold credentials");
               if (!(await stat(real)).isFile()) throw new Error("not a file");
               const prefix = await grantFolder(folders, dirname(real));
               const name = encodeURIComponent(basename(real));

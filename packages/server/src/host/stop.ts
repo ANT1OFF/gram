@@ -106,6 +106,10 @@ export const keptWorkGone = (threadId: string, cwd?: string): string =>
 export const KEPT_WORK_GONE_REASON =
   "Its saved work is gone from the remote and its branch doesn't hold it, so its folder wasn't put back. Push its saved ref back and the next resume brings it, or open it from the branch without that work.";
 
+/** `text` a host gave cut to `max` characters, marked as cut: its own words, held to a size. */
+export const cutHostText = (text: string, max = 1024): string =>
+  text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+
 /** How long a host readied to stop refuses new work when no stop and no cancel follows. */
 export const STOP_HOLD_MS = 10 * 60_000;
 

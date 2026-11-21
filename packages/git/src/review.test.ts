@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  BADGE_REVIEWS_READ,
   buildLatestReview,
   buildReviewState,
   buildReviewThreads,
@@ -16,6 +17,7 @@ import {
   personCommentsFromOf,
   personCommentsOf,
   stripMeta,
+  verdictsCutOff,
 } from "./review.ts";
 
 const bots = REVIEW_BOT_FIXTURE;
@@ -262,6 +264,41 @@ describe("review state from synthetic bot scenarios", () => {
     });
     const authorOnly = { ...node, reviews: { nodes: node.reviews.nodes.slice(6, 7) } };
     expect(buildReviewState(authorOnly, bots, "me")).toBeUndefined();
+  });
+
+  // A window of the latest reviews loses an older one to any number of later comments, replies or
+  // bot rounds: a maintainer's change request stands however many came after it.
+  it("keeps a change request older than a full window of later reviews", () => {
+    const request = {
+      ...review("r0", "maintainer", "CHANGES_REQUESTED", "Not like this."),
+      submittedAt: "2026-09-24T09:00:00Z",
+      authorAssociation: "MEMBER",
+    };
+    const later = Array.from({ length: BADGE_REVIEWS_READ }, (_, i) => ({
+      ...review(`c${i}`, "worker-bot-reply", "COMMENTED"),
+      submittedAt: `2026-09-25T10:${String(i).padStart(2, "0")}:00Z`,
+    }));
+    const node = {
+      headRefOid: "h1",
+      reviews: { nodes: later },
+      latestOpinionatedReviews: { nodes: [request] },
+      reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
+    };
+    expect(buildReviewState(node, bots, "me")?.humanReviews).toMatchObject([
+      { id: "r0", author: "maintainer", verdict: "changesRequested" },
+    ]);
+    expect(verdictsCutOff(node)).toBe(false);
+    // Read without each reviewer's latest verdict, a full window may hide one: it counts as unread.
+    const { latestOpinionatedReviews: _, ...windowOnly } = node;
+    expect(verdictsCutOff(windowOnly)).toBe(true);
+    expect(verdictsCutOff({ ...windowOnly, reviews: { nodes: later.slice(1) } })).toBe(false);
+    // A later verdict of the same reviewer, in the window, is the one that stands.
+    const approved = { ...review("a1", "maintainer", "APPROVED"), authorAssociation: "MEMBER" };
+    expect(
+      buildReviewState({ ...node, reviews: { nodes: [...later.slice(1), approved] } }, bots, "me")
+        ?.humanReviews,
+    ).toMatchObject([{ id: "a1", verdict: "approved" }]);
   });
 
   it("suggestions only: a COMMENTED bot review gives no verdict on head", () => {

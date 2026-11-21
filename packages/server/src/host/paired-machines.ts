@@ -98,6 +98,11 @@ export interface PairedMachine {
    * orchestrators' `sandbox`.
    */
   readonly via?: string;
+  /**
+   * The sign-in at `via` it was asked for under (`WorkerMachineServer.account`): it is asked
+   * after, released and stopped only under that sign-in. Absent on one registered before.
+   */
+  readonly viaAccount?: string;
 }
 
 /** What an embedder started a host on demand for. */
@@ -124,6 +129,10 @@ const routeOf = (machine: Pick<PairedMachine, "kind" | "via">): DialRoute =>
  */
 export const isRelayOrigin = (value: unknown): value is string =>
   typeof value === "string" && value.length <= 512 && hostedOrigin(value) === value;
+
+/** A sign-in's opaque mark (`PairedMachine.viaAccount`): base64url, as the app makes it. */
+const isAccountMark = (value: unknown): value is string =>
+  typeof value === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(value);
 
 /**
  * The last reason a joined machine dropped or was refused, as this Gram saw it since it started:
@@ -189,6 +198,8 @@ export interface ProvisionRequest {
   readonly onDemand?: OnDemandKind;
   /** The hosted server it came through (`PairedMachine.via`): only for a worker host with no owner. */
   readonly via?: string;
+  /** The sign-in there it was asked for under (`PairedMachine.viaAccount`): only with `via`. */
+  readonly viaAccount?: string;
 }
 
 export type ProvisionResult =
@@ -279,7 +290,8 @@ const isMachine = (value: unknown): value is PairedMachine => {
       (m["kind"] === "provisioned" &&
         isRelayOrigin(m["via"]) &&
         m["onDemand"] === "worker" &&
-        m["owner"] === undefined))
+        m["owner"] === undefined)) &&
+    (m["viaAccount"] === undefined || (m["via"] !== undefined && isAccountMark(m["viaAccount"])))
   );
 };
 
@@ -619,6 +631,8 @@ export const createPairedMachines = (
         };
       // One started on demand with no owner would be open to every caller (`host/ownership.ts`),
       // except a worker host a desktop asked a hosted server for: the desktop's, like a joined one.
+      if (request.viaAccount !== undefined && !isAccountMark(request.viaAccount))
+        return { kind: "refused", status: 400, message: "That sign-in mark isn't valid." };
       if (request.via !== undefined) {
         if (
           !isRelayOrigin(request.via) ||
@@ -656,7 +670,8 @@ export const createPairedMachines = (
           existing.owner === request.owner &&
           existing.person === request.person &&
           existing.onDemand === request.onDemand &&
-          existing.via === request.via
+          existing.via === request.via &&
+          existing.viaAccount === request.viaAccount
           ? { kind: "provisioned", machine: existing, created: false }
           : {
               kind: "refused",
@@ -695,9 +710,27 @@ export const createPairedMachines = (
         ...(request.person === undefined ? {} : { person: request.person }),
         ...(request.onDemand === undefined ? {} : { onDemand: request.onDemand }),
         ...(request.via === undefined ? {} : { via: request.via }),
+        ...(request.via === undefined || request.viaAccount === undefined
+          ? {}
+          : { viaAccount: request.viaAccount }),
       };
       save([...machines, machine]);
       return { kind: "provisioned", machine, created: true };
+    },
+    /**
+     * Moves every machine relayed from `origin` under the sign-in mark `from` to the mark `to`,
+     * in one write: the same sign-in, whose mark became its organisation's. No other changes.
+     */
+    remark: (origin: string, from: string, to: string): number => {
+      if (!isAccountMark(to)) return 0;
+      let moved = 0;
+      const next = machines.map((machine) => {
+        if (machine.via !== origin || machine.viaAccount !== from) return machine;
+        moved += 1;
+        return { ...machine, viaAccount: to };
+      });
+      if (moved > 0) save(next);
+      return moved;
     },
     confirm: (id: string): PairedMachine | undefined => {
       const machine = byId(id);
@@ -906,6 +939,7 @@ export const machineView = (
     ...(machine.person === undefined ? {} : { person: machine.person }),
     ...(machine.onDemand === undefined ? {} : { onDemand: machine.onDemand }),
     ...(machine.via === undefined ? {} : { via: machine.via }),
+    ...(machine.viaAccount === undefined ? {} : { viaAccount: machine.viaAccount }),
     ...(online?.selfUpdate === true ? { selfUpdate: true } : {}),
     ...(status.update === undefined ? {} : { update: status.update }),
   };

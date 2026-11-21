@@ -109,6 +109,7 @@ for (const telemetry of [
           const turnId = TurnId.make("gram-turn");
           yield* store.startTurn(thread.id, turnId, at);
           const mapper = makeCodexMapper({
+            requestScope: "s",
             threadId: "original-session",
             freshSession: true,
             newMessageId: () => MessageId.make("main"),

@@ -10,7 +10,6 @@ import {
   autonomyText,
   charterRows,
   planSettingsChanges,
-  readSettingsRows,
   SETTINGS_PROPOSAL_TTL_MS,
   WORKSPACE_CREATE_TOOL,
   WORKSPACE_LIST_TOOL,
@@ -49,7 +48,13 @@ import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-stor
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { ServerApprovalAnswer } from "../runtime/server-approvals.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import {
+  currentReader,
+  readableWorkspacesOnly,
+  readerMayWorkspace,
+} from "../embedding/readable-by.ts";
 import { askUser, canonicalRosterChanges, checkModels, fail } from "./approval.ts";
+import { workspaceListing } from "./workspace-listing.ts";
 import type { SettingsToolsOptions } from "./chat-tools.ts";
 
 const WORKER_REFUSAL =
@@ -294,7 +299,11 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             const settings = yield* store.getSettings;
             const projects = yield* store.listProjects;
             const wanted = workspaceId?.trim().toLowerCase();
-            const states = (yield* store.listWorkspaces).filter(
+            // Never a workspace this thread's reader may not see, by id, name or listing.
+            const states = (yield* readableWorkspacesOnly(
+              yield* store.listWorkspaces,
+              (state) => state.workspace,
+            )).filter(
               (state) =>
                 (role === "plain" || state.workspace.id === thread.workspaceId) &&
                 (wanted === undefined ||
@@ -304,33 +313,14 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             );
             const workspaces = [];
             for (const state of states) {
-              const { workspace, charter } = state;
+              const { workspace } = state;
               const holder =
                 workspace.orchestratorThreadId === undefined
                   ? undefined
                   : yield* store
                       .getThread(workspace.orchestratorThreadId)
                       .pipe(Effect.orElseSucceed(() => undefined));
-              const own = workspace.projectIds.flatMap((id) => {
-                const project = projects.find((each) => each.id === id);
-                return project === undefined
-                  ? []
-                  : [{ id: project.id, name: project.name, root: project.root }];
-              });
-              workspaces.push({
-                id: workspace.id,
-                name: workspace.name,
-                projects: own,
-                home: own.find((project) => project.id === workspace.homeProjectId),
-                autonomy: autonomyOf(charter),
-                workerMode: workerModeText(charter.workerMode),
-                ...(holder === undefined ? {} : { orchestratorThreadId: holder.id }),
-                ...(state.paused === undefined ? {} : { pausedReason: state.paused.reason }),
-                settings: readSettingsRows(
-                  { settings, workspace: state, orchestrator: holder?.model },
-                  "workspace",
-                ),
-              });
+              workspaces.push(workspaceListing(state, projects, settings, holder));
             }
             return { workspaces };
           }),
@@ -542,7 +532,11 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             const tool = WORKSPACE_UPDATE_TOOL;
             const { role, service } = yield* proposer(tool, caller);
             const thread = yield* threadOf(tool, caller);
-            const states = yield* store.listWorkspaces;
+            // Only workspaces this thread's reader may act on are found, or named in a refusal.
+            const reader = yield* currentReader;
+            const states = (yield* store.listWorkspaces).filter((each) =>
+              readerMayWorkspace(reader, each.workspace, "act"),
+            );
             const named = input.workspaceId?.trim();
             const state =
               named === undefined || named === ""

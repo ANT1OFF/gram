@@ -5,8 +5,6 @@
 // data, never as instructions. Dreams get no app tools at all.
 
 import { randomUUID } from "node:crypto";
-import { relative } from "node:path";
-import { realPathOrOwned } from "@gram/git";
 
 import { appToolContent, appToolResultContent, type AppToolPart } from "@gram/agents";
 import {
@@ -16,7 +14,6 @@ import {
   BROWSER_VIEWPORT_MAX,
   BROWSER_VIEWPORT_MIN,
   BROWSER_VIEWPORTS,
-  effectiveCheckout,
   isPinnedPageUrl,
   isPreviewFilesUrl,
   originOf,
@@ -58,7 +55,7 @@ import type { EventHubShape } from "../events/event-hub.ts";
 import { outwardGateFor } from "../orchestration/rules.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
-import { EvidencePathError, writeEvidence } from "./evidence.ts";
+import { evidenceSaver } from "./evidence-save.ts";
 import { UNSANDBOXED_ELSEWHERE, type PanePortShape } from "./pane-port.ts";
 import type { LoopbackProxies } from "./loopback-proxy.ts";
 import type { WorkspaceOutputsShape } from "../outputs/workspace-outputs.ts";
@@ -743,7 +740,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
       name: "browser_console",
       class: "read",
       description:
-        "What the Preview pane's page logged to its console since the agent first used the pane, oldest first, uncaught errors included. Raw console contents are omitted to protect credentials and request bodies. `onlyErrors` keeps the errors.",
+        "What the Preview pane's page logged to its console since the agent first used the pane, oldest first, uncaught errors included. A local page's lines (localhost, 127.0.0.1) keep their text, with common credential shapes (bearer tokens, provider keys, `token=` values) redacted and objects shown by type; a public page's or Gram's own pages' lines say only how many arguments they had. `onlyErrors` keeps the errors.",
     },
     input: Schema.Struct({ onlyErrors: Schema.optionalKey(Schema.Boolean) }),
     handle: (threadId, { onlyErrors }) =>
@@ -825,37 +822,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
       }),
   });
 
-  /** The thread's checkout, where evidence files go. */
-  const checkoutOf = (tool: string, threadId: ThreadId) =>
-    store.getThread(threadId).pipe(
-      Effect.map((thread) => effectiveCheckout(thread).path),
-      Effect.mapError(() => new AppToolError({ tool, message: `unknown thread ${threadId}` })),
-    );
-  /** Writes evidence inside the checkout; the path as the agent would name it, relative. */
-  const saveEvidence = (
-    tool: string,
-    threadId: ThreadId,
-    path: string,
-    base64: string,
-    extension: ".png" | ".gif",
-  ) =>
-    Effect.gen(function* () {
-      const root = yield* checkoutOf(tool, threadId);
-      const written = yield* Effect.tryPromise({
-        try: () => writeEvidence(root, path, Buffer.from(base64, "base64"), extension),
-        catch: (error) =>
-          new AppToolError({
-            tool,
-            message:
-              error instanceof EvidencePathError
-                ? error.message
-                : `Couldn't write ${path}: ${error instanceof Error ? error.message : String(error)}`,
-          }),
-      });
-      if (outputs !== undefined)
-        yield* outputs.record(threadId, { path: written, source: "evidence" });
-      return relative(yield* Effect.promise(() => realPathOrOwned(root)), written);
-    });
+  const { checkoutOf, saveEvidence } = evidenceSaver(store, outputs);
 
   const evaluate = defineAppTool({
     descriptor: {
@@ -920,6 +887,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
             tool: "browser_save_screenshot",
             message: "The path must end in .png.",
           });
+        yield* checkoutOf("browser_save_screenshot", threadId);
         const result = yield* run("browser_save_screenshot", threadId, {
           op: "screenshot",
           format: "png",
@@ -958,6 +926,8 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
     }),
     handle: (threadId, input) =>
       Effect.gen(function* () {
+        // Refused before recording or stopping, so nothing is captured that couldn't be saved.
+        if (input.action !== "discard") yield* checkoutOf("browser_record", threadId);
         if (input.action === "start") {
           const result = yield* run("browser_record", threadId, {
             op: "recordStart",
