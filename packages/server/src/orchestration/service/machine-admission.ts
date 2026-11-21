@@ -1,7 +1,7 @@
-// Admission of a direct Codex, OpenCode or Grok Build worker on a joined machine, from what the
-// machine reports of that CLI.
+// Admission of a direct Codex, OpenCode, Grok Build or Antigravity worker on a joined machine, from
+// what the machine reports of that CLI.
 
-import { hostListing, type ModelRef } from "@gram/contracts";
+import { type AgentKind, hostListing, type ModelRef } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { refusal } from "../rules.ts";
 import { type OrchestrationKit, toolError } from "./kit.ts";
@@ -56,39 +56,56 @@ export const admitMachineCodex = (
       );
   });
 
-/** A direct Grok Build worker on a joined machine, as the machine says of its Grok Build. */
-export const admitMachineGrok = (
+/** The models `machine` reports of its CLI for `agent`; Claude's are the machine's own list. */
+export const placedModelsOf = (machine: JoinedMachine | undefined, agent: AgentKind) =>
+  agent === "codex"
+    ? machine?.codex?.models
+    : agent === "opencode"
+      ? machine?.opencode?.models
+      : agent === "grok"
+        ? machine?.grok?.models
+        : agent === "antigravity"
+          ? machine?.antigravity?.models
+          : machine?.models;
+
+/**
+ * A direct Grok Build or Antigravity worker on a joined machine, as the machine says of that CLI.
+ * Other agents pass.
+ */
+export const admitMachineAcp = (
   tool: string,
   machine: JoinedMachine | undefined,
   name: string,
   chosen: ModelRef,
 ) =>
   Effect.gen(function* () {
-    // A status without Grok Build comes from a host that doesn't run Grok Build sessions.
-    if (machine?.tools !== undefined && machine.grok === undefined)
+    if (chosen.agent !== "grok" && chosen.agent !== "antigravity") return;
+    const cli = chosen.agent === "grok" ? "Grok Build" : "Antigravity";
+    const status = chosen.agent === "grok" ? machine?.grok : machine?.antigravity;
+    // A status without the CLI comes from a host that doesn't run its sessions.
+    if (machine?.tools !== undefined && status === undefined)
       return yield* toolError(
         tool,
         refusal(
           "not_admitted",
-          `${name} doesn't run Grok Build sessions: its Gram is older than this one, or it has no Grok Build. Update Gram there (Settings → Machines), or choose another worker model.`,
+          `${name} doesn't run ${cli} sessions: its Gram is older than this one, or it has no ${cli}. Update Gram there (Settings → Machines), or choose another worker model.`,
         ),
       );
-    const grok = machine?.grok;
-    if (grok === undefined) return;
-    if (!grok.found)
+    if (status === undefined) return;
+    if (!status.found)
       return yield* toolError(
         tool,
         refusal(
           "not_admitted",
-          `${name}: Grok Build is not installed. Install it there before spawning a Grok Build worker.`,
+          `${name}: ${cli} is not installed. Install it there before spawning a ${cli} worker.`,
         ),
       );
-    if (grok.models !== undefined && hostListing(grok.models, chosen.model) === undefined)
+    if (status.models !== undefined && hostListing(status.models, chosen.model) === undefined)
       return yield* toolError(
         tool,
         refusal(
           "not_admitted",
-          `${name}'s Grok Build doesn't list ${chosen.model}. Pick a model it lists.`,
+          `${name}'s ${cli} doesn't list ${chosen.model}. Pick a model it lists.`,
         ),
       );
   });

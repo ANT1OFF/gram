@@ -44,9 +44,14 @@ import { codexStatusOf, hostCodexLive } from "./codex-on-host.ts";
 import { CodexHost } from "@gram/agents/codex";
 import { homedir } from "node:os";
 import { GrokHost, GrokHostLive } from "@gram/agents/grok";
+import { AntigravityHost, AntigravityHostLive } from "@gram/agents/antigravity";
+import {
+  antigravityGeminiDir,
+  prepareOwnedAntigravityHome,
+} from "../gateway/antigravity-owned-home.ts";
 import { prepareOwnedGrokHome } from "../gateway/grok-owned-home.ts";
 import { OpenCodeHost } from "@gram/agents/opencode";
-import { grokStatusOf } from "./grok-on-host.ts";
+import { antigravityStatusOf, grokStatusOf } from "./grok-on-host.ts";
 import { hostOpenCodeLive, openCodeStatusOf } from "./opencode-on-host.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHostKeeping } from "./terminals.ts";
@@ -109,6 +114,7 @@ const hostAgents = (
           const codex = Option.getOrUndefined(yield* Effect.serviceOption(CodexHost));
           const opencode = Option.getOrUndefined(yield* Effect.serviceOption(OpenCodeHost));
           const grok = Option.getOrUndefined(yield* Effect.serviceOption(GrokHost));
+          const antigravity = Option.getOrUndefined(yield* Effect.serviceOption(AntigravityHost));
           return AgentHosts.of({
             get: (agent) =>
               agent === "claude"
@@ -119,12 +125,14 @@ const hostAgents = (
                     ? Effect.succeed(opencode)
                     : agent === "grok" && grok !== undefined
                       ? Effect.succeed(grok)
-                      : Effect.fail(
-                          new AgentUnavailable({
-                            agent,
-                            message: `${agent} sessions don't run in this machine's host yet.`,
-                          }),
-                        ),
+                      : agent === "antigravity" && antigravity !== undefined
+                        ? Effect.succeed(antigravity)
+                        : Effect.fail(
+                            new AgentUnavailable({
+                              agent,
+                              message: `${agent} sessions don't run in this machine's host yet.`,
+                            }),
+                          ),
           });
         }),
       ).pipe(
@@ -145,6 +153,14 @@ const hostAgents = (
             ? Layer.empty
             : GrokHostLive({
                 ownedHome: (userEnv) => prepareOwnedGrokHome(codexData, homedir(), userEnv),
+              }),
+        ),
+        Layer.provide(
+          codexData === undefined
+            ? Layer.empty
+            : AntigravityHostLive({
+                ownedHome: (userEnv) => prepareOwnedAntigravityHome(codexData, homedir(), userEnv),
+                geminiDir: antigravityGeminiDir(codexData),
               }),
         ),
       );
@@ -183,6 +199,10 @@ const hostService = (
       Effect.orElseSucceed(() => false),
     );
     const runsGrok = yield* agents.get("grok").pipe(
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
+    );
+    const runsAntigravity = yield* agents.get("antigravity").pipe(
       Effect.as(true),
       Effect.orElseSucceed(() => false),
     );
@@ -275,7 +295,8 @@ const hostService = (
           (feature) =>
             (feature !== "agent-codex" || runsCodex) &&
             (feature !== "agent-opencode-sessions" || runsOpenCode) &&
-            (feature !== "agent-grok" || runsGrok),
+            (feature !== "agent-grok" || runsGrok) &&
+            (feature !== "agent-antigravity" || runsAntigravity),
         ),
         ...disk,
       },
@@ -323,6 +344,9 @@ const hostService = (
         runsOpenCode ? openCodeStatusOf(agents.get("opencode")) : Effect.succeed(undefined),
         // And its Grok Build, where this host runs Grok Build sessions.
         runsGrok ? grokStatusOf(agents.get("grok")) : Effect.succeed(undefined),
+        runsAntigravity
+          ? antigravityStatusOf(agents.get("antigravity"))
+          : Effect.succeed(undefined),
       ),
       checks,
       admission,
