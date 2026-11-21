@@ -481,7 +481,7 @@ export const MAX_LINES = {
     "packages/agents/src/claude/mapper.ts": 1089,
     "packages/agents/src/claude/session.test.ts": 3552,
     "packages/agents/src/claude/session.ts": 1756,
-    "packages/agents/src/codex/mapper.ts": 1112,
+    "packages/agents/src/codex/mapper.ts": 1060,
     "packages/agents/src/codex/servers.ts": 968,
     "packages/agents/src/codex/session.test.ts": 2558,
     "packages/agents/src/codex/session.ts": 1614,

@@ -16,7 +16,10 @@ const displayed = JSON.parse(
 
 const setup = () => {
   const acc = new MessageAccumulator("audit");
-  const mapper = makeCodexMapper({ newMessageId: () => MessageId.make("audit") });
+  const mapper = makeCodexMapper({
+    requestScope: "s",
+    newMessageId: () => MessageId.make("audit"),
+  });
   const events: AgentEvent[] = [];
   const notify = (method: "item/started" | "item/completed", item: ThreadItem) => {
     const notification: ServerNotification =

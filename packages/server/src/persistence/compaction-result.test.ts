@@ -45,6 +45,7 @@ describe("persisted compaction results", () => {
         } as unknown as SDKMessage);
         const first = apply(acc, boundary);
         const codex = makeCodexMapper({
+          requestScope: "s",
           newMessageId: () => MessageId.make("codex-result"),
           now: () => at,
         });

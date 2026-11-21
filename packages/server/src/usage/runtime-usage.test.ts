@@ -129,6 +129,7 @@ for (const { fresh, input, output } of [
           fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
         );
         const mapper = makeCodexMapper({
+          requestScope: "s",
           threadId: "original-wire-session",
           freshSession: fresh,
           newMessageId: () => MessageId.make("native-message"),
@@ -266,6 +267,7 @@ for (const telemetry of ["absent", "malformed", "reset-unproven"] as const) {
           fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
         );
         const mapper = makeCodexMapper({
+          requestScope: "s",
           threadId: "captured-original",
           freshSession: false,
           newMessageId: () => MessageId.make(`missing-${telemetry}`),

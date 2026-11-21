@@ -16,6 +16,7 @@ const value = (inputTokens: number) => ({ inputTokens, outputTokens: 0 });
 const setup = () => {
   let sequence = 0;
   const mapper = makeCodexMapper({
+    requestScope: "s",
     threadId: "session",
     freshSession: true,
     newMessageId: () => MessageId.make(`boundary-${++sequence}`),
