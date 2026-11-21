@@ -130,7 +130,7 @@ jobs:
             out/packages/*.tgz
             out/packages/packages.json
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   publish:
     name: publish packages

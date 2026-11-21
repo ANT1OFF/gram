@@ -29,6 +29,8 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import {
+  asideBranchOf,
+  type CheckpointError,
   dropWip,
   fetchBranchTip,
   fetchWip,
@@ -43,6 +45,7 @@ import {
   restoreWip,
   restoreWipWorktree,
   samePath,
+  setAsideFor,
   tryRealPathSync,
   snapshotWip,
   tryRepoRoots,
@@ -591,6 +594,7 @@ export const stopOn = (deps: StopDeps): HostStop => {
       // of the gate before anything is written there. The gate reads a folder that is there, so
       // a missing one is made empty for it, and removed again when it is refused.
       let made: string | undefined;
+      let setAside: string | undefined;
       const unmake = Effect.sync(() => {
         if (made !== undefined) rmSync(made, { recursive: true, force: true });
       });
@@ -599,7 +603,25 @@ export const stopOn = (deps: StopDeps): HostStop => {
           yield* placeOf(cwd).pipe(Effect.mapError((error) => refused(error.why)));
           // A worktree a restore before made and didn't finish: the clone gives up the branch
           // when it is on it with nothing of its own, as for a worktree made now.
-          return yield* restoreWip(into ?? clone, kept, request.branch, { release: clone }).pipe(
+          const back = restoreWip(into ?? clone, kept, request.branch, { release: clone });
+          const setOthersAsideAndRetry = (refusal: CheckpointError) =>
+            Effect.gen(function* () {
+              const status = yield* git(into ?? clone, ["status", "--porcelain"]).pipe(
+                Effect.orElseSucceed(() => undefined),
+              );
+              const holdsChangesOfOthers = (status?.stdout.trim() ?? "") !== "";
+              if (kept.head === undefined || !holdsChangesOfOthers)
+                return yield* Effect.fail(refusal);
+              setAside = yield* setAsideFor(
+                into ?? clone,
+                kept,
+                request.branch,
+                asideBranchOf(request.branch ?? request.threadId, now()),
+              );
+              return yield* back;
+            });
+          return yield* back.pipe(
+            Effect.catch(setOthersAsideAndRetry),
             Effect.mapError((error) => refused(error.message)),
           );
         }
@@ -656,12 +678,18 @@ export const stopOn = (deps: StopDeps): HostStop => {
         (yield* count(`${kept.head}..refs/remotes/origin/${request.branch}`))
       )
         said = "The branch at the remote has commits made after this work was kept.";
+      const notes = [
+        said,
+        setAside === undefined
+          ? undefined
+          : `What else was in its folder, from another thread or by hand, is on the branch ${setAside}.`,
+      ].filter((line) => line !== undefined);
       return {
         restored: true,
         commit: kept.commit,
         uncommitted: kept.uncommitted,
         source: ref === undefined ? ("branch" as const) : ("ref" as const),
-        ...(said === undefined ? {} : { note: said }),
+        ...(notes.length === 0 ? {} : { note: notes.join(" ") }),
       };
     }).pipe(
       Effect.provideService(Proc, deps.proc),
