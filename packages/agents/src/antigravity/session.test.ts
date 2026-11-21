@@ -26,6 +26,13 @@ const command = (line: string): Json => ({
   rawInput: { CommandLine: line },
 });
 
+const edit = (path: string): Json => ({
+  kind: "edit",
+  name: "edit_file",
+  rawInput: { Path: path },
+  locations: [{ path }],
+});
+
 describe("Antigravity permissions", () => {
   it("follows Gram's mode, and asks for every command under an outward gate", () => {
     expect(antigravityMode("default", undefined)).toBe("default");
@@ -65,12 +72,6 @@ describe("Antigravity permissions", () => {
   });
 
   it("passes edits inside the thread's folders in Accept edits, and shows the rest", () => {
-    const edit = (path: string): Json => ({
-      kind: "edit",
-      name: "edit_file",
-      rawInput: { Path: path },
-      locations: [{ path }],
-    });
     expect(autoAnswer("acceptEdits", undefined, edit(join(tmpdir(), "a.ts")), ROOTS, APP)).toBe(
       "allow",
     );
