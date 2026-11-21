@@ -36,7 +36,7 @@ import {
   CheckoutRepos,
   originOwnerRepo,
   parseOwnerRepo,
-  recordedOrOriginRepo,
+  resolveRepoNwo,
   withCheckoutRepos,
 } from "./checkout-repos.ts";
 import { cachedCheckoutHead, type CheckoutHead } from "./repo-facts.ts";
@@ -1143,26 +1143,6 @@ const sharedPrResolver = (proc: Proc["Service"]): RequestResolver.RequestResolve
 export { originOwnerRepo, parseOwnerRepo };
 
 /**
- * The repo for `--repo`: the one the embedder recorded the folder as (`CheckoutRepos`), else the
- * local origin URL over `gh repo view`: instant, and right on a fork, where gh's default repo can
- * be the upstream.
- */
-const resolveRepoNwo = (workTree: string) =>
-  Effect.gen(function* () {
-    // What the embedder recorded the folder as, when it did: `undefined` is no repository at all.
-    const origin = yield* recordedOrOriginRepo(workTree);
-    if (origin !== null) return origin;
-    const out = yield* gh(
-      workTree,
-      ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-      { timeoutMs: 8_000 },
-    ).pipe(Effect.option);
-    return Option.isSome(out) && out.value.status === 0
-      ? out.value.stdout.trim() || undefined
-      : undefined;
-  });
-
-/**
  * The checkout's toplevel, HEAD, upstream tip, branch and upstream name, as one `rev-parse` prints
  * them, line by line. A missing upstream (never pushed, or its ref deleted) or a detached HEAD stops
  * it at the first `@{upstream}` with the lines before printed; an unborn HEAD stops it at `HEAD`, and
@@ -1223,7 +1203,7 @@ export const resolvePrInputs = (
         : ((yield* originTips(workTree, [branch]).pipe(
             Effect.orElseSucceed(() => new Map<string, string>()),
           )).get(branch) ?? "");
-    const repo = yield* resolveRepoNwo(workTree);
+    const repo = yield* resolveRepoNwo(cwd, workTree);
     if (repo === undefined) return undefined;
     return { workTree, branch, localTip, remoteTip: tip, repo } satisfies PrInputs;
   }).pipe(Effect.mapError((e) => new PrLookupError({ message: e.message })));
@@ -1559,7 +1539,8 @@ export const PrLive = Layer.effect(
           }
           const workTree = yield* repoTop(cwd);
           const repo =
-            explicitRepo ?? (workTree === undefined ? undefined : yield* resolveRepoNwo(workTree));
+            explicitRepo ??
+            (workTree === undefined ? undefined : yield* resolveRepoNwo(cwd, workTree));
           if (workTree === undefined || repo === undefined)
             return { available: true } satisfies PrDetailResponse;
           const view = yield* attempt(
@@ -1631,7 +1612,9 @@ export const PrLive = Layer.effect(
           )) ?? cwd;
         const repo =
           explicitRepo ??
-          (yield* provide(resolveRepoNwo(workTree)).pipe(Effect.orElseSucceed(() => undefined)));
+          (yield* provide(resolveRepoNwo(cwd, workTree)).pipe(
+            Effect.orElseSucceed(() => undefined),
+          ));
         if (repo === undefined || !OWNER_REPO.test(repo)) {
           return yield* new PrLookupError({ message: "no GitHub repo for this checkout" });
         }

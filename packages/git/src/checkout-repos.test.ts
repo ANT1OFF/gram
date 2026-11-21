@@ -13,7 +13,7 @@ const INPUTS = PR_INPUTS_REV_PARSE.join(" ");
 const none: ProcOutput = { status: 1, stdout: "", stderr: "", truncated: false };
 
 /** A checkout on branch `feature`, never pushed, whose origin now names someone/private. */
-const rewrittenProc = () => {
+const rewrittenProc = (top = "/repo") => {
   const ghArgs: Array<string> = [];
   const proc: ProcShape = {
     run: (bin, args) =>
@@ -26,7 +26,7 @@ const rewrittenProc = () => {
         if (joined === INPUTS)
           return {
             status: 128,
-            stdout: "/repo\naaa\n",
+            stdout: `${top}\naaa\n`,
             stderr: "fatal: no upstream configured for branch",
             truncated: false,
           };
@@ -45,16 +45,20 @@ const rewrittenProc = () => {
   return { proc, ghArgs };
 };
 
-const recorded = Layer.effect(
-  CheckoutRepos,
-  Effect.gen(function* () {
-    const repos = yield* CheckoutRepos;
-    repos.answerWith(() => Effect.succeed("acme/web"));
-    return repos;
-  }),
-).pipe(Layer.provide(CheckoutRepos.layer));
+/** The embedder knows `known` as acme/web, and no other folder. */
+const recorded = (known: string | undefined) =>
+  Layer.effect(
+    CheckoutRepos,
+    Effect.gen(function* () {
+      const repos = yield* CheckoutRepos;
+      repos.answerWith((folder) =>
+        Effect.succeed(known === undefined || folder === known ? "acme/web" : null),
+      );
+      return repos;
+    }),
+  ).pipe(Layer.provide(CheckoutRepos.layer));
 
-const prLayer = (proc: ProcShape) =>
+const prLayer = (proc: ProcShape, known?: string) =>
   PrLive.pipe(
     Layer.provide(Layer.succeed(Proc, proc)),
     Layer.provide(
@@ -65,7 +69,7 @@ const prLayer = (proc: ProcShape) =>
       }),
     ),
     Layer.provide(ReviewBots.layer),
-    Layer.provide(recorded),
+    Layer.provide(recorded(known)),
   );
 
 describe("a checkout's branch lookup", () => {
@@ -80,6 +84,31 @@ describe("a checkout's branch lookup", () => {
       expect(ghArgs.length).toBeGreaterThan(0);
       expect(ghArgs.join("\n")).toContain("acme");
       expect(ghArgs.join("\n")).not.toContain("someone");
+    }),
+  );
+
+  it.effect("asks about the checkout itself, not the top level its .git file points at", () =>
+    Effect.gen(function* () {
+      const { proc, ghArgs } = rewrittenProc("/elsewhere");
+      yield* Pr.pipe(
+        Effect.flatMap((pr) => pr.status("/work/t-1")),
+        Effect.ignore,
+        Effect.provide(prLayer(proc, "/work/t-1")),
+      );
+      expect(ghArgs.join("\n")).toContain("acme");
+      expect(ghArgs.join("\n")).not.toContain("someone");
+    }),
+  );
+
+  it.effect("names no repository for an unknown folder whose top level is elsewhere", () =>
+    Effect.gen(function* () {
+      const { proc, ghArgs } = rewrittenProc("/elsewhere");
+      yield* Pr.pipe(
+        Effect.flatMap((pr) => pr.status("/work/unknown")),
+        Effect.ignore,
+        Effect.provide(prLayer(proc, "/work/t-1")),
+      );
+      expect(ghArgs).toEqual([]);
     }),
   );
 });

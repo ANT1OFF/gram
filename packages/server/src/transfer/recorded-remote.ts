@@ -7,7 +7,7 @@ import type { Project } from "@gram/contracts";
 import { cachedOriginUrl } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { cloneIdentityOf, originIdentityAt } from "../host/repos.ts";
-import { recordedCloneIdentity } from "../persistence/project-origins.ts";
+import { recordedCloneIdentity } from "../git/recorded-clone.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { redactText } from "../logging/redact.ts";
 

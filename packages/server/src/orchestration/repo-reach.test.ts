@@ -146,4 +146,19 @@ describe.skipIf(!hasGit)("repositories an agent names behind a GitHub route", ()
       ),
     { timeout: 90_000 },
   );
+
+  it.effect(
+    "give a worker spawned after its project's origin moved to ssh for the same repository a checkout of it",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          const { session } = yield* openOrchestrator(world);
+          world.origin = "git@github.com:acme/app.git";
+          const worker = yield* spawn(session, { feature: "mail", title: "Mail" });
+          yield* completeTurn(worker.session);
+          expect(worker.thread.checkout.cloneIdentity).toContain("acme/app");
+        }),
+      ),
+    { timeout: 90_000 },
+  );
 });

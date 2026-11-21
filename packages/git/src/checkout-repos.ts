@@ -6,7 +6,9 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { samePath } from "./paths.ts";
 import type { Proc } from "./proc.ts";
+import { gh } from "./exec.ts";
 import { cachedOriginUrl } from "./repo-facts.ts";
 
 /** `owner/repo` from a remote URL (scp-style, https, ssh); `undefined` when not shaped like one. */
@@ -62,13 +64,43 @@ export const withCheckoutRepos = <A, E, R>(
 ): Effect.Effect<A, E, R> =>
   Option.isSome(repos) ? Effect.provideService(effect, CheckoutRepos, repos.value) : effect;
 
-/** The repository a checkout's PR lookups name: as recorded where it is, else its live origin. */
+/**
+ * The repository the PR lookups of the checkout at `cwd` name, `workTree` being the top level git
+ * reports for it: as the embedder recorded `cwd`, where it did. A top level other than `cwd` is
+ * what the folder's `.git` file and `core.worktree` say, which an agent working there can point
+ * anywhere, so behind an embedder such a folder names none rather than go by that one's origin.
+ * Only a folder the embedder doesn't know, at its own top level, goes by its live `origin`.
+ */
 export const recordedOrOriginRepo = (
+  cwd: string,
   workTree: string,
 ): Effect.Effect<string | undefined | null, never, Proc> =>
   Effect.gen(function* () {
     const repos = yield* Effect.serviceOption(CheckoutRepos);
-    const recorded = Option.isSome(repos) ? yield* repos.value.repoOf(workTree) : null;
-    if (recorded !== null) return recorded;
+    if (Option.isSome(repos)) {
+      const recorded = yield* repos.value.repoOf(cwd);
+      if (recorded !== null) return recorded;
+      if (!samePath(cwd, workTree)) return undefined;
+    }
     return (yield* originOwnerRepo(workTree)) ?? null;
+  });
+
+/**
+ * The repo for `--repo`: the one the embedder recorded the folder as (`CheckoutRepos`), else the
+ * local origin URL over `gh repo view`: instant, and right on a fork, where gh's default repo can
+ * be the upstream.
+ */
+export const resolveRepoNwo = (cwd: string, workTree: string) =>
+  Effect.gen(function* () {
+    // What the embedder recorded the folder as, when it did: `undefined` is no repository at all.
+    const origin = yield* recordedOrOriginRepo(cwd, workTree);
+    if (origin !== null) return origin;
+    const out = yield* gh(
+      workTree,
+      ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+      { timeoutMs: 8_000 },
+    ).pipe(Effect.option);
+    return Option.isSome(out) && out.value.status === 0
+      ? out.value.stdout.trim() || undefined
+      : undefined;
   });

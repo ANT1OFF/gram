@@ -492,7 +492,7 @@ export const MAX_LINES = {
     "packages/contracts/src/rpc/host.ts": 879,
     "packages/contracts/src/settings-chat.ts": 1292,
     "packages/contracts/src/settings.ts": 902,
-    "packages/git/src/pr.ts": 1292,
+    "packages/git/src/pr.ts": 1282,
     "packages/server/src/app-tools/orchestration-tools.ts": 905,
     "packages/server/src/app-tools/pr-tools-merge-launch.test.ts": 1420,
     "packages/server/src/app-tools/pr-tools.ts": 1450,

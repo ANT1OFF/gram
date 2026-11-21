@@ -116,6 +116,17 @@ export const cloneIdentityOf = (url: string): string | undefined => {
 };
 
 /**
+ * The repository a clone identity names, as `host/owner/name` in lower case, whatever transport,
+ * port or account reaches it: https and ssh to one repository name the same. `undefined` for
+ * anything that isn't one.
+ */
+export const repositoryOfIdentity = (identity: string): string | undefined => {
+  const url = cloneUrlOf(identity);
+  const remote = url === undefined ? undefined : remoteOf(url);
+  return remote === undefined || "error" in remote ? undefined : remote.legacyFolder.toLowerCase();
+};
+
+/**
  * A URL for the repository `identity` names (`cloneIdentityOf`'s), which a clone made from it is
  * told apart by the same identity; `undefined` for anything that isn't one, or doesn't read back
  * as itself. Names no secret, as the identity names none.

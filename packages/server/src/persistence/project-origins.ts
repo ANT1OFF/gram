@@ -3,8 +3,7 @@
 // workspace (`git/merge-freezes.ts`) go by it, never by the origin the folder's git config names
 // later, which an agent working there can rewrite with `git remote set-url`.
 
-import { InvalidState, type Project } from "@gram/contracts";
-import { git, Proc, ProcLive, samePath } from "@gram/git";
+import { git, Proc, ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { cloneIdentityOf } from "../host/repos.ts";
@@ -85,32 +84,3 @@ export const backfillProjectOrigins = (sql: SqlClient.SqlClient) =>
       { concurrency: 8, discard: true },
     );
   });
-
-/**
- * The identity a new checkout of `repoRoot` records as its clone's (`Checkout.cloneIdentity`), its
- * origin being `live` now: the origin its project recorded when it was added, which the live one
- * must still be. A folder whose origin was rewritten since (`git remote set-url`, by anyone working
- * there) gets no checkout, so its rewritten repository never becomes one the thread works in. A
- * folder no project is, or one with no origin now, keeps what it has.
- */
-export const recordedCloneIdentity = (
-  projects: ReadonlyArray<Project>,
-  repoRoot: string,
-  live: string | undefined,
-): Effect.Effect<string | undefined, InvalidState> => {
-  const project = projects.find(
-    (each) =>
-      samePath(each.root, repoRoot) ||
-      (each.repoRoot !== undefined && samePath(each.repoRoot, repoRoot)),
-  );
-  if (project === undefined || live === undefined || project.originIdentity === live)
-    return Effect.succeed(live);
-  return Effect.fail(
-    new InvalidState({
-      message:
-        project.originIdentity === undefined
-          ? `${project.name} had no origin Gram could read when it was added, and now has one. Remove the project and add it again to work in that repository.`
-          : `${project.name}'s origin names another repository than the one it was added with. Set it back, or remove the project and add it again.`,
-    }),
-  );
-};

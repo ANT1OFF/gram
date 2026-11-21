@@ -57,7 +57,7 @@ import { noAppToolsTunnel } from "./app-tools-tunnel.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
 import { olderHost } from "./folders.ts";
-import { recordedCloneIdentity } from "../persistence/project-origins.ts";
+import { recordedCloneIdentity } from "../git/recorded-clone.ts";
 import { cloneFolderOf, cloneIdentityOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
 import { HOST_THREADS_DIR, type HostThreadPlaces } from "./thread-places.ts";

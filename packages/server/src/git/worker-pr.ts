@@ -327,22 +327,22 @@ export const liveHeadAt = (path: string): Effect.Effect<LiveHead, never, Proc> =
 
 /**
  * The workspace project a worktree on another machine was made for, from what this machine
- * recorded as it made it: the identity of the origin it cloned (`cloneIdentity`), which must be
- * the origin the project recorded when it was added (`Project.originIdentity`), never the one its
- * folder names now, and the PR's repository.
+ * recorded as it made it: the identity of the origin it cloned (`cloneIdentity`), which must name
+ * the repository the project recorded when it was added (`Project.originIdentity`), never the one
+ * its folder names now, and both the PR's repository.
  */
 const projectOfClone = (
   checkout: Checkout,
   projects: ReadonlyArray<Project>,
   repo: string,
 ): Project | undefined => {
-  if (checkout.cloneIdentity === undefined) return undefined;
-  return projects.find((project) => {
-    const identity = project.originIdentity;
-    if (identity === undefined || identity !== checkout.cloneIdentity) return false;
-    const url = cloneUrlOf(identity);
-    return url !== undefined && mayNameRepo(url, repo);
-  });
+  const clone = checkout.cloneIdentity;
+  if (clone === undefined || !mayNameRepo(cloneUrlOf(clone), repo)) return undefined;
+  // Both name the PR's repository, whatever transport each reaches it by (https, ssh).
+  return projects.find(
+    (project) =>
+      project.originIdentity !== undefined && mayNameRepo(cloneUrlOf(project.originIdentity), repo),
+  );
 };
 
 /**
