@@ -127,7 +127,7 @@ describe("a thread's machine marker", () => {
 describe("a hosted server's worker machine", () => {
   const WORKER = HostId.make("m-fedcba987654321001234567");
   const LOGO = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg"/>')}`;
-  const worker = (hosted: MachineState["hosted"], online = true): MachineState => ({
+  const worker = (hosted: NonNullable<MachineState["hosted"]>, online = true): MachineState => ({
     id: WORKER,
     name: "worker-827d7eaf1e",
     kind: "provisioned",
