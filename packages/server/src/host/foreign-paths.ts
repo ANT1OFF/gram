@@ -1,5 +1,5 @@
 import { type Checkout, isLocalHost, type Thread } from "@gram/contracts";
-import { isInside, keepPathsHere, noteForeignPath, tryRealPathSync } from "@gram/git";
+import { isInside, keepPathsHere, noteForeignPath, pathForms, tryRealPathSync } from "@gram/git";
 import { isAbsolute, resolve, win32 } from "node:path";
 
 /** A path as compared here: case folded where the volumes usually ignore case. */
@@ -28,10 +28,8 @@ export const keepFoldersHere = (paths: ReadonlyArray<string>): void => {
   keepPathsHere(paths);
   for (const path of paths) {
     const resolved = resolve(path);
-    ownFolders.add(folded(resolved));
-    const real = tryRealPathSync(resolved);
-    if (real === undefined) ownPending.add(resolved);
-    else ownFolders.add(folded(real));
+    for (const form of pathForms(resolved)) ownFolders.add(folded(form));
+    if (tryRealPathSync(resolved) === undefined) ownPending.add(resolved);
   }
 };
 
@@ -42,15 +40,12 @@ export const keepFoldersHere = (paths: ReadonlyArray<string>): void => {
  */
 export const keepServerFolders = (dataDir: string): void => keepFoldersHere([dataDir]);
 
-/** `paths` (absolute, this machine's) as written and by their real paths, folded. */
+/** `paths` (absolute, this machine's) by every spelling of them on this disk (`pathForms`), folded. */
 export const hereForms = (paths: Iterable<string>): ReadonlyArray<string> => {
   const forms = new Set<string>();
   for (const path of paths) {
     if (!isAbsolute(path)) continue;
-    const resolved = resolve(path);
-    forms.add(folded(resolved));
-    const real = tryRealPathSync(resolved);
-    if (real !== undefined) forms.add(folded(real));
+    for (const form of pathForms(path)) forms.add(folded(form));
   }
   return [...forms];
 };
@@ -65,10 +60,9 @@ export const claimableByHost = (path: string, here: ReadonlyArray<string> = []):
   // A path from a machine of another platform can't hold one of this server's folders.
   if (!isAbsolute(path)) return win32.isAbsolute(path);
   for (const pending of ownPending) {
-    const real = tryRealPathSync(pending);
-    if (real === undefined) continue;
+    if (tryRealPathSync(pending) === undefined) continue;
     ownPending.delete(pending);
-    ownFolders.add(folded(real));
+    for (const form of pathForms(pending)) ownFolders.add(folded(form));
   }
   const at = folded(resolve(path));
   for (const own of ownFolders) if (isInside(at, own) || isInside(own, at)) return false;

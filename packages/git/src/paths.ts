@@ -81,16 +81,48 @@ const folded = (path: string): string =>
 /** Kept folders that didn't exist when kept, whose real path is looked for again. */
 const keptPending = new Set<string>();
 
-/** Adds the real path of each kept folder that has come into existence since it was kept. */
+/**
+ * Every spelling of `path` on this disk: as resolved, as the disk names it (`diskPath`, the real
+ * path of its deepest part that exists), and that real path as each linked folder above `path`
+ * spells it. On macOS `/var` is a link to `/private/var`, so a folder kept through a link in
+ * `/var/folders/x` is matched as `/private/var/folders/x/...` and as `/var/folders/x/...` alike.
+ * Only `path`'s own folders are asked of the disk: a path compared with these never is.
+ */
+export const pathForms = (path: string): ReadonlyArray<string> => {
+  const resolved = nodePath.resolve(path);
+  const real = diskPath(resolved);
+  const forms = new Set([resolved, real]);
+  for (
+    let at = nodePath.dirname(resolved);
+    nodePath.dirname(at) !== at;
+    at = nodePath.dirname(at)
+  ) {
+    const atReal = diskPath(at);
+    if (atReal === at) continue;
+    const rest = relativeInside(atReal, real);
+    if (rest !== undefined) forms.add(rest === "" ? at : nodePath.join(at, rest));
+  }
+  return [...forms];
+};
+
+/** Keeps every spelling of `resolved` (`pathForms`); whether any was new. */
+const keepForms = (resolved: string): boolean => {
+  let added = false;
+  for (const form of pathForms(resolved)) {
+    if (keptRoots.has(folded(form))) continue;
+    keptRoots.add(folded(form));
+    added = true;
+  }
+  return added;
+};
+
+/** Keeps the spellings of each kept folder that has come into existence since it was kept. */
 const settleKept = (): boolean => {
   let added = false;
   for (const resolved of keptPending) {
-    const real = tryRealPathSync(resolved);
-    if (real === undefined) continue;
+    if (tryRealPathSync(resolved) === undefined) continue;
     keptPending.delete(resolved);
-    if (keptRoots.has(folded(real))) continue;
-    keptRoots.add(folded(real));
-    added = true;
+    if (keepForms(resolved)) added = true;
   }
   return added;
 };
@@ -118,24 +150,20 @@ export const noteForeignPath = (path: string): void => {
 
 /**
  * Keeps `paths` this machine's, whatever another machine says: no `noteForeignPath` takes one of
- * them, a folder above one or a folder below one, and a mark that did already goes. Each is kept as
- * resolved (a relative one against the working directory) and by its real path, so a link to it is
- * covered too.
+ * them, a folder above one or a folder below one, and a mark that did already goes. Each is kept by
+ * every spelling of it on this disk (`pathForms`): as resolved (a relative one against the working
+ * directory), by its real path, and through the links above it.
  */
 export const keepPathsHere = (paths: Iterable<string>): void => {
   let added = false;
   for (const path of paths) {
     const resolved = nodePath.resolve(path);
-    // Kept once with its real path, which needn't be asked of the disk again.
-    if (keptRoots.has(folded(resolved))) continue;
-    const real = tryRealPathSync(resolved);
-    // One that isn't there yet gets its real path once it is (`settleKept`).
-    if (real === undefined) keptPending.add(resolved);
-    for (const form of [resolved, real]) {
-      if (form === undefined || keptRoots.has(folded(form))) continue;
-      keptRoots.add(folded(form));
-      added = true;
-    }
+    // Kept once with its spellings, which needn't be asked of the disk again.
+    if (keptRoots.has(folded(resolved)) && !keptPending.has(resolved)) continue;
+    // One that isn't there yet is spelled again once it is (`settleKept`): a link made there
+    // later leads somewhere else.
+    if (tryRealPathSync(resolved) === undefined) keptPending.add(resolved);
+    if (keepForms(resolved)) added = true;
   }
   if (added) dropCrossingMarks();
 };
