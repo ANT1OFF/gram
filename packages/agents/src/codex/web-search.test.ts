@@ -15,7 +15,8 @@ const item = (extra: Partial<WebItem> = {}): WebItem => ({
 });
 const chunks = (events: ReadonlyArray<AgentEvent>) =>
   events.flatMap((e) => (e.type === "chunk" ? [e.chunk] : []));
-const mapper = () => makeCodexMapper({ newMessageId: () => MessageId.make("m") });
+const mapper = () =>
+  makeCodexMapper({ requestScope: "s", newMessageId: () => MessageId.make("m") });
 const started = (value: WebItem): ServerNotification => ({
   method: "item/started",
   params: { threadId: "thread", turnId: "turn", item: value, startedAtMs: 1_000 },
