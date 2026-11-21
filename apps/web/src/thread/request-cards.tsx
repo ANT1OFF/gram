@@ -621,7 +621,10 @@ function useRespond(threadId: ThreadId, request: PendingRequest) {
     if (pending) return;
     setPending(true);
     try {
-      await api.respond(threadId, request.id, answer);
+      // The card's key as shown: one the agent put up again under the id meanwhile refuses it.
+      await (request.shown === undefined
+        ? api.respond(threadId, request.id, answer)
+        : api.respond(threadId, request.id, answer, request.shown));
       if (receipt !== undefined)
         useApprovalReceipts.getState().show(threadId, receipt, {
           requestId: request.id,

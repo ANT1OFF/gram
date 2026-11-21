@@ -101,6 +101,8 @@ export interface RespondManyAnswer {
   readonly threadId: ThreadId;
   readonly requestId: RequestId;
   readonly answer: RequestAnswer;
+  /** The card's key as it was listed (`PendingRequest.shown`): only that card takes the answer. */
+  readonly shown?: string | undefined;
 }
 
 /** A feature's or a group's stage as the user sets it: exactly one of `feature` and `group`. */

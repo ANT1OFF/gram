@@ -450,11 +450,16 @@ export const makeServerApprovals = ({
       return confirmed({ ...answer, scope: "once" });
     });
 
-  const respondToSession = (threadId: ThreadId, requestId: RequestId, given: RequestAnswer) =>
+  const respondToSession = (
+    threadId: ThreadId,
+    requestId: RequestId,
+    given: RequestAnswer,
+    shown: string | undefined,
+  ) =>
     // The hook is asked before the lock is taken, so a slow endpoint holds up nothing else of
     // the thread; whether the card still waits is read under the lock, as it always was.
     confirmedByHook(threadId, requestId, given).pipe(
-      Effect.flatMap((confirmed) => deliverToSession(threadId, requestId, confirmed, given)),
+      Effect.flatMap((confirmed) => deliverToSession(threadId, requestId, confirmed, given, shown)),
     );
 
   /**
@@ -467,6 +472,8 @@ export const makeServerApprovals = ({
     requestId: RequestId,
     confirmed: Confirmed,
     given: RequestAnswer = confirmed.answer,
+    /** The card's key as the person saw it, when the answer names one. */
+    shown?: string,
   ) =>
     withSession(threadId, (rt, session) =>
       Effect.gen(function* () {
@@ -476,6 +483,7 @@ export const makeServerApprovals = ({
         );
         if (
           waiting === undefined ||
+          (shown !== undefined && waiting.shown !== shown) ||
           !sameCard(waiting, confirmed.card) ||
           hooked.asked.get(hookedKey(threadId, requestId)) !== confirmed.asked
         ) {
@@ -500,10 +508,16 @@ export const makeServerApprovals = ({
       }),
     );
 
-  const deliver = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
+  const deliver = (
+    threadId: ThreadId,
+    requestId: RequestId,
+    answer: RequestAnswer,
+    shown?: string,
+  ) =>
+    // A card the server raised has an id of its own, never asked again.
     serverApprovalOrigins.has(requestId)
       ? respondToServer(threadId, requestId, answer)
-      : respondToSession(threadId, requestId, answer);
+      : respondToSession(threadId, requestId, answer, shown);
 
   const respond: ThreadRuntimesShape["respond"] = deliver;
 
@@ -523,8 +537,8 @@ export const makeApprovalMethods = ({
   respond,
 }: ApprovalMethodsDeps): Pick<ThreadRuntimesShape, "respondMany"> => ({
   respondMany: (answers) =>
-    Effect.forEach(answers, ({ threadId, requestId, answer }) =>
-      respond(threadId, requestId, answer).pipe(
+    Effect.forEach(answers, ({ threadId, requestId, answer, shown }) =>
+      respond(threadId, requestId, answer, shown).pipe(
         Effect.as<RespondManyResult>({ threadId, requestId, ok: true }),
         Effect.catchCause((cause) =>
           Effect.succeed<RespondManyResult>({

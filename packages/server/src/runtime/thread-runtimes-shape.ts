@@ -316,10 +316,15 @@ export interface ThreadRuntimesShape {
     threadId: ThreadId,
     taskId: string,
   ): Effect.Effect<void, ThreadNotFound | NotFound | InvalidState>;
+  /**
+   * With `shown`, the card's key as the answer was given for it (`PendingRequest.shown`): a card
+   * put up again under the id since refuses it, `RequestNotFound`.
+   */
   respond(
     threadId: ThreadId,
     requestId: RequestId,
     answer: RequestAnswer,
+    shown?: string,
   ): Effect.Effect<void, ThreadNotFound | RequestNotFound | InvalidState>;
   /**
    * `respond` for each answer in turn, one after the other, so an inbox can answer a group of
@@ -331,6 +336,7 @@ export interface ThreadRuntimesShape {
       readonly threadId: ThreadId;
       readonly requestId: RequestId;
       readonly answer: RequestAnswer;
+      readonly shown?: string | undefined;
     }>,
   ): Effect.Effect<ReadonlyArray<RespondManyResult>>;
   /**

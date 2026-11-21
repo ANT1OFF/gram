@@ -730,6 +730,7 @@ export const makeEventSink = (
               data: {
                 id: request.id,
                 kind: request.kind,
+                ...(request.shown === undefined ? {} : { shown: request.shown }),
                 title: note?.title ?? askTitle(request),
                 ...(request.kind === "approval" ? { toolName: request.toolName } : {}),
                 ...askContent(request),

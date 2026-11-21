@@ -19,13 +19,20 @@ export const postAnswer = async (
   threadId: string,
   requestId: string,
   answer: RequestAnswer,
+  /** The card's key as it was listed: only that card takes the answer. */
+  shown?: string,
 ): Promise<void> => {
   const response = await fetch(serverUrl(ASK_ANSWER_PATH), {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ threadId, requestId, answer }),
+    body: JSON.stringify({
+      threadId,
+      requestId,
+      answer,
+      ...(shown === undefined ? {} : { shown }),
+    }),
   });
   if (response.ok) return;
   const value: unknown = await response.json().catch(() => undefined);
@@ -39,12 +46,17 @@ export const postAnswer = async (
 
 /** Each answer posted in turn, as the socket's `thread.respondMany` would take them. */
 export const postAnswers = async (
-  answers: ReadonlyArray<{ threadId: string; requestId: string; answer: RequestAnswer }>,
+  answers: ReadonlyArray<{
+    threadId: string;
+    requestId: string;
+    answer: RequestAnswer;
+    shown?: string | undefined;
+  }>,
 ): Promise<ReadonlyArray<RespondManyResult>> => {
   const results: Array<RespondManyResult> = [];
-  for (const { threadId, requestId, answer } of answers) {
+  for (const { threadId, requestId, answer, shown } of answers) {
     try {
-      await postAnswer(threadId, requestId, answer);
+      await postAnswer(threadId, requestId, answer, shown);
       results.push({ threadId, requestId, ok: true } as RespondManyResult);
     } catch (error) {
       results.push({

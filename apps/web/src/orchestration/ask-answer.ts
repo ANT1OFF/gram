@@ -59,7 +59,10 @@ const sendAnswer = async (
     };
   }
   const [entry] = ask.group.entries;
-  await api.respond(entry.threadId, entry.request.id, action.answer);
+  const { shown } = entry.request;
+  await (shown === undefined
+    ? api.respond(entry.threadId, entry.request.id, action.answer)
+    : api.respond(entry.threadId, entry.request.id, action.answer, shown));
   return {};
 };
 

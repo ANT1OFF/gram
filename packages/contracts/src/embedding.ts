@@ -124,8 +124,10 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *   `resumeAt` unless `cancelled`; absent once the wait has ended, and every change to it sends
  *   the thread again),
  *   `thread.removed` `{id}`, `thread.status` `{id, status, idle}`.
- * - `ask.opened` `{id, kind, title, toolName?, questions?, plan?, planTruncated?, decisionId?,
- *   assignees?}`. A question carries `questions`, each `{question, header?, options: [{label,
+ * - `ask.opened` `{id, kind, shown?, title, toolName?, questions?, plan?, planTruncated?,
+ *   decisionId?, assignees?}`. `shown` is the card's own key: an answer through `asks/answer`
+ *   that carries it is taken only by that card, never by a later one an agent raised under the
+ *   same `id`. A question carries `questions`, each `{question, header?, options: [{label,
  *   description?}], multiSelect}`, what a receiver needs to answer it through `asks/answer`: the
  *   answer is keyed by each `question` and names choices by `label`, exactly as given here. A
  *   question ask too large to carry whole carries none. A plan carries `plan`, its Markdown, cut

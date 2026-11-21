@@ -416,8 +416,8 @@ export const threadHandlers = Effect.gen(function* () {
     "thread.stopTask": ({ threadId, taskId }) => runtimes.stopTask(threadId, taskId),
     "thread.restartSession": ({ threadId, midTurn }) => runtimes.restartSession(threadId, midTurn),
     "thread.startSession": ({ threadId }) => runtimes.startSession(threadId),
-    "thread.respond": ({ threadId, requestId, answer }) =>
-      runtimes.respond(threadId, requestId, answer),
+    "thread.respond": ({ threadId, requestId, answer, shown }) =>
+      runtimes.respond(threadId, requestId, answer, shown),
     "thread.respondMany": ({ answers }) => runtimes.respondMany(answers),
     // The user's own pick, which the orchestration's auto downgrade must leave alone.
     "thread.setMode": ({ threadId, mode }) =>

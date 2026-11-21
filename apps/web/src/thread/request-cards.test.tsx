@@ -353,6 +353,24 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it("names the card it answers, so a card asked again under its id refuses the click", async () => {
+    const { api, respond } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={{ ...approval, shown: "card-1" }} active={false} />
+      </ApiProvider>,
+    );
+    fireEvent.click(screen.getByTestId("approval-allow"));
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith(
+        T,
+        "r1",
+        { kind: "approval", decision: "allow", scope: "once" },
+        "card-1",
+      ),
+    );
+  });
+
   it.each([
     [[{ key: "1", code: "Digit1" }], { decision: "allow", scope: "once" }],
     // 2 shows what "always" would save; only a second 2 saves it.
