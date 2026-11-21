@@ -160,6 +160,19 @@ export const browserHostEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
     HOST_ENV.flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])),
   );
 
+/**
+ * Whether the browser host renders only this machine's threads' pages: it runs without Chromium's
+ * sandbox (`GRAM_BROWSER_SANDBOX=0`), which holds only while the pages come from agents that already
+ * share its container and user. A page from another machine's thread is less trusted than that, so
+ * it is refused unless the operator opts in with `GRAM_BROWSER_UNSANDBOXED_ELSEWHERE=1`.
+ */
+export const unsandboxedLocalOnly = (env: NodeJS.ProcessEnv): boolean =>
+  env["GRAM_BROWSER_SANDBOX"] === "0" && env["GRAM_BROWSER_UNSANDBOXED_ELSEWHERE"] !== "1";
+
+/** Why a thread on another machine gets no page from an unsandboxed browser host. */
+export const UNSANDBOXED_ELSEWHERE =
+  "The server's browser runs without Chromium's sandbox, so it opens no page for a thread that runs on another machine. Run it with its sandbox, or set GRAM_BROWSER_UNSANDBOXED_ELSEWHERE=1 to allow it.";
+
 const hostGone = (id: string): PaneResponseMessage => ({
   type: "pane.response",
   id,

@@ -172,22 +172,36 @@ describe("a hosted server's answers about one machine", () => {
     }),
   );
 
-  it.effect("reads a release the server answers not_found as a machine gone, and forgets it", () =>
+  it.live("tells a release answered not_found again later, and forgets nothing of it", () =>
     Effect.gen(function* () {
-      const app = fakeApp({ answer: () => ({ status: 404, body: { code: "not_found" } }) });
-      const gone: string[] = [];
-      const tell = releaseTeller(undefined, bridgeWorkerMachines(app.port), (machine) =>
-        Effect.sync(() => gone.push(machine.name)),
-      )!;
+      // The server has no backend for a while, as during a deployment, then is back.
+      const answers = [
+        { status: 404, body: { code: "not_found", message: "No backend here." } },
+        { status: 200, body: { known: true, released: false } },
+      ];
+      const app = fakeApp({ answer: () => answers.shift() ?? { status: 503, body: {} } });
+      const tell = releaseTeller(undefined, bridgeWorkerMachines(app.port))!;
       const machine = {
         id: "m-0123456789abcdef01234567",
         name: NAME,
         onDemand: "worker",
         via: ORIGIN,
       };
-      // Taken as told: nothing to tell again of a machine reclaimed there.
-      expect((yield* tell(machine, true).pipe(Effect.result))._tag).toBe("Success");
-      expect(gone).toEqual([NAME]);
+      // The startup pass's word for a worker still at work: not taken as told, so told again.
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Failure");
+      expect((yield* tell(machine, false).pipe(Effect.result))._tag).toBe("Success");
+      // A 404 that isn't not_found is a passing error, asked again at once like a busy server.
+      const other = [
+        { status: 404, body: {} },
+        { status: 200, body: { known: true } },
+      ];
+      const passing = fakeApp({ answer: () => other.shift() ?? { status: 503, body: {} } });
+      expect(
+        yield* tellSignedInRelease(bridgeWorkerMachines(passing.port), machine, true, {
+          retryMs: 5,
+        }),
+      ).toBe("applied");
+      expect(passing.calls).toHaveLength(2);
     }),
   );
 
@@ -208,6 +222,86 @@ describe("a hosted server's answers about one machine", () => {
       );
       expect(told).toBe("applied");
       expect(app.calls).toHaveLength(3);
+    }),
+  );
+});
+
+describe("a machine asked for, as it comes", () => {
+  it.live("fails only once the server answers not_found three times in a row", () =>
+    Effect.gen(function* () {
+      // Accepted, then its status meets a backend out of reach once, then the machine is starting.
+      const reads = [404, 200, 404, 404, 404];
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "status"
+            ? (reads.shift() ?? 404) === 404
+              ? { status: 404, body: { code: "not_found" } }
+              : { status: 200, body: { phase: "starting" } }
+            : { status: 202, body: {} },
+      });
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts: {
+          list: () => [],
+          remove: () => false,
+          machines: {
+            provision: () => {
+              throw new Error("not registered here");
+            },
+          },
+        },
+        everyMs: 1,
+        timeoutMs: 10_000,
+      });
+      const arrived = yield* source.arrive(NAME);
+      // Not on the first 404, nor after a starting between: on the third in a row.
+      expect(app.calls.filter((each) => each.call === "status")).toHaveLength(5);
+      expect(arrived).toMatchObject({ failed: expect.stringContaining("didn't join") });
+    }),
+  );
+});
+
+describe("a machine asked for, as it comes, through calls that get no answer", () => {
+  it.live("counts only not_found answers in a row, never across one that got none", () =>
+    Effect.gen(function* () {
+      // 404, no answer, 404, no answer, 404, then starting there: never three 404s in a row.
+      const reads = ["404", "none", "404", "none", "404"];
+      let asked = 0;
+      const bridged = bridgeWorkerMachines(
+        fakeApp({
+          answer: ({ call }) =>
+            call === "status"
+              ? reads[asked - 1] === "404"
+                ? { status: 404, body: { code: "not_found" } }
+                : { status: 200, body: { phase: "starting" } }
+              : { status: 202, body: {} },
+        }).port,
+      );
+      const port: WorkerMachinePortShape = {
+        ...bridged,
+        call: (origin, call, body) =>
+          call === "status" && reads[asked++] === "none"
+            ? Effect.succeed({ ok: false as const, why: "no answer" })
+            : bridged.call(origin, call, body),
+      };
+      const source = signedInSource(SERVER, {
+        port,
+        hosts: {
+          list: () => [],
+          remove: () => false,
+          machines: {
+            provision: () => {
+              throw new Error("not registered here");
+            },
+          },
+        },
+        everyMs: 1,
+        timeoutMs: 300,
+      });
+      const arrived = yield* source.arrive(NAME);
+      // Waited to its deadline, past every read, rather than failed on the third 404.
+      expect(asked).toBeGreaterThan(reads.length);
+      expect(arrived).toEqual({ failed: "timeout" });
     }),
   );
 });
@@ -335,6 +429,48 @@ describe("a worker machine that work here wants", () => {
       expect(app.calls.filter((each) => each.call === "start").map((each) => each.body)).toEqual([
         { name: NAME },
       ]);
+      yield* Fiber.interrupt(opening);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps waking a wanted machine through a not_found while its backend is away", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const { id } = provisionRelayed(hosts, NAME);
+      // The pass's read and the wake's first come while the workspace has no backend; then the
+      // backend is back, and the machine is stopped there.
+      let reads = 0;
+      const app = fakeApp({
+        answer: ({ call }) => {
+          if (call !== "status") return { status: 202, body: {} };
+          reads += 1;
+          return reads <= 2
+            ? { status: 404, body: { code: "not_found", message: "The workspace has no backend." } }
+            : { status: 200, body: { phase: "stopped" } };
+        },
+      });
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      const forSession = awaitedMachines(
+        (hostId) => Effect.fail(new HostUnavailable({ hostId, message: "away" })),
+        hosts,
+        { getSettings: Effect.succeed({ experimental: { embedding: true } } as never) },
+        60_000,
+      );
+      const opening = yield* Effect.forkScoped(forSession(HostId.make(id), "t-1" as ThreadId));
+      yield* TestClock.adjust("1 second");
+      expect(reads).toBe(2);
+      expect(app.calls.map((each) => each.call)).not.toContain("start");
+      // Asked again while it is wanted and registered: woken once its backend is back.
+      yield* TestClock.adjust(WAKE_RETRY_MS + 1_000);
+      expect(app.calls.filter((each) => each.call === "start").map((each) => each.body)).toEqual([
+        { name: NAME },
+      ]);
+      expect(hosts.list()).toHaveLength(1);
       yield* Fiber.interrupt(opening);
     }).pipe(Effect.scoped),
   );
@@ -530,6 +666,29 @@ describe("a worker machine that work here wants", () => {
       const woke = yield* wakeSignedIn(bridgeWorkerMachines(app.port), { name: NAME, via: ORIGIN });
       expect(woke).toBe("started");
       expect(app.calls.map((each) => each.call)).toEqual(["status", "start", "release", "start"]);
+    }),
+  );
+
+  it.live("wakes again later a machine whose start, or its take-back, is answered 404", () =>
+    Effect.gen(function* () {
+      for (const answers of [
+        // The start meets a backend out of reach.
+        { start: { status: 404, body: { code: "not_found" } }, release: 200 },
+        // Still released there, and the take-back meets a backend out of reach.
+        { start: { status: 409, body: { code: "released" } }, release: 404 },
+      ]) {
+        const app = fakeApp({
+          answer: ({ call }) =>
+            call === "status"
+              ? { status: 200, body: { phase: "stopped" } }
+              : call === "start"
+                ? answers.start
+                : { status: answers.release, body: { code: "not_found" } },
+        });
+        expect(
+          yield* wakeSignedIn(bridgeWorkerMachines(app.port), { name: NAME, via: ORIGIN }),
+        ).toBe("retry");
+      }
     }),
   );
 

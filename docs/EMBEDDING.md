@@ -23,9 +23,14 @@ value stops the server at start rather than half-configuring it.
 | `GRAM_HOST_PROVIDER_TOKEN` | The bearer token sent to the host provider                                        |
 | `GRAM_GITHUB_ROUTE_URL`    | Where a headless server's `gh` reaches GitHub ([A GitHub route](#a-github-route)) |
 | `GRAM_GITHUB_ROUTE_TOKEN`  | The bearer token sent to the GitHub route (or `GRAM_GITHUB_ROUTE_TOKEN_FILE`)     |
+| `GRAM_SECRET_PATHS`        | More places holding the deployment's secrets, which no file preview reads         |
 
 Tokens are at least 32 characters with no whitespace. The server takes them out of its own
 environment once it has read them, so no agent, terminal or `git` process it starts inherits one.
+A file a `*_TOKEN_FILE`, `*_SECRET_FILE` or provisioned TLS setting names, and the folder holding
+it, are never read by a file preview or a file link, whatever a thread's messages say; so is every
+path in `GRAM_SECRET_PATHS` (absolute, separated by the platform's path delimiter). On a server
+people sign in to, a preview reads only inside a thread's own folders.
 
 ## Calls into the server
 

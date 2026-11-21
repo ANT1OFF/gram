@@ -2,6 +2,8 @@
 // once, when a folder is added. Reading it runs nothing; every file is read inside the folder,
 // never through a link that leaves it.
 
+import * as fs from "node:fs";
+import * as nodePath from "node:path";
 import { type FolderSettings, type Project, parseScriptsFile, SCRIPTS_FILE } from "@gram/contracts";
 import { readInside, realRoot } from "@gram/git";
 
@@ -11,6 +13,28 @@ const MCP_FILE = ".mcp.json";
 
 /** Settings keys that name a command Claude Code runs. */
 const COMMAND_KEYS = ["apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "statusLine"];
+
+/** The settings keys read above, and those known to load nothing that runs or widens access. */
+const READ_KEYS = new Set(["hooks", "permissions", "env", "mcpServers", ...COMMAND_KEYS]);
+const HARMLESS_KEYS = new Set([
+  "$schema",
+  "model",
+  "includeCoAuthoredBy",
+  "attribution",
+  "outputStyle",
+  "alwaysThinkingEnabled",
+  "language",
+]);
+/** Permission keys that only narrow what runs; `allow` is counted, and any other key is other. */
+const NARROWING_PERMISSIONS = new Set(["allow", "deny", "ask"]);
+
+/** What under `.claude` is read above or loads nothing that runs: every other entry counts. */
+const KNOWN_CLAUDE_ENTRIES = new Set([
+  "settings.json",
+  "settings.local.json",
+  "CLAUDE.md",
+  ".DS_Store",
+]);
 
 type Json = Record<string, unknown>;
 
@@ -35,6 +59,38 @@ const parse = (text: string): Json | undefined => {
   }
 };
 
+const lstat = (path: string) => {
+  try {
+    return fs.lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+};
+
+/**
+ * What else `.claude` holds that isn't empty, such as Claude Code's agents, skills and commands,
+ * whose frontmatter can carry hooks and tools; or `.claude` itself when it is a link or can't be
+ * looked in. Each would load as the user's.
+ */
+const definitions = (real: string): ReadonlyArray<string> => {
+  try {
+    const claude = lstat(nodePath.join(real, ".claude"));
+    if (claude === undefined || claude.isFile()) return [];
+    if (!claude.isDirectory()) return [".claude"];
+    return fs.readdirSync(nodePath.join(real, ".claude")).flatMap((name) => {
+      if (KNOWN_CLAUDE_ENTRIES.has(name)) return [];
+      const path = nodePath.join(real, ".claude", name);
+      const found = lstat(path);
+      return found?.isDirectory() === true && fs.readdirSync(path).length === 0
+        ? []
+        : [`.claude/${name}`];
+    });
+  } catch {
+    return [".claude"];
+  }
+};
+
 /** `FolderSettings` for the folder at `root`. Throws when the folder itself can't be resolved. */
 export const folderSettings = (root: string): FolderSettings => {
   const real = realRoot(root);
@@ -43,6 +99,7 @@ export const folderSettings = (root: string): FolderSettings => {
   const env = new Set<string>();
   const commands: Array<string> = [];
   const unreadable: Array<string> = [];
+  const other: Array<string> = [];
   let allowRules = 0;
 
   const load = (rel: string): Json | undefined => {
@@ -74,7 +131,13 @@ export const folderSettings = (root: string): FolderSettings => {
     if (isObject(settings["mcpServers"]))
       for (const name of Object.keys(settings["mcpServers"])) mcpServers.add(name);
     for (const key of COMMAND_KEYS) if (settings[key] !== undefined) commands.push(key);
+    // A key not known to be harmless counts, so a setting Gram hasn't met is asked about.
+    for (const key of Object.keys(settings))
+      if (!READ_KEYS.has(key) && !HARMLESS_KEYS.has(key)) other.push(`${rel}: ${key}`);
+    for (const key of Object.keys(permissions))
+      if (!NARROWING_PERMISSIONS.has(key)) other.push(`${rel}: permissions.${key}`);
   }
+  other.push(...definitions(real));
 
   const mcp = load(MCP_FILE);
   if (mcp !== undefined && isObject(mcp["mcpServers"]))
@@ -102,7 +165,8 @@ export const folderSettings = (root: string): FolderSettings => {
     env.size === 0 &&
     commands.length === 0 &&
     scripts.length === 0 &&
-    unreadable.length === 0;
+    unreadable.length === 0 &&
+    other.length === 0;
   return {
     hooks,
     mcpServers: [...mcpServers],
@@ -111,6 +175,7 @@ export const folderSettings = (root: string): FolderSettings => {
     commands,
     scripts,
     unreadable,
+    other,
     none,
   };
 };

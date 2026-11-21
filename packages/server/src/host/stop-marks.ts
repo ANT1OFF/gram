@@ -28,7 +28,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { RESUME_STALL_MS } from "./budgets.ts";
-import { STOP_HOLD_MS } from "./stop.ts";
+import { cutHostText, STOP_HOLD_MS } from "./stop.ts";
 
 /** How long after a readied machine's hold its sessions are still waited for as a stopped one's. */
 export const STOPPED_RECENTLY_MS = 15 * 60_000;
@@ -84,6 +84,12 @@ export const KEPT_FOLDERS_MAX = 256;
  * (`gram-host new-disk`), which is the machine replaced again, owing a resume.
  */
 export const RETIRED_DISKS_KEPT = 64;
+
+/**
+ * The longest reason a thread is kept blocked for: it often holds what a host said, which is the
+ * host's own text, so it is cut there and a host can't grow the record without bound.
+ */
+export const BLOCK_REASON_MAX_CHARS = 2048;
 
 /** What a stop said it kept of a folder, as kept across a restart: without the diff behind it. */
 const KeptRecordStored = Schema.Struct({
@@ -413,11 +419,30 @@ export const makeStopMarks = (
     if (value === undefined) into.delete(id);
     else into.set(id, value);
   };
-  /** Writes every record, with the machine's as `next`; throws when that fails. */
+  /** Each machine's record as last written: what another machine's write falls back to. */
+  let written = new Map(records);
+  /**
+   * Writes every record, with the machine's as `next`; throws when that fails. When every record
+   * as held can't be written, the others go as they were last written, so a record that can't be
+   * kept (one grown too big) costs its own machine's writes alone, never another's.
+   */
   const save = (id: HostId, next: MachineMarks) => {
+    if (persisted === undefined) return;
     const all = new Map(records);
     put(all, id, next);
-    persisted?.save(Object.fromEntries(all));
+    try {
+      persisted.save(Object.fromEntries(all));
+      written = all;
+    } catch (error) {
+      const unwritten = [...all.keys(), ...written.keys()].some(
+        (key) => key !== id && all.get(key) !== written.get(key),
+      );
+      if (!unwritten) throw error;
+      const others = new Map(written);
+      put(others, id, next);
+      persisted.save(Object.fromEntries(others));
+      written = others;
+    }
   };
   /**
    * A change that lifts a debt, or a host's arrival: written first, and only then taken as so.
@@ -673,7 +698,7 @@ export const makeStopMarks = (
       note(id, {
         ...record,
         back: (record.back ?? []).filter((each) => each !== threadId),
-        blocks: { ...record.blocks, [threadId]: reason },
+        blocks: { ...record.blocks, [threadId]: cutHostText(reason, BLOCK_REASON_MAX_CHARS) },
       });
     },
     blocked: (id, threadId) => get(id).blocks?.[threadId],

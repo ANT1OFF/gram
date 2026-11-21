@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -96,7 +97,38 @@ const toldAt = (told: ReadonlyArray<Told>, count: number) =>
 const quiet = Effect.sleep(Duration.millis(100));
 const fire = (key: unknown) => routes.get("POST timers/fire")!({ key });
 
+/** The live clock, but each sleep wakes 5 ms before it should, as a timer may by the wall clock. */
+const earlyClock = (live: Clock.Clock): Clock.Clock => ({
+  ...live,
+  currentTimeMillisUnsafe: () => live.currentTimeMillisUnsafe(),
+  currentTimeNanosUnsafe: () => live.currentTimeNanosUnsafe(),
+  monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
+  sleep: (duration) => live.sleep(Duration.millis(Math.max(0, Duration.toMillis(duration) - 5))),
+});
+
 describe("Timers", () => {
+  it.live("never ends a wait before its time, though a timer wakes early", () =>
+    Effect.gen(function* () {
+      const live = yield* Clock.Clock;
+      yield* withTimers({}, (timers) =>
+        Effect.gen(function* () {
+          const at = Date.now() + 40;
+          yield* timers.until("wake:early", at);
+          expect(Date.now()).toBeGreaterThanOrEqual(at);
+        }),
+      ).pipe(Effect.provideService(Clock.Clock, earlyClock(live)));
+    }),
+  );
+
+  it.live("ends a wait for no time at once", () =>
+    withTimers({}, (timers) =>
+      timers.until("wake:nan", Number.NaN).pipe(
+        Effect.timeout("1 second"),
+        Effect.map(() => undefined),
+      ),
+    ),
+  );
+
   it.live("is a sleep with no scheduler, and with the hosted features off", () =>
     Effect.gen(function* () {
       const { told, url } = yield* scheduler;

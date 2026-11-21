@@ -25,6 +25,7 @@ import {
 import { fileOrigin } from "../../thread-profiles/repositories.ts";
 import { githubRelayed } from "../../embedding/github-relay.ts";
 import { routeRefusal } from "../../embedding/route-reach.ts";
+import { currentReader, touchesUnreadable } from "../../embedding/readable-by.ts";
 import {
   projectScriptsDir,
   readProjectScripts,
@@ -68,7 +69,7 @@ const githubOriginOf = (root: string) =>
  * `projects.list`, `projects.add`, `projects.repositories`, `projects.clone`,
  * `projects.setBookmarked` and `projects.forget`.
  */
-const projectHandlers = Effect.gen(function* () {
+export const projectHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const proc = yield* Proc;
   const provide = Effect.provideService(Proc, proc);
@@ -89,7 +90,13 @@ const projectHandlers = Effect.gen(function* () {
     Effect.map(projectOf(projectId), (project) => project.root);
 
   return {
-    "projects.list": () => store.listProjects,
+    // A project whose folder is a private thread's (a profile's home) is that person's alone.
+    "projects.list": () =>
+      Effect.flatMap(store.listProjects, (projects) =>
+        Effect.map(currentReader, (reader) =>
+          projects.filter((project) => !touchesUnreadable(reader, [project.root], "read")),
+        ),
+      ),
     "projects.add": ({ root, trust }) =>
       Effect.gen(function* () {
         const { project, created } = yield* registerRepo(store, root);

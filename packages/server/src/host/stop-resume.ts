@@ -45,7 +45,7 @@ import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { cloneUrlOf } from "./repos.ts";
 import { HOST_RESTORE_MS, REOPEN_MS, SHARED_FLUSH_MS, STOP_CANCEL_MS } from "./budgets.ts";
 import type { JobReport } from "./machine-jobs.ts";
-import { FOLDER_THERE, KEPT_WORK_GONE_REASON, keptWorkGone } from "./stop.ts";
+import { cutHostText, FOLDER_THERE, KEPT_WORK_GONE_REASON, keptWorkGone } from "./stop.ts";
 
 export interface StopResumeDeps {
   readonly hosts: Pick<RemoteHostsShape, "connection" | "machines" | "stops">;
@@ -771,7 +771,7 @@ export const resumeHost = (
             }),
             Effect.catch((error) => Effect.succeed({ said: undefined, failed: error.message })),
           );
-          if (answer.said === undefined) return { kind: "refused", note: answer.failed };
+          if (!answer.said) return { kind: "refused", note: cutHostText(answer.failed) };
           const said = answer.said;
           const note = said.note === undefined ? {} : { note: said.note };
           // A host before `wip-restore-kept` makes a folder from its branch whatever the branch

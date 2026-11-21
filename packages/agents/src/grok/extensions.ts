@@ -11,6 +11,8 @@ import type {
   UserInput,
 } from "@gram/contracts";
 import { readFile } from "node:fs/promises";
+import { lstatSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { APP_TOOLS_SERVER_NAME } from "../app-tools.ts";
@@ -114,22 +116,87 @@ export const permissionParams = (permission: "ask" | "auto" | "always-approve"):
   permission_mode: permission,
 });
 
+const EDIT_PATH_KEYS = ["file_path", "target_file", "path", "notebook_path", "target_directory"];
+
+const exists = (path: string) => {
+  try {
+    return lstatSync(path);
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Where a write to absolute `path` lands: its nearest existing ancestor with every link followed,
+ * then the rest, which can hold no link. `undefined` for a path that is itself a link, dangling or
+ * not, or whose links can't be followed.
+ */
+const landing = (path: string): string | undefined => {
+  let at = path;
+  while (exists(at) === undefined) {
+    if (dirname(at) === at) return undefined;
+    at = dirname(at);
+  }
+  if (at === path && exists(at)?.isSymbolicLink() === true) return undefined;
+  try {
+    return join(realpathSync(at), relative(at, path));
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Whether every path an edit request names (its `locations` and its input's path keys) lands,
+ * once links are followed, inside one of `roots`, the first of which relative paths are read
+ * from. A request naming no path, or a path with a `..` step or ending in a link, is not.
+ */
+export const editWithin = (call: Json, roots: ReadonlyArray<string>): boolean => {
+  const [cwd] = roots;
+  if (cwd === undefined) return false;
+  const input = record(call["rawInput"]);
+  const named = [
+    ...(Array.isArray(call["locations"]) ? call["locations"] : []).map((at) => record(at)["path"]),
+    ...EDIT_PATH_KEYS.map((key) => input[key]),
+  ].filter((path) => path !== undefined);
+  if (named.length === 0) return false;
+  const inside = roots.flatMap((root) => {
+    try {
+      return [realpathSync(resolve(root))];
+    } catch {
+      return [];
+    }
+  });
+  return named.every((path) => {
+    if (typeof path !== "string" || path === "" || path.split(/[\\/]/).includes("..")) return false;
+    const real = landing(resolve(cwd, path));
+    return (
+      real !== undefined &&
+      inside.some((root) => {
+        const rest = relative(root, real);
+        return rest === "" || (!rest.split(/[\\/]/).includes("..") && !isAbsolute(rest));
+      })
+    );
+  });
+};
+
 /**
  * The answer Gram gives a permission request itself, without a card: Gram's own app tools go
- * through, as their registry raises its own card where one is needed; `dontAsk` refuses, edits go
- * through in `acceptEdits`, and a mode that would have run the call unasked lets it through when
- * the outward gate doesn't ask about it. `undefined` shows the card.
+ * through, as their registry raises its own card where one is needed; `dontAsk` refuses, edits
+ * inside the thread's folders (`roots`, `editWithin`) go through in `acceptEdits`, and a mode that
+ * would have run the call unasked lets it through when the outward gate doesn't ask about it.
+ * `undefined` shows the card.
  */
 export const autoAnswer = (
   mode: PermissionMode,
   gate: OutwardGate | undefined,
   call: Json,
+  roots: ReadonlyArray<string>,
 ): "allow" | "deny" | undefined => {
   const tool = text(record(call["rawInput"])["tool_name"]);
   if (tool?.startsWith(`${APP_TOOLS_SERVER_NAME}__`) === true) return "allow";
   if (mode === "dontAsk") return "deny";
   const kind = text(call["kind"]);
-  if (mode === "acceptEdits" && kind === "edit") return "allow";
+  if (mode === "acceptEdits" && kind === "edit" && editWithin(call, roots)) return "allow";
   if (mode !== "bypassPermissions" && mode !== "auto") return undefined;
   if (gate === undefined) return "allow";
   if (kind !== "execute") return "allow";

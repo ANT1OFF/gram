@@ -90,12 +90,15 @@ export function spawnVite(port, token, env = process.env, dir = webDir, { isolat
   );
 }
 
-/** Builds the mock-API app into `E2E_DIST_DIR`; rejects when the build fails. */
-export function buildForPreview(env = process.env) {
+/**
+ * Builds the mock-API app into `outDir` (`E2E_DIST_DIR` unless given); rejects when the build
+ * fails. `VITE_MOCK_*` in `env` beyond the speed reach the build, as Bombadil's modes pass theirs.
+ */
+export function buildForPreview(env = process.env, outDir = E2E_DIST_DIR) {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [viteBin(), "build", "--outDir", E2E_DIST_DIR, "--emptyOutDir"],
+      [viteBin(), "build", "--outDir", outDir, "--emptyOutDir"],
       { cwd: webDir, env: { ...env, ...MOCK_ENV }, stdio: ["ignore", "ignore", "inherit"] },
     );
     child.once("error", reject);
@@ -107,14 +110,14 @@ export function buildForPreview(env = process.env) {
 }
 
 /** `vite preview` of the `buildForPreview` bundle on `port` only, answering `/__e2e` with `token`. */
-export function spawnVitePreview(port, token, env = process.env) {
+export function spawnVitePreview(port, token, env = process.env, outDir = E2E_DIST_DIR) {
   return spawn(
     process.execPath,
     [
       viteBin(),
       "preview",
       "--outDir",
-      E2E_DIST_DIR,
+      outDir,
       "--port",
       String(port),
       "--strictPort",

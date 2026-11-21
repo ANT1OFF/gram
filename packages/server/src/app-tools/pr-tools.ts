@@ -58,7 +58,8 @@ import {
 } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { makeMergeFreezeTool } from "./merge-freeze-tool.ts";
-import { parseRunRef, RunMonitor } from "../git/run-monitor.ts";
+import { makeRunMonitorTool } from "./run-monitor-tool.ts";
+import { refuseOutOfReach, repoOutOfReach } from "../git/repo-reach.ts";
 import {
   withOwnedBranch,
   endedPrText,
@@ -187,7 +188,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
     const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
     // Absent in layers without orchestration, where no outward call is ever delegated.
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
-    const runMonitor = Option.getOrUndefined(yield* Effect.serviceOption(RunMonitor));
     const mergeWhenReady = Option.getOrUndefined(yield* Effect.serviceOption(MergeWhenReady));
     const freezes = yield* MergeFreezes;
     /**
@@ -282,12 +282,11 @@ export const PrAppToolsLive = Layer.effectDiscard(
             message: "No pull request found for this branch; pass repo and number.",
           });
         }
-        if (!REPO.test(repo) || number <= 0) {
-          return yield* new AppToolError({
-            tool,
-            message: `invalid pull request ${repo}#${number}`,
-          });
-        }
+        const refusal =
+          !REPO.test(repo) || number <= 0
+            ? `invalid pull request ${repo}#${number}`
+            : yield* repoOutOfReach(store, thread, repo).pipe(Effect.provideService(Proc, proc));
+        if (refusal !== undefined) return yield* new AppToolError({ tool, message: refusal });
         if (input.add === true && thread.boundPr !== undefined) {
           const added = yield* applyPrEdit(runtimes.updateThread, threadId, (t) =>
             // Without a main PR by the time this runs, there is nothing to follow it beside.
@@ -753,46 +752,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         }).pipe(Effect.mapError(failed("set_auto_merge"))),
     });
 
-    const runMonitorTool = defineAppTool({
-      descriptor: {
-        name: "run_monitor",
-        class: "self",
-        description:
-          "Watch a GitHub Actions run, such as a release build or a deploy, and end your turn: when it completes, Gram sends one message here with its conclusion, failed jobs and link. Name it by `run` (id or page URL) or by `workflow` (file name or name; `branch` narrows it) for its latest run; `repo` defaults to the thread's PR's, else origin's. A completed run is answered at once. It survives a restart. enabled: false stops watching `run`, or every run. Use it instead of `gh run watch`, which holds your turn and dies with it; for a PR's own checks, use pr_review_monitor.",
-      },
-      input: Schema.Struct({
-        run: Schema.optionalKey(Schema.String),
-        workflow: Schema.optionalKey(Schema.String),
-        branch: Schema.optionalKey(Schema.String),
-        repo: Schema.optionalKey(Schema.String),
-        enabled: Schema.optionalKey(Schema.Boolean),
-      }),
-      audience: OWN_PR_AUDIENCE,
-      handle: (threadId, { enabled = true, ...input }) =>
-        Effect.gen(function* () {
-          if (runMonitor === undefined) {
-            return yield* new AppToolError({
-              tool: "run_monitor",
-              message: "Run monitoring isn't available here.",
-            });
-          }
-          if (!enabled) {
-            const ref = input.run === undefined ? undefined : parseRunRef(input.run);
-            // Only a call that names no run stops them all; a typo mustn't.
-            if (input.run !== undefined && ref === undefined) {
-              return yield* new AppToolError({
-                tool: "run_monitor",
-                message: `"${input.run}" is neither a run id nor a run's URL.`,
-              });
-            }
-            return { stopped: yield* runMonitor.unwatch(threadId, ref?.runId) };
-          }
-          const result = yield* runMonitor.watch(threadId, input);
-          return result.watch === undefined
-            ? { watching: false, completed: result.completed }
-            : { watching: true, run: result.watch };
-        }),
-    });
+    const runMonitorTool = yield* makeRunMonitorTool;
 
     /** Whether a launch of `pr` by a thread other than `threadId` is outstanding (a pending fence). */
     const reservedElsewhere = (
@@ -984,6 +944,10 @@ export const PrAppToolsLive = Layer.effectDiscard(
               message: `"${input.pr}" isn't a pull request; write owner/repo#N or its URL.`,
             });
           }
+          const repos = [named?.repo, ...after.map((entry) => entry.ref?.repo)];
+          yield* refuseOutOfReach(MERGE, store, thread.id, { repos }).pipe(
+            Effect.provideService(Proc, proc),
+          );
           const branch =
             input.pr === undefined && thread.boundPr === undefined
               ? yield* currentPr(thread)

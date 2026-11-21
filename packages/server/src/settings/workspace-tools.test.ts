@@ -33,6 +33,7 @@ import {
   type World,
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { notePrivacy } from "../embedding/readable-by.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { workspaceAppToolsLayer } from "./workspace-tools.ts";
 
@@ -942,6 +943,51 @@ describe("workspace_list", () => {
         expect(one.workspaces.map((each) => each.name)).toEqual(["Elsewhere"]);
         const own = (yield* call(thread.id, "orchestrator", "workspace_list", {})) as Listed;
         expect(own.workspaces.map((each) => each.id)).toEqual([workspaceId]);
+      }),
+    ),
+  );
+
+  it.effect("never lists, reads or names a workspace another person's thread holds", () =>
+    inWorkspaces((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const orchestration = yield* Orchestration;
+        const other = yield* store.ensureProject({ root: newRepo(world, "ada"), name: "ada" });
+        const theirs = yield* orchestration.saveWorkspace({
+          name: "Ada Private",
+          projectIds: [other.id],
+          homeProjectId: other.id,
+        });
+        const hidden = theirs.workspace.id;
+        notePrivacy({
+          id: "t-ada-orchestrator" as ThreadId,
+          readableBy: "ada",
+          workspaceId: hidden,
+        });
+        const plain = yield* plainThread(world);
+        type Listed = { readonly workspaces: ReadonlyArray<{ readonly id: string }> };
+        for (const workspaceId of [undefined, "ada private", ` ${hidden.toUpperCase()} `]) {
+          const listed = (yield* call(
+            plain.id,
+            "plain",
+            "workspace_list",
+            workspaceId === undefined ? {} : { workspaceId },
+          )) as Listed;
+          expect(listed.workspaces.map((each) => each.id)).not.toContain(hidden);
+        }
+        for (const workspaceId of ["Ada Private", hidden.toUpperCase()]) {
+          const refused = yield* Effect.flip(
+            call(plain.id, "plain", "workspace_update", {
+              workspaceId,
+              name: "Taken over",
+              reason: "test",
+            }),
+          );
+          expect(String(refused.message)).not.toContain(hidden);
+          expect(String(refused.message)).not.toMatch(/Ada Private \(/);
+        }
+        yield* noCard(plain.id);
+        expect((yield* store.getWorkspace(hidden)).workspace.name).toBe("Ada Private");
       }),
     ),
   );

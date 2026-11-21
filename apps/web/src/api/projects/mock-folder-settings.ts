@@ -8,6 +8,7 @@ const NOTHING: FolderSettings = {
   commands: [],
   scripts: [],
   unreadable: [],
+  other: [],
   none: true,
 };
 
@@ -21,6 +22,7 @@ const BRINGING: Record<string, FolderSettings> = {
     commands: [],
     scripts: [{ name: "test", shortcut: "mod+alt+t" }, { name: "lint" }, { name: "deploy" }],
     unreadable: [],
+    other: [],
     none: false,
   },
 };
