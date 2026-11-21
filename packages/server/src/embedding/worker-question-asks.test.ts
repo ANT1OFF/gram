@@ -108,7 +108,7 @@ const fakeDeps = (found: WorkerQuestion | undefined, reach = true, fails?: strin
   const notes: Array<[string, AnswerNote | undefined]> = [];
   const deps: AskAnswerDeps = {
     runtimes: { respond: () => Effect.die("not a harness ask") },
-    store: { appendActorEvents: () => Effect.succeed(0) },
+    store: { appendActorEvents: () => Effect.succeed(0), listRequests: () => Effect.succeed([]) },
     noteAnswer: (id, note) => Effect.sync(() => void notes.push([id, note])),
     workerQuestions: {
       find: () => Effect.succeed(found),
@@ -209,7 +209,10 @@ describe("answering a worker question's ask", () => {
       const answered: Array<string> = [];
       const deps: AskAnswerDeps = {
         runtimes: { respond: () => Effect.die("not a harness ask") },
-        store: { appendActorEvents: () => Effect.succeed(0) },
+        store: {
+          appendActorEvents: () => Effect.succeed(0),
+          listRequests: () => Effect.succeed([]),
+        },
         noteAnswer: (id, note) =>
           Effect.sync(() => void (note === undefined ? notes.delete(id) : notes.set(id, note))),
         workerQuestions: {

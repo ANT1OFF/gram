@@ -26,6 +26,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { Actor } from "../http/fronted-identity.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
+import { keylessRefusal } from "../runtime/card-key.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { actorEventsOf } from "../rpc/actor-guard.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
@@ -58,7 +59,6 @@ const AnswerBody = Schema.Struct({
   threadId: ThreadId,
   requestId: RequestId,
   answer: RequestAnswer,
-  /** The card's key as `ask.opened` carried it: only that card takes the answer. */
   shown: Schema.optionalKey(Schema.String),
 });
 const decodeBody = Schema.decodeUnknownOption(Schema.fromJsonString(AnswerBody));
@@ -69,7 +69,7 @@ const refusal = (status: number, tag: string, message: string) =>
 
 export interface AskAnswerDeps {
   readonly runtimes: Pick<ThreadRuntimesShape, "respond">;
-  readonly store: Pick<ThreadStoreShape, "appendActorEvents">;
+  readonly store: Pick<ThreadStoreShape, "appendActorEvents" | "listRequests">;
   /**
    * For a worker question's ask (`worker-question-asks.ts`): reads it, and answers it as the
    * user. Absent, such an ask is refused.
@@ -196,6 +196,11 @@ export const answerAsk = (
       return failed === undefined
         ? json(200, {})
         : refusal(failed.status, failed.tag, failed.message);
+    }
+    const keylessForKeyedCard = yield* keylessRefusal(deps.store, threadId, requestId, shown);
+    if (keylessForKeyedCard !== undefined) {
+      yield* record(keylessForKeyedCard);
+      return refusal(409, "InvalidState", keylessForKeyedCard);
     }
     // As the signed person: the runtimes refuse it, before the request is taken, on a machine
     // they may not reach (`runtime/owned-runtimes.ts`). The statement says who answered, never
