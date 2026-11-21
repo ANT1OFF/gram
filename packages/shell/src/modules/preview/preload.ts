@@ -6,13 +6,15 @@ import type { PreloadIpc } from "../../preload.ts";
 /** The preview module's bridge half: each thread's Preview tab page (`installPreview` serves it). */
 export const previewPreload = (ipc: PreloadIpc): Pick<DesktopBridge, "preview"> => ({
   preview: {
-    open: (threadId, url) => ipc.invoke(Channels.previewOpen, { threadId, url }),
+    open: (threadId, url, options) =>
+      ipc.invoke(Channels.previewOpen, { threadId, url, typed: options?.typed === true }),
     openWeb: (threadId, url) => ipc.invoke(Channels.previewOpenWeb, { threadId, url }),
     reopenWeb: (threadId, token) => ipc.invoke(Channels.previewReopenWeb, { threadId, token }),
     setBounds: (threadId, bounds) => ipc.send(Channels.previewBounds, { threadId, bounds }),
     back: (threadId) => ipc.send(Channels.previewBack, { threadId }),
     forward: (threadId) => ipc.send(Channels.previewForward, { threadId }),
     reload: (threadId) => ipc.send(Channels.previewReload, { threadId }),
+    setWebRtc: (threadId, allowed) => ipc.invoke(Channels.previewSetWebRtc, { threadId, allowed }),
     state: (threadId) => ipc.invoke(Channels.previewStateGet, { threadId }),
     inspect: (threadId, target) => ipc.invoke(Channels.previewInspect, { threadId, target }),
     viewport: (threadId, preset) => ipc.invoke(Channels.previewViewport, { threadId, preset }),

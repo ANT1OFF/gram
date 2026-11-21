@@ -1756,7 +1756,19 @@ every permission, download, client certificate and external-app launch refused:
 - **Local**: loopback pages and every page an agent drives. It loads nothing off loopback but what
   an agent was allowed (below). Its pages have no WebRTC, in any of their frames: WebRTC looks up
   the names a page hands it past every other control here, which would let a page send data out in
-  DNS queries.
+  DNS queries. The Preview tab's WebRTC switch gives it back to a page at an address you typed in
+  the address strip, for that address's origin only. It is not offered on a page an agent or a port
+  chip opened, a file preview, Gram's own origins, a page an agent drives or was handed, or while
+  the thread's agent works. The page is made again in a session of its own, empty each time, so
+  nothing another local page left there (a service worker, storage, cache) is served into it.
+  Anything else opening in the thread, an agent taking the page, the page leaving that origin, or
+  a turn of any agent working in that folder (the thread's own, another thread's or a worker's on
+  the same folder, a folder inside it or one around it) makes it again without, and the switch
+  stays off while one works. While it is on, every script that origin serves has WebRTC, including
+  code any agent working in that folder wrote into your app (a hot reload, a restarted dev server,
+  or another server an agent bound to that port) and whatever a process an agent left running
+  serves there, which starts no turn and doesn't end the switch. Turn it on only for an app you
+  are testing yourself.
 - **Web**: the pages you open anywhere else. No agent ever reads or drives one; when an agent
   starts browsing in that thread, your page there closes for a fresh one of its own, so what you
   sign in to on the web stays yours. Pages on the internet share one web session, which never

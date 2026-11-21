@@ -314,6 +314,59 @@ test("an element picked on the thread's page rides in the next message, as its p
   await expect(sent).toContainText("Make it smaller.");
 });
 
+// A local page has no WebRTC; only the user's own switch gives it back, on an address they typed,
+// never while an agent drives it or works.
+test("the user lets a local page they typed use WebRTC, and an agent can't keep it", async ({
+  page,
+}) => {
+  await openThread(page, "t-deps");
+  await page.evaluate((p) => window.gramMock!.simulatePorts("t-deps" as never, [p]), port);
+  const chip = page.getByTestId("pane-header").getByTestId(`port-chip-${port}`);
+  await chip.click();
+  await expect(view(page, "t-deps")).toBeVisible();
+
+  // A port chip's page is not one the user typed: no switch.
+  const webRtc = page.getByTestId("preview-webrtc");
+  await expect(webRtc).toHaveCount(0);
+  const address = page.getByTestId("preview-address");
+  // Another address on the same origin: Enter on the address as it stands opens nothing.
+  const typeIt = async () => {
+    await address.fill(`http://localhost:${port}/other`);
+    await address.press("Enter");
+    await expect(address).toHaveValue(`http://localhost:${port}/other`);
+  };
+  await typeIt();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "false");
+  // Typed, and still loopback: never asked for in the session with the user's sign-ins.
+  expect(await page.evaluate(() => window.gramMock!.shell.preview.openedWeb.slice())).toEqual([]);
+  await webRtc.click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "true");
+  await webRtc.click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "false");
+
+  // Anything else opening in the thread, a port chip or an agent's page, ends it.
+  await webRtc.click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "true");
+  await chip.click();
+  await expect(webRtc).toHaveCount(0);
+
+  // The agent starting a turn ends it, and the user can't switch it on while it works.
+  await typeIt();
+  await webRtc.click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(() => window.gramMock!.simulateStatus("t-deps" as never, "running"));
+  await expect(webRtc).toHaveAttribute("aria-pressed", "false");
+  await expect(webRtc).toBeDisabled();
+  await page.evaluate(() => window.gramMock!.simulateStatus("t-deps" as never, "idle"));
+  await expect(webRtc).toBeEnabled();
+
+  // An agent taking the page ends it, and offers no switch while it drives.
+  await webRtc.click();
+  await expect(webRtc).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(() => window.gramMock!.shell.preview.drive("t-deps", "agent"));
+  await expect(webRtc).toHaveCount(0);
+});
+
 test("a Markdown or HTML file the agent wrote gets a card that renders it in the Preview tab", async ({
   page,
 }) => {

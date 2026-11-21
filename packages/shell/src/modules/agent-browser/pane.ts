@@ -152,6 +152,8 @@ export interface AgentPanes {
   viewport(threadId: string, preset: BrowserViewportPreset): Promise<PaneResult>;
   /** Who drives the thread's page; `undefined` before its agent used it. */
   driverOf(threadId: string): PaneDriver | undefined;
+  /** Whether `url` is one of Gram's own pages (a file preview, an origin the server named). */
+  isAppPage(threadId: string, url: string): boolean;
   /** What the agent said its latest input on the thread's page does, and when. */
   actionOf(threadId: string): { readonly summary: string; readonly at: number } | undefined;
   /** Whether the agent is recording the thread's page. */
@@ -1433,6 +1435,7 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     },
     viewport: (threadId, preset) => uiRead(threadId, { op: "viewport", preset }),
     driverOf: (threadId) => pages.get(threadId)?.driving,
+    isAppPage: (threadId, url) => isAppPage(url, contextOf(threadId)),
     actionOf: (threadId) => pages.get(threadId)?.lastAction,
     recordingOf: (threadId) => pages.get(threadId)?.recording !== undefined,
     closed: (threadId) => {

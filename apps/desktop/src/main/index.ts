@@ -864,7 +864,7 @@ async function runApp() {
     driverChanged: (threadId) => preview?.changed(threadId),
     decodeFrame,
   });
-  preview = installPreview(ipc, { openLink, log, agent: agentPanes });
+  preview = installPreview(ipc, { openLink, log, agent: agentPanes, appOrigins: trustedOrigins });
   // Pinned pages, in a session of their own that no agent reaches; the server says where they load.
   pages = installPages(ipc, {
     log,
