@@ -90,7 +90,7 @@ describe("authentication targets agree with the actual router", () => {
     ]) {
       expect(
         authorize(
-          { port: 4321, token: "synthetic", originKey: "synthetic-key" },
+          { port: 4321, token: "synthetic", cookie: "synthetic", originKey: "synthetic-key" },
           request(path, "127.0.0.1:4321"),
         ),
       ).toMatchObject({ status: 403 });

@@ -13,7 +13,8 @@ import {
 const PORT = 4321;
 const TOKEN = "a".repeat(64);
 const KEY = "b".repeat(64);
-const OPTIONS = { port: PORT, token: TOKEN, originKey: KEY };
+const COOKIE = "c".repeat(64);
+const OPTIONS = { port: PORT, token: TOKEN, cookie: COOKIE, originKey: KEY };
 
 const request = (overrides: Partial<AuthRequest> = {}): AuthRequest => ({
   method: "GET",
@@ -29,7 +30,7 @@ describe("authorize", () => {
       OPTIONS,
       request({
         headers: { host: `evil.example:${PORT}` },
-        cookies: { [tokenCookieName(PORT)]: TOKEN },
+        cookies: { [tokenCookieName(PORT)]: COOKIE },
       }),
     );
     expect(decision).toMatchObject({ kind: "reject", status: 403 });
@@ -53,7 +54,7 @@ describe("authorize", () => {
         expect(
           authorize(
             OPTIONS,
-            request({ url, headers, cookies: { [tokenCookieName(PORT)]: TOKEN } }),
+            request({ url, headers, cookies: { [tokenCookieName(PORT)]: COOKIE } }),
           ),
         ).toMatchObject({ status: 403 });
     }
@@ -70,7 +71,7 @@ describe("authorize", () => {
       OPTIONS,
       request({
         headers: { host: `127.0.0.1:${PORT}`, origin: "https://evil.example" },
-        cookies: { [tokenCookieName(PORT)]: TOKEN },
+        cookies: { [tokenCookieName(PORT)]: COOKIE },
       }),
     );
     expect(decision).toMatchObject({ kind: "reject", status: 403 });
@@ -85,7 +86,7 @@ describe("authorize", () => {
           origin: "http://localhost:5173",
           [ORIGIN_KEY_HEADER]: KEY,
         },
-        cookies: { [tokenCookieName(PORT)]: TOKEN },
+        cookies: { [tokenCookieName(PORT)]: COOKIE },
       }),
     );
     expect(decision.kind).toBe("pass");
@@ -104,13 +105,13 @@ describe("authorize", () => {
     expect(authorize(OPTIONS, request({ url: "/ws" }))).toMatchObject({ status: 401 });
     expect(authorize(OPTIONS, request({ url: "/index.html" }))).toMatchObject({ status: 401 });
     expect(
-      authorize(OPTIONS, request({ url: "/ws", cookies: { sb_token_9999: TOKEN } })),
+      authorize(OPTIONS, request({ url: "/ws", cookies: { sb_token_9999: COOKIE } })),
     ).toMatchObject({ status: 401 });
   });
 
   // A server on another loopback port the browser visits is sent the cookie, and replays it.
   describe("the cookie another port saw, without the key only Gram's origin holds", () => {
-    const cookies = { [tokenCookieName(PORT)]: TOKEN };
+    const cookies = { [tokenCookieName(PORT)]: COOKIE };
     const host = `127.0.0.1:${PORT}`;
 
     it("opens no socket and reaches no route", () => {
@@ -124,7 +125,7 @@ describe("authorize", () => {
           kind: "reject",
           status: 401,
         });
-      const wrong = { host, [ORIGIN_KEY_HEADER]: "c".repeat(64) };
+      const wrong = { host, [ORIGIN_KEY_HEADER]: "d".repeat(64) };
       expect(authorize(OPTIONS, request({ url: "/ws", headers: wrong, cookies }))).toMatchObject({
         status: 401,
       });
@@ -161,6 +162,14 @@ describe("authorize", () => {
       ).toBe("pass");
     });
 
+    // The boot answers with the key, so the cookie's value must never also be the boot token.
+    it("is no boot token: replayed as `?boot=`, with or without the cookie, it boots nothing", () => {
+      for (const withCookies of [{}, cookies])
+        expect(
+          authorize(OPTIONS, request({ url: `/?boot=${COOKIE}`, cookies: withCookies })),
+        ).toMatchObject({ kind: "reject", status: 401 });
+    });
+
     it("and the key without the cookie passes nothing", () => {
       expect(
         authorize(OPTIONS, request({ url: "/ws", headers: { host, [ORIGIN_KEY_HEADER]: KEY } })),
@@ -188,7 +197,7 @@ describe("authorize", () => {
     });
 
     it("rejects a missing or non-bearer Authorization with 401, and ignores the cookie", () => {
-      const cookies = { [tokenCookieName(PORT)]: TOKEN };
+      const cookies = { [tokenCookieName(PORT)]: COOKIE };
       expect(authorize(OPTIONS, request({ method: "POST", url: "/mcp", cookies }))).toMatchObject({
         kind: "reject",
         status: 401,

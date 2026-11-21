@@ -150,8 +150,8 @@ const server = (
 };
 
 const info = Effect.gen(function* () {
-  const { token, originKey } = yield* LaunchToken;
-  return { port: serverPort(yield* HttpServer.HttpServer), token, originKey };
+  const { token, cookie, originKey } = yield* LaunchToken;
+  return { port: serverPort(yield* HttpServer.HttpServer), token, cookie, originKey };
 });
 
 /** A plain request to the server, as the proxy (or anyone who reached the port) would send it. */
@@ -358,7 +358,7 @@ describe("sign-in through a fronting proxy", () => {
   layer(server(true), { excludeTestServices: true })("with the hosted features on", (it) => {
     it.effect("refuses a missing or forged identity, the launch token included", () =>
       Effect.gen(function* () {
-        const { port, token, originKey } = yield* info;
+        const { port, token, cookie: launchCookie, originKey } = yield* info;
         const signedIn = { [IDENTITY_HEADER]: proxy.statement() };
         // The proxy's statement is the way in. No web root here: 404 is the app's own answer.
         expect((yield* get(port, "/", signedIn)).status).toBe(404);
@@ -376,7 +376,7 @@ describe("sign-in through a fronting proxy", () => {
         // The launch token signs nobody in: no cookie for the boot address, none taken either.
         const boot = yield* get(port, `/?boot=${token}`, host);
         expect(boot).toMatchObject({ status: 401, setCookie: "" });
-        const cookie = { ...host, cookie: `${tokenCookieName(port)}=${token}` };
+        const cookie = { ...host, cookie: `${tokenCookieName(port)}=${launchCookie}` };
         expect((yield* get(port, "/", cookie)).status).toBe(401);
         expect(yield* upgrade(port, cookie)).toBe(401);
 

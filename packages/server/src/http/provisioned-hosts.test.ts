@@ -147,7 +147,7 @@ interface Answer {
 const local = (path: string, body?: unknown) =>
   Effect.gen(function* () {
     const port = serverPort(yield* HttpServer.HttpServer);
-    const { token, originKey } = yield* LaunchToken;
+    const { cookie: launchCookie, originKey } = yield* LaunchToken;
     return yield* Effect.promise(
       () =>
         new Promise<Answer>((resolve, reject) => {
@@ -160,7 +160,7 @@ const local = (path: string, body?: unknown) =>
               method: "POST",
               agent: false,
               headers: {
-                cookie: `${tokenCookieName(port)}=${token}`,
+                cookie: `${tokenCookieName(port)}=${launchCookie}`,
                 [ORIGIN_KEY_HEADER]: originKey,
                 origin: `http://127.0.0.1:${port}`,
                 "content-type": "application/json",

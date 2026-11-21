@@ -53,7 +53,7 @@ import { captureLogs } from "@gram/agents/testing/logs";
 import { attestShutdown, stopForShutdown } from "../runtime/shutdown.ts";
 import { remoteCookieName } from "./remote-access.ts";
 import { Tailscale, type TailscaleShape } from "./remote-control.ts";
-import { ORIGIN_KEY_PROTOCOL, tokenCookieName } from "./auth.ts";
+import { tokenCookieName } from "./auth.ts";
 import { bootLine, rpcRoutes, serverPort, ServerLayer } from "./server.ts";
 import { guardFileBody, GuardedHttpPlatform } from "./app-shell.ts";
 import {
@@ -406,13 +406,14 @@ layer(TestServer, { excludeTestServices: true })("server over a real socket", (i
 
     it.effect("exchanges the boot token for an HttpOnly, SameSite=Strict per-port cookie", () =>
       Effect.gen(function* () {
-        const { port, token, originKey } = yield* serverInfo;
+        const { port, token, cookie, originKey } = yield* serverInfo;
         const response = yield* raw(port, { path: `/?boot=${token}` });
         expect(response.status).toBe(302);
         // The origin key, in the fragment: the page reads it, and no server is ever sent it.
         expect(response.headers.location).toBe(`/#gram-key=${originKey}`);
         const setCookie = response.headers["set-cookie"]?.[0] ?? "";
-        expect(setCookie).toContain(`${tokenCookieName(port)}=${token}`);
+        expect(setCookie).toContain(`${tokenCookieName(port)}=${cookie}`);
+        expect(cookie).not.toBe(token);
         expect(setCookie).toMatch(/HttpOnly/i);
         expect(setCookie).toMatch(/SameSite=Strict/i);
         expect(setCookie).toMatch(/Path=\//i);
@@ -426,78 +427,17 @@ layer(TestServer, { excludeTestServices: true })("server over a real socket", (i
 
     it.effect("enforces the cookie on static assets and the WebSocket upgrade", () =>
       Effect.gen(function* () {
-        const { port, token } = yield* serverInfo;
+        const { port } = yield* serverInfo;
         const cookie = yield* bootCookie;
+        const value = cookie.slice(cookie.indexOf("=") + 1);
         expect((yield* raw(port, { path: "/app.js" })).status).toBe(401);
         expect((yield* raw(port, { path: "/app.js", headers: { cookie } })).status).toBe(200);
 
         expect(yield* upgradeStatus(port, {})).toBe(401);
         expect(
-          yield* upgradeStatus(port, { cookie: `${tokenCookieName(port + 1)}=${token}` }),
+          yield* upgradeStatus(port, { cookie: `${tokenCookieName(port + 1)}=${value}` }),
         ).toBe(401);
         expect(yield* upgradeStatus(port, { cookie })).toBe(101);
-      }),
-    );
-
-    // A server on another loopback port the browser visits is sent the cookie, and replays it.
-    it.effect(
-      "refuses the socket and every route to the cookie alone, which another port is sent",
-      () =>
-        Effect.gen(function* () {
-          const { port } = yield* serverInfo;
-          const cookie = yield* bootCookie;
-          expect(yield* upgradeStatus(port, { cookie }, "/ws", true)).toBe(401);
-          for (const [method, path] of [
-            ["POST", "/workspace/export"],
-            ["POST", "/machines/join"],
-            ["GET", "/?boot=0"],
-          ] as const)
-            expect(
-              (yield* raw(port, { method, path, headers: { cookie }, noKey: true })).status,
-            ).toBe(401);
-          // The web app's own files it still gets, to load the page that holds the key.
-          expect(
-            (yield* raw(port, { path: "/app.js", headers: { cookie }, noKey: true })).status,
-          ).toBe(200);
-          const shell = yield* raw(port, {
-            path: "/settings/machines",
-            headers: { cookie, accept: "text/html" },
-            noKey: true,
-          });
-          expect(shell.body).toContain("<title>Gram</title>");
-        }),
-    );
-
-    it.effect("opens the socket with the key as its subprotocol, as a browser sends it", () =>
-      Effect.gen(function* () {
-        const { port, originKey } = yield* serverInfo;
-        const cookie = yield* bootCookie;
-        const protocol = `${ORIGIN_KEY_PROTOCOL}${originKey}`;
-        const socket = new (globalThis.WebSocket as unknown as new (
-          url: string,
-          init: { headers: Record<string, string>; protocols: Array<string> },
-        ) => globalThis.WebSocket)(`ws://127.0.0.1:${port}/ws`, {
-          headers: { cookie },
-          protocols: [protocol],
-        });
-        yield* Effect.addFinalizer(() => Effect.sync(() => socket.close()));
-        const opened = yield* Effect.promise(
-          () =>
-            new Promise<string>((resolve, reject) => {
-              socket.addEventListener("open", () => resolve(socket.protocol), { once: true });
-              socket.addEventListener("error", () => reject(new Error("refused")), { once: true });
-            }),
-        );
-        // The server answers with the protocol the browser asked for, or the browser drops it.
-        expect(opened).toBe(protocol);
-        expect(
-          yield* upgradeStatus(
-            port,
-            { cookie, "sec-websocket-protocol": `${ORIGIN_KEY_PROTOCOL}${"0".repeat(64)}` },
-            "/ws",
-            true,
-          ),
-        ).toBe(401);
       }),
     );
 

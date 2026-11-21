@@ -196,7 +196,8 @@ import {
   authorize,
   ORIGIN_KEY_FRAGMENT,
   contentSecurityPolicy,
-  makeLaunchToken,
+  type LaunchSecrets,
+  makeLaunchSecrets,
   MCP_PATH,
   tokenCookieName,
 } from "./auth.ts";
@@ -243,15 +244,11 @@ const recordOf = (response: HttpServerResponse.HttpServerResponse): Record<strin
   };
 };
 
-/** The per-launch secret carried by the boot URL, and the key the boot redirect hands the page. */
-export class LaunchToken extends Context.Service<
-  LaunchToken,
-  { readonly token: string; readonly originKey: string }
->()("@gram/server/LaunchToken") {
-  static readonly layer = Layer.sync(LaunchToken, () => ({
-    token: makeLaunchToken(),
-    originKey: makeLaunchToken(),
-  }));
+/** This launch's boot token, cookie and origin key (`LaunchSecrets`). */
+export class LaunchToken extends Context.Service<LaunchToken, LaunchSecrets>()(
+  "@gram/server/LaunchToken",
+) {
+  static readonly layer = Layer.sync(LaunchToken, makeLaunchSecrets);
 }
 
 export const serverPort = (server: HttpServer.HttpServer["Service"]): number =>
@@ -265,7 +262,7 @@ export const bootLine = (port: number, token: string): string =>
 export const AuthMiddleware = HttpRouter.middleware(
   Effect.gen(function* () {
     const server = yield* HttpServer.HttpServer;
-    const { token, originKey } = yield* LaunchToken;
+    const { token, cookie: launchCookie, originKey } = yield* LaunchToken;
     // The server's, beside its static routes; a router without them serves nothing in its place.
     const shell = yield* Effect.serviceOption(AppShell);
     const config = yield* ServerConfig;
@@ -772,7 +769,7 @@ export const AuthMiddleware = HttpRouter.middleware(
         const decision = isRemote
           ? remote.authorize(authRequest)
           : authorize(
-              { port, token, originKey, extraOrigins: config.extraOrigins },
+              { port, token, cookie: launchCookie, originKey, extraOrigins: config.extraOrigins },
               {
                 method: request.method,
                 url: request.url,
@@ -829,7 +826,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             response = yield* HttpServerResponse.redirect(`/#${ORIGIN_KEY_FRAGMENT}${originKey}`, {
               status: 302,
             }).pipe(
-              HttpServerResponse.setCookie(tokenCookieName(port), token, {
+              HttpServerResponse.setCookie(tokenCookieName(port), launchCookie, {
                 httpOnly: true,
                 sameSite: "strict",
                 path: "/",

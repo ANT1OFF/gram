@@ -21,6 +21,11 @@ import { authTarget } from "./auth-target.ts";
 export interface AuthOptions {
   readonly port: number;
   readonly token: string;
+  /**
+   * The launch cookie's value: its own random value, never the boot token, since every port of this
+   * host is sent the cookie and a boot answers with the origin key.
+   */
+  readonly cookie: string;
   /** The per-launch key only Gram's own origin holds. */
   readonly originKey: string;
   readonly extraOrigins?: ReadonlyArray<string>;
@@ -72,6 +77,25 @@ export const originKeyOf = (
 
 /** 256 random bits, hex-encoded. */
 export const makeLaunchToken = (): string => randomBytes(32).toString("hex");
+
+/** A launch's secrets, each its own random value. */
+export interface LaunchSecrets {
+  /** Carried by the boot URL; exchanged for the cookie and the key. */
+  readonly token: string;
+  /**
+   * The launch cookie's value. Every port of this host is sent the cookie and a boot answers with
+   * the key, so it must never also be the boot token.
+   */
+  readonly cookie: string;
+  /** Handed to the page in the boot redirect's fragment. */
+  readonly originKey: string;
+}
+
+export const makeLaunchSecrets = (): LaunchSecrets => ({
+  token: makeLaunchToken(),
+  cookie: makeLaunchToken(),
+  originKey: makeLaunchToken(),
+});
 
 /** Cookies are host-scoped, not port-scoped: another instance's cookie must not shadow ours. */
 export const tokenCookieName = (port: number): string => `sb_token_${port}`;
@@ -164,7 +188,7 @@ export const authorize = (options: AuthOptions, request: AuthRequest): AuthDecis
   }
 
   const cookie = request.cookies[tokenCookieName(options.port)];
-  if (cookie === undefined || !tokensEqual(cookie, options.token))
+  if (cookie === undefined || !tokensEqual(cookie, options.cookie))
     return { kind: "reject", status: 401, message: "unauthorized: launch token required" };
   const key = originKeyOf(request.headers);
   if (key !== undefined && tokensEqual(key, options.originKey)) return { kind: "pass" };

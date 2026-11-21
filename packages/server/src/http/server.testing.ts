@@ -135,9 +135,9 @@ export const openSocket = (port: number, headers: Record<string, string>, path =
 
 export const serverInfo = Effect.gen(function* () {
   const server = yield* HttpServer.HttpServer;
-  const { token, originKey } = yield* LaunchToken;
+  const { token, cookie, originKey } = yield* LaunchToken;
   launchKey = originKey;
-  return { port: serverPort(server), token, originKey };
+  return { port: serverPort(server), token, cookie, originKey };
 });
 
 /** Performs the boot navigation and returns the resulting `Cookie` header value. */
