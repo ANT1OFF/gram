@@ -513,6 +513,29 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
     }).pipe(provide),
   );
 
+  it.live("puts work kept on an older main back on a fresh clone whose main moved on", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = withOrigin();
+      const kept = run(repo, "rev-parse", "HEAD").trim();
+      write(nodePath.join(repo, "tracked.txt"), "uncommitted\n");
+      yield* pushWip(repo, yield* snapshotWip(repo, "thread-1"), "origin", FILE);
+      // Others merged to main after the work was kept; then the machine was lost.
+      run(repo, "stash", "--quiet");
+      run(repo, "commit", "--quiet", "--allow-empty", "-m", "merged meanwhile");
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      const moved = run(repo, "rev-parse", "HEAD").trim();
+
+      const { clone } = cloneOf(origin);
+      const dirty = yield* fetchWip(clone, "thread-1", "origin", FILE);
+      expect(dirty).toMatchObject({ head: kept, uncommitted: true });
+      yield* restoreWip(clone, dirty!, "main");
+      expect(run(clone, "rev-parse", "main").trim()).toBe(kept);
+      expect(fs.readFileSync(nodePath.join(clone, "tracked.txt"), "utf8")).toBe("uncommitted\n");
+      // The commits main was set back past are still the remote's.
+      expect(run(clone, "rev-parse", "origin/main").trim()).toBe(moved);
+    }).pipe(provide),
+  );
+
   it.live("takes the clone's default branch for a thread that worked on it", () =>
     Effect.gen(function* () {
       const { repo, origin } = withOrigin();
