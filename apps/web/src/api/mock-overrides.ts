@@ -64,3 +64,11 @@ export const MOCK_SERVER_LACKS_KEY = "gram.mock.serverLacks";
 
 export const mockServerLacks = (): readonly string[] =>
   (flag(MOCK_SERVER_LACKS_KEY) ?? "").split(",").filter((tag) => tag !== "");
+
+/**
+ * A message: opening a workspace's orchestrator fails with it, as against a server whose start
+ * fails after the workspace is saved, so New workspace's failed Start can be seen.
+ */
+export const MOCK_FAIL_OPEN_KEY = "gram.mock.failOpen";
+
+export const mockFailOpen = (): string | undefined => flag(MOCK_FAIL_OPEN_KEY) ?? undefined;
