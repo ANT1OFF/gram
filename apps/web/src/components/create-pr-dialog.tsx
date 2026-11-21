@@ -21,10 +21,8 @@ const labelCls = "text-meta font-medium text-muted-foreground";
 const inputCls =
   "w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
-/** `origin/main` as GitHub names it: `main`. */
 const branchName = (ref: string) => ref.replace(/^origin\//, "");
 
-// Shared with the `wrap_up` tool, which offers Create PR only when this button would show.
 export { canCreatePr };
 
 /** "Create PR" for a branch without one; opens the create-PR dialog. */
@@ -70,7 +68,6 @@ export function CreatePrDialog({ threadId, onClose }: { threadId: ThreadId; onCl
     enabled: repoPath !== "",
   });
   const suggestedBase = branchName(git?.base ?? branchList?.default ?? "main");
-  // Undefined until the user picks or types, so the suggestion and pre-fill can still arrive.
   const [pickedBase, setBase] = useState<string>();
   const [editedTitle, setTitle] = useState<string>();
   const [editedBody, setBody] = useState<string>();

@@ -99,8 +99,6 @@ function DocsList({ workspaceId }: { workspaceId: WorkspaceId }) {
         Reports, plans and analyses this workspace's threads published. They stay in Gram on this
         computer, outside your repos.
       </p>
-      {/* By the task that wrote them, the one that published last first; one task's docs need no
-          heading. Within a task, newest first, as the server lists them. */}
       {groups.map((group) => (
         <section
           key={group.authorThreadId}

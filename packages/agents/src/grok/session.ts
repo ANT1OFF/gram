@@ -109,7 +109,6 @@ export const withHeadlessSignIn = (
 
 const failure = (what: string, error: unknown) => acpFailure(GROK, what, error);
 
-/** Holds `connection`'s session to `mode`'s permissions under `gate`. */
 const switchPermission = (
   connection: AcpConnection,
   mode: PermissionMode,
@@ -119,7 +118,6 @@ const switchPermission = (
     ...permissionParams(grokPermission(mode, gate)),
   });
 
-/** Grok Build's own part of a session: its permission switch, models and MCP servers. */
 const GROK: AcpAgentSpec = {
   kind: "grok",
   name: "Grok Build",
@@ -132,7 +130,6 @@ const GROK: AcpAgentSpec = {
   mapper: (sessionId, newMessageId) => makeGrokMapper({ sessionId, newMessageId }),
   appToolsServer: () => APP_TOOLS_SERVER_NAME,
   autoAnswer: (mode, gate, call, roots) => autoAnswer(mode, gate, call, roots),
-  // The role's standing instructions join Grok's system prompt; Grok keeps them with the session.
   sessionParams: (options) => {
     const instructions = options.instructions?.trim();
     return instructions === undefined || instructions === ""
@@ -185,7 +182,6 @@ const GROK: AcpAgentSpec = {
             connection.request("_x.ai/mcp/toggle", { sessionId: id, serverName: name, enabled }),
           catch: (error) => failure(`Grok Build didn't switch ${name}`, error),
         });
-      // The thread's lists leave servers out by switching them off for this session alone.
       if (narrowsMcp(options))
         for (const entry of yield* servers.pipe(Effect.orElseSucceed(() => []))) {
           const name = text(entry["name"]);
@@ -235,7 +231,6 @@ const GROK: AcpAgentSpec = {
     }),
 };
 
-/** Grok Build's plan usage, read from `x.ai/billing` on an agent of its own. */
 const readBilling = (config: GrokHostConfig) =>
   Effect.gen(function* () {
     const connection = yield* launchAcp(config, GROK, homedir(), {

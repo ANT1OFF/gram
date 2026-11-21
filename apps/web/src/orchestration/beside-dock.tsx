@@ -19,7 +19,6 @@ export function useBesideSync() {
   const known = useThreadsStore((s) =>
     worker === undefined ? false : s.byId[worker] !== undefined,
   );
-  // The pane's current worker is the one last open in it, until the pane closes.
   const paneShown = useLayoutStore((s) => fitShell(s).panel !== "none");
   useEffect(() => {
     if (!paneShown && useBesideStore.getState().current !== undefined) {
@@ -31,11 +30,9 @@ export function useBesideSync() {
   useEffect(() => {
     if (ready && restored) checkRestored(route);
   }, [ready, restored, route]);
-  // A worker closed while open beside the chat goes with it, and so does one opened in full.
   useEffect(() => {
     if (worker !== undefined && ready && !known && !record) closeBeside();
   }, [worker, ready, known, record]);
-  // Only on arriving there: ⌘\ opens the worker in view beside the chat before the route has left it.
   const lastRoute = useRef(route);
   useEffect(() => {
     if (lastRoute.current === route) return;

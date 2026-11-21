@@ -126,8 +126,6 @@ export function UsageMeter({
         hint={meterHint(tightest)}
         label="Subscription usage"
         testId="usage-limits"
-        // Wide enough that a provider's name, its reading's age and a date-and-time reset each keep
-        // one line, in columns that line up down it.
         className={cn(POPOVER_WIDTH, "p-3")}
         anchor={anchor}
         keepClearBelow={ACTION_AREA_CLEARANCE}
@@ -173,7 +171,6 @@ export function UsageMeter({
                 TONE_TEXT[tone],
               )}
             >
-              {/* An old reading dims its bar only, so the words keep the text floor. */}
               <LimitBar limit={tightest.limit} className={cn("w-9", stale && "opacity-50")} />
               <span>{meterText(tightest)}</span>
             </button>
@@ -186,19 +183,11 @@ export function UsageMeter({
   );
 }
 
-/**
- * Closes the open popover once focus moves outside it: a click or Tab onto an approval card's
- * buttons, the composer, anything in the conversation, which a ringed card's own focus does too.
- * Its trigger is no "outside": a click there toggles it as before. An ask arriving elsewhere leaves
- * it be: the user may be reading it.
- */
 function useGiveWay(open: boolean, setOpen: (open: boolean) => void) {
   useEffect(() => {
     if (!open) return;
     const away = (event: FocusEvent) => {
       const target = event.target;
-      // The window taking focus back (from a tab a middle-click opened, say) lands on the body:
-      // nothing else asked for the user.
       if (!(target instanceof Element) || target === document.body) return;
       if (target.closest('[data-testid="usage-limits"], [data-testid="usage-meter"]')) return;
       setOpen(false);
@@ -208,18 +197,11 @@ function useGiveWay(open: boolean, setOpen: (open: boolean) => void) {
   }, [open, setOpen]);
 }
 
-/** The popover's width, in rem so it grows with the interface's text size. */
 const POPOVER_REM = 23.75;
 const POPOVER_WIDTH = "w-[23.75rem]";
 
-/** The cards in view that ask for a decision: approvals and questions, wherever they are drawn. */
 const DECISION_CARDS = "[data-request-id]";
 
-/**
- * What the popover hangs from: the meter, or, while that would put it over a card that asks for a
- * decision, a point at the window's edge clear of every such card (`clearRightEdge`). Weighed each
- * time the popover is placed, so a card arriving while it is open moves it aside.
- */
 function useClearAnchor(trigger: HTMLElement | null) {
   return useMemo(() => {
     if (trigger === null) return undefined;
@@ -246,14 +228,8 @@ function useClearAnchor(trigger: HTMLElement | null) {
   }, [trigger]);
 }
 
-/**
- * How much of the window's foot the popover leaves clear, in CSS px: the composer and an approval
- * or question card above it, the conversation's action area. A short window scrolls the popover
- * rather than laying it over them.
- */
 const ACTION_AREA_CLEARANCE = 360;
 
-/** Before any agent reports a limit: the Usage page, behind an icon with its name on hover. */
 function UsageLink({ className }: { className?: string | undefined }) {
   return (
     <Hint
@@ -279,22 +255,13 @@ function UsageLink({ className }: { className?: string | undefined }) {
   );
 }
 
-/**
- * The popover's body, ticking each minute while open so ages and forecasts stay true: whose number
- * the title bar shows (`meterSource`), the columns' names once, then a block per provider, its name
- * and its reading's age on one row, a row per window saying its period, how much is used and when
- * it resets. The window the title bar shows is marked, the thread's agent named, and the foot says
- * the meter's rule, with the way on to the Usage page.
- */
 function LimitsPopover({
   shown,
   agent,
   onLeave,
 }: {
   shown: ShownLimit;
-  /** The agent of the thread in view, whose block says so. */
   agent: string | undefined;
-  /** Closes the popover as its link leaves for the Usage page. */
   onLeave: () => void;
 }) {
   const now = useMinuteNow();
@@ -336,13 +303,8 @@ function LimitsPopover({
   );
 }
 
-/**
- * The popover's columns, the same in every provider's block so they line up down it: the period,
- * its bar, the share used ("85%") and when it resets, both right-aligned under their names.
- */
 const LIMIT_ROW = "grid grid-cols-[3.75rem_minmax(2rem,1fr)_2.75rem_6.75rem] items-center gap-x-2";
 
-/** What a window with no current reading says instead of its share. */
 const missingText = (
   provider: LimitProvider,
   missing: ReturnType<typeof missingReading>,
@@ -356,20 +318,12 @@ const missingText = (
     case "lapsed":
       return `The last reading is too old to count. A new one comes with ${agent}'s next reply.`;
     case "unreported":
-      // Claude Code names one window per reply, so the quieter one can stay unreported.
       return provider === "claude"
         ? `${agent} hasn't reported this window yet. It reports one window at a time, with its replies.`
         : `${agent} hasn't reported this window yet. It reports with its replies.`;
   }
 };
 
-/**
- * A provider's 5-hour and weekly rows under its name and its reading's age, on one row in the
- * columns' grid so the age lines up under Resets; its credits when the agent reports them, and
- * under a row the forecast when there is pace enough to make one; nothing for a provider with no
- * current reading. An old reading says so in the same muted words as its age ("Old reading · 40m
- * ago"), never a mark that reads as a button, and never amber.
- */
 function ProviderLimits({
   provider,
   now,
@@ -378,9 +332,7 @@ function ProviderLimits({
 }: {
   provider: LimitProvider;
   now: number;
-  /** The agent of the thread in view. */
   thisThread: boolean;
-  /** The window the title bar's meter shows, when it is this provider's. */
   shown: LimitWindow | undefined;
 }) {
   const windows = useUsageLimits((s) => s.limits[provider]);
@@ -470,7 +422,6 @@ function ProviderLimits({
               )}
             </div>
             {missing !== undefined && (
-              // Why the row is a dash, in the forecast's muted sub-row, so it never reads as a fault.
               <p className={cn(LIMIT_ROW, "-mt-1 text-meta text-muted-foreground")}>
                 <span aria-hidden />
                 <span data-testid="usage-limit-missing" className="col-span-3">
@@ -487,8 +438,6 @@ function ProviderLimits({
               </p>
             )}
             {forecast !== undefined && (
-              // A muted sub-row from the bar's column, marked as a trend, so the rows keep their
-              // columns and it never reads as the reading's age.
               <p className={cn(LIMIT_ROW, "-mt-1 text-meta text-muted-foreground")}>
                 <span aria-hidden />
                 <span className="col-span-3 flex items-baseline gap-1">
@@ -507,11 +456,6 @@ function ProviderLimits({
   );
 }
 
-/** A reading's words by its tone (`limitTone`): neutral, then amber from 90%, red once spent. */
-/**
- * The title bar's button's dot, by state: near the limit a ring in the warning colour, its middle
- * the bar's own ground; past it on credits filled amber; spent with nothing to carry on filled red.
- */
 const STATE_DOT: Readonly<Record<MeterState, string>> = {
   approaching: "border-2 border-warning bg-thread",
   credits: "bg-warning",

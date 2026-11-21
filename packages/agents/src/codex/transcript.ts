@@ -4,7 +4,6 @@ import { toolOf } from "./mapper.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { Turn } from "./protocol/v2/Turn.ts";
 
-/** An MCP result's text blocks joined; any other block is named rather than inlined. */
 const mcpText = (content: ReadonlyArray<unknown>): string | undefined => {
   const parts = content.map((block) => {
     if (typeof block !== "object" || block === null) return String(block);
@@ -24,7 +23,6 @@ const outputOf = (item: ThreadItem): string | undefined => {
       return toolSideText(`${item.aggregatedOutput ?? ""}${code}`.trim());
     }
     case "fileChange":
-      // A patch that applied says nothing its input didn't.
       return item.status === "declined"
         ? "Declined"
         : item.status === "failed"

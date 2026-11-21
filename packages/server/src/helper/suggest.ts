@@ -18,16 +18,12 @@ import { prPromptBlock } from "./pr-context.ts";
 import { REPLY_RULES, validReplies } from "./replies.ts";
 import { basisHash, type HelperLane, type HelperScheduler } from "./scheduler.ts";
 
-/** Bumped whenever the prompt or the output shape changes, so stored suggestions are made again. */
 const SUGGEST_PROMPT_VERSION = 2;
 
-/** How often suggestions are made again for a plan that moved while they were being made. */
 const PLAN_RETRIES = 3;
 
-/** How many of the user's own messages show the model how they write. */
 const STYLE_SAMPLES = 5;
 const STYLE_SAMPLE_MAX_CHARS = 120;
-/** The agent's last reply, which is what a suggestion answers. */
 const REPLY_MAX_CHARS = 2_000;
 
 /** Appendix A.3 of the 0.8 design. */
@@ -148,7 +144,6 @@ export interface Suggestions {
 export const replyBasis = (plan: unknown, prs: ReadonlyArray<PrContext>): string =>
   basisHash(plan, prPromptBlock(prs) ?? null);
 
-/** Suggestions with the plan and PRs they were made against, as `replyBasis` of them. */
 interface Made {
   readonly suggestions: ThreadSuggestions;
   readonly basis: string;
@@ -163,12 +158,10 @@ export const makeSuggestions = (deps: SuggestDeps): Suggestions => {
 
   const run = (threadId: ThreadId, turnId: TurnId, lane: HelperLane) =>
     Effect.gen(function* () {
-      // Read first and in the basis: a plan edited since is other material, under the same turn.
       const plan = yield* deps.plan(threadId);
       const prs = yield* deps.prContext(threadId);
       const material = yield* Effect.cached(
         Effect.gen(function* () {
-          // The newest that say something: the style samples, the last of them the latest.
           const users = (yield* deps.userMessages(threadId, {
             from: "newest",
             count: STYLE_SAMPLES,
@@ -221,16 +214,9 @@ export const makeSuggestions = (deps: SuggestDeps): Suggestions => {
       return replyBasis(plan, yield* deps.prContext(threadId));
     });
 
-  // A thread the server restarted under, or whose session was put away, is `cold` but done all the
-  // same; anything else is still at work or waiting on the user.
   const settled = (threadId: ThreadId) =>
     Effect.map(deps.status(threadId), (status) => status === "idle" || status === "cold");
 
-  /**
-   * `made` still answers the thread's last turn, which is over, and its plan: kept, and true. The
-   * turn is asked again once it is stored, and it is taken back if that fails, so a thread closed
-   * meanwhile (its turns go with it) can't keep it past the removal's own cleanup.
-   */
   const keep = (made: Made) =>
     Effect.gen(function* () {
       const { threadId, turnId } = made.suggestions;
@@ -245,17 +231,12 @@ export const makeSuggestions = (deps: SuggestDeps): Suggestions => {
       return false;
     });
 
-  /**
-   * Suggestions for `turnId`, kept: made again while the plan moves under them, since an edit
-   * that lands mid-call may be the last, and nothing else would ask for its replies.
-   */
   const fresh = (threadId: ThreadId, turnId: TurnId, lane: HelperLane) =>
     Effect.gen(function* () {
       for (let attempt = 0; attempt < PLAN_RETRIES; attempt++) {
         const made = yield* run(threadId, turnId, lane);
         if (made === undefined) return undefined;
         if (yield* keep(made)) return made;
-        // The user may have sent something while the helper thought: then it's for a turn that's gone.
         const last = yield* deps.lastTurn(threadId);
         if (last?.id !== turnId || last.reason === undefined) return undefined;
       }
@@ -264,8 +245,6 @@ export const makeSuggestions = (deps: SuggestDeps): Suggestions => {
 
   const atTurnEnd: Suggestions["atTurnEnd"] = (thread, turnId) =>
     Effect.gen(function* () {
-      // Not the status: the runtime reports `idle` after its observers hear of the turn end, and a
-      // turn behind it is ruled out by `suggestibleEnd` and the check in `fresh`.
       if (!(yield* deps.focused(thread.id))) return;
       const made = yield* fresh(thread.id, turnId, "interactive");
       if (made === undefined) return;
@@ -281,7 +260,6 @@ export const makeSuggestions = (deps: SuggestDeps): Suggestions => {
       const known = memo.get(threadId);
       if (known === undefined || (yield* basisNow(threadId)) === known.basis) return;
       memo.delete(threadId);
-      // Taken from every window at once, whether or not new ones can be made.
       yield* deps.publish({ ...known.suggestions, replies: [], stale: true });
       if (!(yield* deps.enabled) || !(yield* deps.focused(threadId))) return;
       const last = yield* deps.lastTurn(threadId);
@@ -307,7 +285,6 @@ export const makeSuggestions = (deps: SuggestDeps): Suggestions => {
         return known.suggestions;
       }
       const made = yield* fresh(threadId, last.id, "interactive");
-      // A turn may have started, or even finished, while the helper thought.
       if (made === undefined || !(yield* settled(threadId))) return undefined;
       return made.suggestions;
     }).pipe(

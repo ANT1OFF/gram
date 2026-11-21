@@ -1,20 +1,3 @@
-// A workspace's own machine, through the embedder's host provider.
-//
-// A headless Gram places a workspace's orchestrator, and so its workers, on the person's own
-// machine (`on-demand.ts`). A workspace with an environment of its own (`Workspace.environment`)
-// runs instead on a machine of its own, started in that environment: what one workspace installs
-// and may reach is then not every other workspace's.
-//
-// The person starts it, as they start their own: `/machines/on-demand/start` with `{workspace}`,
-// a request the fronting proxy signs as theirs, which goes to the provider as the proof that they
-// asked (`POST /hosts/start`, `kind: "workspace"`). The provider decides whether they may have it,
-// and in that environment. It registers the machine here (`/machines/provision`) under the name
-// asked for, with the person as its owner and `onDemand: "thread"`: it takes only the threads
-// placed on it by name, and is never anyone's default. Opening the workspace's orchestrator places
-// it there; with the machine not running, it is refused with `WORKSPACE_MACHINE_NOT_RUNNING`, and
-// the app starts it and opens it again. The orchestrator's workers go on it as on any
-// orchestrator's own machine (`orchestration/service/spawning.ts`).
-
 import {
   type HostId,
   InvalidState,

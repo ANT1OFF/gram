@@ -48,7 +48,6 @@ const ledgerQuery = (api: Api, workspaceId: WorkspaceId) => ({
   retry: false,
 });
 
-/** One set of streams per connection: a replaced `api` is a new server session with none open. */
 const watches = new WeakMap<Api, LedgerWatch>();
 
 const watchFor = (api: Api, queryClient: QueryClient): LedgerWatch => {
@@ -71,11 +70,6 @@ const watchFor = (api: Api, queryClient: QueryClient): LedgerWatch => {
 export const ledgerStreamLive = (api: Api, workspaceId: WorkspaceId): boolean =>
   watches.get(api)?.isLive(workspaceId) === true;
 
-/**
- * Streams the ledgers of `workspaceIds` into the query cache while mounted. The query beside it is
- * what shows before the stream's first ledger, and after a failed one; every view of a workspace
- * shares one stream, which closes a little after the last of them goes.
- */
 function useLedgerWatch(workspaceIds: readonly WorkspaceId[]) {
   const api = useApi();
   const queryClient = useQueryClient();

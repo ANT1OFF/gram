@@ -19,7 +19,6 @@ export function RestartSessionDialog({
   onClose: () => void;
 }) {
   const api = useApi();
-  // Read once: the choice offered is about the moment the user asked.
   const interrupts = restartInterrupts(threadId);
   const run = (midTurn: "interrupt" | "afterTurn") => {
     restartSession(api, threadId, midTurn);

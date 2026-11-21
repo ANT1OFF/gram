@@ -96,7 +96,6 @@ export const approvalFor = (
   return needsApproval ? "forced" : "none";
 };
 
-/** Whether a definition is bound for `audience`; one without an `audience` is bound for all. */
 const boundFor = (definition: AppToolDefinition, audience: ToolAudience): boolean =>
   audience === "dream"
     ? definition.audience?.includes("dream") === true
@@ -114,17 +113,10 @@ export interface ApprovalGate {
     threadId: ThreadId,
     descriptor: AppToolDescriptor,
     input: unknown,
-    /** The card's text; the descriptor's description when absent. */
     description?: string,
-    /**
-     * The tool asked for this card itself (`approvalFor`'s `forced`): it is about this one call, so
-     * neither `bypassPermissions` nor an earlier "allow for session" answers it.
-     */
     forced?: boolean,
     claims?: ReviewWriteClaims,
-    /** Why full autonomy didn't cover the call: on the card, and in the agent's refusal. */
     why?: AskedDespiteAutonomy,
-    /** The card's question, when the tool words its own (`AppToolDefinition.title`). */
     title?: string,
   ): Effect.Effect<void, AppToolError>;
 }
@@ -160,27 +152,18 @@ export const REVIEW_BOT_THREAD_TOOLS: ReadonlySet<string> = new Set([
   "pr_resolve_thread",
 ]);
 
-/** What came of one call through the gate, for `run`. */
 type Approved =
-  /** The tool ran (`handle`), with or without a card. */
   | {
       readonly kind: "acted";
       readonly result: unknown;
-      /** Why full autonomy didn't cover the call, when it would have but for the call itself. */
       readonly why: AskedDespiteAutonomy | undefined;
     }
-  /** It joined the same caller's waiting card (`SharedCard.key`) and did nothing. */
   | { readonly kind: "joined"; readonly askedIn: ThreadId };
 
-/** A card some call is waiting on, or is acting on, under a definition's `sharedCard` key. */
 interface PendingCard {
   readonly threadId: ThreadId;
 }
 
-/**
- * The cards waiting under a `sharedCard` key, per gate: one gate asks for every thread of a server,
- * so a key is one decision across all of them.
- */
 const pendingCards = new WeakMap<ApprovalGate, Map<string, PendingCard>>();
 const pendingCardsOf = (gate: ApprovalGate): Map<string, PendingCard> => {
   const known = pendingCards.get(gate);
@@ -201,13 +184,8 @@ export const askedElsewhere = (tool: string, askedIn: ThreadId) => ({
 export const WRITES_STAY_PRIVATE =
   "This thread is readable by one person, so it sends nothing into a thread readable by others.";
 
-/** Schemas belong to definitions and are reused across thread/session bindings. */
 const inputDocuments = new WeakMap<Schema.Top, ReturnType<typeof Schema.toJsonSchemaDocument>>();
 
-/**
- * `call` as its thread's, whichever fiber carries it (`host/ownership.ts`): never the person whose
- * RPC began the turn, nor anyone the input names. Without a lineage, no one's.
- */
 const asLineage = <A, E, R>(
   lineage: ((threadId: ThreadId) => Effect.Effect<string | undefined>) | undefined,
   threadId: ThreadId,
@@ -216,8 +194,6 @@ const asLineage = <A, E, R>(
   Effect.flatMap(lineage === undefined ? Effect.succeed(undefined) : lineage(threadId), (person) =>
     call.pipe(
       Effect.provideService(RoutedFor, { person }),
-      // And it reads as its thread's reader: a thread readable by one person sees that person's
-      // threads and makes only theirs; any other sees none of them (`embedding/readable-by.ts`).
       Effect.provideService(ReadingAs, {
         subject: readableByOf(threadId),
         fromThread: true,
@@ -244,25 +220,13 @@ export const bindAppTools = (
   definitions: ReadonlyArray<AppToolDefinition>,
   threadId: ThreadId,
   gate?: ApprovalGate,
-  /** The decision hook's guard, asked about a tool that names a `decision`; absent asks nothing. */
   guard?: ActionGuard,
-  /**
-   * The person the thread's work is for: its machine's owner (`host/ownership.ts`). Each call runs
-   * as theirs, so it reaches their machine and no one else's. Absent: no one's.
-   */
   lineage?: (threadId: ThreadId) => Effect.Effect<string | undefined>,
-  /**
-   * The folders the thread works in, which a relative path in a call's input is read against
-   * (`embedding/readable-by.ts`). Absent: none.
-   */
   foldersOf?: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<string>>,
 ): ReadonlyArray<AppTool> =>
-  // Registration layers can finish in any order; every transport needs the same prefix.
   definitions.toSorted(byToolName).map((definition) => {
     const { descriptor } = definition;
     const input = definition.input as unknown as Schema.Codec<unknown, unknown>;
-    // A key the schema doesn't name is dropped by default, so `{ pr: 12 }` decoded to `{}` and
-    // merged the bound PR instead. A call that acts on the world is refused for it instead.
     const decodeSchema = Schema.decodeUnknownEffect(
       input,
       descriptor.class === "outward" ||
@@ -306,11 +270,6 @@ export const bindAppTools = (
     const refuseInstead =
       delegatedCall === undefined ? undefined : definition.refuseInsteadOfAsking;
     const sharedCardOf = definition.sharedCard;
-    /**
-     * Puts the call through the gate and, where it may go ahead, runs it (`act`, told whether a
-     * card stood behind it: `undefined` with no gate). A call that shares a card (`sharedCard`)
-     * runs inside the card's bracket, so the same call joins it until it has been carried out.
-     */
     const approve = (
       decoded: unknown,
       target: unknown,
@@ -322,7 +281,6 @@ export const bindAppTools = (
         if (gate === undefined) return yield* acted(undefined, undefined);
         const asked =
           asksPerCall === undefined ? undefined : yield* asksPerCall(threadId, decoded, target);
-        // A check that dies is a doubt, and a doubt is a card.
         const delegated =
           delegatedCall === undefined
             ? false
@@ -331,8 +289,6 @@ export const bindAppTools = (
               );
         const verdict = alwaysAsks ? "forced" : approvalFor(descriptor.class, asked, delegated);
         if (verdict === "none") return yield* acted(false, undefined);
-        // A call the agent can fix itself is refused to it, never put to the user. Only a refusal
-        // comes of it: a hook that fails, dies or is slow leaves the card.
         const refusal =
           refuseInstead === undefined || verdict !== "class"
             ? undefined
@@ -357,21 +313,16 @@ export const bindAppTools = (
             : yield* definition
                 .title(threadId, target)
                 .pipe(Effect.catchCause(() => Effect.succeed(undefined)));
-        // The card's details are the input as it runs, in the schema's own encoding: a key the
-        // schema drops or a value it rewrites isn't shown as though it were sent.
         const shown =
           cardDetails === undefined
             ? yield* encode(decoded).pipe(Effect.orElseSucceed(() => decoded))
             : cardDetails(target);
-        // Messaging only: read after the verdict, which it never changes. A hook that throws,
-        // fails, dies or takes too long leaves the card as it was before it existed.
         const why =
           whyAsked === undefined || verdict !== "class"
             ? undefined
             : yield* Effect.suspend(() => whyAsked(threadId, target)).pipe(
                 Effect.timeoutOption(WHY_ASKED_TIMEOUT),
                 Effect.map(Option.getOrUndefined),
-                // Only well-formed text reaches the card, so nothing past here can throw on it.
                 Effect.map((said) =>
                   typeof said?.user === "string" &&
                   typeof said.agent === "string" &&
@@ -391,8 +342,6 @@ export const bindAppTools = (
           why,
           title,
         );
-        // A card whose call has nothing left to act on is withdrawn (interrupting the wait takes
-        // it down) and the call refused, rather than left for the user to answer for nothing.
         const moot = shared?.moot;
         const settled =
           moot === undefined
@@ -409,10 +358,6 @@ export const bindAppTools = (
           yield* settled;
           return yield* acted(true, why);
         }
-        // The same call from the same caller already waiting on a card (or acting on its answer):
-        // that card is the one decision, so this call raises none and does nothing. Taking the key
-        // and giving it back bracket the card and the call, so an interrupted or failed call never
-        // leaves it held.
         const cards = pendingCardsOf(gate);
         const key = `${descriptor.name}\u0000${shared.key}`;
         const mine: PendingCard = { threadId };
@@ -452,8 +397,6 @@ export const bindAppTools = (
                   const decision = resolve(decoded).pipe(
                     Effect.flatMap((target) => asksPerCall(threadId, decoded, target)),
                   );
-                  // Opt-in tools must refuse unresolved targets even when queried outside `run`.
-                  // Other definitions retain their existing conservative class fallback.
                   return definition.approvalRequiresResolvedTarget === true
                     ? decision
                     : decision.pipe(
@@ -495,8 +438,6 @@ export const bindAppTools = (
                   }),
               ),
             );
-            // A thread named anywhere in the input that this thread's reader may not see is, to
-            // this agent, not there (`embedding/readable-by.ts`): never read, sent to or stopped.
             if (anyPrivate()) {
               for (const named of threadsMentioned(decoded))
                 if (!(yield* mayReadThread(named)))
@@ -504,8 +445,6 @@ export const bindAppTools = (
                     tool: descriptor.name,
                     message: `unknown thread ${named}`,
                   });
-              // A thread readable by one person writes into no thread or workspace of another
-              // reader, everyone's included: what it sends would be read where it isn't private.
               const caller = yield* currentReader;
               if (caller?.subject !== undefined && descriptor.class === "crossThread") {
                 const foreign =
@@ -521,14 +460,12 @@ export const bindAppTools = (
                     message: WRITES_STAY_PRIVATE,
                   });
               }
-              // Nor a workspace of such a thread's.
               for (const workspaceId of workspacesMentioned(decoded))
                 if (!readerMay(yield* currentReader, readableByOfWorkspace(workspaceId)))
                   return yield* new AppToolError({
                     tool: descriptor.name,
                     message: `unknown workspace ${workspaceId}`,
                   });
-              // Nor a path into such a thread's folder, by any spelling.
               if (
                 touchesUnreadable(
                   yield* currentReader,
@@ -579,24 +516,17 @@ export const bindAppTools = (
             if (approved.kind === "joined")
               return askedElsewhere(descriptor.name, approved.askedIn);
             const { result, why } = approved;
-            // The agent learns why the user was asked, and how to go without next time.
             return why === undefined ||
               typeof result !== "object" ||
               result === null ||
               Array.isArray(result)
               ? result
               : { ...result, approvalNeededBecause: why.agent };
-            // Every GitHub read the call makes, its checks' too, is made for its thread.
           }).pipe(forThread(threadId)),
         ),
     };
   });
 
-/**
- * A card's text as plain left-to-right text: control characters become spaces, and bidirectional
- * overrides, isolates and invisible spaces are dropped, so agent-authored text in it (a title, a
- * message) can't reorder or hide what the card says.
- */
 const plainCardText = (text: string): string =>
   text
     .replace(/[\u061c\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/gu, "")
@@ -634,10 +564,6 @@ export const makeApprovalGate = (
   runtimes: ThreadRuntimesShape,
   store: Pick<ThreadStoreShape, "getThread">,
 ): ApprovalGate => {
-  /**
-   * Tool names allowed for the session, by the live agent session they were allowed in: a closed,
-   * reopened or fresh session asks again, as Claude's own "session" rules did.
-   */
   const allowedForSession = new WeakMap<object, Set<string>>();
   return {
     approve: (threadId, descriptor, input, description, forced = false, claims = {}, why, title) =>
@@ -662,7 +588,6 @@ export const makeApprovalGate = (
           forced || (!ownPr && (thread?.role !== undefined || thread?.spawnedBy !== undefined));
         if (thread?.mode === "bypassPermissions" && !once) return;
         const remembers = descriptor.class === "crossThread" && !once;
-        // No live session, no memory: the call is asked.
         const session = remembers
           ? yield* runtimes.session(threadId).pipe(Effect.orElseSucceed(() => undefined))
           : undefined;
@@ -758,7 +683,6 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
       const waits = yield* ThreadWaits;
       const checkouts = yield* CheckoutService;
       const sentFromMachines = yield* sentFromMachinesHere;
-      // Who each tool call is for: its own thread's machine's owner (`host/ownership.ts`).
       const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
       const lineage = (threadId: ThreadId) =>
         store.getThread(threadId).pipe(
@@ -782,7 +706,6 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         },
         input: Schema.Struct({ title: Schema.NonEmptyString }),
         handle: (threadId, { title }) => {
-          // One plain line, so whatever shows or quotes the title gets one (`agentTitle`).
           const named = agentTitle(title);
           return runtimes
             .updateThread(threadId, (t) =>
@@ -818,8 +741,6 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         base: Schema.optionalKey(Schema.String),
         reason: Schema.optionalKey(Schema.String),
       });
-      // Who the caller is now, not which description it was bound with: a Claude session keeps its
-      // binding through a turn in which orchestration can be switched off and on again.
       const offerTask = (threadId: ThreadId, input: typeof spawnTaskInput.Type) =>
         Effect.gen(function* () {
           const reason = input.reason?.trim();
@@ -869,9 +790,6 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         handle: offerTask,
       });
 
-      // The same tool as an orchestrator sees it: a chip starts a
-      // thread outside the workspace, with no ledger entry, PR tracking or digest, which one
-      // orchestrator reached for in place of `spawn_worker`. `offerTask` asks it for the reason.
       const orchestratorSpawnTask = defineAppTool({
         descriptor: {
           name: "spawn_task",
@@ -996,7 +914,6 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         ...waitAppTools(waits, runtimes),
       ];
       const gate = makeApprovalGate(runtimes, store);
-      // Asks nothing unless a decision hook is configured and hosted features are on.
       const guard = makeActionGuard({
         hook: Option.getOrUndefined(yield* Effect.serviceOption(DecisionHook)),
         store,
@@ -1035,10 +952,6 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
             lineage,
             foldersOf,
           ),
-        // The server's gate is the authority on Claude too: the SDK's permission
-        // layer lets a call through unasked in `bypassPermissions`, under an allow rule or an
-        // "always" answer, and when Auto's classifier approves it, so an outward merge or a
-        // worker's cross-thread call could run with no card.
         forSession: (threadId, audience = "plain") =>
           bindAppTools(
             definitions.filter((d) => boundFor(d, audience)),

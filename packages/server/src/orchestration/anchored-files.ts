@@ -1,10 +1,3 @@
-/**
- * Node has no openat/renameat API. This fixed, isolated helper supplies those operations without
- * giving a Dream an interpreter or command surface. Every component below the configured data
- * root is opened with O_DIRECTORY|O_NOFOLLOW; all subsequent operations use those directory fds.
- * No PATH lookup, inherited environment, site modules, project code or shell is involved.
- * Missing /usr/bin/python3 or missing POSIX dir-fd support is an explicit refusal, never a fallback.
- */
 import { InvalidState, NotFound } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
@@ -43,8 +36,6 @@ export interface AnchoredOptions {
   ) => Effect.Effect<A, InvalidState | NotFound>;
 }
 
-// Kept inline so the existing server/desktop bundlers carry the exact helper with the code.
-// The protocol permits only these fixed file operations. It never evals or executes request text.
 export const ANCHORED_FILE_PROGRAM = String.raw`
 import os, sys, json, stat, uuid, hashlib
 
@@ -253,7 +244,6 @@ class AnchoredSession extends Context.Service<AnchoredSession, Session>()(
   "@gram/server/AnchoredSession",
 ) {}
 
-/** One fixed helper, with a fresh fd traversal and authorization handshake for every request. */
 const launch = Effect.gen(function* () {
   if (process.platform !== "darwin" && process.platform !== "linux")
     return yield* new InvalidState({
@@ -265,7 +255,6 @@ const launch = Effect.gen(function* () {
     env: {},
     stdio: ["pipe", "pipe", "pipe"],
   });
-  // Deliberately discard stderr: neither Python startup nor OS errors may log private data.
   child.stderr.resume();
   const lines = createInterface({ input: child.stdout });
   const iterator = lines[Symbol.asyncIterator]();
@@ -280,7 +269,6 @@ const launch = Effect.gen(function* () {
   const close = Effect.promise(() => {
     closing ??= (async () => {
       child.stdin.end();
-      // A cooperative EOF lets the fixed helper unlink its own staged temp before exit.
       const timer = setTimeout(() => child.kill("SIGKILL"), 1000);
       await closed;
       clearTimeout(timer);
@@ -299,7 +287,6 @@ const launch = Effect.gen(function* () {
       const raw = JSON.stringify({ ...request, root }) + "\n";
       if (Buffer.byteLength(raw) > 32 * 1024 * 1024)
         return new InvalidState({ message: "File request exceeds helper cap" });
-      // The existing bound applies to each operation, including its authorization callbacks.
       const timer = setTimeout(() => child.kill("SIGKILL"), 20_000);
       let complete = false;
       const receive = (): Effect.Effect<A, InvalidState | NotFound> =>
@@ -332,7 +319,6 @@ const launch = Effect.gen(function* () {
             const advance = Effect.sync(() => child.stdin.write("continue\n")).pipe(
               Effect.andThen(receive),
             );
-            // Keep the binding/store guard held through the result, exactly as for one operation.
             const final =
               request.op === "write" ? response.phase === "staged" : response.phase === "anchored";
             return yield* final && options.commit ? options.commit(advance) : advance;
@@ -355,7 +341,6 @@ const launch = Effect.gen(function* () {
         Effect.ensuring(
           Effect.suspend(() => {
             clearTimeout(timer);
-            // A denied/interrupted handshake must never consume another request's reply.
             return complete ? Effect.void : close;
           }),
         ),

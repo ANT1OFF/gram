@@ -1,12 +1,3 @@
-// The user's WebRTC switch for a thread's local page (`DesktopPreview.setWebRtc`): which page may
-// have it, and the handler that makes the page again with it or without.
-//
-// It is offered only for a page the user opened by typing its address in the address strip, while
-// the page is still on that address's origin: never for a page an agent opened (`show_panel`, the
-// agent browser), a port chip's, a file preview, or any of Gram's own origins. Whatever then serves
-// that origin has WebRTC, code any agent working in that folder writes and processes one left
-// running included, so the renderer also ends it on a turn under way in any thread on that folder.
-
 import type { WebContents } from "electron";
 
 import { isPreviewFilesUrl, loopbackUrl } from "@gram/contracts/link-trust";
@@ -105,7 +96,6 @@ export function installWebRtcSwitch<P extends SwitchedPage>(
       typeof input === "object" && input !== null ? Reflect.get(input, "allowed") : undefined;
     if (preview?.kind !== "local" || typeof allowed !== "boolean") return false;
     if ((preview.webRtcOrigin !== undefined) === allowed) return true;
-    // For the origin the page is on as the user switches it, and only where it is offered.
     const origin = allowed ? host.originFor(preview) : undefined;
     if (allowed && origin === undefined) return false;
     const url = preview.view.webContents.getURL();

@@ -8,7 +8,6 @@ import {
   type BinaryFs,
 } from "../cli/discovery.ts";
 
-// These names remain available to consumers of the Claude adapter.
 export {
   classifyExecutable,
   parseCliVersion,
@@ -58,7 +57,6 @@ export const sdkExecutablePath = (
   return shimContents === undefined ? undefined : npmShimTarget(binaryPath, shimContents);
 };
 
-/** Enough of a cmd-shim to reach its invocation line. */
 const SHIM_HEAD_BYTES = 4096;
 
 /**
@@ -77,7 +75,6 @@ export const resolveSdkExecutable = (
     Effect.flatMap((target) =>
       target === undefined ? Effect.succeed(undefined) : fs.realpath(target),
     ),
-    // An unreadable shim, or one naming an exe that isn't there, leaves the SDK its bundled CLI.
     Effect.orElseSucceed(() => undefined),
   );
 };
@@ -112,12 +109,6 @@ export const expectedCliVersion = (sdkVersion: string): string | undefined => {
   return match ? `2.1.${match[1]}` : undefined;
 };
 
-/**
- * How far either side of the SDK's matched CLI an installed CLI may be before we warn. Claude Code
- * ships a patch most days and its stable channel trails latest by several, so a CLI a few patches
- * behind the SDK is the ordinary state, not a problem: what an older CLI lacks, the adapter gates
- * by version (`supportsFastControl`, `restoresSessionCost`) or the SDK's initialize names.
- */
 const MAX_NEWER_PATCHES = 10;
 const MAX_OLDER_PATCHES = 10;
 
@@ -210,15 +201,6 @@ export interface VersionNotice {
 
 export type AuthProblem = "not-logged-in" | "api-key-auth" | "third-party-provider" | "unparseable";
 
-/**
- * The `authMethod` values that mean an OAuth subscription login. The field carries the CLI's auth
- * *source*, not a token type: `claude.ai` is the ordinary `claude /login`, the others are an OAuth
- * token handed over by the environment, a file descriptor, or a CCR host. The environment's token
- * reads `oauth_token` from Claude Code 2.1.28x (older ones named the variable). These sources
- * include `claude setup-token` users. Other values this adapter recognizes —
- * `ANTHROPIC_AUTH_TOKEN`, `apiKeyHelper`, `profile` (WIF), `none` — is a key or token Gram
- * doesn't accept.
- */
 const OAUTH_METHODS: ReadonlySet<string> = new Set([
   "claude.ai",
   "oauth_token",

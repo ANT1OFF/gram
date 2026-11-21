@@ -38,7 +38,6 @@ export const sessionAppTools = (
     handle: (threadId, { name }) =>
       connectors("connectors_status", threadId).pipe(
         Effect.flatMap((c) => c.status.pipe(Effect.mapError(failed("connectors_status")))),
-        // The agent has the tools themselves already; listing them again only costs context.
         Effect.map((all) => ({
           connectors: (name === undefined ? all : all.filter((c) => c.name === name)).map(
             ({ tools: _tools, ...connector }) => connector,

@@ -28,7 +28,6 @@ export function createOrchestrationMock(
   world: MockWorld,
   { orchestration, adoptDraft }: OrchestrationDeps,
 ): OrchestrationApi {
-  // Read only the synthetic world's stored choices; no fixture preview creates a holder.
   const taskPreflight = async (
     input: Pick<StartTaskInput, "target" | "autonomy" | "orchestrator">,
   ): Promise<TaskModelSelection> => {
@@ -47,7 +46,6 @@ export function createOrchestrationMock(
       .find((row) => row.thread.id === state?.workspace.orchestratorThreadId)?.thread;
     const slot =
       state?.charter.orchestratorModel ?? settings.agents.defaultModel ?? charter.orchestratorModel;
-    // A pick moves a running orchestrator to it as the task starts, or opens a new one on it.
     const standingModel = held?.model ?? (slot === undefined ? undefined : firstChoiceOf(slot));
     const orchestrator = input.orchestrator ?? standingModel;
     const moves =

@@ -47,8 +47,6 @@ export function KeyboardSection() {
   const changingRow = rows.find((row) => row.id === changing);
   const groups = GROUPS.filter((group) => rows.some((row) => row.group === group));
   const counts = bindingCounts(rows);
-  // Settings search filters the rows itself; this page's own filter waits until it's cleared. A
-  // chip whose count fell to none (its last clash fixed) no longer narrows anything.
   const filter: BindingFilter = searchingSettings
     ? NO_BINDING_FILTER
     : {
@@ -65,9 +63,7 @@ export function KeyboardSection() {
 
   return (
     <div data-testid="keyboard-settings" className="flex flex-col gap-4">
-      {/* With General left out by an app in front of Gram, which keys send lives here. */}
       {!generalKept && <SendingGroup />}
-      {/* keybindings.json is a file on the server: a hosted one is nobody's to edit. */}
       {!hosted && (
         <div
           data-testid="keyboard-intro"
@@ -204,7 +200,6 @@ export function KeyboardSection() {
   );
 }
 
-/** One shortcut's row, found in Settings search by the shortcut's name. */
 function BindingItem({ id, label, children }: { id: string; label: string; children: ReactNode }) {
   const search = useSettingSearch({ label });
   return (
@@ -218,23 +213,14 @@ function BindingItem({ id, label, children }: { id: string; label: string; child
   );
 }
 
-/**
- * Whether Settings search is narrowing this page: what it would do to a setting with no words of
- * its own says so. A search that names the page shows all of it, and so does this filter.
- */
 function useSettingsSearchOn(): boolean {
   const probe = useSettingSearch({ label: "" });
   return "hidden" in probe || "data-setting-match" in probe;
 }
 
-/** A filter chip: a toggle with the one selected style. */
 const CHIP =
   "inline-flex h-7 items-center gap-1 rounded-md border border-border px-3 text-body text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring aria-pressed:choice-selected";
 
-/**
- * "Search shortcuts" and the chips under it: one group or all, and only the clashing or custom
- * bindings. Esc in the field clears it before it can reach the page (Leave settings).
- */
 function BindingFilterBar({
   filter,
   onChange,
@@ -269,7 +255,6 @@ function BindingFilterBar({
             if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
             event.preventDefault();
             event.stopPropagation();
-            // Cleared first; from empty it steps out, and the next Esc leaves Settings.
             if (filter.query === "") event.currentTarget.blur();
             else set({ query: "" });
           }}
@@ -348,7 +333,6 @@ function BindingFilterBar({
   );
 }
 
-/** Where `keybindings.json` lives, behind a small ⓘ: the path to select or copy, and when it applies. */
 function BindingsFileHelp({ path }: { path: string }) {
   const [copied, setCopied] = useState<string>();
   return (

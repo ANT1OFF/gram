@@ -1,6 +1,3 @@
-// An app-tool call a session made on a worker host, and the control plane's answer to it, as the
-// host carries them over its own connection (`host.appTools.*`, feature `app-tools-tunnel`).
-
 import * as Schema from "effect/Schema";
 
 const AppToolsHeaders = Schema.Record(

@@ -15,9 +15,7 @@ export const claudeLabel = (id: string): string | undefined => {
 };
 
 const LONG = /\[1m\]$/i;
-/** A model id without a dated snapshot's suffix; the `[1m]` window is kept, being another row. */
 const undated = (id: string) => id.toLowerCase().replace(/-\d{8}(?=\[1m\]$|$)/i, "");
-/** A display name as a person types it: no case, no spaces ("Fable 5.2" is "fable5.2"). */
 const squashed = (name: string) => name.toLowerCase().replace(/\s+/g, "");
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -78,7 +76,6 @@ export const resolveModel = <T extends CatalogueRow>(
         labelled.test(row.displayName.trim()),
   );
   if (running.length > 0) {
-    // "default" follows the CLI's own choice, which may move; a named row stays on this model.
     return {
       ok: true,
       row: running.find((row) => row.id !== "default") ?? running[0]!,
@@ -121,7 +118,6 @@ export const canonicalModelId = (
   return found.via === "runs" ? name.trim().toLowerCase() : found.row.id;
 };
 
-/** Edits from `a` to `b`, a swap of two neighbouring letters counting as one ("fabel", "fable"). */
 const distance = (a: string, b: string): number => {
   const rows: Array<Array<number>> = [Array.from({ length: b.length + 1 }, (_, index) => index)];
   for (let i = 1; i <= a.length; i++) {
@@ -170,7 +166,6 @@ export const closestName = <T>(
   return best?.value;
 };
 
-/** A model's family and version as its name says them: "Opus 5.5" is `opus #` at 5.5. */
 interface FamilyVersion {
   readonly family: string;
   readonly version: ReadonlyArray<number>;
@@ -178,7 +173,6 @@ interface FamilyVersion {
 
 const VERSION = /\d+(?:\.\d+)*/;
 
-/** `text`'s first version number and the words around it, as one family key; none without one. */
 const familyVersionOf = (text: string): FamilyVersion | undefined => {
   const found = VERSION.exec(text);
   if (found === null) return undefined;
@@ -190,11 +184,6 @@ const familyVersionOf = (text: string): FamilyVersion | undefined => {
   return { family, version: found[0].split(".").map(Number) };
 };
 
-/**
- * What a row's name says of its family and version: its display name ("Fable 5.2", "GPT-6.1-Sol"),
- * else for a Claude id the name that id has (`claude-opus-5-5` → "Opus 5.5"), else its id
- * (`gpt-6.1-sol`). None when no version is in any of them.
- */
 const rowFamily = (row: CatalogueRow): FamilyVersion | undefined => {
   const runs = (row.resolvedId ?? row.id).replace(LONG, "").replace(/-\d{8}$/, "");
   return (
@@ -226,7 +215,6 @@ export const supersededModels = (
     CatalogueRow & { readonly isDefault?: boolean | undefined; readonly description?: string }
   >,
 ): ReadonlySet<string> => {
-  // The CLI's `default` follows another row; a model the user added carries their own name.
   const ranked = models.flatMap((row) => {
     if (row.id === "default" || row.description === ADDED_IN_SETTINGS) return [];
     const found = rowFamily(row);

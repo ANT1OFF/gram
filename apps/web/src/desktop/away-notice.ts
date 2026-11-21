@@ -11,10 +11,6 @@ import {
 } from "@/orchestration/ask-actions";
 import type { Ask } from "@/orchestration/ask-model";
 
-// An ask's desktop notification, built from the ask the stack shows through the shared away rule
-// (`orchestration/ask-actions.ts`): the same command, the same Allow. No React. The title is a
-// template's, or the helper's when it is on.
-
 export interface AwayNotice extends ShownAsk {
   /** The notification's id: the same for the same ask, in its workspace and threads, in every window. */
   readonly id: string;
@@ -61,7 +57,6 @@ export const buildNotice = ({
 
 /** The id of the one notification that stands for several asks. */
 export const SUMMARY_ID = "gram-asks-waiting";
-/** How many asks the shared notification names before it counts the rest. */
 const SUMMARY_LINES = 3;
 
 /**

@@ -1,7 +1,3 @@
-// A project's scripts (`.gram/scripts.json` in its folder) and what its `package.json` and
-// Makefile suggest. Reading and saving the file runs nothing; a script runs only when the user
-// clicks it or presses its key, through `terminal.open`'s `script`, which no agent tool sends.
-
 import {
   LOCKFILE_NAMES,
   parseScriptsFile,
@@ -23,7 +19,6 @@ import type { ShellCommand } from "../terminal/shell.ts";
 /** Why scripts can't be read, saved or run; its message is the user's to read. */
 export class ScriptsError extends Error {}
 
-/** The most bytes read from the scripts file, `package.json` or a Makefile. */
 const READ_MAX = 512 * 1024;
 
 const readText = async (path: string): Promise<string | undefined> => {
@@ -58,10 +53,6 @@ const scriptsCodec = {
   },
 };
 
-/**
- * The scripts in `root`'s scripts file. A missing file has none; a broken one leaves the last good
- * version in use when `lastGood` says where it is kept, and says why in `problem`.
- */
 async function scriptsIn(
   root: string,
   lastGood: ScriptsLastGood | undefined,
@@ -177,7 +168,6 @@ export async function resolveScriptRun(
 ): Promise<ScriptRun> {
   const text = await readText(join(root, SCRIPTS_FILE));
   if (text === undefined) throw new ScriptsError(`This project has no ${SCRIPTS_FILE}.`);
-  // The scripts the menu showed: a broken file runs the last good version's, as the menu lists.
   const parsed = await scriptsIn(root, lastGood);
   if (parsed.scripts.length === 0 && parsed.problem !== undefined)
     throw new ScriptsError(parsed.problem);

@@ -2,11 +2,6 @@ import type { AppUpdateState, UpdateChannel } from "@gram/contracts";
 
 import { useUpdateStore } from "./store";
 
-/**
- * Electron's updater over the bridge (signed installs). Each action stores the state it resolves
- * with; progress in between arrives through `onState`. Without the bridge, or where this install
- * has no signed updater, every action is a no-op.
- */
 const act = async (
   run: (
     native: NonNullable<NonNullable<Window["gram"]>["updates"]["native"]>,

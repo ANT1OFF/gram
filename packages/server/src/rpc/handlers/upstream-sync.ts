@@ -18,7 +18,6 @@ export const upstreamSyncHandlers = Effect.gen(function* () {
   const hosts = yield* WorkerHosts;
   const provide = Effect.provideService(Proc, proc);
 
-  /** A repository on this machine, whose git this runs. */
   const requireRepo = (repoPath: string) =>
     Effect.gen(function* () {
       yield* pathHere(hosts, repoPath);

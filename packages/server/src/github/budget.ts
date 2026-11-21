@@ -1,17 +1,3 @@
-// The app's share of GitHub's hourly allowances, kept from what GitHub's own response headers say.
-//
-// The token is shared: agents in the app's terminals, other sessions and the user's own shell all run
-// `gh` against the same 5,000 an hour, and none of that is visible here except as `remaining` falling
-// faster than this app spent it. So the policy is about what is left, never about what we spent:
-//
-//   - a tenth of every allowance is never touched by anything the app does on its own;
-//   - background polling plans to use at most half of what is spendable before the reset, and slows
-//     down as that shrinks rather than running dry and stopping;
-//   - once GitHub has refused, nothing asks again until the reset time it gave: GitHub's guidance is
-//     that an integration which keeps requesting while limited may be banned, and the answer is known.
-//
-// What the user asks for by hand is only ever held back by the last of these.
-
 import type { RateLimitReading } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -19,22 +5,14 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-/** The share of every allowance the app leaves for whatever else uses the token. */
 const RESERVE_FRACTION = 0.1;
 
-/**
- * The share of an allowance below which background polling stops asking for what only a wake needs
- * beyond the badge, a bound PR's reviews: that goes first, so the badges and CI last longer.
- */
 const EXTRAS_FRACTION = 2 * RESERVE_FRACTION;
 
-/** The share of what is spendable before the reset that background polling plans to use. */
 const BACKGROUND_SHARE = 0.5;
 
-/** How long after the reset time to wait before asking again: GitHub's clock isn't ours. */
 const RESET_SLACK_MS = 2_000;
 
-/** How often an unchanged allowance is written to the log. */
 const LOG_EVERY_MS = 10 * 60_000;
 
 /**
@@ -108,7 +86,6 @@ export const paceBackground = (
   return Duration.max(base, Duration.millis(Math.min(paced, untilResetMs)));
 };
 
-/** Which tenth of the allowance is left: a line is logged as each is crossed. */
 const bandOf = (window: BudgetWindow) =>
   window.limit <= 0 ? 0 : Math.floor((window.remaining / window.limit) * 10);
 
@@ -150,7 +127,6 @@ export class GhBudget extends Context.Service<
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
           const previous = windows.get(reading.resource);
-          // Responses land out of order: within one window, the lower `remaining` is the later one.
           if (
             previous !== undefined &&
             previous.resetAt === reading.resetAt &&

@@ -58,7 +58,6 @@ export const privateJsonFile = (dataDir: string, name: string, maxBytes: number)
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   assertPrivate(lstatSync(directory), true);
   const path = join(directory, name);
-  /** The parsed file, or undefined when there is none; throws on an unsafe or oversized file. */
   const read = (): unknown => {
     let fd: number;
     try {
@@ -76,10 +75,6 @@ export const privateJsonFile = (dataDir: string, name: string, maxBytes: number)
       closeSync(fd);
     }
   };
-  /**
-   * Replaces the file with `value`. `modified`, when given, is set as its modified time on the new
-   * file before it replaces the old, so the two land together or neither does.
-   */
   const write = (value: unknown, modified?: number) => {
     assertPrivate(lstatSync(directory), true);
     const temporary = `${path}.${randomBytes(16).toString("hex")}.tmp`;
@@ -92,7 +87,6 @@ export const privateJsonFile = (dataDir: string, name: string, maxBytes: number)
       closeSync(fd);
       fd = undefined;
       renameSync(temporary, path);
-      // Persist the rename as well as file contents before granting the browser access.
       if (process.platform !== "win32") {
         const directoryFd = openSync(directory, constants.O_RDONLY | constants.O_NOFOLLOW);
         try {
@@ -149,7 +143,6 @@ export const fileRemoteSessionStore = (
   return {
     read,
     write: (sessions) => {
-      // Validate current storage before replacement; never repair an insecure/corrupt file silently.
       read();
       file.write({ version: 1, origin, port, sessions });
     },

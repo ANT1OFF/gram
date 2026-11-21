@@ -27,10 +27,6 @@ const WIDTHS: readonly { value: TranscriptWidth; label: string }[] = [
   { value: "full", label: "Full" },
 ];
 
-/**
- * How much of the preview's frame the sample column takes for each width: the columns' own widths
- * (40, 48 and 64rem, and all of it) against a 72rem pane, about a 1440px window beside the sidebar.
- */
 const PREVIEW_COLUMN: Readonly<Record<TranscriptWidth, string>> = {
   narrow: "56%",
   comfortable: "67%",
@@ -38,7 +34,6 @@ const PREVIEW_COLUMN: Readonly<Record<TranscriptWidth, string>> = {
   full: "100%",
 };
 
-/** What a change has saved yet, so the preview follows a click before the save comes back. */
 interface Pending {
   readonly textSize?: number;
   readonly width?: TranscriptWidth;
@@ -69,7 +64,6 @@ export function ReadingSection() {
       .catch((e: unknown) => setFailed({ key, message: errorMessage(e) }))
       .finally(() => setPending((p) => (p[key] === value ? { ...p, [key]: undefined } : p)));
   };
-  // The default is stored as unset, so a later change to the default reaches it.
   const setSize = (next: number) =>
     send("textSize", next, {
       reading: { textSize: next === TRANSCRIPT_TEXT_SIZE.default ? null : next },
@@ -145,11 +139,6 @@ function SizeStepper({ value, onChange }: { value: number; onChange: (next: numb
   );
 }
 
-/**
- * A user message and a reply in a frame standing for the thread pane, styled by the same rules as a
- * real transcript (`data-transcript`), with this size's variables set on it. The column takes the
- * width's share of the frame; the text is at its real size.
- */
 function ReadingPreview({ size, width }: { size: number; width: TranscriptWidth }) {
   const vars = readingVars({ textSize: size, width }) as CSSProperties;
   return (

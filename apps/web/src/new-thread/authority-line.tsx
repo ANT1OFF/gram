@@ -15,14 +15,12 @@ import { known } from "@/thread/orchestration-model";
 
 import { MergeApprovalSegments, mergeApprovalOf, type MergeApproval } from "./merge-approval";
 
-/** Whether a merge waits for the user at each level: the merge approval line's value. */
 const MERGE_APPROVAL: Readonly<Record<Autonomy, string>> = {
   supervised: "Ask",
   publish: "Ask",
   full: "Automatic",
 };
 
-/** What that means for the workers' pull requests, after the value. */
 const PLAN_MERGE: Readonly<Record<Autonomy, string>> = {
   supervised: "Asks before a push, a pull request or a merge",
   publish: "Opens pull requests; merging waits for you",
@@ -108,7 +106,6 @@ export function TaskAuthorityLine({
       className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-1.5 gap-y-1 text-reading text-muted-foreground"
     >
       <Network aria-hidden className="col-start-1 mt-1 size-icon-row shrink-0" />
-      {/* Inline, so Remembered and Change follow the words' last line rather than wrap alone. */}
       <span
         data-testid="task-destination"
         data-remembered={remembered ? "true" : undefined}
@@ -166,7 +163,6 @@ export function TaskAuthorityLine({
           {approval === undefined ? (
             <span>Merge approval</span>
           ) : (
-            // Its scope in words beside the choice: the workspace, whose every task it governs.
             <Hint
               label={`A workspace setting: every task in ${workspace} follows it, and Settings → Workspaces shows it too.`}
               render={

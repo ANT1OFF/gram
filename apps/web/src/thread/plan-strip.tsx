@@ -80,7 +80,6 @@ const SOURCE: Record<PlanSource, { icon: LucideIcon; label: string }> = {
   orchestrator: { icon: Network, label: "From the orchestrator's brief" },
 };
 
-/** The plan statuses a `StatusMark` draws, so a step's ring fills and then checks in place. */
 const STEP_MARK: Partial<Record<PlanStepStatus, MarkPhase>> = {
   todo: "todo",
   doing: "active",
@@ -100,7 +99,6 @@ const TODO_ICON: Record<
 const report = (op: Promise<unknown>) =>
   void op.catch((error: unknown) => console.error("plan", error));
 
-/** Enter keeps the text, Escape leaves it; anything else types. */
 function TextEdit({
   value,
   label,
@@ -153,7 +151,6 @@ function StepPr({
   if (step.pr === undefined) return null;
   const badge = stepPrBadge(step, git, boundPr);
   const state = badge === undefined ? undefined : prLifecycleOf(badge);
-  // Quiet beside a step: GitHub's shape for its state, and its colour only once merged.
   const Icon = PR_STATE_DISPLAY[state ?? "open"].icon;
 
   return (
@@ -171,7 +168,6 @@ function StepPr({
   );
 }
 
-/** The agent's todo list for this turn, under the step it belongs to. */
 function TurnTodos({ items }: { items: readonly PlanItem[] }) {
   return (
     <ul
@@ -351,7 +347,6 @@ function StepRow({
   );
 }
 
-/** One of the strip's own actions: a glyph, its words on hover. */
 function FooterAction({
   label,
   hint,
@@ -385,7 +380,6 @@ function FooterAction({
   );
 }
 
-/** "Updated 2h ago from the transcript and PR state", by who wrote the plan last. */
 const updatedText = (by: PlanSource, ago: string): string => {
   switch (by) {
     case "helper":
@@ -412,7 +406,6 @@ export function useStripFacts(threadId: ThreadId) {
   const messages = useThreadFeed(threadId, (state) => state.messages);
   const stopped = useMemo(() => stopOf(messages, stoppedAt) !== undefined, [messages, stoppedAt]);
   if (summary === undefined || !planned || summary.thread.role !== undefined) return undefined;
-  // Work it left running in the background is its turn's still: its todo list goes on.
   const turn: StripTurn =
     inTurn(summary.status) || (summary.background?.length ?? 0) > 0
       ? "running"
@@ -469,8 +462,6 @@ export function PlanStrip({
   const [editingGoal, setEditingGoal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const now = useNow(open, undefined, 60_000);
-  // Edits are whole plans, so each builds on the last one sent rather than on what the screen shows
-  // until that one's `thread.plan` arrives: two quick clicks otherwise undo the first.
   const sent = useRef<PlanEdit | undefined>(undefined);
   const saving = useRef<Promise<unknown>>(Promise.resolve());
   if (facts === undefined) return null;
@@ -514,8 +505,6 @@ export function PlanStrip({
           onClick={() => setOpen(!open)}
           className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
         >
-          {/* While the thread works, the header's status is the one thing that moves, so the ring
-            only counts. A turn that failed or was stopped says so in its glyph too. */}
           {glyph === "failed" ? (
             <FailedIcon
               aria-hidden
@@ -545,8 +534,6 @@ export function PlanStrip({
           <span className="max-w-[50%] shrink-0 truncate font-medium text-foreground">
             {goal || "Plan"}
           </span>
-          {/* Neutral even when the turn failed: the error's card in the transcript is the one
-            alarm. */}
           {lead !== undefined && (
             <span data-testid="plan-strip-turn" className="shrink-0">
               · {lead}
@@ -573,8 +560,6 @@ export function PlanStrip({
         </button>
       )}
       {open && (
-        // Capped to a share of the pane and scrolled, so eight steps and a todo list can't push the
-        // composer out of a short grid pane.
         <div
           data-testid="plan-strip-body"
           className={
@@ -583,7 +568,6 @@ export function PlanStrip({
               : "max-h-[calc(var(--pane-height,100vh)*0.4)] thread-column overflow-y-auto px-6 pb-3 @max-sm:px-3"
           }
         >
-          {/* Folded, the strip names the goal; in a popover nothing else does. */}
           {inPopover && !editingGoal && goal !== "" && (
             <p className="mb-1.5 text-meta font-medium text-foreground">{goal}</p>
           )}
@@ -625,7 +609,6 @@ export function PlanStrip({
                 onDone={(text) => {
                   setAdding(false);
                   if (text === undefined || text === "") return;
-                  // A plan built on the agent's todo list starts from it as the user's own steps.
                   edit((e) => ({
                     ...e,
                     steps: [

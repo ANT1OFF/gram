@@ -18,19 +18,12 @@ import { boardWorkspaceFor } from "./board-model";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { tabCount, workersByTab } from "./workers-model";
 
-// The one way to every worker of a workspace: the right panel's Workers tab. ⌘J, the palette's
-// Workers, the title bar's "…" and the status strip's "running" all open it here, so there is one
-// worker list, not a dialog beside the panel.
-
-/** Where the panel was before ⌘J showed Workers, so the same keys put it back. */
 let beforeWorkers: { open: boolean; tab: RightPanelTab; beside: boolean } | undefined;
 
-/** The Workers tab's current row, else its first: where ⌘J puts the keys. */
 const workersRow = (): HTMLElement | null =>
   document.querySelector<HTMLElement>('[data-testid="workers-panel-row"][aria-current]') ??
   document.querySelector<HTMLElement>('[data-testid="workers-panel-row"]');
 
-/** The keys on a row once the tab has drawn its rows (its ledger may still load), else its tab. */
 async function focusWorkers(): Promise<void> {
   if (await focusWhenRendered(workersRow, 60)) return;
   await focusWhenRendered(() =>
@@ -91,7 +84,6 @@ export function toggleWorkersTab(): void {
   layout.setPanelTab(back.tab);
 }
 
-/** The workspace the Workers tab is about: the route's, else the open thread's. */
 function useListWorkspace(): WorkspaceId | undefined {
   const workspaces = useWorkspaces();
   const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
@@ -115,7 +107,6 @@ export function useWorkersNow(): { workspaceId: WorkspaceId | undefined; count: 
   const ledgers = useOrchestratorLedgers(ids);
   const ledger = workspaceId === undefined ? undefined : ledgers.get(workspaceId);
   const now = useNow(true, undefined, 60_000);
-  // Only the count: the threads' every change leaves it alone, and so leaves the title bar still.
   const count = useThreadsStore((s) =>
     tabCount(
       workersByTab(ledger, { byId: s.byId, statusDetail: s.statusDetail, now }, undefined).now,

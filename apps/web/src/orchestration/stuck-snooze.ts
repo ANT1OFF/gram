@@ -5,7 +5,6 @@ import { createJSONStorage, persist } from "zustand/middleware";
 /** How long "Snooze 1 day" keeps a worker's "Why is it stuck?" away. */
 export const STUCK_SNOOZE_MS = 24 * 60 * 60 * 1000;
 
-/** Snoozes remembered at most; the soonest to end go first. */
 const SNOOZE_LIMIT = 200;
 
 type Snoozes = Readonly<Record<string, number>>;
@@ -24,7 +23,6 @@ export const snoozed = (snoozes: Snoozes, threadId: ThreadId, now: number): bool
   (snoozes[threadId] ?? 0) > now;
 
 interface StuckSnoozeState {
-  /** Thread id → epoch ms its snooze ends. */
   until: Snoozes;
   snooze(threadId: ThreadId, now: number): void;
 }
@@ -42,8 +40,6 @@ export const useStuckSnoozes = create<StuckSnoozeState>()(
     {
       name: "gram.stuckSnooze",
       version: 1,
-      // `window`, not `globalThis`: under Node, reading `globalThis.localStorage` warns that it has no
-      // backing file, while a missing `window` throws, which zustand takes as no storage.
       storage: createJSONStorage(() => window.localStorage),
       partialize: ({ until }) => ({ until }),
       merge: (persisted, current) => ({

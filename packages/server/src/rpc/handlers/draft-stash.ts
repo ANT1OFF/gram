@@ -14,14 +14,6 @@ export const draftStashHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const config = yield* ServerConfig;
 
-  /**
-   * Deletes the files `gone` uploaded, once their rows are deleted. Only paths inside the thread's
-   * attachments folder count, as written and through any link on the way, so an attachment dragged
-   * from disk keeps its file and a link in the folder doesn't lead the delete out of it. A path another of
-   * the thread's stashes still references, or that `keep` lists for the live draft, stays: a retried
-   * `thread.stash.add` can leave two rows with the same uploads, and a lost reply can leave the
-   * composer holding what it stashed.
-   */
   const deleteUploads = (
     threadId: ThreadId,
     gone: ReadonlyArray<DraftStash>,
@@ -73,7 +65,6 @@ export const draftStashHandlers = Effect.gen(function* () {
           createdAt: yield* Clock.currentTimeMillis,
         });
         yield* deleteUploads(threadId, dropped);
-        // A retry returns the stash first stored under `id`; an id another thread holds is refused.
         const stored = (yield* store.listStashes(threadId)).find((stash) => stash.id === id);
         if (stored === undefined) return yield* new NotFound({ entity: "stash", id });
         return stored;

@@ -1,13 +1,3 @@
-/**
- * `read_transcript`: a running memory update reads one of its workspace's past conversations
- * from a message on, open or archived. `search_transcripts` finds where something was said; this
- * reads what was around it, so a memory update can follow a lead into older threads that its
- * snapshot doesn't hold instead of being handed everything up front.
- *
- * Scope: only a running dream, and only threads of its own workspace (the archive is the
- * workspace's own, so an archived transcript there is). Every string that leaves has been
- * through `redactText` before it was cut, as `blocksOf` and `parseArchived` do it.
- */
 import { AppToolError, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -26,10 +16,8 @@ import {
 } from "./transcripts.ts";
 
 const TOOL = "read_transcript";
-/** Messages a call returns when it doesn't say, and at most. */
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 60;
-/** Cap on one message's text, and on everything one call returns. */
 const MESSAGE_MAX_CHARS = 4000;
 export const TRANSCRIPT_READ_MAX_CHARS = 60_000;
 
@@ -85,7 +73,6 @@ export const TranscriptReadAppToolsLive = Layer.effectDiscard(
     const store = yield* ThreadStore;
     const archive = yield* ThreadArchive;
 
-    /** The workspace a running dream reads; `undefined` for any other caller. */
     const scopeOf = (caller: ThreadId) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(caller).pipe(Effect.option);
@@ -151,7 +138,6 @@ export const TranscriptReadAppToolsLive = Layer.effectDiscard(
             });
           const parsed = parseArchived(text);
           if (parsed === undefined)
-            // Archived before messages were anchored: it can only be read as one text.
             return {
               threadId,
               source: "archive",

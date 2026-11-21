@@ -14,7 +14,6 @@ import { LOCAL_HOST_ID } from "@gram/contracts";
 import { machineAccountScope } from "../runtime/limit-wait.ts";
 
 export const LIMIT_POLL_MS = 60_000;
-/** Coalesce simultaneous Usage page requests and a background refresh. */
 const LIMIT_REFRESH_QUIET_MS = 10_000;
 /**
  * How often limits are read while a thread waits on one and no recent read came from the window,
@@ -53,7 +52,6 @@ export class UsageLimitPoller extends Context.Service<
                 const identity = yield* (
                   host.value.readAccountScope ?? Effect.succeed(undefined)
                 ).pipe(Effect.result);
-                // A failed probe is not a successful subscription with missing metadata.
                 if (identity._tag === "Failure") return;
                 const login = identity.success;
                 const accountScope = supportsIdentity
@@ -70,9 +68,7 @@ export class UsageLimitPoller extends Context.Service<
                   ),
                   Effect.result,
                 );
-                // Transient failures retain the last observation and its age; never fabricate 0%.
                 if (result._tag === "Failure") return;
-                // Never attribute a query across a changed or failed identity observation.
                 const after = yield* (
                   host.value.readAccountScope ?? Effect.succeed(undefined)
                 ).pipe(Effect.result);
@@ -92,13 +88,9 @@ export class UsageLimitPoller extends Context.Service<
           );
         }),
       );
-      // Each Claude reading starts a Claude Code CLI, and the meter is the window's: no window, no
-      // poll. Live sessions still record what their turns report, and an orchestrator's limit checks
-      // read those, so a worker spawned while nobody looks is still held at its limit.
       yield* pollWhileShown(yield* Effect.serviceOption(AppActivity), LIMIT_POLL_MS, refresh).pipe(
         Effect.forkScoped,
       );
-      // A limit wait is work that depends on the readings while nobody looks: they end it early.
       const store = yield* Effect.serviceOption(ThreadStore);
       if (Option.isSome(store)) {
         yield* Effect.gen(function* () {

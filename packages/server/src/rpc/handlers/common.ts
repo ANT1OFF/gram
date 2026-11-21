@@ -9,10 +9,6 @@ import { type Rpc, type RpcGroup, RpcSchema } from "../../platform/unstable.ts";
 /** Every RPC handler, keyed by tag. A group file builds a `Partial` of it. */
 export type Handlers = Parameters<typeof GramRpcs.of>[0];
 
-/**
- * A defect's class and stack frames, which come from code, and never its message or `name`, which
- * can come from data: a codec failure quotes the value it rejected, a payload or a transcript.
- */
 const defectFields = (defect: unknown): Record<string, string> => {
   if (!(defect instanceof Error)) return { defect: typeof defect };
   const header = String(defect);

@@ -1,7 +1,3 @@
-// What an orchestrator's switch adds to the boot digest of the session it opened: the handoff note
-// the checkpoint wrote (or limit mode's request for one) and the last exchanges with the user,
-// fenced as material through the same path any thread's handoff takes (`switch-handoff.ts`).
-
 import type { ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../../persistence/thread-store.ts";

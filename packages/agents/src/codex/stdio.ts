@@ -9,7 +9,6 @@ export const writeCodexLine = (input: Writable | null, line: string): Effect.Eff
       resume(Effect.die(new Error("Codex input pipe is closed")));
       return;
     }
-    // write() returning means queued, not delivered. Only its callback observes async EPIPE.
     input.write(`${line}\n`, (error) => {
       resume(error ? Effect.die(error) : Effect.void);
     });

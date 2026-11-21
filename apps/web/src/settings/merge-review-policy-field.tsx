@@ -21,7 +21,6 @@ const OPTIONS = [
   { value: "bot", label: "Require review bot" },
 ] as const;
 
-/** Each policy in one line, under the selector while it is picked. */
 const POLICY_LINE: Record<MergeReviewPolicy, string> = {
   automatic: "Requires review bot approval when one is set up, otherwise solo.",
   solo: "Merges once CI and GitHub's merge rules pass.",
@@ -38,7 +37,6 @@ const SELECT = cn(inputCls, "h-7 w-auto max-w-none text-meta");
 
 type Override = NonNullable<OrchestratorCharter["repoMergeReviewPolicies"]>[number];
 
-/** The charter with these overrides, or none. */
 const withOverrides = (
   charter: OrchestratorCharter,
   overrides: readonly Override[],
@@ -47,7 +45,6 @@ const withOverrides = (
   return overrides.length === 0 ? rest : { ...rest, repoMergeReviewPolicies: overrides };
 };
 
-/** Why `repo` can't be added beside `overrides`, or `undefined`. */
 const overrideProblem = (overrides: readonly Override[], repo: string): string | undefined => {
   if (Schema.decodeUnknownOption(MergePolicyRepo)(repo)._tag === "None") {
     return "Use an exact owner/repo, such as octo-org/api.";
@@ -173,7 +170,6 @@ export function MergeReviewPolicyField({
   );
 }
 
-/** The row that adds one override: its repository and policy, checked before it is saved. */
 function AddOverride({
   overrides,
   disabled,

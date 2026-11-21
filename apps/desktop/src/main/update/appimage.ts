@@ -1,9 +1,3 @@
-// The Linux AppImage's own update steps, around electron-updater's check and download: where the
-// running AppImage is and whether this user may replace it, what a downloaded candidate must be
-// before it can be offered, and the replacement itself. There is no Squirrel.Mac, ShipIt or
-// publisher signature on Linux: the candidate is the exact file the release's `latest-linux.yml`
-// names, by its SHA-512, and GitHub's SHA-256 for the asset, written over the running AppImage
-// with one rename only after Gram's stop fence.
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { access, lstat, open, rename, rm, type FileHandle } from "node:fs/promises";
@@ -58,7 +52,6 @@ export async function locateAppImage(
   }
 }
 
-/** ELF, and the AppImage type 2 magic (`AI\x02`) at offset 8: what electron-builder writes. */
 const APPIMAGE_MAGIC = [0x7f, 0x45, 0x4c, 0x46];
 const APPIMAGE_TYPE2 = [0x41, 0x49, 0x02];
 
@@ -116,15 +109,9 @@ interface FileIdentity {
   readonly size: bigint;
   readonly mtimeNs: bigint;
   readonly ctimeNs: bigint;
-  /** Its permission bits (no set-id or sticky bits). */
   readonly mode: number;
 }
 
-/**
- * What tells one file at `path` from another put there since. The inode alone doesn't: ext4 hands
- * a deleted file's inode number straight to the next one created, so a file removed and rewritten
- * keeps it. Its size and its modification and change times, to the nanosecond, change all the same.
- */
 async function identity(path: string): Promise<FileIdentity> {
   const info = await lstat(path, { bigint: true });
   return {
@@ -179,7 +166,6 @@ export async function installAppImage(
         at += bytesWritten;
       }
     });
-    // By descriptor, never by path: the path could name another file by now.
     await owned.chmod(before.mode | 0o100);
     await owned.sync();
     await owned.close();
@@ -192,11 +178,8 @@ export async function installAppImage(
     await rm(temp, { force: true }).catch(() => {});
     throw error;
   }
-  // The rename is durable once the folder is: best effort, since some filesystems refuse it.
   try {
     const dir = await open(dirname(target), constants.O_RDONLY);
     await dir.sync().finally(() => dir.close());
-  } catch {
-    // The rename itself already happened.
-  }
+  } catch (_theRenameItselfAlreadyHappened) {}
 }

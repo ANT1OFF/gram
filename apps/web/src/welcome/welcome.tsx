@@ -63,11 +63,6 @@ export function Welcome() {
   return shown ? <FirstRun /> : null;
 }
 
-/**
- * A new install's Recommended setup row, on unless switched off here. Looking at it saves nothing:
- * the choice is saved when the user goes on (Open, or Skip), so the new workspace starts on it.
- * An install that has set the mode either way sees what it set, and a change here saves at once.
- */
 function RecommendedSetupWelcome({
   on,
   onChange,
@@ -78,7 +73,6 @@ function RecommendedSetupWelcome({
   const available = useAvailableModels(on);
   const summary = recommendedSummary(available);
   const titleId = useId();
-  // A row, not a <label>: a label around the Switch would click it again as the click bubbles.
   return (
     <div
       data-testid="welcome-recommended"
@@ -103,7 +97,6 @@ function RecommendedSetupWelcome({
   );
 }
 
-/** What Gram does, in the order it happens. */
 const STEPS: readonly { icon: LucideIcon; short: string; line: ReactNode }[] = [
   {
     icon: MessageSquare,
@@ -128,7 +121,6 @@ const STEPS: readonly { icon: LucideIcon; short: string; line: ReactNode }[] = [
 
 function FirstRun() {
   const api = useApi();
-  // On screen, it says the launch problems it covers, so the banner leaves them out.
   useEffect(() => {
     useWelcome.setState({ onScreen: true });
     return () => useWelcome.setState({ onScreen: false });
@@ -145,7 +137,6 @@ function FirstRun() {
       console.error("welcome: record", e),
     );
 
-  // The Recommended setup: on for a new install unless switched off here, saved as the user goes on.
   const mode = useServerSettings((s) => s.settings?.agents.recommendedSetup);
   const [recommended, setRecommended] = useState(true);
   const recommendedOn = mode === undefined ? recommended : mode.enabled;
@@ -168,11 +159,9 @@ function FirstRun() {
 
   const start = async (project: Project) => {
     await keepRecommended();
-    // The card's line promises the survey, so the form opens with it ticked.
     await navigate({ to: "/new-workspace", search: { repo: project.id, read: true } });
   };
 
-  /** Registers a folder Gram doesn't know yet, then starts on it. */
   const startAt = async (root: string, known?: Project) => {
     if (pending !== undefined) return;
     setPending(root);
@@ -189,18 +178,13 @@ function FirstRun() {
   };
 
   const { projects, all, listed } = useFirstRunRepos();
-  // With no agent ready, installing or signing in one is the next step, and opening a repository
-  // only sets it up: nothing can start on it yet.
   const { checks } = useLaunchChecks();
   const noAgent = checks !== undefined && runsWith(toolRows(checks)).agents.length === 0;
   const home = useHome();
-  // Past a screenful of repositories, a search finds one; it has the focus, so typing starts it.
   const [query, setQuery] = useState("");
   const searchable = all.length > RECENT_LIMIT;
   const matches = matchRepos(all, query);
   const repos = matches.slice(0, RECENT_LIMIT);
-  // The most recent repository is picked to start with, so Open is the obvious first click; a
-  // search picks its best match unless the pick is still among them.
   const [pickedRoot, setPickedRoot] = useState<string>();
   const picked = repos.find((repo) => repo.root === pickedRoot) ?? repos[0];
   const openRepo = (repo: RepositoryCandidate) =>
@@ -221,7 +205,6 @@ function FirstRun() {
     void keepRecommended().then(record);
   };
 
-  // Drawn whole once the repositories are listed: centred, a list arriving later moved it up.
   if (!listed) return null;
 
   return (
@@ -269,7 +252,6 @@ function FirstRun() {
           </p>
         )}
         {picked !== undefined && (
-          // Another way in, quiet under the list it adds to: a folder, or a clone from GitHub.
           <AddRepositoryMenu
             disabled={pending !== undefined}
             onFolder={() => void chooseFolder()}
@@ -282,9 +264,7 @@ function FirstRun() {
       </div>
       <RecommendedSetupWelcome on={recommendedOn} onChange={changeRecommended} />
       <div className="flex flex-col gap-3">
-        {/* With no agent ready, setting one up leads: its install or sign-in is the primary. */}
         {noAgent && <Readiness lead />}
-        {/* The one primary action with Skip beside it as the secondary one, the agents under them. */}
         <div data-testid="welcome-actions" className="flex flex-wrap items-center gap-2">
           {picked !== undefined ? (
             <Button
@@ -303,7 +283,6 @@ function FirstRun() {
               {noAgent ? `Set up ${picked.name}` : `Open ${picked.name}`}
             </Button>
           ) : (
-            // Nothing to pick: a folder on disk is the way in, a clone the other.
             <>
               <Button
                 type="button"
@@ -340,9 +319,7 @@ function FirstRun() {
           </p>
         )}
         {!noAgent && <Readiness />}
-        {/* With no agent, the install row above says what comes first; Set up says what it does. */}
         {picked !== undefined && !noAgent && (
-          // What Open leads to, so the first click holds no surprise, and that the survey comes next.
           <p data-testid="welcome-next" className="text-meta text-muted-foreground">
             Next: choose how much it may do on its own. Its orchestrator then surveys {picked.name}{" "}
             and suggests first tasks; nothing starts until you pick one.
@@ -354,14 +331,8 @@ function FirstRun() {
   );
 }
 
-/** The footer's two folds: how Gram works, and past CLI sessions to pick up. */
 type More = "how" | "import";
 
-/**
- * Under the start, folded until asked for: how Gram works, in three rows (who gives the work, who
- * plans it and who does it), and past CLI sessions to import. One row of two disclosures, so the
- * first screen is the repository, the agent and Open.
- */
 function MoreAboutGram() {
   const [open, setOpen] = useState<More>();
   const toggle = (which: More) => setOpen((was) => (was === which ? undefined : which));
@@ -434,10 +405,6 @@ function Disclosure({
   );
 }
 
-/**
- * The first run's other ways in, behind one quiet action under the list: a folder on disk, or a
- * clone from GitHub, which unfolds its form under it.
- */
 function AddRepositoryMenu({
   disabled,
   onFolder,
@@ -482,10 +449,6 @@ function AddRepositoryMenu({
   );
 }
 
-/**
- * The first run's repository search, once there are more than fit: focused as the card opens, so
- * typing narrows the list at once. Down moves into the list, Return opens the best match.
- */
 function RepoSearch({
   query,
   total,
@@ -495,12 +458,10 @@ function RepoSearch({
 }: {
   query: string;
   total: number;
-  /** Whether the list it narrows is on the page, which it controls. */
   listed: boolean;
   onQuery: (query: string) => void;
   onOpen: () => void;
 }) {
-  // It mounts once the repositories have loaded: focused then only if focus is nowhere else.
   const focusFree = useCallback((input: HTMLInputElement | null) => {
     if (input !== null && focusLost()) input.focus();
   }, []);
@@ -539,10 +500,6 @@ function RepoSearch({
   );
 }
 
-/**
- * Sessions started in a terminal with Claude Code or Codex, picked up as threads: a repository
- * first, then its past sessions, as ⌘K's Resume past session lists them. Shown once its fold opens.
- */
 function ImportSessions() {
   const { repos } = useFirstRunRepos();
   const [root, setRoot] = useState<string>();
@@ -583,10 +540,6 @@ function ImportSessions() {
   );
 }
 
-/**
- * The repositories Gram knows or finds in the default and clone folders, as one choice: a click or
- * the arrow keys pick one, and Open below (or a double-click, or Return) starts on it.
- */
 function RecentRepos({
   repos,
   home,
@@ -663,7 +616,6 @@ function RecentRepos({
   );
 }
 
-/** How each state reads beside its icon: never by colour alone. */
 const STATE: Readonly<Record<ToolState, { icon: LucideIcon; words: string; className: string }>> = {
   ready: { icon: CircleCheck, words: "Ready", className: "text-success" },
   attention: { icon: CircleAlert, words: "Needs sign-in", className: "text-foreground" },
@@ -671,16 +623,8 @@ const STATE: Readonly<Record<ToolState, { icon: LucideIcon; words: string; class
   optional: { icon: Circle, words: "Not installed", className: "text-muted-foreground" },
 };
 
-/** What the GitHub CLI is for, beside it while it isn't set up: it is optional, not a blocker. */
 const GH_FOR = "For pull requests and their checks";
 
-/**
- * Under Open, what its work runs on: "Runs with Codex" when an agent is ready, else the one thing
- * to do first, above Open (`lead`), whose first install (or, with only sign-ins left, Check again)
- * is then the card's primary action. Under that line, each tool that isn't ready yet: an agent no other covers says how
- * to install or sign in to it, with its install docs; one another agent covers, the GitHub CLI and
- * git when missing stay one quiet row each. Check again runs the checks once more. Only reads them.
- */
 function Readiness({ lead = false }: { lead?: boolean }) {
   const { checks, recheck } = useLaunchChecks();
   const [checking, setChecking] = useState(false);
@@ -693,12 +637,9 @@ function Readiness({ lead = false }: { lead?: boolean }) {
   }
   const all = toolRows(checks);
   const { ready, agents, words } = runsWith(all);
-  // The ones still to set up, those that stop the start first; a ready agent is named in the line.
   const rows = all
     .filter((row) => row.state !== "ready")
     .toSorted((a, b) => Number(a.state === "optional") - Number(b.state === "optional"));
-  // Leading the card, its first install is the primary action; with an agent installed and only
-  // its sign-in to do (the line says "Sign in to …"), which happens in a terminal, Check again is.
   const signIn = rows.some(
     (row) => (row.tool === "claude" || row.tool === "codex") && row.state === "attention",
   );
@@ -753,11 +694,6 @@ function Readiness({ lead = false }: { lead?: boolean }) {
   );
 }
 
-/**
- * One tool that isn't ready. Needed (no other agent covers it, or git): its remedy is spelled out
- * under it, the command marked, with its install docs beside. Optional: one quiet row, the remedy
- * on its hover.
- */
 function ToolLine({ row, primary = false }: { row: ToolRow; primary?: boolean }) {
   const state = STATE[row.state];
   const Icon = state.icon;
@@ -773,13 +709,11 @@ function ToolLine({ row, primary = false }: { row: ToolRow; primary?: boolean })
         label={<CommandText text={row.detail} />}
         render={
           <span
-            // Focusable, so the version or the remedy behind it reaches the keyboard too.
             tabIndex={0}
             className="flex items-center gap-1.5 rounded-sm text-muted-foreground outline-none focus-visible:focus-ring"
           />
         }
       >
-        {/* An agent by its own mark; the GitHub CLI by what it is for, git by its branches. */}
         {row.tool === "claude" || row.tool === "codex" ? (
           <AgentIcon agent={row.tool} className="size-icon-row" />
         ) : row.tool === "gh" ? (
@@ -797,7 +731,6 @@ function ToolLine({ row, primary = false }: { row: ToolRow; primary?: boolean })
         <OutboundLink
           href={row.installUrl}
           title={`How to install ${row.name}`}
-          // Optional, with another agent ready: a quiet link, not a second start.
           className={buttonVariants({
             size: "xs",
             variant: primary ? "default" : needed ? "outline" : "ghost",

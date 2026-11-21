@@ -12,10 +12,6 @@ import { longTranscript } from "@gram/contracts/testing";
 
 import type { MockScenes } from "./mock-orchestration";
 
-// The scale scenario's workspaces, for the performance specs: ten workspaces, the first with an
-// orchestrator running forty workers over ten features, the others with nine workers each. Every
-// worker has a short generated transcript; the big orchestrator a long one. Names are invented.
-
 const MINUTE = 60_000;
 const FEATURES = [
   "retry-policy",
@@ -113,7 +109,6 @@ export async function simulateScaleWorkspaces(
           startAt: worker.createdAt,
         }),
       );
-      // A spread of what workers are doing: a third running, some with an open PR, a few merged.
       const kind = i % 6;
       const git: GitState = {
         repo: true,

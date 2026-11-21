@@ -38,10 +38,6 @@ import { registerMockTurnFiles } from "./mock-git";
 import type { MockRealisticSimulation } from "./mock-realistic";
 import { PROJECTS } from "./mock-scripts";
 
-// Dev and e2e scenarios MockApi tells over the orchestration mock and the other domain mocks: the
-// workers, asks, waits, release and archive stories, failures, missing folders, unpushed work, a
-// recap and PRs.
-
 /**
  * Dev and e2e hook: the card the server raises when the workspace's orchestrator spawns a worker
  * in a repo Gram doesn't know yet, named by its folder. On "Allow" the repo becomes a
@@ -428,7 +424,6 @@ export function simulateOpenPr(core: MockCoreScenes, pr: OwnPr) {
   core.reviewRequests.simulateOwn(pr);
 }
 
-/** The folders the realistic scenario's `gram` and `infra` workspaces work in. */
 const REALISTIC_FOLDERS = {
   gram: "/Users/dev/Documents/code/gram",
   infra: "/Users/dev/Documents/code/infra",
@@ -446,14 +441,11 @@ export async function simulateRealistic(core: MockCoreScenes): Promise<MockReali
     projects: { gram: gram.id, docs: docs!.id, api: api!.id, web: web!.id, infra: infra.id },
     turnFiles: registerMockTurnFiles,
   });
-  // What each live worker is doing stays on its summary, as the server keeps it, so a window that
-  // loads after the scenario started reads the same line as one that watched it start.
   for (const { threadId, activity } of made.running) {
     const runtime = core.runtime(threadId);
     runtime.summary = { ...runtime.summary, activity };
     core.setStatus(runtime, "running", activity);
   }
-  // The seeded memory's open questions were settled on an earlier day: the one ask is the worker's.
   for (const id of ["Q1", "Q3"]) {
     core.dreams.editQuestions(made.workspaceId, (current) =>
       closeQuestion(

@@ -35,7 +35,6 @@ export const usePhoneDrawer = create<PhoneDrawerState>()((set) => ({
   setOpen: (open) => set({ open }),
 }));
 
-/** The places in the menu with a count above 0, which its button marks with a dot. */
 function useMenuCounts(): readonly { label: string; count: number }[] {
   const groups = useEmbedShell((s) => s.navigation);
   return useMemo(
@@ -53,7 +52,6 @@ function useMenuCounts(): readonly { label: string; count: number }[] {
 /** The data attribute the drawer's column carries, which the overview's rows take their phone shape from. */
 export const PHONE_DRAWER = "data-phone-drawer";
 
-/** The drawer's name: its threads, or, where an app in front of Gram leaves them out, its menu. */
 const useDrawerName = () => (useThreadsListed() ? "Threads" : "Menu");
 
 /**
@@ -64,8 +62,6 @@ export function PhoneMenuButton() {
   const open = usePhoneDrawer((s) => s.open);
   const name = useDrawerName();
   const roomy = useRoomySidebar();
-  // In the roomy look the button is round, and carries the Inbox's dot: what needs you is a row
-  // of the menu behind it, not a button of its own in the header.
   const attention = useEmbedShell((s) => s.attention);
   const counted = useMenuCounts();
   const hostCount = shownCount(attention?.count);
@@ -111,10 +107,6 @@ export function PhoneMenuButton() {
   );
 }
 
-/**
- * Closes the drawer once what was picked in it takes over: a move to another page (a row, a
- * workspace, New task, Settings) or a sheet it opened (Search, Needs you, History).
- */
 function useCloseOnPick(open: boolean) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const palette = useLayoutStore((s) => s.paletteOpen);
@@ -143,11 +135,9 @@ export function PhoneDrawer() {
   const setOpen = usePhoneDrawer((s) => s.setOpen);
   const name = useDrawerName();
   const roomy = useRoomySidebar();
-  // Keep the drawer closed until its content is ready, preserving its opening focus and transition.
   const menu = phoneMenuBody.useModule(requested && roomy);
   const open = requested && (!roomy || menu !== undefined);
   useCloseOnPick(requested);
-  // Leaving the phone layout (a tablet turned to landscape) closes it, so it doesn't come back open.
   useEffect(() => () => usePhoneDrawer.getState().setOpen(false), []);
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>

@@ -79,14 +79,10 @@ export const rawOutput = (part: AnyToolPart): string => {
 
 /** Output as plain text, its tail only. */
 export const tail = (text: string): string => {
-  // Cleaned from a little more than is kept, so a sequence cut in half at the edge is dropped too.
   const clean = terminalText(text.length <= OUTPUT_TAIL * 2 ? text : text.slice(-OUTPUT_TAIL * 2));
   return clean.length <= OUTPUT_TAIL ? clean : clean.slice(-OUTPUT_TAIL);
 };
 
-// Control sequences a shell's output carries for a terminal to act on: colours and cursor moves
-// (CSI), titles and links (OSC, ended by BEL or ST), and the other escapes (charset picks, keypad
-// modes). A plain-text view shows none of them. Matching control characters is the point here.
 /* oxlint-disable no-control-regex -- these patterns match terminal control characters on purpose */
 const CSI = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const OSC = /\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?/g;

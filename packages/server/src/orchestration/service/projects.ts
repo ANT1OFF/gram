@@ -1,7 +1,3 @@
-// Project lookup for the tools that name a repo (`spawn_worker`, `add_worker_repo`, joins): which
-// registered project a name or path means, whether it is outside the workspace, and joining one to
-// the workspace for a worker that needs it.
-
 import { type Project, type ProjectId, type ThreadId, type WorkspaceState } from "@gram/contracts";
 import { basename, samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -31,15 +27,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
     unjoinedRegistered,
   } = kit;
 
-  // ---------------------------------------------------------------------------------------
-  // What the tools call
-  // ---------------------------------------------------------------------------------------
-
-  /**
-   * A repo Gram doesn't know yet that `needle` names: a path to one, or a plain name that
-   * is the folder of exactly one repo beside the workspace's own. Only ever a card's subject, or
-   * registered by a handler that the card has already asked about.
-   */
   const unknownRepo = (tool: string, needle: string, state: WorkspaceState) =>
     Effect.gen(function* () {
       if (needle.startsWith("~") || isAbsolute(needle)) {
@@ -67,10 +54,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
       return found.length === 1 ? { root: found[0]!, name: needle } : undefined;
     });
 
-  /**
-   * `project` as a project id, a root path, or a name; refuses a name two projects share. A repo
-   * Gram doesn't know yet comes back as `unknown`, as `unknownRepo` found it.
-   */
   const lookupProject = (tool: string, named: string, state: WorkspaceState) =>
     Effect.gen(function* () {
       const needle = named.trim();
@@ -87,7 +70,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
       const found = exact.length > 0 ? exact : inWorkspace.length > 0 ? inWorkspace : byName;
       if (found.length === 0) {
         const unknown = yield* unknownRepo(tool, needle, state);
-        // A path that spells a known root another way (`~`, a trailing slash) is that project.
         const known =
           unknown === undefined
             ? undefined
@@ -112,18 +94,10 @@ export const makeProjects = (kit: OrchestrationKit) => {
       return { known: found[0]! };
     });
 
-  /**
-   * `lookupProject`, registering a repo Gram doesn't know yet, and noting in `registered`
-   * a project this call created. Only for a handler whose approval check counts such a repo as
-   * outside the workspace (`outsideWorkspace`), so the user has said yes to it before this runs;
-   * one that isn't the repository `identities` says the card was about is refused.
-   */
   const resolveProject = (tool: string, named: string, state: WorkspaceState, call: ProjectCall) =>
     Effect.gen(function* () {
       const found = yield* lookupProject(tool, named, state);
       const root = "known" in found ? found.known.root : found.unknown.root;
-      // Pinned as a folder, it is held to the repository seen there, even if it was registered
-      // meanwhile and now comes back as a project.
       const approved = call.identities?.[named];
       if (approved !== undefined && (yield* repoIdentity(root)) !== approved) {
         return yield* toolError(
@@ -131,8 +105,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
           `The repository at ${root} was replaced after the user was asked about it, so nothing was started there. Ask again if it is still wanted.`,
         );
       }
-      // Registered or found again, and claimed, in one step under `registryLock`, so another
-      // call's failure can't forget the project between this finding it and claiming it.
       return yield* registryLock.withPermits(1)(
         Effect.gen(function* () {
           const known = "known" in found ? found.known : undefined;
@@ -149,7 +121,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
       );
     });
 
-  /** Claims `project` for `call` until it ends (`claimedProjects`). Under `registryLock`. */
   const claim = (call: ProjectCall, project: Project) => {
     if (!call.claimed.includes(project.id)) {
       call.claimed.push(project.id);
@@ -158,12 +129,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
     return project;
   };
 
-  /**
-   * Forgets the projects a failed call created, so a refusal leaves no project behind. One any
-   * workspace has taken in since stays, and so does one a thread has opened in (`forgetProject`).
-   * One another call in any workspace still holds waits for that call's end (`unjoinedRegistered`).
-   * Under `registryLock`.
-   */
   const forgetUnjoined = (candidates: ReadonlyArray<ProjectId>) =>
     Effect.gen(function* () {
       if (candidates.length === 0) return;
@@ -182,11 +147,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
       }
     });
 
-  /**
-   * Runs a call that may register the repos it names (`resolveProject`): what it resolves stays
-   * claimed until it ends. Its end gives the claims back and, under the same lock, forgets what a
-   * failure registered and what an earlier failure left to the last claim (`forgetUnjoined`).
-   */
   const projectCall = <A, E, R>(
     identities: Readonly<Record<string, string>> | undefined,
     f: (call: ProjectCall) => Effect.Effect<A, E, R>,
@@ -216,17 +176,9 @@ export const makeProjects = (kit: OrchestrationKit) => {
       );
     });
 
-  /**
-   * The repos `named` pinned once, before the approval check: a known project by its id, a repo
-   * Gram doesn't know yet by its folder. The check, the card and the handler all read the
-   * pins, so what runs is what was asked about, whatever is registered or renamed meanwhile. A
-   * name that resolves to nothing refuses the call here, so no later lookup can find a repo the
-   * check never saw.
-   */
   const pinRepos: OrchestrationShape["pinRepos"] = (callerId, tool, named) =>
     Effect.gen(function* () {
       const authority = yield* authorityOf(callerId);
-      // Without authority the handler refuses before it reads a repo.
       if (authority === undefined) return { pins: named, identities: {} };
       const pins: Array<string> = [];
       const identities: Record<string, string> = {};
@@ -238,7 +190,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
         }
         const { root } = found.unknown;
         const identity = yield* repoIdentity(root);
-        // Without it the handler couldn't tell this repository from one moved in after the card.
         if (identity === undefined) {
           return yield* toolError(tool, `Gram can't read the repository at ${root}.`);
         }
@@ -248,7 +199,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
       return { pins, identities };
     });
 
-  /** The repos `named` as a card names them, whether pinned (`pinRepos`) or not. */
   const repoNames = (tool: string, named: ReadonlyArray<string>, state: WorkspaceState) =>
     Effect.forEach(named, (name) =>
       lookupProject(tool, name, state).pipe(
@@ -257,10 +207,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
       ),
     );
 
-  /**
-   * Once the user has said yes to a project outside the workspace, it joins, and the orchestrator
-   * reads it as one of its folders from then on.
-   */
   const joinWorkspace = (
     state: WorkspaceState,
     orchestratorId: ThreadId,
@@ -294,10 +240,6 @@ export const makeProjects = (kit: OrchestrationKit) => {
       yield* workspacesChanged;
     });
 
-  /**
-   * The repos among `named` that aren't the workspace's, a repo Gram doesn't know yet among
-   * them (with `unknown`); a name that resolves to nothing is the handler's to refuse.
-   */
   const outsideWorkspace = (tool: string, named: ReadonlyArray<string>, state: WorkspaceState) =>
     Effect.gen(function* () {
       const outside: Array<OutsideRepo> = [];

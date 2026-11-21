@@ -4,19 +4,14 @@ import * as Layer from "effect/Layer";
 import { monitorEventLoopDelay, performance, PerformanceObserver } from "node:perf_hooks";
 import { blockingStack, makeStallProfiler } from "./stall-profile.ts";
 
-/** A delay of the server's event loop at least this long gets a warning line. */
 const LOOP_STALL_WARN_MS = 500;
 
-/** How often the delay histogram is read and reset, so at most one line per window. */
 const LOOP_STALL_WINDOW = Duration.seconds(10);
 
-/** How many windows pass between two `event loop` lines, stalled or not: one every 10 minutes. */
 const LOOP_HEARTBEAT_WINDOWS = 60;
 
-/** A stall at least this long arms the stack profiler, so the ones after it are named. */
 const PROFILE_ARM_MS = 1000;
 
-/** How long the profiler stays armed after the last stall that armed it: stalls come in runs. */
 const PROFILE_ARMED_WINDOWS = 180;
 
 /** What one window measured, in milliseconds except the two sizes. */

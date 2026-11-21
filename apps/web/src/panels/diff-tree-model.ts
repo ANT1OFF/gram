@@ -2,7 +2,6 @@ import type { DiffFile } from "@gram/contracts";
 
 interface DiffTreeDir {
   kind: "dir";
-  /** One folder, or a chain of single-child folders shown as one (`src/panels`). */
   name: string;
   path: string;
   children: DiffTreeNode[];

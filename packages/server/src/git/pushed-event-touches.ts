@@ -1,5 +1,3 @@
-// Which checkouts a pushed repository event touches, so only those are read again.
-
 import type { GitState } from "@gram/contracts";
 import { repoFromPrUrl } from "@gram/git";
 import type { PrRef } from "./extra-prs.ts";

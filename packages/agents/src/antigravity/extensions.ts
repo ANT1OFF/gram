@@ -1,6 +1,3 @@
-// Antigravity's ACP payloads read as Gram's: its models and thinking levels, its modes, its tools
-// as Gram's cards know them, and the usage it reports. Pure.
-
 import type { AgentModel, PermissionMode, ReasoningVariant, TokenUsage } from "@gram/contracts";
 
 import type { OutwardGate } from "../host.ts";
@@ -60,14 +57,12 @@ export const antigravityMode = (
   return "default";
 };
 
-/** The input keys Antigravity names an edited file by. */
 const EDIT_KEYS = ["Path", "TargetFile", "AbsolutePath", "file_path"];
 
 /** Antigravity's own name for a call: its `name`, else the ACP title it opened with. */
 export const antigravityToolName = (update: Json): string =>
   text(update["name"]) ?? text(update["title"]) ?? "tool";
 
-/** The input keys Antigravity, or a tool it runs, gives a command line in. */
 const COMMAND_KEYS = ["CommandLine", "commandLine", "command_line", "Command", "command"];
 
 /** The command line a call carries, whatever its kind. */
@@ -186,7 +181,6 @@ export const toolFor = (name: string, input: Json, appToolsServer: string): Card
   }
 };
 
-/** The longest output kept from a call that gave no text content. */
 const OUTPUT_MAX = 20_000;
 
 /** What a finished call said: its text content, else the output its raw output carries. */

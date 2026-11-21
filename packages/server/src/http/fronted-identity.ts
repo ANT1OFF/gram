@@ -39,7 +39,6 @@ export const CLOCK_SKEW_SECONDS = 30;
  * keeps what the statement gave them when the proxy doesn't close their connections itself.
  */
 export const SOCKET_LIFETIME_MS = 15 * 60_000;
-/** A statement longer than this is refused unread. */
 const MAX_STATEMENT_LENGTH = 4096;
 const MAX_TEXT_LENGTH = 256;
 
@@ -103,7 +102,6 @@ export type IdentityResult =
 
 const refuse = (reason: IdentityRefusal): IdentityResult => ({ ok: false, reason });
 
-/** Canonical unpadded base64url, or undefined: a second spelling of the same bytes is refused. */
 const decodeBase64Url = (text: string): Buffer | undefined => {
   if (!/^[A-Za-z0-9_-]+$/.test(text)) return undefined;
   const bytes = Buffer.from(text, "base64url");
@@ -121,10 +119,6 @@ const parseObject = (bytes: Buffer): Record<string, unknown> | undefined => {
   }
 };
 
-/**
- * Printable text of a sane length: no control characters to carry into a log or a header, and no
- * invisible or direction-changing ones to make one name read as another.
- */
 const plainText = (value: unknown): string | undefined =>
   typeof value === "string" &&
   value.length > 0 &&
@@ -157,10 +151,7 @@ export const verifyIdentity = (
     return refuse("malformed");
   const header = parseObject(headerBytes);
   if (header === undefined) return refuse("malformed");
-  // One algorithm, named here and never read from the statement as a choice: `none`, an HMAC keyed
-  // with the public key, and every other substitution end at this line.
   if (header["alg"] !== "EdDSA") return refuse("algorithm");
-  // Extensions this reader doesn't know must not be skipped past.
   if ("crit" in header || "b64" in header || "jwk" in header || "jku" in header || "x5u" in header)
     return refuse("malformed");
   const kid = header["kid"];
@@ -184,7 +175,6 @@ export const verifyIdentity = (
   const claims = parseObject(payloadBytes);
   if (claims === undefined) return refuse("malformed");
   if (claims["iss"] !== config.issuer) return refuse("issuer");
-  // A statement for several audiences is one another server could have been handed.
   if (claims["aud"] !== config.audience) return refuse("audience");
   const iat = claims["iat"];
   const exp = claims["exp"];
@@ -202,7 +192,6 @@ export const verifyIdentity = (
   const name = claims["name"] === undefined ? id : plainText(claims["name"]);
   if (name === undefined) return refuse("subject");
   const role = claims["role"];
-  // Both or neither: the header says what kind of statement this is, and the role agrees.
   const forService = header["typ"] === SERVICE_TYP;
   if (forService !== (role === SERVICE_ROLE)) return refuse("role");
   if (forService) {
@@ -230,7 +219,6 @@ const invalid = (message: string): never => {
   throw new FrontedIdentityConfigError(`fronted sign-in: ${message}`);
 };
 
-/** `https://host[:port]`, or plain `http` on loopback for a proxy tried out on one machine. */
 const publicOrigin = (value: string): string => {
   let url: URL;
   try {
@@ -246,7 +234,6 @@ const publicOrigin = (value: string): string => {
   return url.origin;
 };
 
-/** The proxy's Ed25519 public keys, from a JWK Set (`{"keys":[…]}`). */
 const publicKeys = (text: string): ReadonlyMap<string, KeyObject> => {
   let parsed: unknown;
   try {
@@ -261,7 +248,6 @@ const publicKeys = (text: string): ReadonlyMap<string, KeyObject> => {
   for (const jwk of list as ReadonlyArray<Record<string, unknown> | null>) {
     if (typeof jwk !== "object" || jwk === null)
       return invalid(`${IDENTITY_ENV.keys} holds something that is not a key`);
-    // A private key here means the signing key was handed to the server it is meant to convince.
     if ("d" in jwk) return invalid(`${IDENTITY_ENV.keys} must hold public keys only`);
     if (jwk["kty"] !== "OKP" || jwk["crv"] !== "Ed25519" || typeof jwk["x"] !== "string")
       return invalid(`${IDENTITY_ENV.keys} takes Ed25519 keys only (kty OKP, crv Ed25519)`);
@@ -282,7 +268,6 @@ const publicKeys = (text: string): ReadonlyMap<string, KeyObject> => {
       return invalid(`${IDENTITY_ENV.keys} holds a key that is not a valid Ed25519 public key`);
     }
   }
-  // Without a `kid` a statement can only mean the one key there is.
   if (keys.size > 1 && keys.has(""))
     return invalid("with more than one key, every key needs a kid");
   return keys;

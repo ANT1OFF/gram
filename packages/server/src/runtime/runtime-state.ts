@@ -1,5 +1,3 @@
-// One thread's live runtime state, and the small helpers every part of `ThreadRuntimes` reads it with.
-
 import type { StoredActor } from "../host/ownership.ts";
 import {
   type AgentUnavailable,

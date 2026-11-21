@@ -90,20 +90,12 @@ import { pushHandlers } from "./push.ts";
 import { threadUiHandlers } from "./thread-ui.ts";
 import { upstreamSyncHandlers } from "./upstream-sync.ts";
 
-/** `worktree.*`, `git.*` and `pr.*`. */
-
-/**
- * `listing` with nothing of a thread the caller may not see (`embedding/readable-by.ts`): no
- * worktree such a thread holds or has held, by name, path or branch.
- */
 const unnamed = <L extends { readonly worktrees: ReadonlyArray<StorageWorktree> }>(listing: L) =>
   Effect.gen(function* () {
     if (!anyPrivate()) return listing;
     const reader = yield* currentReader;
     return {
       ...listing,
-      // Nor its path or branch: the worktree is left out. A cleanup removes only paths it is
-      // given, which the guard checks against such a thread's folders.
       worktrees: listing.worktrees.filter(
         (worktree) =>
           (worktree.threadId === undefined || readerMay(reader, privacyOf(worktree.threadId))) &&
@@ -116,7 +108,6 @@ export const gitHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const runtimes = yield* ThreadRuntimes;
   const proc = yield* Proc;
-  // Each path's worktrees and git state, on the machine the threads place it on.
   const hosts = yield* WorkerHosts;
   const { worktrees, git: gitState } = hosts.placed;
   const pr = yield* Pr;
@@ -128,7 +119,6 @@ export const gitHandlers = Effect.gen(function* () {
   const cachedDetail = makePrDetailCache(pr.detail);
   const provide = Effect.provideService(Proc, proc);
 
-  /** The repo top for a base-branch RPC; `base` must name an `origin/` branch. */
   const baseRepo = (repoPath: string, base: string) =>
     Effect.gen(function* () {
       if (!/^origin\/[A-Za-z0-9._/-]+$/.test(base) || base.includes("..")) {
@@ -142,7 +132,6 @@ export const gitHandlers = Effect.gen(function* () {
       return repoTop;
     });
 
-  /** The main checkout of the repo `path` belongs to. */
   const mainCheckout = (path: string) =>
     Effect.gen(function* () {
       const list = yield* worktrees
@@ -155,13 +144,8 @@ export const gitHandlers = Effect.gen(function* () {
       return main;
     });
 
-  /** This machine's worktrees, whatever another machine holds at the same paths. */
   const worktreesHere = hosts.machine(LOCAL_HOST_ID).worktrees;
 
-  /**
-   * What Settings › Storage reads: the projects, the threads open and closed, and git's lists, of
-   * this machine's disk.
-   */
   const storageSources = Effect.gen(function* () {
     return {
       projects: yield* store.listProjects,
@@ -186,12 +170,10 @@ export const gitHandlers = Effect.gen(function* () {
     };
   });
 
-  /** The thread's PR: the bound PR, else the branch's badge; `undefined` without one. */
   const threadPr = (yield* ThreadPrLookup).target;
 
   const noPullRequest = new InvalidState({ message: "This thread has no pull request" });
 
-  /** Fails for an orchestrator, which follows no PR of its own. */
   const refuseOrchestrator = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(threadId);
@@ -200,10 +182,6 @@ export const gitHandlers = Effect.gen(function* () {
       }
     });
 
-  /**
-   * Uncommitted work. A clean tree on a branch ahead of its base falls back to branch vs base, with
-   * `base` set so the panel can say so.
-   */
   const uncommittedDiff = (cwd: string, ignoreWhitespace: boolean) =>
     provide(
       Effect.gen(function* () {
@@ -213,7 +191,6 @@ export const gitHandlers = Effect.gen(function* () {
       }),
     );
 
-  /** Committed branch work against the rebase signal's base, else the repo default. */
   const branchDiff = (cwd: string, ignoreWhitespace: boolean) =>
     provide(
       Effect.gen(function* () {
@@ -258,7 +235,6 @@ export const gitHandlers = Effect.gen(function* () {
   return {
     "worktree.list": ({ repoPath }) =>
       Effect.gen(function* () {
-        // Only the threads on the machine the repository is on hold its worktrees.
         const host = (yield* hosts.placeOf(repoPath)) ?? LOCAL_HOST_ID;
         const threads = yield* store.listThreads;
         const lastActivity = (path: string) =>
@@ -282,11 +258,9 @@ export const gitHandlers = Effect.gen(function* () {
         const list = yield* worktrees
           .list(path, { openCheckouts: [] })
           .pipe(Effect.mapError(toGitError));
-        // Only a linked worktree git knows: the RPC takes a path, and the main checkout is never sized.
         if (!list.worktrees.slice(1).some((w) => samePath(w.path, path))) {
           return yield* new InvalidState({ message: `${path} isn't a linked worktree` });
         }
-        // Measured on this disk.
         yield* pathHere(hosts, path);
         return yield* cachedFolderSize(path);
       }),
@@ -340,10 +314,8 @@ export const gitHandlers = Effect.gen(function* () {
                 .list(main.path, { openCheckouts: [] })
                 .pipe(Effect.mapError(toGitError))).worktrees.find((w) => samePath(w.path, path))
                 ?.branch;
-        // The list above placed it, so a path two machines hold never gets this far.
         const host = (yield* hosts.placeOf(path)) ?? LOCAL_HOST_ID;
         const here = host === LOCAL_HOST_ID;
-        // Only that machine's threads use its folders: one elsewhere at the same path is another.
         const openCheckouts = usedCheckoutPaths(yield* store.listThreads, host);
         yield* worktrees
           .remove({
@@ -355,13 +327,11 @@ export const gitHandlers = Effect.gen(function* () {
           })
           .pipe(
             Effect.catch((error) =>
-              // Counting the changes runs git here, so another machine's are only named.
               here ? provide(removalError(error, path)) : Effect.fail(toGitError(error)),
             ),
           );
         forgetFolderSize(path);
         if (deleteBranch === undefined || branch === undefined) return {};
-        // The branch is deleted with git here, in that repository.
         if (!here) {
           return {
             branch: {
@@ -454,12 +424,9 @@ export const gitHandlers = Effect.gen(function* () {
     "git.prDetail": ({ threadId }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        // Not its checkout's PR either: an orchestrator follows none of its own.
         if (thread.role === "orchestrator") return { available: true };
         const cwd = yield* ghFolder(thread);
         const here = isLocalHost(effectiveCheckout(thread));
-        // Another machine's checkout has its branch's PR only as published, with its repository
-        // named: a lookup from `cwd` here would ask about no repository, or another one.
         const state = here
           ? yield* publisher.stateFor(cwd)
           : yield* publisher.stateForThread(thread);
@@ -469,7 +436,6 @@ export const gitHandlers = Effect.gen(function* () {
           (here
             ? (yield* pr.status(cwd).pipe(Effect.orElseSucceed(() => undefined)))?.number
             : undefined);
-        // No PR is a normal state, not a failure: `error` is reserved for gh, network and auth failures.
         if (number === undefined) return { available: true };
         const repo =
           thread.boundPr?.repo ??
@@ -481,7 +447,6 @@ export const gitHandlers = Effect.gen(function* () {
           ...(repo === undefined ? {} : { repo }),
           ...(stamp === undefined ? {} : { stamp }),
         });
-        // The panel may be first to see a merge, for a thread no sweep has asked about since.
         if (result.detail !== undefined) yield* publisher.reconcile(thread, result.detail);
         return {
           available: result.available,
@@ -526,7 +491,6 @@ export const gitHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
         if (thread.role === "orchestrator") return {};
-        // Another machine's branch is looked up there or not at all: never from a folder here.
         const badge = isLocalHost(effectiveCheckout(thread))
           ? yield* Effect.gen(function* () {
               const cwd = yield* threadFolder(thread);
@@ -570,7 +534,6 @@ export const gitHandlers = Effect.gen(function* () {
         const thread = yield* runtimes.updateThread(threadId, (t) =>
           removeExtraPr(t, { repo, number }),
         );
-        // A network refresh, because only that pass prunes the badge the row was drawn from.
         yield* refreshes.request(effectiveCheckout(thread).path, true);
       }),
 
@@ -593,8 +556,6 @@ export const gitHandlers = Effect.gen(function* () {
             threadId,
           });
         }
-        // The store refuses a new main binding of a PR another thread's launch has reserved, and
-        // leaves this thread's bindings as they were: say so rather than return the old main PR.
         if (
           thread.boundPr.number !== number ||
           thread.boundPr.repo.toLowerCase() !== repo.toLowerCase()
@@ -640,7 +601,6 @@ export const gitHandlers = Effect.gen(function* () {
     "git.prApplySuggestion": ({ threadId, commentId }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        // Applied with git here, in the thread's checkout.
         const cwd = yield* threadFolder(thread);
         const target = yield* threadPr(thread, cwd);
         if (target === undefined) return yield* noPullRequest;
@@ -675,7 +635,6 @@ export const gitHandlers = Effect.gen(function* () {
     "git.prReplyThread": ({ threadId, reviewThreadId, body }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        // By the review thread's node id, so gh needs only a folder here to start in.
         const cwd = yield* ghFolder(thread);
         const comment = yield* reviews
           .reply(cwd, reviewThreadId, body)
@@ -699,7 +658,6 @@ export const gitHandlers = Effect.gen(function* () {
         const target = yield* threadPr(thread, cwd);
         if (target === undefined) return yield* noPullRequest;
         const bots = reviewBotsOf(yield* store.getSettings);
-        // Not the checkout's badge: a PR bound from another repository is reviewed by its own bot.
         const badge = yield* publisher.badgeFor(thread);
         const seen =
           badge !== undefined && isBadgeOf(badge, target) ? (badge.review?.bots ?? []) : [];

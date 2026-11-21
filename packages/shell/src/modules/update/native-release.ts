@@ -1,10 +1,3 @@
-// The electron-updater manifest a release carries, and how the feed picks the release it points at.
-// `bun run release:rc` renders the manifest with `renderNativeManifest`; the app checks what it
-// reads with `validateNativeManifest`, so the two can't drift apart.
-//
-// Three installs read releases: a Developer ID signed macOS app (the signed ZIP and
-// `latest-mac.yml`), the Linux AppImage (the AppImage and `latest-linux.yml`), and the Linux .deb,
-// which only learns that a release is out: apt installs it, never Gram.
 import type { UpdateChannel } from "@gram/contracts";
 
 import { macArtifactName } from "./mac-artifacts.ts";
@@ -17,7 +10,6 @@ import { compareVersions, formatVersion, parseVersion } from "./semver.ts";
  */
 export type NativeTarget = "mac" | "appimage" | "deb";
 
-/** The manifest platform a target reads: electron-updater's `-mac` or `-linux` channel files. */
 const manifestPlatform = (target: NativeTarget): "mac" | "linux" =>
   target === "mac" ? "mac" : "linux";
 
@@ -169,7 +161,6 @@ export function validateNativeManifest(
   if (expected.target !== undefined && expected.target !== "mac" && expected.target !== "appimage")
     return fail();
   const zip = nativePayloadName(expected.version, expected.target ?? "mac");
-  // js-yaml reads an unquoted ISO time as a Date; ours is quoted, so it stays a string.
   if (
     version !== expected.version ||
     entry["url"] !== zip ||
@@ -264,7 +255,6 @@ export function pickNativeRelease(
     const raw = byTag.get(candidate.tag);
     const version = formatVersion(candidate.version);
     const r = raw as { prerelease?: unknown; body?: unknown; published_at?: unknown } | null;
-    // GitHub's flag must agree with the tag, as the private updater requires.
     if (r?.prerelease !== candidate.prerelease) continue;
     const payload = asset(raw, nativePayloadName(version, target), NATIVE_ZIP_MAX_BYTES);
     const manifest = asset(raw, nativeManifestName(version, target), NATIVE_MANIFEST_MAX_BYTES);

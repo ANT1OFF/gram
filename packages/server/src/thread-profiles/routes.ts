@@ -1,8 +1,3 @@
-// `POST /threads/from-profile`: a thread started from a profile by a fronting platform's own
-// service (its statement for this path), or by the local app; never by a person signed in through
-// the proxy, nor by a paired phone. While the hosted features setting is off it answers as a path
-// that isn't there. Beside it, `POST /threads/move-to-machine` places such a thread on a machine,
-// and `POST /threads/machine-wait` says how the wait of one started before its machine stands.
 import {
   embeddingOn,
   PROFILE_MOVE_PATH,
@@ -32,7 +27,6 @@ import type { ProfileStarter } from "./start.ts";
 
 export { PROFILE_MOVE_PATH, PROFILE_START_PATH, PROFILE_WAIT_PATH, THREAD_READERS_PATH };
 
-/** A profile's files hold at most 1 MB; the rest of a body is small beside them. */
 const BODY_MAX = 2_000_000;
 
 const refuse = (message: string, status: number) =>
@@ -56,11 +50,6 @@ export const PROFILE_START_RECORD = {
   moved: "x-gram-moved",
 } as const;
 
-/**
- * The JSON body of a POST to `path`, or the answer that refuses it: a path that isn't there under
- * another spelling or with the hosted features off, another method, another content type, or a
- * body too large or not JSON.
- */
 const jsonBodyAt = (
   path: string,
   on: Effect.Effect<boolean>,
@@ -71,7 +60,6 @@ const jsonBodyAt = (
 > =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    // Only under its one spelling: the checks above this route match the path exactly.
     if (authTarget(request.url)?.path !== path) return { answer: notThere };
     if (!(yield* on)) return { answer: notThere };
     if (request.method !== "POST")
@@ -81,7 +69,6 @@ const jsonBodyAt = (
           headers: { allow: "POST" },
         }),
       };
-    // A form or a plain-text post from another page is never a start.
     if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json"))
       return { answer: refuse("Send the body as application/json.", 415) };
     const length = Number(request.headers["content-length"]);
@@ -139,7 +126,6 @@ export const profileStartRoute = (
               headers: {
                 [PROFILE_START_RECORD.thread]: thread.id,
                 [PROFILE_START_RECORD.created]: String(created),
-                // A thread that waits for its machine is on none, and its record names none.
                 ...(thread.checkout.hostId === undefined || thread.awaitingMachine !== undefined
                   ? {}
                   : { [PROFILE_START_RECORD.host]: thread.checkout.hostId }),
@@ -147,7 +133,6 @@ export const profileStartRoute = (
             },
           ),
         ),
-        // The starter's own sentence, and nothing of how it failed inside.
         Effect.catch((error) => Effect.succeed(refuse(error.message, 409))),
       );
   });

@@ -1,20 +1,3 @@
-// Proves an update's killed server tree gone before the bundle is replaced (`server-host.ts`
-// `TreeCheck`). The process table is read by number and start time only, never by name: pid,
-// parent pid, process group and `lstart`. A process is known by its birth identity (pid and start
-// time), so one that is reparented to launchd stays known, and a pid reused by another process is
-// never taken for it.
-//
-// From the stop request on, the watch follows the server's tree: every process under a known one
-// joins it, and so does a process orphaned since the request into a process group the tree leads
-// (a terminal's shell leads its own) or into the server's own group, its parent gone before a
-// read could see it. A group number the tree led that another process now leads makes what is in
-// it untellable, which refuses. Before the kill the whole tree is stopped (SIGSTOP) until two reads
-// in a row find nothing new, so nothing can fork past the kill. After it, the tree must be gone in
-// two reads in a row. A table that can't be read, a watch that doesn't settle in time, or a
-// launched program whose identity can't be told from a reused pid fails closed: the update is
-// refused. Whatever the outcome, the tree is released: anything of it still alive is killed, or,
-// when no read can check identities, everything stopped is continued and the update refused.
-
 import type { RunSync } from "../process-tree.ts";
 
 export interface TreeCheckDeps {
@@ -26,10 +9,8 @@ export interface TreeCheckDeps {
   readonly now: () => number;
 }
 
-/** Every process as `pid ppid pgid lstart`: numbers and a start time, nothing a process names. */
 const TABLE = ["/bin/ps", ["-A", "-o", "pid=,ppid=,pgid=,lstart="]] as const;
 const LINE = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S.*?)\s*$/;
-/** Long enough for `ps -A` on a loaded machine; a read that runs over fails closed. */
 const PS_TIMEOUT_MS = 2_000;
 /** How long stopping the tree may take to settle before the check fails closed. */
 export const FREEZE_MS = 2_000;
@@ -45,12 +26,9 @@ interface Row {
 }
 type Table = ReadonlyMap<number, Row>;
 
-/** A process's birth identity: its pid and when it started. */
 const id = (pid: number, row: Row) => `${pid} ${row.start}`;
 
-/** The table by pid, or undefined when it couldn't be read; never an empty table. */
 function readTable(deps: TreeCheckDeps): Table | undefined {
-  // `ps` is POSIX; Windows has no qualified survivor check, so an update there is refused.
   if (deps.platform === "win32") return undefined;
   const [file, args] = TABLE;
   const read = deps.run(file, args, PS_TIMEOUT_MS);
@@ -62,9 +40,6 @@ function readTable(deps: TreeCheckDeps): Table | undefined {
     const start = match[4]!.replaceAll(/\s+/g, " ");
     rows.set(Number(match[1]), { ppid: Number(match[2]), pgid: Number(match[3]), start });
   }
-  // `ps -A` lists itself: a new child of the app, in the app's group the server shares. Read as a
-  // process, every read after the first would find an ancestor's new child in that group and
-  // refuse the update as untellable. It has exited by now and is nothing of the server's.
   if (read.pid !== undefined) rows.delete(read.pid);
   return rows.size === 0 ? undefined : rows;
 }
@@ -120,12 +95,8 @@ export function watchTree(
   const rootRow = first?.get(root);
   if (first === undefined || rootRow === undefined) return undefined;
   const members = new Map<number, string>([[root, rootRow.start]]);
-  // Every process group the tree leads, by its leader's start: a terminal's shell leads its own.
-  // The server's group, when it doesn't lead it, is shared with the app (`shared`).
   const groups = new Map<number, string>();
   const shared = rootRow.pgid === root ? undefined : rootRow.pgid;
-  // Linux can adopt orphans into an ancestor subreaper instead of PID 1. Record ancestors by
-  // birth identity, never by process name or an unfenced parent pid.
   const ancestors = new Map<number, string>();
   for (let pid = rootRow.ppid; pid > 1 && !ancestors.has(pid);) {
     const row = first.get(pid);
@@ -133,16 +104,13 @@ export function watchTree(
     ancestors.set(pid, row.start);
     pid = row.ppid;
   }
-  // An already existing process is never claimed merely because its parent later changes.
   const before = new Set([...first].map(([pid, row]) => id(pid, row)));
-  /** Members ever sent SIGSTOP, by birth identity, so none is left stopped whatever happens. */
   const stopped = new Map<number, string>();
   let ambiguous = false;
   let settled = false;
 
   const isMember = (pid: number, row: Row | undefined) =>
     row !== undefined && members.get(pid) === row.start;
-  /** Group numbers seen led by another process than the tree's leader: never owned again. */
   const disowned = new Set<number>();
   const join = (pid: number, row: Row) => {
     members.set(pid, row.start);
@@ -150,11 +118,7 @@ export function watchTree(
   };
   join(root, rootRow);
 
-  /** Adds every process of `table` that joins the tree; returns the pids it added. */
   const grow = (table: Table): number[] => {
-    // A group of the tree now led by another process: its number was reused, and what is in it
-    // can no longer be told apart. The group is disowned for good, so nothing in it is taken in,
-    // stopped or killed, and the update is refused.
     for (const [pgid, start] of groups) {
       const leader = table.get(pgid);
       if (leader === undefined || leader.start === start) continue;
@@ -172,8 +136,6 @@ export function watchTree(
         const adoptedByAncestor =
           ancestors.has(row.ppid) && ancestors.get(row.ppid) === table.get(row.ppid)?.start;
         const newInGroup = ownGroup && !before.has(id(pid, row));
-        // An ancestor's new child in the app's shared group could be unrelated. Refuse without
-        // claiming or signaling it. A group led by this tree gives the missing ownership proof.
         if (!underMember && adoptedByAncestor && newInGroup && row.pgid === shared) {
           ambiguous = true;
           continue;
@@ -183,7 +145,6 @@ export function watchTree(
         if (!underMember && !orphaned) continue;
         if (launched.has(pid)) {
           const start = launched.get(pid);
-          // Unknown: can't be told from a reused pid. Matching: the user's program, spared.
           if (start === undefined) ambiguous = true;
           if (start === undefined || start === row.start) continue;
         }
@@ -196,7 +157,6 @@ export function watchTree(
   };
   grow(first);
 
-  /** Sends `signal` to every member `table` still lists as itself. */
   const signalAll = (table: Table, signal: NodeJS.Signals) => {
     for (const [pid, start] of members) {
       if (table.get(pid)?.start !== start) continue;
@@ -207,16 +167,9 @@ export function watchTree(
   const send = (pid: number, signal: NodeJS.Signals) => {
     try {
       deps.signal(pid, signal);
-    } catch {
-      // ESRCH: it exited since the read.
-    }
+    } catch (_esrchItExitedSinceTheRead) {}
   };
 
-  /**
-   * Leaves nothing of the tree stopped or alive: kills every member a fresh read still shows as
-   * itself. Without a read no identity can be checked, so whatever was stopped is only continued
-   * (harmless to a pid since reused), and the update is refused as unverified.
-   */
   const release = () => {
     const table = readTable(deps);
     if (table !== undefined) {
@@ -235,7 +188,6 @@ export function watchTree(
         if (table === undefined) return false;
         const added = grow(table);
         signalAll(table, "SIGSTOP");
-        // Two reads in a row with nothing new, the last after everything was stopped.
         if (reads > 0 && added.length === 0) {
           settled = !ambiguous;
           return settled;
@@ -260,7 +212,6 @@ export function watchTree(
             break;
           }
           if (deps.now() >= deadline) {
-            // Gone in one read only isn't confirmed: fail closed.
             left = alive.length > 0 ? alive.length : undefined;
             break;
           }

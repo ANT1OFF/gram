@@ -140,7 +140,6 @@ export function WordFilterControls({
               onKeyDown={(event) => {
                 if (event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey)
                   return;
-                // Commit arrow edits in the chip itself, consistently across native popup menus.
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
                   const index = values.findIndex((value) => value === filter.value);

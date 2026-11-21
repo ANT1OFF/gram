@@ -21,7 +21,6 @@ export const prPeopleHandlers = Effect.gen(function* () {
   const refreshes = yield* GitRefresh;
   const provide = Effect.provideService(Proc, proc);
 
-  /** The thread's folder and PR: the bound PR, else the branch's badge. */
   const threadPr = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(threadId);

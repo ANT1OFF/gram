@@ -135,7 +135,6 @@ export const UNASKED_WHAT_MOST = 512;
 type Refusal = { readonly kind: "refused"; readonly why: DeviceRefusalReason };
 const refusal = (why: DeviceRefusalReason): Refusal => ({ kind: "refused", why });
 
-/** The same payload, whatever order its keys came in. */
 const fingerprint = (kind: string, payload: unknown): string =>
   JSON.stringify([kind, payload], (_key, value: unknown) =>
     value !== null && typeof value === "object" && !Array.isArray(value)
@@ -149,15 +148,11 @@ const fingerprint = (kind: string, payload: unknown): string =>
 
 interface Running {
   readonly fingerprint: string;
-  /** Takes the request back: withdraws its ask, or stops its command. */
   readonly controller: AbortController;
-  /** For a command: every event so far, and who else is listening. */
   readonly events: Array<DeviceExecEvent>;
   readonly listeners: Set<(event: DeviceExecEvent) => void>;
-  /** The answer, or for a command the work under way. */
   answer: Promise<unknown>;
   done: boolean;
-  /** Calls waiting on it. When the last one stops listening, the request is taken back. */
   callers: number;
 }
 
@@ -196,19 +191,16 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
   const requests = new Map<string, Running>();
   const run = options.run ?? runCommand;
   const askWaitMs = options.askWaitMs ?? DEVICE_ASK_WAIT_MS;
-  /** Why everything was stopped, for the requests that were under way. */
   const stoppedWith = new WeakMap<AbortSignal, "away" | "paused">();
   const elapsed = options.elapsed ?? (() => performance.now());
   let unaskedLogged: Array<number> = [];
   let unaskedDropped = 0;
 
-  /** How a request that was taken back or stopped is answered. */
   const takenBack = (signal: AbortSignal): Refusal | "withdrawn" => {
     const why = stoppedWith.get(signal);
     return why === undefined ? "withdrawn" : refusal(why);
   };
 
-  /** Counts a caller in, and takes the request back when the last one leaves. */
   const join = (entry: Running, left: AbortSignal | undefined) => {
     entry.callers += 1;
     if (left === undefined) return;
@@ -250,10 +242,8 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
         ...(result?.signal === undefined ? {} : { signal: result.signal }),
         ...(result === undefined ? {} : { timedOut: result.timedOut }),
       })
-      // The log failing doesn't change the answer, and is the caller's to show.
       .catch(() => undefined);
 
-  /** A refusal before any ask: logged within a budget, with the server's words cut short. */
   const recordUnasked = (
     payload: RequestBy,
     kind: DeviceLogEntry["kind"],
@@ -288,7 +278,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     );
   };
 
-  /** The checks before any path is looked at. */
   const whoAndWhen = (payload: RequestBy, kind: DeviceLogEntry["kind"]): Refusal | undefined => {
     if (payload.actor.id !== options.personId) return refusal("not-for-this-person");
     if (!options.present()) return refusal("away");
@@ -304,16 +293,11 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     return undefined;
   };
 
-  /**
-   * Takes a place among the asks waiting before any path is looked at, so the answer to a path
-   * never depends on whether there was room: a path refused frees it again, still counted.
-   */
   const admit = (payload: RequestBy): Admitted | Refusal => {
     const admitted = options.limits.admit(payload.thread.id);
     return typeof admitted === "string" ? refusal(admitted) : admitted;
   };
 
-  /** Everything checked before the ask, again, after the allow: any of it may have changed. */
   const stillAllowed = (
     payload: RequestBy,
     kind: DeviceLogEntry["kind"],
@@ -334,17 +318,11 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     return undefined;
   };
 
-  /**
-   * Shows the ask and waits for the answer: an allow for exactly `hash`, a refusal, nothing in
-   * time, or the request taken back. Settles the server's limits once, however it ends.
-   */
   const askPerson = async (
     request: AskRequest,
     admitted: Admitted,
     signal: AbortSignal,
   ): Promise<"allowed" | Refusal | "withdrawn"> => {
-    // Taken back or stopped while the path was being looked at: no window, and nothing counted
-    // against the person.
     if (signal.aborted) {
       admitted.settle(stoppedWith.has(signal) ? "stopped" : "withdrawn");
       return takenBack(signal);
@@ -364,7 +342,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     let answer: "allowed" | Refusal | "withdrawn" = refusal("not-allowed-by-person");
     try {
       const result = await Promise.race([
-        // A window that throws, even before it returns a promise, is a refusal.
         Promise.resolve()
           .then(() => options.ask(request, withdrawn.signal))
           .catch((): AskAnswer => ({ allowed: false })),
@@ -388,7 +365,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
-      // The window learns its ask is over, however it ended.
       withdrawn.abort();
       admitted.settle(outcome);
     }
@@ -416,10 +392,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     return { approval, hash: approvalHash(approval) };
   };
 
-  /**
-   * Takes a request once per id: a repeat with the same payload gets the first one's answer, a
-   * repeat with another payload is refused.
-   */
   const once = <A>(
     kind: string,
     payload: RequestBy,
@@ -454,7 +426,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     return answer;
   };
 
-  /** What a list or read does after the allow, with the real path the person was shown. */
   const filesRequest = <A extends { readonly kind: string }>(
     kind: "list" | "read",
     payload: RequestBy & { readonly path: string },
@@ -562,9 +533,7 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
           signal,
           (folder) => resolveLentFile(folder, payload.path),
           async (folder, target): Promise<DeviceReadResult> => {
-            // No more than the size the person was shown, even if the file grew since.
             const most = Math.min(payload.maxBytes, target.size ?? payload.maxBytes);
-            // Shown empty, it is read as empty: nothing is opened that the window didn't show.
             if (most === 0) return { kind: "read", data: "", truncated: target.size === 0 };
             const file = await readLentFile(folder, payload.path, most, target.path);
             return file.ok
@@ -591,7 +560,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
         emit(refusal("changed-request"));
         return;
       }
-      // Join: what happened so far, then the rest as it comes.
       for (const event of seen.events) emit(event);
       if (seen.done) return;
       seen.listeners.add(emit);
@@ -676,7 +644,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       payload.command,
       timeoutMs,
     );
-    // Taken back while the folder was looked at, it is never asked.
     if (!signal.aborted) {
       try {
         send({ kind: "asked" });
@@ -696,9 +663,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
       admitted,
       signal,
     );
-    // Just before it runs: everything checked before the ask still holds, and the folder it was
-    // allowed in is still where it was.
-    // Checked after the last wait, so nothing can change between the check and the run.
     let after: Refusal | "withdrawn" | undefined = answer === "allowed" ? undefined : answer;
     let again: Awaited<ReturnType<typeof resolveWorkingFolder>> | undefined;
     if (after === undefined) {
@@ -716,7 +680,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
         payload.command,
         why === "withdrawn" ? "withdrawn" : why.why,
       );
-      // A request the server took back ends without an answer: it asked for that.
       if (why !== "withdrawn") send(why);
       return;
     }
@@ -733,7 +696,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
         signal,
       });
     } catch {
-      // It didn't start: the folder went, or the shell couldn't be started. No code, no signal.
       void record(payload, "exec", folder.path, payload.command, "allowed");
       send({ kind: "exit", truncated: false, timedOut: false });
       return;
@@ -764,7 +726,6 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     stopAll: (why) => {
       for (const request of requests.values()) {
         if (request.done) continue;
-        // The first reason stands: a pause followed by the hang-up it causes is still a pause.
         if (!stoppedWith.has(request.controller.signal))
           stoppedWith.set(request.controller.signal, why);
         request.controller.abort();

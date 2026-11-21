@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 
 import { HOST_MODE_FLAG } from "@gram/server/host/launch-args";
 
-/** The same file, however its path is spelled; false when either can't be found. */
 const same = (a: string, b: string) => {
   if (resolve(a) === b) return true;
   try {

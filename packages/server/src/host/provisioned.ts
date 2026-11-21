@@ -36,7 +36,6 @@ export const provisionedOrigin = (value: string): string => {
     value !== url.origin ||
     url.protocol !== "https:" ||
     url.hostname === "" ||
-    // One spelling of a name only, so `name.` is never a second address for `name`.
     url.hostname.endsWith(".")
   )
     throw new Error(NOT_AN_ORIGIN);

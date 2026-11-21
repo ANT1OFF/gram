@@ -1,6 +1,3 @@
-// One of the Settings pages built from several sections, apart from the page list (`pages.tsx`) so
-// that the list, which the nav and every Settings route load, does not bring the sections with it.
-
 import { AgentBrowseSection } from "./agent-browse-section";
 import { EditorSection } from "./editor-section";
 import { GENERAL_ANCHORS } from "./general-anchors";
@@ -10,10 +7,6 @@ import { SettingsGroup } from "./settings-group";
 import { TrustedLinksSection } from "./trusted-links-section";
 import { useFeature } from "./use-diagnostics";
 
-/**
- * Search words for the parts of a page that aren't built from `Field`s, which bring their own label
- * and description. Words the heading already has don't need repeating.
- */
 const EDITOR_KEYWORDS = ["vs code", "vscode", "cursor", "zed", "command", "path", "line"];
 const TRUSTED_LINK_KEYWORDS = ["link", "domain", "host", "url", "browser", "open external"];
 const AGENT_BROWSE_KEYWORDS = ["browse", "browser", "preview", "host", "site", "domain", "agent"];

@@ -20,10 +20,6 @@ import { threadStatusOf } from "@/sidebar/status";
 import { liveWorkerEntry } from "./board-model";
 import { workerWait } from "./wait-model";
 
-// A workspace's threads as a tree, built from the threads the app already holds: an orchestrator,
-// the features it spawned workers for, and the workers under each. The ledger only adds each
-// feature's derived state, so the tree is live without waiting on a fetch.
-
 export interface TreeFeature {
   readonly feature: string;
   /** In spawn order, so a row never jumps when a sibling gets busy. */
@@ -100,17 +96,11 @@ export const workspaceTrees = (
     };
   });
 
-/** Nothing about these threads is running or waits on the user, so none of them needs to be seen. */
 const quiet = (threads: readonly ThreadSummary[]) => {
   const rollup = rollupOf(threads);
   return rollup !== "needsYou" && rollup !== "working";
 };
 
-/**
- * Without the ledger: archived, or merged with nothing left (`mergedAndDone`). A followed PR whose
- * badge hasn't landed counts as open, so a worker across repos is never finished while one of its
- * PRs may still be in review.
- */
 const workerFinished = ({ thread, git }: ThreadSummary) =>
   thread.parked || mergedAndDone(thread, threadPrBadges(thread, git));
 
@@ -140,7 +130,6 @@ export const featureFinished = (
     );
   });
 
-/** Whether the workspace is parked: its orchestrator's thread is, which pauses the workspace too. */
 const treeParked = (tree: WorkspaceTree): boolean => tree.orchestrator?.thread.parked === true;
 
 /** Every thread a tree lists: the orchestrator, then the rest. */
@@ -183,10 +172,6 @@ export const workingWorkerThreads = (
     )
     .toSorted((a, b) => b.thread.lastActivityAt - a.thread.lastActivityAt);
 
-/**
- * A worker as `workspaceTrees` counts one, working now: no role of its own, and a feature it was
- * spawned for. A dream reading the workspace's memory isn't one.
- */
 const workerWorking = (
   s: ThreadSummary,
   details: Readonly<Record<string, string | undefined>>,
@@ -213,7 +198,6 @@ export const midTurnWorkers = (
       inTurn(s.status),
   ).length;
 
-/** The title an orchestrator is opened under, `Orchestrator · <workspace>`. */
 const OPENED_TITLE = "Orchestrator · ";
 
 /**
@@ -227,11 +211,9 @@ export const orchestratorRowTitle = (
   workspaceName: string = title.slice(OPENED_TITLE.length),
 ): string => (title.startsWith(OPENED_TITLE) ? workspaceName : title);
 
-/** Where a workspace stands when the sidebar arranges by status, most urgent first. */
 const WORKSPACE_STATUSES = ["needsYou", "working", "inReview", "idle", "parked"] as const;
 export type WorkspaceStatus = (typeof WORKSPACE_STATUSES)[number];
 
-/** Whether a thread's own PR, or one it follows beside it, is still open. */
 const hasOpenPr = (git: ThreadSummary["git"]): boolean =>
   git?.pr?.state === "OPEN" || (git?.extraPrs ?? []).some((pr) => pr.state === "OPEN");
 
@@ -248,7 +230,6 @@ export const workspaceStatus = (
   { questions = 0, working = 0 }: { readonly questions?: number; readonly working?: number } = {},
 ): WorkspaceStatus => {
   if (treeParked(tree)) return "parked";
-  // Archived CI still needs an owner; other parked work stays set aside.
   const live = treeThreads(tree).filter(
     (s) => !s.thread.parked || unseenAttention(s) !== undefined,
   );
@@ -259,8 +240,6 @@ export const workspaceStatus = (
   );
   if (waiting || questions > 0 || rollupOf(actionable) === "needsYou") return "needsYou";
   if (working > 0) return "working";
-  // The ledger's roll-up is the least advanced worker's state, so a feature one of whose workers
-  // still builds reads as working while another's PR is open: the PRs count on their own.
   const reviewing = tree.features.some(
     (feature) =>
       !featureFinished(feature, tree.entries) &&

@@ -27,7 +27,6 @@ export interface MachineMark {
     | "starting"
     | "needs update"
     | "not joined"
-    // A worker sent to a server: it waits on its orchestrator there, or this app can't hear it.
     | "asks you"
     | "signed out"
     | "not heard";
@@ -90,7 +89,6 @@ export function machineMark(
       words: "on a machine that is no longer joined",
       hint: "Runs on a machine that is no longer joined to this Gram",
     };
-  // The protocol this build speaks is the server's: the page is served with it.
   const health = machineHealth(
     { ...machine, confirmed: true },
     { protocol: HOST_PROTOCOL_VERSION },
@@ -109,8 +107,6 @@ export function machineMark(
       words: `on ${where}`,
       hint: `${head}\n${kind} · ${health.label}`,
     };
-  // A host this Gram can't talk to: the older of the two needs the update. When that is this Gram,
-  // the machine is offline with the reason on its hover, never told to update itself.
   const older = health.tone === "update";
   const newer =
     older &&
@@ -129,9 +125,7 @@ export function machineMark(
     hint: [
       head,
       `${kind} · ${newer ? "newer than this Gram" : state}`,
-      // Being brought back: why it went and how to bring it back are not the person's to act on.
       state === "starting" ? STARTING_WHY : health.why,
-      // A provisioned host is replaced by whoever started it; the fixes are a joined machine's.
       machine.kind === "provisioned" || state === "starting"
         ? undefined
         : older && !newer

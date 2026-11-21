@@ -4,7 +4,6 @@ import { create } from "zustand";
 import { useLayoutStore } from "@/stores/layout";
 
 interface PagePaneState {
-  /** The page the Pages tab shows for each workspace; absent shows the list. */
   readonly open: Readonly<Partial<Record<WorkspaceId, PageId>>>;
   setOpen(workspaceId: WorkspaceId, id: PageId | undefined): void;
 }

@@ -6,7 +6,6 @@ import { threadRoleOf } from "@/thread/orchestration-model";
 /** Why a worker's worktree can go with it: the worker is archived, or its PR merged. */
 export type FinishedWorker = "archived" | "merged";
 
-/** Statuses of a thread that isn't doing anything and won't until someone writes to it. */
 const AT_REST: ReadonlySet<ThreadStatus> = new Set<ThreadStatus>(["cold", "idle", "ended"]);
 
 /**
@@ -28,7 +27,6 @@ export const finishedWorker = (
   if ((summary.background?.length ?? 0) > 0 || (summary.terminalProcesses?.length ?? 0) > 0) {
     return undefined;
   }
-  // Between turns the server sends an activity line only while a background subagent works.
   if (activityLine(summary.status, detail, summary.activity) !== undefined) return undefined;
   if ((thread.extraCheckouts?.length ?? 0) > 0) return undefined;
   if (thread.parked) return "archived";

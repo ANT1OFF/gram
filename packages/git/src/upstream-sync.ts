@@ -1,5 +1,3 @@
-// The current branch against its `origin/` upstream, and a fast-forward onto it.
-
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

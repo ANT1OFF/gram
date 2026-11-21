@@ -55,7 +55,6 @@ export function StashMenu({
   const discard = (stash: DraftStash) =>
     api
       .removeStash(threadId, stash.id, keep)
-      // The list closes with its last stash rather than staying open empty.
       .then(() => stashes.length === 1 && setOpen(false))
       .catch((error: unknown) => onError(`Couldn't discard the draft: ${errorMessage(error)}`))
       .finally(

@@ -33,7 +33,6 @@ import { themeStore } from "@/theme/store";
 import { systemSource } from "@/theme/system";
 import { resolveMode } from "@/theme/theme";
 
-/** A local info toast, for menu commands that finish without navigating anywhere. */
 const toast = (title: string, body: string) =>
   useThreadsStore.getState().applyEvent({ type: "notify", kind: "info", title, body });
 
@@ -57,7 +56,6 @@ export function useDesktopBridge() {
           startNewTask((to) => void navigate({ to }));
           return;
         case "palette": {
-          // The menu takes ⌘K before the renderer sees it, so the toggle lives here too.
           const { paletteOpen, openPalette, closePalette } = useLayoutStore.getState();
           if (paletteOpen) closePalette();
           else openPalette();
@@ -142,7 +140,6 @@ export function useDesktopBridge() {
       let fresh = false;
       const byId = state.byId;
       for (const n of state.notifications) {
-        // Only what the interrupt policy lets through; the rest waits for "Since you left".
         if (known.has(n) || !interrupts(awayEventOf(n), notifyAbout)) continue;
         if (
           n.ciFailure !== undefined &&
@@ -189,7 +186,6 @@ export function useDesktopBridge() {
       bridge.setVibrancy(isTranslucentLook(state.look));
       const vibrancy = vibrancyAttribute(
         state.look,
-        // Linux has no vibrancy to show through: the look paints its own backdrop there.
         bridge.platform !== "linux",
         window.matchMedia?.("(prefers-reduced-transparency: reduce)").matches ?? false,
       );
@@ -202,10 +198,6 @@ export function useDesktopBridge() {
     const unsubscribeTheme = themeStore.subscribe(syncChrome);
     const unsubscribeSystem = systemSource.subscribe(syncChrome);
     const offMenu = bridge.onMenu(onMenu);
-    // The window's zoom keys, which the menu leaves to the renderer (see `window-zoom-keys.ts`).
-    // The shortcut registry listens on `window` too and was installed first, at startup, so a
-    // press the focused terminal used for its own font size arrives here already handled and is
-    // left alone.
     const onZoomKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || bridge.zoom === undefined) return;
       const step = windowZoomStep(event, isMac());
@@ -232,14 +224,12 @@ export function useDesktopBridge() {
     };
   }, [navigate, openSettings, api]);
 
-  // macOS's window buttons keep their room in the overview's header and the title bar.
   useSubscription(() => {
     const bridge = window.gram;
     if (!bridge) return;
     return watchWindowLights(bridge);
   }, []);
 
-  // The menu's accelerators follow keybindings.json, like the renderer's shortcuts.
   useSubscription(() => {
     const bridge = window.gram;
     if (!bridge?.setMenuShortcuts) return;

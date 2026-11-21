@@ -1,9 +1,3 @@
-/*
- * What the user is doing in the composers of every connected window, as far as the server can know:
- * when they last typed, and which threads have a draft. Idle compaction never runs while either
- * says the user may be about to send, and a window that stops reporting counts as one that might.
- * Counts and thread ids only: no draft text reaches the server.
- */
 import type { ThreadId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -46,7 +40,6 @@ export const makeComposerPresence = Effect.sync(() => {
     drafts: (windowId, threadIds) =>
       Clock.currentTimeMillis.pipe(
         Effect.map((now) => {
-          // A closing window says it has none; keeping it would count it as gone quiet.
           if (threadIds.length === 0) windows.delete(windowId);
           else windows.set(windowId, { at: now, threads: new Set(threadIds) });
         }),

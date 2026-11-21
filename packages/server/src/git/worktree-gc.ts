@@ -1,31 +1,3 @@
-// The worktree sweep: a pass, on unless turned off, that frees finished threads' `node_modules` once
-// they have sat for `freeAfterDays`, and closes the thread with its worktree after `removeAfterDays`,
-// or `MERGED_GRACE_MS` after its PR merged. Every thread kind but an orchestrator: a worker once the
-// ledger reads it finished, any other thread once it is archived or its PRs are all merged or closed.
-// An archived worker with no PR of its own (a reviewer, a research or release worker) goes
-// `ARCHIVED_GRACE_MS` after it was archived (`parkedAt`), once clean, pushed and with no PR open for
-// its branch. Only worktrees in the repo's own `.worktrees/` folder are ever taken, and a thread
-// with a pending wake is never closed: its wake would go with it.
-//
-// Invariants. It only ever looks at a finished thread at rest with nothing waiting on the user, in a
-// linked worktree no other thread holds, and never at a main checkout or at a worker spanning
-// repos. Before either step, git is asked afresh: a worktree with uncommitted changes, or whose HEAD
-// no remote has, is left alone; one whose folder was deleted outside Gram has nothing left to lose,
-// and is removed (its registration pruned) once due. Last, right before either step, no process
-// may work inside it (`processInside`): an agent, a dev server or a shell the threads don't know
-// about keeps it, and so does a platform or a scan that can't tell.
-// Removal also needs the PR merged or closed (for an archived worker with none, no PR open), goes
-// through `closeAtRest` (the app's own close, which refuses a dirty tree, a thread that got busy or a
-// terminal running a command, and removes on the `slow` tier), and never deletes a branch. It logs counts, never paths, and tells each workspace one digest line.
-//
-// Known and accepted gap. Whether another thread holds or follows the worktree, or a process works
-// in it, is read last right before the deletion, not held across it: an agent elsewhere that moves into this worktree while
-// `freeNodeModules` or `git worktree remove` is still running can lose `node_modules` (back with
-// `pnpm install`) or the checked-out tree, whose work passed the clean-and-pushed check. Taking a
-// worktree days after its last activity makes that rare, and closing it needs a checkout lock
-// that serializes `setCurrentCheckout`, worktree moves, creation and removal across a repo's
-// threads, which is a follow-up of its own (the same family as the archive race), not this sweep.
-
 import type { Dirent } from "node:fs";
 import { lstat, readdir, readlink, rm } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -80,13 +52,10 @@ import { cleanupNotes, underWorktreesFolder, type Cleaned } from "./storage.ts";
 import { cachedFolderSize, forgetFolderSize } from "./worktree-size.ts";
 import { DAY_MS } from "../zone-time.ts";
 
-/** Statuses of a thread that isn't doing anything and won't until someone writes to it. */
 const AT_REST: ReadonlySet<ThreadStatus> = new Set<ThreadStatus>(["cold", "idle", "ended"]);
 
-/** Folders the search for `node_modules` never enters: git's, nested worktrees, and deps. */
 const SKIPPED_DIRS: ReadonlySet<string> = new Set([".git", ".worktrees", "node_modules"]);
 
-/** How deep under the worktree a `node_modules` is looked for: `apps/web/node_modules` is 2. */
 const NODE_MODULES_DEPTH = 3;
 
 /** What the sweep knows about one thread before asking git anything. */
@@ -109,14 +78,7 @@ export interface SweepFacts {
   readonly hasWake?: boolean;
 }
 
-/**
- * Whether the ledger reads the worker as finished (`FINISHED_STATES`: delivered, merged or
- * archived), from the facts the sweep has. Its reports live in the orchestration outbox, which the
- * sweep doesn't read, so a worker that only reported done reads as not finished: the safe side.
- * The one place the sweep decides "finished", so a shared predicate can replace it.
- */
 const isFinishedWorker = (facts: SweepFacts): boolean => {
-  // Every PR of the worker, as the ledger reads them: one still open, or not known, isn't finished.
   const badges = workerPrBadges({ ...facts, extraBadges: facts.extraBadges ?? [] });
   const pr = combinePrFacts(
     badges.map((badge) => (badge === undefined ? undefined : prFactsOf(badge))),
@@ -135,10 +97,6 @@ const isFinishedWorker = (facts: SweepFacts): boolean => {
   );
 };
 
-/**
- * Whether a thread no orchestrator dispatched is finished: archived, or every PR it follows merged
- * or closed, and not reopened since a merge.
- */
 const isFinishedThread = (facts: SweepFacts): boolean => {
   if (facts.thread.parked) return true;
   const badges = workerPrBadges({ ...facts, extraBadges: facts.extraBadges ?? [] });
@@ -150,12 +108,6 @@ const isFinishedThread = (facts: SweepFacts): boolean => {
   );
 };
 
-/**
- * Whether the thread is done because its PRs merged: its worktree goes without the long wait. An
- * archived thread's badge is dropped once GitHub answers that its PR merged, so there its own record
- * stands in: completed on a merge, no other PR followed, and no badge it still has open.
- * `checkWorktree` asks GitHub afresh before anything goes.
- */
 const mergedDone = (facts: SweepFacts): boolean => {
   const { thread } = facts;
   const badges = workerPrBadges({ ...facts, extraBadges: facts.extraBadges ?? [] });
@@ -182,7 +134,6 @@ export const MERGED_GRACE_MS = 10 * 60_000;
  */
 export const ARCHIVED_GRACE_MS = DAY_MS;
 
-/** Epoch ms from which a finished thread's age is counted: its last activity or completion. */
 const finishedSince = (thread: Thread): number =>
   Math.max(thread.lastActivityAt, thread.completedAt ?? 0);
 
@@ -210,12 +161,8 @@ export const sweepDue = (
   const { thread } = facts;
   const { checkout } = thread;
   if (thread.role !== undefined) return undefined;
-  // A worktree on another machine is that machine's to judge: here its folder reads as gone, and
-  // nothing about it may be asked of this disk.
   if (!isLocalHost(checkout) || !isLocalHost(effectiveCheckout(thread))) return undefined;
   const worker = thread.spawnedBy !== undefined;
-  // A thread of any kind, a worker adopting one included, may work in a worktree some other tool
-  // or the user made: only one in Gram's own `.worktrees/` folder is the sweep's to take.
   if (checkout.repoRoot === undefined || !underWorktreesFolder(checkout.repoRoot, checkout.path)) {
     return undefined;
   }
@@ -224,7 +171,6 @@ export const sweepDue = (
     return undefined;
   }
   if ((thread.extraCheckouts?.length ?? 0) > 0) return undefined;
-  // A worker that followed its agent elsewhere: what it works in isn't what would be cleaned up.
   if (
     thread.currentCheckout !== undefined &&
     !samePath(thread.currentCheckout.path, checkout.path)
@@ -235,13 +181,11 @@ export const sweepDue = (
   if (facts.heldByOthers.some((held) => samePath(held, checkout.path))) return undefined;
   const due = finishedDue(facts, sweep, now, worker);
   if (due === undefined) return undefined;
-  // Closing the thread deletes its pending wakes, so it isn't removed while it has one.
   if (facts.hasWake === true && due.remove)
     return due.free ? { free: true, remove: false } : undefined;
   return due;
 };
 
-/** `sweepDue` past its guards: what is due for a thread found at rest in a worktree of its own. */
 const finishedDue = (
   facts: SweepFacts,
   sweep: WorktreeSweep,
@@ -253,8 +197,6 @@ const finishedDue = (
   const age = now - finishedSince(thread);
   const hasPr = thread.boundPr !== undefined || facts.badge !== undefined;
   const free = age >= sweep.freeAfterDays * DAY_MS;
-  // An archived worker following no PR at all: archiving is what says its work is over. Its grace
-  // counts from the archive; one archived before that was recorded waits the full M days.
   if (!hasPr && (thread.extraPrs?.length ?? 0) === 0 && worker && thread.parked) {
     const remove =
       thread.parkedAt === undefined
@@ -340,7 +282,6 @@ export const checkWorktree = (
 ): Effect.Effect<WorktreeCheck, never, Proc | Pr> =>
   Effect.gen(function* () {
     const no: WorktreeCheck = { clean: false, pushed: false, prSettled: false };
-    // Strict whatever the user's config: a hidden untracked file is still work to lose.
     const status = yield* git(path, STRICT_STATUS_ARGS).pipe(Effect.option);
     if (Option.isNone(status) || status.value.status !== 0 || status.value.truncated) return no;
     const clean = status.value.stdout.trim() === "";
@@ -447,10 +388,6 @@ export const keepDetachedHead = (
     return kept.status === 0;
   }).pipe(Effect.orElseSucceed(() => false));
 
-/**
- * `node_modules` folders under `root`, `NODE_MODULES_DEPTH` deep at most, never through a link and
- * never into a nested git checkout (a submodule), whose own index is the only one that knows them.
- */
 const findNodeModules = async (root: string): Promise<ReadonlyArray<string>> => {
   const found: string[] = [];
   const visit = async (dir: string, depth: number): Promise<void> => {
@@ -458,10 +395,8 @@ const findNodeModules = async (root: string): Promise<ReadonlyArray<string>> => 
     try {
       entries = await readdir(dir, { withFileTypes: true });
     } catch {
-      // Unreadable or gone: nothing in it to free.
       return;
     }
-    // A submodule or nested repository: the outer index can't say what it tracks.
     if (dir !== root && entries.some((entry) => entry.name === ".git")) return;
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
@@ -511,7 +446,6 @@ export const lsofCwds = (stdout: string): ReadonlyArray<string> =>
     .filter((line) => line.startsWith("n/"))
     .map((line) => line.slice(1));
 
-/** Every process's working folder, or `undefined` where they can't be listed. */
 const processCwds = (): Effect.Effect<ReadonlyArray<string> | undefined, never, Proc> =>
   Effect.gen(function* () {
     if (process.platform === "linux") {
@@ -519,7 +453,6 @@ const processCwds = (): Effect.Effect<ReadonlyArray<string> | undefined, never, 
         const pids = await readdir("/proc").catch(() => undefined);
         if (pids === undefined) return undefined;
         const cwds = await Promise.all(
-          // Another user's process, or one gone since, has no folder to read: it isn't ours.
           pids
             .filter((pid) => /^\d+$/.test(pid))
             .map((pid) => readlink(`/proc/${pid}/cwd`).catch(() => undefined)),
@@ -537,7 +470,6 @@ const processCwds = (): Effect.Effect<ReadonlyArray<string> | undefined, never, 
         maxOutputBytes: 16 * 1024 * 1024,
       })
       .pipe(Effect.option);
-    // lsof exits 1 when it couldn't read some process, and still lists the rest.
     if (Option.isNone(out) || out.value.truncated || out.value.status > 1) return undefined;
     const cwds = lsofCwds(out.value.stdout);
     return cwds.length === 0 ? undefined : cwds;
@@ -609,21 +541,15 @@ export const asChecked = (checked: Thread): ClaimGuard => ({
     now.spawnedBy?.threadId === checked.spawnedBy?.threadId,
 });
 
-/** What one pass did, as counts only. */
 interface SweepCounts {
-  /** Worktrees whose `node_modules` went. */
   readonly freed: number;
   readonly removed: number;
-  /** Due, but git or GitHub said no, or the step failed. */
   readonly kept: number;
-  /** The worktrees removed, by repo and workspace, for the digest line. */
   readonly cleaned: ReadonlyArray<Cleaned & { readonly workspaceId?: WorkspaceId | undefined }>;
 }
 
-/** How long a removed worktree's size count may take: the digest line says what it freed. */
 const SIZE_BUDGET_MS = 5_000;
 
-/** One pass over every thread, under `sweep`'s schedule. */
 const sweepOnce = (
   sweep: WorktreeSweep,
 ): Effect.Effect<
@@ -651,7 +577,6 @@ const sweepOnce = (
           thread,
           status: summary.status,
           pendingRequests: summary.pendingRequests.length,
-          // Between turns an activity line is published only while a background subagent works.
           busy:
             working.has(thread.id) ||
             (summary.background?.length ?? 0) > 0 ||
@@ -680,14 +605,10 @@ const sweepOnce = (
           )
         : yield* checkWorktree(path, thread, due.remove, askOpen);
       const step = sweepStep(due, check);
-      // A folder that is gone holds no `node_modules`; it waits to be removed with its thread.
       if (step === undefined || (gone && step === "free")) {
         counts.kept += 1;
         continue;
       }
-      // Asked again with the step in hand: another thread may have followed its agent in since. A
-      // free step asks about processes under its own lock below; a removal asks here, and whether
-      // a wake was set since, and keeps a detached HEAD before anything goes.
       const held = othersCheckouts(yield* store.listThreads, thread.id);
       const kept =
         held.some((each) => samePath(each, path)) ||
@@ -701,8 +622,6 @@ const sweepOnce = (
       }
       if (step === "remove") {
         const size = gone ? { bytes: 0 } : yield* cachedFolderSize(path, SIZE_BUDGET_MS);
-        // `closeAtRest` holds its terminals and scans them; the close checks the runtime and that
-        // the thread is still as it was found due (`asChecked`), under the lock sends take.
         const closed = yield* closeAtRest(runtimes, ports, gate, thread.id, {
           removeWorktree: { force: false },
           ...asChecked(thread),
@@ -718,9 +637,6 @@ const sweepOnce = (
         } else counts.kept += 1;
         continue;
       }
-      // Freeing takes the same terminal hold and scan, and runs reserved at rest while the worker is
-      // still as found due and in that checkout, so no send starts a turn on top of it:
-      // `node_modules` pulled from under `pnpm dev` or an agent breaks them.
       const freed = yield* Effect.acquireUseRelease(
         gate === undefined ? Effect.succeed(Effect.void) : gate.hold(thread.id),
         () =>
@@ -730,8 +646,6 @@ const sweepOnce = (
             return yield* runtimes.whileAtRest(
               thread.id,
               Effect.gen(function* () {
-                // Last look before anything goes: another thread's agent may have moved in. Not held
-                // across the deletion; see "Known and accepted gap" at the top.
                 return yield* freeUnlessInUse(
                   path,
                   othersCheckouts(yield* store.listThreads, thread.id),
@@ -748,10 +662,6 @@ const sweepOnce = (
     return { ...counts, cleaned };
   });
 
-/**
- * How often the sweep runs; the first pass waits as long, so a boot isn't slowed by it. Short
- * enough that a merged thread's worktree goes soon after `MERGED_GRACE_MS`.
- */
 const SWEEP_EVERY = Duration.minutes(15);
 
 /** Runs `sweepOnce` every `SWEEP_EVERY` while the setting is on, until the scope closes. */
@@ -768,18 +678,13 @@ export const WorktreeSweepLive: Layer.Layer<
       const sweep = worktreeSweepOf(settings);
       if (sweep === undefined) return;
       const { cleaned, ...counts } = yield* sweepOnce(sweep);
-      // A worktree kept for want of a merge is kept again every pass; that alone isn't news.
       if (counts.freed + counts.removed === 0) return;
       yield* Effect.logInfo("worktree sweep").pipe(Effect.annotateLogs({ ...counts }));
       if (orchestration === undefined || cleaned.length === 0) return;
       const notes = cleanupNotes(cleaned, yield* store.listWorkspaces, yield* store.listProjects);
       for (const { workspaceId, note } of notes)
         yield* orchestration.noteQuietly(workspaceId, note);
-    }).pipe(
-      // A defect's text can name a worktree's path, so the log says only that the pass failed; the
-      // next pass runs regardless.
-      Effect.catchCause(() => Effect.logWarning("worktree sweep pass failed")),
-    );
+    }).pipe(Effect.catchCause(() => Effect.logWarning("worktree sweep pass failed")));
     yield* Effect.sleep(SWEEP_EVERY).pipe(
       Effect.andThen(pass.pipe(Effect.repeat(Schedule.spaced(SWEEP_EVERY)))),
       Effect.forkScoped,

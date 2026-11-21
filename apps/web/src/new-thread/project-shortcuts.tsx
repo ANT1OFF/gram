@@ -12,7 +12,6 @@ import { baseName, folderLabel } from "./path";
 export const projectLabel = (project: Pick<Project, "root" | "name">): string =>
   folderLabel(project.root) === baseName(project.root) ? project.name : folderLabel(project.root);
 
-/** Folders worth one click, after the default folder when one is set. */
 const SHORTCUTS = [
   { label: "~/Documents/code", path: "~/Documents/code" },
   { label: "Home", path: "~" },
@@ -62,14 +61,11 @@ export function ProjectLists({
   current: string | undefined;
   onChoose: (root: string) => void;
 }) {
-  // A bookmarked project is listed once, under Bookmarks.
   const recents = projects
     .filter((p) => p.lastOpenedAt !== undefined && !p.bookmarked)
     .toSorted((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))
     .slice(0, 6);
   const bookmarks = projects.filter((p) => p.bookmarked);
-  // The folder in use when neither list holds it (a default folder, or one not opened before), so
-  // the menu still says which folder the thread runs in.
   const unlisted =
     current !== undefined && ![...bookmarks, ...recents].some((p) => p.root === current)
       ? current
@@ -135,7 +131,6 @@ function Section({
 }: {
   title: string;
   icon: ComponentType<{ className?: string }>;
-  /** What an empty section says; a section that is absent while empty needs none. */
   empty?: string;
   children: ReactNode[];
 }) {
@@ -163,7 +158,6 @@ function ProjectRow({
   project: Project;
   current: string | undefined;
   onChoose: (root: string) => void;
-  /** Offers "Remove from recents" (the Recent section only). */
   forgettable?: boolean;
 }) {
   const parent = project.root.slice(0, project.root.length - baseName(project.root).length);

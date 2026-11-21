@@ -76,7 +76,6 @@ export const electronFetch =
               response.on("data", (chunk) => {
                 if (!open) return;
                 controller.enqueue(new Uint8Array(chunk));
-                // Held while the reader is behind, so a slow disk never queues the model in memory.
                 if ((controller.desiredSize ?? 1) <= 0) response.pause();
               });
               response.on("end", () => {
@@ -102,7 +101,6 @@ export const electronFetch =
             pull() {
               response.resume();
             },
-            // The reader gave up (a full disk, an oversized file): stop the transfer with it.
             cancel() {
               finish();
               request.abort();

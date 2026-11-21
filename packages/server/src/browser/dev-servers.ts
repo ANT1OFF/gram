@@ -1,8 +1,3 @@
-// A thread's dev servers for the Preview pane: started by name from the project's launch config,
-// each on its port or the next free one (workers run many worktrees at once), their output kept to
-// read back, and stopped with the thread. Starting one runs the project's own command on the
-// user's computer, so the tools ask the user first (`dev-server-tools.ts`).
-
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -105,7 +100,6 @@ export async function readLaunchConfig(root: string): Promise<LaunchConfig | und
   return undefined;
 }
 
-/** `${port}` in a value, replaced by the port the server got. */
 const withPort = (value: string, port: number) => value.replaceAll("${port}", String(port));
 
 /** What a start would run: the command line, folder and environment, port substituted. */
@@ -169,7 +163,6 @@ export interface LogLine {
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
-/** Terminal colour and title sequences, which a log line is read without. */
 const ANSI = new RegExp(`${ESC}\\[[\\d;?]*[ -/]*[@-~]|${ESC}\\][^${BEL}]*${BEL}`, "g");
 
 export const levelOf = (text: string): LogLevel =>
@@ -195,7 +188,6 @@ export function filterLogs(
   return kept.slice(-(options.lines ?? 100));
 }
 
-/** Whether something already listens on `port` on this computer's loopback. */
 const listening = (port: number, host: string) =>
   new Promise<boolean>((done) => {
     const socket = connect({ port, host });
@@ -203,8 +195,6 @@ const listening = (port: number, host: string) =>
       socket.destroy();
       done(open);
     };
-    // An ephemeral source port can equal the destination and connect the socket to itself.
-    // That is not a listener, even though TCP reports a successful connection.
     socket.once("connect", () =>
       finish(
         socket.localPort !== socket.remotePort || socket.localAddress !== socket.remoteAddress,
@@ -214,7 +204,6 @@ const listening = (port: number, host: string) =>
     socket.setTimeout(500, () => finish(false));
   });
 
-/** Whether `port` can be bound on loopback now. */
 const bindable = (port: number) =>
   new Promise<boolean>((done) => {
     const server = createServer();
@@ -264,17 +253,13 @@ export const freePort = (
     free,
   );
 
-/** The most log lines a server keeps. */
 const LOGS_KEPT = 2_000;
 /** The longest log line kept, in characters (`bounded.ts`); the rest of a longer one is dropped. */
 export { LINE_CHARS, TRUNCATED };
 /** The most characters a server's kept log lines hold together; the oldest go first. */
 export const LOG_CHARS_KEPT = 1_048_576;
-/** How long a start waits for the server to answer on its port. */
 const READY_MS = 30_000;
-/** How often an exited server's group is checked for whether anything is left in it. */
 const GROUP_POLL_MS = 1_000;
-/** How long a stop waits before it kills. */
 const STOP_GRACE_MS = 3_000;
 
 export interface DevServer {
@@ -310,26 +295,17 @@ const keyOf = (threadId: string, name: string) => `${threadId}\u0000${name}`;
 /** Every thread's dev servers, in this server process. */
 export function createDevServerHost(options: DevServerHostOptions) {
   const servers = new Map<string, DevServer>();
-  /** Ports given out or being given, by holder, so two starts at once never pick the same. */
   const reserved = new Map<number, symbol>();
   const holders = new Map<string, symbol>();
-  /** Frees `port` only for the holder that has it, never for a later start of another thread. */
   const free = (port: number, holder: symbol | undefined) => {
     if (holder !== undefined && reserved.get(port) === holder) reserved.delete(port);
   };
-  /** Thread and name pairs being started, so a second start of one waits for none. */
   const starting = new Set<string>();
-  /** Pending spawns remain cancellable while the environment is being resolved. */
   const launches = new Map<string, { readonly threadId: string; cancelled: boolean }>();
 
-  /**
-   * Signals the server's whole process group (`npm run dev` and what it started), whose remainder
-   * can outlive its leader, until that group has emptied; on Windows, its tree while it runs.
-   */
   const kill = (server: DevServer, signal: NodeJS.Signals) => {
     if (server.pid === undefined || server.groupGone) return;
     if (process.platform === "win32") {
-      // A tree is found by its root, whose id may be reused once it exits.
       if (server.exit === undefined)
         execFile("taskkill", ["/pid", String(server.pid), "/T", "/F"], () => {});
       return;
@@ -341,7 +317,6 @@ export function createDevServerHost(options: DevServerHostOptions) {
     }
   };
 
-  /** Watches an exited leader's group until it empties, so it is never signalled after. */
   const watchGroup = (server: DevServer) => {
     if (server.pid === undefined || process.platform === "win32") {
       server.groupGone = true;
@@ -368,7 +343,6 @@ export function createDevServerHost(options: DevServerHostOptions) {
         : Promise.resolve();
     kill(server, "SIGTERM");
     await Promise.race([exited, sleep(STOP_GRACE_MS)]);
-    // Whatever is left of the group, its leader gone or not, is killed.
     kill(server, "SIGKILL");
     free(server.port, holders.get(key));
     if (server.pid !== undefined) options.unrooted?.(server.pid);
@@ -391,7 +365,6 @@ export function createDevServerHost(options: DevServerHostOptions) {
     /** The port a start of `config` would get now, reserved for it until it stops. */
     reserve: async (threadId: string, config: LaunchConfiguration) => {
       const holder = Symbol(config.name);
-      // Each candidate is claimed before it is probed, so a start at the same time skips it.
       const port = await claimPort(
         config.port,
         (candidate) => {
@@ -446,7 +419,6 @@ export function createDevServerHost(options: DevServerHostOptions) {
         };
         servers.set(keyOf(threadId, launch.name), server);
         if (child.pid !== undefined) options.rooted?.(threadId, child.pid);
-        /** Characters in `server.logs`, kept under `LOG_CHARS_KEPT` with their count under `LOGS_KEPT`. */
         const kept = makeBoundedList(server.logs, {
           maxItems: LOGS_KEPT,
           maxSize: LOG_CHARS_KEPT,
@@ -455,7 +427,6 @@ export function createDevServerHost(options: DevServerHostOptions) {
         const log = (stream: LogLine["stream"], text: string, level = levelOf(text)) =>
           kept.push({ at: Date.now(), stream, level, text });
         for (const stream of ["stdout", "stderr"] as const) {
-          // Each line is kept to `LINE_CHARS` while it is read, so a partial line never grows past it.
           const lines = makeLineCutter((partial, cut) => {
             let text = partial.replace(ANSI, "").trimEnd();
             if (cut) text = text.slice(0, LINE_CHARS - TRUNCATED.length) + TRUNCATED;
@@ -463,7 +434,6 @@ export function createDevServerHost(options: DevServerHostOptions) {
           });
           child[stream]?.setEncoding("utf8");
           child[stream]?.on("data", lines.write);
-          // Output that never ended its last line is still kept.
           child[stream]?.once("end", lines.end);
         }
         child.once("error", (error) => {

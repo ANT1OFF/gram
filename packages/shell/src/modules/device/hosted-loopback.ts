@@ -1,6 +1,3 @@
-// The loopback page a browser sign-in returns to (`signInHosted` in `hosted.ts`): its answers,
-// and how what comes back is compared.
-
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { ServerResponse } from "node:http";
 

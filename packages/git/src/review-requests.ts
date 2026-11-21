@@ -1,6 +1,3 @@
-// The pull requests whose review is requested from the signed-in `gh` user, and the open ones they
-// authored. Read-only: nothing here writes to GitHub.
-
 import * as os from "node:os";
 import type { ChecksRollup, ReviewBot, ReviewRequestBot } from "@gram/contracts";
 import * as Data from "effect/Data";
@@ -79,11 +76,6 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
 
-/**
- * Whether the search payload's author is a GitHub App. GitHub has no `is:bot` search qualifier, so
- * this is the only place bots can be told apart: `is_bot` when the payload carries it, and the
- * `…[bot]` login suffix an app author always has.
- */
 const botAuthor = (author: Record<string, unknown> | undefined): boolean =>
   author?.["is_bot"] === true || text(author?.["login"]).endsWith("[bot]");
 
@@ -144,7 +136,6 @@ export const parseReviewRequests = (
   });
 };
 
-/** `gh search prs` with `args`, in the home folder so no repository's own `gh` config applies. */
 const searchPrs = (
   args: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyArray<SearchedReviewRequest>, ReviewRequestsError, Proc> =>
@@ -212,9 +203,6 @@ export interface ReviewRequestDetails {
  */
 export const REVIEW_REQUEST_DETAILS_PER_QUERY = 20;
 
-// `statusCheckRollup.state` rather than its contexts: the row shows one mark, and GitHub's own
-// rollup is a single field where the contexts are up to a hundred nodes per PR. The scalars cost
-// nothing in GraphQL points, so review requests carry the two only own PRs show.
 const DETAILS_GQL_FIELDS =
   "labels(first:100){nodes{name} totalCount} additions deletions headRefOid headRefName mergeStateStatus updatedAt isDraft reviewDecision commits(last:1){nodes{commit{statusCheckRollup{state}}}} " +
   "reviews(last:20){nodes{id author{login __typename} state submittedAt commit{oid} body}}";

@@ -12,18 +12,12 @@ import { THREAD_REF_TAG, resolveThreadRef, splitThreadLinks } from "./thread-ref
 const CHIP =
   "inline-flex max-w-[28ch] items-center gap-1 rounded-sm border px-1 align-baseline text-code leading-snug font-medium";
 
-/**
- * A link to another thread, as a compact chip under that thread's current title; muted, and not a
- * link, when the id has a thread's shape but no thread has it any more. Anything else renders as
- * `fallback`, the link as it was written.
- */
 function ThreadRefChip({
   id,
   label,
   fallback,
 }: {
   id: string;
-  /** The title as the link was written, for a thread that is gone. */
   label: string;
   fallback: ReactNode;
 }) {
@@ -63,7 +57,6 @@ function ThreadRefChip({
   );
 }
 
-/** The `thread-ref` element `rehypeThreadRefs` marks, wrapping the link as written. */
 function ThreadRefElement({
   "data-thread-id": id,
   "data-label": label,

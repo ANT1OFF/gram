@@ -36,18 +36,15 @@ import { FILE_REF_TAG, mayBeInRoots, positionLabel } from "./file-refs";
 
 interface FileRefsScope {
   readonly threadId: ThreadId;
-  /** The thread's checkout, then a multi-repo worker's other worktrees. */
   readonly roots: readonly string[];
   readonly resolver: FileRefResolver;
 }
 
-/** The transcript's thread and checkouts, which its file references resolve in. */
 const FileRefsContext = createContext<FileRefsScope | undefined>(undefined);
 
 /** The thread and checkouts file references resolve in; `undefined` outside a transcript. */
 export const useFileRefsScope = () => use(FileRefsContext);
 
-/** One resolver per API, so its answers outlive a transcript that is closed and opened again. */
 const resolvers = new WeakMap<Api, FileRefResolver>();
 
 const resolverFor = (api: Api) => {
@@ -81,15 +78,12 @@ export function FileRefsProvider({
   );
   useEffect(
     () => resolver.refresh(threadId),
-    // Signals, not inputs: a turn starting or ending may have written, moved or deleted a file, and
-    // a thread whose checkouts change has its paths in other places.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `status` and `rootsKey` are signals to refresh, not inputs
     [resolver, threadId, status, rootsKey],
   );
   return <FileRefsContext value={scope}>{children}</FileRefsContext>;
 }
 
-/** Whether a click asks for the editor rather than the Files panel: ⌘ on macOS, Ctrl elsewhere. */
 const wantsEditor = (
   event: Pick<MouseEvent | KeyboardEvent, "metaKey" | "ctrlKey">,
   mac = isMac(),
@@ -99,14 +93,12 @@ const subscribeNowhere = () => () => {};
 
 const LINK = "cursor-pointer rounded-sm underline-offset-2 hover:underline";
 
-/** How each kind of reference looks once it links: a path in prose gets a code span's font. */
 const KIND_CLASS: Record<string, string> = {
   code: "decoration-muted-foreground",
   text: "font-mono text-code decoration-muted-foreground",
   link: "wrap-anywhere font-medium text-link underline",
 };
 
-/** A path elsewhere on the machine before it's known to be a file: only its font, as a code span. */
 const CANDIDATE_CLASS: Record<string, string> = {
   code: "",
   text: "font-mono text-code",
@@ -118,7 +110,6 @@ const notify = (kind: "info" | "error", title: string, body?: string) =>
     .getState()
     .applyEvent({ type: "notify", kind, title, ...(body === undefined ? {} : { body }) });
 
-/** One icon in a file link's menu, named by its hover hint. */
 function MenuAction({
   label,
   onClick,
@@ -142,11 +133,6 @@ function MenuAction({
   );
 }
 
-/**
- * A path that names a file, with its menu on hover or right-click: preview, editor, file manager
- * and copy. A file that may hold credentials offers only the file manager and copy, and a click on
- * it opens the menu rather than a preview.
- */
 function FileLink({
   scope,
   resolved,
@@ -163,13 +149,11 @@ function FileLink({
   line: number | undefined;
   end: number | undefined;
   column: number | undefined;
-  /** Takes focus as it appears: the candidate it replaces had it. */
   focusOnMount?: boolean | undefined;
   children?: ReactNode;
 }) {
   const openInEditor = useOpenInEditor();
   const revealInFileManager = useRevealInFileManager();
-  // In managed mode a ⌘-click shows the file in the Files panel too: there is no editor to open.
   const local = useOpensLocally();
   const reveals = useFeature("revealInFileManager");
   const [open, setOpen] = useState(false);
@@ -178,7 +162,6 @@ function FileLink({
     if (focusOnMount) anchor.current?.focus();
   }, [focusOnMount]);
   const secret = isCredentialPath(resolved);
-  // A file outside the checkouts is opened unscoped, since `threadId` would refuse it.
   const scoped = mayBeInRoots(resolved, scope.roots);
   const position = positionLabel({ line, endLine: end, column });
   const target = position === "" ? resolved : `${resolved}:${position}`;
@@ -212,13 +195,10 @@ function FileLink({
     <Popover.Root
       open={open}
       onOpenChange={(next, details) => {
-        // A press on the link previews; the menu opens on hover and right-click only.
         if (next && details.reason === "trigger-press") return;
         setOpen(next);
       }}
     >
-      {/* No `href`: an agent's path must open only through the scoped RPCs, never as a `file://` URL
-          a context menu could open in a window of its own. */}
       <Popover.Trigger
         openOnHover
         delay={500}
@@ -300,11 +280,8 @@ function FileRefLink({
   children?: ReactNode;
 }) {
   const scope = use(FileRefsContext);
-  // A path into the checkouts is asked about as it renders; one elsewhere once it's pointed at, so
-  // a transcript full of `/tmp/…` paths sends nothing until one of them is hovered or clicked.
   const inRoots = scope !== undefined && path !== "" && mayBeInRoots(path, scope.roots);
   const [pointed, setPointed] = useState(false);
-  /** A click or Enter before the answer came: what it asked for, the editor or a preview. */
   const pending = useRef<"editor" | "preview" | undefined>(undefined);
   const openInEditor = useOpenInEditor();
   const local = useOpensLocally();
@@ -322,8 +299,6 @@ function FileRefLink({
   const end = endText === undefined ? undefined : Number(endText);
   const column = columnText === undefined ? undefined : Number(columnText);
   useEffect(() => {
-    // A click on a path elsewhere before its answer came: open it once it's known to be a file, the
-    // way the link it becomes would.
     const wants = pending.current;
     if (wants === undefined || entry === undefined || scope === undefined) return;
     pending.current = undefined;
@@ -338,7 +313,6 @@ function FileRefLink({
     }
   }, [entry, scope, line, end, openInEditor]);
   const ask = (event: MouseEvent | KeyboardEvent) => {
-    // In managed mode there is no editor, so a ⌘-click previews, as it does on a link.
     pending.current = local && wantsEditor(event) ? "editor" : "preview";
     setPointed(true);
   };
@@ -346,8 +320,6 @@ function FileRefLink({
   if (scope === undefined || entry === null) return <>{children}</>;
   if (entry === undefined) {
     if (inRoots) return <>{children}</>;
-    // Focusable, so the keyboard reaches it too: focus asks about it as hovering does, and Enter
-    // opens it once it's known to be a file, as a click does.
     return (
       <span
         role="link"

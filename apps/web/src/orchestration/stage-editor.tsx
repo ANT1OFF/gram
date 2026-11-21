@@ -49,14 +49,11 @@ export function StageEditor({
   const [draft, setDraft] = useState<PlanDraft>(() => draftOfStage(stage));
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
-  // Steps are edited by position, and a step's name changes as it is typed, so each keeps a key of
-  // its own that travels with it when it moves.
   const [keys, setKeys] = useState<readonly number[]>(() => draft.steps.map((_, i) => i));
   const [nextKey, setNextKey] = useState(draft.steps.length);
   const name = useId();
   const noteId = useId();
   const labelId = useId();
-  // The free label, or the step it stands at: whichever there is to type in first.
   const focus = useFocusOnOpen<HTMLInputElement>();
   const [focusKey] = useState(() => keys[draft.current]);
 

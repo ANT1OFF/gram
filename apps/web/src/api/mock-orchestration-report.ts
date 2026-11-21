@@ -2,9 +2,6 @@ import { orchestrationMode, type ProjectId, type Thread, type WorkerReport } fro
 
 import type { MockOrchestrationSimulation, MockScenes } from "./mock-orchestration";
 
-// The `report` scenario: one orchestrator at work in a one-project workspace, with a worker that
-// reports back.
-
 /**
  * One orchestrator at work in `projectId`'s one-project workspace: its session-start digest, a
  * worker in a new worktree that reports back, a memory write, a handoff, and the digest that

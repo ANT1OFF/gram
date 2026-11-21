@@ -1,4 +1,3 @@
-// `run_monitor`: a thread watches a GitHub Actions run and is told once it completes.
 import { AppToolError } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -31,7 +30,6 @@ export const makeRunMonitorTool = Effect.gen(function* () {
     audience: OWN_PR_AUDIENCE,
     handle: (threadId, { enabled = true, ...input }) =>
       Effect.gen(function* () {
-        // Before anything else, so the answer says nothing of whether the run exists.
         if (enabled) {
           const named = input.run === undefined ? undefined : parseRunRef(input.run)?.repo;
           yield* refuseOutOfReach("run_monitor", store, threadId, {
@@ -46,7 +44,6 @@ export const makeRunMonitorTool = Effect.gen(function* () {
         }
         if (!enabled) {
           const ref = input.run === undefined ? undefined : parseRunRef(input.run);
-          // Only a call that names no run stops them all; a typo mustn't.
           if (input.run !== undefined && ref === undefined) {
             return yield* new AppToolError({
               tool: "run_monitor",

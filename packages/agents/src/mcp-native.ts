@@ -1,11 +1,3 @@
-/**
- * The one place a `McpServerConfig` becomes an agent's own MCP server entry, and an agent's entry
- * becomes something to show. Each agent reads, runs and signs in to its servers itself, so an entry
- * carries nothing about auth: a remote server is written with the agent's OAuth discovery left on,
- * and whatever token the agent's sign-in gets stays in the agent's own store. Header and env values
- * pass through on the way in and are secrets; on the way out (`describe*Entry`) they are dropped
- * here, so no caller ever holds them.
- */
 import type { ConfiguredServer, McpServerConfig, McpTarget } from "@gram/contracts";
 
 /** An agent's entry for a server, or why the agent can't run one like it. */

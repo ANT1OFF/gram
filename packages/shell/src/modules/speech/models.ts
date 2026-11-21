@@ -1,7 +1,3 @@
-// Local dictation's model store as main serves it: the one door to `store.ts`, which keeps the
-// Effect it had on the server, so the rest of main sees Promises and plain
-// answers that cross IPC, and the store's log lines reach the shell's log.
-
 import { join } from "node:path";
 
 import type { SpeechModelAnswer, SpeechModelFailure, SpeechStatus } from "@gram/contracts";
@@ -51,7 +47,6 @@ export interface SpeechModelStoreOptions {
   readonly log: ShellLog;
 }
 
-/** An Effect log line's parts: its text, and the fields of any object logged beside it. */
 const lineOf = (message: unknown): { text: string; fields: Record<string, unknown> } => {
   const parts = Array.isArray(message) ? (message as unknown[]) : [message];
   const fields: Record<string, unknown> = {};
@@ -82,7 +77,6 @@ const failureOf = (error: unknown): SpeechModelFailure | undefined => {
   return undefined;
 };
 
-// The store's ids are strings; anything else from the page is a model it doesn't know.
 const idOf = (model: unknown) => (typeof model === "string" ? model : "");
 
 /** Opens the store, first putting back a model an update moved aside when the app quit mid-move. */
@@ -133,7 +127,6 @@ export async function openSpeechModelStore(
         else options.log.warn({ source: "speech-models" }, "speech model watch failed");
       });
     },
-    // Interrupting the store's fibers aborts any download, as the server's shutdown did.
     close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
   };
 }

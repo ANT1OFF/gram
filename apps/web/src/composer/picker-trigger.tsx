@@ -37,7 +37,6 @@ export function ValueWords({
 }) {
   const size = labelSize(labelled);
   const fullText = dimension === undefined ? value : `${dimension}: ${value}`;
-  // A compact word that is empty or the dimension itself says nothing: the value stands in for it.
   const word = compact === undefined || compact === "" || compact === dimension ? value : compact;
   const shortText =
     compact === undefined ? undefined : dimension === undefined ? compact : `${dimension}: ${word}`;
@@ -49,7 +48,6 @@ export function ValueWords({
     icon: "",
   };
   const showing = texts[size];
-  // The dimension reads a step quieter than its value, so the eye lands on what is chosen.
   const prefix = dimension === undefined ? undefined : `${dimension}: `;
   const words = (text: string) =>
     prefix === undefined || !text.startsWith(prefix) ? (
@@ -103,7 +101,6 @@ export function usePickConfirm(value: string | undefined) {
   const [pending, setPending] = useState<string>();
   const [landed, setLanded] = useState(0);
   if (pending !== undefined && pending === value) {
-    // Derived during render, as React asks for state that follows a prop.
     setPending(undefined);
     setLanded(landed + 1);
   }
@@ -174,10 +171,8 @@ export function PickerTrigger({
     );
   const named = `${label}: ${value}`;
   const size = labelSize(labelled);
-  // Short of room its chevron goes, leaving the space to the words.
   const bare = size !== "full";
   return (
-    // A native title would wait a second before saying what the glyph means.
     <Hint
       label={tip ?? named}
       render={
@@ -188,11 +183,6 @@ export function PickerTrigger({
         />
       }
     >
-      {/* The glyph stands in for words, never beside the ones it repeats: "Effort: High" says
-          what a gauge only hints at, so it draws only once the dimension's word gives way, beside
-          the value alone ("High") or alone. While the words show it is still laid out, invisible
-          and out of the flow, so a measure of the row sees the width it would take rather than
-          assume one. */}
       {glyph && (
         <span
           aria-hidden

@@ -38,24 +38,19 @@ export async function focusWhenRendered(
 export function focusSidebar(): Promise<boolean> {
   const nav = navigationNow();
   if (nav.position !== "side") {
-    // The dock's current place, else its first item; focus brings an auto-hidden dock into view.
     return focusWhenRendered(() => {
       const items = [...document.querySelectorAll<HTMLElement>(`[${DOCK_ITEM}]`)];
       return items.find((item) => item.getAttribute("aria-current") === "page") ?? items[0] ?? null;
     });
   }
   const layout = useLayoutStore.getState();
-  // An auto-hidden sidebar is there out of view: focus brings it back.
   if (!nav.autoHide && fitShell(layout).sidebar === "none") layout.toggleOverview();
-  // The current row scrolled to and not drawn in time: the first stop, as before.
   let tries = 0;
   return focusWhenRendered(() => {
-    // Open or compact: the compact rail's stops are its tiles.
     const overview = document.querySelector<HTMLElement>(`[${OVERVIEW_ROOT}]`);
     const stops = overview === null ? [] : overviewStops(overview);
     const current = stops.find((stop) => stop.getAttribute("aria-current") === "true");
     if (current !== undefined) return current;
-    // A long list draws only the rows near the view: its current row is scrolled to, then found.
     const list =
       overview === null
         ? undefined

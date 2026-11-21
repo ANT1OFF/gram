@@ -16,15 +16,6 @@ import { pauseClock, pauseLeavesRunning, pauseText } from "@/thread/orchestratio
 
 import { useViewStore } from "./view-store";
 
-// The Board's header: what waits on you (a link into the Inbox) and Show finished; the rows below
-// say who works. It is the window's title bar's, one bar not two: the switcher there names the
-// workspace, and Tidy up and Pause or Resume are the bar's own. A pause says so in a line under it,
-// in the shared pause words.
-
-/**
- * Show finished, while the Board leaves any worker out: archived ones, and the lines whose work is
- * over, which Done lists. The workspace's choice.
- */
 function FinishedToggle({ workspaceId, count }: { workspaceId: string; count: number }) {
   const shown = useLayoutStore((s) => s.boardArchivedShown.includes(workspaceId));
   if (count === 0) return null;
@@ -46,8 +37,6 @@ function FinishedToggle({ workspaceId, count }: { workspaceId: string; count: nu
       }
     >
       <Archive aria-hidden />
-      {/* Named where the bar has room, as the action it is: an archive box alone read as nothing,
-          and a count beside it repeated Done's. */}
       <span aria-hidden className="@max-2xl/titlebar:hidden">
         {shown ? "Hide finished" : "Show finished"}
       </span>
@@ -64,25 +53,20 @@ export function BoardHeader({
   hidden: number;
 }) {
   const { workspace, paused } = state;
-  // The workspace's share of the Inbox, as its badge counts it (`needsYouCounts`).
-  // What needs you here; amber only while some of it asks (an error alone keeps its one alarm).
   const { here } = useNeedsYouIn({ workspaceId: workspace.id });
   const waiting = here.length;
   const asking = here.some((item) => !isErrorItem(item));
   const working = useThreadsStore((s) => midTurnWorkers(s.byId, workspace.id));
   const slot = useTitlebarSlot((s) => s.slot);
-  // Leaving for Chat, Board stays a moment for its exit while the thread's header moves in.
   const shown = useViewStore((s) => s.view === "board");
   const header = (
     <header
       data-testid="board-header"
       className={cn(
-        // In the bar, cut short rather than run under the window's buttons.
         "flex min-w-0 flex-1 items-center gap-3 overflow-x-clip",
         slot === null ? "h-12 shrink-0 px-4" : "pl-2",
       )}
     >
-      {/* The Board's one way to what the workspace needs from you: the Inbox, on its first item. */}
       {waiting > 0 && (
         <button
           type="button"
@@ -110,7 +94,6 @@ export function BoardHeader({
   );
   return (
     <>
-      {/* Without the shell's bar (a test, say), the header is Board's own. */}
       {slot === null ? header : shown && createPortal(header, slot)}
       {paused !== undefined && (
         <p

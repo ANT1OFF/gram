@@ -1,17 +1,4 @@
-/**
- * The replayable mock's clock (`VITE_MOCK_DETERMINISTIC=1`). Time moves only when the person acts:
- * each input grants `stepMs` more of it, and every timer due within what has been granted fires, in
- * due order, as soon as it can. Wall-clock time between two inputs changes nothing, so the same
- * inputs reach the same state however fast or slow they come. That is what Bombadil's
- * `--reproduce` and `browser shrink` need, and what real timers deny them.
- *
- * Timers fire from microtasks, not tasks, with a few microtask turns between them so an awaited
- * `sleep` can schedule the next one: a whole step settles before the page takes its next task.
- */
-
-/** A timer shorter than this counts as this long, so a timer that re-arms itself at 0 ms ends. */
 const MIN_DELAY_MS = 1;
-/** Microtask turns between two timers: enough for a few nested `await`s to reach the next sleep. */
 const TURNS_BETWEEN_TIMERS = 32;
 
 interface Timer {

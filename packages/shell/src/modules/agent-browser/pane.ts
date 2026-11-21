@@ -1,10 +1,3 @@
-// Agents driving their thread's page in the Preview pane: the shell's end of the pane commands
-// (contracts' `PaneRequest`), which the server sends over its `parentPort`. Every rule is held
-// here, whatever the server asked:
-// where the page may go and load from (`core/browse-rules.ts`), act limits, and one driver at a
-// time. The preview module asks this one about an agent's page before each navigation and
-// request, and tells it when the user puts input into the pane.
-
 import { randomUUID } from "node:crypto";
 
 import type { ResolvedHost } from "electron";
@@ -167,28 +160,18 @@ interface AgentPage {
   readonly contents: PaneContents;
   readonly driver: PageDriver;
   driving: PaneDriver;
-  /** A takeover and hand-back cannot revive input admitted under earlier ownership. */
   ownership: number;
-  /** Only the currently serialized command can authorize protocol reads or mutations. */
   validateOperation: ((mutating: boolean) => void) | undefined;
-  /** Until when input events in the view are the agent's own. */
   agentInputUntil: number;
-  /** A navigation the page started that this module stopped, since the last command. */
   blocked: PaneBlocked | undefined;
-  /** Counts the documents the page has shown, so a confirmation holds for the one it named. */
   document: number;
-  /** The confirmation card the server is raising, until it answers or the page moves on. */
   pending: PendingConfirm | undefined;
-  /** While an approved submission runs, the one URL it may send to; nothing else is let out. */
   armedFor: string | undefined;
-  /** The writes the page sent during an agent's action, held until the user answers. */
   held: HeldWrites | undefined;
-  /** What the agent said its latest input does, for the pane's header. */
   lastAction: { readonly summary: string; readonly at: number } | undefined;
   recording: Recording | undefined;
 }
 
-/** Frames of the page an agent is recording, kept until it stops. */
 interface Recording {
   readonly frames: Array<{
     readonly at: number;
@@ -199,29 +182,17 @@ interface Recording {
   readonly scale: number;
   readonly startedAt: number;
   readonly timer: NodeJS.Timeout;
-  /** A frame is being taken. */
   busy: boolean;
-  /** The kept frames' pixel bytes, which `RECORDING_MAX_BYTES` caps. */
   bytes: number;
-  /** Its frame or time budget ran out; what it has is kept. */
   full: boolean;
 }
 
-/** How often a recording takes a frame, at most; a capture can take longer. */
 const FRAME_MS = 250;
-/** The most pixel bytes a recording keeps before it stops taking frames. */
 const RECORDING_MAX_BYTES = 200_000_000;
-/** How long the last frame of a recording shows. */
 const LAST_FRAME_MS = 1_000;
 
-/**
- * Requests that write, which the page sent while an agent acted, paused in `webRequest` rather
- * than cancelled: the user's card releases them as sent, so approving never runs the agent's
- * input a second time. Any other command, a new document or `HELD_MS` cancels them.
- */
 interface HeldWrites {
   readonly token: string;
-  /** Shown on a card: the batch is closed, and a later write is cancelled, not added to it. */
   reported: boolean;
   readonly document: number;
   readonly urls: string[];
@@ -229,39 +200,28 @@ interface HeldWrites {
   readonly timer: NodeJS.Timeout;
 }
 
-/** A submission the shell asked the user about, good once for that document and target. */
 interface PendingConfirm {
   readonly token: string;
   readonly document: number;
-  /** The command it is for, without its token. */
   readonly key: string;
   readonly action: string;
   readonly control: string;
 }
 
-/** How long a page that started loading after an action is waited for. */
 const SETTLE_MS = 10_000;
-/** How long after an action a navigation it causes is looked for. */
 const ACTION_SETTLE_MS = 300;
-/** How long a held write waits for the user's card before it is cancelled. */
 const HELD_MS = 10 * 60_000;
-/** How many held writes a card's text names; every one is in its details. */
 const HELD_SHOWN = 3;
-/** The most writes one card holds; the page's further writes are cancelled. */
 const HELD_MAX = 20;
-/** How long a page's own GET navigation waits for the renderer to say whether it submits a form. */
 const FORM_SIGNAL_MS = 150;
 
-/** `url` without its fragment, which a request never carries. */
 const withoutHash = (url: string) => {
   const at = url.indexOf("#");
   return at === -1 ? url : url.slice(0, at);
 };
 
-/** How often a settling action looks for a write it held. */
 const HELD_POLL_MS = 100;
 
-/** How many request ids' latest hop are kept, to judge where a redirect came from. */
 const HOPS_KEPT = 512;
 
 const fail = (
@@ -270,14 +230,8 @@ const fail = (
   extra: Partial<Extract<PaneResult, { ok: false }>> = {},
 ): PaneResult => ({ ok: false, code, message, ...extra });
 
-/**
- * The page's protocol session. Every event subscription shares one debugger listener, so the
- * driver's many subscriptions don't trip Node's listener-leak warning.
- */
 const cdpOf = (contents: PaneContents): Cdp => {
   const listeners = new Map<string, Set<(params: unknown) => void>>();
-  // An event of a frame's own session (the WebRTC guard's, `preview/webrtc-guard.ts`) isn't the
-  // page's.
   const handler = (_event: unknown, method: string, params: unknown, sessionId?: string) => {
     const own = sessionId === undefined || sessionId === "" ? listeners.get(method) : undefined;
     for (const listener of Array.from(own ?? [])) listener(params);
@@ -305,12 +259,10 @@ const LOCAL_ONLY =
 const targetOf = (point: PanePoint): PageTarget =>
   point.ref !== undefined ? { ref: point.ref } : { coordinate: point.coordinate };
 
-/** Waits for `contents` to stop loading, if it is, for at most `SETTLE_MS`. */
 const settled = (contents: PaneContents, stop: () => boolean = () => false) =>
   new Promise<void>((resolve) => {
     if (contents.isDestroyed() || !contents.isLoading() || stop()) return resolve();
     const timer = setTimeout(done, SETTLE_MS);
-    // A held main-frame write keeps the page loading until it is answered.
     const poll = setInterval(() => {
       if (stop()) done();
     }, HELD_POLL_MS);
@@ -323,7 +275,6 @@ const settled = (contents: PaneContents, stop: () => boolean = () => false) =>
     contents.once("did-stop-loading", done);
   });
 
-/** The recording as a GIF, encoded a frame at a time so the shell stays responsive. */
 const encodeRecording = async (recording: Recording): Promise<string> => {
   const frames: GifFrame[] = recording.frames.map((frame, index) => ({
     width: frame.width,
@@ -344,11 +295,8 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
   const { hosts, views, log } = options;
   const pages = new Map<string, AgentPage>();
   const byContents = new WeakMap<PaneContents, AgentPage>();
-  /** Hosts the user allowed once, by thread, until its page closes. */
   const once = new Map<string, Set<string>>();
-  /** Lookups in flight, shared by the requests that wait on them; each answer is used once. */
   const lookups = new Map<string, Promise<boolean>>();
-  /** Each main-frame request's latest URL, by id, so its next redirect knows where it came from. */
   const hops = new Map<number, string>();
   const hop = (id: number, url: string) => {
     hops.delete(id);
@@ -356,7 +304,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     if (hops.size > HOPS_KEPT) hops.delete(hops.keys().next().value!);
   };
 
-  /** The app's own origins the server named on the thread's latest command. */
   const appOrigins = new Map<string, ReadonlySet<string>>();
   const contextOf = (threadId: string): BrowseContext => ({
     approved: new Set(hosts.hosts()),
@@ -364,12 +311,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     appOrigins: appOrigins.get(threadId),
   });
 
-  /**
-   * Whether `host` resolves to an address on a private network, asked again for every request:
-   * the pane's session resolves it through the same resolver and cache the connection then uses,
-   * so the answer isn't held past what DNS gave it. A failure resolves nothing, so the request
-   * fails on its own.
-   */
   const resolvesPrivate = (host: string): Promise<boolean> => {
     const inFlight = lookups.get(host);
     if (inFlight !== undefined) return inFlight;
@@ -384,7 +325,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     return answer;
   };
 
-  /** How the page on screen is allowed; `undefined` when it no longer is (a host removed). */
   const accessOf = (page: AgentPage): PaneAccess | undefined => {
     const url = page.contents.getURL();
     if (url === "") return "loopback";
@@ -410,7 +350,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     options.driverChanged?.(page.threadId, driving);
   };
 
-  /** A page being opened, so a second command while its contents are made waits for the same. */
   const opening = new Map<string, Promise<AgentPage | undefined>>();
   const open = (threadId: string): Promise<AgentPage | undefined> => {
     const existing = pages.get(threadId);
@@ -425,12 +364,8 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
   const openPage = async (threadId: string): Promise<AgentPage | undefined> => {
     const contents = await views.contentsFor(threadId, true);
     if (contents === undefined) return undefined;
-    // A page that never loaded anything has no renderer yet, and the protocol's first command
-    // waits for one forever.
     if (contents.getURL() === "") await contents.loadURL("about:blank").catch(() => {});
     if (!contents.debugger.isAttached()) contents.debugger.attach("1.3");
-    // A page the agent may not read, such as a file preview the user opened here, logs nothing it
-    // can read later: held from the moment its navigation starts until another page commits.
     const unreadable = (url: string) => isAppPage(url, contextOf(threadId));
     let held: number | null = unreadable(contents.getURL()) ? 0 : null;
     let attached: PageDriver | undefined;
@@ -440,8 +375,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     };
     contents.on("did-start-navigation", (event) => {
       if (!event.isMainFrame || event.isSameDocument) return;
-      // Invalidate an awaited command as soon as a new document starts loading, even before
-      // getURL/CDP report its commit. A submission approval cannot follow that navigation.
       const page = pages.get(threadId);
       if (page?.contents === contents) {
         page.document += 1;
@@ -453,8 +386,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     contents.on("did-navigate", (_event, url) => {
       if (!unreadable(url)) hold(null);
     });
-    // Held all through the attach, whatever pages come and go meanwhile, and released only if the
-    // page it ends on may be read.
     const driver = await createPageDriver(
       cdpOf(contents),
       0,
@@ -503,14 +434,12 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     return page;
   };
 
-  /** Stops taking frames; what was kept goes with it. */
   const endRecording = (page: AgentPage) => {
     if (page.recording === undefined) return;
     clearInterval(page.recording.timer);
     page.recording = undefined;
   };
 
-  /** Takes one frame, if the page may be read now and the last one is done. */
   const takeFrame = async (page: AgentPage, recording: Recording) => {
     if (recording.busy || recording.full || page.recording !== recording) return;
     if (
@@ -521,8 +450,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       clearInterval(recording.timer);
       return;
     }
-    // A page the agent may not read, such as a file the user previews here, isn't recorded, and
-    // neither is the page while the user drives it: what they type there isn't the agent's.
     if (page.contents.isDestroyed() || accessOf(page) === undefined || page.driving !== "agent")
       return;
     recording.busy = true;
@@ -531,7 +458,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       if (decoded === undefined || page.recording !== recording || accessOf(page) === undefined)
         return;
       const last = recording.frames.at(-1);
-      // An unchanged page lengthens the frame before rather than adding one.
       if (
         last !== undefined &&
         last.width === decoded.width &&
@@ -545,8 +471,7 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
         recording.full = true;
         clearInterval(recording.timer);
       }
-    } catch {
-      // A frame the page changed under, or one taken while access lapsed, is skipped.
+    } catch (_aFrameThePageChangedUnderOrOneTaken) {
     } finally {
       recording.busy = false;
     }
@@ -557,8 +482,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     validate: () => void,
     deliver?: (validate: () => void) => void,
   ) => {
-    // Navigation may change its admitted document; its returned metadata belongs to the
-    // document reached here and still needs live authorization at result delivery.
     const document = page.document;
     const documentId = page.driver.inspection().documentId;
     const reached = page.contents.getURL();
@@ -577,7 +500,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     deliver?.(validateResult);
   };
 
-  /** Loads `url` for the agent, after every check the navigation guard makes too. */
   const navigate = async (
     page: AgentPage,
     url: string,
@@ -604,10 +526,7 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       });
     }
     page.blocked = undefined;
-    // A page that won't load rejects here and shows its own error page; a redirect this module
-    // stopped is reported below.
     validate();
-    // Host consent may have been withdrawn while the address lookup was awaited.
     if (agentNavigation(url, contextOf(page.threadId)).kind !== "allow")
       throw new PageAccessError("The navigation is no longer authorized.");
     await page.contents.loadURL(decision.url).catch(() => {});
@@ -630,7 +549,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     return { ok: true, page: pageOf(page) };
   };
 
-  /** Runs an agent's input, so the view's input events for it don't read as the user's. */
   const asAgent = async <T>(page: AgentPage, act: () => Promise<T>): Promise<T> => {
     page.agentInputUntil = Number.POSITIVE_INFINITY;
     try {
@@ -640,7 +558,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     }
   };
 
-  /** Releases the page's held writes as sent, or cancels them. */
   const answerHeld = (page: AgentPage, release: boolean) => {
     const held = page.held;
     if (held === undefined) return;
@@ -649,11 +566,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     for (const answer of held.answer) answer(release);
   };
 
-  /**
-   * Holds one write until the user's card answers; the request waits on what this returns. A
-   * released write still goes out only if its host doesn't resolve to a private address, checked
-   * when it is released, as every public request is.
-   */
   const hold = (page: AgentPage, url: string, host: string): Promise<"allow" | "block"> =>
     new Promise((settle) => {
       if (page.held?.reported === true) return settle("block");
@@ -665,7 +577,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
         answer: [],
         timer: setTimeout(() => answerHeld(page, false), HELD_MS),
       };
-      // A card lists every request it releases; past a cap the page's writes are refused outright.
       if (page.held.urls.length >= HELD_MAX) return settle("block");
       page.held.urls.push(url);
       page.held.answer.push((release) => {
@@ -674,7 +585,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       });
     });
 
-  /** Asks the user, through the server's card, about a submission on this document and target. */
   const askToConfirm = (
     page: AgentPage,
     key: string,
@@ -689,10 +599,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     });
   };
 
-  /**
-   * The approved submission `token` names, taken once: only for the document it was asked on and
-   * the same command; anything else is no approval at all.
-   */
   const approved = (
     page: AgentPage,
     key: string,
@@ -704,11 +610,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     return pending.document === page.document && pending.key === key ? pending : undefined;
   };
 
-  /**
-   * Runs an action, then waits for what it loaded. A write the page sent during it without an
-   * approval is held and asks the user, whose card releases it without running the action again;
-   * a navigation it started to a host not approved is reported.
-   */
   const act = async (
     page: AgentPage,
     armedFor: string | undefined,
@@ -728,7 +629,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     return reportAfter(page);
   };
 
-  /** What an action came to: its held writes asked about, else the page and any navigation stopped. */
   const reportAfter = (page: AgentPage): PaneResult => {
     const { blocked, held } = page;
     page.blocked = undefined;
@@ -757,7 +657,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     return { ok: true, page: pageOf(page), ...(blocked === undefined ? {} : { blocked }) };
   };
 
-  /** Bind a command to the document and live authorization it actually inspected. */
   const onDocument = async (
     page: AgentPage,
     limits: PaneLimits,
@@ -886,10 +785,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       );
     }
     const { driver } = page;
-    /**
-     * Whether the document is a local page's own: on loopback, not a blank page, whose origin a
-     * public page that opened it would lend it, and with a loopback or opaque origin itself.
-     */
     const localDocument = async () => {
       const url = page.contents.getURL();
       if (access !== "loopback" || url === "about:blank" || browseTarget(url).kind !== "loopback")
@@ -931,13 +826,11 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
             ...(command.text === undefined ? {} : { text: command.text }),
             ...(command.ref === undefined ? {} : { ref: command.ref }),
           });
-          // The driver's own answer, not page text.
           return { ok: true, page: pageOf(page), content: shown ? "shown" : "not shown" };
         }
         case "diagnostics":
           return { ok: true, page: pageOf(page), inspection: driver.inspection(true) };
         case "viewport":
-          // Resize is a mutation and observes the same ownership/autonomy restrictions.
           if (actRefusal(access, limits) !== undefined)
             return fail(
               "loopbackOnly",
@@ -956,8 +849,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
             page: pageOf(page),
             console: driver.console(command.onlyErrors === true, contextOf(threadId)),
           };
-        // Reading a page's own requests and running code in it are for local pages only: a
-        // public page's responses may carry the user's data, and its code is someone else's.
         case "network":
           if (!(await localDocument())) return fail("refused", LOCAL_ONLY, { page: pageOf(page) });
           return {
@@ -1023,7 +914,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
         readonly confirmToken?: string;
       };
       const held = page.held;
-      // The user approved what the page sent: it goes out as it was, and the input isn't repeated.
       if (held !== undefined && confirmToken === held.token && held.document === page.document) {
         answerHeld(page, true);
         await delay(ACTION_SETTLE_MS);
@@ -1033,8 +923,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       answerHeld(page, false);
       const key = JSON.stringify(unsigned);
       const grant = approved(page, key, confirmToken);
-      // An approval that no longer holds (the page moved on, the wait ran out, another command came
-      // between) approves nothing, and the input it was for isn't run on its strength.
       if (confirmToken !== undefined && grant === undefined) {
         return fail(
           "failed",
@@ -1042,12 +930,10 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
           { page: pageOf(page) },
         );
       }
-      // What a card approved is what runs: a submission that changed since is asked about again.
       const covers = (submission: { readonly action: string; readonly control: string }) =>
         grant !== undefined &&
         grant.action === submission.action &&
         grant.control === submission.control;
-      // The user follows along: the pane's header says what this input is for as it runs.
       const summary = (command as { readonly actionSummary?: string }).actionSummary;
       if (summary !== undefined) {
         page.lastAction = { summary, at: Date.now() };
@@ -1069,10 +955,8 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
                 : { coordinate: command.coordinate }
               : { ref: command.ref };
           if (target === undefined) return fail("failed", "Name a ref or a coordinate to click.");
-          // A right click opens a menu; it submits nothing.
           const submits =
             command.button === "right" ? undefined : await driver.clickSubmits(target);
-          // One approval is for one submission, which a double click would send twice.
           if (submits !== undefined && command.double === true && access !== "loopback") {
             return fail(
               "failed",
@@ -1112,8 +996,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
               ...(command.modifiers === undefined ? {} : { modifiers: command.modifiers }),
               ...(command.repeat === undefined ? {} : { repeat: command.repeat }),
             });
-          // Enter in a field or on a submit control, and Space on one, submit its form; Enter
-          // anywhere else may, as `type`'s submit does.
           const submits =
             (await driver.keySubmits(command.ref, command.key)) ??
             (command.key === "Enter"
@@ -1167,8 +1049,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       if (queues.get(threadId) === next) queues.delete(threadId);
     }
   };
-  // Notification callbacks and the awaited queue can also run after capture completion.
-  // Withhold all output on revocation, and stale data/cards on document change.
   const deliverResult = (
     threadId: string,
     result: PaneResult,
@@ -1181,8 +1061,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       try {
         validate();
       } catch {
-        // An already dispatched action retains its original document identity. Captures, read
-        // content and confirmation cards from a stale command are never delivered.
         const observed = result.inspection;
         return fail(
           "staleRef",
@@ -1236,8 +1114,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
         return fail("failed", "Duplicate pane request.");
       const controller = new AbortController();
       if (requestId !== undefined) requests.set(requestId, controller);
-      // Bind target/ownership at admission, including navigation. Only document commands also
-      // bind the current document: navigation is allowed to replace it under the same ownership.
       const admitted = pages.get(request.threadId);
       const document = admitted?.document;
       const documentId = admitted?.driver.inspection().documentId;
@@ -1299,7 +1175,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
         const page = pages.get(request.threadId);
         const inspection =
           page !== undefined && accessOf(page) !== undefined ? page.driver.inspection() : undefined;
-        // Never attach an earlier action as evidence for a refused/new command.
         const freshAction = inspection?.action?.id !== previous;
         if (inspection !== undefined)
           result = {
@@ -1327,8 +1202,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       if (page === undefined) return undefined;
       const decision = agentNavigation(url, contextOf(page.threadId));
       if (decision.kind === "allow") return decision.access === "loopback" ? undefined : "load";
-      // The user drives: the preview's own rule sends the link to their browser, where a sign-in
-      // or an EXAMPLE page opens with their device and identity.
       if (page.driving === "user") return undefined;
       page.blocked = {
         url,
@@ -1351,7 +1224,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
             initiator: details.initiator,
             before,
             page: contents.getURL(),
-            // The user sends what they mean to; an approved submission sends to its own target.
             mayWrite:
               page.driving === "user" ||
               (page.armedFor !== undefined && withoutHash(details.url) === page.armedFor),
@@ -1378,9 +1250,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
             return hold(page, details.url, verdict.host);
         }
       };
-      // A page's own GET to a public page may be a form it submitted, which only the renderer
-      // says, over the protocol, and not always before the request gets here: wait a moment for it.
-      // A frame on any port or scheme counts: only the page around it has to be public.
       const pageAsked =
         !isWrite(details.method) &&
         details.initiator !== undefined &&
@@ -1444,7 +1313,6 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
       const page = pages.get(threadId);
       if (page !== undefined) endRecording(page);
       pages.delete(threadId);
-      // Let go without detaching: the WebRTC guard shares the page's debugger.
       if (page === undefined || page.contents.isDestroyed()) return;
       page.driver.dispose();
       void releasePage(cdpOf(page.contents).send, page.contents.getUserAgent?.());

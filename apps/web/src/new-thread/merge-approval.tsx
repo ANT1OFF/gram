@@ -70,8 +70,6 @@ export function MergeApprovalSegments({
             className={cn(
               SEGMENT,
               "h-7 px-2.5 text-meta disabled:opacity-100",
-              // A step toward the text colour: the warning hue alone is under the text floor on
-              // the selected slab's tint in light.
               checked &&
                 choice.value === "automatic" &&
                 "aria-checked:text-[color-mix(in_oklab,var(--warning-text),var(--fg)_35%)]",
@@ -104,12 +102,10 @@ export const mergeApprovalSaved = (workspace: string, next: Autonomy): string =>
 export function useWorkspaceMergeApproval(state: WorkspaceState | undefined, fallback: Autonomy) {
   const changes = useWorkspaceChanges(state);
   const id = state?.workspace.id;
-  // The workspace a pending confirm, or a save's error, was raised for.
   const [confirmFor, setConfirmFor] = useState<WorkspaceId>();
   const [failure, setFailure] = useState<{ for: WorkspaceId | undefined; message: string }>();
   const [shownFor, setShownFor] = useState(id);
   if (shownFor !== id) {
-    // Another workspace: what was pending for the last one goes, and stays gone on coming back.
     setShownFor(id);
     setConfirmFor(undefined);
     setFailure(undefined);
@@ -138,7 +134,6 @@ export function useWorkspaceMergeApproval(state: WorkspaceState | undefined, fal
     if (autonomyNeedsConfirm(autonomy as Autonomy, next)) setConfirmFor(id);
     else save(next);
   };
-  // Only the workspace the confirm was opened for: never another the draft has moved to since.
   const confirmFull = () => {
     if (confirming) save("full");
   };

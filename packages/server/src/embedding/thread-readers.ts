@@ -1,8 +1,3 @@
-// Who else may read a thread readable by one person (`Thread.readers`), as an embedding host sets
-// it: at the thread's start (`ProfileStartRequest.readers`) and after (`THREAD_READERS_PATH`).
-// The set replaces the one there on the thread and on every thread that shares its privacy
-// (`privacyFamily`): what it spawned or forked and its workspace's, open or closed. Readers read;
-// only the thread's person acts (`embedding/readable-by.ts`).
 import { InvalidState, THREAD_READERS_MAX, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

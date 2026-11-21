@@ -1,7 +1,3 @@
-// The ledger: `survey`, which gathers every fact a digest, the
-// ledger tool and the board read about a workspace and its workers, the ledger and feature cards
-// built from it, and the watches that send them again when something they show moves.
-
 import {
   currentBaseOf,
   effectiveCheckout,
@@ -46,11 +42,9 @@ import { type OrchestrationShape } from "./shape.ts";
 /** How long `watchLedger` lets changes settle before it builds the ledger again. */
 export const LEDGER_WATCH_DEBOUNCE = Duration.millis(300);
 
-/** A ledger as `watchLedger` compares two: everything but the moment it was built. */
 const ledgerText = (ledger: OrchestratorLedger): string =>
   JSON.stringify({ ...ledger, builtAt: 0 });
 
-/** What a waiting request asks, in the worker's own words, scrubbed and cut for the ledger. */
 const requestSummary = (request: PendingRequest): string => {
   const asks =
     request.kind === "question"
@@ -64,10 +58,8 @@ const requestSummary = (request: PendingRequest): string => {
   return clipped(redactText(asks.trim()), WORKER_REQUEST_SUMMARY_MAX);
 };
 
-/** The zone this machine keeps its clock in: the one "today" is counted in for today's spend. */
 const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-/** Gram's own check of a worker's PR as its ledger row shows it. */
 const localCheckRow = (check: LocalCheck): NonNullable<WorkerFacts["localCheck"]> => ({
   status: check.status,
   ...(check.reason === undefined ? {} : { reason: check.reason }),
@@ -100,19 +92,6 @@ export const makeLedgerWatch = (
     eventSink,
   } = kit;
 
-  // ---------------------------------------------------------------------------------------
-  // The ledger
-  // ---------------------------------------------------------------------------------------
-
-  /**
-   * The workspace's features and budget now. With `persistCost` the day's spend is written back,
-   * which the approval gates must not do: they may run twice for one call.
-   *
-   * A digest is built with the orchestrator's runtime lock held, and `ThreadRuntimes.snapshot`
-   * takes every thread's lock in turn, the orchestrator's included, so it would never return.
-   * Each worker is asked for its status on its own instead, and cost is what the last ended turn
-   * reported, which is a turn behind at most.
-   */
   const survey = (state: WorkspaceState, persistCost: boolean) =>
     Effect.gen(function* () {
       yield* deps.reconcileQuestions(state.workspace.id);
@@ -131,7 +110,6 @@ export const makeLedgerWatch = (
           };
         });
       const latest = new Map<ThreadId, WorkerReport>();
-      /** Each worker's last stated interface, which a later report that leaves it out keeps. */
       const interfaces: Record<string, string> = {};
       const reported = yield* store.latestWorkerReports(
         state.workspace.id,
@@ -268,14 +246,12 @@ export const makeLedgerWatch = (
       });
     });
 
-  /** Hub events after which a workspace's ledger may read differently. */
   const movesLedger = (workspaceId: WorkspaceId, event: ServerEvent): boolean => {
     const ofWorkspace = (threadId: ThreadId) =>
       workerWorkspaces.get(threadId) === workspaceId || orchestrators.get(threadId) === workspaceId;
     switch (event.type) {
       case "orchestration.changed":
         return event.workspaceId === workspaceId;
-      // The subscription's own first item, and what a client that fell behind is given again.
       case "threads.snapshot":
         return true;
       case "thread.upsert":
@@ -299,9 +275,6 @@ export const makeLedgerWatch = (
         Stream.debounce(LEDGER_WATCH_DEBOUNCE),
         Stream.mapEffect(() => ledger(workspaceId)),
       );
-    // Both start together, so nothing that happens while the first ledger is built is missed;
-    // the subscription's opening snapshot then builds a second one, which reads the same and goes
-    // nowhere unless something did move meanwhile.
     return Stream.merge(Stream.fromEffect(ledger(workspaceId)), changed).pipe(
       Stream.changesWith((a, b) => ledgerText(a) === ledgerText(b)),
     );
@@ -356,7 +329,6 @@ export const makeLedgerWatch = (
     );
   };
 
-  /** The publisher's last badges of the PRs `thread`'s bound PR depends on. */
   const dependencyBadgesOf = (thread: Thread) =>
     Effect.forEach(thread.boundPr?.dependsOn ?? [], (dependency) =>
       publisher.watchedBadge(dependency),

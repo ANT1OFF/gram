@@ -1,8 +1,3 @@
-// Fences text Gram didn't write, such as a check's output or a comment from GitHub, so an agent
-// reads it as data. Neutralised rather than detected: the opener and footer carry a random value
-// made for this fence alone, which nothing inside could have known, and the text inside is
-// normalised and stripped of anything that could pass for a marker or hide from a reader.
-
 export const FENCE_OPENER = "[BEGIN UNTRUSTED EXTERNAL CONTENT";
 /** The footer's start; each fence's footer ends with its own value: `[END … CONTENT <value>]`. */
 export const FENCE_FOOTER = "[END UNTRUSTED EXTERNAL CONTENT";
@@ -16,26 +11,15 @@ export const fenceNonce = (): string =>
 /** The footer of the fence whose value is `nonce`. */
 export const fenceFooter = (nonce: string): string => `${FENCE_FOOTER} ${nonce}]`;
 
-/** Terminal escape sequences: CSI (`ESC [ … final`) and OSC (`ESC ] … BEL|ST`). */
 // oxlint-disable-next-line no-control-regex -- matching escape sequences is the point
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?/g;
-/**
- * Characters that hide or reorder what a reader sees but a model still reads: zero-width, soft
- * hyphen, the combining grapheme joiner, bidi formatting, variation selectors, and Unicode tag
- * characters (the "ASCII smuggling" range).
- */
 const INVISIBLE = new RegExp(
   "[\\u00ad\\u034f\\u061c\\u180e\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069" +
     "\\ufe00-\\ufe0f\\ufeff\\u{e0000}-\\u{e007f}\\u{e0100}-\\u{e01ef}]",
   "gu",
 );
-/** Control characters, except tab and newline. */
 // oxlint-disable-next-line no-control-regex -- stripping them is the point
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
-/**
- * Anything shaped like an opener or footer: the four words in order with up to a few
- * non-letters between them, in any case. Bounded, so it can't backtrack far on any input.
- */
 const MARKER_SHAPE =
   /(begin|end)[^\p{L}\p{N}\n]{0,8}untrusted[^\p{L}\p{N}\n]{0,8}external[^\p{L}\p{N}\n]{0,8}content/giu;
 
@@ -81,7 +65,6 @@ export const fenceNames = (
 ): string => {
   const lines = names.slice(0, max).map((name) => {
     const line = defang(name).replaceAll(/\s+/g, " ").trim();
-    // Three dots, not an ellipsis, which the fence's normalising would turn into three anyway.
     return line.length > FENCED_NAME_CHARS ? `${line.slice(0, FENCED_NAME_CHARS - 3)}...` : line;
   });
   const more = names.length - lines.length;
@@ -92,7 +75,6 @@ export const fenceNames = (
   );
 };
 
-/** A Markdown link-reference definition, `[label]: …`, which GitHub renders as nothing. */
 const LINK_DEFINITION = /^ {0,3}\[[^\]\n]*\]:[ \t]/;
 
 /**

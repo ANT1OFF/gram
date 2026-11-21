@@ -1,5 +1,3 @@
-// Session policy: what a thread's role adds to its session when it
-// opens, its role prompt, tools, MCP lists and outward gate, asked again on every open.
 import {
   autonomyOf,
   orchestratorConnectors,
@@ -26,10 +24,6 @@ import {
 } from "../rules.ts";
 import { worktreesOf, type OrchestrationKit } from "./kit.ts";
 
-/**
- * Whether the thread's repository has a verify recipe, read in its own clone as `verify` reads it.
- * Only on this machine: a worker elsewhere isn't told, though its `verify` tool still works.
- */
 const hasVerifyRecipe = (thread: Thread): boolean => {
   const checkout = effectiveCheckout(thread);
   return isLocalHost(checkout) && existsSync(join(checkout.repoRoot ?? checkout.path, VERIFY_FILE));
@@ -38,15 +32,9 @@ const hasVerifyRecipe = (thread: Thread): boolean => {
 export const makeSessionPolicy = (kit: OrchestrationKit) => {
   const { store, findWorkspace, findThread, openedInAuto, workerMachinesOffered } = kit;
 
-  // ---------------------------------------------------------------------------------------
-  // Session policy
-  // ---------------------------------------------------------------------------------------
-
   const policyFor = (thread: Thread): Effect.Effect<SessionPolicy> =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
-      // Every Dream drops external connectors. The runtime selects file-only tools or guided
-      // normal native permissions separately.
       const confined = thread.role === "dream" ? { confineWrites: true } : {};
       if (thread.role === undefined && thread.spawnedBy === undefined) {
         const instructions = plainPrompt({ agent: thread.model.agent });
@@ -60,8 +48,6 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
       }
       const state = yield* findWorkspace(thread.workspaceId);
       const audience = toolAudience({ thread, workspace: state?.workspace });
-      // The gate follows the workspace's autonomy, and is fixed for the session's life:
-      // `setCharter` reloads the sessions when the level changes.
       const outwardGate = outwardGateFor({
         thread,
         workspace: state?.workspace,
@@ -73,14 +59,8 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
         return {
           audience,
           outwardGate,
-          // It runs unattended: its shell stays home, it asks through `ask_user` rather than a
-          // tool that holds its turn overnight, and on Claude it gets the user's connectors as
-          // listed or, listing none, only where tool search defers their schemas. On every
-          // agent, only those its workspace gives.
           pinCwd: true,
           noBlockingAsk: true,
-          // Only where the user lets it, and only outward: the agent's own peer messaging would
-          // reach a session past Gram's routing, so workers and plain threads never have it.
           ...(orchestratorPeerMessaging(settings) ? { peerMessaging: true } : {}),
           ...browserGrant(thread, audience, settings, state.charter),
           ...mcpListsFor({
@@ -125,8 +105,6 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
           instructions: workerPrompt({
             feature: thread.spawnedBy.feature,
             orchestratorTitle: orchestrator?.title ?? "an orchestrator that has since closed",
-            // What the prompt says will ask has to be what the session's gate asks about, so it
-            // is read off the gate: a worker left with the strictest one is told exactly that.
             autonomy:
               outwardGate === "all"
                 ? "supervised"
@@ -142,7 +120,6 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
           }),
         };
       }
-      // The runtime binds the Dream audience and standing instructions on every reopen.
       if (thread.role === "dream" && admittedForRole(thread.model.agent, "dream")) {
         return {
           audience: "plain",
@@ -151,17 +128,9 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
           ...confined,
         };
       }
-      // A role outside its slot, or on an agent kind that isn't admitted: no tools and no
-      // delegation, but the accident gate stays for as long as the thread carries the marks.
       return { audience: "plain", outwardGate, ...confined };
     });
 
-  /**
-   * Every open of an orchestrator or a worker in `auto`, not only the first: a reopen can land
-   * where its harness has no Auto (a Codex session under a gate the workspace gained, a CLI that
-   * fell below the reviewer, an older joined machine), which it reports as `default`, and
-   * `modeAfterDowngrade` moves it on to `bypassPermissions` (`observers.ts`).
-   */
   const opening = (thread: Thread): Effect.Effect<void> =>
     Effect.sync(() => {
       if (thread.mode !== "auto") return;
@@ -172,10 +141,6 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
         openedInAuto.add(thread.id);
     });
 
-  /**
-   * The downgrade `onUpsert` makes of an `auto` open's `default` report, made instead by a switch
-   * before it lets queued input go, so its first turn is sent in the mode the session will keep.
-   */
   const modeAfterSwitch = (thread: Thread): Effect.Effect<PermissionMode | undefined> =>
     Effect.sync(() => {
       if (!openedInAuto.has(thread.id) || thread.mode === "auto") return undefined;

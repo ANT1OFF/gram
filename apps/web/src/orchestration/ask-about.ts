@@ -4,9 +4,6 @@ import { focusPaneComposer } from "@/shell/pane-focus";
 import { useDraftStore } from "@/stores/drafts";
 import { useLayoutStore } from "@/stores/layout";
 
-// "Ask about it": a message to the orchestrator about one worker, started in its composer with the
-// worker's context and left there for the user to finish and send. Nothing is sent from here.
-
 /** `text` appended to the orchestrator's draft, which then opens with its composer focused. */
 export function startOrchestratorMessage(
   orchestrator: ThreadId,

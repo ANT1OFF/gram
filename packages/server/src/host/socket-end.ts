@@ -9,7 +9,6 @@ import type { Socket } from "../platform/unstable.ts";
 export const watchedSocket = (
   socket: Socket.Socket,
   ended: Effect.Effect<void> | ((error: Socket.SocketError) => Effect.Effect<void>),
-  /** Runs on each read that brings data: the other side is there and talking. */
   received: Effect.Effect<void> = Effect.void,
 ): Socket.Socket => {
   const end = (error: Socket.SocketError) => (typeof ended === "function" ? ended(error) : ended);

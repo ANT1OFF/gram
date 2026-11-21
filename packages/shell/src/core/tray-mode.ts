@@ -1,10 +1,3 @@
-// Closing the last window on Windows and Linux quits the app, as is their convention, unless the
-// user turned on "Keep running in the tray". Then the app shows a tray icon with its asks and
-// workspaces (`tray-menu.ts`), and the first time the last window closes into it, a notice says
-// where the app went (an app that went on running with no sign of it looked as if it had
-// vanished). macOS keeps its own convention, where the Dock holds a windowless app: the same
-// setting there ("Show in menu bar") only shows the menu bar item, and closing changes nothing.
-
 /** What `tray.json` keeps. */
 export interface TrayPrefs {
   readonly keepInTray: boolean;
@@ -25,7 +18,6 @@ export function parseTrayPrefs(text: string | undefined): TrayPrefs {
       noticeShown: Reflect.get(parsed, "noticeShown") === true,
     };
   } catch {
-    // Torn by a crash mid-write, or edited by hand: off is the platform's own behaviour.
     return DEFAULT_PREFS;
   }
 }

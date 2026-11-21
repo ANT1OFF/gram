@@ -41,8 +41,6 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
   return (
     <TabsPrimitive.Panel
       data-slot="tabs-content"
-      // A panel mounts when its tab is chosen, so the fade plays on each switch. Opacity only: panels
-      // hold measured things (the terminal's grid, virtual lists) that a moving box would upset.
       className={cn("gram-fade min-h-0 flex-1 outline-none", className)}
       {...props}
     />

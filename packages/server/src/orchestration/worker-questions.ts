@@ -1,7 +1,3 @@
-// The workers' questions in a workspace's outbox (docs/design/worker-questions.md): pure moves on
-// `OutboxState.questions`, which the service makes under the outbox lock. Who may make a move is
-// the service's to check; these only refuse a move the question's stage doesn't allow.
-
 import {
   isOpenQuestion,
   WORKER_QUESTION_TRIAGE_MS,
@@ -34,10 +30,6 @@ export const findQuestion = (outbox: OutboxState, id: string): StoredWorkerQuest
   return questionsOf(outbox).find((question) => question.id.toLowerCase() === wanted);
 };
 
-/**
- * The questions kept: every open one, and the newest `WORKER_QUESTIONS_KEPT_CLOSED` closed ones
- * whose copy is no longer owed, beside any whose copy still is. Oldest first, as asked.
- */
 const kept = (questions: ReadonlyArray<StoredWorkerQuestion>): StoredWorkerQuestion[] => {
   const closed = questions
     .filter((question) => !isOpenQuestion(question) && question.copyOwed !== true)
@@ -49,7 +41,6 @@ const kept = (questions: ReadonlyArray<StoredWorkerQuestion>): StoredWorkerQuest
   );
 };
 
-/** The outbox with `questions` in place of its own, pruned; `questions` absent when empty. */
 const withQuestions = (
   outbox: OutboxState,
   questions: ReadonlyArray<StoredWorkerQuestion>,

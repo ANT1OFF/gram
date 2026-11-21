@@ -1,8 +1,3 @@
-// The Linux .deb's updates: checks only. apt owns a .deb install, so Gram never downloads, writes or
-// runs anything for it; a check finds the newest release that carries the .deb (and the AppImage's
-// `latest-linux.yml`, so the release is complete) and links to its page. The same reducer as the
-// other installs keeps the pill and Settings → Updates in step, with `target: "deb"` and
-// `canInstall: false`, which the reducer enforces too.
 import type { AppUpdateState, UpdateChannel } from "@gram/contracts";
 import {
   backgroundCheckAllowed,
@@ -73,7 +68,6 @@ export function createPackageUpdates(options: PackageUpdatesOptions): NativeUpda
       const info = await feed.latest(channel);
       const picked = feed.picked();
       if (disposed) return state;
-      // The feed offers only newer releases of the channel; anything else is the running version.
       if (!picked || picked.version !== info.version || info.version === options.currentVersion)
         return apply({ type: "upToDate", at: now() });
       return apply({
@@ -111,7 +105,6 @@ export function createPackageUpdates(options: PackageUpdatesOptions): NativeUpda
     state: () => state,
     start,
     check,
-    // Nothing downloads or installs: these only say so, and leave the state as it is.
     async download() {
       await start();
       log("warn", `update: refused a download on a .deb install: ${NOT_HERE}`);

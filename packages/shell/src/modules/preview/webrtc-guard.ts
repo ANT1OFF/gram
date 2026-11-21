@@ -1,22 +1,3 @@
-// WebRTC, taken away from every frame of a page: the preview's local session's pages and pinned
-// pages (`modules/pages`). Chromium resolves an ICE server's or a remote candidate's host name
-// through the system resolver before any of a session's controls (its request check, proxy and UDP
-// policy) apply, so a page could otherwise send what it holds, or what the user types into it, out
-// in DNS queries for names it chose. No setting of a session or a page turns that off, and a name
-// rule for the resolver (as the agent's headless browser has, `agent-browser/headless.ts`) would
-// hold for the whole app.
-//
-// A preload can't do it: it never runs in a child the page makes by script at `about:blank`, which
-// shares the page's origin, so the page could reach a peer connection through it. So the page's
-// own debugger session puts the removal in place: the protocol runs it first in every document of
-// the page, `about:blank` children and their children included, and in each out-of-process frame,
-// which starts paused until it has the removal too. It is in place before the page loads anything
-// but `about:blank`; a page the guard couldn't reach loads nothing (`ready`).
-//
-// The agent browser's pane drives the same page through the same session, and lets it go without
-// detaching it. Should anything detach it all the same, the page loads nothing (`webRtcGuardHeld`)
-// until the guard has attached again and put itself back; if it can't, the page is blanked.
-
 /** What a page's script reaches WebRTC by. */
 export const WEBRTC_NAMES = [
   "RTCPeerConnection",
@@ -66,16 +47,11 @@ const attachedTarget = (params: unknown): AttachedTarget | undefined => {
     : undefined;
 };
 
-/** A page held while its removal isn't in place: `until` settles `true` once it is back. */
 interface Held {
   readonly until: Promise<boolean>;
   readonly settle: (up: boolean) => void;
 }
 
-/**
- * The pages whose removal isn't in place right now, by their contents' id (a request's
- * `webContents` is another object for the same page); a page never guarded isn't one.
- */
 const held = new Map<number, Held>();
 
 const hold = (id: number) => {
@@ -87,7 +63,6 @@ const release = (id: number) => {
   held.get(id)?.settle(true);
   held.delete(id);
 };
-/** Held for good: every request waiting, and every one after, is refused. */
 const giveUp = (id: number) => {
   hold(id);
   held.get(id)?.settle(false);
@@ -119,10 +94,8 @@ export const heldForGuard =
     void until.then((up) => (up ? listener(details, callback) : callback({ cancel: true })));
   };
 
-/** How many times in a row the guard attaches again before it gives a page up. */
 const REATTACH_TRIES = 5;
 
-/** A target that has no WebRTC of its own, which only waits to be let go. */
 const WORKERS = new Set(["worker", "service_worker", "shared_worker"]);
 
 /**
@@ -137,25 +110,21 @@ export async function guardWebRtc(
   hold(contents.id);
   const install = (sessionId?: string) =>
     Promise.all([
-      // The removal is only kept while the page domain is on.
       cdp.sendCommand("Page.enable", {}, sessionId),
       cdp.sendCommand(
         "Page.addScriptToEvaluateOnNewDocument",
         { source: DROP_WEBRTC, runImmediately: true },
         sessionId,
       ),
-      // No page is loaded ahead of a navigation, in a target of its own.
       cdp
         .sendCommand("Page.setPrerenderingAllowed", { isAllowed: false }, sessionId)
         .catch(() => {}),
-      // Every other target, its own children included, starts paused, for the above.
       cdp.sendCommand(
         "Target.setAutoAttach",
         { autoAttach: true, waitForDebuggerOnStart: true, flatten: true },
         sessionId,
       ),
     ]);
-  /** The removal is gone: the page is blanked, and loads nothing until it is back. */
   const fail = (message: string, error?: unknown) => {
     giveUp(contents.id);
     if (contents.isDestroyed()) return;
@@ -171,14 +140,11 @@ export async function guardWebRtc(
     void guarded
       .then(
         () => cdp.sendCommand("Runtime.runIfWaitingForDebugger", {}, sessionId),
-        // A frame that can't take the removal stays paused, and runs nothing.
         (error: unknown) =>
           warn({ source: "webrtc-guard", error: String(error) }, "a frame wasn't guarded"),
       )
       .catch(() => {});
   });
-  // Nothing of Gram's detaches the page's debugger; whatever does, the guard attaches again and
-  // puts itself back. A page that keeps detaching before that holds (one being closed) is let go.
   let attaching = false;
   let detachedMeanwhile = false;
   let tries = 0;
@@ -192,7 +158,6 @@ export async function guardWebRtc(
     attaching = true;
     detachedMeanwhile = false;
     try {
-      // Another user of the same debugger may have attached it already.
       if (!cdp.isAttached()) cdp.attach("1.3");
     } catch (error) {
       attaching = false;
@@ -211,14 +176,11 @@ export async function guardWebRtc(
         } else attachAgain();
       });
   };
-  // Electron ends a detach only after its listeners have run, and a page being closed is destroyed
-  // just after: the guard attaches on the next turn, once both have.
   cdp.on("detach", () => {
     hold(contents.id);
     setImmediate(attachAgain);
   });
   try {
-    // A page that never loaded anything has no renderer, and the protocol waits for one forever.
     if (contents.getURL() === "") await contents.loadURL("about:blank");
     if (!cdp.isAttached()) cdp.attach("1.3");
     await install();

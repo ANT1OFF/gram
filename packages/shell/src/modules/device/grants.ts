@@ -38,7 +38,6 @@ export const makeGrantLedger = (
   elapsed: () => number = () => performance.now(),
 ): GrantLedger => {
   const publicKey = createPublicKey(key);
-  /** By nonce, in the order minted. */
   const live = new Map<string, { readonly to: GrantTarget; readonly endsAt: number }>();
   const prune = () => {
     const time = elapsed();

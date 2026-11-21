@@ -40,13 +40,10 @@ export const publishMachineStates = (
 ) =>
   Effect.gen(function* () {
     const run = yield* FiberSet.makeRuntime<never>();
-    // A client that connects is sent the states as they stand, so only what differs is news.
     let sent = machineNews(hosts.states());
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         hosts.watch(() => {
-          // Read when it runs, not when it was asked for: whichever of two quick changes runs
-          // last sends the states as they then stand.
           run(
             Effect.suspend(() => {
               const machines = hosts.states();
@@ -62,7 +59,6 @@ export const publishMachineStates = (
     );
   });
 
-/** The machines connected now. */
 const onlineIn = (hosts: Pick<RemoteHostsShape, "states">): ReadonlySet<HostId> =>
   new Set(
     hosts.states().flatMap((machine) => (machine.onlineSince === undefined ? [] : [machine.id])),

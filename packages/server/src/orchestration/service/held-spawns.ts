@@ -1,7 +1,3 @@
-// Held spawns: the gates a spawn passes near a usage limit (asking
-// the user, holding a low-priority brief, offering another route), the held briefs themselves, and
-// releasing them when the limit resets or a slot frees, or when the user or orchestrator says so.
-
 import type { makeSpawnBreaker } from "../spawn-breaker.ts";
 import {
   InvalidState,
@@ -87,9 +83,7 @@ const heldSpawnOf = (stored: StoredHeldBrief): HeldSpawn => ({
   note: heldWords(stored),
 });
 
-/** How long a spawn waits for a fresh limit reading while no window shows; see `spawnLimits`. */
 const SPAWN_LIMIT_READ = "10 seconds";
-/** The log line of a route offer (`routeAtLimit`). */
 const logOffer = (workspaceId: WorkspaceId, input: SpawnWorkerInput, stop: string) =>
   Effect.logInfo("a spawn stopped at a limit is offered other worker models").pipe(
     Effect.annotateLogs({ workspaceId, feature: input.feature, stop }),
@@ -136,25 +130,11 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
   } = kit;
   const { wake, lookupProject, spawnFor, survey, spawnBreaker } = deps;
 
-  // ---------------------------------------------------------------------------------------
-  // Pausing new workers near a subscription limit
-  // ---------------------------------------------------------------------------------------
-
-  /**
-   * Wakes the workspace's consumer at its soonest paused window's reset, or its soonest held
-   * brief's (or its retry's); nothing with neither. Held briefs already due start now, in the
-   * background, unless orchestration is paused: resuming arms this again. Called from inside a
-   * release run too, where a brief that fell due meanwhile gets a run of its own after it.
-   * One at a time (`alarmLock`), reading the outbox inside it, and the alarm is set before a
-   * release run is forked: a run that finishes at once (one refused straight away) sets its own
-   * alarm after this one, never under it.
-   */
   const armLimitResume = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       const outbox = yield* readOutbox(workspaceId);
       const now = yield* Clock.currentTimeMillis;
       const paused = (outbox.limitHolds ?? []).filter((hold) => hold.decision === "paused");
-      // Not a brief of a feature the user paused: resuming it arms this again.
       const pausedFeatures = (yield* findWorkspace(workspaceId))?.pausedFeatures ?? [];
       const held = (outbox.heldBriefs ?? []).filter(
         (brief) => !pausedFeatures.includes(brief.input.feature),
@@ -181,11 +161,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       yield* FiberSet.run(heldReleases, releaseDue(workspaceId));
     }).pipe((effect) => alarmLock.withLock(workspaceId, effect));
 
-  /**
-   * Drops the holds whose windows have reset. One that paused new workers is owed the
-   * orchestrator a word: a note and a digest, which a pause of the whole workspace holds back
-   * with the rest.
-   */
   const onLimitReset = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
@@ -212,19 +187,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       yield* wake(workspaceId, "a usage limit reset", true);
     });
 
-  /**
-   * Fresh readings may show that a limit holding the workspace's new workers back no longer
-   * applies: the CLI was signed in to another login, or the window reset early. Nothing is
-   * resumed on stale or unknown data. A reading counts only when it was taken since the hold,
-   * within `LIMIT_FRESH_MS`, and is of the hold's own agent and window.
-   * - A held brief whose agent no longer holds briefs (`holdingLimit` finds none) falls due now,
-   *   oldest first, in the batches a limit's resume takes (`releaseBatchAt`). Its release
-   *   (`releaseDue`) checks again, and so does every pause.
-   * - A "pause new workers until it resets" whose window reads as another window (its reset
-   *   moved more than `LIMIT_SAME_WINDOW_MS`) below the threshold ends as if that window had
-   *   reset (`onLimitReset`), with its note.
-   * A user pause of the workspace or a feature still holds what it holds: releases stop there.
-   */
   const onLimitHeadroom = (workspaceId: WorkspaceId) =>
     Effect.gen(function* () {
       if (Option.isNone(limitReadings)) return;
@@ -286,17 +248,10 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       yield* Effect.logInfo("a limit holding new workers no longer applies").pipe(
         Effect.annotateLogs({ workspaceId, briefs: early.length, pauses: lifted.length }),
       );
-      // Drops the pauses with their note, re-arms the alarm, and starts what fell due.
       yield* onLimitReset(workspaceId);
       if (lifted.length === 0) yield* orchestrationChanged(workspaceId);
     });
 
-  /**
-   * Asks the user, on the orchestrator's thread, whether to pause new workers until `limit`'s
-   * window resets, and keeps the answer for that window. A spawn made meanwhile waits on the same
-   * ask rather than raising its own. `undefined` when no answer came from the user: the card was
-   * withdrawn, so nothing is kept and the next spawn asks again.
-   */
   const askLimit = (
     callerId: ThreadId,
     workspaceId: WorkspaceId,
@@ -376,12 +331,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       return decision;
     });
 
-  /**
-   * The readings a spawn decides on. While no window shows the limit poll rests, and a session
-   * reports only its own agent's limits, so a spawn reads them afresh first (at most one read per
-   * `LIMIT_REFRESH_QUIET_MS`, however many spawns ask). A read that hangs holds a spawn for at most
-   * `SPAWN_LIMIT_READ`, after which the last readings stand.
-   */
   const spawnLimits = (readings: UsageLimitReadings["Service"]) =>
     Effect.gen(function* () {
       if (
@@ -394,13 +343,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       return yield* readings.current;
     });
 
-  /**
-   * `spawn_worker`'s limit check, before the spawn itself: when a subscription limit the new
-   * worker would run against stands at the workspace's threshold (`pauseAtLimitPct`), the user is
-   * asked once per window, and while they have paused new workers the spawn is refused. Running
-   * workers are never touched. A gateway model, a retried call that made its worker already, and a
-   * workspace without a threshold pass; so does anything the spawn itself refuses, which it says.
-   */
   const limitGate = (callerId: ThreadId, input: SpawnWorkerInput) =>
     Effect.gen(function* () {
       const tool = "spawn_worker";
@@ -434,7 +376,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       ).filter((limit) => atThreshold(limit, pauseAtPct));
       for (const limit of reached) {
         const decided = holdOf((yield* readOutbox(workspaceId)).limitHolds, limit, now)?.decision;
-        // A routine's run asks nobody: without the user's answer for this window it doesn't start.
         if (decided === undefined && input.unattended === true) {
           return yield* toolError(
             tool,
@@ -465,15 +406,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       }
     });
 
-  // ---------------------------------------------------------------------------------------
-  // Holding low-priority briefs until a limit resets
-  // ---------------------------------------------------------------------------------------
-
-  /**
-   * The subscription limit a brief would wait on, with the project's name: one of the agent its
-   * worker would run on at the workspace's hold share (`holdAtPct`) or rejected. None for a
-   * gateway model, a repo Gram doesn't know yet, or anything the spawn itself would refuse.
-   */
   const heldLimit = (caller: Thread, state: WorkspaceState, input: SpawnWorkerInput) =>
     Effect.gen(function* () {
       if (Option.isNone(limitReadings)) return undefined;
@@ -500,29 +432,16 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       return limit === undefined ? undefined : { limit, project: found.value.known };
     });
 
-  /**
-   * `spawn_worker`'s hold, before the limit check and the spawn: a `low` priority brief whose
-   * worker would run against a subscription limit at the workspace's hold share is kept in the
-   * outbox instead of spawned, and starts on its own at the reset (`releaseDue`). A retried call
-   * with the same `clientRequestId` finds the brief it held (one without it holds a second copy,
-   * as a retried spawn without it makes a second worker); one whose worker exists already
-   * passes, as do normal briefs. A feature that won't slug isn't held: the spawn refuses it.
-   */
   const holdGate = (callerId: ThreadId, input: SpawnWorkerInput) =>
     Effect.gen(function* () {
       if (input.priority !== "low") return undefined;
-      // A name that makes no feature is the spawn's to refuse, which says why.
       if (featureSlug(input.feature) === undefined) return undefined;
       const authority = yield* authorityOf(callerId);
       if (authority === undefined || authority.state.paused !== undefined) return undefined;
-      // A paused feature's brief is the spawn's to refuse, not to hold.
       if (authority.state.pausedFeatures?.includes(featureSlug(input.feature)!) === true) {
         return undefined;
       }
       const { thread: caller, state } = authority;
-      // An orchestrator on a machine started for one person holds nothing in this version: a
-      // held brief is kept to be spawned later with no one's call to place it, so it is never
-      // offered there (`host/ownership.ts`). Its spawn goes now, or is refused, as any other.
       if (threadOwner(ownerOf, caller) !== undefined) return undefined;
       const workspaceId = state.workspace.id;
       const outbox = yield* readOutbox(workspaceId);
@@ -537,7 +456,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       if (found === undefined) return undefined;
       const { limit, project } = found;
       const now = yield* Clock.currentTimeMillis;
-      // `unattended` stays: its release is admitted against the cap under the spawn lock as well.
       const { priority: _priority, atLimit: _atLimit, ...rest } = input;
       const stored: StoredHeldBrief = {
         id: `held-${randomUUID().slice(0, 8)}`,
@@ -552,7 +470,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         until: limitExpiresAt(limit),
         heldAt: now,
       };
-      // A parallel retry may have held it meanwhile; the first one stands.
       const raced = yield* updateOutbox(workspaceId, (current) => {
         const first =
           input.clientRequestId === undefined
@@ -573,18 +490,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       return heldSpawnOf(stored);
     });
 
-  // ---------------------------------------------------------------------------------------
-  // Offering another worker model at a limit
-  // ---------------------------------------------------------------------------------------
-
-  /**
-   * What a route offer needs, when one may be made for this spawn: the workspace's `routeAtLimit`
-   * is on and it has a roster, the call didn't say `atLimit: "stay"`, isn't a retry of a call
-   * that made or held its brief, and its model runs on a subscription login. `alternatives` are
-   * the roster's other models clear of every limit that stops a spawn now (`agentStopped`): a
-   * gateway model always is. No share of a meter is read; only what the CLI says is reached and
-   * the user's pauses.
-   */
   const routeContext = (callerId: ThreadId, input: SpawnWorkerInput) =>
     Effect.gen(function* () {
       if (input.atLimit === "stay" || Option.isNone(limitReadings)) return undefined;
@@ -620,7 +525,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
           return [];
         }
         const gateway = entry.profileId !== undefined;
-        // Limits are an account's: another model on the same login shares the one that stopped it.
         if (!gateway && entry.agent === chosen.agent) return [];
         if (!gateway && agentStopped(limitsOf(entry.agent), outbox.limitHolds, entry.agent, now)) {
           return [];
@@ -644,11 +548,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       };
     });
 
-  /**
-   * `spawn_worker`'s route offer before the hold and the pause gates: a spawn whose account its
-   * CLI says is at its limit would only wait in its worker's queue, so nothing is spawned and the
-   * orchestrator is offered the models clear of it. Nothing is swapped for it.
-   */
   const routeGate = (callerId: ThreadId, input: SpawnWorkerInput) =>
     Effect.gen(function* () {
       if (featureSlug(input.feature) === undefined) return undefined;
@@ -667,10 +566,8 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       return offer;
     });
 
-  /** A brief the hold gate held, with the models it could be retargeted to when routing is on. */
   const routeHeld = (callerId: ThreadId, input: SpawnWorkerInput, held: HeldSpawn) =>
     Effect.gen(function* () {
-      // The held brief's id is the retry's answer now, so a retry finds it already held.
       const route = yield* routeContext(callerId, { ...input, clientRequestId: undefined });
       if (route === undefined) return held;
       yield* logOffer(route.workspaceId, input, "held");
@@ -681,10 +578,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       };
     });
 
-  /**
-   * The pause gate's refusal, as a route offer when routing is on and another model is clear:
-   * still nothing is spawned, and the orchestrator chooses. Any other refusal stands.
-   */
   const routePaused = (callerId: ThreadId, input: SpawnWorkerInput, refused: AppToolError) =>
     Effect.gen(function* () {
       const why = /^limit_(?:paused|unanswered): (.*)$/s.exec(refused.message)?.[1];
@@ -704,7 +597,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       return offer;
     });
 
-  /** Takes the held brief `id` out of the outbox, so only one release ever spawns it. */
   const claimHeld = (workspaceId: WorkspaceId, id: string) =>
     updateOutbox(workspaceId, (outbox) => {
       const held = outbox.heldBriefs ?? [];
@@ -715,7 +607,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       return [kept.length === 0 ? rest : { ...rest, heldBriefs: kept }, claimed];
     });
 
-  /** Spawns a claimed held brief for the workspace's orchestrator, seeding its plan if it had one. */
   const spawnHeld = (workspaceId: WorkspaceId, stored: StoredHeldBrief) =>
     Effect.gen(function* () {
       const state = yield* store.getWorkspace(workspaceId);
@@ -736,7 +627,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       return spawned;
     });
 
-  /** Rewrites the held brief `id` in place; nothing when it was released meanwhile. */
   const updateHeld = (
     workspaceId: WorkspaceId,
     id: string,
@@ -752,14 +642,12 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       undefined,
     ]);
 
-  /** Puts a claimed brief back, as `change` makes it, when its spawn didn't happen. */
   const putBackHeld = (workspaceId: WorkspaceId, brief: StoredHeldBrief) =>
     updateOutbox(workspaceId, (outbox) => [
       { ...outbox, heldBriefs: [...(outbox.heldBriefs ?? []), brief] },
       undefined,
     ]);
 
-  /** Live workers against the charter's cap, as `spawn_worker`'s approval check counts them. */
   const slotFree = (state: WorkspaceState) =>
     survey(state, false).pipe(
       Effect.map(({ budget }) => ({
@@ -769,19 +657,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       })),
     );
 
-  /**
-   * Spawns, one at a time, the held briefs that are due: their limit has reset, or their retry
-   * came. Each is checked as `spawn_worker` would be:
-   * - its worker would now run against another limit at the hold share (the weekly one, say): held
-   *   again until that one resets;
-   * - every worker slot is taken (`maxConcurrentWorkers`): kept, and tried again every
-   *   `HELD_RETRY_MS` until a worker finishes; the orchestrator is told once;
-   * - the spawn refuses it for now (`refusalPasses`: rate limited, paused, a failing git): put back
-   *   and tried again, dropped with a note after `HELD_RETRIES_MAX`;
-   * - the spawn refuses it for good: dropped with a note.
-   * The board hears of every change; the orchestrator is woken when there is a note to read.
-   * Stops, leaving the rest held, while orchestration is paused. One run at a time (`heldLock`).
-   */
   const releaseDue = (workspaceId: WorkspaceId): Effect.Effect<void> =>
     Effect.gen(function* () {
       heldPending.delete(workspaceId);
@@ -792,7 +667,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         const state = yield* findWorkspace(workspaceId);
         if (state === undefined || state.paused !== undefined) break;
         const now = yield* Clock.currentTimeMillis;
-        // A brief of a feature the user paused stays held until they resume it.
         const due = ((yield* readOutbox(workspaceId)).heldBriefs ?? []).find(
           (brief) =>
             heldDueAt(brief) <= now &&
@@ -848,8 +722,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
           continue;
         }
         yield* spawnBreaker.abandoned(claimed);
-        // An unattended brief found every slot taken under the spawn lock, which the look above
-        // can't promise: it waits for a slot, as one the look had found taken does.
         if (spawned.error.startsWith("unattended_cap: ")) {
           const live = /(\d+) workers are live/.exec(spawned.error)?.[1];
           if (claimed.waitsForSlot !== true) {
@@ -862,8 +734,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
           });
           continue;
         }
-        // Its feature was paused meanwhile: held as it was, without counting a try, until the
-        // resume arms it again.
         if (spawned.error.startsWith("feature_paused: ")) {
           yield* putBackHeld(workspaceId, claimed);
           continue;
@@ -922,7 +792,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       }
       if (input.model === undefined)
         return yield* toolError(tool, "model is required for action retarget.");
-      // The same configured/admitted roster as spawn_worker; no arbitrary provider/profile switch.
       const picked = yield* workerModel(
         tool,
         caller,
@@ -930,7 +799,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         input.model,
         yield* workerModelsHere(caller, state.charter),
       );
-      // By the entry's name, so the release finds the same entry, a tier's included.
       const model = picked.name;
       const now = yield* Clock.currentTimeMillis;
       const nextInput = { ...held.input, model };
@@ -950,8 +818,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
               }),
         };
       });
-      // Ordinary release rechecks model admission, limits, worker slots and feature/workspace
-      // pauses. It also preserves clientRequestId, the plan, and puts refused spawns back.
       yield* armLimitResume(workspaceId);
       yield* orchestrationChanged(workspaceId);
       return {
@@ -977,7 +843,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
           message: `You paused ${held.input.feature}, so “${held.input.title}” waits. Resume the feature to start it.`,
         });
       }
-      // The user's click is no "Allow one more": past the cap it waits for a slot, as at the reset.
       const slot = yield* slotFree(state);
       if (!slot.ok) {
         return yield* new InvalidState({
@@ -992,9 +857,6 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       }
       const spawned = yield* spawnHeld(workspaceId, claimed).pipe(
         Effect.catch((error) =>
-          // Put back as it was, so a refusal loses nothing: it still starts at the reset, and
-          // one whose reset has passed is looked at again now. A routine's brief its routine no
-          // longer admits (removed, off, changed) is let go instead: it would never start.
           (error.message.startsWith("routine_changed: ")
             ? Effect.void
             : putBackHeld(workspaceId, claimed)
@@ -1016,16 +878,8 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       return yield* store
         .getThread(spawned.threadId)
         .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
-      // One release at a time with the release runs, so a rename never falls between a brief's
-      // claim and its spawn.
     }).pipe((effect) => heldLock.withLock(workspaceId, effect));
 
-  /**
-   * `spawn_worker`'s refusal for a feature the user paused, before the hold and the limit check:
-   * a paused feature's brief is neither held nor asked about, only refused. A retry whose
-   * `clientRequestId` already made its worker passes, after the same lookup `spawnFor` makes, so
-   * it gets that worker back rather than the refusal.
-   */
   const pausedSpawnGate = (callerId: ThreadId, input: SpawnWorkerInput) =>
     Effect.gen(function* () {
       const slug = featureSlug(input.feature);

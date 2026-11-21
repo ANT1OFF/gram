@@ -51,7 +51,6 @@ import { useSaveSettings } from "./use-save-settings";
 
 type HelpersKey = keyof NonNullable<SettingsPatch["helpers"]>;
 
-/** Where today's usage is cached; the page refetches it while open. */
 const HELPER_STATUS_KEY = ["helper-status"] as const;
 
 const KIND_LABELS: Readonly<Record<HelperKind, string>> = {
@@ -140,11 +139,9 @@ export const suggestRateLine = (counts: SuggestCounts): string => {
   return `Last ${SUGGEST_COUNTS_DAYS} days: used in ${counts.taken} of ${counts.shown.toLocaleString("en-US")} turns that offered them (${Math.round(rate * 100)}%).`;
 };
 
-/** What "used" counts, for the line's tooltip: it is not a send rate, nor a measure of quality. */
 const SUGGEST_RATE_TITLE =
   "Used means at least one word of a suggestion went into the composer, sent or not.";
 
-/** Today's calls per kind, cheapest models folded in. */
 const usageByKind = (status: HelperStatus) =>
   (["title", "plan", "recap", "suggest", "wait", "notice", "stuck"] as const).flatMap((kind) => {
     const lines = status.lines.filter((line) => line.kind === kind);
@@ -156,21 +153,14 @@ const usageByKind = (status: HelperStatus) =>
     ];
   });
 
-/** The host a gateway address names, or the address itself when it isn't a URL. */
 const hostOf = (baseURL: string): string => {
   try {
     return new URL(baseURL).host;
   } catch {
-    // Shown as typed: it is what the user entered.
     return baseURL;
   }
 };
 
-/**
- * Profile saves one after another, each applied to the profile as stored when its turn comes:
- * `profiles.upsert` replaces the whole profile, so two pickers each saving their own copy would
- * undo each other's change.
- */
 let profileSaves: Promise<unknown> = Promise.resolve();
 
 /** Settings → AI helpers: the helper model's switches, models, budget and today's use. */
@@ -350,7 +340,6 @@ export function AiHelpersSection() {
       >
         {source === "gateway" && (
           <BudgetField
-            // A value saved elsewhere resets the draft.
             key={helperDailyBudgetUsd(settings)}
             value={helperDailyBudgetUsd(settings)}
             onSave={(dailyBudgetUsd) => apply("dailyBudgetUsd", { dailyBudgetUsd })}
@@ -393,10 +382,8 @@ export function AiHelpersSection() {
   );
 }
 
-/** The budget's field, and the key its Undo outlives the field's remount by. */
 const BUDGET_ID = "settings-helper-budget";
 
-/** The daily budget in dollars, saved on blur or Enter. */
 function BudgetField({
   value,
   onSave,
@@ -475,12 +462,9 @@ function BudgetField({
   );
 }
 
-/** Stands for "no choice" in a select, whose values can't be empty. */
 const NO_CHOICE = "\u0000default";
-/** The fallback turned off, which is stored as `null`. */
 const NO_FALLBACK = "\u0000none";
 
-/** Why an effort is marked as not listed, under the picker while one is picked. */
 const UNLISTED_EFFORT_NOTE =
   "The gateway lists no efforts for this model, so it may ignore the one picked or refuse it.";
 
@@ -511,13 +495,11 @@ export function helperEfforts(
   return { options, unlisted };
 }
 
-/** The profile's own primary pick, without its fallback. */
 const helperModelOf = (profile: GatewayProfile) => ({
   ...(profile.helperModel === undefined ? {} : { helperModel: profile.helperModel }),
   ...(profile.helperEffort === undefined ? {} : { helperEffort: profile.helperEffort }),
 });
 
-/** A picked model as the profile stores it, for either slot. */
 type SlotPick = { readonly model: string; readonly effort?: ReasoningVariant } | undefined | null;
 
 /** `profile` with `slot` set to `pick`: absent for the default, `null` for no fallback. */
@@ -648,11 +630,6 @@ export const saveHelperPick = (
   return next;
 };
 
-/**
- * Which of the default gateway's models a helper slot runs on. An effort is offered with a picked
- * model only: the default carries its own, a kind's effort, and only models that take one should
- * be given one.
- */
 function HelperModelPicker({
   profile,
   slot,
@@ -668,8 +645,6 @@ function HelperModelPicker({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["profiles"] }),
   });
 
-  // Either slot's save holds both pickers until the saved profile is back, so nothing is picked
-  // against a profile about to change.
   const saving = useIsMutating({ mutationKey: HELPER_PICK_KEY }) > 0;
   const picked =
     slot === "primary"
@@ -682,9 +657,6 @@ function HelperModelPicker({
       ? helperChoice({ models: profile.models })
       : helperFallbackChoice({ models: profile.models, ...helperModelOf(profile) });
   const nameOf = (id: string) => profile.models.find((m) => m.id === id)?.name ?? id;
-  // A policy rather than a model, so it never reads as a second copy of the model it picks today.
-  // Automatic falls back to one model only: absent until the gateway lists it, and none while it is
-  // the model itself.
   const fallbackListed = profile.models.some(
     (m) => m.id === DEFAULT_HELPER_FALLBACK.model && gatewayModelUsable(m),
   );
@@ -699,14 +671,11 @@ function HelperModelPicker({
           byDefault.model === DEFAULT_HELPER_FALLBACK.model
         ? `Automatic — currently ${nameOf(byDefault.model)}, recommended`
         : `Automatic — currently ${nameOf(byDefault.model)}`;
-  // Embeddings, OCR, speech and the like can't answer a helper's prompt either.
   const offered = profile.models.filter(gatewayModelUsable);
   const items = [
     { value: NO_CHOICE, label: defaultLabel },
-    // Off is its own choice: automatic would start using a fallback the gateway lists later.
     ...(slot === "fallback" ? [{ value: NO_FALLBACK, label: "No fallback" }] : []),
     ...offered.map((model) => ({ value: model.id, label: model.name })),
-    // A model picked earlier that discovery no longer lists is still the choice until changed.
     ...(picked != null && !offered.some((model) => model.id === picked.model)
       ? [{ value: picked.model, label: `No longer listed: ${picked.model}` }]
       : []),
@@ -723,8 +692,6 @@ function HelperModelPicker({
   const [searchOpen, setSearchOpen] = useState(false);
   const pick = (next: string) =>
     save.mutate(next === NO_CHOICE ? undefined : next === NO_FALLBACK ? null : { model: next });
-  // A gateway's alias can be longer than the row is wide: the picker ends it in an ellipsis, and
-  // this says it whole.
   const shownLabel = items.find((item) => item.value === value)?.label;
   return (
     <div className="flex max-w-full min-w-0 flex-col items-end gap-1">
@@ -758,7 +725,6 @@ function HelperModelPicker({
             <SelectContent>
               {items.map((item, index) => (
                 <Fragment key={item.value}>
-                  {/* The policies first, then the models a pick pins by name. */}
                   {index === policies && index < items.length && <SelectSeparator />}
                   <SelectItem value={item.value}>{item.label}</SelectItem>
                 </Fragment>

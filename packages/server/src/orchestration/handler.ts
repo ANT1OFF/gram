@@ -27,15 +27,12 @@ export const orchestrationHandlers = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const finished = makeFinishedWorkers({
     store: yield* ThreadStore,
-    // Absent in test layers that keep no archive: only closed records are read there.
     archive: Option.getOrUndefined(yield* Effect.serviceOption(ThreadArchive)),
   });
 
-  /** The user's words to the orchestrator: steered into a turn that can take them, else sent. */
   const deliver = (threadId: ThreadId, input: UserInput) =>
     steerOrSend(runtimes, threadId, input).pipe(Effect.asVoid);
 
-  /** Runs `run` with the draft's attachments moved into the thread's folder, as `thread.create` does. */
   const adopted = <A, E>(
     draftId: DraftId | undefined,
     threadId: ThreadId,
@@ -49,7 +46,6 @@ export const orchestrationHandlers = Effect.gen(function* () {
         );
 
   return {
-    // A workspace is its orchestrator's to see, whose workers have its reader (`readable-by.ts`).
     "workspace.list": () =>
       orchestration.listWorkspaces.pipe(
         Effect.flatMap((all) =>
@@ -76,8 +72,6 @@ export const orchestrationHandlers = Effect.gen(function* () {
     }) =>
       Effect.gen(function* () {
         const input = clientInput(sent);
-        // The orchestrator the user picked: a running one starts moving to it, under the locks a
-        // switch and a charter change take, before the task's own startup takes them.
         const move = yield* orchestration.prepareTaskOrchestrator({
           target,
           ...(picked === undefined ? {} : { orchestrator: picked }),
@@ -91,8 +85,6 @@ export const orchestrationHandlers = Effect.gen(function* () {
           selection,
           (current) =>
             Effect.gen(function* () {
-              // A running orchestrator that is moving to the pick is on its old model until the
-              // switch lands, so it is opened as it is.
               const orchestrator = yield* orchestration.open(
                 "projectId" in target ? { projectId: target.projectId, autonomy } : target,
                 current.orchestratorThreadId !== undefined && picked !== undefined
@@ -102,15 +94,11 @@ export const orchestrationHandlers = Effect.gen(function* () {
               if (orchestrator.workspaceId === undefined) {
                 return yield* new InvalidState({ message: "The orchestrator has no workspace." });
               }
-              // Mid-switch it is queued, never steered into the checkpoint turn: the switch holds
-              // the queue and gives it to the new session.
               yield* adopted(draftId, orchestrator.id, input, (task) =>
                 orchestrator.sessionSwitch !== undefined
                   ? runtimes.send(orchestrator.id, task).pipe(Effect.asVoid)
                   : move === "fresh"
-                    ? // Held for the fresh session on the pick: sent now, it would reach the
-                      // session that is saving to memory and about to go.
-                      orchestration
+                    ? orchestration
                         .sendAfterHandoff(orchestrator.workspaceId!, task)
                         .pipe(
                           Effect.flatMap((held) =>
@@ -164,7 +152,6 @@ export const orchestrationHandlers = Effect.gen(function* () {
       }),
     "orchestrator.releaseHeldBrief": ({ workspaceId, id }) =>
       orchestration.releaseHeldBrief(workspaceId, id),
-    // The user's own answer or dismissal: theirs to give, so it isn't refused while paused.
     "workerQuestion.answer": (input) => orchestration.answerQuestionAsUser(input),
     "workerQuestion.dismiss": (input) => orchestration.dismissQuestionAsUser(input),
     "orchestrator.finishedWorkers": ({ workspaceId }) => finished.list(workspaceId),

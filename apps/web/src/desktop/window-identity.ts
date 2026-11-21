@@ -31,9 +31,7 @@ export function browserWindow(storage: Storage, search: string): AppWindow {
     if (saved && typeof saved.id === "string" && typeof saved.name === "string") {
       return { id: saved.id, name: saved.name, primary: saved.primary === true };
     }
-  } catch {
-    // A malformed record starts the tab over.
-  }
+  } catch (_aMalformedRecordStartsTheTabOver) {}
   const fresh: AppWindow = { id: randomId(), name: "Main", primary: true };
   storage.setItem(TAB_KEY, JSON.stringify(fresh));
   return fresh;

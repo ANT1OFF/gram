@@ -43,7 +43,6 @@ export function folderProblem(error: unknown): string | undefined {
   if (tag === "InvalidState" && message.startsWith("Not a folder")) {
     return "This thread's folder isn't a folder.";
   }
-  // The server's permission messages are already written for the user.
   if (tag === "InvalidState" && /can't read|Permission denied/.test(message)) return message;
   if (/folder no longer exists|FileSystem\.access|ENOENT|no such file or directory/.test(message)) {
     return "This thread's folder doesn't exist.";

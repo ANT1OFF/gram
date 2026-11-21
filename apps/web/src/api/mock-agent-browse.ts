@@ -2,7 +2,6 @@ import type { DesktopBridge, PendingRequest, RequestAnswer, ThreadId } from "@gr
 
 type AgentBrowse = NonNullable<DesktopBridge["agentBrowse"]>;
 
-/** Raises a pending request on a thread and hears its answer: `MockCore.simulateRequest`. */
 type Ask = (
   threadId: ThreadId,
   request: PendingRequest,

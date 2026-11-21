@@ -40,8 +40,6 @@ export function eligibleReleases(
     if (typeof tag !== "string" || !validTag(tag)) continue;
     const version = parseVersion(tag.slice(1));
     if (!version) continue;
-    // GitHub's `isPrerelease` is ignored: any writer can toggle it on the release page, while a
-    // `v*` tag only the release-please App can create.
     const prerelease = version.pre.length > 0;
     if (prerelease && !includePrerelease) continue;
     out.push({ tag, version, prerelease });

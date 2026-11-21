@@ -1,6 +1,3 @@
-// A machine's mirrors of the shared folders of the workspaces whose threads run on it, one folder
-// each under one root, as its host serves them (`host.shared.*`) and as a control plane reaches them.
-
 import {
   InvalidState,
   isSharedWorkspaceId,

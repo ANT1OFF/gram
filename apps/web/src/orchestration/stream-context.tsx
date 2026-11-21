@@ -10,7 +10,6 @@ import { cardRows, planRuns, planStream, quietCard, type StreamPlan } from "./st
 import { UpdateBlock, UpdateRun } from "./update-block";
 import { useFeatureCards } from "./use-feature-cards";
 
-/** A worker's name as orchestrator messages link it. */
 interface WorkerName {
   readonly threadId: ThreadId;
   readonly title: string;
@@ -25,11 +24,6 @@ export interface OrchestratorStream {
   readonly quiet?: boolean;
 }
 
-/**
- * Present only in an orchestrator's transcript: a digest message there shows the lines it speaks,
- * the cards it anchors and a quiet, collapsed digest line instead of its own card, and worker names
- * in messages are links.
- */
 const OrchestratorStreamContext = createContext<OrchestratorStream | undefined>(undefined);
 
 export const useOrchestratorStreamContext = () => use(OrchestratorStreamContext);
@@ -50,20 +44,17 @@ export function useOrchestratorStream(
   const orchestrator = thread?.role === "orchestrator";
   const cards = useFeatureCards(orchestrator ? thread.workspaceId : undefined);
   const shown = orchestrator ? cards : NO_STREAM_CARDS;
-  // Quiet unless the user asked for all of it: what changed nothing for them folds into its update.
   const all = useAllActivity((s) => thread !== undefined && s.shown.has(thread.id));
   const plan = useMemo(
     () =>
       orchestrator
         ? all
           ? planStream(messages, shown)
-          : // Quiet: and a run of updates and merged lines in a row is one line.
-            planRuns(planStream(messages, shown, { quiet: true }), shown)
+          : planRuns(planStream(messages, shown, { quiet: true }), shown)
         : NO_PLAN,
     [orchestrator, messages, shown, all],
   );
   const byFeature = useMemo(() => new Map(shown.map((card) => [card.feature, card])), [shown]);
-  // Keyed by the names alone, so a card's new version doesn't re-render every message's markdown.
   const namesKey = shown
     .flatMap((card) => card.workers.map((worker) => `${worker.threadId}\u0000${worker.title}`))
     .toSorted()
@@ -94,8 +85,6 @@ export function OrchestratorStreamProvider({
   stream: OrchestratorStream | undefined;
   children: ReactNode;
 }) {
-  // The cards' workers take their dots from the workspace's own facts (`card-tones.ts`), read
-  // once here: every card of a stream is its workspace's.
   const workspaceId = stream?.cards.values().next().value?.workspaceId;
   const facts = useRailFacts(workspaceId);
   return (
@@ -136,7 +125,6 @@ export function StreamExtrasView({
     );
   };
   return (
-    // A reply's block step (12 px) between the update and its cards, and after the message above.
     <div data-testid="stream-extras" className="mt-3 flex flex-col gap-3 first:mt-0">
       {extras.run === undefined ? (
         <UpdateBlock

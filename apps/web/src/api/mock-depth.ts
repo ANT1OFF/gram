@@ -33,7 +33,6 @@ export function mockSessions(
 
 const STORAGE_KEY = "gram.mock.keybindings";
 
-/** The e2e mock build seeds and keeps overrides in sessionStorage, so specs can start customised. */
 const persistence = (): Storage | undefined =>
   import.meta.env["VITE_API"] === "mock" && typeof sessionStorage !== "undefined"
     ? sessionStorage

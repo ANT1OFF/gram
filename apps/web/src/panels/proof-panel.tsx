@@ -25,14 +25,6 @@ import { spin } from "@/motion";
 import { imageDataUrl } from "./files/image-preview";
 import { PanelMessage } from "./panel-message";
 
-// A worker's Proof: what Gram itself recorded of the repository's verify drivers on the worker's
-// committed head, never what the worker wrote. Each driver's state, the command it runs, whether
-// the repository requires it and whether it covers what the branch changed. A repository without
-// a recipe has no Proof tool at all. Under a driver, what its run kept in its evidence folder:
-// screenshots to open, videos and snapshots by name. They show what the driver chose to keep,
-// never that it passed.
-
-/** How often the tab looks again while a driver is running. */
 const RUNNING_POLL_MS = 5_000;
 
 /** The query a worker's Proof reads, keyed by its head so a new commit reads afresh. */
@@ -85,10 +77,8 @@ const seconds = (driver: VerifyDriverState): string | undefined => {
     : `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, "0")}s`;
 };
 
-/** Names the server serves as pictures; a video or snapshot is named, not shown. */
 const PICTURE = /\.(png|jpe?g|gif|webp|svg)$/i;
 
-/** One screenshot a driver kept, read when its row shows. */
 function EvidencePicture({
   threadId,
   head,
@@ -101,7 +91,6 @@ function EvidencePicture({
   item: VerifyEvidence;
 }) {
   const api = useApi();
-  // A run again on the same head writes the same names afresh: its start keys it apart.
   const run = [driver.name, driver.startedAt ?? 0, item.file, item.size] as const;
   const query = useQuery({
     queryKey: [...verifyStateQueryKey(threadId, head), "evidence", ...run],
@@ -136,7 +125,6 @@ function EvidencePicture({
   );
 }
 
-/** What the driver's run kept to show: its screenshots, and the rest by name. */
 function DriverEvidence({
   threadId,
   head,

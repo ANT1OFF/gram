@@ -1,5 +1,3 @@
-// A user-approved selection of a check's source: the manifest that names the complete candidate
-// tree, and the verification of what was materialized from it. Omitted paths are never opened.
 import type { ProjectLocalCheck } from "@gram/contracts";
 import { realPathSync } from "@gram/git";
 import { createHash } from "node:crypto";

@@ -32,14 +32,9 @@ import {
 } from "./view-store";
 import { useViewWorkspace } from "./view-workspace";
 
-// The frame Chat, Board and Quiet share: the title bar's switcher and Quiet toggle, the
-// main area each view mounts in, and their keys. A view itself lives in its own file, loaded apart
-// from the shell; a view picked before its code is in hand shows once it is.
-
 const boardView = lazyPart(() => import("./board-view"));
 const quietView = lazyPart(() => import("./quiet-view"));
 
-/** Board needs a workspace to show; Chat is always there. */
 const viewAvailable = (view: AppView, hasWorkspace: boolean) => view !== "board" || hasWorkspace;
 
 /**
@@ -54,13 +49,11 @@ export function ViewOutlet({ children }: { children: ReactNode }) {
   useExternalSync(() => {
     useViewStore.getState().routeChanged(pathname);
   }, [pathname]);
-  // A workspace removed under Board leaves nothing to show it for.
   useEffect(() => {
     if (!viewAvailable(view, workspace !== undefined)) useViewStore.getState().setView("chat");
   }, [view, workspace]);
 
   const board = boardView.useModule(view !== "chat");
-  // Chat stays in view until the picked view can draw.
   const shown = board === undefined ? "chat" : view;
   const over = shown !== "chat";
   const workspaceId = workspace?.workspace.id;
@@ -137,8 +130,6 @@ export function ViewSwitcher({ className }: { className?: string }) {
   const available = APP_VIEWS.filter((each) => viewAvailable(each, hasWorkspace));
   const checked = switcherChecked(view, pathname);
   const pickView = (each: AppView) => {
-    // From a page of its own the Board is its workspace's, over its orchestrator: the view alone
-    // has nothing to draw over there, so the click did nothing on Memory.
     if (each === "board" && !chatRoute(pathname) && workspace !== undefined) {
       return openBoard(workspace.workspace.id);
     }
@@ -147,8 +138,6 @@ export function ViewSwitcher({ className }: { className?: string }) {
       void navigate({ to: useViewStore.getState().lastChat ?? "/" });
     }
   };
-  // With no workspace yet there is no Board to switch to, and Chat alone is no choice. Nor until
-  // the workspaces are known: drawn meanwhile, Chat · Board showed for a frame and went.
   const { workspaces, settled } = useWorkspacesQuery();
   if (!settled || workspaces.length === 0) return null;
   return (
@@ -165,7 +154,6 @@ export function ViewSwitcher({ className }: { className?: string }) {
           view={each}
           shortcutId={`view.${each}`}
           checked={checked === each}
-          // With neither marked, Tab still lands on the first.
           focusable={checked === each || (checked === undefined && each === available[0])}
           disabled={!available.includes(each)}
           slab={slab}
@@ -212,7 +200,6 @@ function ViewSegment({
   );
 }
 
-/** A view's key: that view, out of Quiet. */
 const pick = (view: AppView) => () => {
   const store = useViewStore.getState();
   store.setQuiet(false);
@@ -233,7 +220,6 @@ export function useViewShortcuts(): void {
     keys: "mod+alt+1",
     label: "Chat",
     group: "Navigation",
-    // From a page of its own, back to the last chat, as the switcher's Chat goes.
     run: () => {
       pick("chat")();
       if (!chatRoute(pathname)) void navigate({ to: useViewStore.getState().lastChat ?? "/" });
@@ -266,7 +252,6 @@ export function useViewShortcuts(): void {
     keys: "escape",
     label: "Leave Focus",
     group: "Navigation",
-    // Ahead of Escape's unscoped uses, which belong to the window under it.
     focusScope: () => useViewStore.getState().quiet,
     run: () => useViewStore.getState().setQuiet(false),
   });

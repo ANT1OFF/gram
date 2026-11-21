@@ -1,7 +1,3 @@
-// What GitHub says is left of the hour's allowance, cached for the pollers. `fetchRateLimit` does
-// the asking; this decides how often to ask and writes the reading to the log, so a support log
-// shows the headroom the sweep was working with rather than only the 403 at the end.
-
 import {
   fetchRateLimit,
   Proc,

@@ -2,9 +2,6 @@ import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-// What the Workers tab's sections share, the worker groups and the Docs under them: one grid, one
-// heading and one quiet line, so every section of the tab reads the same way.
-
 /**
  * The rows' grid, which a section's heading and its "N more" share: a 10 px mark column, then the
  * title, then its age, so marks centre on one column and words start on one edge.

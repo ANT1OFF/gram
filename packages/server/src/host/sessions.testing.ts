@@ -1,5 +1,3 @@
-// A joined machine's host over a real stream, its sessions a scripted agent, for the session tests.
-
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import type { AgentHost, AgentSession, OpenSessionOptions, RemoteAppTools } from "@gram/agents";
 import {
@@ -45,15 +43,10 @@ export const CAPABILITIES = {
 export const scriptedAgent = (kind: AgentKind, where: string) =>
   Effect.gen(function* () {
     const calls: Array<string> = [];
-    /** Every input the agent was sent or steered with, as it arrived. */
     const inputs: Array<UserInput> = [];
     const opened: Array<OpenSessionOptions> = [];
     const closed: Array<string> = [];
     const events = yield* Queue.unbounded<AgentEvent, Cause.Done>();
-    /**
-     * When set, an open waits on it, and a send once the agent has it. With `endOnClose`, a
-     * session whose scope closes says `ended` as the Claude adapter does when it is interrupted.
-     */
     const gate: {
       open?: Deferred.Deferred<void>;
       send?: Deferred.Deferred<void>;

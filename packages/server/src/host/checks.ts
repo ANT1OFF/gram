@@ -1,13 +1,3 @@
-// A project's check of a pull request, run on this joined machine for the main Gram, which keeps
-// the record. The source is isolated as the main Gram's own checks isolate it (`LocalChecksLive`):
-// the head is merged onto its base (`git merge-tree`) in a bare repository of the host's own, fed
-// only by fetch from the machine's clone, committed to a throwaway commit and checked out in a
-// fresh worktree outside every checkout. Nothing an agent writes into its worktree reaches it.
-//
-// Each run is taken once per id, so a control plane whose connection dropped while it ran asks
-// again under the same id and joins it, or hears how it ended; a host that restarted meanwhile has
-// no run of that id and starts it again from the start.
-
 import { type HostCheckResult, HostFailed } from "@gram/contracts";
 import { git, type ProcOutput, type ProcShape, remoteGit } from "@gram/git";
 import * as Deferred from "effect/Deferred";
@@ -55,15 +45,11 @@ export type HostCheckRunner = (
 ) => Effect.Effect<LocalCheckOutcome>;
 
 const liveRunner: HostCheckRunner = (dir, log, run) =>
-  // The service's own environment and PATH, which `gram-host service install` took from the
-  // login shell.
   spawnCheck(dir, log, { base: process.env, pathValue: "" }, run);
 
 const SHA = /^[a-f0-9]{40}$/;
 
-/** How long a finished run's result is kept for a control plane that asks again. */
 const KEEP_MS = 30 * 60_000;
-/** At most this many finished results are kept. */
 const KEEP_MOST = 32;
 
 const fixedIdentity = {
@@ -75,7 +61,6 @@ const fixedIdentity = {
   GIT_COMMITTER_DATE: "1970-01-01T00:00:00Z",
 };
 
-/** What a run checks: a repeat of its id must ask for the very same. */
 const asksOf = (request: HostCheckRequest) =>
   JSON.stringify([
     request.path,
@@ -93,10 +78,6 @@ const unstartable = (reason: string): LocalCheckOutcome => ({
   failure: { kind: "unstartable" },
 });
 
-/**
- * Git as the check's source is made with it: no git variable the host inherited points it at
- * another repository, and no replace ref or graft changes what a commit names.
- */
 const isolatedGit =
   (proc: ProcShape) =>
   (
@@ -129,10 +110,6 @@ export const checksOn = (
       }
     >();
     const work = nodePath.join(dir, "work");
-    /**
-     * Before the first run: what a host that stopped mid-check left is removed, and its worktree
-     * links pruned as each repository is next used.
-     */
     let swept = false;
     const sweep = Effect.sync(() => {
       if (swept) return;
@@ -148,7 +125,6 @@ export const checksOn = (
     const hasCommit = (repo: string, sha: string) =>
       g(repo, ["cat-file", "-e", `${sha}^{commit}`]).pipe(Effect.map((out) => out?.status === 0));
 
-    /** The source and the outcome of one run: what the control plane records. */
     const execute = (request: HostCheckRequest) =>
       Effect.gen(function* () {
         const host = hostname();
@@ -200,7 +176,6 @@ export const checksOn = (
           if (yield* hasCommit(own, sha)) continue;
           yield* take(sha);
           if (yield* hasCommit(own, sha)) continue;
-          // The clone may not have it yet: the base moved on its remote since it last fetched.
           yield* net(
             remoteGit(
               source,
@@ -260,7 +235,6 @@ export const checksOn = (
           yield* g(own, ["worktree", "prune"]);
         });
         return yield* Effect.acquireUseRelease(
-          // No checkout hook may change the tree after git wrote it.
           g(own, ["-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", src, sha]),
           (added) =>
             added?.status === 0
@@ -294,7 +268,6 @@ export const checksOn = (
         ),
       );
 
-    /** Forgets finished results past their keeping, and the oldest past the bound. */
     const prune = () => {
       const ended = [...runs]
         .filter(([, run]) => run.endedAt !== undefined)
@@ -326,7 +299,6 @@ export const checksOn = (
             };
             run = entry;
             runs.set(request.id, entry);
-            // Runs in the host's scope, not the caller's: a dropped connection doesn't stop it.
             yield* FiberMap.run(
               fibers,
               request.id,
@@ -340,8 +312,7 @@ export const checksOn = (
                       Effect.andThen(
                         Exit.isSuccess(exit)
                           ? Deferred.succeed(done, exit.value)
-                          : // Interrupted as the host stops: no word of how it would have ended.
-                            Deferred.succeed(done, {
+                          : Deferred.succeed(done, {
                               tree: null,
                               ok: false,
                               reason: "the host stopped while it ran",

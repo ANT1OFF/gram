@@ -1,8 +1,3 @@
-// How a path is read out of an agent's text: what the transcript renderer links (apps/web
-// `thread/file-refs.ts`) and what the server accepts as written in a thread before it reads a path
-// outside the thread's checkouts (`writtenFileRefs`). Both sides parse with these, so the server
-// authorizes exactly the paths the renderer can ask about.
-
 /** A path as written, with the line or range it points at. */
 export interface FileRef {
   /** Without the position, `\` turned to `/` unless it's a Windows absolute path. */
@@ -14,16 +9,11 @@ export interface FileRef {
   readonly column?: number | undefined;
 }
 
-/** `#L10`, `#L10C5`, `#L10-L20` and `#L10-20`, as GitHub and editors write them. */
 const HASH_POSITION = /#L(\d+)(?:C(\d+))?(?:-L?(\d+)(?:C\d+)?)?$/i;
-/** `:10`, `:10:5` and `:10-20`. */
 const COLON_POSITION = /:(\d+)(?::(\d+)|-(\d+))?$/;
 const WINDOWS_ABSOLUTE = /^[A-Za-z]:[\\/]/;
-/** A letter first, so `glm-5.3` and `v1.2` are versions, not files. */
 const EXTENSION = /\.[A-Za-z][\w-]*$/;
-/** Never in a path an agent means: markup, globs, a PR's `#N`, a URL's query. */
 const NOT_A_PATH = /[<>|"*?`#\n\r\t{}[\]]|:\/\//;
-/** A leading segment that is a host (`github.com/…`, `organization.example.invalid:443`), not a folder. */
 const HOST = /^(?:www\.)?[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|io|dev|app|ai|co|sh|me|so)$/i;
 
 const FILE_NAMES = new Set([
@@ -46,7 +36,6 @@ const positive = (digits: string | undefined) => {
   return Number.isSafeInteger(value) && value >= 1 ? value : undefined;
 };
 
-/** The ref with `line` / `endLine` / `column` set only when they mean something. */
 const withPosition = (path: string, line?: string, column?: string, end?: string): FileRef => {
   const start = positive(line);
   const last = positive(end);
@@ -81,7 +70,6 @@ export function parseFileRef(text: string): FileRef | undefined {
   if (match !== null) rest = rest.slice(0, match.index);
   if (rest === "" || rest !== rest.trim() || NOT_A_PATH.test(rest)) return undefined;
   const windows = WINDOWS_ABSOLUTE.test(rest);
-  // A Windows absolute path keeps its drive's `:`; any other `:` left means it isn't one.
   if (!windows && rest.includes(":")) return undefined;
   const path = windows ? rest : rest.replaceAll("\\", "/").replace(/^(?:\.\/)+/, "");
   const segments = path.split(/[\\/]/);
@@ -98,20 +86,15 @@ export function parseFileRef(text: string): FileRef | undefined {
   return withPosition(path, ...position);
 }
 
-/** Opening punctuation a path in prose sits behind. */
 const LEADING = /^[("'‘“[<]+/;
-/** Closing punctuation after a path in prose: its sentence's, not the path's. */
 const TRAILING = new Set([".", ",", ";", ":", "!", "?", "'", '"', "’", "”", "]", ">"]);
 
-/** `token` without its trailing punctuation, in one backward scan: a regex retrying `[…]+$` from
- * every start is quadratic on a run like `!!!…x`, and the server runs this on message text. */
 const trimTrailing = (token: string) => {
   let end = token.length;
   while (end > 0 && TRAILING.has(token[end - 1]!)) end--;
   return token.slice(0, end);
 };
 
-/** `token` without its unmatched closing parens, so `(see a.ts)` loses one and `f(1).ts` none. */
 const trimParens = (token: string) => {
   let out = token;
   let open = 0;
@@ -169,7 +152,6 @@ export function hrefFileRef(href: string): FileRef | undefined {
   let target = trimmed;
   if (/^file:\/\//i.test(target)) {
     target = target.slice("file://".length);
-    // `file:///C:/…` names `C:/…`.
     if (/^\/[A-Za-z]:\//.test(target)) target = target.slice(1);
   } else if (/^[a-z][a-z\d+.-]*:/i.test(target) && !WINDOWS_ABSOLUTE.test(target)) {
     return undefined;
@@ -187,15 +169,9 @@ export function hrefFileRef(href: string): FileRef | undefined {
   return parseFileRef(target);
 }
 
-/** A blockquote's marker at a line's start, with the one space it may take. */
 const QUOTE_MARKER = / {0,3}> ?/y;
 const isBlank = (char: string | undefined) => char === " " || char === "\t";
 
-/**
- * How long the list markers before a line's content are: `- `, `* `, `+ `, `1. `, `1) `, nested any
- * number deep. One forward scan, where a regex of repeated blank runs around each marker backtracks
- * polynomially on a long run of tabs.
- */
 function listMarkersLength(line: string): number {
   let end = 0;
   for (let i = 0; ;) {
@@ -220,25 +196,14 @@ function listMarkersLength(line: string): number {
     end = i;
   }
 }
-/** A fence run, wherever it starts after the markers: an opener is read generously. */
 const FENCE_RUN = /^([ \t]*)(`{3,}|~{3,})/;
-/** A closing fence: the run and nothing after it but spaces, as CommonMark requires. */
 const FENCE_CLOSER = /^( *)(`{3,}|~{3,})[ \t]*$/;
-/** A line of an indented code block, or of a list item's continuation; both are left unread. */
 const INDENTED = /^(?: {4}|\t)/;
-/** Raw HTML whose text the renderer never reads for paths, or reads as a link or a code span. */
 const OPAQUE_HTML = /<(pre|code|kbd|samp|a|script|style|textarea|template)(?=[\s>/])/iy;
-/** `<scheme:…>`, an autolink, read from where it starts. */
 const AUTOLINK = /<([a-z][a-z\d+.-]{1,31}:[^\s<>]*)>/iy;
-/** A reference link's definition, `[label]: target`, which renders as nothing. */
 const DEFINITION = /^ {0,3}\[[^\]\n]*\]:/;
-/** How far a link's text or destination may run before it's read as prose, bounding the scan. */
 const LINK_TEXT_MAX = 1000;
 const DESTINATION_MAX = 4096;
-/**
- * Characters the link scans may visit in one text, bounding a text full of `[` that never close.
- * Past it no more is read, so a text that spends it gives up references, never gains them.
- */
 const LINK_SCAN_BUDGET = 1_000_000;
 
 interface Budget {
@@ -246,18 +211,14 @@ interface Budget {
 }
 const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/;
 
-/** `markdown` without its fenced and indented code blocks and reference definitions. */
 function withoutBlocks(markdown: string): string {
   const kept: string[] = [];
-  /** The open fence: its run, the column it starts at and the blockquote depth it's in. */
   let fence: { run: string; column: number; depth: number } | undefined;
   for (const line of markdown.split("\n")) {
     let offset = 0;
     let depth = 0;
-    // Inside an open fence only its own quote markers are structure; more are its code.
     const limit = fence === undefined ? Number.POSITIVE_INFINITY : fence.depth;
     while (depth < limit) {
-      // Matched in place: slicing the line once per marker is quadratic on `> > > …`.
       QUOTE_MARKER.lastIndex = offset;
       const marker = QUOTE_MARKER.exec(line);
       if (marker === null) break;
@@ -266,8 +227,6 @@ function withoutBlocks(markdown: string): string {
     }
     const content = line.slice(offset);
     if (fence !== undefined && depth >= fence.depth) {
-      // Strict, so a line that only looks like a closer leaves the block open: what isn't closed
-      // is never read.
       const closer = FENCE_CLOSER.exec(content);
       const closes =
         closer !== null &&
@@ -279,7 +238,6 @@ function withoutBlocks(markdown: string): string {
       kept.push("");
       continue;
     }
-    // A blockquote that ends ends the fence in it, as no fenced block continues lazily.
     fence = undefined;
     const listed = listMarkersLength(content);
     const opener = FENCE_RUN.exec(content.slice(listed));
@@ -293,7 +251,6 @@ function withoutBlocks(markdown: string): string {
   return kept.join("\n");
 }
 
-/** The first index in `text` from `from` that holds `char`, before a newline and within `max`. */
 const findOnLine = (text: string, char: string, from: number, budget: Budget) => {
   for (let i = from; i < text.length && i - from <= DESTINATION_MAX; i++, budget.left--) {
     if (text[i] === char) return i;
@@ -302,7 +259,6 @@ const findOnLine = (text: string, char: string, from: number, budget: Budget) =>
   return -1;
 };
 
-/** The backtick runs in `text` by length, for finding a code span's closing run in linear time. */
 function backtickRuns(text: string): Map<number, number[]> {
   const runs = new Map<number, number[]>();
   for (let i = 0; i < text.length;) {
@@ -324,10 +280,6 @@ function backtickRuns(text: string): Map<number, number[]> {
   return runs;
 }
 
-/**
- * A link's destination at `at`, the `(` after its text: `<…>` or a run without spaces whose
- * parens balance, then an optional title. Its end and target, or none when it isn't one.
- */
 function linkDestination(
   text: string,
   at: number,
@@ -344,7 +296,6 @@ function linkDestination(
   } else {
     const start = i;
     let depth = 0;
-    // CommonMark ends a bare destination at an ASCII space or control character.
     for (; i < text.length && text.charCodeAt(i) > 32; i++, budget.left--) {
       if (i - start > DESTINATION_MAX) return undefined;
       if (text[i] === "\\") i++;
@@ -379,7 +330,6 @@ export function writtenFileRefs(markdown: string): FileRef[] {
   const text = withoutBlocks(markdown);
   const lower = text.toLowerCase();
   const runs = backtickRuns(text);
-  /** The start of the next run of `length` backticks after `from`, or -1, by binary search. */
   const closing = (length: number, from: number) => {
     const starts = runs.get(length) ?? [];
     let low = 0;
@@ -391,7 +341,6 @@ export function writtenFileRefs(markdown: string): FileRef[] {
     }
     return starts[low] ?? -1;
   };
-  /** Where the code span opening at `at` ends, or -1 when its backticks are literal. */
   const codeSpanEnd = (at: number) => {
     let end = at;
     while (text[end] === "`") end++;
@@ -437,7 +386,6 @@ export function writtenFileRefs(markdown: string): FileRef[] {
         i += autolink[0].length;
         continue;
       }
-      // Read here, in order, so a code span that opened first keeps `<!--` as its own text.
       if (text.startsWith("<!--", i)) {
         const end = text.indexOf("-->", i + 4);
         prose += " ";
@@ -483,13 +431,11 @@ export function writtenFileRefs(markdown: string): FileRef[] {
         i = destination.end;
         continue;
       }
-      // Not an inline link: its brackets are prose, and so is the text after them.
       prose += text.slice(i, open + 1);
       i = open + 1;
       continue;
     }
     if (char === "*") {
-      // A run of `*` beside a space or an end is emphasis, which the renderer doesn't show.
       let end = i;
       while (text[end] === "*") end++;
       const outer = (at: number) => at < 0 || at >= text.length || /\s/.test(text[at]!);

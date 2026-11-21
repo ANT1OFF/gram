@@ -12,7 +12,6 @@ export function useStopTask(threadId: ThreadId) {
   const api = useApi();
   return (taskId: string) =>
     api.stopTask(threadId, taskId).catch((error: unknown) => {
-      // Gone already, which is what Stop was for.
       if (Reflect.get(error as object, "_tag") === "NotFound") return;
       useThreadsStore.getState().applyEvent({
         type: "notify",

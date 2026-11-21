@@ -1,6 +1,3 @@
-// How Gram answers an ACP agent's permission requests: which option carries an answer, and which
-// requests Gram answers itself without showing a card.
-
 import type { ApprovalScope, PermissionMode } from "@gram/contracts";
 import { lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -65,11 +62,6 @@ const exists = (path: string) => {
   }
 };
 
-/**
- * Where a write to absolute `path` lands: its nearest existing ancestor with every link followed,
- * then the rest, which can hold no link. `undefined` for a path that is itself a link, dangling or
- * not, or whose links can't be followed.
- */
 const landing = (path: string): string | undefined => {
   let at = path;
   while (exists(at) === undefined) {
@@ -122,10 +114,8 @@ export const editWithin = (
   });
 };
 
-/** Call kinds that only read. */
 const READING_KINDS: ReadonlySet<string> = new Set(["read", "search", "fetch", "think"]);
 
-/** Call kinds that change files. */
 const WRITING_KINDS: ReadonlySet<string> = new Set(["edit", "delete", "move"]);
 
 const inGuarded = (path: string, guarded: ReadonlySet<string>) =>

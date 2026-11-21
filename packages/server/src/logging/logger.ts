@@ -4,7 +4,6 @@ import pino, { type Logger } from "pino";
 import { dailyFile, type DailyFile } from "./daily-file.ts";
 import { CENSOR } from "./redact.ts";
 
-/** Structured fields pino censors at the top level and one level down. */
 const REDACT_PATHS = [
   "token",
   "apiKey",

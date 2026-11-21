@@ -19,10 +19,6 @@ import { switchTheme } from "@/theme/transition";
 import { OPTION_GROUP, SEGMENT, SEGMENT_ROOMY, SEGMENT_SLAB, SettingRow } from "./fields";
 import { SettingsGroup } from "./settings-group";
 
-// Settings → Appearance → Accent and background: an accent over the palette, a picture behind the
-// app with how see-through the surfaces over it are, and the sidebar's shape and icons. Each is
-// saved as the person's own choice; until then the app embedding Gram may give its default.
-
 const SURFACE_LABELS: Record<SurfacesId, string> = {
   solid: "Solid",
   frosted: "Frosted",
@@ -31,7 +27,6 @@ const SURFACE_LABELS: Record<SurfacesId, string> = {
 const SIDEBAR_LABELS: Record<SidebarPref, string> = { flush: "Straight", inset: "Rounded" };
 const ICON_LABELS: Record<SidebarIconsPref, string> = { plain: "Plain", accent: "Accent" };
 
-/** A swatch or a picture: a round or a small tile that reads as chosen with a ring. */
 const CHOSEN = "ring-2 ring-foreground ring-offset-2 ring-offset-card";
 
 export function LookRows({ prefs, mode }: { prefs: ThemePrefs; mode: Mode }) {
@@ -87,7 +82,6 @@ export function LookRows({ prefs, mode }: { prefs: ThemePrefs; mode: Mode }) {
   );
 }
 
-/** The palette's own accent, then the ten, in the value each draws in the mode shown. */
 function Accents({ value, mode }: { value: AccentId | "palette" | undefined; mode: Mode }) {
   return (
     <Radios label="Accent">
@@ -111,7 +105,6 @@ function Accents({ value, mode }: { value: AccentId | "palette" | undefined; mod
   );
 }
 
-/** Off, then the six scenes as small tiles in the version for the mode shown. */
 function Pictures({ value, mode }: { value: BackdropPref; mode: Mode }) {
   const tile =
     "h-10 w-16 overflow-hidden rounded-md border border-border-subtle [&_svg]:block [&_svg]:size-full";
@@ -158,7 +151,6 @@ function Picture({
       title={scene.name}
       onClick={() => switchTheme({ backdrop: scene.id })}
       className={cn(tile, "outline-none focus-visible:focus-ring", checked && CHOSEN)}
-      // The scenes are drawn from code, never from anything a person typed.
       dangerouslySetInnerHTML={{ __html: sceneSvg(scene.id, mode === "dark", `pick-${scene.id}`) }}
     />
   );
@@ -203,7 +195,6 @@ function Radio({
   );
 }
 
-/** A row of a few named choices, as the Theme rows draw theirs. */
 function Choice<T extends string>({
   label,
   description,

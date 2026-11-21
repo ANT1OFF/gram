@@ -1,7 +1,3 @@
-// The one path to Gram's issue tracker, for the `report_issue` tool and the in-app form
-// alike. Everything goes through the user's own `gh` over REST, so the GitHub token never enters
-// this process and the scarce GraphQL allowance isn't spent (D-GH-1).
-
 import { homedir, release, type as osType } from "node:os";
 import {
   GitError,
@@ -65,10 +61,8 @@ export class IssueReporter extends Context.Service<IssueReporter, IssueReporterS
         const proc = yield* Proc;
         const config = yield* ServerConfig;
         const store = yield* ThreadStore;
-        // Absent in test layers, where the footer just goes without the agent's version.
         const checks = Option.getOrUndefined(yield* Effect.serviceOption(LaunchChecksCache));
         const home = homedir();
-        // gh is always told the repo, so the folder it runs in doesn't matter.
         const run = (args: ReadonlyArray<string>, stdin?: string) =>
           ghApi(home, args, { timeoutMs: 30_000, ...(stdin === undefined ? {} : { stdin }) }).pipe(
             Effect.provideService(Proc, proc),
@@ -112,7 +106,6 @@ export class IssueReporter extends Context.Service<IssueReporter, IssueReporterS
                 body: issue.body,
                 labels: issue.labels,
               });
-              // The body goes on stdin: no argument length limit, and no `@file` reading of a value.
               const out = yield* run(
                 [`repos/${issue.repo}/issues`, "--method", "POST", "--input", "-"],
                 payload,

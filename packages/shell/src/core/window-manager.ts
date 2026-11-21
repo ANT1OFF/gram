@@ -158,7 +158,6 @@ export function placeBounds(
   };
 }
 
-/** A new window offset from `from`, on the display `from` is centred on. */
 function cascade(from: Rect | undefined, displays: readonly DisplayInfo[]) {
   if (!from) return placeBounds(undefined, undefined, displays);
   const centre = { x: from.x + from.width / 2, y: from.y + from.height / 2, width: 1, height: 1 };
@@ -334,7 +333,6 @@ export function createWindowManager({
       if (!store.saveForUpdate)
         throw new Error("Window persistence cannot confirm an update flush");
       store.saveForUpdate([...live.values()].map((entry) => entry.record).toSorted(byId));
-      // app.exit closes windows without before-quit; preserve this successfully written snapshot.
       quitting = true;
     },
     cancelUpdateQuit: () => {
@@ -377,9 +375,7 @@ export function fileWindowStore(path: string, fs: StoreFs = nodeStoreFs): Window
     save: (records) => {
       try {
         fs.writeFile(path, `${JSON.stringify(records, null, 2)}\n`);
-      } catch {
-        // Losing a placement only means the window opens centred next launch.
-      }
+      } catch (_losingAPlacementOnlyMeansTheWindowOpensCentred) {}
     },
   };
 }

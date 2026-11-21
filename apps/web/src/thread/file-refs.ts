@@ -1,9 +1,3 @@
-// File paths in an agent's text, found where the markdown is rendered. Like PR references
-// (`pr-refs.ts`), the renderer finds them and nothing asks the model to mark them: this module only
-// says what could be a path, and `fs.resolve` decides what is, so a path links only when it names
-// one file. A path into the thread's checkouts is asked about as it renders; an absolute one
-// elsewhere only when it's pointed at. A wrong link is worse than none.
-
 import { findFileRefs, hrefFileRef, parseFileRef, type FileRef } from "@gram/contracts";
 
 const WINDOWS_ABSOLUTE = /^[A-Za-z]:[\\/]/;
@@ -52,7 +46,6 @@ interface HastElement {
 
 type HastNode = HastText | HastElement | { type: string; children?: HastNode[] };
 
-/** Whose text is never read for paths: code blocks, keys, and what is already a reference. */
 const OPAQUE = new Set(["pre", "kbd", "samp", "pr-ref", "thread-ref", FILE_REF_TAG]);
 
 const refElement = (ref: FileRef, children: HastNode[], kind: "code" | "text" | "link") => ({

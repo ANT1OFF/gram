@@ -21,12 +21,10 @@ import { useFlash } from "@/lib/timers";
 
 export { highlightCode } from "@/lib/code-highlighting";
 
-// Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
 const isItalic = (fontStyle: number | undefined) => fontStyle && fontStyle & 1;
 const isBold = (fontStyle: number | undefined) => fontStyle && fontStyle & 2;
 const isUnderline = (fontStyle: number | undefined) => fontStyle && fontStyle & 4;
 
-// Transform tokens to include pre-computed keys to avoid noArrayIndexKey lint
 interface KeyedToken {
   token: ThemedToken;
   key: string;
@@ -45,7 +43,6 @@ const addKeysToTokens = (lines: ThemedToken[][]): KeyedLine[] =>
     })),
   }));
 
-// Token rendering component
 export const TokenSpan = ({ token }: { token: ThemedToken }) => (
   <span
     className="dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)]"
@@ -64,7 +61,6 @@ export const TokenSpan = ({ token }: { token: ThemedToken }) => (
   </span>
 );
 
-// Line number styles using CSS counters
 const LINE_NUMBER_CLASSES = cn(
   "block",
   "before:content-[counter(line)]",
@@ -78,7 +74,6 @@ const LINE_NUMBER_CLASSES = cn(
   "before:select-none",
 );
 
-// Line rendering component
 const LineSpan = ({
   keyedLine,
   number,
@@ -86,7 +81,6 @@ const LineSpan = ({
   highlighted,
 }: {
   keyedLine: KeyedLine;
-  /** 1-based. */
   number: number;
   showLineNumbers: boolean;
   highlighted: boolean;
@@ -102,7 +96,6 @@ const LineSpan = ({
   </span>
 );
 
-// Types
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: BundledLanguage;
@@ -113,7 +106,6 @@ interface CodeBlockContextType {
   code: string;
 }
 
-// Context
 const CodeBlockContext = createContext<CodeBlockContextType>({
   code: "",
 });
@@ -145,7 +137,6 @@ const CodeBlockBody = memo(
     return (
       <pre
         className={cn(
-          // A phone wraps long lines: a sideways scroll inside the thread is a fight for a thumb.
           "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0 p-4 text-reading phone:whitespace-pre-wrap phone:[overflow-wrap:anywhere]",
           className,
         )}
@@ -312,8 +303,6 @@ const InlineTokens = ({
   language: string;
   tokenized: TokenizedCode;
 }) => {
-  // Shiki consumes CRLF separators. Use the source separators, and never display altered text
-  // if a grammar's tokens cannot round-trip the source (including the initial raw fallback).
   const separators = useMemo(() => code.match(/\r?\n/gu) ?? [], [code]);
   const preservesSource =
     tokenized.tokens.length === separators.length + 1 &&

@@ -3,9 +3,6 @@ import { CircleCheck, CircleMinus, CircleX, type LucideIcon } from "lucide-react
 
 import { PendingRing } from "@/motion";
 
-// A PR's checks in words and glyphs, apart from the PR panel so a peek or a card can show them
-// without loading the panel, its diff and its review threads.
-
 const CHECK_STATUS: Record<CheckStatus, { icon: LucideIcon; label: string; tone: string }> = {
   passing: { icon: CircleCheck, label: "Passing", tone: "text-success" },
   failing: { icon: CircleX, label: "Failing", tone: "text-destructive" },
@@ -46,6 +43,5 @@ export const checkDuration = (run: CheckRun, now = Date.now()): string | undefin
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
   const hours = Math.floor(minutes / 60);
   if (hours < 48) return `${hours}h ${minutes % 60}m`;
-  // A check left running for days: its days, not a four-figure count of hours.
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 };

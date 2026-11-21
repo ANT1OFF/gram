@@ -1,20 +1,13 @@
-// A joined machine's Grok Build and Antigravity: the `grok` and `agy` there, run by its host as the
-// server runs them here, on that machine's own sign-in, or on what its environment names for a
-// sandbox, which holds no login of its own. Nothing here reads a credential.
-
 import type { AgentHost } from "@gram/agents";
 import type { AgentUnavailable, HostAntigravityStatus, HostGrokStatus } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { parseToolVersion } from "../launch-checks/checks.ts";
 import { hostModelOf, loginShell, type ShellRun } from "./claude-sign-in.ts";
 
-/** How long one part of an agent's status may take before it reads as unknown. */
 const PART_TIMEOUT_MS = 20_000;
 
-/** How many listed models a status carries, as the wire takes. */
 const MODELS_SENT = 64;
 
-/** Whether `command` is on the login-shell PATH, and its version. */
 const probeCli = (command: string, run: ShellRun): Promise<{ found: boolean; version?: string }> =>
   run(`command -v ${command} >/dev/null 2>&1 && ${command} --version`).then(
     ({ code, stdout }) => {
@@ -25,11 +18,6 @@ const probeCli = (command: string, run: ShellRun): Promise<{ found: boolean; ver
     () => ({ found: false }),
   );
 
-/**
- * What the machine's `command` CLI can run now: whether it is there, and what it lists. A list that
- * fails leaves `models` out, so the control plane says the machine hasn't listed rather than that
- * it lists nothing.
- */
 const cliStatusOf = (
   command: string,
   agent: Effect.Effect<AgentHost, AgentUnavailable>,

@@ -41,7 +41,6 @@ export function WorkerHeadPlan({ worker }: { worker: ThreadId }) {
   );
 }
 
-/** The repositories the worker's ledger row names, else its checkouts' folders. */
 function useHeadRepos(worker: ThreadId): WorkerHeadRepos | undefined {
   const summary = useThreadsStore((s) => s.byId[worker]);
   const { data: ledger } = useOrchestratorLedger(summary?.thread.workspaceId ?? undefined);
@@ -58,7 +57,6 @@ const CONTROL =
 const POPUP =
   "max-w-(--available-width) rounded-md border border-edge bg-popover text-popover-foreground shadow-overlay outline-none";
 
-/** A popover from the head, below its trigger; Esc closes it and leaves the worker open. */
 function HeadPopover({
   trigger,
   popupTestId,
@@ -72,7 +70,6 @@ function HeadPopover({
   className: string;
   children: ReactNode;
 }) {
-  // The popup takes the keys as it opens, so none of its rows shows its hover actions yet.
   const popup = useRef<HTMLDivElement>(null);
   return (
     <Popover.Root>
@@ -100,7 +97,6 @@ function HeadPopover({
   );
 }
 
-/** The step it is on, its bar and "Step 3 of 4"; a click or Enter opens the whole plan. */
 function PlanControl({
   worker,
   line,
@@ -148,7 +144,6 @@ function PlanControl({
   );
 }
 
-/** Its plan's steps as a short bar: the done ones filled, the one it is on in the primary colour. */
 function PlanBar({ done, total }: { done: number; total: number }) {
   return (
     <span aria-hidden className="flex shrink-0 items-center gap-0.5">
@@ -165,10 +160,6 @@ function PlanBar({ done, total }: { done: number; total: number }) {
   );
 }
 
-/**
- * The repositories at the line's right: one by name; several as "api +2", which opens them all and
- * what follows the first one only, by click or by the keys.
- */
 function Repos({ repos }: { repos: WorkerHeadRepos }) {
   const glyph = <FolderGit2 aria-hidden className="size-icon-chip shrink-0" />;
   if (repos.others.length === 0) {
@@ -209,6 +200,5 @@ function Repos({ repos }: { repos: WorkerHeadRepos }) {
   );
 }
 
-/** "api, web and docs". */
 const listed = (names: readonly string[]): string =>
   names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;

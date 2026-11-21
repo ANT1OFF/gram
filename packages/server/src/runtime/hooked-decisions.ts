@@ -1,5 +1,3 @@
-// An agent's approval requests as the thread puts them up: a card in front of a person, or, while
-// the decision hook is on, the hook's answer first (`decideRequest`).
 import type { AgentSession } from "@gram/agents";
 import type { PendingRequest, RequestId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
@@ -25,7 +23,6 @@ import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { locked, type Runtime } from "./runtime-state.ts";
 import type { TurnLifecycle } from "./turn-lifecycle.ts";
 
-/** A value with its object keys in order, so two spellings of one value compare equal. */
 const canonical = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map(canonical)
@@ -37,10 +34,6 @@ const canonical = (value: unknown): unknown =>
         )
       : value;
 
-/**
- * Whether a card asks what `request` asks, leaving out what the server added to it. A card stored
- * with no key (by a server before keys) never does, so asking again puts it up with one.
- */
 const sameAsk = (card: PendingRequest, request: PendingRequest): boolean => {
   if (card.shown === undefined) return false;
   const { shown: _shown, ...asked } = card;
@@ -70,31 +63,19 @@ export const makeHookedDecisions = ({
   eventSink,
   setStatus,
 }: HookedDecisionsDeps) => {
-  /** Puts an agent's request in front of the user. Holds the lock. */
   const raiseCard = (rt: Runtime, asked: PendingRequest) =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
-      // Its own key, whatever the agent sent: an answer given for it is for this card alone.
       const request: PendingRequest = { ...asked, shown: randomUUID() };
       yield* store.putRequest(rt.threadId, request, now);
       yield* hub.publish({ type: "thread.request", threadId: rt.threadId, request });
       yield* setStatus(rt, request.kind === "question" ? "needsInput" : "needsApproval");
     });
 
-  /**
-   * Puts an agent's outward request to the decision hook, each thing it does in turn: allowed, it
-   * is answered for the agent with no card; refused, it is denied with the reason, which the
-   * thread is told too; and what the hook says to ask about becomes the card it would have been,
-   * whose approval is put to the hook again (`server-approvals.ts`). A request withdrawn
-   * meanwhile, or whose session has gone, is left alone. Takes the lock only once the hook has
-   * answered.
-   */
   const decideRequest = (
     rt: Runtime,
-    /** The session that asked: a later one of the thread never made this request. */
     asking: AgentSession | undefined,
     hook: DecisionHookShape,
-    /** The entry in `hooked.deciding` this decision is for, and is void once another replaces. */
     deciding: DecidingRequest,
     actions: ReadonlyArray<RequestAction>,
   ) =>
@@ -105,7 +86,6 @@ export const makeHookedDecisions = ({
         | { readonly action: RequestAction["action"]; readonly decided: Decided }
         | undefined;
       let asked: Decided | undefined;
-      /** Every answer but a refusal, by action, for the second call if this becomes a card. */
       const answers: Array<RequestAction & { readonly decided: Decided }> = [];
       if (Option.isNone(thread)) {
         refused = {
@@ -126,7 +106,6 @@ export const makeHookedDecisions = ({
       yield* locked(
         rt,
         Effect.gen(function* () {
-          // Withdrawn meanwhile, or asked again under its id: this answer is for neither.
           const key = hookedKey(rt.threadId, request.id);
           if (hooked.deciding.get(key) !== deciding) return;
           hooked.deciding.delete(key);
@@ -164,12 +143,7 @@ export const makeHookedDecisions = ({
               }
               return;
             }
-            // The agent didn't take the answer, so it still waits: a card, whose approval the
-            // hook is asked about again, lets a person retry it without deciding in its place.
           }
-          // On `ask`, an approval is put to the hook again for the actions it said to ask about,
-          // each under its own first call. A card raised because an answer wasn't delivered asks
-          // again about them all.
           const basis = asked ?? refused?.decided ?? answers[0]?.decided;
           if (basis === undefined) return;
           const again = answers.filter((each) => each.decided.decision === "ask");
@@ -204,12 +178,6 @@ export const makeHookedDecisions = ({
       );
     });
 
-  /**
-   * Makes way for a request an agent raised under `requestId`, which is another request whatever
-   * it was before: what the hook said, or is saying, of the earlier one is never taken for it, and
-   * its card comes down, since an answer given to that card is for the earlier one. Holds the
-   * lock. Gives the request's key in the hook's bookkeeping.
-   */
   const replaceAsked = (rt: Runtime, requestId: RequestId) =>
     Effect.gen(function* () {
       const key = hookedKey(rt.threadId, requestId);
@@ -227,11 +195,6 @@ export const makeHookedDecisions = ({
       return key;
     });
 
-  /**
-   * Whether `request` is one already up as a card, asked again as it was (a session that redialled
-   * replays what it still waits on), with the hook not deciding it: the card, and what the hook
-   * said of it, stay as they are, and an answer given for it still goes.
-   */
   const replayed = (rt: Runtime, request: PendingRequest) =>
     Effect.gen(function* () {
       if (hooked.deciding.has(hookedKey(rt.threadId, request.id))) return false;

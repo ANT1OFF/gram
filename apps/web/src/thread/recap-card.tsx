@@ -36,13 +36,8 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { useTallerThanPaneShare } from "./pane-height";
 
-/**
- * The share of the pane a recap's text may take before it folds to its first sentence: a grid pane
- * can be short enough that the whole of it pushes the composer out of sight.
- */
 const RECAP_SHARE = 0.25;
 
-/** How long an open waits on the server before saying a recap is on its way. */
 const SKELETON_AFTER_MS = 300;
 
 const BUSY = new Set<ThreadSummary["status"]>([
@@ -52,7 +47,6 @@ const BUSY = new Set<ThreadSummary["status"]>([
   "needsInput",
 ]);
 
-/** When the transcript's last user message was sent; 0 without one. */
 const lastSentAt = (messages: readonly GramUIMessage[]): number =>
   messages.findLast((m) => m.role === "user")?.metadata?.createdAt ?? 0;
 
@@ -80,7 +74,6 @@ export const factPanel = (
 export const nextStepInsert = (draft: string, next: string): string =>
   draft.trim() === "" || draft.endsWith("\n") ? next : `\n${next}`;
 
-/** `field` with the caret at its end, or all of it selected while it is only whitespace. */
 const selectEnd = (field: HTMLTextAreaElement): HTMLTextAreaElement => {
   const end = field.value.length;
   field.focus();
@@ -92,10 +85,6 @@ const selectEnd = (field: HTMLTextAreaElement): HTMLTextAreaElement => {
 export const withNextStep = (draft: string, next: string): string =>
   draft.trim() === "" ? next : `${draft.replace(/\s+$/, "")}\n${next}`;
 
-/**
- * Whether a recap still describes the thread: nothing happened since it was made, and no turn is
- * running. Sending a message is something happening, so the card goes once you send.
- */
 const recapCurrent = (view: RecapView, summary: ThreadSummary | undefined): boolean =>
   summary !== undefined &&
   !BUSY.has(summary.status) &&
@@ -116,7 +105,6 @@ export function RecapCard({
   focused: boolean;
 }) {
   const api = useApi();
-  // Coming back to the app counts as coming back to the pane it left focused.
   const attended = useWindowAttended();
   const focused = paneFocused && attended;
   const summary = useThreadsStore((s) => s.byId[threadId]);
@@ -131,17 +119,9 @@ export function RecapCard({
     threadId,
     (s) => since !== undefined && lastSentAt(s.messages) > since,
   );
-  /**
-   * The request whose answer is late enough to say so. Each one, when it settles, clears its own
-   * and any older request's, never a newer one's.
-   */
   const [waiting, setWaiting] = useState<number>();
-  // The request of this spell of focus, if one was made: cleared when the pane loses focus, so
-  // coming back asks again, and only the latest request's answer and spinner count.
   const asked = useRef<{ readonly id: number; readonly threadId: ThreadId } | undefined>(undefined);
   const requests = useRef(0);
-  // Turns started in this thread since the card mounted: an answer to a request made before the
-  // latest one started is about a thread that has since moved on, whether or not a card was up.
   const turns = useRef(0);
 
   useEffect(() => {
@@ -153,34 +133,26 @@ export function RecapCard({
     const request = { id: ++requests.current, threadId };
     asked.current = request;
     const turnsAtAsk = turns.current;
-    // Before the transcript is in, what's sent can only be told apart once the answer comes.
     const sentAtAsk = feedLoaded(threadId) ? lastSentAt(feedMessages(threadId)) : undefined;
     const latest = () => asked.current?.id === request.id;
-    // Not cancelled on cleanup: a second run of the effect in the same spell doesn't ask again, so
-    // its answer has to land whenever it comes, unless a later request replaced it meanwhile.
     const skeleton = setTimeout(() => latest() && setWaiting(request.id), SKELETON_AFTER_MS);
     api
       .threadRecap(threadId)
       .then((next) => {
         if (!latest()) return;
         const status = useThreadsStore.getState().byId[threadId]?.status;
-        // A turn that started while the server was making it has already moved on.
         const moved = turns.current !== turnsAtAsk || (status !== undefined && BUSY.has(status));
         setCard(
           next === null
             ? undefined
             : {
                 view: next,
-                // A message sent while the server was making it counts as sent after it.
                 since: Math.max(next.lastActiveAt, sentAtAsk ?? lastSentAt(feedMessages(threadId))),
                 gone: moved,
               },
         );
-        // The recap's call also suggested what to say next, for the turn it covers.
         const settings = useServerSettings.getState().settings;
         const suggestOn = settings !== undefined && helperOn(settings, "suggest");
-        // None is no answer: the server leaves them out when the plan moved during the call, and
-        // offering that would take away replies already made for the new one.
         if (next?.turnId !== undefined && !moved && suggestOn && next.recap.replies.length > 0) {
           const { turnId, recap } = next;
           useSuggestionsStore.getState().offer({ threadId, turnId, replies: recap.replies });
@@ -189,13 +161,10 @@ export function RecapCard({
       .catch((error: unknown) => console.warn("recap", error))
       .finally(() => {
         clearTimeout(skeleton);
-        // An older request's line goes too: the newer answer is the one that counts.
         setWaiting((w) => (w !== undefined && w <= request.id ? undefined : w));
       });
   }, [api, focused, threadId]);
 
-  // The renderer isn't told every turn's new `lastActivityAt`, so a turn starting is what ends it,
-  // and a message landing in the transcript after it, which no quick turn can slip past.
   useSubscription(
     () =>
       useThreadsStore.subscribe((s, previous) => {
@@ -211,8 +180,6 @@ export function RecapCard({
   const shown = card?.view.threadId === threadId ? card.view : undefined;
   const current =
     shown !== undefined && card?.gone !== true && !sentSince && recapCurrent(shown, summary);
-  // The agent's own box for the turn that just ended, straight from the transcript: it needs no
-  // request, and no helper. `thread.recap` hands back the same one when the thread is opened later.
   const fromFeed = useThreadFeed(threadId, (s) => latestWrapUp(s.messages));
   const wrapUp = fromFeed ?? (current ? shown?.wrapUp : undefined);
   const [dismissedBox, setDismissedBox] = useState<string>();
@@ -221,10 +188,8 @@ export function RecapCard({
     summary !== undefined &&
     !BUSY.has(summary.status) &&
     dismissedBox !== wrapUp.id;
-  /** When the recap on screen first showed, for telling a quick dismissal from a considered one. */
   const shownAt = useRef<{ readonly view: RecapView; readonly at: number } | undefined>(undefined);
   useEffect(() => {
-    // The helper's counts are about the helper's recaps; the agent's box is none of them.
     if (!current || shown === undefined || shown.wrapUp !== undefined) return;
     if (shownAt.current?.view === shown) return;
     shownAt.current = { view: shown, at: Date.now() };
@@ -266,7 +231,6 @@ export function RecapCard({
           <WrapUpBox
             threadId={threadId}
             wrapUp={wrapUp}
-            // Opened after a break, the box is where you left off; at the turn's end, its recap.
             leftOff={current && shown?.wrapUp?.id === wrapUp.id ? shown.lastActiveAt : undefined}
             onDismiss={() => setDismissedBox(wrapUp.id)}
           />
@@ -277,8 +241,6 @@ export function RecapCard({
           <section
             data-testid="recap"
             aria-label="Where you left off"
-            // However it folds, the card as a whole keeps to a share of the pane: in a grid quarter
-            // the plan strip and the header take their own rows, and the composer must still fit.
             className="my-2 max-h-[calc(var(--pane-height,100vh)*0.4)] overflow-y-auto rounded-(--radius-md) border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-reading"
           >
             <div className="flex items-center gap-2 text-meta text-muted-foreground">
@@ -356,11 +318,6 @@ export function RecapCard({
   );
 }
 
-/**
- * The recap itself: in full, or its first sentence while a request waits or while the whole would
- * take more of the pane than `RECAP_SHARE`, then with More to read the rest in place. The hidden
- * copy is what says how tall the whole would be, however much of it shows.
- */
 function RecapText({
   text,
   folded,
@@ -416,7 +373,6 @@ function RecapText({
   );
 }
 
-/** A ring filled to the share of the plan's steps done. */
 function ProgressRing({ done, total }: { done: number; total: number }) {
   const r = 5;
   const length = 2 * Math.PI * r;
@@ -436,16 +392,11 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
   );
 }
 
-/**
- * The recap's next step, and a button that puts it in this thread's composer to edit and send; it is
- * never sent on its own.
- */
 function NextStep({ threadId, next }: { threadId: ThreadId; next: string }) {
   const use = (button: HTMLElement) => {
     const composer = button
       .closest("[data-pane-index]")
       ?.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]');
-    // Typed in where it can be, so ⌘Z takes the step back out, as an accepted suggestion does.
     if (composer && typeIntoField(selectEnd(composer), nextStepInsert(composer.value, next)))
       return;
     const drafts = useDraftStore.getState();
@@ -482,12 +433,6 @@ function NextStep({ threadId, next }: { threadId: ThreadId; next: string }) {
 const notify = (kind: "info" | "error", title: string, body: string) =>
   useThreadsStore.getState().applyEvent({ type: "notify", kind, title, body });
 
-/**
- * The agent's `wrap_up` box: its recap of the turn, and, when the next move is yours, its one
- * question with the buttons that answer it, its pick first. A reply sends its message as yours; an
- * app action is the control the thread's header has, so Create PR opens its dialog and merging
- * opens the PR panel, whose Merge asks first. A button whose control has nothing left to do goes.
- */
 function WrapUpBox({
   threadId,
   wrapUp,
@@ -496,14 +441,12 @@ function WrapUpBox({
 }: {
   threadId: ThreadId;
   wrapUp: WrapUpData;
-  /** When the thread was last active, when the box is shown as where you left off. */
   leftOff: number | undefined;
   onDismiss: () => void;
 }) {
   const api = useApi();
   const git = useThreadsStore((s) => s.byId[threadId]?.git);
   const buttons = wrapUp.ask === undefined ? [] : liveWrapUpButtons(wrapUp, git);
-  // One answer per box: while a reply is on its way, neither button sends another.
   const [sending, setSending] = useState(false);
   const reply = async (message: string) => {
     if (sending) return;
@@ -575,10 +518,6 @@ function WrapUpBox({
   );
 }
 
-/**
- * One of the box's buttons. A reply whose message says more than its label shows the message on
- * hover and to a screen reader, so what is sent in your name is never hidden behind its label.
- */
 function WrapUpAction({
   threadId,
   button,

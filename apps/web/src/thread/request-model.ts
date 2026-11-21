@@ -58,7 +58,6 @@ export const limitPauseAsk = (
   };
 };
 
-/** The prefix every Gram app tool's name carries on a card, whichever agent raised it. */
 const APP_TOOL_PREFIX = "mcp__gram__";
 
 const decodeSettings = Schema.decodeUnknownOption(SettingsProposalCard);
@@ -140,10 +139,8 @@ export const mustReadDetails = (request: ApprovalRequest): boolean =>
   (request.toolName.startsWith(`${APP_TOOL_PREFIX}browser_`) &&
     typeof request.input["control"] === "string");
 
-/** Claude in Chrome's tools, as an approval names them (`mcp__claude-in-chrome__<tool>`). */
 const CHROME_TOOL = /^mcp__claude-in-chrome__(.+)$/;
 
-/** A server's own permission prompt (`mcp__<server>__elicitation`), as computer use raises. */
 const SERVER_PROMPT = /^mcp__(.+)__elicitation$/;
 
 /**
@@ -171,7 +168,6 @@ const point = (value: unknown): string | undefined =>
     ? `${value[0]}, ${value[1]}`
     : undefined;
 
-/** What each of `computer`'s actions is, as a title's verb phrase. */
 const COMPUTER_ACTIONS: Readonly<Record<string, string>> = {
   left_click: "Click",
   right_click: "Right-click",
@@ -184,7 +180,6 @@ const COMPUTER_ACTIONS: Readonly<Record<string, string>> = {
   hover: "Point at something",
 };
 
-/** A Claude in Chrome tool's name in words, for one this list doesn't know yet. */
 const CHROME_TOOLS: Readonly<Record<string, string>> = {
   form_input: "Fill in a field",
   javascript_tool: "Run a script",
@@ -202,7 +197,6 @@ const browserAskOf = (request: ApprovalRequest): BrowserAsk | undefined => {
     const app = text(input["app"]);
     const server = text(input["server"]) ?? prompt[1]!;
     const fields = [{ label: "Asked by", value: server }];
-    // A prompt that is one short question is the card's title, said once.
     const message = request.description?.trim();
     if (
       message !== undefined &&
@@ -272,11 +266,9 @@ export interface ApprovalDetailField {
   readonly value: string;
 }
 
-/** The input field `approvalSubject` leads with, or `undefined` when it shows the whole input. */
 const subjectKey = (input: ApprovalRequest["input"]): string | undefined =>
   ["command", "file_path", "url"].find((key) => typeof input[key] === "string");
 
-/** How much of an argument's value the line under the subject shows; Details has all of it. */
 const EXTRA_VALUE_MAX = 80;
 
 /**
@@ -329,7 +321,6 @@ const text = (value: unknown): string | undefined =>
 const texts = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.flatMap((item) => text(item) ?? []) : [];
 
-/** A `report_issue` card's issue as the server composed it, or `undefined` if it isn't one. */
 const issueDetails = (input: ApprovalRequest["input"]): ApprovalDetails | undefined => {
   const repo = text(input["repo"]);
   const title = text(input["title"]);
@@ -348,7 +339,6 @@ const issueDetails = (input: ApprovalRequest["input"]): ApprovalDetails | undefi
 
 /** The folded details of an app tool's card. A spawn missing its project or brief reads as JSON. */
 export const approvalDetails = (request: ApprovalRequest): ApprovalDetails => {
-  // Every string as it reads: a character that hides or reorders text shows as its marker.
   const input = revealValue(request.input) as ApprovalRequest["input"];
   const json: ApprovalDetails = { kind: "json", text: JSON.stringify(input, null, 2) };
   if (request.toolName === `${APP_TOOL_PREFIX}report_issue`) return issueDetails(input) ?? json;
@@ -393,21 +383,6 @@ export interface AlwaysRule {
   readonly kept: string | undefined;
 }
 
-/**
- * Claude Code's settings destinations, as an "always" answer writes them (`resolveRequest` in
- * `packages/agents/src/claude/permissions.ts` passes the suggestion's own destination through),
- * each stated at the widest reach Claude Code gives it (code.claude.com/docs/en/settings and
- * /worktrees), never narrower:
- * - `session`, `cliArg`: held by the session alone, gone when it ends.
- * - `localSettings`: since Claude Code v2.1.211, `.claude/settings.local.json` at the repository's
- *   root, the main checkout's root for a worktree, so the rule applies in the main checkout and
- *   every worktree of the repository and outlives the worktree that saved it. It stays in the
- *   working folder only in narrower cases (outside git, Windows, a home-directory repository).
- * - `projectSettings`: `.claude/settings.json` in the session's working folder, read by everyone
- *   working there, and by everyone with the repository once the file is committed.
- * - `userSettings`: the Claude config's `settings.json` (`~/.claude`, or `CLAUDE_CONFIG_DIR`),
- *   which every project on this machine using that config reads, inside Gram and out.
- */
 const DESTINATION: Readonly<
   Record<PermissionUpdateDestination, { reach: AlwaysReach; scope: string; kept?: string }>
 > = {

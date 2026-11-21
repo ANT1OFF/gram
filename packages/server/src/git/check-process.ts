@@ -1,7 +1,3 @@
-// How a project's check runs as a process: its environment, the wrapper that leads its process
-// group and writes how it ended, its timeout and stop, and what its exit means. Gram's own checks
-// (`LocalChecksLive`) and a joined machine's (`host/checks.ts`) both run through it, so it imports
-// nothing of the server's store: `gram-host` bundles it on its own.
 import {
   redactText,
   DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
@@ -46,20 +42,7 @@ export const KILL_GRACE_MS = 10_000;
 
 /** Why a check didn't pass, as the worker and the ledger are told it. */
 export const LocalCheckFailure = Schema.Struct({
-  kind: Schema.Literals([
-    /** A command the check runs wasn't on its PATH. */
-    "not-found",
-    /** It ran past the configured timeout and was stopped. */
-    "timed-out",
-    /** It ran and exited non-zero: a failing check. */
-    "exited",
-    /** A signal stopped it. */
-    "stopped",
-    /** Gram couldn't start it, or prepare the source for it. */
-    "unstartable",
-    /** The head conflicts with its base: nothing to check. */
-    "conflict",
-  ]),
+  kind: Schema.Literals(["not-found", "timed-out", "exited", "stopped", "unstartable", "conflict"]),
   /** The command that wasn't found. */
   command: Schema.optionalKey(Schema.String),
   /** The PATH the check ran on. */
@@ -87,7 +70,6 @@ export const isGitControl = (name: string): boolean =>
   name.toUpperCase().startsWith("GIT_") &&
   !["GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_ASKPASS"].includes(name.toUpperCase());
 
-/** Gram's own variables stay out of the check, whose tests set what they need themselves. */
 const checkEnv = (
   base: Readonly<Record<string, string | undefined>>,
   pathValue: string,
@@ -122,7 +104,6 @@ export interface CheckEnvironment {
   readonly durable?: DurableCheck | undefined;
 }
 
-/** At most this much of the log's end is read to explain a failure. */
 const TAIL_BYTES = 64 * 1024;
 
 /** The end of `log`; empty when it can't be read. */
@@ -143,10 +124,6 @@ export const readTail = (log: string): string => {
   }
 };
 
-/**
- * `text` as plain lines: terminal escape sequences (colours, titles) and other control characters
- * gone, and a carriage return's overwrite kept as its last state.
- */
 const plainLines = (text: string): Array<string> =>
   text
     // oxlint-disable-next-line no-control-regex -- terminal escape sequences
@@ -182,8 +159,6 @@ export const missingCommand = (output: string): string | undefined => {
   const shell = String.raw`(?:\S*/)?(?:ba|z|da|k)?sh`;
   const name = String.raw`([^\s:'"‘’]+)`;
   const patterns = [
-    // A script names itself by its path: `./scripts/x.sh: line 3: foo: command not found` in bash,
-    // `./scripts/x.sh: 3: foo: not found` in dash (`/bin/sh` on Debian and Ubuntu).
     new RegExp(String.raw`^(?:${shell}|\S*/\S*): (?:line \d+: )?${name}: command not found$`),
     new RegExp(String.raw`^(?:${shell}|\S*/\S*): \d+: ${name}: not found$`),
     new RegExp(String.raw`^(?:${shell}|(?:\S*/)?bun): command not found: ${name}$`),
@@ -264,13 +239,6 @@ export interface CheckProcess {
   readonly pathValue: string;
 }
 
-/**
- * The setup and the command, each in its own shell, in one wrapper that leads the check's process
- * group and writes the exit status (`$1`) once they end: a check Gram left running when it quit
- * still says how it ended to the next start. A watchdog in the group stops it, SIGTERM then
- * SIGKILL after `$5` seconds, once `$4` seconds pass with the wrapper still there: the timeout Gram
- * isn't running to enforce. It ignores SIGTERM only once it sent its own, so Gram's stops it at once.
- */
 const WRAPPER = `status=$1 setup=$2 command=$3 limit=$4 grace=$5
 (
   n=0
@@ -290,7 +258,6 @@ if [ "$code" -eq 0 ]; then /bin/sh -c "$command"; code=$?; fi
 if [ -n "$status" ]; then printf '%s\\n' "$code" > "$status.tmp" && mv -f "$status.tmp" "$status"; fi
 exit "$code"`;
 
-/** How long past its timeout the watchdog waits for Gram to stop a check, before doing it. */
 const WATCHDOG_SLACK_S = 30;
 
 /** Configured setup then check on the resolved login-shell PATH, with shared diagnostics. */
@@ -302,7 +269,6 @@ export const spawnCheck = (
 ) =>
   Effect.gen(function* () {
     const env = checkEnv(environment.base, environment.pathValue);
-    // Only the approved recipe can supply this binding; never inherit a caller's claim.
     delete env["GRAM_CHECK_SOURCE_SELECTION_MANIFEST"];
     delete env["GRAM_CHECK_SOURCE_SELECTION_SHA256"];
     delete env["GRAM_CHECK_APPROVED_INPUT_SHA256"];
@@ -313,8 +279,6 @@ export const spawnCheck = (
         env["GRAM_CHECK_APPROVED_INPUT_SHA256"] = run.preparation.inputConfigSha256;
       }
     }
-    // A verify driver's run gets an empty folder of its own for what it wants shown; nothing
-    // else gets one, and `checkEnv` already keeps the server's own value out.
     if (run.profile?.startsWith("verify/") === true) {
       const evidence = yield* Effect.sync(() => freshEvidenceDir(log));
       if (evidence !== undefined) env[VERIFY_EVIDENCE_ENV] = evidence;
@@ -334,7 +298,6 @@ export const spawnCheck = (
     );
   });
 
-/** `90 minutes`, `1 minute`, `500 ms`. */
 const spell = (ms: number) =>
   ms >= 60_000 && ms % 60_000 === 0
     ? `${ms / 60_000} minute${ms === 60_000 ? "" : "s"}`
@@ -349,13 +312,8 @@ export const timedOut = (log: string, timeoutMs: number): LocalCheckOutcome => {
   };
 };
 
-/**
- * How long a group sent SIGKILL gets to be gone, its leader reaped, before Gram stops waiting and
- * keeps the check's source (`CheckEnvironment.retain`): a process stuck in the kernel outlives it.
- */
 const REAP_MS = 5_000;
 
-/** Sends `signal` to the process group `pgid`; false when there is none. */
 const signalGroup = (pgid: number, signal: NodeJS.Signals | 0) => {
   try {
     process.kill(-pgid, signal);
@@ -365,11 +323,6 @@ const signalGroup = (pgid: number, signal: NodeJS.Signals | 0) => {
   }
 };
 
-/**
- * Stops a check's process group: SIGTERM, SIGKILL for whatever is still there after `graceMs`,
- * then a wait of up to `REAP_MS` for it to be gone. True once `present` says it is gone; false when
- * it couldn't be shown gone, or `present` stopped vouching that the group is the check's.
- */
 const stopGroup = (
   pgid: number,
   present: () => "ours" | "gone" | "unsure",
@@ -399,14 +352,6 @@ const stopGroup = (
     }, 50);
   });
 
-/**
- * The wrapper in its own process group. However it ends (exit, timeout, interruption), what is
- * left of the group, such as a watcher it started in the background, is stopped before the result
- * is told, the interruption ends and the worktree is removed (`stopGroup`). A group that can't be
- * shown gone keeps the source (`retain`). Only this group is signalled, by the id it was spawned
- * with; a process that left it (`setsid`) is beyond what Gram can follow. Interrupted while Gram
- * quits, a durable check that was recorded is left running instead (`DurableCheck`).
- */
 const spawnCommand = (
   dir: string,
   log: string,
@@ -444,12 +389,10 @@ const spawnCommand = (
             closeSync(fd);
           }
         })();
-        /** Node reaped the leader: until then its zombie keeps the group's id taken. */
         let reaped = child.pid === undefined;
         const present = () =>
           !reaped || (child.pid !== undefined && signalGroup(child.pid, 0)) ? "ours" : "gone";
         let stopping: Promise<void> | undefined;
-        /** Stops what is left of the group and waits for it to be gone, once however often asked. */
         const stop = () =>
           (stopping ??=
             child.pid === undefined
@@ -460,7 +403,6 @@ const spawnCommand = (
         let settled = false;
         let release: (() => void) | undefined;
         const outcome = new Promise<LocalCheckOutcome>((resolve) => {
-          /** Stops what is left of the group, then tells `outcome`, once. */
           const settle = (told: () => LocalCheckOutcome) => {
             if (settled) return;
             settled = true;
@@ -468,8 +410,6 @@ const spawnCommand = (
             void stop().then(() => resolve(told()));
           };
           const timer = setTimeout(() => {
-            // Like the exit handler, capture the check's output before stopping its group:
-            // bash can print a termination notice while its children are being killed.
             const result = timedOut(log, timeoutMs);
             settle(() => result);
           }, timeoutMs);
@@ -487,7 +427,6 @@ const spawnCommand = (
           });
           child.once("exit", (code, signal) => {
             reaped = true;
-            // Read now: what the group's leftovers print while they are stopped is not the check's.
             const output = readTail(log);
             settle(() => diagnoseExit(code, signal, output, pathValue));
           });
@@ -499,7 +438,6 @@ const spawnCommand = (
             release?.();
             return stop();
           },
-          /** Lets it run on past Gram: nothing of it keeps this process alive. */
           leave: () => {
             release?.();
             child.unref();
@@ -522,8 +460,6 @@ const spawnCommand = (
           return yield* Effect.promise(() => running.outcome);
         }),
       ).pipe(
-        // Interrupted, the group is stopped the same way, and the interruption waits for it;
-        // unless Gram is quitting and the next start can take it back.
         Effect.onInterrupt(() =>
           recorded && durable?.detach() === true
             ? Effect.sync(running.leave)
@@ -533,10 +469,8 @@ const spawnCommand = (
     }),
   );
 
-/** `ps`, at its path: an app opened from the Dock has launchd's PATH, and a shell may alias it. */
 const PS = ["/bin/ps", "/usr/bin/ps"].find((path) => existsSync(path)) ?? "ps";
 
-/** When `pid` started, as `ps` says it, in a fixed locale; undefined when it isn't there. */
 const processStartOf = (pid: number): string | undefined => {
   try {
     const out = execFileSync(PS, ["-o", "lstart=", "-p", String(pid)], {
@@ -551,7 +485,6 @@ const processStartOf = (pid: number): string | undefined => {
   }
 };
 
-/** The folder `pid` runs in; undefined when it can't be read. */
 const processCwdOf = (pid: number): string | undefined => {
   try {
     if (process.platform === "linux") return readlinkSync(`/proc/${pid}/cwd`);
@@ -568,10 +501,6 @@ const processCwdOf = (pid: number): string | undefined => {
   }
 };
 
-/**
- * Whether a process of the group `pgid` runs inside the worktree `work`: what a check leaves
- * behind inherits its folder, and no other process has a reason to be in Gram's own worktree.
- */
 const memberInWork = (pgid: number, work: string): boolean => {
   try {
     const members = execFileSync(PS, ["-A", "-o", "pid=,pgid="], {
@@ -643,9 +572,7 @@ export const RETAINED = "retained";
 export const markRetained = (dir: string) => {
   try {
     writeFileSync(nodePath.join(nodePath.dirname(dir), RETAINED), "");
-  } catch {
-    // The worktree is kept regardless; only retention reads this.
-  }
+  } catch (_theWorktreeIsKeptRegardlessOnlyRetentionReadsThis) {}
 };
 
 /** The status the wrapper wrote, or undefined when it wrote none. */

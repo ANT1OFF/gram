@@ -1,7 +1,3 @@
-// Settings › Storage: every known repo's linked worktrees, grouped by what removing one would lose,
-// and the cleanups run from there. Nothing here deletes a branch, and nothing removes a worktree
-// with uncommitted or unpushed work unless the user named it (`confirmed`).
-
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { statfs } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -41,29 +37,20 @@ import { folderExists } from "../fs/folders.ts";
 import { usedCheckoutPaths } from "../runtime/create-in-checkout.ts";
 import { cachedFolderSize, forgetFolderSize } from "./worktree-size.ts";
 
-/** Worktrees probed at once: each probe is a handful of short git runs. */
 const PROBES = 8;
 
-/** How long a size count may take while a cleanup works out what it frees. */
 const PLAN_SIZE_BUDGET_MS = 5_000;
 
-/** The PRs asked of `gh` per repo, newest first; an older branch falls back to the base check. */
 const PR_LIMIT = 200;
 
-/** What git said of one linked worktree. */
 interface WorktreeProbe {
   readonly missing: boolean;
-  /** `git status` or `rev-parse` failed: nothing can be said, so it is kept. */
   readonly unreadable: boolean;
-  /** `git worktree lock`ed. */
   readonly locked: boolean;
   readonly head: string | undefined;
   readonly changedFiles: number;
-  /** Commits on HEAD no remote-tracking ref has. */
   readonly unpushed: number;
-  /** HEAD is already in the repo's base branch. */
   readonly inBase: boolean;
-  /** Epoch ms git last touched the worktree's index or HEAD; 0 when unknown. */
   readonly gitActivity: number;
 }
 
@@ -99,7 +86,6 @@ export const classifyWorktree = (input: ClassifyInput): StorageGroup => {
 export const underWorktreesFolder = (repoTop: string, path: string): boolean =>
   samePath(nodePath.dirname(path), nodePath.join(repoTop, ".worktrees"));
 
-/** `git status` locks and refreshes a linked worktree's index here; `HEAD` moves on commit. */
 const gitDirOf = (path: string): string | undefined => {
   try {
     const pointer = readFileSync(nodePath.join(path, ".git"), "utf8").trim();
@@ -119,13 +105,11 @@ const mtimeOf = (path: string): number => {
   }
 };
 
-/** Whether `git worktree lock` holds the worktree: its admin folder has a `locked` file. */
 const isLocked = (path: string): boolean => {
   const dir = gitDirOf(path);
   return dir !== undefined && existsSync(nodePath.join(dir, "locked"));
 };
 
-/** When git last wrote the worktree's index, HEAD or reflog: activity any tool leaves behind. */
 const gitActivityOf = (path: string): number => {
   const dir = gitDirOf(path);
   if (dir === undefined) return 0;
@@ -136,7 +120,6 @@ const gitActivityOf = (path: string): number => {
   );
 };
 
-/** Asks git about one linked worktree; `base` is the repo's base ref when it has one. */
 const probeWorktree = (
   path: string,
   base: string | undefined,
@@ -194,10 +177,8 @@ export const parseBranchPrs = (stdout: string): ReadonlyMap<string, BranchPr> =>
   for (const item of body as ReadonlyArray<Record<string, unknown>>) {
     const { number, state, headRefName, headRefOid } = item ?? {};
     if (typeof number !== "number" || typeof headRefName !== "string") continue;
-    // A fork's PR from a branch of the same name says nothing about this repo's branch.
     if (!isSameRepoHead(item)) continue;
     if (state !== "OPEN" && state !== "MERGED" && state !== "CLOSED") continue;
-    // gh lists the newest first; an older PR from a reused branch name says less.
     if (prs.has(headRefName)) continue;
     prs.set(headRefName, {
       number,
@@ -208,7 +189,6 @@ export const parseBranchPrs = (stdout: string): ReadonlyMap<string, BranchPr> =>
   return prs;
 };
 
-/** The repo's PRs by head branch, asked once; none without an `origin` or when gh can't answer. */
 const branchPrs = (repoTop: string): Effect.Effect<ReadonlyMap<string, BranchPr>, never, Proc> =>
   Effect.gen(function* () {
     const origin = yield* git(repoTop, ["config", "--get", "remote.origin.url"]).pipe(
@@ -234,20 +214,17 @@ const askGh = (repoTop: string): Effect.Effect<ReadonlyMap<string, BranchPr>, ne
     Effect.orElseSucceed(() => new Map<string, BranchPr>()),
   );
 
-/** One linked worktree as `git worktree list` gave it. */
 interface ListedWorktree {
   readonly path: string;
   readonly branch?: string | undefined;
 }
 
-/** What `storageEntry` needs beyond git's answers. */
 interface EntryContext {
   readonly repoTop: string;
   readonly openThreads: ReadonlyArray<Thread>;
   readonly pr: BranchPr | undefined;
 }
 
-/** Builds the Storage row for one linked worktree from git's and GitHub's answers. */
 const storageEntry = (
   listed: ListedWorktree,
   probe: WorktreeProbe,
@@ -258,11 +235,9 @@ const storageEntry = (
     usedCheckoutPaths([thread], LOCAL_HOST_ID).some((used) => samePath(used, path)),
   );
   const holder = users.find((thread) => samePath(thread.checkout.path, path)) ?? users[0];
-  // Gram's own folder only: a thread may have been opened in a worktree some other tool made.
   const madeByGram = underWorktreesFolder(context.repoTop, path);
   const pr = context.pr;
   const prSettled = pr !== undefined && pr.state !== "OPEN";
-  // A squash merge leaves HEAD in no remote branch once GitHub deletes the PR's.
   const onPrHead = prSettled && probe.head !== undefined && pr.headRefOid === probe.head;
   const unpushed = onPrHead ? 0 : probe.unpushed;
   const settled = prSettled || probe.inBase;
@@ -295,7 +270,6 @@ const storageEntry = (
   };
 };
 
-/** The repos Gram knows, each once: the projects that are repositories. */
 const knownRepos = (projects: ReadonlyArray<Project>): ReadonlyArray<string> => {
   const repos: string[] = [];
   for (const project of projects) {
@@ -305,7 +279,6 @@ const knownRepos = (projects: ReadonlyArray<Project>): ReadonlyArray<string> => 
   return repos;
 };
 
-/** Free and total bytes of the disk `path` is on; `undefined` where the platform can't say. */
 const diskSpaceAt = (path: string): Effect.Effect<DiskSpace | undefined> =>
   Effect.promise(() =>
     statfs(path).then(
@@ -333,7 +306,6 @@ export interface StorageSources {
 export const storageReport = (sources: StorageSources): Effect.Effect<StorageReport, never, Proc> =>
   scanStorage(sources).pipe(Effect.map((scan) => scan.report));
 
-/** `storageReport`, with the HEAD each worktree was read at, so a removal can tell it moved. */
 const scanStorage = (
   sources: StorageSources,
 ): Effect.Effect<
@@ -417,11 +389,6 @@ export interface CleanUpSources extends StorageSources {
   readonly currentThreads: Effect.Effect<ReadonlyArray<Thread>>;
 }
 
-/**
- * The entry as it stands right before removal: the threads read again and git asked again. A
- * moved HEAD, new uncommitted work or a lock shows here, so `keepReason` judges what would really
- * go rather than what the report saw.
- */
 const recheckEntry = (
   entry: StorageWorktree,
   reportHead: string | undefined,
@@ -436,7 +403,6 @@ const recheckEntry = (
     group: inUse ? "inUse" : entry.group,
     missing: probe.missing,
     changedFiles: probe.changedFiles,
-    // The report's count stands only while HEAD hasn't moved (a squash-merged PR head reads 0).
     unpushed: probe.head === reportHead ? entry.unpushed : probe.unpushed,
     ...(probe.unreadable ? { unreadable: true as const } : {}),
     ...(probe.locked ? { locked: true as const } : {}),
@@ -453,7 +419,6 @@ export interface Cleaned {
 export const prunedCount = (output: string): number =>
   output.split("\n").filter((line) => line.trim().startsWith("Removing ")).length;
 
-/** `git worktree prune` of one repo; how many registrations went. */
 const pruneRepo = (repoTop: string): Effect.Effect<number, never, Proc> =>
   git(repoTop, ["worktree", "prune", "--verbose"]).pipe(
     Effect.map((out) => (out.status === 0 ? prunedCount(`${out.stdout}\n${out.stderr}`) : 0)),
@@ -485,7 +450,6 @@ export const cleanUp = (
     const pruneRepos = new Set<string>();
     if (request.prune) for (const repo of knownRepos(sources.projects)) pruneRepos.add(repo);
     for (const path of request.paths) {
-      // Exactly the path asked for: `samePath` also matches another spelling of the same folder.
       const reported = report.worktrees.find((w) => w.path === path);
       const reason = keepReason(reported, confirmed);
       if (reported === undefined || reason !== undefined) {
@@ -493,13 +457,10 @@ export const cleanUp = (
         continue;
       }
       if (reported.missing) {
-        // Nothing left on disk: dropping git's registration is all there is to do.
         pruneRepos.add(reported.repoTop);
         continue;
       }
       const size = yield* cachedFolderSize(path, PLAN_SIZE_BUDGET_MS);
-      // Asked again with the size in hand: the report and the count take time, in which a thread
-      // may have opened here or work landed.
       const threads = yield* sources.currentThreads;
       const entry = recheckEntry(
         reported,
@@ -508,7 +469,6 @@ export const cleanUp = (
         threads,
       );
       if (entry.missing) {
-        // Gone since the report: there is nothing left to remove, only git's record to prune.
         pruneRepos.add(entry.repoTop);
         continue;
       }

@@ -140,7 +140,6 @@ export const launchChecksHandlers = Effect.gen(function* () {
           ),
         { discard: true },
       );
-  // Outside the cache, so changing the default or adding a thread counts at once.
   const agentsInUse = (checks: LaunchChecks) =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;

@@ -1,7 +1,3 @@
-/**
- * The condition kinds Gram can wait on (`WakeCondition`), one `WakeConditionSource` each. A new kind
- * is a source here and a line in `WakeConditionSourcesLive`; the engine (`conditions.ts`) runs them.
- */
 import {
   AppToolError,
   isNpmPackageName,
@@ -44,7 +40,6 @@ const notMet = (seen?: Readonly<Record<string, string>>): ConditionLook =>
 
 const refuse = (message: string) => new AppToolError({ tool: "schedule_wake", message });
 
-/** How long one branch's head, read for one wake, answers for the others on it. */
 const HEAD_READ_REUSE_MS = 20_000;
 
 /**
@@ -63,7 +58,6 @@ export const branchMovedSource = Effect.gen(function* () {
 
   const headOf = (cwd: string, repo: string, branch: string) =>
     Effect.gen(function* () {
-      // Per caller (`GhCallEnv`): a head read for one thread is never another's answer.
       const key = `${yield* currentGhCaller}\u0000${repo.toLowerCase()}\u0000${branch}`;
       const now = yield* Clock.currentTimeMillis;
       const kept = reads.get(key);
@@ -88,7 +82,6 @@ export const branchMovedSource = Effect.gen(function* () {
         }
         const head = yield* heads.head(cwd, spec.repo, branch);
         if (head === null) return yield* refuse(`${spec.repo} has no branch ${branch}.`);
-        // Unreadable now: the first look that reads it is the baseline.
         return {
           spec: { ...spec, branch },
           ...(head === undefined ? {} : { seen: { head } }),
@@ -113,7 +106,6 @@ export const branchMovedSource = Effect.gen(function* () {
   return source;
 });
 
-/** At rest: the thread runs no turn and waits on nothing. */
 const AT_REST: ReadonlyArray<ThreadStatus> = ["idle", "cold", "ended"];
 
 /**
@@ -128,7 +120,6 @@ export const threadFinishedSource = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const runtimes = yield* ThreadRuntimes;
   const hub = yield* EventHub;
-  /** The threads some wake waits on, which their upserts are let through for. */
   const targets = new Set<ThreadId>();
 
   const lastReport = (thread: Thread) =>
@@ -239,13 +230,10 @@ const HOUR_MS = 3_600_000;
 export const RELEASE_READ_EVERY_MS = 6 * HOUR_MS;
 /** The longest a failing registry is left before it is asked again. */
 export const RELEASE_BACKOFF_MAX_MS = 24 * HOUR_MS;
-/** Setting a wake reads afresh, unless a read this recent answered. */
 const RELEASE_ARM_REUSE_MS = 60_000;
 
-/** `1.2.3` for `v1.2.3`. */
 const bareVersion = (version: string) => version.replace(/^v/, "");
 
-/** The newest of `releases` by version; `undefined` for none. */
 const newest = (releases: ReadonlyArray<UpstreamRelease>) =>
   releases.reduce<UpstreamRelease | undefined>(
     (best, each) =>
@@ -253,7 +241,6 @@ const newest = (releases: ReadonlyArray<UpstreamRelease>) =>
     undefined,
   );
 
-/** The releases a wake counts: stable ones, and prereleases when it asked for them. */
 const counted = (spec: ReleasePublishedCondition, releases: ReadonlyArray<UpstreamRelease>) =>
   releases.filter((release) => spec.includePrerelease === true || !release.prerelease);
 
@@ -285,7 +272,6 @@ const where = (spec: ReleasePublishedCondition) => (spec.source === "npm" ? "npm
  */
 export const releasePublishedSource = Effect.gen(function* () {
   const upstream = yield* UpstreamReleases;
-  /** Per package: the last answer that read, when, and when to ask again. */
   const reads = new Map<
     string,
     {
@@ -296,10 +282,8 @@ export const releasePublishedSource = Effect.gen(function* () {
     }
   >();
 
-  /** The package's releases: the kept answer while it is due no read, else a new one. */
   const releasesOf = (spec: ReleasePublishedCondition, reuseMs?: number) =>
     Effect.gen(function* () {
-      // A GitHub repo's releases per caller (`GhCallEnv`), as its heads are.
       const caller = spec.source === "github" ? yield* currentGhCaller : "";
       const key = `${caller}\u0000${spec.source}\u0000${spec.name.toLowerCase()}`;
       const now = yield* Clock.currentTimeMillis;
@@ -316,7 +300,6 @@ export const releasePublishedSource = Effect.gen(function* () {
       if (list === undefined) {
         const failures = (kept?.failures ?? 0) + 1;
         const wait = Math.min(RELEASE_READ_EVERY_MS * 2 ** failures, RELEASE_BACKOFF_MAX_MS);
-        // A failure keeps the last answer that read, if there was one.
         reads.set(key, { list: kept?.list, at: kept?.at ?? now, nextAt: now + wait, failures });
         return kept?.list;
       }
@@ -327,11 +310,9 @@ export const releasePublishedSource = Effect.gen(function* () {
   const source: WakeConditionSource<"releasePublished"> = {
     kind: "releasePublished",
     pollEvery: Duration.hours(1),
-    // A published release doesn't flap.
     debounce: Duration.zero,
     arm: (_caller, spec) =>
       Effect.gen(function* () {
-        // An owner never starts with a dot; a repo may (`.github`), but isn't `.` or `..`.
         if (spec.source === "npm" && !isNpmPackageName(spec.name)) {
           return yield* refuse(
             `Name an npm package as name or @scope/name, in lowercase, not ${spec.name}.`,
@@ -353,7 +334,6 @@ export const releasePublishedSource = Effect.gen(function* () {
         };
         const list = yield* releasesOf(filled, RELEASE_ARM_REUSE_MS);
         if (list === null) return yield* refuse(`${where(spec)} has no ${spec.name}.`);
-        // Unreadable now: the first look that reads it takes the baseline.
         if (list === undefined) return { spec: filled };
         if (filled.after === undefined) {
           const latest = newest(counted(filled, list));
@@ -372,7 +352,6 @@ export const releasePublishedSource = Effect.gen(function* () {
         const spec = wake.spec;
         const list = yield* releasesOf(spec);
         if (list === undefined) return undefined;
-        // Gone since: nothing will be published there to wait for; the fallback time still is.
         if (list === null) return notMet();
         const after = spec.after ?? wake.seen?.after;
         if (after === undefined) {
@@ -430,7 +409,6 @@ export const versionChangedSource = Effect.gen(function* () {
         if (now === from) return notMet();
         return met({ target: wake.spec.target, version: now, previous: from });
       }),
-    // The hosts register as the server finishes starting: a look then sees an update.
     changes: Stream.fromEffect(Effect.sleep(Duration.seconds(10))).pipe(
       Stream.concat(installed.changes),
     ),

@@ -22,9 +22,7 @@ export const bootTheme = (
   try {
     const stored = JSON.parse(storage?.getItem("gram.theme") ?? "{}") as { state?: typeof state };
     state = stored.state ?? {};
-  } catch {
-    // Unreadable storage boots the defaults.
-  }
+  } catch (_unreadableStorageBootsTheDefaults) {}
   let mode: "light" | "dark" = state.mode === "light" ? "light" : "dark";
   if (state.mode === "system") mode = prefersLight() ? "light" : "dark";
   const stored =
@@ -39,7 +37,6 @@ export const bootTheme = (
   root.setAttribute("data-theme-booting", "");
 };
 
-/** A preset palette stored in the other mode paints as its partner, the way `ThemeRoot` will. */
 const pairedPalette = (stored: string, mode: "light" | "dark", theme?: HostTheme): string =>
   resolvePalette([...(PRESET_PALETTES as readonly Palette[]), ...hostPalettes(theme)], stored, mode)
     ?.id ?? stored;

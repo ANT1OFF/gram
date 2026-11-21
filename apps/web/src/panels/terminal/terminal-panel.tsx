@@ -61,7 +61,6 @@ export function TerminalPanel({
   };
   const closeTab = (id: TerminalId) => {
     void closeTerminal(api, threadId, id);
-    // The close button leaves with its tab: keep focus in the tab strip.
     setTimeout(() => {
       if (!focusLost()) return;
       const panel = panelRef.current;
@@ -107,7 +106,6 @@ export function TerminalPanel({
             const selected = id === entry.active;
             const script = entry.scripts?.[id];
             const run = entry.runs?.[id];
-            // Shells are numbered among themselves; a script's tab is its name.
             const number =
               entry.ids.filter((each) => entry.scripts?.[each] === undefined).indexOf(id) + 1;
             const name = script ?? `Terminal ${number}`;

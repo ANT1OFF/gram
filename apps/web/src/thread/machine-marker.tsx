@@ -141,7 +141,6 @@ export function MachineMarker({
     "aria-label": `Runs ${mark.words}`,
     className: cn(
       "flex h-lh min-w-0 items-center gap-1 text-meta whitespace-nowrap",
-      // The glyph alone never gives way; with its name it shrinks, and the name is cut.
       words ? "shrink" : "shrink-0",
       mark.state === undefined
         ? "text-muted-foreground"

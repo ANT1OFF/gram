@@ -16,7 +16,6 @@ export class MockPages implements DesktopPages {
   }
 
   async open(key: string, url: string): Promise<boolean> {
-    // As the shell: a page listener address only.
     if (!/^http:\/\/127\.0\.0\.1:\d+\/gram-pages\/[A-Za-z0-9_-]+\//.test(url)) return false;
     this.opened.push(`${key} ${url}`);
     let frame = this.#frames.get(key);

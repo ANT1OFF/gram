@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import { useFeature } from "@/settings/use-diagnostics";
 import { useLayoutStore } from "@/stores/layout";
 
-/** Opens a local port in the default browser: through the desktop bridge when present, else the server. */
 const openLocalPort = async (api: Api, port: number): Promise<void> => {
   const bridge = window.gram;
   if (bridge?.openLocalPort) await bridge.openLocalPort(port);
@@ -45,8 +44,6 @@ export function PortChips({
   const preview = useFeature("previewPane");
   if (ports === undefined || ports.length === 0) return null;
 
-  // Into the thread's route as well as its pane: off a thread's page (Home, Settings, the board)
-  // the right panel follows the route, not the grid.
   const previewPort = (port: number) => {
     const layout = useLayoutStore.getState();
     layout.openThread(threadId);

@@ -30,7 +30,6 @@ export function ThreadDialogs() {
   const open = useThreadDialogs((s) => s.open);
   const dismiss = useThreadDialogs((s) => s.dismiss);
   const clearError = useThreadDialogs((s) => s.clearError);
-  // A dialog asked for before its code is in hand opens once it is.
   const bodies = threadDialogBodies.useModule(dialog !== undefined);
 
   useShortcut({
@@ -50,7 +49,6 @@ export function ThreadDialogs() {
     keys: "f2",
     label: "Rename thread…",
     group: "Thread",
-    // F2 types nothing, so it works from the composer too.
     allowInInputs: true,
     when: () => focusedThread() !== undefined,
     run: () => {
@@ -59,7 +57,6 @@ export function ThreadDialogs() {
     },
   });
 
-  // The desktop menu owns ⌘W there; this documents it and gives the browser the same behaviour.
   useShortcut({
     id: "pane.close",
     keys: "mod+w",

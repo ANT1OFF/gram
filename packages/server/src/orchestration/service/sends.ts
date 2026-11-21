@@ -1,6 +1,3 @@
-// Sends: the checks on `send_message` to a worker and back to
-// the orchestrator, the per-pair rate limit, and the once-only send a `clientRequestId` keeps.
-
 import { type ThreadId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -16,7 +13,6 @@ import {
 } from "./kit.ts";
 import { type OrchestrationShape } from "./shape.ts";
 
-/** The key an orchestrator's sends to one worker are counted under. */
 const sendKey = (callerId: ThreadId, targetId: ThreadId) => `${callerId} ${targetId}`;
 
 /** The send checks, their record, and the once-only send. */
@@ -36,7 +32,6 @@ export const makeSends = (kit: OrchestrationKit) => {
     updateOutbox,
   } = kit;
 
-  /** The orchestrator → worker loop guard for one input, whichever tool sends it. */
   const guardSend = (tool: string, callerId: ThreadId, targetId: ThreadId) =>
     Effect.gen(function* () {
       const { state } = yield* requireAuthority(tool, callerId);

@@ -1,7 +1,3 @@
-// Workspaces and the orchestrator's charter. Apart from
-// `orchestration.ts` because the charter names `PermissionMode` and `ModelRef`, and `domain.ts`
-// imports that file.
-
 import * as Schema from "effect/Schema";
 import { DraftId } from "./attachments.ts";
 import { type AgentKind, ModelRef, PermissionMode, UserInput } from "./domain.ts";
@@ -86,9 +82,7 @@ const AtLeastOne = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 export const WORKER_MODEL_NOTE_MAX = 300;
 
 const WorkerModelNotes = {
-  /** The kind of work the user wants on this model, in their words; the orchestrator picks by it. */
   useFor: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(WORKER_MODEL_NOTE_MAX))),
-  /** A worker gets this model when the orchestrator names none; the first entry marked wins. */
   default: Schema.optionalKey(Schema.Boolean),
 };
 
@@ -102,7 +96,6 @@ export type PinnedWorkerModel = typeof PinnedWorkerModel.Type;
 export const WorkerModel = Schema.Union([
   PinnedWorkerModel,
   Schema.Struct({ ...TierRef.fields, ...WorkerModelNotes }),
-  // A tier only a newer Gram knows: kept as stored, and unavailable here.
   Schema.Struct({ ...UnknownTierRef.fields, ...WorkerModelNotes }),
 ]);
 export type WorkerModel = typeof WorkerModel.Type;
@@ -159,8 +152,6 @@ export const rosterModelHere = (
 ): { readonly entry: RosterModel; readonly missing?: string } => {
   if (!("tier" in entry)) return { entry };
   if (!isTierRef(entry)) {
-    // Kept for the newer Gram that wrote it; here it is unavailable, as Lead's first choice so
-    // the entry still has a model to show, and the default stands in for it.
     const stand = firstChoiceOf({ tier: "lead" }, table);
     const kept = entry.agent === "claude" || entry.agent === "codex" ? entry.agent : undefined;
     return {
@@ -252,7 +243,6 @@ export const ConnectorSet = Schema.Union([
 ]);
 export type ConnectorSet = typeof ConnectorSet.Type;
 
-/** Entries trimmed, once each, without those `connectorEntryProblem` refuses. */
 const keptEntries = (entries: ReadonlyArray<string>): Array<string> => [
   ...new Set(
     entries
@@ -270,7 +260,6 @@ export const connectorSetOf = (
   return "allow" in set ? { allow: keptEntries(set.allow) } : { deny: keptEntries(set.deny) };
 };
 
-/** A connector entry's URL pattern as one expression: `*` matches anything, all else is literal. */
 const urlPattern = (entry: string): RegExp =>
   new RegExp(
     `^${entry

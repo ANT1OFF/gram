@@ -46,7 +46,6 @@ export interface ModelPick {
   readonly model: string;
 }
 
-/** A row of the prompt box's list, unique across agents and gateways. */
 const pickKey = (agent: AgentKind, profileId: ProfileId | undefined, model: string) =>
   JSON.stringify([agent, profileId ?? null, model]);
 
@@ -55,7 +54,6 @@ const parsePick = (key: string): ModelPick => {
   return profileId === null ? { agent, model } : { agent, profileId, model };
 };
 
-/** `options` of `agent` through `profileId`, keyed for the prompt box's list and marked. */
 const keyed = (
   agent: AgentKind,
   profileId: ProfileId | undefined,
@@ -67,11 +65,6 @@ const keyed = (
     icon: <AgentIcon agent={agent} className="size-icon-row" />,
   }));
 
-/**
- * The prompt box's model list across `agents`: each agent's own models under its name, then every
- * model added in Settings under Custom, then the chosen gateway's models under its name. Each row
- * carries its agent's mark. Another agent's models are asked for only while `open`.
- */
 function useModelsAcross(
   agents: readonly AgentKind[],
   current: { agent: AgentKind; profileId?: ProfileId | undefined },
@@ -79,8 +72,6 @@ function useModelsAcross(
   open: boolean,
 ): PickerOption<string>[] {
   const api = useApi();
-  // The same queries `useModelsQuery` makes, so the lists the draft already fetched are reused. An
-  // agent the draft isn't on is asked only once the list opens, never just for showing the form.
   const listings = useQueries({
     queries: agents.map((agent) => ({
       enabled: open || (agent === current.agent && current.profileId === undefined),
@@ -127,7 +118,6 @@ function useModelsAcross(
   return [...own, ...custom, ...gateway];
 }
 
-/** The embedding app's words for `agent`'s empty Model row: its own, or the one for every agent. */
 const noneOf = (
   none: ShellModelsNone | ((agent: ShellAgent) => ShellModelsNone | undefined) | undefined,
   agent: AgentKind,
@@ -139,14 +129,12 @@ const noneOf = (
   }
 };
 
-/** The embedding app's words for a Model row with nothing to pick, and where to put it right. */
 function NoModels({ none }: { none: ShellModelsNone }) {
   return (
     <>
       <span className="min-w-0 whitespace-normal">{none.text}</span>
       {none.action !== undefined && (
         <Link
-          // A path under the app: one of its pages, as the navigation's are.
           {...({ to: none.action.to } as unknown as { to: "/" })}
           className="rounded-sm text-meta text-foreground underline underline-offset-2 outline-none hover:text-foreground/80 focus-visible:focus-ring"
         >
@@ -157,12 +145,6 @@ function NoModels({ none }: { none: ShellModelsNone }) {
   );
 }
 
-/**
- * A model list's state: loading before it has anything to show, failed with a retry, or, where
- * the embedding app narrows the list, with nothing left to pick and the app's words for that.
- * `keep` shows `value` even when it is not offered (a saved setting); a draft's is only shown while
- * it is offered, and `replacement` names the one it moves to.
- */
 function useModelListing(
   agent: AgentKind,
   profileId: ProfileId | undefined,
@@ -180,9 +162,7 @@ function useModelListing(
     listed !== undefined &&
     value !== "" &&
     !listed.some((model) => model.id === value || model.resolvedId === value);
-  // A value stored on a pinned id or a name shows as the catalogue row it runs.
   const shown = pickerModelId(listed, value) ?? value;
-  // CLI aliases are a fallback only for local Claude, never for a gateway or another account.
   const options = modelOptions(
     listed,
     !keep && notOffered ? undefined : shown,
@@ -194,7 +174,6 @@ function useModelListing(
   const { recheck } = useLaunchChecks();
   const retry = useMutation({
     mutationFn: async () => {
-      // A CLI login performed outside Gram may leave its discovery server holding old auth.
       if (profileId === undefined) await recheck();
       else await listing.refetch();
     },
@@ -265,8 +244,6 @@ export function useModelSection({
     replacement,
     shown: picked,
   } = useModelListing(agent, profileId, value, keep);
-  // A draft never keeps, nor starts on, a model the embedding app does not offer. Once for each
-  // model it moves off, whatever the caller's `onChange` is this render.
   const moveTo = useEffectEvent((model: string) => onChange(model));
   useEffect(() => {
     if (!keep && replacement !== undefined) moveTo(replacement);
@@ -285,9 +262,7 @@ export function useModelSection({
     refresh();
     setOpened(true);
   };
-  // Closed, the other agents' lists are no longer asked for; what they fetched stays cached.
   const onClose = () => setOpened(false);
-  // With nothing of this agent's to pick, the other agents' models stay pickable beside the words.
   if (status !== undefined && !(empty && across))
     return { section: undefined, status, onOpen, onClose };
   if (!across)
@@ -328,7 +303,6 @@ export function useModelSection({
           },
         },
       }),
-      // Named from the agent's own list, which has the model before the other agents' have loaded.
       named: shown.named,
     },
     status,
@@ -352,7 +326,6 @@ export function ModelSelect({
   value: string;
   onChange: (model: string) => void;
 }) {
-  // Settings: a saved model is shown as it is, offered or not.
   const { options, refresh, status, shown } = useModelListing(agent, profileId, value, true);
   const [open, setOpenState] = useState(false);
   const setOpen = (next: boolean) => {
@@ -361,7 +334,6 @@ export function ModelSelect({
   };
   const favourite = useIsFavourite(agent);
   if (status !== undefined) return status;
-  // The plain select has no Legacy fold, so a list with superseded models searches too.
   if (options.length > MODEL_SEARCH_THRESHOLD || options.some((option) => option.legacy)) {
     return (
       <ModelCombobox

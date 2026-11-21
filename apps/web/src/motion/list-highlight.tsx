@@ -13,11 +13,9 @@ export const REPEAT_MS = 100;
 export const glides = (sinceLast: number | undefined): boolean =>
   sinceLast !== undefined && sinceLast >= REPEAT_MS;
 
-/** Where `target` sits and how big it is, in the list's own coordinates, as one comparable key. */
 const geometryOf = (target: HTMLElement): string =>
   `${target.offsetLeft} ${target.offsetTop} ${target.offsetWidth} ${target.offsetHeight}`;
 
-/** Puts the highlight exactly over `target`, in the list's own coordinates. */
 const placeOver = (element: HTMLElement, target: HTMLElement) => {
   element.style.translate = `${target.offsetLeft}px ${target.offsetTop}px`;
   element.style.width = `${target.offsetWidth}px`;
@@ -58,12 +56,8 @@ export function ListHighlight({
     last.current = { targetId, at: now };
     element.hidden = false;
     placeOver(element, target);
-    // The menu narrows and widens with the window, and the option with it, while neither the
-    // selection nor the list changes: follow it there at once, never gliding.
     if (typeof ResizeObserver === "undefined") return;
     let placed = geometryOf(target);
-    // An observer reports once as it starts watching, with nothing changed: that one must not end
-    // the glide this selection just began, so only a real change of geometry re-places.
     const resized = new ResizeObserver(() => {
       const current = geometryOf(target);
       if (current === placed) return;
@@ -73,7 +67,6 @@ export function ListHighlight({
     });
     resized.observe(target);
     return () => resized.disconnect();
-    // `layout` isn't read: a list that changes around the same option must place it again.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies, react/exhaustive-deps -- see above
   }, [targetId, layout]);
   return (

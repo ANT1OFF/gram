@@ -1,7 +1,3 @@
-// Gram's locks keyed by the resource they guard (lint: `gram/no-adhoc-lock`): a workspace, a repo
-// and base branch, a checkout, never a thread standing in for one. `makeKeyedLock` holds one permit
-// per key; `makeAdmission` lets a capped number of jobs run at once, in arrival order.
-
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";

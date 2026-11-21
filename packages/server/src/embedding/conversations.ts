@@ -1,15 +1,3 @@
-// The conversations of an embedding host its threads answer (`ConversationRef`): which thread owns
-// each, how one changes hands, and a reply out through the host's event sink.
-//
-// - A message the host sends in from a conversation (`/embed/v1/thread-messages`) gives the thread
-//   it was sent to the conversation, unless another open thread owns it: the host routes, and the
-//   first thread it routes to answers.
-// - An orchestrator hands a conversation it owns to a worker it spawns (`spawn_worker`'s
-//   `conversations`), and takes it back from one of its workers (`take_conversation`). A worker's
-//   go back to its orchestrator when it closes, or to nobody if that is gone too.
-// - Each change is told to the host as `conversation.owner`, so the conversation's next messages go
-//   to the owner. A thread replies only in a conversation it owns (`conversation.reply`), so text
-//   one conversation's people wrote can't make a thread post in another.
 import {
   type ConversationRef,
   CONVERSATIONS_PER_THREAD_MAX,
@@ -86,7 +74,6 @@ export class Conversations extends Context.Service<Conversations, ConversationsS
       const sink = yield* EventSink;
       const hub = yield* EventHub;
       const config = yield* ServerConfig;
-      // One change of hands at a time, so two can't both find a conversation unowned.
       const lock = yield* Semaphore.make(1);
 
       const on = Effect.map(
@@ -119,7 +106,6 @@ export class Conversations extends Context.Service<Conversations, ConversationsS
           Effect.gen(function* () {
             const owner = yield* ownerOf(conversation.id);
             if (owner !== undefined) {
-              // Its label as the host gives it now, kept by whichever thread owns it.
               if (owner.id === threadId && conversation.label !== undefined)
                 yield* update(threadId, (list) =>
                   list.map((each) => (each.id === conversation.id ? conversation : each)),
@@ -197,8 +183,6 @@ export class Conversations extends Context.Service<Conversations, ConversationsS
           return { id: replyId };
         });
 
-      // A closed worker's conversations go back to the orchestrator that spawned it, if it is open,
-      // and a closed thread's are nobody's otherwise.
       yield* hub.internalEvents(isThreadRemoved, "conversations").pipe(
         Stream.runForEach(({ threadId }) =>
           lock.withPermits(1)(

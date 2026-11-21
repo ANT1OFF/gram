@@ -1,5 +1,3 @@
-// What of an agent's chunk the server takes: who wrote or sent a message is the server's word,
-// set from what it knows (`user-input.ts`), never a session's.
 import type { GramUIMessageChunk } from "@gram/contracts";
 
 /** `chunk` without the fields that say who wrote or sent its message. */

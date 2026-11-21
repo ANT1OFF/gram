@@ -30,9 +30,6 @@ import {
 
 import { agentLabel } from "@/agents/agent-label";
 
-// The recommended setup in Settings: what each tier is on this machine, what turning the mode on
-// would change (the one-time sheet), and what turning it off keeps. Pure, so it is tested alone.
-
 const effortWord = (effort: ReasoningVariant) => `${effort[0]!.toUpperCase()}${effort.slice(1)}`;
 
 /** A tier as it stands on this machine: the model it runs on and its effort, if anything fills it. */
@@ -99,17 +96,12 @@ export const pinnedText = (model: ModelRef): string =>
     ...(model.variant === undefined ? [] : [effortWord(model.variant)]),
   ].join(" · ");
 
-/** Whether a pinned orchestrator is Gram's own past default (Opus at high), not the user's pick. */
 const isPastOrchestratorDefault = (model: ModelRef) =>
   model.agent === DEFAULT_ORCHESTRATOR_MODEL.agent &&
   model.model === DEFAULT_ORCHESTRATOR_MODEL.model &&
   model.variant === DEFAULT_ORCHESTRATOR_MODEL.variant &&
   model.profileId === undefined;
 
-/**
- * The tier a pinned roster entry runs the same model as here, if one does: what ticking it moves it
- * to, keeping its note and its default mark.
- */
 const tierOfPinned = (entry: ModelRef, available: AvailableModels): Tier | undefined => {
   const agent = entry.agent;
   if (!isTierAgent(agent)) return undefined;
@@ -233,7 +225,6 @@ export const turnOnWrites = (
   };
   const saved = settings.agents.defaultModel;
   if (saved === undefined && !ticked.has("default")) {
-    // Kept as it was: unset meant the CLI's own default, which the mode would otherwise replace.
     const discovered = localSubscriptionDefault(available.claude, available.codex);
     if (discovered !== undefined) agents["defaultModel"] = discovered;
   } else if (saved !== undefined && isPinned(saved) && ticked.has("default")) {
@@ -284,7 +275,6 @@ export const turnOnWrites = (
   return { patch: patch as SettingsPatch, charters };
 };
 
-/** A following slot pinned to what it runs on here, or left as it is when nothing fills it. */
 const pinHere = (slot: ModelSlot, available: AvailableModels): ModelSlot => {
   if (!isTierRef(slot)) return slot;
   return resolveTier(RECOMMENDED, slot as TierRef, available)?.ref ?? slot;
@@ -319,7 +309,6 @@ export const turnOffKeepWrites = (
       const here = rosterModelHere(entry, available);
       if (here.missing !== undefined) return entry;
       const { tier: _tier, tierAgent: _agent, unknownTier: _unknown, ...model } = here.entry;
-      // Its note stays the user's only when they wrote one; the tier's note goes with the tier.
       const { useFor: _note, ...bare } = model;
       return entry.useFor === undefined ? bare : { ...bare, useFor: entry.useFor };
     });

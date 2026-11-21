@@ -20,10 +20,6 @@ export const evidenceSaver = (
   store: Pick<ThreadStoreShape, "getThread">,
   outputs: Pick<WorkspaceOutputsShape, "record"> | undefined,
 ) => {
-  /**
-   * The thread's checkout, where evidence files go, on this disk: a thread whose session runs on
-   * another machine has its folder there, and the same path here is this machine's own.
-   */
   const checkoutOf = (tool: string, threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* store
@@ -40,10 +36,6 @@ export const evidenceSaver = (
       return effectiveCheckout(thread).path;
     });
 
-  /**
-   * Writes evidence inside the checkout; the path as the agent would name it, relative. A failed
-   * write names only the path the agent gave, never what this disk said about it.
-   */
   const saveEvidence = (
     tool: string,
     threadId: ThreadId,

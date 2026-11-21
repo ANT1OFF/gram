@@ -64,7 +64,6 @@ export const typeIntoField = (field: HTMLTextAreaElement, text: string): boolean
   try {
     return document.execCommand("insertText", false, text);
   } catch {
-    // Some test DOMs throw instead of returning false.
     return false;
   }
 };

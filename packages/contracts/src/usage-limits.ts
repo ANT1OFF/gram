@@ -1,6 +1,3 @@
-// Subscription limits as app state: the latest reading of each window the CLIs report, kept by the
-// server across restarts and replayed to every client that connects, and the forecast drawn from it.
-
 import * as Schema from "effect/Schema";
 import { rateLimitFields } from "./agent.ts";
 import { AgentKind } from "./domain.ts";
@@ -28,7 +25,6 @@ export const LIMIT_SAMPLES_MAX = 120;
  */
 export const LIMIT_SAME_WINDOW_MS = 10 * 60 * 1000;
 
-/** A share that falls by more than this starts a new window, whatever the reset says. */
 const LIMIT_DROP = 0.1;
 
 /** One change in a window's use: when it was read and the share used then. */
@@ -136,7 +132,6 @@ export function nextLimitReading(
   const sameWindow =
     before !== undefined &&
     sameLimitWindow(
-      // With no sample yet, any share is of the same window.
       { ...before, utilization: last?.utilization ?? 0 },
       { resetsAt: report.resetsAt, utilization },
       now,
@@ -148,8 +143,6 @@ export function nextLimitReading(
       : [...kept, { at: now, utilization }].slice(-LIMIT_SAMPLES_MAX);
   const resetsAt = report.resetsAt ?? (sameWindow ? before.resetsAt : undefined);
   return {
-    // An account metadata percentage isn't admission proof. A turn's explicit allowed event
-    // can clear a rejection, but a still-exhausted snapshot of the same window cannot.
     status:
       options.snapshot === true && sameWindow && before.status === "rejected" && utilization >= 1
         ? "rejected"

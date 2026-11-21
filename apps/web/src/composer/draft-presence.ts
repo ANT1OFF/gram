@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { useApi } from "@/api/context";
 import { useDraftStore } from "@/stores/drafts";
 
-/** While a draft waits, the server hears of it at least this often (`DRAFT_REPORT_MS` there). */
 const DRAFT_REPORT_MS = 30_000;
 
 /** The threads whose composer holds more than whitespace. */
@@ -23,7 +22,6 @@ export function draftPresenceReporter(send: (threadIds: readonly string[]) => Pr
   let last: string | undefined;
   const report = (threadIds: readonly string[], force = false) => {
     const key = threadIds.join("\n");
-    // Nothing to repeat for a window with no drafts: the server forgets it once it says so.
     if (!force && key === last) return;
     if (force && threadIds.length === 0 && last === "") return;
     last = key;
@@ -34,7 +32,6 @@ export function draftPresenceReporter(send: (threadIds: readonly string[]) => Pr
   return { report };
 }
 
-/** A window's own id for its draft reports, kept across reloads of the window. */
 const windowId = (): string => {
   const key = "gram.composer.windowId";
   try {

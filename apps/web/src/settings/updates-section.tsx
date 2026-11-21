@@ -71,8 +71,6 @@ export function UpdatesSection({
       <p className="text-reading text-muted-foreground">Updates are managed by the desktop app.</p>
     );
   }
-  // A Developer ID signed install updates through Electron's updater; the rest of this page is
-  // the `gh` updater's. Until main has said which this install uses, show neither.
   if (native === undefined && bridge.updates.native)
     return <p className="text-reading text-muted-foreground">Reading the update status…</p>;
   if (native) {
@@ -113,9 +111,6 @@ export function UpdatesSection({
     const previous = pinnedVersion ?? null;
     const pin = pinForInstall(check?.releases ?? [], release.tag);
     try {
-      // Stored first: a successful install exits the app before a later write could land. A pin is
-      // stored again even when it's the saved one, since the shell checks the copy the server
-      // mirrors, which a failed mirror write leaves behind.
       if (pin !== previous || pin !== null) await onPinChange?.(pin);
       const result = await bridge.updates.install({
         channel: check?.channel ?? channel,
@@ -148,7 +143,6 @@ export function UpdatesSection({
   return (
     <div className="flex flex-col gap-3 text-reading" data-testid="updates">
       <BuildStatus check={check} checking={checking} error={error} />
-      {/* An unsigned Mac has no updater to check automatically. */}
       {bridge.platform !== "darwin" && (
         <Toggle
           label="Check for updates automatically"
@@ -269,7 +263,6 @@ function CheckSummary({ check }: { check: UpdateCheck }) {
     );
   }
   if (!check.available && check.channel === "stable" && check.currentVersion.includes("-")) {
-    // An empty stable feed gives the same `available: false`, with nothing to be ahead of.
     const hasStable = check.releases?.some((release) => !release.prerelease) ?? false;
     return (
       <p className="text-muted-foreground">

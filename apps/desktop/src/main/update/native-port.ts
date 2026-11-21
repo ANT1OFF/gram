@@ -1,6 +1,3 @@
-// electron-updater and Squirrel.Mac behind `NativeUpdaterPort`. electron-updater checks and
-// downloads (and checks the ZIP's SHA-512); Squirrel.Mac unpacks it, checks its code signature
-// against this app's designated requirement, and installs it when the app exits.
 import { autoUpdater as squirrel } from "electron";
 import { MacUpdater } from "electron-updater";
 
@@ -18,12 +15,9 @@ export function createElectronUpdaterPort(options: {
 }): NativeUpdaterPort {
   const updater = new MacUpdater();
   let staging: Promise<void> | undefined;
-  // Nothing happens unasked: no download on a check, and above all nothing handed to Squirrel.Mac
-  // (which would install on any quit) until Gram's stop fence has passed.
   updater.autoDownload = false;
   updater.autoInstallOnAppQuit = false;
   updater.autoRunAppAfterInstall = true;
-  // Every download is the whole ZIP: no block maps to publish or trust.
   updater.disableDifferentialDownload = true;
   updater.fullChangelog = false;
   updater.logger = {
@@ -35,7 +29,6 @@ export function createElectronUpdaterPort(options: {
   return {
     useFeed(channel) {
       updater.setFeedURL(feedOptions(options.feed, channel));
-      // Setting the channel allows downgrades; nothing here ever does.
       updater.channel = nativeChannelName(channel);
       updater.allowPrerelease = channel === "prerelease";
       updater.allowDowngrade = false;
@@ -66,12 +59,8 @@ export function createElectronUpdaterPort(options: {
     },
 
     stage(snapshot, version) {
-      // One owned attempt at a time: Squirrel.Mac's events are global, so a second attempt could
-      // otherwise take the first one's late outcome as its own.
       if (staging) return Promise.reject(new Error("macOS is already preparing an update."));
       staging = (async () => {
-        // Squirrel.Mac reads the verified snapshot from Gram's own feed, never from the shared
-        // cache electron-updater's proxy would reopen.
         const feed = await createSquirrelFeed(snapshot, version);
         try {
           await new Promise<void>((resolve, reject) => {

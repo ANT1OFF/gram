@@ -43,10 +43,8 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** `at` on the next quarter hour, so the invented resets read like real ones. */
 const quarter = (at: number) => Math.ceil(at / (15 * MINUTE)) * 15 * MINUTE;
 
-/** A kept reading whose samples are `[minutes ago, share]`; the last is the reading itself. */
 const seed = (
   now: number,
   fields: Omit<LimitRecord, "utilization" | "at" | "samples" | "status"> & {
@@ -68,7 +66,6 @@ const seed = (
   };
 };
 
-/** The invented Codex account's credits, as its readings carry them. */
 const CODEX_CREDITS = { creditsAvailable: true, creditsBalance: "1250" } as const;
 
 /**

@@ -25,7 +25,6 @@ import {
   type AnyToolPart,
 } from "./parts";
 
-/** Diff rows an opened edit shows before "Show more". */
 const EDIT_ROW_BUDGET = 30;
 
 const STATUS: Record<FileEdit["kind"], DiffFile["status"]> = {
@@ -87,7 +86,6 @@ export function FileEditCard({ part }: { part: AnyToolPart }) {
     part.state === "output-available" && part.preliminary === true,
   );
   const edits = partEdits(part);
-  // A call an interrupt cut off says so plainly, never in Claude Code's words that blame the user.
   const error =
     part.state !== "output-error"
       ? undefined
@@ -95,7 +93,6 @@ export function FileEditCard({ part }: { part: AnyToolPart }) {
         ? CUT_OFF_REASON
         : part.errorText;
   if (edits.length === 0) {
-    // The call hasn't named its file yet.
     return (
       <div
         data-testid="file-edit"
@@ -110,7 +107,6 @@ export function FileEditCard({ part }: { part: AnyToolPart }) {
     <div data-tool-call-id={part.toolCallId}>
       {edits.map((edit, index) => (
         <FileEditRow
-          // A patch names each file once.
           key={`${edit.path}:${index}`}
           edit={edit}
           phase={phase}
@@ -128,16 +124,13 @@ function FileEditRow({
 }: {
   edit: FileEdit;
   phase: ReturnType<typeof toolPhase>;
-  /** Shown under the diff when opened; on the first file only. */
   error: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  // Like a tool card's body: not laid out until first opened, then kept so closing animates.
   const [opened, setOpened] = useState(false);
   const bodyId = useId();
   const scope = useFileRefsScope();
   const working = phase === "pending" || phase === "running";
-  // Only a finished call changed the file; one waiting, refused or failed is still "Editing".
   const verb = FILE_EDIT_VERB[edit.kind][phase === "done" ? "done" : "doing"];
   const name = basename(edit.movedTo ?? edit.path);
   const display =
@@ -145,7 +138,6 @@ function FileEditRow({
       ? { ...PHASE_DISPLAY[phase], label: "Interrupted" }
       : PHASE_DISPLAY[phase];
   const openable = edit.hunks.length > 0 || error !== undefined;
-  // A deleted file is gone, and a credential file isn't previewed from a link.
   const linked = scope !== undefined && edit.kind !== "delete" && !isCredentialPath(edit.path);
   const toggle = () => {
     if (!openable) return;
@@ -159,7 +151,6 @@ function FileEditRow({
 
   return (
     <div data-testid="file-edit" data-kind={edit.kind} data-open={open}>
-      {/* The chevron is the row's control; the rest of the row is a larger target for a mouse. */}
       <div
         onClick={toggle}
         className={cn(
@@ -168,7 +159,6 @@ function FileEditRow({
           working ? "text-foreground" : "text-muted-foreground",
         )}
       >
-        {/* Spaces between the flex items render nothing, but make the row read as words. */}
         <span className="shrink-0">{verb}</span>{" "}
         {linked ? (
           <button

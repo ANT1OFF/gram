@@ -98,7 +98,6 @@ export const defaultName = (raw = hostname()): string => {
   return name === "" ? "machine" : name;
 };
 
-/** One line from standard input, the prompt shown when it is a terminal; undefined at its end. */
 const readLine = (prompt: string) =>
   Effect.callback<string | undefined>((resume) => {
     const lines = createInterface({
@@ -149,7 +148,6 @@ const install = (home: string) =>
 
 const join = (args: ReadonlyArray<string>, home: string) =>
   Effect.gen(function* () {
-    // Read from the terminal by default, so the code stays out of shell history and `ps`.
     const link =
       args.find((arg) => !arg.startsWith("--") && arg !== option(args, "--name")) ??
       (yield* readLine("Paste the join link from the main Gram: "));
@@ -157,7 +155,6 @@ const join = (args: ReadonlyArray<string>, home: string) =>
       return yield* fail("Give the join link: gram-host join, then paste it.");
     const parsed = parseJoinLink(link);
     if ("error" in parsed) return yield* fail(parsed.error);
-    // Refuse an unsafe destination before the one-use invitation can be consumed.
     ensureHostHome(home);
     const existing = readHostConfig(home);
     if (existing !== undefined)
@@ -279,8 +276,6 @@ const joined = (home: string) => {
   const publicKey = publicKeyText(createPublicKey(key));
   if (hostIdOf(publicKey) !== config.hostId)
     throw new Error(`The key in ${home} isn't the one this machine joined with.`);
-  // A provisioned host dials only an https address, whatever its config has come to say: its
-  // signed dial is never sent in the clear.
   if (config.provisioned === true) provisionedOrigin(config.origin);
   return { config, key, publicKey };
 };
@@ -326,7 +321,6 @@ export const runCli = <R>(
     readonly service: (
       hostId: HostId,
       home: string,
-      /** Whether a control plane provisioned this host, which then also replaces it to update. */
       provisioned: boolean,
     ) => Effect.Effect<HostService, never, Scope.Scope | R>;
     readonly layer: Layer.Layer<R>;
@@ -346,7 +340,6 @@ export const runCli = <R>(
         const found = joined(home);
         if (found === undefined) return fail("This machine hasn't joined a Gram: gram-host join.");
         const dialToken = hostDialToken();
-        // An update a reboot or crash left unfinished is rolled back or finished alongside.
         return Effect.forkScoped(recoverHere(home, host.release)).pipe(
           Effect.andThen(
             dialForever(
@@ -403,7 +396,6 @@ export const runCli = <R>(
               (yield* serviceRunning(platform)) ? "Service: running." : "Service: not running.",
             );
         });
-      // Started by the host itself when it updates (`self-update.ts`), outside its own service.
       case "update-supervise":
         return superviseHere(home, rest);
       case "new-disk":

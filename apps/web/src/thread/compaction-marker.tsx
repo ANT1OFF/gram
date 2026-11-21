@@ -58,14 +58,12 @@ export const compactionParts = (
   return tokens === undefined ? [head] : [head, tokens];
 };
 
-/** Who started it, for the tooltip: the line itself reads the same either way. */
 const TRIGGER: Record<CompactionData["trigger"], string> = {
   manual:
     "Compacted on request (/compact): the agent carries on from a summary of the conversation.",
   auto: "The agent compacted the conversation to make room in its context window, and carries on from a summary of it.",
 };
 
-/** Gram's idle compaction, by how it ended, for the tooltip and the details' first line. */
 const IDLE: Record<NonNullable<CompactionData["outcome"]>, string> = {
   completed:
     "Gram compacted this idle thread just before its prompt cache expired, so its next wake starts from a summary instead of rewriting the whole conversation.",
@@ -94,7 +92,6 @@ export const compactingParts = (compaction: CompactionActivity, now: number): re
     : [`from ${TOKENS.format(compaction.preTokens)} tokens`]),
 ];
 
-/** `compactingParts` by position: the clock's text changes every second, its place doesn't. */
 const PART_KEYS = ["what", "elapsed", "tokens"] as const;
 
 /** The status glyph's hint while the thread compacts, short for a row or a header. */
@@ -105,7 +102,6 @@ export const compactingLabel = (compaction: CompactionActivity): string =>
       ? "Compacting context to make room"
       : "Compacting context";
 
-/** The live line's hint: who started it, and what it does. */
 const compactingTitle = (compaction: CompactionActivity): string =>
   compaction.trigger === "manual"
     ? "Compacting on request (/compact): the agent is replacing the conversation with a summary of it."
@@ -156,7 +152,6 @@ export function CompactingLine({ compaction }: { compaction: CompactionActivity 
  * to the provider's retained summary or an explanation when this history has no supplied summary.
  */
 export function CompactionMarker({ compaction }: { compaction: CompactionData }) {
-  // Only to tell today from another day, so read once rather than on a clock.
   const now = useNow(false);
   const [open, setOpen] = useState(false);
   const parts = compactionParts(compaction, now);

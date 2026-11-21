@@ -1,5 +1,3 @@
-// What `ThreadRuntimes` offers the rest of the server, and the inputs its operations take.
-
 import type {
   ThreadId,
   TurnId,
@@ -272,10 +270,6 @@ export interface ThreadRuntimesShape {
   /** Interrupts the running turn; after the watchdog, closes the session and resumes it. */
   interrupt(
     threadId: ThreadId,
-    /**
-     * Stops only this turn: once it has ended, a later turn (the one a queued message started,
-     * say) is left running, and so are background agents.
-     */
     options?: {
       readonly turnId?: TurnId;
       /**

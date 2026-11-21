@@ -9,9 +9,6 @@ import { historyMetadataBytes, type UsageHistoryInput } from "./history-reader.t
 import { mergeHistoryUsage } from "./history-merge.ts";
 import { DAY_MS } from "../zone-time.ts";
 
-// Materialized admission gates precede JSON evaluation, even if SQLite reorders later joins.
-// Bound all linked messages, including nested/user lanes, before filtering metadata.
-// Only persisted attribution projections and turn snapshots are read; no transcript or provider.
 export const USAGE_TURN_LIMIT = 50_000;
 export const USAGE_MESSAGE_LIMIT = 50_000;
 export const USAGE_MESSAGE_BYTES = 1_048_576;
@@ -112,8 +109,6 @@ export const readUsageOverview = (query: UsageOverviewQuery, historyInput?: Usag
       message_limit_exceeded, payload_limit_exceeded, model_limit_exceeded, selected_bytes
     FROM period p CROSS JOIN admission CROSS JOIN model_budget
       LEFT JOIN attribution a ON a.id = p.id AND a.closed = p.closed`;
-    // On the read worker when there is one: a day of turns takes hundreds of milliseconds to
-    // attribute on a large history, and the event loop would wait for it.
     const records = yield* readOffLoop<Effect.Success<typeof statement>[number]>(
       ...statement.compile(),
     );

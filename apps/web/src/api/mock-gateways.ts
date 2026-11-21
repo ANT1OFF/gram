@@ -18,7 +18,6 @@ import {
 
 import { mockLaunchChecks } from "./mock-launch-checks";
 
-/** A thrown contract error as the rpc api rejects: `_tag` plus the error's fields. */
 const tagged = (tag: string, fields: Record<string, unknown> & { message: string }) =>
   Object.assign(new Error(fields.message), { _tag: tag, ...fields });
 
@@ -36,7 +35,6 @@ const SEEDED: GatewayProfile[] = [
   },
 ];
 
-/** What `profiles.seed` finds in the OpenCode and Codex configs in the mock. */
 const IMPORTABLE: GatewayProfile = {
   id: "litellm" as ProfileId,
   name: "LiteLLM",
@@ -45,7 +43,6 @@ const IMPORTABLE: GatewayProfile = {
   models: [],
 };
 
-/** What `GET {baseURL}/models` answers in the mock. */
 const DISCOVERED: GatewayModel[] = [
   { id: "gpt-5.5", name: "GPT-5.5", variants: ["low", "medium", "high"] },
   {
@@ -56,7 +53,6 @@ const DISCOVERED: GatewayModel[] = [
   { id: "claude-sonnet", name: "Claude Sonnet (gateway)" },
 ];
 
-/** What OpenRouter's `/models` answers in the mock: every maker's, some without tools. */
 const OPENROUTER_DISCOVERED: GatewayModel[] = [
   {
     id: "anthropic/claude-sonnet-5.5",
@@ -89,11 +85,9 @@ const OPENROUTER_DISCOVERED: GatewayModel[] = [
   },
 ];
 
-/** What the mock's discovery finds for `profile`. */
 const discoveredFor = (profile: GatewayProfile): GatewayModel[] =>
   profile.kind === "openrouter" ? OPENROUTER_DISCOVERED : DISCOVERED;
 
-/** A morning's helper use in the mock: titles and plans on Haiku 5.5, one Luna fallback. */
 const HELPER_STATUS: HelperStatus = {
   providers: [
     {
@@ -331,7 +325,6 @@ export function createMockGateways(
             "Codex isn't signed in. Run `codex login` with your ChatGPT account, then retry model discovery.",
         });
       }
-      // OpenCode lists every signed-in provider's models as `<provider>/<model>`, Anthropic's left out.
       if (profileId === undefined && agent === "opencode")
         return {
           models: [

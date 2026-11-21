@@ -1,8 +1,3 @@
-// The decision hook around an action the server itself takes for a thread: an app tool that
-// spawns or merges, the app's own push and pull request calls. `allow` lets the action go on to
-// whatever Gram would have asked anyway, `refuse` stops it with the reason, and `ask` puts a card
-// on the thread and, once a person approves it, asks the hook again before anything happens.
-
 import type { ThreadId } from "@gram/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -35,7 +30,6 @@ export interface ActionCard {
 export type ActionGuard = (
   threadId: ThreadId,
   question: Pick<DecisionQuestion, "action" | "initiator" | "detail">,
-  /** Built only when the hook answers `ask`: with the hook off, nothing of it runs. */
   card: Effect.Effect<ActionCard>,
 ) => Effect.Effect<void, ActionRefused>;
 
@@ -85,7 +79,6 @@ export const makeActionGuard =
         approval: {
           decisionId: first.id,
           askId: answer.resolution?.requestId ?? "",
-          // The card was answered in another call than this one: its person, not this call's.
           ...(answer.answeredBy === undefined ? {} : { answeredBy: answer.answeredBy }),
         },
       });

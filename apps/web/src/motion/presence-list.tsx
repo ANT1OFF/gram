@@ -14,11 +14,8 @@ export function PresenceList({ children }: { children: ReactNode }) {
 }
 
 interface PresenceItemProps {
-  /** `li` inside a list element; a `div` otherwise. */
   as?: "div" | "li";
-  /** Where it arrives from: below for what lands in a column, the right for what slides in beside. */
   from?: "below" | "right";
-  /** Glides to its new place when the list is reordered around it. */
   glide?: boolean;
   className?: string;
   children: ReactNode;
@@ -62,7 +59,6 @@ export function PresenceItem({
             ease: toEase(look.easing.out),
           },
         };
-  // Clipped only while it folds: at rest its children's focus rings and shadows may overhang it.
   const shared = {
     ...props,
     ...motion,

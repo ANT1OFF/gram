@@ -51,7 +51,6 @@ import { DialogShell } from "./dialog-shell";
 import { useSwitchOffer } from "./use-switch-offer";
 import { SaveFirst } from "@/orchestration/fresh-session";
 
-/** One of the sheet's lines: its glyph, whose words are on hover, then the line. */
 function Line({
   glyph,
   hint,
@@ -88,19 +87,8 @@ function Line({
   );
 }
 
-/**
- * "Continue in Codex" (or Claude Code): the confirm sheet for moving a thread, a worker or the
- * orchestrator to the other agent, from the choices chip's other-agent group, the thread's "…" menu
- * or, for the orchestrator, Settings → Workspaces. Its model and effort (up to High), what carries
- * over and what doesn't, the note checkbox (limit mode's line in its place), a worker's or the
- * orchestrator's line and the mode line when the mode changes. Nothing changes until Continue; then
- * it says where the switch stands, and closes once the thread is on its new agent. The
- * orchestrator's switch saves memory first, and while one is under way the sheet opens on how it
- * stands, with Cancel switch before the old session stops and Retry once it has failed.
- */
 type ContinueInProps = {
   threadId: ThreadId;
-  /** The model picked in the chip's group; absent, §3.5's default target. */
   model?: string | undefined;
   onClose: () => void;
 };
@@ -122,10 +110,7 @@ function ContinueInSheet({ threadId, model: picked, onClose }: ContinueInProps) 
   const { checks } = useLaunchChecks();
   const workspaces = useWorkspaces();
   const thread = summary?.thread;
-  // The orchestrator's goes through its workspace: its checkpoint saves memory and writes the note.
   const workspaceId = thread?.role === "orchestrator" ? thread.workspaceId : undefined;
-  // Fixed as the sheet opens: once the switch lands, the thread's agent is the target. One under
-  // way (an orchestrator's, opened again) is read from its claim.
   const [from] = useState<AgentKind>(
     () => thread?.sessionSwitch?.previous.agent ?? thread?.model.agent ?? "claude",
   );
@@ -136,12 +121,10 @@ function ContinueInSheet({ threadId, model: picked, onClose }: ContinueInProps) 
   const [note, setNote] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  // An orchestrator's switch already under way opens on how it stands.
   const [sent, setSent] = useState(
     () => workspaceId !== undefined && thread?.sessionSwitch !== undefined,
   );
 
-  // Preselected once the target's models are in: the pick, else the default target.
   const listed = models ?? [];
   const target = (model: string | undefined) =>
     thread === undefined
@@ -157,7 +140,6 @@ function ContinueInSheet({ threadId, model: picked, onClose }: ContinueInProps) 
     const start = target(picked);
     if (start !== undefined) setChoice(start);
   }
-  // Done: the switch went through and the thread is on its new agent.
   const landed =
     sent && thread !== undefined && thread.sessionSwitch === undefined && thread.model.agent === to;
   useEffect(() => {
@@ -180,7 +162,6 @@ function ContinueInSheet({ threadId, model: picked, onClose }: ContinueInProps) 
   );
   const modelItems = listed.map((m) => ({ value: m.id, label: m.displayName }));
   const refusal = offer.offered ? offer.refusal : undefined;
-  // Where this session can't carry over, the sheet starts a fresh one on the pick instead.
   const fresh = offer.offered && !sent ? offer.fresh : undefined;
   const title = fresh === undefined ? continueLabel(to) : freshLabel(to);
 

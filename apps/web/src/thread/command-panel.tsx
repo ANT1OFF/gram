@@ -52,12 +52,9 @@ export function CommandPanel({ open }: { open: OpenCommand }) {
     [open, messages, background, backgroundOutput, subagentUsage],
   );
   const running = snapshot.state === "running";
-  // What it last wrote stays once it ends, though the tail read back for a background shell goes
-  // with its task when the thread's summary is next fetched.
   const [kept, setKept] = useState(snapshot.output);
   if (snapshot.output !== "" && snapshot.output !== kept) setKept(snapshot.output);
   const output = snapshot.output === "" ? kept : snapshot.output;
-  // The agent reports no end time: the clock holds still from its last tick before the end.
   const root = useRef<HTMLDivElement>(null);
   const now = useNow(running && open.startedAt !== undefined, root);
   const elapsed = open.startedAt === undefined ? undefined : formatElapsed(now - open.startedAt);

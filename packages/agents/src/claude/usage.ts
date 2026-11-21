@@ -22,10 +22,6 @@ const tokenUsage = (usage: unknown): TokenUsage => {
   };
 };
 
-/**
- * A request's cache writes by TTL, from `usage.cache_creation`; `undefined` when the report has no
- * breakdown, which an older CLI or a gateway can omit.
- */
 const cacheWriteSplit = (usage: unknown): CacheWriteSplit | undefined => {
   const split = asRecord(asRecord(usage)["cache_creation"]);
   const fiveMinute = int(split["ephemeral_5m_input_tokens"]);
@@ -35,27 +31,16 @@ const cacheWriteSplit = (usage: unknown): CacheWriteSplit | undefined => {
     : { fiveMinute: fiveMinute ?? 0, oneHour: oneHour ?? 0 };
 };
 
-/**
- * A model id's trailing variant tag, `[1m]` of `claude-opus-5[1m]`, or `""`. Plain string work: the
- * id is the agent's to choose, and a regex over it was flagged as polynomial.
- */
 const tagOf = (model: string): string => {
   const open = model.endsWith("]") ? model.lastIndexOf("[") : -1;
   return open < 0 ? "" : model.slice(open);
 };
 
-/** A model id without its trailing variant tag: `claude-opus-5[1m]` is `claude-opus-5`. */
 const untagged = (model: string): string => model.slice(0, model.length - tagOf(model).length);
 
 const totalOf = (u: TokenUsage): number =>
   u.inputTokens + u.outputTokens + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0);
 
-/**
- * The best of two reports of the SAME request. A request is reported up to three times — the
- * stream's `message_start` and `message_delta`, and the complete assistant message (once per
- * content block, all carrying `message_start`'s numbers) — and only `message_delta` has the final
- * output count, so each field's largest value is the one to keep.
- */
 const maxTokens = (a: TokenUsage, b: TokenUsage): TokenUsage => {
   const cacheRead = Math.max(a.cacheReadTokens ?? 0, b.cacheReadTokens ?? 0);
   const cacheWrite = Math.max(a.cacheWriteTokens ?? 0, b.cacheWriteTokens ?? 0);
@@ -90,41 +75,20 @@ export const makeUsageLedger = (
     readonly carriedCost?: number;
   } = {},
 ) => {
-  /** The latest main-agent request's whole prompt; subagents have their own contexts. */
   let contextTokens: number | undefined;
-  /** The main lane's wire model id. `modelUsage` keys its entry by it, and subagents' by theirs. */
   let mainModel: string | undefined;
-  /**
-   * The model the session currently runs as it was asked for, from `init` and then every switch. It
-   * keeps the variant tag (`claude-opus-5[1m]`) that API messages drop and `modelUsage` keys by.
-   */
   let sessionModel: string | undefined;
-  /** Context windows by model id, kept across turns so a mid-turn report carries one too. */
   const contextWindows = new Map<string, number>();
-  /** Largest window seen, the only guess left while the main model is still unknown. */
   let anyWindow: number | undefined;
-  /** The running turn's main-loop requests, by API message id. */
   const requests = new Map<string, TokenUsage>();
-  /** Those requests' cache writes by TTL, for the ones that reported a breakdown. */
   const splits = new Map<string, CacheWriteSplit>();
-  /** Those requests summed, as last reported. */
   let turnTokens: TokenUsage | undefined;
-  /** Everything this session has been charged up to the running turn, counted from zero. */
   let sessionCost = 0;
-  /** The latest `total_cost_usd` as the CLI reported it, which may include a restored total. */
   let reportedCost = options.carriedCost ?? 0;
-  /** What `total_cost_usd` is ahead of `sessionCost`. */
   let costOffset = reportedCost;
   const rates = options.rates ?? new Map<string, number>();
   let advertised: number | undefined;
 
-  /**
-   * The main model's entry in a map keyed like `modelUsage`. A message names the bare model while
-   * `modelUsage` keeps the variant tag, so a 1M session's 1M window sits under `model[1m]`. Only the
-   * session model's tag is used, since it may be an alias (`opus[1m]`). `modelUsage` is cumulative,
-   * so after a switch between `model` and `model[1m]`, or with a subagent on the other one, both
-   * entries are there and the tag is what tells them apart.
-   */
   const ofMainModel = <T>(byModel: ReadonlyMap<string, T>): T | undefined => {
     if (mainModel === undefined) return undefined;
     const tag = sessionModel === undefined ? "" : tagOf(sessionModel);
@@ -142,7 +106,6 @@ export const makeUsageLedger = (
     turnTokens = undefined;
   };
 
-  /** The running turn's cache writes by TTL, summed; `undefined` when no request reported one. */
   const turnSplit = (): CacheWriteSplit | undefined =>
     splits.size === 0
       ? undefined
@@ -151,11 +114,6 @@ export const makeUsageLedger = (
           oneHour: a.oneHour + b.oneHour,
         }));
 
-  /**
-   * `costUsd` is the session's priced total. Without one the turn is still running, and the cost is
-   * that total plus a guess at the turn: main-loop tokens only, so a turn that runs subagents
-   * reads low until its `result`.
-   */
   const usage = (
     tokens: TokenUsage,
     costUsd?: number,
@@ -182,11 +140,6 @@ export const makeUsageLedger = (
     };
   };
 
-  /**
-   * Books one report of a main-loop request and reports the turn so far. Merging per request and
-   * summing the requests keeps the running total on the same ledger as the turn's `result`, so the
-   * meter moves during the turn instead of jumping once at its end.
-   */
   const record = (apiMessageId: string, raw: unknown): UsageEvent | undefined => {
     const reported = tokenUsage(raw);
     const prompt =
@@ -194,7 +147,6 @@ export const makeUsageLedger = (
     if (prompt > 0) contextTokens = prompt;
     const before = requests.get(apiMessageId);
     requests.set(apiMessageId, before === undefined ? reported : maxTokens(before, reported));
-    // Like the tokens, each report of a request repeats its writes: keep the larger of each.
     const split = cacheWriteSplit(raw);
     if (split !== undefined) {
       const seen = splits.get(apiMessageId);
@@ -219,8 +171,6 @@ export const makeUsageLedger = (
     startTurn: startTurnUsage,
     record,
     finish: (m: SDKResultMessage): UsageEvent => {
-      // `modelUsage` covers subagents and compaction too, so the meter must read the main model's
-      // entry: the largest window in there is whichever model ran the widest context, not this one.
       for (const [id, u] of Object.entries(m.modelUsage ?? {})) {
         const rate = learnedRate(u);
         if (rate !== undefined) rates.set(id, rate);
@@ -233,14 +183,9 @@ export const makeUsageLedger = (
       const summed = turnTokens;
       const writes = turnSplit() ?? cacheWriteSplit(m.usage);
       startTurnUsage();
-      // `m.usage` is the main loop's turn total and the summed requests are the same ledger, so take
-      // whichever is further along rather than let the meter step backwards at the end of a turn.
       const reported = tokenUsage(m.usage);
       const tokens =
         summed !== undefined && totalOf(summed) > totalOf(reported) ? summed : reported;
-      // `contextTokens`: occupancy is the last request's prompt, not the turn's summed tokens.
-      // `costUsd`: cumulative for the agent session, not per turn. A counter that went backwards was
-      // restarted under us (`/clear`, a crash's zeroes), so all it shows is new since.
       if (m.total_cost_usd < reportedCost) costOffset = -sessionCost;
       reportedCost = m.total_cost_usd;
       sessionCost = m.total_cost_usd - costOffset;

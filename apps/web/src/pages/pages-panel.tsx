@@ -18,7 +18,6 @@ import { useLayoutStore } from "@/stores/layout";
 import { usePagePane } from "./page-pane-store";
 import { usePageAddress, usePages } from "./page-queries";
 
-/** The shell's pinned pages, or the mock API's stand-in; absent where neither has them. */
 const pagesBridge = (): DesktopPages | undefined =>
   window.gram?.pages ?? window.gramMock?.shell.pages;
 
@@ -114,11 +113,6 @@ function PageRow({ page, now, onOpen }: { page: PageMeta; now: number; onOpen: (
   );
 }
 
-/**
- * One pinned page: Gram's own header (its title, the thread that made it, when it was pinned),
- * a notice when an agent offered a newer version, and the page itself, drawn by the shell over the
- * placeholder. The page never changes under the user: an offer waits for their Show it.
- */
 function PageView({
   workspaceId,
   id,
@@ -139,11 +133,9 @@ function PageView({
   const placeholder = useRef<HTMLDivElement>(null);
   const covered = useCoveredByOverlay(placeholder);
   const [state, setState] = useState<PageViewState>({ loading: true });
-  /** What the shell said to the latest open, for the address and attempt it was asked for. */
   const [answer, setAnswer] = useState<{ url: string; attempt: number; ok: boolean }>();
   const [acting, setActing] = useState<string | undefined>();
   const [actError, setActError] = useState<string | undefined>();
-  /** Bumped by Retry, which opens the page again. */
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => bridge?.onState(id, setState), [bridge, id]);
@@ -162,7 +154,6 @@ function PageView({
     answer !== undefined && answer.url === url && answer.attempt === attempt
       ? answer.ok
       : undefined;
-  // The server restarted on another port: what was open came from the old address.
   const refetchAddress = address.refetch;
   useEffect(() => {
     if (state.error === "Gram restarted") void refetchAddress();
@@ -253,7 +244,6 @@ function PageView({
       data-version={page.version}
       className="flex min-h-0 flex-1 flex-col"
     >
-      {/* Gram's chrome, never the page's: what it is, who made it, and what may change it. */}
       <header className="flex flex-col gap-1 border-b border-border px-4 pt-3 pb-2">
         {back}
         <div className="flex items-start gap-2">

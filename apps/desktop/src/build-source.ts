@@ -11,7 +11,6 @@ export function captureBuildSource(root: string): string | null {
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
   try {
-    // Git walks ancestors: an archive inside an ignored directory is not that parent source.
     if (realpathSync(git(["rev-parse", "--show-toplevel"])) !== realpathSync(root)) return null;
     if (git(["status", "--porcelain", "--untracked-files=normal"])) return null;
     const source = git(["rev-parse", "HEAD"]);

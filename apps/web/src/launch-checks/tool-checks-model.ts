@@ -14,13 +14,9 @@ export type Harness = "claude" | "codex";
 export const HARNESSES: readonly Harness[] = ["claude", "codex"];
 
 interface AgentTrouble {
-  /** `error` when its threads can't start, `warning` when they start with something off. */
   readonly level: "error" | "warning";
-  /** A few words beside the name, such as "not signed in". */
   readonly summary: string;
-  /** The whole story, one or two sentences; `backticks` mark a command. */
   readonly detail: string;
-  /** A command that fixes it, offered to copy. */
   readonly fix?: string;
 }
 
@@ -75,7 +71,6 @@ function claudeStatus(tool: ToolCheck | undefined, checks: LaunchChecks): AgentS
       trouble: { level: "error", summary: "can't start threads", detail: tool.unusable },
     };
   }
-  // An unreadable sign-in isn't trouble: Diagnostics says so, and a wrong alarm would be worse.
   const trouble = CLAUDE_SIGN_IN_TROUBLE[checks.claudeSignIn];
   return { agent: "claude", ...version, ...(trouble === undefined ? {} : { trouble }) };
 }
@@ -88,7 +83,6 @@ function gatewayAgentStatus(
   const name = agentLabel(agent);
   const fix = tool?.upgradeCommand === undefined ? {} : { fix: tool.upgradeCommand };
   if (tool === undefined || !tool.found) {
-    // Not installed is only trouble for someone who relies on it.
     if (!inUse) return { agent, note: "not installed" };
     return {
       agent,
@@ -106,7 +100,6 @@ function gatewayAgentStatus(
     tool.testedVersion !== undefined &&
     isOlderVersion(tool.version, tool.testedVersion)
   ) {
-    // Like the launch banner, an old version is only trouble for someone who relies on it.
     if (!inUse) return { agent, ...version, note: `older than ${tool.testedVersion}` };
     return {
       agent,

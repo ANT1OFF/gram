@@ -1,6 +1,3 @@
-// One file's patch out of a `git diff` limited to its paths: for paging through a file too large for
-// the listing, which reads it again on its own up to a larger cap.
-
 import { createHash } from "node:crypto";
 import { parseGitDiff, type DiffFileStatus } from "./diff.ts";
 
@@ -40,7 +37,6 @@ export interface FilePatch {
 
 const BINARY = /^(?:Binary files .* differ|GIT binary patch)$/m;
 
-/** Each `diff --git` section of `text`. A hunk line never starts with `diff`, so these are headers. */
 function* sections(text: string): Generator<string> {
   let start = text.startsWith("diff --git ") ? 0 : text.indexOf("\ndiff --git ");
   if (start === -1) return;
@@ -67,7 +63,6 @@ export const selectFilePatch = (
 ): FilePatch | undefined => {
   const whole = truncated ? text.slice(0, text.lastIndexOf("\n") + 1) : text;
   for (const section of sections(whole)) {
-    // Without the closing newline, which the parser would read as one more (empty) line.
     const file = parseGitDiff(section.endsWith("\n") ? section.slice(0, -1) : section)[0];
     if (file?.path !== path) continue;
     const hunks = section.indexOf("\n@@");

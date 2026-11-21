@@ -5,9 +5,6 @@ import { ChartNoAxesCombined, Settings } from "lucide-react";
 import { MENU_ITEM } from "@/lib/selection";
 import { useOpenSettings } from "@/settings/open-settings";
 
-// The window's own places, in words, for the title bar's "…" menu when the bar has no room for
-// their icons.
-
 /** Usage in words, for a bar with no room for its meter. */
 export function UsageItem() {
   const navigate = useNavigate();

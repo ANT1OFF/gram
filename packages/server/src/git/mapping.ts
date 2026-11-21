@@ -1,6 +1,3 @@
-// Runtime shapes from `@gram/git` onto the round-3 contracts, and the git errors onto contract
-// errors.
-
 import {
   GitError,
   InvalidState,

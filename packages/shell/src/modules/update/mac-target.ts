@@ -10,7 +10,6 @@ export const personalMacTargets = () => [
   join(homedir(), "Applications/Gram.app"),
 ];
 
-/** A user-owned bundle whose plist and executable can be read. */
 async function ownedBundle(path: string): Promise<void> {
   const s = await lstat(path);
   if (!s.isDirectory() || s.isSymbolicLink() || s.uid !== process.getuid?.())

@@ -40,11 +40,9 @@ export const DEPLOYMENT_RPCS: ReadonlySet<string> = new Set([
   "profiles.setKey",
   "profiles.upsert",
   "profiles.vaultInfo",
-  // Trusting a folder lets its own settings and CLAUDE.md run for every session in it.
   "projects.setFolderTrust",
   "sessions.delete",
   "sessions.list",
   "sessions.preview",
-  // Its personal settings, a person's own view, are theirs to set (`setsOnlyOwnView`).
   "settings.set",
 ]);

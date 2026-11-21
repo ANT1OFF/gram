@@ -18,7 +18,6 @@ export function ScriptShortcuts() {
 
   useEffect(() => {
     if (threadId === undefined || data === undefined || data.projectId !== projectId) return;
-    // A folder the user hasn't trusted binds no keys; its scripts still show, and don't run.
     if (data.untrusted === true) return;
     const unregister = data.scripts.flatMap((script) =>
       script.shortcut === undefined
@@ -29,7 +28,6 @@ export function ScriptShortcuts() {
               keys: script.shortcut,
               label: `Run ${script.name}`,
               group: "Thread",
-              // The file's key never takes one of Gram's own.
               yields: true,
               run: () => startScript(api, threadId, script.name),
             }),

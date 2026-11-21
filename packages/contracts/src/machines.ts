@@ -27,7 +27,6 @@ export const MachineOffline = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("tailscale-down"), cause: TailscaleDown }),
   Schema.Struct({ kind: Schema.Literal("unconfirmed"), at: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("bad-signature"), at: Schema.Number }),
-  /** Its clock against this machine's: positive when it is ahead. */
   Schema.Struct({ kind: Schema.Literal("clock"), at: Schema.Number, skewMs: Schema.Number }),
   Schema.Struct({
     kind: Schema.Literal("mismatch"),

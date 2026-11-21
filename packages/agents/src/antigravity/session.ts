@@ -50,10 +50,8 @@ export const ANTIGRAVITY_AGENT_ARGS = ["acp"] as const;
 export const SIGN_IN_MESSAGE =
   "Not signed in. Run `agy` in a terminal and sign in, then start the thread again.";
 
-/** Antigravity's errors when it has no sign-in, as Grok's say it and "not logged into Antigravity". */
 const SIGNED_OUT = new RegExp(`${SIGN_IN_PATTERN.source}|logged in`, "i");
 
-/** Methods that need a sign-in, and are tried again once after a headless one. */
 const SIGNED_METHODS: ReadonlySet<string> = new Set([
   "session/new",
   "session/load",
@@ -179,7 +177,6 @@ const ANTIGRAVITY: AcpAgentSpec = {
     }),
 };
 
-/** The models Antigravity lists, read from a session it opens in the home folder and closes. */
 const listedModels = async (connection: AcpConnection): Promise<ReadonlyArray<AgentModel>> => {
   const opened = record(
     await connection.request("session/new", { cwd: homedir(), mcpServers: [] }),

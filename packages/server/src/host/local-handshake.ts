@@ -1,12 +1,3 @@
-// How the host kept running after Gram quits and the app prove themselves to each other before a
-// byte of the host protocol crosses its socket. The socket's folder is this user's alone, but any
-// process of this user could still connect to it, and the connection that is served answers the
-// agents' approvals and sets their permission modes. So each side proves it holds the install's
-// secret, a file in Gram's data folder only this user can read, which the app made and the host is
-// pointed at: the host by an HMAC over a nonce it chose, then the app by one over the app's.
-// Neither sends the secret. A connection that doesn't prove itself is closed before it is served,
-// and never displaces the app that is.
-
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Socket } from "node:net";
@@ -15,7 +6,6 @@ import { dirname } from "node:path";
 
 /** How long either side waits for the other's line before it closes the connection. */
 export const HANDSHAKE_TIMEOUT_MS = 5_000;
-/** The longest handshake line either side reads. */
 const LINE_MAX = 1_024;
 
 const HEX = /^[0-9a-f]{64}$/;
@@ -55,9 +45,7 @@ export const ensureLocalSecret = (file: string): string => {
   let kept: string | undefined;
   try {
     kept = readFileSync(file, "utf8").trim();
-  } catch {
-    // None yet.
-  }
+  } catch (_noneYet) {}
   if (kept !== undefined) {
     assertPrivate(file, 0o600);
     if (HEX.test(kept)) return kept;
@@ -81,10 +69,6 @@ export const readLocalSecret = (file: string): string | undefined => {
   }
 };
 
-/**
- * One line of JSON from `socket`, the rest of what arrived handed back to the stream. Rejects on a
- * close, an error, a line too long or the timeout.
- */
 const readLine = (socket: Socket, timeoutMs: number): Promise<Record<string, unknown>> =>
   new Promise((resolve, reject) => {
     let buffered = Buffer.alloc(0);
@@ -174,15 +158,9 @@ export const proveToHost = async (
   return connectionKey(secret, theirs, nonce);
 };
 
-/**
- * The key of one connection: from the secret and both sides' nonces, so it is new each time and
- * known only to the two that proved themselves. Every frame after the handshake carries a MAC
- * under it (`macFramed`), so a process relaying the handshake can't add one of its own.
- */
 const connectionKey = (secret: string, hostNonce: string, appNonce: string): Buffer =>
   createHmac("sha256", secret).update(`gram-local-host:conn:${hostNonce}:${appNonce}`).digest();
 
-/** The most bytes one frame may carry. */
 const FRAME_MAX = 32 * 1024 * 1024;
 const MAC_BYTES = 32;
 

@@ -1,7 +1,3 @@
-// Which threads someone can see a PR badge or sync chip for, so a sweep can skip the rebase tier of
-// threads nobody is looking at. Windows report the threads their panes show and whether their sidebar
-// is collapsed to the strip.
-
 import type { ThreadId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -43,13 +39,11 @@ export const newlyVisible = (
   after: ReadonlyArray<WindowView>,
 ): Revealed => {
   if (!allCollapsed(after)) return allCollapsed(before) ? "all" : [];
-  // An expanded sidebar showed every thread's chips already.
   if (!allCollapsed(before)) return [];
   const shown = new Set(before.flatMap((w) => w.threadIds));
   return [...new Set(after.flatMap((w) => w.threadIds))].filter((id) => !shown.has(id));
 };
 
-/** The threads the user is in: the focused pane of each window that has their attention. */
 const focusedThreads = (windows: ReadonlyArray<WindowView>): ReadonlySet<ThreadId> =>
   new Set(
     windows.flatMap((w) =>
@@ -68,8 +62,6 @@ export const attentionOf = (windows: ReadonlyArray<WindowView>, threadId: Thread
   const onScreen = windows.filter((w) => w.visible !== false);
   if (onScreen.some((w) => w.threadIds.includes(threadId))) return "shown";
   if (windows.length === 0 || onScreen.some((w) => !w.sidebarCollapsed)) return "listed";
-  // A window that is off screen still counts as showing its chips when it is all there is: whether
-  // anyone is looking at the app at all is `AppActivity`'s to say, and it slows every sweep.
   return rebaseGated(windows, threadId) ? "hidden" : "listed";
 };
 
@@ -101,8 +93,6 @@ export class ThreadVisibility extends Context.Service<
         readonly at: number;
       }>();
       const leftAt = new Map<ThreadId, number>();
-      // A removed thread is never focused again: what it was left at goes with it, and a window
-      // that still reports it, not having heard yet, can't bring it back. Ids are never reused.
       const removed = new Set<ThreadId>();
       const hub = yield* Effect.serviceOption(EventHub);
       if (Option.isSome(hub)) {

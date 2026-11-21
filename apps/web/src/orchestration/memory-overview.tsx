@@ -11,17 +11,11 @@ import { agoText } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { PanelMessage } from "@/panels/panel-message";
 
-/** How many files "Recently changed" lists. */
 const RECENT = 3;
 
-/** A file's name as a link to it in Files, where its size, cap and editor are. */
 const FILE_LINK =
   "rounded-sm font-mono text-meta text-link underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring";
 
-/**
- * A file's own headings, each a level under the file's name, so its `# Goals` doesn't stand as the
- * page's title beside "Memory · <workspace>".
- */
 const HEADINGS = {
   h1: ({ children }: ComponentProps<"h1">) => (
     <h3 className="mt-4 mb-2 text-title first:mt-0">{children}</h3>
@@ -60,7 +54,6 @@ export function MemoryOverview({
       ref={ref}
       aria-label="Current memory"
       data-testid="memory-overview"
-      // As wide as Settings → Appearance → Reading says, as the transcript is: a file reads as prose.
       className="thread-column flex flex-col gap-4"
     >
       <h2 className="sr-only">Current memory</h2>
@@ -104,7 +97,6 @@ export function MemoryOverview({
   );
 }
 
-/** One memory file, rendered: its name and age, Edit, and its Markdown. */
 function OverviewFile({
   workspaceId,
   file,
@@ -117,7 +109,6 @@ function OverviewFile({
   onOpen: () => void;
 }) {
   const api = useApi();
-  // The same query the editor reads, so opening a file to edit it shows what was read here.
   const content = useQuery({
     queryKey: ["memory", workspaceId, "file", file.path],
     queryFn: () => api.readMemory(workspaceId, file.path),

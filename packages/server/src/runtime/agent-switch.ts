@@ -1,7 +1,3 @@
-// Moving any thread to the other agent: the checks a target has to pass, the refusals of a thread
-// that can't move now, and the switch itself, which claims the thread, stops its session, opens one
-// on the target with no memory of the old one, marks the transcript and lets the queue go.
-
 import {
   listedRow,
   aboveHigh,
@@ -75,7 +71,6 @@ export const checkProfileModel = (
     if (profile?.models === undefined) return;
     if (profileAllowsModel(profile, model)) return;
     if (row !== undefined && profileAllowsModel(profile, row.id, row.resolvedId)) return;
-    // Named by an alias the profile doesn't list: wait for the row, which says what it runs.
     if (row === undefined) return;
     return yield* new InvalidState({ message: profileModelRefusal(profile, model) });
   });
@@ -102,7 +97,6 @@ export const checkSwitchTarget = (
       .get(target.agent)
       .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
     if (!sourceHost.supportsWorkspaceSwitch || !targetHost.supportsWorkspaceSwitch) {
-      // Name what can't: a harness that has no switch at all, or the machine (Windows).
       const lacking = [sourceHost, targetHost].find(
         (host) => host.supportsWorkspaceSwitch === undefined,
       );
@@ -122,7 +116,6 @@ export const checkSwitchTarget = (
       return yield* new InvalidState({
         message: "Switching uses the CLI's own sign-in; it doesn't move gateway accounts.",
       });
-    // The user's ceiling for a switch, whatever the model lists.
     if (target.variant !== undefined && aboveHigh(target.variant))
       return yield* new InvalidState({
         message: "A switch runs at High effort at most. Pick High or lower.",
@@ -156,7 +149,6 @@ export const checkSwitchTarget = (
         message:
           "This harness build cannot re-check sign-in before stopping the current session. Update or recover the current session before trying the switch.",
       });
-    // The CLI's own sign-in check, as the launch checks run it; never its credential files.
     yield* targetHost.checkWorkspaceSwitch.pipe(
       Effect.mapError((e) => new InvalidState({ message: e.message })),
     );
@@ -216,10 +208,6 @@ export const moveKindOf = (
     ),
   );
 
-/**
- * Why `thread`, as its runtime stands, can't move to `target` now, in the words the user reads; or
- * `undefined`. Holds the lock: the turn, requests and background work it reads are the runtime's.
- */
 const notNow = (
   rt: Runtime,
   thread: Thread,
@@ -233,7 +221,6 @@ const notNow = (
   if (thread.role === "orchestrator")
     return "Move the orchestrator from its own Continue in… sheet, in its menu or in Settings → Workspaces.";
   if (rt.closing || thread.parked) return "Unarchive this thread before switching it.";
-  // A thread whose last turn failed moves too: that is limit mode, with no note turn.
   if (
     rt.turn !== undefined ||
     rt.reopening ||
@@ -245,7 +232,6 @@ const notNow = (
     return `${from} still has background work running.`;
   if (!isLocalHost(effectiveCheckout(thread)))
     return `${to} can't run on this thread's machine yet.`;
-  // A fork with no session of its own reopens by forking its source, which is the old agent's.
   if (
     thread.forkedFrom !== undefined &&
     (thread.agentSessionId === undefined || thread.agentSessionUnused === true)
@@ -255,7 +241,6 @@ const notNow = (
   return undefined;
 };
 
-/** The key of the old session's note turn; the new one's handoff is `SWITCH_HANDOFF_KEY`. */
 const NOTE_KEY = "switch-note";
 
 /** What a switch of any thread reads and changes. */
@@ -305,10 +290,6 @@ export interface AgentSwitchDeps {
   readonly roleHandoff: (thread: Thread) => Effect.Effect<SystemDelivery | undefined>;
 }
 
-/**
- * How a switch's turn of Gram's own ended: the turn's end, or the delivery's failure. `turnId` is
- * the turn that carried it, whenever one was opened, however it ended.
- */
 type Outcome = ({ readonly end: ObservedTurnEnd } | { readonly failed: SystemDeliveryFailure }) & {
   readonly turnId?: TurnId | undefined;
 };
@@ -324,11 +305,6 @@ export const replyOf = (messages: ReadonlyArray<GramUIMessage>): string =>
     )
     .join("\n\n");
 
-/**
- * How `thread`'s switch writes its note, and in limit mode why: out of usage by the agent's own
- * report, or its last turn failed, with the provider's error kept as untrusted detail. Otherwise the
- * old session's last turn, unless the user left the note out.
- */
 const noteModeOf = (
   rt: Pick<Runtime, "status">,
   thread: Thread,
@@ -370,11 +346,9 @@ export const turnNote = (
     }),
   );
 
-/** The switch's claim, as `handoff` keeps it, if it is still `attemptId`'s. */
 const claimOf = (thread: Thread, attemptId: string) =>
   thread.sessionSwitch?.id === attemptId ? thread.sessionSwitch : undefined;
 
-/** The attempt a switch's divider is written under: its first, whatever reopens came since. */
 const dividerKey = (claim: NonNullable<Thread["sessionSwitch"]>): string =>
   claim.handoff?.divider ?? claim.id;
 
@@ -395,17 +369,10 @@ export const makeAgentSwitch = ({
   gitState,
   roleHandoff,
 }: AgentSwitchDeps) => {
-  /** The switch's own turns still running, by turn id, each waiting for its end. */
   const turnEnds = new Map<TurnId, Deferred.Deferred<Outcome>>();
 
-  /**
-   * The switches still owing their new session its handoff, or their release, by thread: one a
-   * restart left `ready` and undelivered, or one whose thread is archived, which waits for it to
-   * come back (`giveOwed`).
-   */
   const owed = new Map<ThreadId, string>();
 
-  /** The runtime's observer hears every turn end; a switch's own turn ends its wait. */
   const onTurnEnd = (_thread: Thread, end: ObservedTurnEnd) =>
     Effect.suspend(() => {
       const waiting = turnEnds.get(end.turnId);
@@ -414,18 +381,12 @@ export const makeAgentSwitch = ({
         : Deferred.succeed(waiting, { end, turnId: end.turnId }).pipe(Effect.asVoid);
     });
 
-  /**
-   * One server-authored turn of the switch's own, sent once the thread can take it, and its
-   * outcome: the turn's end, or why it never ran, with the turn that carried it either way.
-   * `build` returns `undefined` to send nothing; `accepted` hears the agent take it.
-   */
   const turnOf = (
     threadId: ThreadId,
     key: string,
     build: (turnId: TurnId, rest: DeliveryRest) => Effect.Effect<UserInput | undefined>,
     accepted: (turnId: TurnId) => Effect.Effect<void> = () => Effect.void,
     started?: (turnId: TurnId) => Effect.Effect<void>,
-    /** Told too when it fails, before the outcome is: a role's own delivery keeps its books. */
     failed?: SystemDelivery["failed"],
   ) =>
     Effect.gen(function* () {
@@ -460,10 +421,6 @@ export const makeAgentSwitch = ({
       );
     });
 
-  /**
-   * The reply of a turn that ended `completed`, all of it, as a capped note by `by`; none
-   * otherwise. Read by the turn's id, so a long reply keeps its beginning.
-   */
   const noteFrom = (threadId: ThreadId, outcome: Outcome, by: AgentKind) =>
     Effect.gen(function* () {
       if (
@@ -476,11 +433,6 @@ export const makeAgentSwitch = ({
       return yield* turnNote(store, threadId, outcome.turnId, by);
     });
 
-  /**
-   * The old session's last turn, asked for its note. Its turn id goes on the claim as it is built,
-   * which holds the queue from then on and keeps the turn out of the handoff's replay however it
-   * ends. Undefined, with why, when the turn didn't end `completed` with a reply.
-   */
   const askNote = (threadId: ThreadId, attemptId: string, previous: ModelRef, target: ModelRef) =>
     Effect.gen(function* () {
       const outcome = yield* turnOf(threadId, NOTE_KEY, (turnId) =>
@@ -509,11 +461,6 @@ export const makeAgentSwitch = ({
       return { why };
     });
 
-  /**
-   * The thread's messages a handoff replays: since the last divider before this switch's own, when
-   * there is one (switching back), with that divider's note; else all of them. Never this switch's
-   * note turn, which the claim names.
-   */
   const conversation = (threadId: ThreadId, attemptId: string, noteTurn: TurnId | undefined) =>
     Effect.gen(function* () {
       const rows = yield* store.listMessagesFrom(threadId, 0);
@@ -543,11 +490,9 @@ export const makeAgentSwitch = ({
       return { messages: fromStoredMessages(window), earlierNote, sinceDivider: after >= 0 };
     });
 
-  /** Gram's facts about the thread, from its own state; git is asked, and left out if it can't say. */
   const factsOf = (thread: Thread, opening: string | undefined) =>
     Effect.gen(function* () {
       const checkout = effectiveCheckout(thread);
-      // Best effort: a machine that can't say (offline, no git here) leaves those facts unknown.
       const read = yield* Effect.exit(Effect.suspend(() => gitState(checkout.path)));
       const git = Exit.isSuccess(read) && read.value.repo ? read.value : undefined;
       const plan = (yield* store.getPlan(thread.id)).plan;
@@ -571,7 +516,6 @@ export const makeAgentSwitch = ({
       });
     });
 
-  /** This switch's divider, if it was written already: by a run a restart cut off. */
   const dividerOf = (threadId: ThreadId, attemptId: string) =>
     Effect.gen(function* () {
       for (const message of yield* store.messagesWithParts(threadId, ["data-handoff"]))
@@ -581,7 +525,6 @@ export const makeAgentSwitch = ({
       return undefined;
     });
 
-  /** The divider, once per attempt: messages above it can't be rewound or forked to. */
   const markTranscript = (
     threadId: ThreadId,
     attemptId: string,
@@ -606,7 +549,6 @@ export const makeAgentSwitch = ({
       return { id, data };
     });
 
-  /** Limit mode's note, written by the new agent, onto the divider it belongs under. */
   const addNote = (threadId: ThreadId, attemptId: string, note: HandoffNote) =>
     Effect.gen(function* () {
       const divider = yield* dividerOf(threadId, attemptId);
@@ -618,14 +560,6 @@ export const makeAgentSwitch = ({
       });
     });
 
-  /**
-   * The current switch's handoff, as the new session's first turn, if it is owed one now: its
-   * claim `ready`, not taken yet, the thread not archived and its target's session there (`finish`
-   * reopens one that isn't). The divider goes first, once, under the first attempt; the claim
-   * records the turn once the agent takes it, so it is never sent twice. While it runs the switch
-   * stays `ready`, so queued input and Gram's own messages wait for it, limit mode's catch-up above
-   * all; its reply is the note.
-   */
   const handOver = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(threadId);
@@ -641,7 +575,6 @@ export const makeAgentSwitch = ({
       const key = dividerKey(claim);
       const own = yield* roleHandoff(thread);
       if (own !== undefined) return yield* handOverOwn(thread, attemptId, key, own);
-      // The orchestrator's handoff is its boot digest: never a thread's in its place.
       if (thread.role === "orchestrator")
         return yield* new InvalidState({
           threadId,
@@ -661,7 +594,6 @@ export const makeAgentSwitch = ({
       const opening = (yield* store.firstMessages(threadId, 4))
         .flatMap((message) => fromStoredMessages([{ seq: 0, message }]))
         .find((message) => message.role === "user")?.text;
-      // Through `material` as the fence takes it, so the divider keeps exactly what was sent.
       const facts = existing?.data.facts ?? material(yield* factsOf(thread, opening));
       const turns = renderRecentTurns(
         messages,
@@ -685,14 +617,12 @@ export const makeAgentSwitch = ({
         facts,
         turns: turns.text,
       });
-      // Archived meanwhile, its session evicted: `finish` sees to it, never the delivery pump.
       if ((yield* getRuntime(threadId)).session === undefined) return;
       const outcome = yield* turnOf(
         threadId,
         SWITCH_HANDOFF_KEY,
         () =>
           store.getThread(threadId).pipe(
-            // Asked again as it goes: an archive committed meanwhile holds it back.
             Effect.map((current) =>
               claimOf(current, attemptId)?.phase === "ready" && !current.parked
                 ? { text }
@@ -700,10 +630,6 @@ export const makeAgentSwitch = ({
             ),
             Effect.orElseSucceed(() => undefined),
           ),
-        // Delivered only once the agent natively took it: began the turn or accepted its input
-        // (`SystemDelivery.started`, `accepted`). A refusal, like Codex rejecting `turn/start`,
-        // is neither: the claim and the queue stay, and `finish` tries again within its bound. A
-        // turn that began and then failed was delivered, and is never given it again.
         (turnId) => markDelivered(threadId, attemptId, turnId),
         (turnId) => markDelivered(threadId, attemptId, turnId),
       );
@@ -713,12 +639,6 @@ export const makeAgentSwitch = ({
       }
     });
 
-  /**
-   * `handOver` for a role whose handoff is a delivery of its own, the orchestrator's boot digest:
-   * the same key, the same holds and the same native start evidence (`started`, `accepted`) as a
-   * thread's handoff, its books (`accepted`, `failed`) kept by the role. The divider is the role's,
-   * written before; limit mode's note, the turn's reply, goes onto it.
-   */
   const handOverOwn = (thread: Thread, attemptId: string, key: string, own: SystemDelivery) =>
     Effect.gen(function* () {
       const threadId = thread.id;
@@ -746,7 +666,6 @@ export const makeAgentSwitch = ({
       }
     });
 
-  /** Records on the claim the turn that carried its handoff, once; a later one changes nothing. */
   const markDelivered = (threadId: ThreadId, attemptId: string, turnId: TurnId) =>
     runtimes
       .updateThread(threadId, (t) => {
@@ -760,11 +679,6 @@ export const makeAgentSwitch = ({
       })
       .pipe(Effect.ignore);
 
-  /**
-   * Lets the held input go. A release refused because the new session went meanwhile still drops
-   * the claim: the thread is on its target, the handoff taken, and holding its queue would help
-   * nothing.
-   */
   const letGo = (threadId: ThreadId, attemptId: string) =>
     Effect.gen(function* () {
       const released = yield* runtimes.releaseSwitch(threadId, attemptId).pipe(
@@ -780,7 +694,6 @@ export const makeAgentSwitch = ({
       yield* afterRelease(yield* getRuntime(threadId));
     });
 
-  /** Leaves the current switch `failed`, its queue held, with why, and tells the user. */
   const failOwed = (threadId: ThreadId, detail: string) =>
     Effect.gen(function* () {
       yield* runtimes
@@ -799,22 +712,12 @@ export const makeAgentSwitch = ({
       });
     });
 
-  /** One `finish` at a time per thread, whoever asks: the switch, the boot or an unarchive. */
   const finishLock = makeKeyedLock<ThreadId>();
   const serially = <A, E>(threadId: ThreadId, effect: Effect.Effect<A, E>) =>
     finishLock.withLock(threadId, effect);
 
-  /** How many times `finish` gives the handoff before it leaves the switch `failed`. */
   const HANDOFF_TRIES = 3;
 
-  /**
-   * Settles a plain thread's or worker's switch once its new session is confirmed, one step at a
-   * time, from the state as it is now: archived, it waits, owed (`giveOwed`), its queue held;
-   * its handoff taken, it lets go of what it held; else its target is reopened if it has no
-   * session (an archive evicted it, or a restart), under a fresh startup id, and given the
-   * handoff, and it looks again. Nothing it held goes before the handoff was taken. A handoff
-   * that can't be given leaves the switch `failed`, the queue still held.
-   */
   const finish = (threadId: ThreadId): Effect.Effect<void, ThreadNotFound> =>
     serially(
       threadId,
@@ -876,7 +779,6 @@ export const makeAgentSwitch = ({
       }),
     );
 
-  /** The switch past its claim: the note, stop, open on the target, hand over, release. */
   const run = (threadId: ThreadId, attemptId: string, previous: ModelRef) =>
     Effect.gen(function* () {
       const claimed = claimOf(yield* store.getThread(threadId), attemptId);
@@ -888,8 +790,6 @@ export const makeAgentSwitch = ({
         const asked = yield* askNote(threadId, attemptId, previous, claimed.target);
         let limit: HandoffLimit | undefined;
         if (asked.note === undefined) {
-          // The old agent ran out of usage or failed in its last turn: limit mode after all.
-          // Anything else that stopped the note leaves the thread where it was.
           const after = yield* store.getThread(threadId);
           const found = noteModeOf(
             yield* getRuntime(threadId),
@@ -921,7 +821,6 @@ export const makeAgentSwitch = ({
         });
       }
       yield* runtimes.switchSession(threadId, attemptId);
-      // The wait was the old account's; the new agent's turns aren't held by it.
       yield* endLimitWait(yield* getRuntime(threadId), previous);
       yield* finish(threadId);
     }).pipe(
@@ -933,7 +832,6 @@ export const makeAgentSwitch = ({
             : "The switch was interrupted before the previous session stopped.";
           const current = yield* store.getThread(threadId).pipe(Effect.option);
           if (Option.isNone(current)) return;
-          // Rolled back by `switchSession`: on its source again, the held input on its way.
           if (current.value.sessionSwitch === undefined) {
             if (current.value.model.agent !== previous.agent) return;
             return yield* hub.publish({
@@ -945,7 +843,6 @@ export const makeAgentSwitch = ({
             });
           }
           if (current.value.sessionSwitch.id !== attemptId) return;
-          // Nothing was stopped yet: the thread carries on in the session it had.
           if (current.value.sessionSwitch.phase === "checkpoint") {
             yield* runtimes.cancelSessionSwitch(threadId, attemptId).pipe(Effect.ignore);
             return yield* hub.publish({
@@ -970,11 +867,6 @@ export const makeAgentSwitch = ({
       ),
     );
 
-  /**
-   * A failed switch tried again, onto `target` (the same agent or back to the previous one). An
-   * attempt whose old session had begun stopping needs the target's proof that its own child is
-   * gone, as the orchestrator's retry does.
-   */
   const retry = (thread: Thread, target: ModelRef) =>
     Effect.gen(function* () {
       const change = thread.sessionSwitch!;
@@ -1011,8 +903,6 @@ export const makeAgentSwitch = ({
                     ? { retryFrom: { id: change.id, release } }
                     : {}),
                   ...(change.source === undefined ? {} : { source: change.source }),
-                  // The old session is gone or going: a note it didn't write is not asked again.
-                  // Nor is a handoff marked taken by another attempt: this one gives its own.
                   handoff:
                     change.handoff === undefined
                       ? { note: "none" }
@@ -1042,8 +932,6 @@ export const makeAgentSwitch = ({
           threadId,
           message: "Wait for this switch to finish, then switch again.",
         });
-      // A failed switch is tried again, onto its target or back onto the agent it left: either
-      // way a fresh session, from the model it was switched away from.
       if (failed) {
         const previous = thread.sessionSwitch!.previous;
         if (thread.role === "orchestrator")
@@ -1082,7 +970,6 @@ export const makeAgentSwitch = ({
       yield* checkSwitchTarget(store, hosts, thread, target);
       const id = randomUUID();
       const mode: PermissionMode = thread.mode;
-      // The claim re-checks the model and mode it was asked against, under the runtime lock.
       yield* runtimes.claimSessionSwitch(threadId, {
         id,
         target,
@@ -1090,14 +977,12 @@ export const makeAgentSwitch = ({
         mode,
         phase: "checkpoint",
         oldExited: false,
-        // Kept until the target is confirmed, so a failed start goes back to it.
         source: sessionIdentity(thread),
         handoff: {
           note: checked.note.mode,
           ...(checked.note.limit === undefined ? {} : { limit: checked.note.limit }),
         },
       });
-      // The refusals again, now that the claim holds the queue: a turn may have started meanwhile.
       const late = yield* locked(
         rt,
         Effect.gen(function* () {
@@ -1118,18 +1003,6 @@ export const makeAgentSwitch = ({
       return yield* store.getThread(threadId);
     });
 
-  /**
-   * At boot, a plain thread's or worker's switch the last run left. One not yet stopping is
-   * dropped, as nothing happened to its session. One whose new session was confirmed finishes: its
-   * handoff is given now if the agent never took it, before anything it held goes, and only its
-   * divider and release are left if the agent did. One caught between is failed: who owns the
-   * session can't be proved, so nothing starts on its own. The orchestrator's is `resumeHandoff`'s.
-   */
-  /**
-   * Settles a thread's switch in the background (`finish`), first ending a limit wait a restart
-   * left on the account the thread left, before the boot schedules that account, so it neither
-   * holds the handoff nor resumes the old turn on the new agent.
-   */
   const give = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const claim = (yield* store.getThread(threadId)).sessionSwitch;
@@ -1152,23 +1025,16 @@ export const makeAgentSwitch = ({
       ),
     );
 
-  /** At boot, once sessions can open and before what the switches held is sent: each owed switch. */
   const handOverOwed = Effect.suspend(() =>
     Effect.forEach([...owed.keys()], give, { discard: true }),
   );
 
-  /**
-   * A thread back from the archive: its switch, if it holds one at `ready`, settles now, however
-   * far it had got (owed or not yet), ahead of its queue.
-   */
   const giveOwed = (threadId: ThreadId) => give(threadId);
 
   const resumeAtBoot = (thread: Thread) =>
     Effect.gen(function* () {
       const change = thread.sessionSwitch;
       if (change === undefined) return;
-      // The orchestrator's switch before `ready` is its handoff's (`resumeHandoff`); at `ready`,
-      // its boot digest is owed or taken as any thread's handoff is.
       if (
         thread.role === "orchestrator" &&
         (change.phase !== "ready" || change.handoff === undefined)
@@ -1185,14 +1051,10 @@ export const makeAgentSwitch = ({
         return;
       }
       if (change.phase === "ready") {
-        // Still owed its handoff: given once the app is up (`handOverOwed`), the queue held
-        // behind it meanwhile as at the first try.
         if (change.handoff !== undefined && change.handoff.delivered === undefined) {
           owed.set(thread.id, change.id);
           return;
         }
-        // Taken by the agent before the restart: never sent twice. The divider says what was
-        // carried; a catch-up's note, if the turn was cut off, is the one thing missing.
         if ((yield* dividerOf(thread.id, dividerKey(change))) === undefined)
           yield* markTranscript(
             thread.id,

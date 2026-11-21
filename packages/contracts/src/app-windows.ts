@@ -2,8 +2,6 @@ import * as Schema from "effect/Schema";
 import { ThreadId } from "./ids.ts";
 import type { GridLayout } from "./settings.ts";
 
-// Multi-window: which window shows which thread.
-
 /** One app window (or browser tab) and the threads its panes show. */
 export const WindowPlacement = Schema.Struct({
   /** Stable for the window's lifetime; the desktop shell's first window is `w1`. */

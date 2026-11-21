@@ -46,7 +46,6 @@ export const waitAge = (at: number, now: number): string => {
   return hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 };
 
-/** One row of `list_waits`. */
 const listedWait = (item: WaitItem, now: number) => ({
   id: item.id,
   kind: item.kind,

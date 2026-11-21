@@ -3,11 +3,6 @@ import type { CSSProperties } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-// A colour the user gives a workspace, to tell its orchestrator from the others at a glance: a bar
-// beside its line in the sidebar, the guide beside its workers and its orchestrator's glyph. It
-// says whose a thing is, never a status, so no hue here is near the amber, red, green or blue a
-// status takes, and it never tints a name, a row's ground or a status dot.
-
 /** The colours on offer, by name, each a hue (oklch degrees) the theme sets light and dark. */
 export const WORKSPACE_ACCENTS = [
   { id: "violet", label: "Violet", hue: 300 },
@@ -40,9 +35,7 @@ export const accentStyle = (accent: WorkspaceAccentId | undefined): CSSPropertie
   accent === undefined ? undefined : ({ "--accent-hue": HUE.get(accent) } as CSSProperties);
 
 interface WorkspaceAccentState {
-  /** Workspace id → its colour. A workspace without one is not listed. */
   byWorkspace: Readonly<Record<string, WorkspaceAccentId>>;
-  /** Gives `workspaceId` a colour, or takes it away. */
   setAccent(workspaceId: WorkspaceId, accent: WorkspaceAccentId | undefined): void;
 }
 
@@ -60,8 +53,6 @@ export const useWorkspaceAccents = create<WorkspaceAccentState>()(
     {
       name: "gram.workspaceAccent",
       version: 1,
-      // `window`, not `globalThis`: under Node, reading `globalThis.localStorage` warns that it has no
-      // backing file, while a missing `window` throws, which zustand takes as no storage.
       storage: createJSONStorage(() => window.localStorage),
       partialize: ({ byWorkspace }) => ({ byWorkspace }),
       merge: (persisted, current) => ({

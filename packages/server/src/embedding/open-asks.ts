@@ -1,5 +1,3 @@
-// The cards open now, as a `sink.started` that isn't the server's start lists them.
-
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 

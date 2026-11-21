@@ -3,7 +3,6 @@ import type { GitState, TaskChipData } from "@gram/contracts";
 /** Where accepting a chip starts its thread, as `task.accept` decides it on the server. */
 export type TaskStart =
   | { readonly kind: "worktree"; readonly branch: string | undefined }
-  /** `asked`: the chip said `current`. Otherwise there is no commit to branch a worktree from. */
   | { readonly kind: "shared"; readonly asked: boolean };
 
 /**

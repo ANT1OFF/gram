@@ -13,10 +13,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { createHash } from "node:crypto";
 
-/** The platform's own rule for a server's name, which is also its path. */
 const PLATFORM_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
-/** The group every EXAMPLE user is in, which an open server is assigned to. */
 const EVERYONE_GROUP = "SYS_(MCP)_(All Users)";
 
 export interface McpCatalogueShape {
@@ -40,7 +38,6 @@ const catalogueUrl = (id: string) => `https://${EXAMPLE_MCP_HOST}/${id}`;
 export const codexRedirect = (url: string) =>
   `http://127.0.0.1/callback/${createHash("sha256").update(url).digest().subarray(0, 9).toString("base64url")}`;
 
-/** Entra ignores a loopback redirect's port, so Claude Code's random one matches any of these. */
 const CLAUDE_REDIRECT = /^http:\/\/localhost(?::\d+)?\/callback$/;
 
 /** A `README.md` table row's title and description, by the server's id from its docs link. */
@@ -62,7 +59,6 @@ export const readmeEntries = (
   return entries;
 };
 
-/** The list items under `key:` in a small YAML file, as plain strings. */
 const yamlList = (text: string, key: string, item: RegExp): ReadonlyArray<string> => {
   const lines = text.split("\n");
   const start = lines.findIndex(
@@ -96,7 +92,6 @@ export const signInUnsupportedBy = (auth: string, url: string): ReadonlyArray<Mc
   return (["claude", "codex"] as const).filter((target) => !accepts[target]);
 };
 
-/** Whether `auth.yml` is the production app for `url`, not some other app under the name. */
 const servesUrl = (auth: string, url: string) =>
   yamlList(auth, "identifier_uris", /^\s*-\s*(\S+)\s*$/).includes(url);
 

@@ -23,9 +23,6 @@ import {
 import type { MockWorld } from "../mock-world";
 import type { ConnectorsApi } from "./types";
 
-// MCP connector fixtures for MockApi: one connector per status, kept per thread so actions stick.
-
-/** Synthetic personal document service, connected through claude.ai with four invented tools. */
 const HOSTED_DOCS = {
   name: "claude.ai Personal Docs",
   url: "https://mcp.example.invalid/personal-docs",
@@ -77,7 +74,6 @@ const remote = (name: string, scope: string, signedIn?: boolean): ConfiguredServ
 const CONFIGURED: Readonly<Record<McpTarget, ReadonlyArray<ConfiguredServer>>> = {
   claude: [
     remote("github", "user", true),
-    // As a Claude thread last reported it: no Claude thread runs in the mock's Settings.
     {
       name: "linear",
       transport: "other",
@@ -111,7 +107,6 @@ const CONFIGURED: Readonly<Record<McpTarget, ReadonlyArray<ConfiguredServer>>> =
   codex: [remote("github", "user", true), remote("example", "user", false)],
 };
 
-/** A synthetic catalogue; ordinary Settings never requests one. */
 const OPTIONAL_CATALOGUE: ReadonlyArray<CatalogueServer> = [
   {
     id: "personal-docs",
@@ -295,7 +290,6 @@ export class MockConnectors {
       }
       this.#byThread.set(input.threadId, [
         ...connectors,
-        // A remote server with no credentials of its own comes up asking for its OAuth sign-in.
         {
           name: input.name,
           status:
@@ -366,12 +360,10 @@ export interface ConnectorsMockControls {
 /** `ConnectorsApi` over `MockConnectors`, with what it was asked recorded for the specs. */
 export function createConnectorsMock(world: MockWorld): ConnectorsApi & ConnectorsMockControls {
   const connectors = new MockConnectors();
-  /** Cold threads have no session, so there are no connectors to report or change. */
   const cold = (threadId: ThreadId) => world.summary(threadId).status === "cold";
   const connectorAdds: AddConnectorPayload[] = [];
   const configuredConnectorReads: ConfiguredConnectorsPayload[] = [];
   const catalogueReads: ConnectorCatalogue[] = [];
-  /** Like the server's `changeOf`: a per-project scope reaches the folder's threads only. */
   const changed = async (
     input: AddConnectorPayload | RemoveConnectorPayload,
     targets: ReadonlyArray<McpTarget>,
@@ -381,13 +373,11 @@ export function createConnectorsMock(world: MockWorld): ConnectorsApi & Connecto
         ? input.cwd
         : effectiveCheckout(world.summary(input.threadId).thread).path;
     for (const target of targets) {
-      // Claude Code's reconnect loads an added server in place; only a removal restarts.
       if (target === "claude" && "config" in input) continue;
       const perFolder = input.scope !== undefined && mcpScopeFor(target, input.scope) !== "user";
       await world.mcpConfigChanged(target, perFolder ? folder : undefined);
     }
   };
-  /** The agent a request without targets is for: the thread's own, as the server's `placeFor`. */
   const agentOf = (threadId: ThreadId | undefined): McpTarget =>
     (threadId === undefined
       ? undefined
@@ -405,7 +395,6 @@ export function createConnectorsMock(world: MockWorld): ConnectorsApi & Connecto
       ]);
     },
     listConnectors: async (threadId) => {
-      // Like the server: a session still opening has nothing to report yet.
       const list = connectors.list(
         threadId,
         cold(threadId) || world.summary(threadId).status === "starting",
@@ -453,7 +442,6 @@ export function createConnectorsMock(world: MockWorld): ConnectorsApi & Connecto
     },
     signInConnector: async (input) => {
       await world.delay(10);
-      // Claude Code's sessions waiting on the server reconnect; the other agents' restart.
       return connectors.signIn(input, () => {
         if (input.target !== "claude") void world.mcpConfigChanged(input.target, undefined);
       });

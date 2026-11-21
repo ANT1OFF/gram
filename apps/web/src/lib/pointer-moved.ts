@@ -13,22 +13,14 @@
 /** A real movement's events (pointer and mouse, over and move) arrive within this of each other. */
 export const SAME_MOVE_MS = 48;
 
-/**
- * Where the pointer was, by the kind of event that said so. A pointer event's position is fractional
- * and its mouse twin's whole pixels, so the pair the browser sends for one layout change under a
- * still pointer differ: each is compared with the last of its own kind, or every pair would read as
- * a move, while a move of under a pixel still is one.
- */
 const last = new Map<"pointer" | "mouse", { x: number; y: number }>();
 let movedAt = Number.NEGATIVE_INFINITY;
-/** What the pointer was over at its last change of position. */
 let movedOver: EventTarget | null = null;
 let listening = false;
 
 const record = (event: MouseEvent) => {
   const { clientX: x, clientY: y } = event;
   const kind = event.type.startsWith("pointer") ? "pointer" : "mouse";
-  // The first of a kind has only the other kind's last to go on.
   const was = last.get(kind) ?? last.get(kind === "pointer" ? "mouse" : "pointer");
   if (was === undefined || was.x !== x || was.y !== y) {
     movedAt = event.timeStamp;
@@ -56,7 +48,6 @@ export function pointerMovedFor(event: Event | undefined, on?: Element | null): 
   if (event.clientX === 0 && event.clientY === 0) return true;
   if (Math.abs(event.timeStamp - movedAt) > SAME_MOVE_MS) return false;
   const target = on ?? event.currentTarget ?? event.target;
-  // A move recorded before anything it was over can be told apart, or onto nothing: as it was.
   if (!(target instanceof Node) || !(movedOver instanceof Node)) return true;
   return target.contains(movedOver);
 }

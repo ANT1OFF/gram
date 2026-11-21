@@ -22,7 +22,6 @@ function ThreadPage() {
   const routeShown = useLayoutStore((s) => s.grid.panes.includes(id));
   useBesideSync();
 
-  // Opening a thread reads it, once: marked unread while open, it stays so until opened again.
   const loaded = useThreadsStore((s) => s.byId[id] !== undefined);
   const read = useRef<ThreadId | undefined>(undefined);
   useEffect(() => {
@@ -31,14 +30,10 @@ function ThreadPage() {
     if (unread) void api.markUnread(id, false);
   }, [api, id, loaded, unread]);
 
-  // The route names the focused pane's thread: navigating loads the thread into the grid…
   useEffect(() => {
     useLayoutStore.getState().openThread(id);
   }, [id]);
 
-  // …and focusing another pane navigates to its thread. Read the store fresh: the effect above
-  // may have just changed it. Once the route's thread is in no pane (its pane was closed) and the
-  // focused pane is empty, leave the route so a reload doesn't bring the thread back.
   useEffect(() => {
     const { grid } = useLayoutStore.getState();
     const current = grid.panes[grid.focused];

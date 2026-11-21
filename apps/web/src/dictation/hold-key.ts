@@ -25,14 +25,11 @@ export interface HoldTarget {
   readonly cancel: () => void;
 }
 
-/** Most recently used first. */
 const targets: HoldTarget[] = [];
-/** The target the press under way, or the lock, dictates into. */
 let owner: HoldTarget | undefined;
 let machine: ModifierHold | undefined;
 let unlisten: (() => void) | undefined;
 
-/** The composer whose pane has the focus, else the one last used. */
 const current = (): HoldTarget | undefined =>
   targets.find((target) => target.focused() && target.available()) ??
   targets.find((target) => target.available());
@@ -57,7 +54,6 @@ const hold = (): ModifierHold =>
     },
   }));
 
-/** The keys dictation is bound to, when they're one modifier held alone (`altright`). */
 const boundModifier = (): string | undefined => {
   const keys = effectiveKeys("composer.dictate", DICTATE_KEYS);
   return keys !== undefined && loneModifierFromEvent({ code: keys }) !== undefined
@@ -65,7 +61,6 @@ const boundModifier = (): string | undefined => {
     : undefined;
 };
 
-/** Settings and the key recorder hold the keys while they're open; nothing dictates behind them. */
 const inDialog = (target: EventTarget | null) =>
   target instanceof Element && target.closest("[role='dialog'], [role='alertdialog']") !== null;
 

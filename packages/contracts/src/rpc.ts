@@ -1,5 +1,3 @@
-// The wire surface, assembled: each domain declares its RPCs in `rpc/<domain>.ts`, and this module
-// only merges them. Nothing here declares an RPC or a shape, so no domain imports back from it.
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { AgentRuntimeRpcs } from "./rpc/agent-runtime.ts";
 import { AppRpcs } from "./rpc/app.ts";
@@ -20,8 +18,6 @@ import { ThreadRpcs } from "./rpc/threads.ts";
  * Every domain's group. A tag belongs to exactly one: `merge` keeps the last of two RPCs with the
  * same tag, so a test checks that none is shared.
  */
-// Annotated, not inferred: the merged surface is past what the declaration emitter will spell out
-// in full (TS7056), so its type names each domain's group instead.
 export const GramRpcGroups: readonly [
   typeof AgentRuntimeRpcs,
   typeof AppRpcs,

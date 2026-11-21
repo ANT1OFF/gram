@@ -1,5 +1,3 @@
-// The orchestration tools' pure pieces: input schemas, memory revision checks and the question
-// helpers, apart from the effectful wiring in tools.ts.
 import {
   AppToolError,
   PlanStepId,
@@ -26,8 +24,6 @@ export const questionEdit = (tool: string, edit: QuestionEdit) =>
 export const VISUALS_HELP =
   " When the options are a mock's directions, give each an `image` (a screenshot, such as shots/a-inbox-dark.png) and a `preview` (its page and board, such as v1.html#a-inbox), and name the mock in `mock` (its mock.json or a page): the card shows each thumbnail and opens its board in Preview. Paths are relative to your folder or absolute, inside your worktree or repo.";
 
-// Tool limits apply before question persistence/visual confinement. Stored historical choices
-// remain readable through the broader contract schema.
 export const questionOptions = Schema.Array(
   Schema.Struct({
     ...QuestionChoice.fields,

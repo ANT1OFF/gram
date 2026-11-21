@@ -55,7 +55,6 @@ const MODIFIER_WORDS: Readonly<Record<string, "mod" | "ctrl" | "alt" | "shift">>
   "⇧": "shift",
 };
 
-/** Keys a binding names with a word, which `formatKeys` shows as a glyph or a word. */
 const NAMED_KEYS = [
   "escape",
   "enter",
@@ -116,10 +115,6 @@ export function parseQueryChord(query: string, mac: boolean): QueryChord | undef
   return { ...chord, key };
 }
 
-/**
- * Whether a binding's keys answer a chord typed in search: every modifier typed is held, and the
- * key, if one was typed, is the binding's key. So `k` finds ⌘K and `⌘` every ⌘ binding.
- */
 function chordMatches(keys: string, query: QueryChord, mac: boolean): boolean {
   if (isLoneModifier(keys)) return false;
   const chord = parseKeys(keys);
@@ -132,7 +127,6 @@ function chordMatches(keys: string, query: QueryChord, mac: boolean): boolean {
   return query.key === undefined || query.key === chord.key;
 }
 
-/** The words a binding is found by: its name, its group and its keys as shown, both ways. */
 function rowText(row: BindingRow, mac: boolean): string {
   const keys = row.keys === undefined ? "off" : `${formatKeys(row.keys, mac)} ${row.keys}`;
   return `${row.label}\n${row.group}\n${keys}`.toLowerCase();

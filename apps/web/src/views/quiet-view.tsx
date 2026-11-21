@@ -71,7 +71,6 @@ const ICON = { approval: ShieldQuestion, question: MessageCircleQuestion, plan: 
 
 const DOT: Readonly<Record<DotTone, string>> = {
   working: "bg-status-working",
-  // Busy on CI or a review rather than a turn: the working colour, hollow.
   waiting: "border border-status-working bg-transparent",
   needs: "bg-status-needs-mark",
   error: "bg-destructive",
@@ -85,7 +84,6 @@ const MENU_ITEM =
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** Leaves Quiet, then goes to the thread, so what opens is in view. */
 function useLeaveTo() {
   const open = useOpenThread();
   return (threadId: ThreadId) => {
@@ -94,7 +92,6 @@ function useLeaveTo() {
   };
 }
 
-/** The solo threads' asks as one more source of cards, after every workspace's. */
 const soloSource = (asks: readonly Ask[]): DeckSource => ({
   workspaceId: undefined,
   name: "Solo threads",
@@ -125,21 +122,15 @@ export function QuietView({ workspaceId }: ViewProps) {
   const held = useAskStackStore((s) => s.held);
   const problems = useAskStackStore((s) => s.problems);
   const takeBack = useAskStackStore((s) => s.undo);
-  // What needs you everywhere, by the selector the pill counts by, less what the deck can answer:
-  // said beside the deck so its count and the pill's add up.
   const groups = useDerivedAsks((s) => s.needsYou.groups);
   const rest = useMemo(() => notInDeck(needsYouIn(groups, "all"), deck), [groups, deck]);
   const rootRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLInputElement | null>(null);
 
   const card = deck[0];
-  // The choice picked on the top card and not sent yet.
   const [pick, setPick] = useState<{ key: string; index: number }>();
-  // The request on top as it reads: another one, or the same one changed, starts afresh.
   const shown = card === undefined ? undefined : askFingerprint(card.ask);
   const picked = shown !== undefined && pick?.key === shown ? pick.index : undefined;
-  // When the top card last changed by itself, and when Quiet last answered: a key in either's wake
-  // is a slip, not a decision.
   const stepped = useRef<string | undefined>(undefined);
   const topSince = useRef(0);
   const answeredAt = useRef(0);
@@ -164,7 +155,6 @@ export function QuietView({ workspaceId }: ViewProps) {
   const choose = (each: DeckCard, option: AskOption) => {
     const { action } = option;
     if (action.kind === "open") return leaveTo(action.threadId);
-    // Read in full where it is answered: the Inbox, over the window Quiet leaves for.
     if (action.kind === "board") return showInboxAsk(each.ask.key);
     setPick(undefined);
     send(each.ask, option.done, action);
@@ -188,7 +178,6 @@ export function QuietView({ workspaceId }: ViewProps) {
     const root = rootRef.current;
     if (root === null) return;
     const target = event.target instanceof Element ? event.target : null;
-    // A choice just clicked keeps focus, and the card's keys with it; its reply field types.
     const own =
       target !== null && !types(target) && target.closest(CHOICE) !== null && root.contains(target);
     if (!own && !plainKeysReach(target, root)) return;
@@ -202,9 +191,6 @@ export function QuietView({ workspaceId }: ViewProps) {
       return;
     }
     if (card === undefined) return;
-    // An approval's verbs answer to their own keys, the thread card's, chord and all (a binding
-    // rebound to ⌥1 or ⌘⇧D included), and act on the press: matched before the modifiers below,
-    // which only Quiet's own keys go without.
     const verb = shortcutOptionAt(card.ask.options, event);
     if (verb >= 0) {
       take();
@@ -251,7 +237,6 @@ export function QuietView({ workspaceId }: ViewProps) {
     }
     const at = number ?? picked;
     if (at !== undefined && at === otherIndex(card.ask)) {
-      // "Other…": its number picks it and puts the cursor in its field, ⌘⏎ sends what is typed.
       take();
       if (!sending) {
         setPick({ key: shown!, index: at });
@@ -377,7 +362,6 @@ function QuietCard({
   replyRef,
 }: {
   card: DeckCard;
-  /** Its workspace's workers at work, as the strip draws them: its context beside the question. */
   workers: readonly WorkerRow[] | undefined;
   total: number;
   problem: string | undefined;
@@ -392,7 +376,6 @@ function QuietCard({
   const { ask } = card;
   const Icon = ICON[ask.icon];
   const rule = answerRule(ask.options);
-  // A question's choices sit above the footer with Send answer; a short row of verbs sits in it.
   const listed = rule === "pick" || choiceLayout(ask.options) === "list";
   const pickedOption = picked === undefined ? undefined : ask.options[picked];
   const [otherText, setOtherText] = useOtherText(ask);
@@ -412,8 +395,6 @@ function QuietCard({
       aria-label="Needs you"
       className="grid gap-3 rounded-lg border border-edge bg-card p-5 shadow-raised"
     >
-      {/* Where the question is from and the way back to it, at its head rather than in the strip
-          at the window's foot: the workspace, its workers at work, and Open thread. */}
       <header className="flex min-w-0 items-center gap-2 text-body text-muted-foreground">
         <Icon aria-hidden className="size-icon-row shrink-0 text-status-needs-mark" />
         <span data-testid="quiet-workspace" className="truncate font-medium text-foreground">
@@ -536,7 +517,6 @@ function QuietCard({
             onChoose={onChoose}
             testId="quiet-option"
             size="default"
-            // Its buttons sit in this row, beside Later.
             className="contents"
           />
         )}
@@ -552,7 +532,6 @@ function QuietCard({
   );
 }
 
-/** One workspace's workers, opened from its place in the strip. */
 function Peek({
   workspace,
   onClose,
@@ -615,7 +594,6 @@ function PeekRow({ row, onOpen }: { row: WorkerRow; onOpen: () => void }) {
   );
 }
 
-/** The bottom strip: a dot per worker by workspace, what needs you, the time, and the one menu. */
 function Strip({
   strip,
   peek,
@@ -627,7 +605,6 @@ function Strip({
 }) {
   const now = useNow(true, undefined, 30_000);
   const time = new Date(now);
-  // A phone keeps the row on one line: usage as its glyph, and the phone's own clock.
   const phone = usePhone();
   return (
     <footer
@@ -660,7 +637,6 @@ function Strip({
           </button>
         ))}
       </div>
-      {/* The window's one attention entry, in the sidebar pill's words and count. */}
       <NeedsYouEntry variant="chip" data-testid="quiet-asks" />
       <UsageMeter iconOnly={phone} />
       <span className="text-muted-foreground tabular-nums phone:hidden">
@@ -671,7 +647,6 @@ function Strip({
   );
 }
 
-/** Quiet's one menu: Pause all, New task, Settings. */
 function QuietMenu() {
   const api = useApi();
   const queryClient = useQueryClient();

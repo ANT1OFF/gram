@@ -6,7 +6,6 @@ import { resolveMotion, type ResolvedMotion } from "@/theme/theme";
 
 interface Note {
   readonly frequency: number;
-  /** Seconds after the sound starts. */
   readonly at: number;
   readonly length: number;
   readonly wave: OscillatorType;
@@ -73,9 +72,7 @@ export function playChime(sound: ChimeSound, options: { readonly reduced?: boole
       oscillator.start(at);
       oscillator.stop(at + note.length + 0.05);
     }
-  } catch {
-    // No audio output: the notification itself still shows.
-  }
+  } catch (_noAudioOutputTheNotificationItselfStillShows) {}
 }
 
 const motionLevel = (): ResolvedMotion =>

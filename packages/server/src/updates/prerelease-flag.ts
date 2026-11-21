@@ -74,7 +74,6 @@ export async function readUpdatePrefs(dataDir: string): Promise<UpdatePrefs> {
       ...(prefs["gram.automaticUpdateChecks"] === true ? { automaticChecks: true } : {}),
     };
   } catch {
-    // No prefs yet, or garbage: no flag means stable.
     return { channel: "stable" };
   }
 }

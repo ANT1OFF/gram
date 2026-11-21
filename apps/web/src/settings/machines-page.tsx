@@ -98,7 +98,6 @@ export function MachinesPage() {
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState<Pending>();
-  /** The machine whose Sign in terminal is open under its row. */
   const [signingIn, setSigningIn] = useState<string>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -106,8 +105,6 @@ export function MachinesPage() {
     queryKey: MACHINES_KEY,
     queryFn: machinesApi.list,
     retry: false,
-    // The join dialog watches for the new machine, and a row its update; otherwise a slow refresh
-    // keeps "online" honest.
     refetchInterval: (query) =>
       adding || query.state.data?.machines.some(updating) === true ? 1500 : 10_000,
   });
@@ -137,12 +134,10 @@ export function MachinesPage() {
   const machines = status.data.machines;
   const healthOf = (machine: JoinedMachine) =>
     machineHealth(machine, status.data, status.dataUpdatedAt);
-  /** Confirmed machines behind this Gram, which an Update moves to its release. */
   const behind = machines.filter(
     (machine) => machine.confirmed && healthOf(machine).update !== undefined,
   );
   const update = (machine: JoinedMachine) => {
-    // A host that updates itself starts at once, and its row shows how it goes.
     if (machine.selfUpdate === true) void act(() => machinesApi.update(machine.id));
     else setPending({ kind: "update", machine });
   };
@@ -309,10 +304,6 @@ export function MachinesPage() {
   );
 }
 
-/**
- * Settings → Machines' switch for updating joined machines on their own, on until turned off. It
- * goes through the machines' own local-only route, never Settings, so a paired phone can't flip it.
- */
 function MachineUpdatesToggle({
   on,
   onChange,
@@ -360,19 +351,13 @@ function MachineRow({
 }) {
   const online = health.tone === "online";
   const hint = healthHint(health);
-  // Any confirmed machine behind this Gram: over its own connection when its host updates itself,
-  // otherwise by the installer.
   const updateTo = machine.confirmed ? health.update?.to : undefined;
   const updateLine = machineUpdateLine(machine, now);
   const problem = online ? machineSignInProblem(machine) : undefined;
   const tools = online ? machineToolsLine(machine) : undefined;
   const needsSignIn = online && machineNeedsSignIn(machine);
-  // What is looked up, not watched: when it joined, its key's fingerprint and its token. Open from
-  // the start on a machine that waits to be confirmed, whose fingerprint is what is being checked.
   const [details, setDetails] = useState(!machine.confirmed);
   const detailsId = useId();
-  // The token from this Mac is offered on the row where the machine needs a sign-in; a machine
-  // that is signed in keeps it, with Forget token and Remove, in its menu.
   const actions: RowAction[] = [
     ...(online && machine.claudeTokenSetAt === undefined && !needsSignIn
       ? [{ label: "Use a token from this Mac", icon: KeyRound, onSelect: onToken }]
@@ -400,7 +385,6 @@ function MachineRow({
               />
             )}
           </span>
-          {/* One line: whether it is here, and what it runs. */}
           <span className="text-meta text-muted-foreground">
             {hint === undefined ? (
               <span data-testid="machines-state">{health.label}</span>
@@ -410,7 +394,6 @@ function MachineRow({
                 side="bottom"
                 render={
                   <span
-                    // Focusable, so the reason is there by keyboard too.
                     tabIndex={0}
                     aria-description={hint}
                     data-testid="machines-state"
@@ -419,7 +402,6 @@ function MachineRow({
                 }
               >
                 {health.label}
-                {/* Neutral: the glyph's shape says it, as for any caution that isn't a setting's. */}
                 {health.update !== undefined ? (
                   <CircleArrowUp aria-hidden className="size-icon-chip" />
                 ) : (
@@ -543,10 +525,6 @@ function MachineRow({
   );
 }
 
-/**
- * Updates a joined machine to this Gram's release: over SSH again where Gram added it, otherwise
- * the one command to run there, which moves its service to the release and keeps the join.
- */
 function UpdateDialog({
   machine,
   health,
@@ -672,26 +650,17 @@ function UpdateDialog({
   );
 }
 
-/** An install over SSH: running, or how it ended. */
 type SshRun =
   | { readonly phase: "running"; readonly host: string }
   | {
       readonly phase: "done";
       readonly host: string;
-      /** What happened, for the person: joined and confirmed, or its service moved. */
       readonly said: string;
-      /** What still went wrong after it joined, if anything. */
       readonly problem?: string;
       readonly output: string;
     }
   | { readonly phase: "failed"; readonly message: string; readonly output: string };
 
-/**
- * Add over SSH: this computer runs the installer on a host it can SSH to with its keys, and the
- * machine is confirmed when the key that joined is the one the install printed. The run's state
- * lives in the dialog, so the new machine appearing, or the dialog's link expiring, mid-run doesn't
- * lose its answer.
- */
 function SshJoin({
   run,
   showForm,
@@ -774,11 +743,6 @@ function SshJoin({
   );
 }
 
-/**
- * Access over Tailscale, turned on from here when it is off: other machines dial the address it
- * serves on the tailnet. While Tailscale itself isn't ready, what it still needs, checked again on
- * request.
- */
 function TailscaleStep({ onReady }: { onReady: () => void }) {
   const queryClient = useQueryClient();
   const status = useQuery({
@@ -855,10 +819,6 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-/**
- * Makes a join link and waits for a machine to use it: the steps to run on the new machine, the
- * link to paste there, and the new machine once it has joined.
- */
 function AddDialog({
   machines,
   onConfirm,
@@ -869,7 +829,6 @@ function AddDialog({
   onClose: () => void;
 }) {
   const [link, setLink] = useState<JoinLink | "tailscale-off" | "ssh-running" | "error">();
-  // A run that ends after the dialog closed mints no link nobody will see.
   const open = useRef(true);
   useEffect(() => {
     open.current = true;
@@ -906,13 +865,10 @@ function AddDialog({
         message: message(e),
         output: e instanceof SshJoinError ? e.output : "",
       });
-      // The install used its own link, which replaced this dialog's: the command gets a new one.
-      // One refused because another was running replaced nothing.
       if (open.current && !(e instanceof SshJoinError && e.busy)) mint();
     }
   };
   useEffect(() => {
-    // A newer link replaces an older one on the server, so only the last answer counts.
     let live = true;
     machinesApi.joinLink().then(
       (next) => live && setLink(next),

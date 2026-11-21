@@ -1,21 +1,3 @@
-// The file layer under a workspace's docs (`docs.ts`): every read and write of `<root>/<ws>/<name>`
-// with the two folders above the file pinned for the whole operation.
-//
-// Node has no `openat`, so a path is resolved again by each call. What stops a folder swapped in
-// mid-operation (a link put in place of the docs root or the workspace folder, then perhaps put
-// back) is identity: each operation `lstat`s both folders first, refuses a link, a non-folder or
-// one another user owns, and keeps their device and inode. After it opens a file it checks that
-// the file at the confined path now is the one it opened, and that both folders are still the
-// pinned ones. A read whose check fails returns nothing it read. A write checks its fresh temp file
-// the same way before writing any content into it, renames it over the target (replacing a link
-// there, never writing through one), and checks the result again.
-//
-// What is left: without `openat`/`renameat`, a folder swapped for a link between the last check and
-// the `rename` (or the `open`) is caught after the call, not prevented. A rename in that window can
-// replace a file of the same name in the swapped-in folder before the refusal. Only someone who can
-// already write to Gram's own state folder can make that swap, and they already control what is in
-// it. A descriptor-relative commit would need native code, which this deliberately doesn't add.
-
 import { randomUUID } from "node:crypto";
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
@@ -62,7 +44,6 @@ const MOVED = "The docs folder changed during the operation, so nothing was read
 const NOT_PLAIN_FOLDER =
   "The docs folder is a link, not a folder, or not yours, so nothing was read or written";
 
-/** A read's check failed: the folder or the file at the path changed under it. */
 class Moved extends DocRefusal {
   constructor() {
     super(MOVED);
@@ -82,7 +63,6 @@ const statOrMissing = async (path: string): Promise<Stats | undefined> => {
   }
 };
 
-/** A real folder of this user's at `path`, pinned; `undefined` when there is none. */
 const pin = async (path: string): Promise<Pin | undefined> => {
   const stats = await statOrMissing(path);
   if (stats === undefined) return undefined;
@@ -107,7 +87,6 @@ const stillPinned = async (pins: readonly Pin[]) => {
   }
 };
 
-/** The file at `path` is still the one `opened` is. */
 const sameFile = async (path: string, opened: Stats) => {
   const now = await statOrMissing(path);
   if (now === undefined || now.dev !== opened.dev || now.ino !== opened.ino) {
@@ -153,8 +132,6 @@ export const readPinned = async (
   max: number,
   options: { readonly whole: boolean; readonly hooks?: DocFileHooks | undefined },
 ): Promise<ReadResult> => {
-  // A save renamed over the file between its open and its check fails the check as a swap would:
-  // the read is tried again, and only a read whose checks pass is answered.
   for (let attempt = 1; ; attempt++) {
     try {
       return await readOnce(folder, name, max, options);
@@ -180,14 +157,12 @@ const readOnce = async (
       await stillPinned(folder.pins);
       return { _tag: "Missing" };
     }
-    // `O_NOFOLLOW` on a link fails with ELOOP (EMLINK on some BSDs).
     if (codeOf(error) === "ELOOP" || codeOf(error) === "EMLINK") return { _tag: "NotPlain" };
     throw error;
   }
   try {
     await options.hooks?.afterOpen?.(path);
     const opened = await handle.stat();
-    // No link left: a save renamed over it since the open, which the read is tried again for.
     if (opened.nlink === 0) throw new Moved();
     if (!opened.isFile() || opened.nlink !== 1) return { _tag: "NotPlain" };
     if (options.whole && opened.size > max) return { _tag: "TooBig" };
@@ -243,9 +218,6 @@ export const writePinned = async (
     await handle.close();
     closed = true;
     await hooks?.beforeRename?.(temp);
-    // Checked again at the last moment: both folders still the pinned ones and the temp still the
-    // file written. Node has no renameat, so a swap after this check and before the rename is the
-    // one window left (see the module's note).
     await sameFile(temp, created);
     await stillPinned(folder.pins);
     await (hooks?.rename ?? rename)(temp, target);

@@ -6,7 +6,6 @@ export interface TokenizedCode {
   bg: string;
 }
 
-// Bound grammar work and retained transcript text. Large content remains selectable plain text.
 const MAX_CODE_LENGTH = 16_384;
 const MAX_LINE_LENGTH = 2_048;
 const MAX_LINES = 500;
@@ -25,11 +24,6 @@ const highlighters = new Map<
 >();
 const tokensCache = new Map<string, TokenizedCode>();
 const pending = new Map<string, Set<(result: TokenizedCode) => void>>();
-/**
- * What asked while `MAX_ENTRIES` were already being worked on, oldest first, started as they
- * finish: a long diff's later hunks get their colours too. Bounded, dropping the oldest, which stay
- * plain text.
- */
 const waiting = new Map<
   string,
   { code: string; language: BundledLanguage; callbacks: Set<(result: TokenizedCode) => void> }
@@ -71,7 +65,6 @@ export const highlightCode = (
   callback?: (result: TokenizedCode) => void,
 ): TokenizedCode | null => {
   if (!canHighlightCode(code)) return null;
-  // A prefix/suffix key can substitute different text with the same length and ends.
   const key = `${language}:${code}`;
   const cached = tokensCache.get(key);
   if (cached) {
@@ -93,7 +86,6 @@ export const highlightCode = (
   return null;
 };
 
-/** One background tokenization, then the oldest waiting one in its place. */
 const tokenize = (
   key: string,
   code: string,
@@ -102,7 +94,6 @@ const tokenize = (
 ) => {
   pending.set(key, callbacks);
 
-  // The existing Shiki engine/themes are retained; failures resolve to the original source.
   void (async () => {
     let tokenized: TokenizedCode;
     try {
@@ -121,7 +112,6 @@ const tokenize = (
     }
     tokensCache.set(key, tokenized);
     if (tokensCache.size > MAX_ENTRIES) tokensCache.delete(tokensCache.keys().next().value!);
-    // The set callers joined while it ran, which `pending` handed them.
     pending.delete(key);
     for (const receive of callbacks) receive(tokenized);
     const next = waiting.entries().next().value;

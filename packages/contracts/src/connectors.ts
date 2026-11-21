@@ -100,7 +100,6 @@ export const connectorHealth = (
   return "failed";
 };
 
-/** What a `failed` connector's error says when its sign-in is what was refused. */
 const SIGN_IN_REFUSED =
   /\b401\b|unauthori[sz]ed|authenticat|token (?:has )?expired|sign(?:ed)?[ -]?in/i;
 

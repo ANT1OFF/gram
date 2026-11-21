@@ -1,5 +1,3 @@
-// Task startup: the user's start of a task in a workspace, with
-// the model it opens on, its preflight and the lock against a charter commit.
 import {
   autonomyOf,
   InvalidState,
@@ -41,13 +39,9 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
     workspaceStartupKeys,
   } = kit;
 
-  /** One model/gate decision shared by read-only task preview and holder creation. */
   const openModel = (charter: OrchestratorCharter, expected?: ModelRef) =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
-      // A slot that follows a tier is resolved now, so the orchestrator opens on the model the
-      // recommendation names today; one nothing here fills falls through, as an unset one does,
-      // and says so (`note`) beside what stands in.
       const own = yield* slotHereNow(hosts, charter.orchestratorModel);
       const app = own.model === undefined ? yield* slotHereNow(hosts, defaultSlotOf(settings)) : {};
       const preferred = own.model ?? app.model;
@@ -113,7 +107,6 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
       return { settings, state, projectIds, charter, holder };
     });
 
-  // Only selection inputs participate: outbox/ledger changes do not invalidate a draft.
   const taskContextKey = (context: Effect.Success<ReturnType<typeof taskContext>>) =>
     JSON.stringify({
       agents: context.settings.agents,
@@ -142,8 +135,6 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
         return yield* new InvalidState({
           message: `${kindName(picked.agent)} threads can't be orchestrators yet. Pick another orchestrator model.`,
         });
-      // A pick opens a workspace's first orchestrator on it, as its charter will then say; a running
-      // one moves to it as the task starts (`prepareTaskOrchestrator`), or is on it already.
       const opened =
         holder === undefined
           ? yield* openModel(
@@ -156,8 +147,6 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
         picked !== undefined &&
         !sameTaskModel(holder.model, picked) &&
         (switching === undefined || !sameTaskModel(switching, picked));
-      // A move the running session can carry over is a switch; one it can't starts it fresh on the
-      // pick. Neither possible, the preview says why before Start rather than the handoff after it.
       const move = moves
         ? yield* moveKindOf(store, hosts, holder, picked).pipe(
             Effect.mapError(
@@ -194,10 +183,6 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
       return plan.selection;
     });
 
-  /**
-   * The `taskStartupLock` keys of a task's target: its workspace's (`startupKeysOf`), or the
-   * project's alone while it has no workspace yet.
-   */
   const startupKeys = (input: Pick<StartTaskInput, "target">) =>
     Effect.gen(function* () {
       const target = input.target;
@@ -214,8 +199,6 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
 
   const withTaskStartup: OrchestrationShape["withTaskStartup"] = (input, selected, run) =>
     Effect.gen(function* () {
-      // CLI discovery may wait. Let edits finish during it, then check the original
-      // inputs under the same lock used by charter commits before creating anything.
       const plan = yield* taskPlan(input);
       return yield* underKeysOf(
         taskStartupLock,

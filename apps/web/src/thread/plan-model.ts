@@ -87,7 +87,6 @@ export const stripState = (
   const done = steps.filter((step) => step.status === "done").length;
   const at = `${done}/${steps.length}`;
   const next = steps.find((step) => step.status === "doing" || step.status === "todo");
-  // A todo list's step is worded for while it runs ("Reproducing the flake"): left out once stopped.
   const nextLine = next === undefined || fromTodo ? undefined : `Next: ${planText(next.text)}`;
   if (turn === "stopped") return { lead: `Stopped at step ${at}`, line: nextLine, count: false };
   if (turn === "failed") return { lead: `Failed at step ${at}`, line: nextLine, count: false };

@@ -15,7 +15,6 @@ import { useThreadsStore } from "@/stores/threads";
 export const worktreeName = (path: string): string =>
   path.split(/[\\/]/).findLast((part) => part !== "") ?? path;
 
-/** The open PR on another worktree, while this branch has no PR of its own. */
 const prElsewhereOf = (git: GitState | undefined) =>
   git !== undefined && git.pr === undefined ? git.prElsewhere : undefined;
 

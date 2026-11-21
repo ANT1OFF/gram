@@ -1,8 +1,5 @@
 import type { BoundPr, GitState, PrStatus } from "@gram/contracts";
 
-// `MockApi.seedPrStates`: one thread per state the sidebar's PR glyph draws, and one with several PRs,
-// so the glyph's colours and its hover card can be seen side by side.
-
 export interface MockPrStateThread {
   readonly id: string;
   readonly title: string;

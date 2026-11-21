@@ -1,6 +1,3 @@
-// Thin git/gh wrappers over `Proc`, plus the small porcelain and rev-parse helpers shared by the
-// worktree, state and diff modules.
-
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
@@ -194,9 +191,7 @@ export const dirtyContentHash = (workTree: string, status: string): string => {
     try {
       const stat = fs.statSync(nodePath.join(workTree, path), { bigint: true });
       parts.push(path, stat.size, stat.mtimeNs, stat.ino, stat.ctimeNs);
-    } catch {
-      // A deleted entry contributes nothing; its status code already moved the porcelain text.
-    }
+    } catch (_aDeletedEntryContributesNothingItsStatusCodeAlready) {}
   }
   return stableHash(parts);
 };

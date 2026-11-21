@@ -1,14 +1,9 @@
-// A workspace's monogram on the compact rail's tile: one letter from its name, two only where
-// another workspace's name starts with the same one. No React.
-
-/** A name's words: split at spaces, dashes, underscores, dots, slashes and camelCase humps. */
 const words = (name: string): string[] =>
   name
     .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
     .split(/[^\p{L}\p{N}]+/u)
     .filter((word) => word.length > 0);
 
-/** The letters a name offers, first first: its words' initials, then the rest of its first word. */
 const letters = (name: string): string[] => {
   const parts = words(name);
   const initials = parts.map((word) => word[0]!);

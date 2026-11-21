@@ -12,7 +12,6 @@ export const canSymlink = ((): boolean => {
     fs.symlinkSync(dir, nodePath.join(dir, "link"));
     return true;
   } catch {
-    // EPERM without the privilege; the tests that plant one skip.
     return false;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

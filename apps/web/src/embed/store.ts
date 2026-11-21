@@ -220,7 +220,6 @@ export const useThreadsListed = () => useEmbedShell((s) => s.threads === "shown"
 export const shellFor = (settings: Settings, shell: ShellContributions | undefined) =>
   embeddingOn(settings) ? (shell ?? {}) : {};
 
-/** The first segment of each path Gram has itself: an added page may not take one. */
 const OWN = new Set([
   "",
   "t",

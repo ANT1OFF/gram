@@ -61,7 +61,8 @@ import {
 import { usePrList, PrListControls } from "./pr-list-controls";
 import { prRefText } from "@/components/pr-marks-model";
 
-// Keep the settings consumer's existing import path while both lists use the shared display.
+const theNextScheduledPollTriesAgain = (): void => {};
+
 export { PLACEMENT_OPTIONS } from "./pr-display";
 
 const reviewRequestsQuery = (api: Api) => ({
@@ -80,9 +81,7 @@ export function useRefreshReviewRequestsOnFocus() {
   const api = useApi();
   useSubscription(() => {
     const refresh = () => {
-      api.refreshReviewRequests().catch(() => {
-        // Nothing to say: the next scheduled poll tries again.
-      });
+      api.refreshReviewRequests().catch(theNextScheduledPollTriesAgain);
     };
     return listen(window, "focus", refresh);
   }, [api]);
@@ -90,14 +89,12 @@ export function useRefreshReviewRequestsOnFocus() {
 
 type ThreadsById = ReturnType<typeof useThreadsStore.getState>["byId"];
 
-/** The PR badges the open threads carry, a thread's extra PRs included. */
 const threadPrs = (byId: ThreadsById): PrStatus[] =>
   Object.values(byId).flatMap((summary) => [
     ...(summary.git?.pr === undefined ? [] : [summary.git.pr]),
     ...(summary.git?.extraPrs ?? []),
   ]);
 
-/** The repositories to suggest for the review-bot list, from what the app holds right now. */
 function currentBotRepoSuggestions(requests: ReviewRequests | undefined): string[] {
   const prRepos = botReviewedRepos(threadPrs(useThreadsStore.getState().byId));
   return suggestedBotRepos(requests?.requests ?? [], prRepos);
@@ -106,7 +103,6 @@ function currentBotRepoSuggestions(requests: ReviewRequests | undefined): string
 /** The repositories to suggest for the review-bot list, kept current as reviews land. */
 export function useBotRepoSuggestions(): string[] {
   const { data } = useReviewRequests();
-  // Joined, so a thread event that changes no PR's reviewers doesn't render again.
   const prRepos = useThreadsStore((s) => botReviewedRepos(threadPrs(s.byId)).join("\n"));
   return useMemo(
     () => suggestedBotRepos(data?.requests ?? [], prRepos === "" ? [] : prRepos.split("\n")),
@@ -114,7 +110,6 @@ export function useBotRepoSuggestions(): string[] {
   );
 }
 
-/** How long seeding the review-bot list waits to try again after it couldn't. */
 const SEED_RETRY_MS = 5 * 60_000;
 
 /**
@@ -137,9 +132,7 @@ export function useSeedReviewBotRepos() {
   );
   const threadsReady = useThreadsStore((s) => s.ready);
   const prRepos = useThreadsStore((s) => botReviewedRepos(threadPrs(s.byId)).join("\n"));
-  /** Repositories the seeded list has held, lowercased; `undefined` until this mount seeds it. */
   const offered = useRef<Set<string>>(undefined);
-  /** The seed and each late addition, one save at a time, so none writes over another. */
   const adding = useRef<Promise<unknown>>(Promise.resolve());
   useEffect(() => {
     if (!unseeded || !threadsReady) return;
@@ -150,15 +143,12 @@ export function useSeedReviewBotRepos() {
     };
     const fresh = () => queryClient.fetchQuery({ ...reviewRequestsQuery(api), staleTime: 0 });
     const seed = async () => {
-      // A poll that changes nothing announces nothing, so the cached list may predate every one;
-      // and a failed one keeps the last result, so only a `checkedAt` that moved says it landed.
       const before = (await fresh()).checkedAt;
       await api.refreshReviewRequests({ force: true });
       const requests = await fresh();
       if (cancelled) return;
       if (requests.checkedAt === undefined || requests.checkedAt === before) return later();
       const reviewBotRepos = currentBotRepoSuggestions(requests);
-      // Offered from here on, so a badge that lands while this saves is queued behind it.
       offered.current = new Set(reviewBotRepos.map((repo) => repo.toLowerCase()));
       const save = adding.current.then(() => apply({ reviewBotRepos }));
       adding.current = save.catch(() => {});
@@ -228,16 +218,11 @@ export function ReviewRequestsPanel() {
   );
 }
 
-/**
- * A right-click menu over one piece of the list. Each piece is its own trigger rather than the
- * section being one, so a row can lead with its own actions without nesting one menu in another.
- */
 function RequestsMenu({
   request,
   render,
   children,
 }: {
-  /** The row's PR; absent on the headings and the empty space. */
   request?: ReviewRequest | undefined;
   render: ReactElement;
   children?: ReactNode;
@@ -260,10 +245,6 @@ function useOpenRequest() {
   return (request: ReviewRequest) => void openExternalUrl(api, request.url).catch(() => {});
 }
 
-/**
- * One PR's actions. Only a PR in a known project can be checked out. One held for a review bot can
- * be let go by saying its repository has none, which lets go of the others there too.
- */
 function RequestMenuItems({ request }: { request: ReviewRequest }) {
   const open = useOpenRequest();
   const queryClient = useQueryClient();
@@ -301,10 +282,6 @@ function RequestMenuItems({ request }: { request: ReviewRequest }) {
   );
 }
 
-/**
- * What the list shows and where, without a trip to Settings → Notifications, whose controls these
- * mirror. The toggles leave the menu open so more than one can be changed at once.
- */
 function ListMenuItems() {
   const api = useApi();
   const navigate = useNavigate();
@@ -477,7 +454,6 @@ function ReviewRequestRepoGroup({
   );
 }
 
-/** What a row has no room for: the whole title and login, and its marks in words. */
 function ReviewRequestCard({ request }: { request: ReviewRequest }) {
   const waitingOn = reviewRequestWaitingOn(request);
   return (
@@ -500,7 +476,6 @@ function ReviewRequestRow({
   cardSide,
 }: {
   request: ReviewRequest;
-  /** Under its repository's heading, so the row names only the number. */
   grouped?: boolean;
   cardSide: CardSide;
 }) {

@@ -1,11 +1,3 @@
-// Live feature cards:
-// each orchestration feature as one card in the orchestrator's stream, which the server builds from
-// the ledger, versions and persists, so a newer card replaces the older one and survives a reload.
-// The Board, the Quiet status strip and the tray read the same cards (`orchestrator.watchFeatureCards`).
-//
-// Everything here is a pure function over ledger facts, so the stations, the now line and the event
-// budget say the same thing in every view and are tested without a server.
-
 import { ledgerPrsOf } from "./ci-fix-ownership.ts";
 import * as Schema from "effect/Schema";
 import { ChecksRollup } from "./git.ts";
@@ -22,10 +14,6 @@ import {
   type WorkerPr,
   WorkerState,
 } from "./orchestration.ts";
-
-// ---------------------------------------------------------------------------------------------
-// Stations
-// ---------------------------------------------------------------------------------------------
 
 /** The five stations of a card's stage line, in order. */
 export const FeatureStation = Schema.Literals(["briefed", "working", "checks", "review", "merged"]);
@@ -59,13 +47,11 @@ export const checksOf = (checks: string | undefined): ChecksRollup | undefined =
 
 type StationFacts = Pick<WorkerLedgerEntry, "state" | "pr" | "morePrs" | "lastReport">;
 
-/** Where an open PR puts a worker: checks while they run or fail, review once they pass or none. */
 const prStation = (pr: WorkerPr): FeatureStation => {
   const checks = checksOf(pr.checks);
   return checks === "pending" || checks === "failing" ? "checks" : "review";
 };
 
-/** The station a worker's facts imply when its state alone doesn't say (error, archived). */
 const factsStation = (worker: StationFacts): FeatureStation => {
   const prs = [worker.pr, ...(worker.morePrs ?? [])].filter((pr) => pr !== undefined);
   if (prs.length > 0 && prs.every((pr) => pr.state === "merged")) return "merged";
@@ -139,10 +125,6 @@ export const cardStationOf = (
   return FEATURE_STATIONS[pick(...pool.map((worker) => stationIndex(worker.station)))]!;
 };
 
-// ---------------------------------------------------------------------------------------------
-// The now line
-// ---------------------------------------------------------------------------------------------
-
 /** The most words a now line holds. */
 export const NOW_LINE_WORDS = 4;
 
@@ -153,12 +135,10 @@ export const capWords = (text: string, max = NOW_LINE_WORDS): string => {
   return `${words.slice(0, max).join(" ")}…`;
 };
 
-/** Lowercase a sentence's first letter unless the word is an acronym or a name with capitals. */
 const lowerFirst = (text: string): string =>
   /^[A-Z][a-z]/.test(text) ? `${text[0]!.toLowerCase()}${text.slice(1)}` : text;
 
 const TEST_WORDS = /\b(test|tests|suite|pytest|vitest|jest|spec|specs|playwright)\b/i;
-/** "38 of 52", "38/52": a count of tests run, as a report says it. */
 const COUNT = /\b(\d{1,6})\s*(?:of|\/)\s*(\d{1,6})\b/;
 
 /**
@@ -175,7 +155,6 @@ export const reportGist = (summary: string): string => {
   return gist === "" ? "reported" : gist;
 };
 
-/** A command line on its own, by the tools a worker commonly runs. */
 const BARE_COMMAND =
   /^((?:git|gh|uv|uvx|npm|npx|pnpm|bun|bunx|yarn|cargo|go|make|pytest|python3?|node|tsc|vitest|jest)\b.*)$/;
 
@@ -187,7 +166,6 @@ const TEST_COMMAND = /\b(test|tests|pytest|vitest|jest|spec|playwright|check)\b/
  */
 export const activityGist = (activity: string): string => {
   const line = activity.trim();
-  // The server says "Running <command>"; an older or scripted line may be the bare command.
   const running = /^Running (.+)$/.exec(line) ?? BARE_COMMAND.exec(line);
   if (running !== null && running[1] !== undefined) {
     const command = running[1];
@@ -221,7 +199,6 @@ export const requestGist = (
 ): string => {
   if (request.kind === "question") return "asks you";
   if (request.kind === "plan") return "has a plan";
-  // The ledger's summary of an approval reads "Bash: git push -u origin …".
   const words = (command ?? request.summary?.replace(/^[\w .-]{1,40}:\s+/, "") ?? "").trim();
   if (/^git push\b/.test(words)) return "wants to push";
   if (/^gh pr merge\b/.test(words)) return "wants to merge";
@@ -249,7 +226,6 @@ export const nowLineOf = (
     | "compacting"
   > &
     Partial<Pick<WorkerLedgerEntry, "lastError">>,
-  /** The live activity line while it runs ("Running uv run pytest"). */
   activity?: string | undefined,
 ): string => {
   const line = (() => {
@@ -268,7 +244,6 @@ export const nowLineOf = (
     }
     if (worker.status === "running" || worker.status === "starting") {
       if (worker.compacting === true) return "compacting";
-      // A running worker that reported a count since is better told by it than by "running tests".
       const counted = report === undefined ? undefined : reportGist(report.summary);
       if (
         counted?.startsWith("tests ") === true &&
@@ -291,7 +266,6 @@ export const nowLineOf = (
       if (worker.state === "readyToMerge") return "ready to merge";
       return "in review";
     }
-    // Spawned and not begun: starting, as the web's sidebar, Workers panel and header say it.
     if (worker.state === "briefed") return "starting…";
     if (report !== undefined)
       return report.state === "done" ? "reported done" : reportGist(report.summary);
@@ -300,10 +274,6 @@ export const nowLineOf = (
   })();
   return capWords(line);
 };
-
-// ---------------------------------------------------------------------------------------------
-// The card
-// ---------------------------------------------------------------------------------------------
 
 /** One of a worker's PRs as its card's chip shows it. */
 export const FeatureCardPr = Schema.Struct({
@@ -451,7 +421,6 @@ export const mergeFeatureCards = (
     const before = byFeature.get(card.feature);
     const kept = newerCard(before, card);
     if (kept !== before) {
-      // The same version may carry a summary written for it since.
       if (before === undefined || kept.version > before.version || kept.summary !== before.summary)
         changed = true;
       byFeature.set(card.feature, kept);
@@ -466,10 +435,6 @@ export const mergeFeatureCards = (
     ),
   };
 };
-
-// ---------------------------------------------------------------------------------------------
-// Versioning: newer replaces older
-// ---------------------------------------------------------------------------------------------
 
 /** What the service knows beside the ledger when it builds the cards. */
 export interface FeatureCardFacts {
@@ -488,7 +453,6 @@ export interface FeatureCardFacts {
   readonly now: number;
 }
 
-/** A held brief as its feature's card shows it. */
 const cardHeldOf = ({ feature: _feature, heldAt: _heldAt, ...rest }: HeldBrief): FeatureCardHeld =>
   rest;
 
@@ -516,7 +480,6 @@ const cardWorkerOf = (
   };
 };
 
-/** Sorted-key JSON, so two cards that say the same thing compare equal however they were built. */
 const canonical = (value: unknown): string =>
   JSON.stringify(value, (_key, each: unknown) =>
     each !== null && typeof each === "object" && !Array.isArray(each)
@@ -528,7 +491,6 @@ const canonical = (value: unknown): string =>
       : each,
   );
 
-/** What a card shows, without what only says when or which version. */
 const bodyOf = (card: FeatureCard): string => {
   const {
     version: _version,
@@ -606,7 +568,6 @@ export const reconcileFeatureCards = (
   const heldOnly = new Set(
     (facts.held ?? []).flatMap((brief) => (inLedger.has(brief.feature) ? [] : [brief.feature])),
   );
-  // A card left with held briefs no longer held: kept as it was, without them.
   for (const card of previous) {
     if (card.held === undefined || inLedger.has(card.feature) || heldOnly.has(card.feature)) {
       continue;
@@ -642,16 +603,11 @@ export const reconcileFeatureCards = (
 /** Same cards, same text: what the watch compares before it sends. */
 export const featureCardsText = (cards: ReadonlyArray<FeatureCard>): string => canonical(cards);
 
-// ---------------------------------------------------------------------------------------------
-// The event budget
-// ---------------------------------------------------------------------------------------------
-
 /**
  * What the orchestration can tell the stream about. Worker state moves are the digest's
  * `DigestChange.to`; the rest are `orchestration_events` kinds and PR facts.
  */
 export const StreamEventKind = Schema.Literals([
-  // Worker state moves (DigestChange.to)
   "briefed",
   "working",
   "needsUser",
@@ -664,10 +620,8 @@ export const StreamEventKind = Schema.Literals([
   "merged",
   "error",
   "archived",
-  // PR facts
   "checksFailing",
   "checksPassing",
-  // orchestration_events kinds
   "spawn",
   "stage",
   "group",
@@ -802,10 +756,6 @@ export const streamLinesOf = (
   return lines;
 };
 
-// ---------------------------------------------------------------------------------------------
-// Since you left
-// ---------------------------------------------------------------------------------------------
-
 /**
  * What changed while the user was away, for one card at the top of the stream when they come
  * back. Folded from the digests the orchestrator was given meanwhile (the same facts as its
@@ -843,7 +793,6 @@ export const sinceYouLeftOf = (
 ): SinceYouLeft | undefined => {
   if (since === undefined) return undefined;
   const ordered = digests.toSorted((a, b) => a.at - b.at);
-  // A redelivery carries the same generation; it is folded once.
   const generations = new Set<number>();
   let previous: OrchestrationDigest | undefined;
   const merged: Array<StreamLine> = [];

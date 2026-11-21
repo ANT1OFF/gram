@@ -1,12 +1,3 @@
-// Gram's one place for calendar days (lint: `gram/no-day-math`). Wall-clock reading in an IANA time
-// zone: the date a given instant is on there, and the instant a clock time on a date falls at.
-// Daylight-saving changes move both, so nothing here assumes one offset for a whole day, and a
-// local day is 23 or 25 hours long twice a year.
-//
-// A calendar day is a date (`Wall`, `dateKey`), and moving between days is `plusDays`. `DAY_MS` is
-// only a duration: a rolling window, a lifetime, a retention age. A UTC day is always `DAY_MS`
-// long, so UTC date arithmetic may use it too.
-
 /** 24 hours, as a duration. Never "the same time tomorrow" in a local zone: use `plusDays`. */
 export const DAY_MS = 86_400_000;
 
@@ -44,7 +35,6 @@ export const formatterOf = (zone: string): Intl.DateTimeFormat | undefined => {
   }
 };
 
-/** The wall clock in `zone` at `at`, as if it were UTC. */
 const wallAsUtc = (format: Intl.DateTimeFormat, at: number): number => {
   const parts = Object.fromEntries(
     format.formatToParts(at).map((part) => [part.type, Number(part.value)]),

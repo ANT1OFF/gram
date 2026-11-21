@@ -4,20 +4,12 @@ import { useCallback, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 
-// The workers closed with their worktree, which the ledgers no longer have, a page at a time
-// (`orchestrator.finishedWorkersPage`). Each workspace reads its first page; Done asks for the next
-// only when its rows reach where the loaded ones stop, so the archive is read as far as someone
-// scrolls and no further.
-
-/** What is loaded of a workspace's finished workers. */
 interface Loaded {
   readonly workers: readonly FinishedWorker[];
-  /** Where the next page starts; absent once the archive has nothing older. */
   readonly next?: FinishedWorkersPage["next"];
   readonly pages: number;
 }
 
-// Under `finishedWorkers`, so `orchestration.changed` makes every page of the workspace stale.
 const pagesKey = (id: WorkspaceId, pages: number) => ["finishedWorkers", id, "pages", pages];
 
 export interface FinishedWorkerPages {
@@ -36,11 +28,7 @@ export function useFinishedWorkerPages(ids: readonly WorkspaceId[]): FinishedWor
   const api = useApi();
   const client = useQueryClient();
   const [depth, setDepth] = useState<Readonly<Record<string, number>>>({});
-  // What each workspace last had loaded. A deeper page is a new query, and `placeholderData` only
-  // carries the previous one over when the same observer is reused, which `useQueries` doesn't
-  // promise: without this the list dropped every older row while the next page loaded.
   const lastLoaded = useRef(new Map<WorkspaceId, Loaded>());
-  // Stable while `ids` is, so the maps are new only when a page is: what reads them sits still.
   const combine = useCallback(
     (all: readonly { data?: Loaded | undefined; isPlaceholderData: boolean }[]) => {
       const kept = lastLoaded.current;
@@ -76,7 +64,6 @@ export function useFinishedWorkerPages(ids: readonly WorkspaceId[]): FinishedWor
       return {
         queryKey: pagesKey(id, pages),
         queryFn: async (): Promise<Loaded> => {
-          // The pages before, while cached and current: only the new one to read.
           const before =
             pages > 1 ? client.getQueryState<Loaded>(pagesKey(id, pages - 1)) : undefined;
           let loaded: Loaded =
@@ -88,8 +75,6 @@ export function useFinishedWorkerPages(ids: readonly WorkspaceId[]): FinishedWor
             try {
               page = await api.finishedWorkersPage(id, loaded.next);
             } catch (error) {
-              // The first page's failure is the query's; a later one's keeps what is loaded, and
-              // stops there until the list is read again.
               if (loaded.pages === 0) throw error;
               return { workers: loaded.workers, pages: loaded.pages };
             }
@@ -105,7 +90,6 @@ export function useFinishedWorkerPages(ids: readonly WorkspaceId[]): FinishedWor
           }
           return loaded;
         },
-        // What was loaded stays while the next page comes, so rows never blink out.
         placeholderData: (previous: Loaded | undefined) => previous,
         retry: false,
         staleTime: 30_000,

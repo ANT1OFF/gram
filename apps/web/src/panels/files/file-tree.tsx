@@ -33,7 +33,6 @@ const sortEntries = (entries: readonly FsEntry[]) =>
 
 const indent = (depth: number) => ({ paddingInlineStart: `${(depth - 1) * 12 + 6}px` });
 
-/** The tree's one Tab stop: the item last focused. */
 const ActiveItem = createContext<{
   readonly active: string | undefined;
   readonly setActive: (path: string) => void;
@@ -89,8 +88,6 @@ export function FileTree({ threadId, root }: { threadId: ThreadId; root: string 
   const [active, setActive] = useState<string>();
   const treeRef = useRef<HTMLUListElement>(null);
 
-  // The active item may be gone (collapsed, filtered out): the first item takes the Tab stop.
-  // Runs after every render because folders load lazily; it only sets state when that changes.
   // oxlint-disable-next-line react/exhaustive-deps -- runs after every render, as folders load lazily
   useLayoutEffect(() => {
     const tree = treeRef.current;

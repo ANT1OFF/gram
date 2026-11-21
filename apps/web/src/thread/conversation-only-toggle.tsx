@@ -9,7 +9,6 @@ import { useConversationOnly } from "@/stores/conversation-only";
 /** The mode's name, wherever it is switched. */
 export const CONVERSATION_ONLY = "Conversation only";
 
-/** What the switch does, for its hint off and on. */
 const HINT = {
   off: "Conversation only: hide tool calls and reasoning",
   on: "Showing the conversation only. Show tool calls and reasoning",
@@ -60,7 +59,6 @@ export function ConversationOnlyItem({ className }: { className: string }) {
   return (
     <Menu.CheckboxItem
       data-testid="menu-conversation-only"
-      // One toggle, so the menu closes on it and the transcript shows the change at once.
       closeOnClick
       className={className}
       checked={on}

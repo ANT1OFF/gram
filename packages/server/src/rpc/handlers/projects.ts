@@ -33,17 +33,9 @@ import {
 import { logDefects, type Handlers } from "./common.ts";
 import { sessionHandlers } from "./sessions.ts";
 
-/**
- * The URL a headless server files a repository's origin under: a GitHub repository's https
- * address, the spelling a profile's repositories use, so either way it is the same origin.
- */
 const originUrl = (remote: RepoRemote): string =>
   remote.kind === "github" ? `https://github.com/${remote.owner}/${remote.repo}` : remote.url;
 
-/**
- * The GitHub `owner/repo` a folder's `origin` names, as its config stores it (not as `insteadOf`
- * rewrites it); undefined for none, another host, or a config that can't be read.
- */
 const githubOriginOf = (root: string) =>
   git(root, ["config", "--get", "remote.origin.url"], { timeoutMs: 2_000 }).pipe(
     Effect.map((out) => {
@@ -63,7 +55,6 @@ export const projectHandlers = Effect.gen(function* () {
   const proc = yield* Proc;
   const provide = Effect.provideService(Proc, proc);
   const suggestions = makeCloneSuggestions(homedir());
-  // Absent in test layers without a data folder: a broken scripts file then just has none.
   const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
   const lastGoodDir = config === undefined ? undefined : projectScriptsDir(config.dataDir);
   const projectOf = (projectId: ProjectId) =>
@@ -79,7 +70,6 @@ export const projectHandlers = Effect.gen(function* () {
     Effect.map(projectOf(projectId), (project) => project.root);
 
   return {
-    // A project whose folder is a private thread's (a profile's home) is that person's alone.
     "projects.list": () =>
       Effect.flatMap(store.listProjects, (projects) =>
         Effect.map(currentReader, (reader) =>
@@ -89,9 +79,6 @@ export const projectHandlers = Effect.gen(function* () {
     "projects.add": ({ root, trust }) =>
       Effect.gen(function* () {
         const { project, created } = yield* registerRepo(store, root);
-        // Only a folder this call adds takes the answer: an existing project keeps its own, which
-        // changes only through `projects.setFolderTrust`. Without one nothing is kept, so settings
-        // the folder gains later are asked about rather than trusted for having been absent.
         if (!created || trust === undefined) return project;
         return yield* store.setProjectFolderTrust(project.id, trust);
       }),
@@ -105,7 +92,6 @@ export const projectHandlers = Effect.gen(function* () {
     "projects.repositories": () =>
       Effect.gen(function* () {
         const settings = yield* store.getSettings;
-        // Where the user keeps repositories: the folder `/new` starts in, and where clones go.
         const folders = [settings.agents.defaultFolder, cloneFolderOf(settings)].flatMap(
           (folder) =>
             folder === undefined || folder.trim() === ""
@@ -116,9 +102,6 @@ export const projectHandlers = Effect.gen(function* () {
       }),
     "projects.clone": ({ remote, into }) =>
       Effect.gen(function* () {
-        // A headless server runs no work itself and holds no credential for the remote: it files
-        // the repository's origin, reaching nothing, and the machine a thread is placed on clones
-        // it with its own credentials, as it does a profile's repositories.
         if (config?.headless === true) {
           const parsed = parseRepoRemote(remote);
           if ("error" in parsed) return yield* new InvalidState({ message: parsed.error });

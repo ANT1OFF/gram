@@ -1,11 +1,3 @@
-/**
- * Which messages a dream reads. Pure: no store, no clock.
- *
- * A memory version holds one watermark per thread, the last seq it consolidated. A dream reads what
- * is past each, and only its adoption moves them, into the version it makes. A mark is only ever
- * replaced by one read later, so discarding a dream, or adopting an older one after a newer, moves
- * nothing back.
- */
 import {
   DREAM_DIGEST_MAX_CHARS,
   type DreamRead,
@@ -16,7 +8,6 @@ import type { MessageMark } from "../persistence/thread-store.ts";
 
 /** Consolidated messages quoted ahead of the new ones, so the first of them reads in context. */
 export const DELTA_CONTEXT_MESSAGES = 2;
-/** Marks offered for that quote: some messages render to nothing (a subagent's, an empty one). */
 const CONTEXT_CANDIDATES = DELTA_CONTEXT_MESSAGES * 4;
 
 /** What `selectDelta` picked of one thread. */
@@ -29,7 +20,6 @@ export interface DeltaSelection {
   readonly rewound: boolean;
 }
 
-/** Marks up to the first of a turn still running, whose messages are still being written. */
 const settled = (marks: ReadonlyArray<MessageMark>): ReadonlyArray<MessageMark> => {
   const open = marks.findIndex((mark) => mark.open);
   return open === -1 ? marks : marks.slice(0, open);
@@ -80,7 +70,6 @@ export const takeOldest = (
   let used = 0;
   let count = 0;
   for (const block of blocks) {
-    // The heading and the blank line a block may be written with.
     used += block.body.length + 16;
     if (count > 0 && used > maxChars) break;
     count++;
@@ -112,8 +101,6 @@ export const foldMarks = (
   for (const read of reads) {
     const held = next.get(read.threadId);
     if (held !== undefined && held.readAt > readAt) continue;
-    // A dream that wrote no digest for a thread leaves the one it was given, unless the thread was
-    // rewound below its mark: that digest summarises messages the thread no longer holds.
     const digest = digests.get(read.threadId) ?? (read.rewound === true ? undefined : held?.digest);
     next.set(read.threadId, {
       threadId: read.threadId,
@@ -165,7 +152,6 @@ export interface BudgetFill {
   }>;
 }
 
-/** A block's characters as `takeOldest` counts them. */
 const sizeOf = (block: { readonly body: string }) => block.body.length + 16;
 
 /**
@@ -202,8 +188,6 @@ export const fillBudget = (
       leave(0);
       continue;
     }
-    // A file's header and context count against the budget as much as its messages, but not
-    // against `fileChars`, which `DELTA_MAX_CHARS` already leaves them room under.
     const overhead = item.overheadChars ?? 0;
     const full = sizes.reduce((sum, size) => sum + size, 0);
     const room = Math.min(remaining - overhead, options.fileChars);

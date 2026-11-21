@@ -16,7 +16,6 @@ export type Fetcher = (
 
 const DISCOVERY_TIMEOUT_MS = 15_000;
 
-/** The most redirects a gateway request follows, each within the origin it was asked of. */
 const REDIRECTS_MAX = 3;
 
 /**
@@ -112,7 +111,6 @@ export const parseModelInfo = (body: unknown): Map<string, GatewayModelInfo> | n
       restricted: flag(record["restricted"]),
       tools: flag(supports["supports_function_calling"]),
       reasoning: flag(supports["supports_reasoning"]),
-      // Claude's 5.5 models can't turn thinking off, and the catalog says so outside `supports`.
       noneEffort:
         record["thinking_always_on"] === true
           ? false
@@ -143,7 +141,6 @@ export interface InlineModel {
 const positiveInt = (value: unknown): number | undefined =>
   Number.isInteger(value) && (value as number) > 0 ? (value as number) : undefined;
 
-/** xAI lists prices in US cents per 100 million tokens: 20000 is $2 per million. */
 const XAI_PRICE_PER_MTOK = 10_000;
 
 const xaiPrice = (value: unknown): number | undefined =>
@@ -151,11 +148,6 @@ const xaiPrice = (value: unknown): number | undefined =>
     ? value / XAI_PRICE_PER_MTOK
     : undefined;
 
-/**
- * An xAI `/models` entry: text prices, a context length and the reasoning efforts it takes under
- * `capabilities`. One without a completion price makes images, video or speech, not conversation.
- * A model that lists no efforts takes no effort parameter, so none is ever sent to it.
- */
 const xaiModel = (record: Record<string, unknown>): InlineModel => {
   const input = xaiPrice(record["prompt_text_token_price"]);
   const output = xaiPrice(record["completion_text_token_price"]);
@@ -236,7 +228,6 @@ export const mergeModels = (
     const kept = byId.get(id);
     let model: GatewayModel = kept ?? { id, name: own?.name ?? id };
     if (own !== undefined) {
-      // A name the user gave stays; the entry's own name replaces only the bare id.
       model = {
         ...model,
         ...(own.name !== undefined && model.name === id ? { name: own.name } : {}),
@@ -255,10 +246,8 @@ export const mergeModels = (
   });
 };
 
-/** The gateway's own catalog, or `undefined` when it has none or it can't be read: it's optional. */
 const readCatalog = (url: string, fetcher: Fetcher) =>
   Effect.tryPromise({
-    // Metadata is fetched without the profile key or cookies.
     try: (signal) => fetcher(url, { headers: { Accept: "application/json" }, signal }),
     catch: () => undefined,
   }).pipe(

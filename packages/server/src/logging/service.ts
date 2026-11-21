@@ -49,11 +49,6 @@ const partText = (part: unknown): string => {
   }
 };
 
-/**
- * Routes `Effect.log*` entries into pino, which filters by its own level. `Effect.annotateLogs`
- * fields become fields of the line, scrubbed like any other logged object: they are what says which
- * poll backed off and for how long, and without them the line is only its message.
- */
 const pinoLogger = (logger: PinoLogger): Logger.Logger<unknown, void> =>
   Logger.make(({ logLevel, message, cause, fiber }) => {
     const level = PINO_LEVELS[logLevel as keyof typeof PINO_LEVELS];

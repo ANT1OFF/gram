@@ -118,7 +118,6 @@ export const ensureHostHome = (home: string) => {
   ownedPrivate(home, true);
 };
 
-/** Writes `name` in `home` owner-only, replacing it atomically with the rename made durable. */
 const writePrivate = (home: string, name: string, text: string) => {
   ensureHostHome(home);
   const path = join(home, name);
@@ -138,10 +137,6 @@ const writePrivate = (home: string, name: string, text: string) => {
   }
 };
 
-/**
- * Writes `name` in `home` owner-only unless it is there already: made in full beside it, then linked
- * into place, which fails rather than replace one that another writer made first.
- */
 const createPrivate = (home: string, name: string, text: string) => {
   ensureHostHome(home);
   const path = join(home, name);
@@ -165,7 +160,6 @@ const createPrivate = (home: string, name: string, text: string) => {
   }
 };
 
-/** Reads `name` in `home` without following a link, refused unless owner-only; undefined if none. */
 const readPrivate = (home: string, name: string): string | undefined => {
   let fd: number;
   try {
@@ -228,12 +222,6 @@ export const forgetJoined = (home: string) => {
 export const DISK_ID = "disk-id";
 const DISK_ID_SHAPE = /^[A-Za-z0-9_-]{8,64}$/;
 
-/**
- * The id of the disk `home` is on, made and kept owner-only on first use. One that isn't an id
- * (cut short, edited) is replaced: the host then says it is on another disk, which only makes
- * Gram put its folders back first. Throws when the folder or the file isn't private to this user.
- */
-/** A new disk id, as its file holds it. */
 const newDiskId = () => `${randomBytes(16).toString("base64url")}\n`;
 
 export const hostDiskId = (home: string): string => {
@@ -242,13 +230,10 @@ export const hostDiskId = (home: string): string => {
     return kept !== undefined && DISK_ID_SHAPE.test(kept) ? kept : undefined;
   };
   const kept = read();
-  // Said only once durable: an id another start of the host just made is synced here too.
   if (kept !== undefined) {
     syncFolder(home);
     return kept;
   }
-  // None there: made only if none is there still, so two hosts starting at once on one disk both
-  // read back whichever was made first.
   if (readPrivate(home, DISK_ID) === undefined) {
     createPrivate(home, DISK_ID, newDiskId());
     const first = read();
@@ -257,8 +242,6 @@ export const hostDiskId = (home: string): string => {
       return first;
     }
   }
-  // One there that isn't an id (cut short, edited): replaced by one host at a time, each looking
-  // again once it holds the lock, so a repair never replaces an id another host just made.
   return withLock(join(home, `${DISK_ID}.lock`), () => {
     const now = read();
     if (now !== undefined) {
@@ -292,13 +275,11 @@ export const renewDiskId = (home: string): string =>
 /** The folder in a work volume of its own that holds that volume's id (`hostIdentity`). */
 export const VOLUME_ID_FOLDER = ".gram-volume";
 
-/** Whether `repos` is on storage of its own: outside `home`, or on another device. */
 const onOwnStorage = (home: string, repos: string): boolean => {
   if (!isStrictlyInside(home, repos)) return true;
   try {
     return statSync(repos).dev !== statSync(home).dev;
   } catch (error) {
-    // Not made yet: it will be, inside the home folder. Anything else can't be told: its own.
     return (error as NodeJS.ErrnoException).code !== "ENOENT";
   }
 };
@@ -326,10 +307,8 @@ export const hostIdentity = (
   }
 };
 
-/** How long a lock left by a host that died holding it is waited out before it is taken. */
 const LOCK_STALE_MS = 30_000;
 
-/** Runs `run` holding the lock folder `path`, made exclusively; one older than a crash is taken. */
 const withLock = <A>(path: string, run: () => A): A => {
   const until = Date.now() + LOCK_STALE_MS + 5_000;
   for (;;) {
@@ -356,7 +335,6 @@ const withLock = <A>(path: string, run: () => A): A => {
   }
 };
 
-/** Makes what was renamed or linked into `folder` durable, where the platform can. */
 const syncFolder = (folder: string) => {
   if (process.platform === "win32") return;
   const fd = openSync(folder, constants.O_RDONLY);

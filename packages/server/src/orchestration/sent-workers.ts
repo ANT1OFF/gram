@@ -1,15 +1,3 @@
-// Workers an orchestrator sends to run on a server signed in to (`send_worker`), as threads of a
-// workspace there, under that server's rules (docs/design/mocks/hosted-send-and-move, v1). Only
-// where the workspace's charter allows it (`sendWork`, off by default), and only through the
-// desktop app, which holds the sign-in (`embedding/sent-work-port.ts`).
-//
-// Here, each is a thread record that runs nothing (`Thread.sentTo`): listed with the
-// orchestrator's workers, its brief and its replies kept, messaged and stopped there
-// (`app-tools/orchestration-tools.ts`). This server follows each one that is still at work, and
-// what it says comes to the orchestrator as the worker's report: a reply as progress or done, a
-// question as a question, a failure as blocked. This machine holds none of its files; its pull
-// request is how the work comes back.
-
 import {
   AppToolError,
   parseRepoRemote,
@@ -147,9 +135,7 @@ interface Deps {
   readonly store: ThreadStoreShape;
   readonly runtimes: ThreadRuntimesShape;
   readonly port: SentWorkPortShape;
-  /** Reads a project's remote. */
   readonly proc: Proc["Service"];
-  /** Tells the follower a worker was just sent, so it is followed at once. */
   readonly sent?: (id: ThreadId) => Effect.Effect<void>;
 }
 
@@ -175,9 +161,6 @@ export const sendWorkerTool = (deps: Deps) =>
       ),
       reason: Schema.optionalKey(Schema.String),
     }),
-    // Where it would go, picked once: the card names it, and the call sends it there and nowhere
-    // else, even if the list changes while the card waits.
-    // The model is the server's say of what a thread there opens on now, asked once with it.
     resolve: (caller, input) =>
       Effect.gen(function* () {
         const listed = yield* deps.port.targets();
@@ -186,7 +169,6 @@ export const sendWorkerTool = (deps: Deps) =>
         const model = yield* modelThere(deps, caller, input.project, picked);
         return { ...input, picked, ...(model === undefined ? {} : { pickedModel: model }) };
       }),
-    // The work leaves this computer, so the user says yes to each, naming where it goes.
     needsApproval: () => Effect.succeed(true),
     title: (_caller, input: SendWorkerCall) =>
       Effect.succeed(
@@ -227,7 +209,6 @@ export const sendWorkerTool = (deps: Deps) =>
     },
   });
 
-/** A `send_worker` call, with the workspace there it would go to when one could be picked. */
 interface SendWorkerCall {
   readonly project: string;
   readonly title: string;
@@ -238,20 +219,14 @@ interface SendWorkerCall {
   readonly clientRequestId?: string;
   readonly reason?: string;
   readonly picked?: SentWorkTarget;
-  /** What a thread there opens on now, as the server said when the card was made. */
   readonly pickedModel?: { readonly agent: string; readonly model: string };
 }
 
 const agents: Readonly<Record<string, string>> = { claude: "Claude", codex: "Codex" };
 
-/** "Claude · <model>", as the card names the model a sent worker runs on. */
 const modelLabel = (model: { readonly agent: string; readonly model: string }): string =>
   `${agents[model.agent] ?? model.agent} · ${model.model}`;
 
-/**
- * The model a thread started in `target` would open on now, asked of its server with the
- * project's repository, or nothing when the project, its remote or the server's answer is missing.
- */
 const modelThere = (
   { orchestration, store, port, proc }: Deps,
   callerId: ThreadId,
@@ -289,10 +264,6 @@ export const sendWorker = (
     /** Exactly where it goes, as a person picked it; else `workspace` names it. */
     readonly target?: { readonly origin: string; readonly workspaceId: string };
   },
-  /**
-   * A person sending it from New task, as the orchestrator's worker: their own say, so the
-   * charter's `sendWork`, which bounds what the orchestrator does unasked, isn't asked.
-   */
   by: "orchestrator" | "person" = "orchestrator",
 ) =>
   Effect.gen(function* () {
@@ -307,7 +278,6 @@ export const sendWorker = (
     if (state.paused !== undefined)
       return yield* fail(`Orchestration is paused (${state.paused.reason}), so nothing is sent.`);
     const workspaceId = state.workspace.id;
-    // A retry finds the worker its first call made.
     const id =
       input.clientRequestId === undefined
         ? undefined
@@ -403,7 +373,6 @@ export const sendWorker = (
       .pipe(
         Effect.catch((error) =>
           Effect.gen(function* () {
-            // A call with the same id made the record first: it is that worker, not an orphan.
             const made =
               id === undefined ? undefined : yield* store.getThread(id).pipe(Effect.option);
             if (
@@ -412,7 +381,6 @@ export const sendWorker = (
               made.value.sentTo?.threadId === started.threadId
             )
               return made.value;
-            // No record here means nothing could follow or stop it, so it is stopped there.
             yield* port
               .stop(target.origin, target.workspaceId, started.threadId)
               .pipe(Effect.ignore);
@@ -460,7 +428,6 @@ export const followOnce = (
       return "unheard" as const;
     }
     const { happened, latest, reply, thread: there } = waited.waited;
-    // Asked again while this wait ran: an end it heard may come before the message is taken.
     let heard: SentTo | undefined;
     yield* runtimes
       .updateThread(thread.id, (current) => {
@@ -479,13 +446,11 @@ export const followOnce = (
       })
       .pipe(Effect.ignore);
     if (heard === undefined) return "unheard" as const;
-    // Something to tell: a reply, or a new state (a question, its end) whether or not it wrote.
     const changed = (happened && latest !== sent.latest) || heard.state !== sent.state;
     if (changed) yield* orchestration.recordReport(thread.id, reportOf(heard)).pipe(Effect.ignore);
     return isEnded(heard.state) ? ("ended" as const) : ("open" as const);
   });
 
-/** The sent workers still worth following: open here, and at work or waiting there. */
 const openSent = (store: ThreadStoreShape) =>
   store.listThreads.pipe(
     Effect.map((threads) =>
@@ -495,7 +460,6 @@ const openSent = (store: ThreadStoreShape) =>
     ),
   );
 
-/** Follows every open sent worker, one fiber each, for as long as the server runs. */
 const followAll = (
   deps: Pick<Deps, "orchestration" | "store" | "runtimes" | "port">,
   kicks: Queue.Queue<ThreadId>,
@@ -509,7 +473,6 @@ const followAll = (
           if (Option.isNone(thread) || thread.value.parked) return;
           const step = yield* followOnce(deps, thread.value);
           if (step === "ended") return;
-          // Never back to back: a server that answers at once is asked again only after a pause.
           yield* Effect.sleep(step === "unheard" ? SENT_RETRY_AFTER : SENT_WAIT_FLOOR);
         }
       }).pipe(Effect.ensuring(Effect.sync(() => following.delete(id))));
@@ -519,7 +482,6 @@ const followAll = (
         following.add(thread.id);
         yield* Effect.forkScoped(follow(thread.id));
       }
-      // Again when a worker is sent, else after a while: one sent before a restart is found too.
       yield* Queue.take(kicks).pipe(Effect.timeoutOption(SENT_LOOK_EVERY));
     }
   });

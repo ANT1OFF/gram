@@ -43,10 +43,6 @@ export interface UpdateService {
   install(intent: UpdateInstallIntent): Promise<UpdateInstallResult>;
 }
 
-// electron-builder's NSIS template reads only the flags `NsisTarget` declares, plus NSIS's own `/S`;
-// these are what electron-updater's `NsisUpdater` passes. `--updated` gives the exiting app time
-// to close instead of killing it, and is handed on to the relaunched app; `/S` is silent, which a
-// per-user install can be without elevation; `--force-run` relaunches the app after a silent install.
 export const NSIS_UPDATE_ARGS: readonly string[] = ["--updated", "/S", "--force-run"];
 
 export function spawnInstaller(installer: string): Promise<void> {
@@ -69,8 +65,6 @@ const codeOf = (error: unknown): unknown =>
 export const githubReleasePage = (tag: string): string | undefined =>
   UPDATE_REPO === null ? undefined : `https://github.com/${UPDATE_REPO}/releases/tag/${tag}`;
 
-// What `gh` (Go) and Windows print for the same failures Node reports with a code: the desktop
-// downloads through `gh release download`, whose failure reaches here as its stderr text alone.
 const DISK_FULL = /ENOSPC|no space left on device|not enough space on the disk/i;
 const TIMED_OUT = /timed out|deadline exceeded|Client\.Timeout/i;
 const NETWORK =
@@ -102,8 +96,6 @@ export function explainUpdateFailure(error: unknown): { text: string; manual: bo
       manual: true,
     };
   }
-  // Undici's `fetch failed`, Electron's `net::ERR_*` and Go's dial errors are a connection that
-  // never completed: offline, a proxy or Global Secure Access refusing it, or a reset mid-download.
   const fetchFailed = name === "TypeError" && text === "fetch failed";
   if (fetchFailed || NETWORK.test(text)) {
     const cause = codeOf(error instanceof Error ? error.cause : undefined);
@@ -138,14 +130,8 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
   const { updater, broadcast } = options;
   const launch = options.spawnInstaller ?? spawnInstaller;
   const releasePage = options.releasePage ?? githubReleasePage;
-  // One install at a time: a duplicate request mid-teardown would launch a second installer over
-  // the first one's still-flushing sessions. Cleared only on failure, so a retry can run.
   let applying = false;
 
-  /**
-   * Logs `cause` as thrown, and tells the renderer why in words, with the manual way when it helps.
-   * `cause` goes to `explainUpdateFailure` as it was thrown, so its code survives.
-   */
   const fail = (
     tag: string,
     cause: unknown,
@@ -179,7 +165,6 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
     }
 
     broadcast({ stage: "installing", tag });
-    // The app should look gone at once rather than sit frozen while sessions flush.
     const showWindows = options.hideWindows();
     let launchingInstaller = false;
     try {
@@ -187,7 +172,6 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       launchingInstaller = true;
       await launch(installer);
     } catch (error) {
-      // Publish the failure before restartServer initiates any window navigation.
       const failure = fail(
         tag,
         error,
@@ -195,8 +179,6 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
         "",
         false,
       );
-      // AV quarantine can still pull the verified file. Stay up rather than exit with nothing to
-      // relaunch us: reclaim the dir, bring the server and windows back.
       const dir = dirname(installer);
       if (isUpdateDirName(basename(dir)))
         await rm(dir, { recursive: true, force: true }).catch(() => {});
@@ -204,7 +186,6 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       try {
         await options.restartServer();
       } catch (restart) {
-        // `restartServer` has offered the user a way back; the windows still have to reappear.
         restartError = `; the server didn't restart: ${message(restart)}`;
       }
       showWindows();
@@ -223,7 +204,6 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       );
     }
 
-    // Let the reply reach the renderer, then get out of the installer's way.
     setTimeout(options.exit, options.exitDelayMs ?? 250);
     return { updating: true };
   }

@@ -10,7 +10,6 @@ export interface FindRow {
   columns: readonly number[];
 }
 
-/** The cells one match covers on one row; `width` is in cells. */
 interface FindSegment {
   row: number;
   column: number;
@@ -28,7 +27,6 @@ export interface FindQuery {
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** `undefined` for an empty term or a regex that doesn't compile; the find bar reports the latter. */
 const pattern = ({ term, caseSensitive, regex }: FindQuery): RegExp | undefined => {
   if (term === "") return undefined;
   try {
@@ -38,7 +36,6 @@ const pattern = ({ term, caseSensitive, regex }: FindQuery): RegExp | undefined 
   }
 };
 
-/** A match's cells on the rows of one logical line, given where each row's text starts in it. */
 const segments = (
   rows: readonly FindRow[],
   first: number,
@@ -76,7 +73,6 @@ export function findMatches(rows: readonly FindRow[], query: FindQuery): FindMat
       line += rows[last]!.text;
     }
     for (const match of line.matchAll(regex)) {
-      // A regex can match nothing (`a*`); there is nothing to highlight or step to.
       if (match[0] === "") continue;
       matches.push(segments(rows, first, starts, match.index, match.index + match[0].length));
     }

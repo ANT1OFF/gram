@@ -30,10 +30,8 @@ export interface PhonePlace {
   readonly live?: boolean;
 }
 
-/** A thread outside any workspace has no workers to count. */
 const NO_WORKSPACE = "" as WorkspaceId;
 
-/** A page's own name, for the routes that show no thread (the New form's are `newFormName`'s). */
 const PAGE_NAMES: readonly (readonly [RegExp, string])[] = [
   [/\/memory$/, "Memory"],
   [/^\/settings(\/|$)/, "Settings"],
@@ -70,7 +68,6 @@ export const phoneState = ({
  */
 export function usePhonePlace(): PhonePlace {
   const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
-  // A page an app in front of Gram added, by the name it gave it.
   const embedTitle = useEmbedPageTitle();
   const embedGroup = useEmbedPageGroup();
   const hosted = useEmbedShell((s) => s.hosted);
@@ -84,7 +81,6 @@ export function usePhonePlace(): PhonePlace {
   const detail = useThreadsStore((s) =>
     threadId === undefined ? undefined : s.statusDetail[threadId],
   );
-  // What its workspace knows of it, as the sidebar's rows read it: who works, and who waits on what.
   const workspaceId = summary?.thread.workspaceId;
   const ledger = useOrchestratorLedger(workspaceId).data;
   const asks = useWorkspaceAsks();
@@ -95,10 +91,7 @@ export function usePhonePlace(): PhonePlace {
   );
   const { working } = useWorkerTally(workspaceId ?? NO_WORKSPACE, ledger, asking);
   const waitings = useWorkerWaitings(ledger, asking);
-  // Mounted by an app in front of Gram, its pages name where you are: Gram's own name says nothing.
   const place = solo ? (soloWord ?? "Solo") : (workspace?.workspace.name ?? (hosted ? "" : "Gram"));
-  // A thread an app in front shows in a place of its own is under that place's name, not a kind
-  // of coding thread; at rest that is all its line says.
   const own = useEmbedShell((s) =>
     threadId === undefined
       ? undefined
@@ -133,7 +126,6 @@ export function usePhonePlace(): PhonePlace {
       live: true,
     };
   }
-  // An added page is listed in no workspace: under its name, the group it is listed in.
   if (embedTitle !== undefined) {
     return { title: embedTitle, line: embedGroup ?? place, asks: false };
   }

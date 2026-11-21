@@ -40,7 +40,6 @@ export function CliUpdateButton({
   );
 }
 
-/** The command's output so far, scrolled to its end as it grows. */
 function Output({ text }: { text: string }) {
   const ref = useRef<HTMLPreElement>(null);
   useEffect(() => {
@@ -324,7 +323,6 @@ const OUTCOME_TONE = {
   error: "text-destructive",
 } as const;
 
-/** What a launch-check line says under its Update: a refusal, or how the last run went. */
 function bannerOutcome(
   name: string,
   state: CliUpdateState | undefined,
@@ -333,7 +331,6 @@ function bannerOutcome(
   if (error !== undefined) return { tone: "error", text: error };
   if (state?.state === "succeeded") return updateOutcome(name, state);
   if (state?.state !== "failed") return undefined;
-  // The output the server's message points below to is on the Agents row, not in the banner.
   if (state.problem === "failed")
     return {
       tone: "error",

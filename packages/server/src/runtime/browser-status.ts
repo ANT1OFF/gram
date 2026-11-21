@@ -1,7 +1,3 @@
-// Whether a thread's sessions get the user's browser, as the server opens them: the session
-// policy's grant (`SessionPolicy.browser`, from the consents in Settings), then what the thread's
-// own session can carry. The adapters hold the same lines (`chromeArgs`, Codex's `browserOff`), so
-// what this says is what a session gets.
 import { codexHomeFor } from "@gram/agents/codex";
 import {
   type AgentKind,
@@ -16,7 +12,6 @@ import {
 import type { ResumeOptions } from "./history-plans.ts";
 import type { SessionPolicy } from "./session-policy.ts";
 
-/** Claude in Chrome's MCP server, and the ones Codex computer use runs through. */
 const BROWSER_SERVERS: Record<AgentKind, ReadonlySet<string>> = {
   claude: new Set(["claude-in-chrome"]),
   codex: new Set(["cua_repl", "node_repl", "computer-use"]),
@@ -53,7 +48,6 @@ export const browserNotReady = (
     : `Codex computer use isn't running (${broken.name}: ${broken.status}${detail}). Check that the ChatGPT app is open.`;
 };
 
-/** What the thread's agent calls the browser it drives. */
 const browserName = (thread: Pick<Thread, "model">) =>
   thread.model.agent === "claude" ? "Claude in Chrome" : "Codex computer use";
 

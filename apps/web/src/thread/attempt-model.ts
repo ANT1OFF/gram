@@ -1,9 +1,5 @@
 import type { GramUIMessage, ThreadError, TurnEnd } from "@gram/contracts";
 
-// What became of a failed turn and of a stopped one, read from the transcript alone: a failed turn
-// whose message was sent again is "Retried", and the attempt that sent it is the one to look at; a
-// turn the user stopped ends on "Stopped". No React.
-
 /** A failed turn's error, as its transcript card names it: by when it failed and in which turn. */
 export const errorKey = (error: Pick<ThreadError, "at" | "turnId">): string =>
   `${error.turnId ?? ""}@${error.at}`;
@@ -57,7 +53,6 @@ const textOf = (message: GramUIMessage): string | undefined => {
   return text === "" ? undefined : text;
 };
 
-/** A message the user sent: not Gram's own notice on the user's side. */
 const sentByUser = (message: GramUIMessage): boolean =>
   message.role === "user" && message.metadata?.author !== "server";
 
@@ -69,14 +64,11 @@ interface Turn {
   readonly text: string | undefined;
   readonly at: number | undefined;
   readonly errors: ThreadError[];
-  /** Its reply's end was written as completed. */
   completed: boolean;
 }
 
-/** A run of the same words sent one after another, each failure but the last retried. */
 type Run = readonly Turn[];
 
-/** The transcript as user turns, each with the errors its reply ended on, and its runs of retries. */
 const runsOf = (messages: readonly GramUIMessage[]): { turns: Turn[]; runs: Run[] } => {
   const turns: Turn[] = [];
   const turnOf = new Map<string, Turn>();
@@ -168,7 +160,6 @@ export const attemptsOf = (
   return out;
 };
 
-/** Parts that draw nothing on their own, so a reply of only these and folded failures is empty. */
 const SILENT_PARTS: ReadonlySet<string> = new Set([
   "step-start",
   "data-tool-image",
@@ -207,7 +198,6 @@ export const retryHiddenOf = (messages: readonly GramUIMessage[]): ReadonlySet<s
 
 const NO_HIDDEN: ReadonlySet<string> = new Set();
 
-/** How long after the user pressed Stop the turn may still end and be theirs to have stopped. */
 const STOP_SETTLE_MS = 120_000;
 
 /** How the transcript's last turn ended, when it was stopped. */
@@ -239,7 +229,6 @@ export const stopOf = (
     const end: TurnEnd | undefined = last.metadata?.turnEnd;
     if (end?.reason === "interrupted") return { at: end.at, byYou: yours(end.at) };
     if (end !== undefined || stoppedAt === undefined) return undefined;
-    // A reply cut off before its end was written.
     return yours(stoppedAt) ? { at: stoppedAt, byYou: true } : undefined;
   }
   if (stoppedAt === undefined || !sentByUser(last)) return undefined;

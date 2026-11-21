@@ -1,6 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
 
-/** How many frames a focus that didn't hold is tried again before it is given up. */
 const FOCUS_ATTEMPTS = 30;
 
 export interface FocusWhenAbleOptions {

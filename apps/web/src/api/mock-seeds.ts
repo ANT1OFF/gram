@@ -17,9 +17,6 @@ import type { MockScaleWorkspaces } from "./mock-scale";
 import { mockPrStateThreads } from "./mock-pr-states";
 import { PROJECTS, finish, seedSummaries, start } from "./mock-scripts";
 
-// Perf and load seeds for MockApi: busy and long threads, a turn in flight, PR states, the
-// sidebar's realistic load and the Claude account's models.
-
 /**
  * Perf hook: adds `streaming` threads that work until `stopBusyThreads`, and `idle` ones beside
  * them, spread over the seeded projects in worktrees with an open PR. Each working thread sends
@@ -82,7 +79,6 @@ export function stopBusyThreads(core: MockCoreScenes) {
   }
 }
 
-/** The threads `streamThread` set working, which `stopBusyThreads` brings back to idle. */
 const streamed = new Set<string>();
 
 /**
@@ -94,10 +90,6 @@ export function streamThread(core: MockCoreScenes, threadId: ThreadId, speed = 1
   keepBusy(core, core.runtime(threadId), 0, speed);
 }
 
-/**
- * One thread's endless turn, `offset` ms out of phase with the others so they don't tick as one,
- * `speed` ticks at a time.
- */
 function keepBusy(core: MockCoreScenes, runtime: ThreadRuntime, offset: number, speed = 1) {
   const threadId = runtime.summary.thread.id;
   let messageId = "";
@@ -108,7 +100,6 @@ function keepBusy(core: MockCoreScenes, runtime: ThreadRuntime, offset: number, 
     core.feed(runtime, event);
   };
   const tick = () => {
-    // A new message every 20 s, so no one message grows without bound.
     if (ticks % 500 === 0) {
       if (messageId !== "") {
         send({ type: "text-end", id: "t" });

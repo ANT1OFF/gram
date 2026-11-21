@@ -24,12 +24,8 @@ import {
 } from "./on-demand-picks";
 import { useOnDemandMachine } from "./start-machine-card";
 
-// The Runs on popover's body, loaded when it first opens so New's first paint stays small.
-
-/** The most options a choice shows side by side; more go in a menu. */
 const SIDE_BY_SIDE = 4;
 
-/** One choice: its options side by side (or a menu), and whose value it is. */
 function ChoiceField({
   choice,
   value,

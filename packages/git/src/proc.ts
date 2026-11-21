@@ -1,10 +1,3 @@
-// The one subprocess primitive. Everything that shells out (git, gh, the PATH probe) goes through
-// `runCommand`, which wraps `effect/process` so nothing else imports that unstable module.
-//
-// A run is scoped: interrupting it (the timeout included) closes the scope, which SIGTERMs the child,
-// SIGKILLs it after `FORCE_KILL_AFTER`, and awaits its exit, so an overrun is killed AND reaped
-// rather than left as an orphan.
-
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner";
@@ -107,7 +100,6 @@ const collect = <E>(
   cap: number,
   onOutput: ((text: string) => void) | undefined,
 ) => {
-  // One decoder per stream, so a multi-byte character split across two chunks still decodes.
   const decoder = onOutput === undefined ? undefined : new TextDecoder();
   return Stream.runFold(
     stream,
@@ -138,10 +130,6 @@ const collect = <E>(
 
 const encoder = new TextEncoder();
 
-/**
- * The escaped command line as one command with no arguments: Effect's `ChildProcess` refuses
- * arguments beside `shell` (since 4.1.0). Node joined them with spaces into this same line.
- */
 const shellLine = (invocation: {
   readonly file: string;
   readonly args: ReadonlyArray<string>;
@@ -161,7 +149,6 @@ export const runCommand = (
 ): Effect.Effect<ProcOutput, ProcError> => {
   const timeoutMs = options.timeoutMs ?? TIER_MILLIS[options.tier ?? "local"];
   const cap = options.maxOutputBytes ?? MAX_OUTPUT_BYTES;
-  // Node won't spawn a Windows batch file (npm's `claude.cmd`) directly; it goes through `cmd.exe`.
   const batch = process.platform === "win32" && isWindowsBatchFile(exe);
   const invocation = batch ? shellLine(batchFileInvocation(exe, args)) : { file: exe, args };
   const command = ChildProcess.make(invocation.file, invocation.args, {
@@ -272,7 +259,6 @@ export const withGitLongPaths = (
   platform: NodeJS.Platform,
 ): Readonly<Record<string, string>> => {
   if (platform !== "win32" || !isGitExecutable(exe)) return env;
-  // Windows env names are case-insensitive, so an inherited count may be spelled any way.
   const countKey =
     Object.keys(env).find((key) => key.toUpperCase() === "GIT_CONFIG_COUNT") ?? "GIT_CONFIG_COUNT";
   const count = Number.parseInt(env[countKey] ?? "", 10);
@@ -284,9 +270,6 @@ export const withGitLongPaths = (
     [`GIT_CONFIG_VALUE_${index}`]: "true",
   };
 };
-
-// ---------------------------------------------------------------------------------------------
-// PATH probe
 
 const PATH_MARK = "__SB_PATH__";
 const PATH_PROBE_TIMEOUT_MS = 12_000;
@@ -312,7 +295,6 @@ export class PathProbe extends Context.Service<
   { readonly path: Effect.Effect<string> }
 >()("@gram/git/PathProbe") {}
 
-/** The command runner shared by the PATH probe and Proc, including one scoped worker on macOS. */
 class CommandRunner extends Context.Service<
   CommandRunner,
   {
@@ -382,14 +364,8 @@ export const PathProbeLive = pathProbeLayer.pipe(Layer.provide(CommandRunnerLive
 
 const GUARD_CACHE_LIMIT = 512;
 
-/** The most nested repositories (submodules and other gitlinks) one guard reads before refusing. */
 const NESTED_LIMIT = 64;
 
-/**
- * The git folders of the repositories the index's gitlinks point at in the worktree, as far down
- * as they nest. `undefined` when a listing fails or is cut short, or past `NESTED_LIMIT`: the call
- * can't be vouched for and doesn't run. A bare repository has no worktree and so none.
- */
 const gitlinkedGitDirs = (
   read: (more: ReadonlyArray<string>) => Effect.Effect<ProcOutput, ProcError>,
 ): Effect.Effect<
@@ -406,7 +382,6 @@ const gitlinkedGitDirs = (
     ];
     while (queue.length > 0) {
       const { worktree, gitDir } = queue.shift()!;
-      // Reading the index starts the repository's fsmonitor unless told not to.
       const listing = yield* read([
         "-c",
         "core.fsmonitor=false",
@@ -439,11 +414,6 @@ interface CachedGuard {
   readonly guard: Guard;
 }
 
-/**
- * The repository config guard for git children (`repo-config-guard.ts`): the repository's own
- * program-naming keys read before the call, with git's own options and the call's env, and kept
- * while nothing that decides the repository or its config has changed.
- */
 const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
   const cache = new Map<string, CachedGuard>();
   return (
@@ -468,8 +438,6 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
         ) === hit.signature
       )
         return hit.guard;
-      // `git config` reads `GIT_CONFIG` as its `--file`, which the call itself ignores: listed
-      // with it, the repository's own keys wouldn't show.
       const listEnv = Object.fromEntries(
         Object.entries(env).filter(([name]) => name.toUpperCase() !== "GIT_CONFIG"),
       );
@@ -482,15 +450,11 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
         "--git-common-dir",
       ]);
       const listing = yield* read(["config", "--list", "--show-scope", "-z"]);
-      // A listing that failed or was cut short can't vouch for anything: the call doesn't run.
       if (listing.status !== 0 || listing.truncated)
         return yield* Effect.fail(
           new ProcSpawnError({ bin: "git", message: "couldn't read the repository's git config" }),
         );
       const [gitDir, commonDir] = dirs.stdout.trim().split("\n");
-      // A git started inside a submodule reads that one's own config, so it is read here too:
-      // those under `<common dir>/modules`, and any other nested repository a gitlink in the index
-      // points at, wherever its git folder is (an agent can make one with `git add`).
       const nested: Array<ConfigEntry> = [];
       const nestedDirs: Array<string> = [];
       let dotGits: ReadonlyArray<string> = [];
@@ -513,8 +477,6 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
           return yield* Effect.fail(
             new ProcSpawnError({ bin: "git", message: "the repository has too many submodules" }),
           );
-        // Read as that submodule's own git does, so its conditional includes (`onbranch:`,
-        // `hasconfig:`) are judged against it rather than against this repository.
         for (const sub of submodules) {
           const own = yield* runner.run(
             exe,
@@ -532,7 +494,6 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
         }
       }
       const guard = guardFor(parseConfigList(listing.stdout), nested);
-      // Not a repository (yet), or one with includes: read again next time.
       if (dirs.status === 0 && gitDir && commonDir && !guard.includes && globals.length === 0) {
         if (cache.size >= GUARD_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
         cache.set(key, {
@@ -568,13 +529,9 @@ const makeProc = Effect.gen(function* () {
         exe = resolveExecutable(bin, process.platform, pathValue);
         resolved.set(bin, exe);
       }
-      // The inherited env is filtered here, as data, so the runner (perhaps a worker) gets no function.
       const { omitEnv, pinnedUrl, ...rest } = options;
       const base = withoutEnv(childEnv(process.env, pathValue, process.platform), omitEnv);
       if (isGhExecutable(exe)) {
-        // `gh` runs git itself in `cwd` (to find the repository, the branch, the remote), and that
-        // git would read the checkout's config with no guard. The guard's pairs go in the env every
-        // git it starts inherits.
         const env = { ...base, ...rest.env };
         const gitExe = resolved.get("git") ?? resolveExecutable("git", process.platform, pathValue);
         resolved.set("git", gitExe);

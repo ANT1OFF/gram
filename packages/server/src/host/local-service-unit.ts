@@ -1,13 +1,3 @@
-// The app's side of "Keep agents running after Gram quits": this machine's host as a service of
-// this user that the app starts and connects to, and that outlives the app. A systemd user unit on
-// Linux, a launchd agent on a Mac, each named for Gram's data folder, so a release and a checkout
-// of Gram on one machine never share one. It isn't started at login: the app starts it, and it
-// ends on its own once no app has been connected for a while with nothing running.
-//
-// The macOS coalition trap (see herdr's notes): a process the app spawns, even with `setsid`, stays
-// in the app's coalition, which macOS can end with the app. A launchd agent the user's own launchd
-// starts is in a coalition of its own, so it is started through `launchctl`, never spawned.
-
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -71,7 +61,6 @@ export interface LocalServicePaths {
   readonly serviceFile: string;
 }
 
-/** Longest Unix socket path every platform takes (macOS's 104 bytes, less its terminator). */
 const SOCKET_PATH_MAX = 103;
 
 export const localServicePaths = (
@@ -83,8 +72,6 @@ export const localServicePaths = (
   const id = createHash("sha256").update(dataDir).digest("hex").slice(0, 10);
   const folder = join(dataDir, "local-host");
   const wanted = join(folder, "host.sock");
-  // A data folder deep enough to push the socket past what the OS takes uses a private folder of
-  // its own in the temporary one instead.
   const socket =
     Buffer.byteLength(wanted) <= SOCKET_PATH_MAX
       ? wanted
@@ -95,8 +82,6 @@ export const localServicePaths = (
         );
   const name =
     platform === "darwin" ? `io.github.ant1off.gram.local.${id}` : `gram-local-host-${id}.service`;
-  // On macOS the definition sits in Gram's data folder, not `~/Library/LaunchAgents`, which launchd
-  // loads at every login: only Gram's own `launchctl bootstrap` ever loads it.
   const serviceFile =
     platform === "darwin"
       ? join(folder, `${name}.plist`)
@@ -166,11 +151,6 @@ export const localServiceProgram = (
   ];
 };
 
-/**
- * The names the service's environment carries over from the app's, and nothing else: no token,
- * key or proxy (whose address can hold a password) is written to disk. Claude Code finds the
- * user's own sign-in where it keeps it, as it does from a terminal.
- */
 const CARRIED = [
   "PATH",
   "LANG",
@@ -186,7 +166,6 @@ const CARRIED = [
   "XDG_CACHE_HOME",
   "XDG_RUNTIME_DIR",
   "CLAUDE_CONFIG_DIR",
-  // Synthetic runs: the fake agent in place of Claude Code, as the app itself was started.
   "GRAM_FAKE_AGENT",
   "GRAM_FAKE_AGENT_REPLY",
 ] as const;
@@ -212,7 +191,6 @@ export const localServiceEnv = (
   return out;
 };
 
-/** One systemd word, quoted, its specifiers escaped, and in a command line its `$`. */
 const systemdWord = (text: string, command = false) => {
   const quoted = text.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%");
   return `"${command ? quoted.replaceAll("$", "$$$$") : quoted}"`;
@@ -228,8 +206,6 @@ export const localSystemdUnit = (
   program: ReadonlyArray<string>,
   dataDir: string,
 ): string => {
-  // systemd takes `EnvironmentFile=` as the rest of the line, unquoted: a quoted path is ignored,
-  // and the host would start without its environment.
   if ([...program, dataDir, paths.envFile].some((word) => /[\n\r]/.test(word)))
     throw new Error("A service path can't hold a line break.");
   return `[Unit]
@@ -353,7 +329,6 @@ export const startLocalService = (
     Effect.gen(function* () {
       const { paths, platform } = spec;
       mkdirSync(paths.folder, { recursive: true, mode: 0o700 });
-      // An earlier release's AppImage launcher: the service no longer runs one.
       rmSync(paths.launcher, { force: true });
       mkdirSync(dirname(paths.serviceFile), { recursive: true });
       let outstanding = readRunTokens(paths);
@@ -364,10 +339,7 @@ export const startLocalService = (
           if (Exit.isSuccess(cleaned)) outstanding = [];
         }
       }
-      // A token of this start, which everything it starts inherits, so a stop finds it all.
       const token = randomBytes(16).toString("hex");
-      // An unverified generation is never let go to make room: past the bound the start is
-      // refused, and a Stop (which cleans every outstanding run up, verified) makes room again.
       if (outstanding.length >= RUNS_KEPT)
         return yield* Effect.fail(
           new Error(
@@ -376,7 +348,6 @@ export const startLocalService = (
         );
       outstanding = [...outstanding, token];
       writeRunTokens(paths, outstanding);
-      // Found again whatever happens to the data folder: moved, removed, or another Gram's.
       recordInstance(paths, spec.dataDir, platform, outstanding);
       const env = { ...spec.env, [RUN_TOKEN_ENV]: token };
       if (platform === "linux") {
@@ -392,13 +363,9 @@ export const startLocalService = (
         );
         return;
       }
-      // Its environment is in the property list, so the file is this user's alone.
       writeFileSync(paths.serviceFile, localLaunchdPlist(paths, spec.program, env), {
         mode: 0o600,
       });
-      // launchd keeps the definition it loaded, whatever the file says now: a job left loaded from
-      // an earlier start (another release, an older environment) would run as it was. It is booted
-      // out first, and only once launchd no longer has it is the new definition loaded.
       yield* runner("launchctl", ["bootout", `${domain()}/${paths.name}`]);
       yield* untilLaunchdForgets(paths, runner);
       yield* bootstrapRetrying(paths, runner);
@@ -408,7 +375,6 @@ export const startLocalService = (
     }),
   );
 
-/** Waits, up to ten seconds, until launchd has no job by the service's label. */
 const untilLaunchdForgets = (paths: LocalServicePaths, runner: ServiceRunner) =>
   Effect.gen(function* () {
     for (let i = 0; i < 50; i++) {
@@ -421,7 +387,6 @@ const untilLaunchdForgets = (paths: LocalServicePaths, runner: ServiceRunner) =>
     );
   });
 
-/** `launchctl bootstrap`, again for a moment while launchd finishes an earlier bootout (EIO). */
 const bootstrapRetrying = (paths: LocalServicePaths, runner: ServiceRunner) =>
   Effect.gen(function* () {
     let last: Run = { code: 1, output: "" };
@@ -442,7 +407,6 @@ export const restartLocalService = (spec: LocalServiceSpec, runner: ServiceRunne
     Effect.andThen(startLocalService(spec, runner)),
   );
 
-/** What the app wrote for the service in Gram's data folder: its launcher, environment and record. */
 const forgetFiles = (paths: LocalServicePaths) => {
   for (const file of [
     paths.launcher,
@@ -463,7 +427,6 @@ export const stopLocalService = (
   runner: ServiceRunner = run,
   forget = true,
   sweep: Sweep = (tokens) => sweepRun(tokens, systemScanner(platform, paths.name)),
-  /** Run tokens the registry knows, when the data folder's own file may be gone. */
   knownTokens: ReadonlyArray<string> = [],
   cgroupProcs: (cgroup: string) => string | undefined = readCgroupProcs,
 ) =>
@@ -483,26 +446,19 @@ export const stopLocalService = (
               : `The service manager can't say the service stopped (${stop.code}: ${stop.output.slice(0, 300)}); it may still be running.`,
           ),
         );
-      // On Linux the unit's control group holds everything it started, whatever it did to its
-      // environment, session or parent; systemd stopped all of it, and its group must now be empty.
       if (platform === "linux") yield* verifyCgroupEmpty(paths, runner, cgroupProcs);
-      // What got away from the service's own stop where nothing holds it (on macOS, a pty shell's
-      // session): every outstanding run's processes, by token, each ending verified. A failure
-      // keeps the tokens and the records for another try.
       const tokens = [...new Set([...readRunTokens(paths), ...knownTokens])];
       if (tokens.length > 0) yield* sweep(tokens);
       writeRunTokens(paths, []);
       if (forget) {
         rmSync(paths.serviceFile, { force: true });
         forgetFiles(paths);
-        // Only now, the stop confirmed: until then the instance stays findable.
         rmSync(paths.registryFile, { force: true });
         if (platform === "linux") yield* runner("systemctl", ["--user", "daemon-reload"]);
       }
     }),
   );
 
-/** The processes in a cgroup (v2), or undefined when it no longer exists. */
 const readCgroupProcs = (cgroup: string): string | undefined => {
   try {
     return readFileSync(join("/sys/fs/cgroup", cgroup, "cgroup.procs"), "utf8");
@@ -512,7 +468,6 @@ const readCgroupProcs = (cgroup: string): string | undefined => {
   }
 };
 
-/** Fails unless systemd says the unit has no control group left, or the group is empty. */
 const verifyCgroupEmpty = (
   paths: LocalServicePaths,
   runner: ServiceRunner,
@@ -546,7 +501,6 @@ const verifyCgroupEmpty = (
       );
   });
 
-/** How many runs' tokens are kept at most while their cleanup isn't verified. */
 const RUNS_KEPT = 64;
 
 /** A process's start time, which a pid reused by another process doesn't share. */
@@ -557,7 +511,6 @@ export const processStart = (pid: number): string | undefined => {
       return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
     }
     process.kill(pid, 0);
-    // Elsewhere, a live pid alone: no process start time short of `ps`, which a lock can't wait on.
     return "alive";
   } catch {
     return undefined;
@@ -614,18 +567,14 @@ export const lifecycle = <A, E, R>(
           return;
         } catch {
           const owner = lockOwner(lock);
-          // Made but its owner not yet written: a holder between its two steps, alive.
           const dead = owner !== undefined && started(owner.pid) !== owner.start;
           if (dead) {
-            // Moved aside first, atomically, so two takers never both remove it.
             const aside = `${lock}.gone-${randomBytes(4).toString("hex")}`;
             try {
               renameSync(lock, aside);
               if (lockOwner(aside)?.nonce === owner.nonce) rmSync(aside, { recursive: true });
               else renameSync(aside, lock);
-            } catch {
-              // Taken over by another meanwhile.
-            }
+            } catch (_takenOverByAnotherMeanwhile) {}
             continue;
           }
           if (Date.now() >= until)
@@ -694,7 +643,6 @@ export const keptHostInstances = (registry: string): ReadonlyArray<KeptHostInsta
       const raw = JSON.parse(readFileSync(join(registry, name), "utf8")) as KeptHostInstance & {
         readonly runToken?: unknown;
       };
-      // An entry from before generations were kept names its one token as `runToken`.
       const runTokens = Array.isArray(raw.runTokens)
         ? raw.runTokens.filter((token): token is string => typeof token === "string")
         : typeof raw.runToken === "string"
@@ -709,9 +657,7 @@ export const keptHostInstances = (registry: string): ReadonlyArray<KeptHostInsta
         const { runToken: _old, ...rest } = raw;
         found.push({ ...rest, runTokens });
       }
-    } catch {
-      // Unreadable: left for a person to look at, never acted on.
-    }
+    } catch (_unreadableLeftForAPersonToLookAtNever) {}
   }
   return found;
 };
@@ -786,7 +732,6 @@ export const serviceState = (
         Effect.map((result) => {
           if (result.code === 0)
             return /state = running/.test(result.output) ? "running" : "stopped";
-          // 113: launchd has no job by that label in this user's domain.
           return result.code === 113 || /could not find service/i.test(result.output)
             ? "absent"
             : "unknown";
@@ -819,7 +764,6 @@ const writeRunTokens = (paths: LocalServicePaths, tokens: ReadonlyArray<string>)
   renameSync(temporary, paths.runFile);
 };
 
-/** One connection to the socket, or the reason there is none. */
 const dial = (socketPath: string) =>
   Effect.callback<NetSocket, Error>((resume) => {
     const socket = createConnection(socketPath);
@@ -834,7 +778,6 @@ const dial = (socketPath: string) =>
 
 const asError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));
 
-/** Dials the socket until a host answers on it, for up to `withinMs`. */
 const dialWithin = (socketPath: string, withinMs: number) =>
   Effect.gen(function* () {
     const until = Date.now() + withinMs;
@@ -868,7 +811,6 @@ export const connectLocalService = (
       ),
       (socket) => Effect.sync(() => socket.destroy()),
     );
-    // Before any of the protocol: each side proves it holds the install's secret.
     const key = yield* Effect.tryPromise({
       try: () => proveToHost(raw, secret),
       catch: (error) =>
@@ -887,7 +829,6 @@ export const connectLocalService = (
       ),
     );
     raw.on("error", () => {});
-    // Every frame after the handshake carries this connection's MAC, both ways.
     const framed = macFramed(raw, key, "app");
     framed.on("error", () => framed.destroy());
     const socket = yield* NodeSocket.fromDuplex(Effect.succeed(framed));

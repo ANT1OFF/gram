@@ -170,7 +170,6 @@ export function CurrentCheckoutFreshness({ repoPath }: { repoPath: string }) {
 
 const commits = (n: number) => `${n} commit${n === 1 ? "" : "s"}`;
 
-/** "main is 2 commits behind origin/main", with a fast-forward when it's safe, or why it isn't. */
 function UpstreamSyncNote({ repoPath }: { repoPath: string }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -226,17 +225,11 @@ function UpstreamSyncNote({ repoPath }: { repoPath: string }) {
   );
 }
 
-/** Older fetches than this may have missed commits on the base branch. */
 const STALE_AFTER_MS = 60 * 60 * 1000;
 
-/**
- * A quiet note when the picked base branch was last fetched long ago, with a one-click fetch. The
- * default base needs none: creating the worktree fetches it.
- */
 function BaseFreshness({ repoPath, base }: { repoPath: string; base: string }) {
   const api = useApi();
   const queryClient = useQueryClient();
-  // Staleness is judged when the status arrives, so rendering stays pure.
   const status = useQuery({
     queryKey: ["git.baseStatus", repoPath, base],
     queryFn: async () => {
@@ -244,7 +237,6 @@ function BaseFreshness({ repoPath, base }: { repoPath: string; base: string }) {
       const now = Date.now();
       return {
         stale: fetchedAt === undefined || now - fetchedAt >= STALE_AFTER_MS,
-        // Spelled out: the note is a sentence.
         lastFetched: fetchedAt === undefined ? undefined : agoText(fetchedAt, now, { long: true }),
       };
     },
@@ -255,7 +247,6 @@ function BaseFreshness({ repoPath, base }: { repoPath: string; base: string }) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["git.baseStatus", repoPath, base] });
       void queryClient.invalidateQueries({ queryKey: ["branches", repoPath] });
-      // A fetch can leave the current branch behind: let the fast-forward note see it.
       void queryClient.invalidateQueries({ queryKey: ["git.upstreamSync", repoPath] });
     },
   });

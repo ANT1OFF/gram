@@ -26,13 +26,11 @@ export const SETTINGS_STACK = "flex flex-col gap-6";
 /** A group's title: clearly above a row's name, which is the body size at medium weight. */
 export const GROUP_TITLE = "font-heading text-title text-foreground";
 
-/** `plainOnPhone`'s classes, each part's own, all under `phone:`. */
 const PLAIN = {
   section: "phone:gap-0!",
   head: "phone:items-center!",
   caption:
     "phone:items-center! phone:after:order-1 phone:after:h-px phone:after:min-w-6 phone:after:flex-1 phone:after:bg-border",
-  // The rule runs out after the title on its line; a description takes the line under both.
   description: "phone:order-2 phone:basis-full!",
   title:
     "phone:font-sans! phone:text-body! phone:font-normal! phone:whitespace-nowrap! phone:text-muted-foreground!",
@@ -89,11 +87,6 @@ export function SettingsGroup({
       {...(anchor === undefined ? {} : { id: anchor })}
       className={cn("flex scroll-mt-4 flex-col gap-2", plainOnPhone && PLAIN.section)}
     >
-      {/* Flush with the page's title and the card's edge: one left edge for every heading. */}
-      {/* With an action, on a phone the title and the action share the first line and the sentence
-          takes the full width under them; beside the action it was squeezed into a column three
-          lines tall. The phone's classes are important, to hold where an embedding app's plain
-          utilities come after Gram's stylesheet. */}
       <div
         className={cn(
           "flex items-start gap-3",

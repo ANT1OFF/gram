@@ -34,8 +34,6 @@ export function WorkspaceConnectorsField({
   const id = useId();
   const saved = connectorChoice(charter);
   const { entries } = saved;
-  // A list picked with nothing on it yet narrows nothing until its first entry is added, so
-  // choosing "Only these" doesn't take every connector away from running threads on the spot.
   const [pending, setPending] = useState<ConnectorMode>();
   const mode = pending ?? saved.mode;
   const [error, setError] = useState<string>();

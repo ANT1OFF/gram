@@ -9,29 +9,20 @@ import { displayCommand } from "@gram/contracts";
  */
 
 export type CommandFact =
-  /** A program from the lent folder, or a tool that runs the folder's own scripts or hooks. */
   | { readonly kind: "runs-folder-code"; readonly program: string }
-  /** `$(…)`, backticks, `<(…)`: output of one command becomes part of another. */
   | { readonly kind: "substitution" }
-  /** `$NAME`, `${NAME}`: text decided when it runs, not shown here. */
   | { readonly kind: "expansion"; readonly names: ReadonlyArray<string> }
-  /** A program whose name is only known when it runs. */
   | { readonly kind: "program-expanded" }
-  /** Where it writes or reads; none when the name is only known when it runs. */
   | { readonly kind: "redirect"; readonly target?: string; readonly writes: boolean }
   | { readonly kind: "pipe-to-interpreter"; readonly program: string }
   | { readonly kind: "elevates"; readonly program: string }
   | { readonly kind: "network"; readonly program: string }
   | { readonly kind: "outside-folder"; readonly path: string }
-  /** Text run as a command: `eval`, `sh -c`, `source`, `xargs`. */
   | { readonly kind: "evaluates"; readonly program: string }
   | { readonly kind: "background" }
   | { readonly kind: "here-document" }
-  /** `NAME=value program`: the program runs with these set, which can change what it runs. */
   | { readonly kind: "sets-environment"; readonly names: ReadonlyArray<string> }
-  /** `cd` somewhere outside the folder, home, or a place only known when it runs. */
   | { readonly kind: "leaves-folder"; readonly to?: string }
-  /** A script in the program's own language, which can run commands and write files. */
   | { readonly kind: "script"; readonly program: string };
 
 export interface CommandFacts {
@@ -49,7 +40,6 @@ export interface CommandPlace {
   readonly cwd: string;
 }
 
-/** Tools that run code the folder holds: its scripts, its build files, its tests, its hooks. */
 const FOLDER_RUNNERS = new Set([
   "npm",
   "npx",
@@ -91,11 +81,9 @@ const FOLDER_RUNNERS = new Set([
   "turbo",
   "nx",
   "lerna",
-  // Any git command may run the repository's hooks or a program its config names.
   "git",
 ]);
 
-/** Interpreters: given a file, they run it; given `-c`, they run the text. */
 const INTERPRETERS = new Set([
   "sh",
   "bash",
@@ -114,11 +102,9 @@ const INTERPRETERS = new Set([
   "pwsh",
 ]);
 
-/** Versioned names too: `python3.12`, `node22`. */
 const isInterpreter = (name: string) =>
   INTERPRETERS.has(name) || /^(python|python3|ruby|perl|php|node|lua)[0-9.]+$/.test(name);
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
-/** Programs whose first argument is a program in their own language: it can run anything. */
 const AWKS = new Set(["awk", "gawk", "mawk", "nawk"]);
 
 const ELEVATORS = new Set(["sudo", "doas", "su", "pkexec", "runas"]);
@@ -156,7 +142,6 @@ const NETWORK = new Set([
   "ssh-keyscan",
   "mosh",
   "lftp",
-  // These fetch the package they run.
   "npx",
   "bunx",
   "pnpx",
@@ -178,7 +163,6 @@ const INSTALLS = new Set([
   "exec",
   "x",
 ]);
-/** git's own options before its subcommand that take the next word. */
 const GIT_OPTIONS_WITH_VALUES = new Set([
   "-C",
   "-c",
@@ -190,7 +174,6 @@ const GIT_OPTIONS_WITH_VALUES = new Set([
   "--exec-path",
 ]);
 
-/** Words before a program that run the next word as the program. */
 const WRAPPERS = new Set([
   "env",
   "nice",
@@ -209,7 +192,6 @@ const WRAPPERS = new Set([
   ...ELEVATORS,
 ]);
 
-/** A wrapper's short options that take a value, its long options that do, and those that don't. */
 const WRAPPER_OPTIONS: Readonly<
   Record<string, { readonly short: string; readonly values?: string; readonly flags?: string }>
 > = {
@@ -247,10 +229,6 @@ const WRAPPER_OPTIONS: Readonly<
 
 const EVALUATORS = new Set(["eval", "source", ".", "xargs"]);
 
-/**
- * Programs that run another program or text in ways this parse doesn't follow, and builtins that
- * read their words as arithmetic or change what later words mean: the command isn't read whole.
- */
 const NOT_FOLLOWED = new Set([
   "watch",
   "script",
@@ -290,10 +268,8 @@ const NOT_FOLLOWED = new Set([
   "complete",
   "bind",
 ]);
-/** Builtins whose `-i`, or a subscript in a name, make bash read values as arithmetic. */
 const DECLARERS = new Set(["declare", "typeset", "local", "readonly", "export"]);
 const SEDS = new Set(["sed", "gsed"]);
-/** Options through which a program runs a command of its own. */
 const RUNS_OPTIONS: Readonly<Record<string, RegExp>> = {
   tar: /^--(checkpoint-action|to-command|use-compress-program|info-script|new-volume-script)|^-[a-zA-Z]*[IF]/,
   split: /^--filter/,
@@ -309,9 +285,7 @@ const RUNS_OPTIONS: Readonly<Record<string, RegExp>> = {
   git: /^--(upload-pack|receive-pack|exec)/,
 };
 
-/** Reserved words after which a command starts. */
 const COMMAND_STARTERS = new Set(["if", "then", "else", "elif", "do", "while", "until", "!", "{"]);
-/** Words that start syntax this parse doesn't read. */
 const UNREAD_STARTERS = new Set(["case", "function", "coproc"]);
 const ENDERS = new Set(["fi", "done", "}", "esac"]);
 
@@ -320,13 +294,9 @@ const DEPTH_MOST = 8;
 class Unreadable extends Error {}
 
 interface Word {
-  /** The word with its quotes taken off, as far as it is known before it runs. */
   readonly text: string;
-  /** Part of it is only known when it runs. */
   readonly expands: boolean;
-  /** The commands its substitutions run, read where the word is. */
   readonly inner: ReadonlyArray<string>;
-  /** It starts with an unquoted `NAME=`: before a program, it sets that program's environment. */
   readonly assigns: boolean;
 }
 
@@ -338,7 +308,6 @@ interface Found {
   programs: Array<string>;
   facts: Array<CommandFact>;
   names: Set<string>;
-  /** Where the command is by now; unknown after a `cd` to a place only known when it runs. */
   cwd: string | undefined;
 }
 
@@ -368,7 +337,6 @@ const OPERATORS = [
 
 const REDIRECTS = new Set(["<", ">", ">>", "<&", ">&", "<>", ">|", "&>", "&>>"]);
 
-/** The index just past the `)` that closes a `(` at `from`, minding quotes and nesting. */
 const closing = (text: string, from: number, open: string, close: string): number => {
   let depth = 0;
   for (let at = from; at < text.length; at += 1) {
@@ -421,7 +389,6 @@ const closingBacktick = (text: string, from: number): number => {
 
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*/;
 
-/** Splits a command into words and operators, reading what substitutions run as it goes. */
 const lex = (text: string, found: Found): Array<Token> => {
   const tokens: Array<Token> = [];
   const heredocs: Array<{ delimiter: string; quoted: boolean }> = [];
@@ -434,7 +401,6 @@ const lex = (text: string, found: Found): Array<Token> => {
   const flush = () => {
     if (inWord) {
       const raw = text.slice(wordStart);
-      // `a[i]=…` reads `i` as arithmetic when it runs.
       if (/^[A-Za-z_][A-Za-z0-9_]*\[[^\]]*\]\+?=/.test(raw)) throw new Unreadable();
       const assigns = /^[A-Za-z_][A-Za-z0-9_]*\+?=/.test(raw);
       tokens.push({ kind: "word", word: { text: word, expands, inner, assigns } });
@@ -450,22 +416,16 @@ const lex = (text: string, found: Found): Array<Token> => {
     inner.push(command);
   };
   const dollar = (): void => {
-    // At a `$`: a substitution, an arithmetic, a parameter, or a plain `$`.
     const next = text[at + 1];
-    // `$'…'` and `$"…"` are bash's own quoting, decoded when it runs.
     if (next === "'" || next === '"') throw new Unreadable();
-    // `$[…]` is bash's old arithmetic.
     if (next === "[") throw new Unreadable();
     if (next === "(" && text[at + 2] === "(") {
       const end = closing(text, at + 1, "(", ")");
       if (text[end - 2] !== ")") {
-        // `$((…); …)` is a command substitution of a subshell, which bash reads as one.
         substitution(text.slice(at + 2, end - 1));
         at = end;
         return;
       }
-      // Names in arithmetic are read again as arithmetic when it runs, and that can run
-      // commands; so can a substitution inside it.
       if (/[A-Za-z_$`]/.test(text.slice(at + 3, end - 2))) throw new Unreadable();
       expands = true;
       at = end;
@@ -480,8 +440,6 @@ const lex = (text: string, found: Found): Array<Token> => {
     if (next === "{") {
       const end = closing(text, at + 1, "{", "}");
       const body = text.slice(at + 2, end - 1);
-      // A default, an indirection or a transformation can run commands or read other names.
-      // So can a subscript or an offset, which are arithmetic.
       if (/[$`@![]|[<>]\(|:[^-=?+]/.test(body)) throw new Unreadable();
       const name = NAME.exec(body)?.[0];
       if (name !== undefined) found.names.add(name);
@@ -508,7 +466,6 @@ const lex = (text: string, found: Found): Array<Token> => {
     const char = text[at] ?? "";
     if (!inWord) wordStart = at;
     if (char === "\\") {
-      // A backslash and newline join lines; any other character is taken as it is.
       if (text[at + 1] === "\n") {
         at += 2;
         continue;
@@ -562,7 +519,6 @@ const lex = (text: string, found: Found): Array<Token> => {
       continue;
     }
     if ((char === "<" || char === ">") && text[at + 1] === "(") {
-      // A process substitution: its output, or its input, as a file.
       const end = closing(text, at + 1, "(", ")");
       inWord = true;
       substitution(text.slice(at + 2, end - 1));
@@ -581,7 +537,6 @@ const lex = (text: string, found: Found): Array<Token> => {
     }
     const op = OPERATORS.find((candidate) => text.startsWith(candidate, at));
     if (op !== undefined) {
-      // A file descriptor written before a redirection belongs to it, not to the words.
       if (REDIRECTS.has(op) && inWord && /^[0-9]+$/.test(word) && !expands) {
         word = "";
         inWord = false;
@@ -604,8 +559,6 @@ const lex = (text: string, found: Found): Array<Token> => {
         });
       }
       if (op === "\n" && heredocs.length > 0) {
-        // The documents' lines follow, each to its delimiter: data, not commands, unless the
-        // delimiter is unquoted, when the shell expands what is in them.
         for (const { delimiter, quoted } of heredocs.splice(0)) {
           for (;;) {
             if (at >= text.length) throw new Unreadable();
@@ -623,7 +576,6 @@ const lex = (text: string, found: Found): Array<Token> => {
       continue;
     }
     if (char === "{") {
-      // `{a,b}` and `{1..3}` are expanded into several words by bash: not read here.
       const rest = /^[^\s;&|<>()]*/.exec(text.slice(at))?.[0] ?? "";
       const close = rest.indexOf("}");
       if (close > 0 && /,|\.\./.test(rest.slice(1, close))) throw new Unreadable();
@@ -640,7 +592,6 @@ const lex = (text: string, found: Found): Array<Token> => {
 const inside = (folder: string, path: string) =>
   path === folder || path.startsWith(folder.endsWith("/") ? folder : `${folder}/`);
 
-/** The places a word may name: itself, what follows its `=`, and a short option's glued value. */
 const placesIn = (text: string): Array<string> => {
   const places = [text];
   const equals = text.indexOf("=");
@@ -652,11 +603,9 @@ const placesIn = (text: string): Array<string> => {
 const dotGlob = (text: string) =>
   text.split("/").some((segment) => segment.startsWith(".") && /[*?[]/.test(segment));
 
-/** Notes a word that names a place outside the lent folder. */
 const pathFacts = (word: Word, found: Found, place: CommandPlace) => {
   if (word.expands) return;
   for (const text of placesIn(word.text)) {
-    // `.?` and `.*` match `..` in older bash: such a pattern may lead out.
     if (dotGlob(text)) {
       found.facts.push({ kind: "outside-folder", path: text });
       return;
@@ -666,7 +615,6 @@ const pathFacts = (word: Word, found: Found, place: CommandPlace) => {
       return;
     }
     if (!text.includes("/") && text !== "..") continue;
-    // After a `cd` to a place only known when it runs, any path but the folder's own may be out.
     const resolved =
       found.cwd === undefined
         ? text.startsWith("/")
@@ -682,7 +630,6 @@ const pathFacts = (word: Word, found: Found, place: CommandPlace) => {
 
 const baseName = (program: string) => program.slice(program.lastIndexOf("/") + 1);
 
-/** The first word that isn't an option, past git's own options; and whether `-c` set config. */
 const gitSubcommand = (args: ReadonlyArray<Word>) => {
   let configured = false;
   for (let index = 0; index < args.length; index += 1) {
@@ -699,7 +646,6 @@ const gitSubcommand = (args: ReadonlyArray<Word>) => {
   return { sub: undefined, configured };
 };
 
-/** Where a `cd` goes: its folder, home, or undefined when only known when it runs. */
 const changeFolder = (args: ReadonlyArray<Word>, found: Found, place: CommandPlace) => {
   const target = args.find((arg) => !arg.text.startsWith("-") || arg.text === "-");
   if (target === undefined || target.text === "-" || target.expands || dotGlob(target.text)) {
@@ -716,10 +662,6 @@ const changeFolder = (args: ReadonlyArray<Word>, found: Found, place: CommandPla
   if (!inside(place.folder, to)) found.facts.push({ kind: "leaves-folder", to: target.text });
 };
 
-/**
- * One simple command: its program, what wraps it, and its arguments. Returns the programs it
- * named, wrappers first, so a pipe into `sudo bash` is seen as a pipe into bash.
- */
 const simple = (
   words: ReadonlyArray<Word>,
   found: Found,
@@ -728,7 +670,6 @@ const simple = (
 ): Array<string> => {
   const named: Array<string> = [];
   let index = 0;
-  // Assignments before the program set its environment.
   const assigned: Array<string> = [];
   while (index < words.length && words[index]?.assigns === true) {
     const text = words[index]?.text ?? "";
@@ -744,7 +685,6 @@ const simple = (
       break;
     }
     const program = word.text;
-    // Matched without case, as a disk that ignores case finds it, and without a `.exe`.
     const name = baseName(program)
       .toLowerCase()
       .replace(/\.exe$/, "");
@@ -778,8 +718,6 @@ const simple = (
       if (text?.expands === true) throw new Unreadable();
       if (text !== undefined && text.text !== "") evaluated(text.text, name, found, place, depth);
     }
-    // sed's scripts can run commands (`e`) and read and write files (`r`, `w`) by any address
-    // or delimiter: every sed script is named as one.
     if (SEDS.has(name)) found.facts.push({ kind: "script", program: name });
     const runsOption = RUNS_OPTIONS[name];
     if (runsOption !== undefined && args.some((arg) => runsOption.test(arg.text)))
@@ -806,7 +744,6 @@ const simple = (
     }
     if (AWKS.has(name)) found.facts.push({ kind: "script", program: name });
     if (name === "find") {
-      // `-exec` and its kin run a program for each file found.
       for (let at = 0; at < args.length; at += 1) {
         if (!["-exec", "-execdir", "-ok", "-okdir"].includes(args[at]?.text ?? "")) continue;
         const stop = args.findIndex(
@@ -822,14 +759,11 @@ const simple = (
       const flag = args.findIndex((arg) =>
         shell
           ? /^-[a-zA-Z]*c$/.test(arg.text)
-          : // A glued script, `-e'…'`, is a script too.
-            /^-[a-zA-Z]*[ceEpr]/.test(arg.text) || /^--(eval|print|command)(=|$)/.test(arg.text),
+          : /^-[a-zA-Z]*[ceEpr]/.test(arg.text) || /^--(eval|print|command)(=|$)/.test(arg.text),
       );
-      // A shell reading its commands from its input runs whatever is fed to it.
       const reads = shell && args.some((arg) => /^-[a-zA-Z]*s/.test(arg.text));
       if (flag >= 0) {
         found.facts.push({ kind: "evaluates", program: name });
-        // Options may come between `-c` and its text: not followed.
         const following = args[flag + 1]?.text ?? "";
         if (shell && /^[-+]/.test(following) && following !== "--") throw new Unreadable();
         const script = args[following === "--" ? flag + 2 : flag + 1];
@@ -842,7 +776,6 @@ const simple = (
         found.facts.push({ kind: "runs-folder-code", program: `${name} ${sub}` });
     }
     if (name === "su") {
-      // su runs no program of its own words: only `-c`'s text, wherever it comes.
       for (let at = 0; at < args.length; at += 1) {
         const text = args[at]?.text ?? "";
         const glued = /^-[a-zA-Z]*c(.+)$/.exec(text)?.[1] ?? /^--command=(.*)$/.exec(text)?.[1];
@@ -853,7 +786,6 @@ const simple = (
       break;
     }
     if (!WRAPPERS.has(name)) break;
-    // The wrapped program comes after the wrapper's options, and for `env`, its assignments.
     const options = WRAPPER_OPTIONS[name] ?? { short: "" };
     let duration = name === "timeout";
     index += 1;
@@ -865,7 +797,6 @@ const simple = (
       }
       if (next.startsWith("--")) {
         const [option = "", value] = next.split("=", 2);
-        // An option this parse doesn't know may take the program's place: not read.
         if (option === "--split-string") throw new Unreadable();
         if ((options.values ?? "").split(" ").includes(option)) {
           index += value === undefined ? 2 : 1;
@@ -882,7 +813,6 @@ const simple = (
         continue;
       }
       if (next.startsWith("-") && next.length > 1) {
-        // A cluster of short options; one that takes a value takes the rest, or the next word.
         if (name === "env" && next.includes("S")) throw new Unreadable();
         const takes = next
           .slice(1)
@@ -896,7 +826,6 @@ const simple = (
         index += 1;
         continue;
       }
-      // timeout's first word is its duration, whatever it looks like.
       if (duration) {
         duration = false;
         index += 1;
@@ -909,7 +838,6 @@ const simple = (
   return named;
 };
 
-/** Text a wrapper runs as a command, such as `su -c`. */
 const evaluated = (
   text: string | undefined,
   program: string,
@@ -921,7 +849,6 @@ const evaluated = (
   if (text !== undefined) walk(text, found, place, depth + 1);
 };
 
-/** Reads a whole command line: its lists, pipelines and simple commands. */
 const walk = (text: string, found: Found, place: CommandPlace, depth: number) => {
   if (depth > DEPTH_MOST) throw new Unreadable();
   const tokens = lex(text, found);
@@ -930,7 +857,6 @@ const walk = (text: string, found: Found, place: CommandPlace, depth: number) =>
   };
   let words: Array<Word> = [];
   let afterPipe = false;
-  /** Its input comes from a file or a here-document: into an interpreter, that is a script. */
   let fedIn = false;
   let redirect: string | undefined;
   let skipping: "for" | undefined;
@@ -948,7 +874,6 @@ const walk = (text: string, found: Found, place: CommandPlace, depth: number) =>
   for (const [at, token] of tokens.entries()) {
     if (token.kind === "op") {
       if (redirect !== undefined) throw new Unreadable();
-      // `((…))` is arithmetic, which can run commands through the names in it.
       const after = tokens[at + 1];
       if (token.op === "(" && after?.kind === "op" && after.op === "(") throw new Unreadable();
       if (REDIRECTS.has(token.op) || token.op === "<<" || token.op === "<<-") {
@@ -1031,8 +956,6 @@ export const shownWord = (text: string): string => {
   const { pieces } = displayCommand(text);
   const plain = pieces.map((piece) => (piece.kind === "newline" ? "\\n" : piece.text)).join("");
   if (/^[A-Za-z0-9._/+@:%=~-]+$/.test(plain)) return plain;
-  // In quotes, the word's own backslashes and quotes are escaped; the codes for hidden
-  // characters are not, so they read as codes.
   const quoted = pieces
     .map((piece) =>
       piece.kind === "newline"

@@ -27,7 +27,6 @@ export function useSettingsLink(to: SettingsEntry = "/settings") {
  */
 export function settingsTarget(to: SettingsEntry, pathname: string): SettingsEntry {
   if (to !== "/settings" || !isSettingsPath(pathname)) return to;
-  // A route of its own under `/settings`, which the typed `to` has no name for.
   return (/^\/settings\/[^/]+/.exec(pathname)?.[0] ?? to) as SettingsEntry;
 }
 

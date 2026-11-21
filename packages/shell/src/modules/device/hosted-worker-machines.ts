@@ -1,7 +1,3 @@
-// Machines of a worker's own, from a hosted server this computer is signed in to: each call about
-// one under the server's `worker_machines_endpoint`, a dial of the relay that carries its
-// connection, a relay's lease, and the device's side of them (`hosted-device.ts`).
-
 import type { KeyObject } from "node:crypto";
 
 import {
@@ -27,7 +23,6 @@ import {
   UNREACHABLE,
 } from "./hosted.ts";
 
-/** `call` under `endpoint`: one path segment more, whether or not the endpoint ends in a slash. */
 const callAddress = (endpoint: string, which: string): string => {
   const url = new URL(endpoint);
   let path = url.pathname;
@@ -54,11 +49,7 @@ export const callWorkerMachines = async (
     return failed("This server doesn't start machines for this computer's workers.");
   if (!(WORKER_MACHINE_CALLS as readonly string[]).includes(calls.call))
     return failed("The request isn't one the app sends.");
-  // The token as it stands before the call, and after it: a renewal on the way may replace the
-  // one the call was made with, and neither may leave the app.
   const before = await calls.keeper.token("machines:workers").catch(() => undefined);
-  // The fence is asked just before each request goes out, after any wait for a token: one it
-  // holds back is never sent, and is answered with why.
   let heldBack: string | undefined;
   const gate = calls.fence?.gate;
   const fenced: typeof calls.fetch =
@@ -78,18 +69,14 @@ export const callWorkerMachines = async (
     callAddress(endpoint, calls.call),
     calls.body,
   );
-  // Settled only by an answer below 500: a 5xx (a 503 included) may still act later.
   calls.fence?.done(!("why" in response) && response.status < 500);
   if (heldBack !== undefined) return failed(heldBack);
   if ("why" in response) return response;
-  // What a server echoes of the sign-in never leaves the app: the token it was called with, and
-  // anything shaped like a signed token (a proof, a JWT), wherever it is in the answer.
   const after = await calls.keeper.token("machines:workers").catch(() => undefined);
   const secrets = [before, after].flatMap((held) =>
     held?.ok === true ? [held.token.accessToken] : [],
   );
   const body = scrubbed(await jsonOf(response), secrets);
-  // A 503 is the server's own word that it is busy, for the server to read: never "no answer".
   if (response.status === 401 || (response.status >= 500 && response.status !== 503))
     return failed(
       scrubbed(refusalOf(body), secrets) ??
@@ -100,13 +87,11 @@ export const callWorkerMachines = async (
 
 const BASE64URL = new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-");
 
-/** Whether a word is a signed token: three or more base64url parts of 8 or more, dot-separated. */
 const signedToken = (word: string) => {
   const parts = word.split(".");
   return parts.length >= 3 && parts.every((part) => part.length >= 8);
 };
 
-/** `text` with each word that is a signed token replaced, in one pass over it. */
 const withoutSignedTokens = (text: string): string => {
   let out = "";
   let word = "";
@@ -152,9 +137,6 @@ export const workerMachineRelayDial = async (
   if (!WORKER_MACHINE_NAME.test(calls.name)) return failed("That isn't a worker machine's name.");
   const held = await calls.keeper.fresh("machines:workers");
   if (!held.ok) return failed(held.why);
-  // A WebSocket's handshake answers a nonce challenge in no way this app can read, so a current
-  // nonce is had first: one call to the server's own worker-machine endpoint, which takes its
-  // challenge and keeps the nonce it gives, as every call made with a token does.
   const endpoint = calls.discovery.worker_machines_endpoint;
   if (endpoint !== undefined) {
     const primed = await authorizedCall(
@@ -179,7 +161,6 @@ export const workerMachineRelayDial = async (
       authorization: `${token.tokenType} ${token.accessToken}`,
       dpop: dpopProof(calls.key, {
         method: "GET",
-        // The relay's own `wss:` address, without its query, as the server checks it.
         url: url.href,
         accessToken: token.accessToken,
         now: Date.now(),
@@ -238,9 +219,7 @@ export interface HostedWorkerMachines {
     origin: string,
     call: WorkerMachineCall,
     body: Readonly<Record<string, unknown>>,
-    /** Not sent at all past this time (`WorkerMachineOp`'s `sendBy`). */
     sendBy?: number,
-    /** The sign-in it is for (`WorkerMachineServer.account`): another's, it isn't sent. */
     account?: string,
   ) => Promise<
     | { readonly ok: true; readonly status: number; readonly body: unknown }
@@ -267,26 +246,16 @@ export interface HostedWorkerMachines {
   >;
 }
 
-/** A signed-in server as these read it. */
 interface WorkerMachineServerSide {
   readonly origin: string;
   readonly discovery: HostedDiscovery;
   readonly key: KeyObject;
   readonly keeper: TokenKeeper;
-  /**
-   * The mark of this sign-in (`StoredSignIn.machineMark`, `WorkerMachineServer.account`):
-   * undefined while one restored from before marks were awaits its first renewal.
-   */
   readonly machineMark: string | undefined;
-  /** The marks this sign-in had before (`StoredSignIn.formerMarks`). */
   readonly formerMarks?: ReadonlyArray<string>;
   readonly limits: { readonly paused: () => boolean };
 }
 
-/**
- * Whether `account` is this sign-in's: its mark, or one it had before (`formerMarks`), whose
- * machines and stops the server is still moving to it. Undefined asks under no sign-in.
- */
 const ownMark = (server: WorkerMachineServerSide, account: string | undefined) =>
   account === undefined ||
   (server.machineMark !== undefined &&
@@ -299,7 +268,6 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
   readonly callsOf: (server: S) => HostedCalls;
 }): HostedWorkerMachines => {
   const { servers, known, callsOf } = deps;
-  // One fence for every server's names: a stop never lands on what a newer start made.
   const fence = makeWorkerMachineFence();
   const logos = hostedLogos();
   return {
@@ -321,7 +289,6 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
               : { formerAccounts: open.formerMarks }),
           },
         };
-      // No machine is asked for under a sign-in whose mark isn't known yet.
       if (open !== undefined)
         return {
           ok: false,
@@ -400,7 +367,6 @@ export const hostedWorkerMachines = <S extends WorkerMachineServerSide>(deps: {
     workerMachineRelayDial: async (origin, name, account) => {
       const server = known(origin);
       if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
-      // Another sign-in's machine is never carried under this one: not dialled, nor leased.
       if (!ownMark(server, account)) return ANOTHER_ACCOUNT;
       return workerMachineRelayDial({ ...callsOf(server), name });
     },

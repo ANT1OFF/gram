@@ -1,7 +1,3 @@
-// The `git diff` parser shared by the diff panel, PR detail and checkpoints, and the working-tree diff:
-// tracked changes, synthetic all-added diffs for untracked files, and the clean-tree branch-vs-base
-// fallback.
-
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { DIFF_TOO_LARGE_NOTE } from "@gram/contracts/git";
@@ -67,11 +63,6 @@ const C_ESCAPES: Readonly<Record<string, number>> = {
   "\\": 92,
 };
 
-/**
- * The C-quoted path git writes for a name with a quote, backslash or control character (and, under
- * `core.quotepath`, non-ASCII), from the opening `"` at `start`: its exact bytes decoded as UTF-8,
- * and the index after the closing `"`. `undefined` when it isn't a well-formed quoted path.
- */
 const quotedPath = (
   text: string,
   start: number,
@@ -107,15 +98,9 @@ export const unquoteGitPath = (text: string): string => {
   return quoted !== undefined && quoted.end === text.length ? quoted.value : text;
 };
 
-/** `prefix` stripped from a header path, or `undefined` when it lacks it. */
 const unprefixed = (path: string | undefined, prefix: "a/" | "b/") =>
   path?.startsWith(prefix) ? path.slice(prefix.length) : undefined;
 
-/**
- * The post-image path of a `diff --git <a> <b>` line. Either side may be quoted. Unquoted, a name can
- * hold ` b/`, so an unrenamed file's two equal halves are split in the middle; a rename's paths come
- * from its `rename to` line instead.
- */
 const gitLinePath = (rest: string): string | undefined => {
   if (rest.startsWith('"')) {
     const a = quotedPath(rest, 0);
@@ -139,10 +124,6 @@ const gitLinePath = (rest: string): string | undefined => {
   return idx >= 0 ? rest.slice(idx + 3) : undefined;
 };
 
-/**
- * A `--- a/…` or `+++ b/…` header's path; `undefined` for `/dev/null`. Git ends an unquoted name
- * holding a space with a tab (an unquoted name never holds one itself, since a tab gets quoted).
- */
 const sidePath = (value: string, prefix: "a/" | "b/"): string | undefined => {
   if (value === "/dev/null") return undefined;
   if (value.startsWith('"')) return unprefixed(quotedPath(value, 0)?.value, prefix);
@@ -196,7 +177,6 @@ export const parseGitDiff = (text: string): Array<DiffFile> => {
   return files;
 };
 
-/** A patch line without its sign and whitespace, as `git diff -w` compares lines. */
 const bareLine = (line: string) => line.slice(1).replace(/\s+/g, "");
 
 /**
@@ -216,7 +196,6 @@ export const withoutWhitespaceChanges = (files: ReadonlyArray<DiffFile>): Array<
     }
     const kept = hunks.flatMap(([header, ...lines]) => {
       const out: Array<string> = [];
-      // A run of one sign, with the `\ No newline` note git puts after its last line.
       const take = (sign: string, at: number) => {
         const stop = lines.findIndex((line, k) => k >= at && !line.startsWith(sign));
         const end = stop === -1 ? lines.length : stop;
@@ -247,7 +226,6 @@ export const withoutWhitespaceChanges = (files: ReadonlyArray<DiffFile>): Array<
         ? [[header!, ...out]]
         : [];
     });
-    // A rename keeps its row, with no lines left to show.
     if (kept.length === 0) {
       return file.status === "modified" ? [] : [{ ...file, added: 0, removed: 0, diff: "" }];
     }
@@ -326,13 +304,8 @@ export const untrackedOverflowNote = (more: number | undefined) =>
 export const UNTRACKED_BUDGET_NOTE =
   "Some untracked files are past the diff size limit and are listed without their contents";
 
-/** Git's binary sniff: a NUL in the first 8000 bytes. */
 const BINARY_SNIFF_BYTES = 8000;
 
-/**
- * At most `limit` bytes of open regular file `fd`; `binary` after reading only the sniffed prefix.
- * The descriptor is closed.
- */
 const readBounded = (fd: number, limit: number): Buffer | "binary" => {
   try {
     const buf = Buffer.alloc(Math.min(fs.fstatSync(fd).size, limit));
@@ -350,12 +323,6 @@ const readBounded = (fd: number, limit: number): Buffer | "binary" => {
   }
 };
 
-/**
- * One untracked entry within `budget` bytes of diff text. A link shows its target text, as git does,
- * and is never followed; a file is read through `openInside`, so no link on the way or swapped in
- * redirects it. A directory, FIFO, socket or device is left out, as is anything `openInside` refuses.
- * A file past the budget is listed `too large` unread.
- */
 const untrackedFile = (
   workTree: string,
   realTop: string,
@@ -376,7 +343,6 @@ const untrackedFile = (
       buf = fs.readlinkSync(abs, { encoding: "buffer" });
     } else if (stat.isFile()) {
       if (stat.size > limit) return tooLarge;
-      // One byte over the limit tells a file that grew since the `lstat`.
       const read = readBounded(openInside(realTop, rel), limit + 1);
       if (read === "binary") return binary;
       buf = read;
@@ -406,10 +372,6 @@ export const untrackedFileDiff = (
   }
 };
 
-/**
- * Untracked entries after `used` bytes of tracked diff, sharing one byte budget with it: at most
- * `MAX_UNTRACKED_FILES` are looked at, and a note says when any were cut or listed without contents.
- */
 const untrackedFiles = (
   workTree: string,
   paths: ReadonlyArray<string>,
@@ -488,12 +450,10 @@ export const gitDiff = (
     }
     const files = capped.files;
 
-    // Exact names, NUL-delimited: porcelain's quoted names would need a full C unquoter.
     const others = yield* git(workTree, ["ls-files", "--others", "--exclude-standard", "-z"], {
       maxOutputBytes: 64 * 1024 * 1024,
     });
     const listed = others.stdout.split("\0");
-    // The last name of a cut listing may be partial; a whole listing ends in an empty field.
     listed.pop();
     const untracked = untrackedFiles(
       workTree,
@@ -507,7 +467,6 @@ export const gitDiff = (
     }
 
     if (files.length > 0 || !hasHead) return { repo: true, branch, files, worktree: workTree };
-    // Whitespace-only changes are still uncommitted work: the tree isn't clean, so no fallback.
     if (
       options.ignoreWhitespace === true &&
       (yield* git(workTree, ["diff", "--quiet", "HEAD"])).status === 1

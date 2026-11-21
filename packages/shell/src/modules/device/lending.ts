@@ -104,7 +104,6 @@ export interface ServerLending {
 interface Running {
   gate?: DeviceGate | undefined;
   fiber?: Fiber.Fiber<void> | undefined;
-  /** Hanging up: it takes nothing new, and a new connection waits until it has gone. */
   closing?: boolean;
 }
 
@@ -134,7 +133,6 @@ export const makeServerLending = (
 
     const lentNow = (id: string) => options.workspaces().find((workspace) => workspace.id === id);
 
-    /** One connection, from the dial to its end. */
     const once = (id: string, entry: Running) =>
       Effect.gen(function* () {
         const held = yield* Effect.promise(() => options.keeper.fresh("device:connect"));
@@ -151,7 +149,6 @@ export const makeServerLending = (
           now: options.now(),
         });
         const socket = yield* connect(url, headers);
-        // A pause isn't absence: the gate refuses for it by name.
         const lendingHere = () =>
           options.present() &&
           !options.keeper.signedOut() &&
@@ -185,7 +182,6 @@ export const makeServerLending = (
             })),
           };
         };
-        // The device closes the connection itself when the token it last handed over ends.
         const expiry = Effect.gen(function* () {
           for (;;) {
             const left = deadline - options.elapsed();
@@ -211,7 +207,6 @@ export const makeServerLending = (
         return options.elapsed() - started > LENDING_RETRY_MOST_MS ? "lasted" : "failed";
       }).pipe(Effect.scoped);
 
-    /** Dials again after each end, waiting longer each time it fails, until lending stops. */
     const loop = (id: string, entry: Running) =>
       Effect.gen(function* () {
         let wait = first;
@@ -231,8 +226,6 @@ export const makeServerLending = (
       const entry = running.get(id);
       if (entry === undefined || entry.closing === true) return;
       entry.closing = true;
-      // The reason first, so what waits on the person is refused for it, not for the hang-up, and
-      // a moment for the refusals to reach the server before the connection goes.
       const gate = entry.gate;
       if (gate !== undefined) {
         gate.stopAll(why);
@@ -245,9 +238,6 @@ export const makeServerLending = (
         ]);
         clearTimeout(timer);
       }
-      // This connection's own fiber: one started since for the same workspace is left alone.
-      // Bounded, so a connection whose close never finishes can't keep the workspace from
-      // being dialled again.
       if (entry.fiber !== undefined) {
         let timer: NodeJS.Timeout | undefined;
         await Promise.race([
@@ -259,11 +249,9 @@ export const makeServerLending = (
         clearTimeout(timer);
       }
       if (running.get(id) === entry) running.delete(id);
-      // Lent again while it hung up: it is dialled now, unless lending was stopped.
       lendAgain();
     };
 
-    /** Set by `stop`, and cleared only by the next `sync` from outside. */
     let stopped = false;
 
     const lendAgain = () => {

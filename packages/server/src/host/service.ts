@@ -35,11 +35,9 @@ export const serviceCommand = (home: string): ServiceCommand => {
       GRAM_HOST_HOME: home,
       GRAM_HOST_SERVICE: "1",
       PATH: process.env["PATH"] ?? "/usr/bin:/bin",
-      // Where it clones the repositories its workers use, when not its own folder's `repos`.
       ...(process.env["GRAM_HOST_REPOS"]
         ? { GRAM_HOST_REPOS: process.env["GRAM_HOST_REPOS"] }
         : {}),
-      // Run under Electron's own binary, as a packaged app's host is, it has to be plain Node.
       ...(process.versions["electron"] === undefined ? {} : { ELECTRON_RUN_AS_NODE: "1" }),
     },
     home,
@@ -93,10 +91,6 @@ ${env}
 `;
 };
 
-/**
- * One systemd word: quoted, with its backslashes, quotes and specifiers escaped, and in a command
- * line its `$`, which systemd expands there (never in `Environment=`).
- */
 const systemdWord = (text: string, command = false) => {
   const quoted = text.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%");
   return `"${command ? quoted.replaceAll("$", "$$$$") : quoted}"`;
@@ -174,7 +168,6 @@ export const installService = (platform: ServicePlatform, command: ServiceComman
     const file = serviceFile(platform);
     mkdirSync(dirname(file), { recursive: true });
     if (platform === "darwin") {
-      // A service already loaded is unloaded first, so the new file is the one that runs.
       yield* run("launchctl", ["bootout", `gui/${uid()}/${LAUNCHD_LABEL}`]);
       writeFileSync(file, launchdPlist(command), { mode: 0o644 });
       yield* run("launchctl", ["bootstrap", `gui/${uid()}`, file]).pipe(
@@ -208,18 +201,13 @@ export const restartService = (platform: ServicePlatform) =>
         Effect.flatMap(must("systemctl --user restart")),
       );
 
-/**
- * Whether the service is stopped now, by its manager's own answer: launchd has no such service
- * loaded, or systemd has the unit inactive or failed. Undefined when the manager couldn't say.
- */
 const serviceStopped = (platform: ServicePlatform, runner: ServiceRunner) =>
   platform === "darwin"
     ? runner("launchctl", ["print", `gui/${uid()}/${LAUNCHD_LABEL}`]).pipe(
         Effect.map((result) =>
           result.code === 0
             ? false
-            : // 113: launchd has no service by that label in this user's domain.
-              result.code === 113 || /could not find service/i.test(result.output)
+            : result.code === 113 || /could not find service/i.test(result.output)
               ? true
               : undefined,
         ),
@@ -250,7 +238,6 @@ export const uninstallService = (
         ? yield* runner("launchctl", ["bootout", `gui/${uid()}/${LAUNCHD_LABEL}`])
         : yield* runner("systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]);
     const stopped = yield* serviceStopped(platform, runner);
-    // A stop that worked, with a manager that can't say after it, is taken at its word.
     if (stopped === false || (stopped === undefined && stop.code !== 0))
       return yield* Effect.fail(
         new Error(

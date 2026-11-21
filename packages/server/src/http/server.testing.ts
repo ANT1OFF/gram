@@ -1,6 +1,3 @@
-// The real-socket helpers of the HTTP server's tests: raw requests and upgrades as a browser or
-// another client makes them, each carrying the origin key the page holds unless a test asks not.
-
 import { randomBytes } from "node:crypto";
 import { type IncomingHttpHeaders, request as httpRequest } from "node:http";
 import * as Effect from "effect/Effect";
@@ -14,10 +11,6 @@ export interface RawResponse {
   readonly body: string;
 }
 
-/**
- * The origin key of the server `serverInfo` last read, which the page holds: every local request
- * here carries it, as the web app's do, unless a test asks for one without (`noKey`).
- */
 let launchKey: string | undefined;
 export const keyed = (
   headers: Record<string, string> = {},
@@ -45,7 +38,6 @@ export const raw = (
             path: options.path ?? "/",
             method: options.method ?? "GET",
             headers: keyed(options.headers, options.noKey),
-            // A fresh connection per request: a rejected upgrade leaves its socket unusable.
             agent: false,
           },
           (res) => {

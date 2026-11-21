@@ -1,23 +1,3 @@
-/**
- * The server's own SQLite connection on a worker thread, so a write (or any statement on that
- * connection) never holds the event loop while SQLite works. `node:sqlite` is synchronous: on the
- * main thread a large write, a lock wait behind a checkpoint, or a long read stopped every socket,
- * stream and timer of the server until it finished (510–780 ms stalls on the 200,000-message perf
- * fixture).
- *
- * This is the same single connection as before, moved: the client still serialises every statement
- * and transaction through one connection (`durableSqliteLayer`'s gate), so ordering, transactions,
- * savepoints and `durableCommit`'s FULL sync all behave as they did. What changes is that each
- * statement is a message to the worker and back, so the event loop runs other fibers while SQLite
- * works; a fiber outside a transaction can now run between two statements of another fiber's
- * non-transactional sequence, as it could already between any two awaited steps.
- *
- * A statement once sent always finishes: its fiber waits for the answer even when interrupted,
- * so the connection is never lent on while the worker still runs a statement, and the client's
- * idea of whether a transaction is open (`isTransaction`) always matches the worker's.
- *
- * The worker is plain JavaScript in a string, so a bundler has nothing to resolve or rewrite in it.
- */
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -28,13 +8,10 @@ import { classifySqliteError, ConnectionError } from "effect/sql/SqlError";
 import { Worker } from "node:worker_threads";
 import { SqlClient, SqlError, SqlStatement, type SqlConnection } from "../platform/unstable.ts";
 
-/** The client's lock wait, as `SqliteClient`'s default. */
 const BUSY_TIMEOUT_MS = 5_000;
 
-/** How many prepared statements the worker keeps, as `SqliteClient`'s default. */
 const STATEMENT_CACHE = 200;
 
-/** How long close waits for the worker to close its connection (and checkpoint) before terminating. */
 const STOP_TIMEOUT_MS = 10_000;
 
 const WORKER_SOURCE = String.raw`
@@ -125,7 +102,6 @@ interface WorkerError {
   readonly code?: unknown;
   readonly errcode?: unknown;
   readonly errstr?: unknown;
-  /** Failed preparing the statement, not running it. */
   readonly prepare?: boolean;
 }
 
@@ -160,7 +136,6 @@ export interface ObservedStatement {
 /** Test-process-only instrumentation: told of every statement any writer worker runs. */
 export const statementObservers = new Set<(statement: ObservedStatement) => void>();
 
-/** The native error, rebuilt with the fields `classifySqliteError` reads. */
 const sqlError = (error: WorkerError, message: string, operation: string) =>
   new SqlError({
     reason: classifySqliteError(
@@ -212,7 +187,6 @@ export const layer = (options: {
           statementCache: STATEMENT_CACHE,
         },
       });
-      // The scope stops it; an idle worker must not keep the process up.
       spawned.unref();
       let stopped = false;
       let inTransaction = false;
@@ -241,7 +215,6 @@ export const layer = (options: {
       });
 
       let stopping: Promise<void> | undefined;
-      /** Lets the running statement finish, closes the connection and ends the thread, once. */
       const stop = () =>
         (stopping ??= (async () => {
           if (!stopped) {
@@ -252,7 +225,6 @@ export const layer = (options: {
           await exited.promise;
           clearTimeout(timer);
         })());
-      // Before the wait for ready: a build interrupted while the worker opens still ends it.
       yield* Effect.addFinalizer(() => Effect.promise(stop));
       const failed = yield* Effect.promise(() => ready.promise);
       if (failed !== undefined) {
@@ -260,7 +232,6 @@ export const layer = (options: {
         return yield* Effect.fail(sqlError(failed, "Failed to open database", "connect"));
       }
 
-      /** One message to the worker and its answer, waited for even when interrupted. */
       const send = (
         message: Record<string, unknown>,
         sql: string,
@@ -348,7 +319,6 @@ export const layer = (options: {
           isTransaction: (conn) => conn.isTransaction(),
         });
       const client = yield* SqlClient.make({
-        // Gram's own client over the writer worker's connection.
         driver: "gram-writer-worker",
         acquirer,
         borrower,

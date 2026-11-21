@@ -11,7 +11,6 @@ import type { PrPeopleApi } from "./types";
  */
 export function createPrPeopleMock(world: MockWorld) {
   const people = new MockPrPeople();
-  /** Throws `ThreadNotFound` for an unknown thread, as the server does before asking GitHub. */
   const pr = (threadId: ThreadId) => {
     world.summary(threadId);
     return mockPrDetail(threadId);

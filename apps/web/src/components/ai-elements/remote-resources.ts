@@ -1,9 +1,3 @@
-// Markdown that Gram renders is untrusted: an agent's text, a plan, a GitHub comment, a README.
-// Any element that loads a URL as the page renders would let that text make the viewer's browser
-// ask a server of its choosing for it, with whatever it likes in the URL, and no click. Gram's own
-// page forbids that with its CSP, but the renderer is also mounted in pages that carry none, so
-// the markdown itself never asks: this runs last in every chain, whatever the caller built.
-
 interface HastText {
   type: "text";
   value: string;
@@ -18,14 +12,10 @@ interface HastElement {
 
 type HastNode = HastText | HastElement | { type: string; children?: HastNode[] };
 
-/** Attributes the browser fetches as an element renders. */
 const LOADING = ["src", "srcSet", "poster", "data", "background", "imageSrcSet", "href"] as const;
-/** Elements whose `href` loads as it renders (`a`'s waits for a click, and is the link policy's). */
 const LOADS_HREF = new Set(["link", "image", "use", "feImage"]);
-/** Attributes that hold a list of candidates, each a URL then its size. */
 const CANDIDATES = new Set(["srcSet", "imageSrcSet"]);
 
-/** Schemes the browser resolves without the network. Anything else, or `//`, leaves the page. */
 const LOCAL_SCHEME = /^(data|blob):/i;
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
@@ -35,7 +25,6 @@ const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
  * and the components that render it decide what it means.
  */
 export const isRemoteUrl = (url: string): boolean => {
-  // Browsers drop these from a URL before they read it, so `ht\ttp:` is `http:`.
   const trimmed = [...url].filter((char) => char.charCodeAt(0) > 0x20).join("");
   if (/^[\\/]{2}/.test(trimmed)) return true;
   return SCHEME.test(trimmed) && !LOCAL_SCHEME.test(trimmed);
@@ -55,7 +44,6 @@ const remote = (name: string, value: unknown): boolean => {
   );
 };
 
-/** An image that won't be fetched: its alt text in brackets, and where it was, on hover. */
 const inertImage = (element: HastElement): HastElement => {
   const src = element.properties?.["src"];
   const alt = element.properties?.["alt"];
@@ -73,7 +61,6 @@ const inertImage = (element: HastElement): HastElement => {
   };
 };
 
-/** `element` with every attribute that would load another origin taken off, or undefined to drop it. */
 const tame = (element: HastElement): HastNode | undefined => {
   const properties = element.properties ?? {};
   const loads = LOADING.filter(
@@ -84,7 +71,6 @@ const tame = (element: HastElement): HastNode | undefined => {
   );
   if (loads.length === 0) return element;
   if (element.tagName === "img") return inertImage(element);
-  // A `source` is only ever a remote candidate here; the `img` beside it stands for the picture.
   if (element.tagName === "source") return undefined;
   const kept = { ...properties };
   for (const name of loads) delete kept[name];

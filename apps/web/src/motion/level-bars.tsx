@@ -7,9 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { onClock } from "./spin";
 
-/** How tall each bar stands at rest, as a share of its full height; `motion.css` holds the same. */
 const REST = [0.45, 0.7, 0.45] as const;
-/** How much of the loudness each bar takes, so they don't move as one. */
 const REACH = [0.7, 1, 0.55] as const;
 
 /**
@@ -23,7 +21,6 @@ export const barScale = (index: 0 | 1 | 2, level: number, previous: number): num
 
 const scaleOf = (bar: SVGElement): number => Number(bar.dataset["scale"] ?? Number.NaN);
 
-/** The bars of one `LevelBars`, and where they read the loudness from. */
 const sources = new WeakMap<SVGElement, () => number>();
 
 const follow = onClock({

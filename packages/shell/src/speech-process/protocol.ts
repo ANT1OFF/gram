@@ -28,13 +28,8 @@ export type SpeechSessionKind = "local";
  * session's port in `ports[0]`.
  */
 export type SpeechHostMessage =
-  /** Loads the native runtime and nothing else, for `--smoke`; answered with `prewarmed`. */
   | { readonly type: "probe"; readonly requestId: number }
-  /** Ends the open session with `stopped`, then exits. */
   | { readonly type: "shutdown" }
-  /**
-   * Ends dictation and releases the model without exiting the process.
-   */
   | { readonly type: "release" }
   | {
       readonly type: "prewarm";
@@ -57,7 +52,6 @@ export type SpeechHostMessage =
 /** Speech process → main. */
 export type SpeechProcessMessage =
   | { readonly type: "prewarmed"; readonly requestId: number; readonly result: SpeechOpenResult }
-  /** The session is over, however it ended; main starts the idle clock when none is left. */
   | { readonly type: "ended"; readonly sessionId: string };
 
 /** IPC payload main sends the preload with a session's port. */

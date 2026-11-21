@@ -10,7 +10,6 @@ export function claudeSubscriptionLimits(
   const raw = object(response);
   if (raw.rate_limits_available !== true) return [];
   const limits = object(raw.rate_limits);
-  // Extra usage that can still cover sends: a full window goes on, billed, rather than stopping.
   const extra = object(limits.extra_usage);
   const credits =
     extra.is_enabled === true &&

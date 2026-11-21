@@ -1,19 +1,3 @@
-/**
- * The default-branch watch: for a workspace whose charter turns on `watchDefaultBranch`, the Actions
- * runs of each of its repos' default branch are read, and when the newest decided commit there turns
- * red the orchestrator is told once, in its next digest, which pull requests merged since the branch
- * was last green, whose workers they were, and which runs failed. When it is green again, it is told
- * that too.
- *
- * Merges don't wait on one another (no queue, no rule that a branch be up to date), so two pull
- * requests each green on their own can still break the branch together; this is what notices. It
- * only tells: what to do about it (rerun once, bisect, revert, re-land) is the orchestrator's, under
- * the workspace's own autonomy and merge rules.
- *
- * Every read is one bounded REST `gh api`, run in the project's folder and paced to the background
- * share of the allowance like the other polls. What a repo was last seen as is kept in memory; the
- * note's key keeps a red commit from being told twice across a restart.
- */
 import { type Project, type Thread, type WorkspaceId, type WorkspaceState } from "@gram/contracts";
 import { ghApi, Proc } from "@gram/git";
 import { projectRepo } from "../git/repo-reach.ts";
@@ -31,13 +15,10 @@ import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { BranchHeads } from "./branch-heads.ts";
 
-/** How often each watched branch is read when the config doesn't say. */
 const MAIN_WATCH_INTERVAL = Duration.minutes(5);
 
-/** How many of the branch's newest push runs a look reads. */
 const RUNS_READ = 50;
 
-/** The most merged pull requests, and failed runs, a note names before it counts the rest. */
 const NAMED_MAX = 8;
 
 const RestRun = Schema.Struct({
@@ -70,9 +51,7 @@ const decodePulls = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Array(Schema.Struct({ number: Schema.Int }))),
 );
 
-/** Conclusions that say nothing about the code: the run was stopped or never needed. */
 const NEUTRAL = new Set(["cancelled", "skipped", "neutral", "stale"]);
-/** Conclusions that make a commit red. */
 const RED = new Set(["failure", "timed_out", "startup_failure", "action_required"]);
 
 /** One commit of the branch as its runs judge it, newest first. */
@@ -102,7 +81,6 @@ export const commitVerdicts = (runs: ReadonlyArray<MainRun>): ReadonlyArray<Comm
   }
   const judged: Array<CommitVerdict & { readonly latest: string }> = [];
   for (const [sha, { latest, runs: own }] of bySha) {
-    // A rerun shows as the same run id with a new attempt, so each id counts once, as it last ended.
     const failed = own.filter((run) => RED.has(run.conclusion ?? ""));
     const unfinished = own.some((run) => (run.status ?? "completed") !== "completed");
     const decided = own.filter(
@@ -157,7 +135,6 @@ export interface MergedSince {
 
 const short = (sha: string) => sha.slice(0, 7);
 
-/** Titles can be an agent's own words, so one goes into a note as one short quoted line. */
 const quoted = (title: string) => `"${title.replaceAll(/\s+/g, " ").slice(0, 80)}"`;
 
 /** The note an orchestrator gets when a watched branch turns red. */
@@ -217,7 +194,6 @@ export const MainWatchConfig = Context.Reference<{ readonly interval?: Duration.
 export const watchesDefaultBranch = (state: WorkspaceState): boolean =>
   state.charter.watchDefaultBranch === true && state.paused === undefined;
 
-/** The thread whose pull request `number` in `repo` is: bound to it, or one it follows. */
 const ownerOf = (threads: ReadonlyArray<Thread>, repo: string, number: number) =>
   threads.find((thread) =>
     [thread.boundPr, ...(thread.extraPrs ?? [])].some(
@@ -236,9 +212,7 @@ export const MainWatchLive = Layer.effect(
     const heads = yield* BranchHeads;
     const config = yield* MainWatchConfig;
 
-    /** Per workspace and repo, the red commit it was last told about, until it is green again. */
     const toldRed = new Map<string, string>();
-    /** Each repo's default branch, read once. */
     const branches = new Map<string, string>();
 
     const api = (cwd: string, path: string) =>
@@ -252,7 +226,6 @@ export const MainWatchLive = Layer.effect(
         return out?.status === 0 ? out.stdout : undefined;
       });
 
-    /** The pull requests merged between `green` and `red`, oldest first. */
     const mergedBetween = (cwd: string, repo: string, green: string, red: string) =>
       Effect.gen(function* () {
         const body = yield* api(cwd, `repos/${repo}/compare/${green}...${red}`);
@@ -274,8 +247,6 @@ export const MainWatchLive = Layer.effect(
     const look = (workspaceId: WorkspaceId, project: Project, threads: ReadonlyArray<Thread>) =>
       Effect.gen(function* () {
         const cwd = project.root;
-        // The repository the project recorded when it was added, never the one its folder's git
-        // config names now, which an agent working there can rewrite.
         const repo = projectRepo(project);
         if (repo === undefined) return;
         let branch = branches.get(repo);
@@ -331,9 +302,6 @@ export const MainWatchLive = Layer.effect(
       const threads = yield* store.listThreads;
       for (const state of watching) {
         const own = threads.filter((thread) => thread.workspaceId === state.workspace.id);
-        // Read as the workspace's orchestrator, whom the notes are for: behind a GitHub route the
-        // reads then go out with its thread's handle, never the deployment's own access, and one
-        // with no orchestrator to read for reads nothing there.
         const orchestrator = state.workspace.orchestratorThreadId;
         if (orchestrator === undefined && githubRelayed()) continue;
         const asOrchestrator = orchestrator === undefined ? Effect.asVoid : forThread(orchestrator);

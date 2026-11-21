@@ -10,10 +10,6 @@ import {
 import type { syncScene } from "./backdrop-scene";
 import type { ThemeAttributes } from "./theme";
 
-// The look's parts that are written at run time, for the palette actually rendered: an accent laid
-// over it (its own `[data-palette]` block), and a background picture behind the app, whose scenes
-// and levels load only once one is chosen (backdrop-scene.ts).
-
 const STYLE_ID = "gram-look";
 
 /** The palette `attrs` render, the accent laid over it where the id names one. */
@@ -56,7 +52,6 @@ export function syncLookStyle(
   const scene = attrs["data-backdrop"];
   const palette = renderedPalette(attrs, palettes);
   const draw = (sync: typeof syncScene) => {
-    // A choice made while the module loaded wins: draw only what the page still asks for.
     const asked = doc.documentElement.getAttribute("data-backdrop") ?? scene;
     sync(
       doc,

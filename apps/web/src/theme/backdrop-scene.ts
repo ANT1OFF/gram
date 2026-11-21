@@ -7,10 +7,6 @@ import {
   type SurfacesId,
 } from "@gram/themes";
 
-// The background picture's part of the look, loaded only once a picture is chosen so the scenes
-// and their contrast check stay out of the first paint: the layer under the app (theme/looks.css
-// draws it) and the levels that keep the palette's text readable over it.
-
 const STYLE_ID = "gram-backdrop-style";
 const LAYER_ID = "gram-backdrop";
 
@@ -24,7 +20,6 @@ export function backdropCss(palette: Palette, scene: string, surfaces: string): 
   if (!isSceneId(scene)) return "";
   const { colors } = derivePalette(palette);
   const { scrim, alpha } = backdropLevels(colors, palette.mode, scene, surfaces as SurfacesId);
-  // The page goes clear; More contrast keeps its own, solid surfaces, its block being more specific.
   return (
     `:root[data-backdrop="${scene}"] {` +
     ` --thread-bg: transparent;` +
@@ -65,7 +60,6 @@ export function syncScene(
   }
   if (layer.dataset["scene"] !== key) {
     layer.dataset["scene"] = key;
-    // Drawn from code, never from anything a person typed.
     layer.innerHTML = sceneSvg(scene, mode === "dark", "gram-backdrop");
   }
 }

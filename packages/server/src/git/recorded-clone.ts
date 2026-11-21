@@ -1,7 +1,3 @@
-// The clone identity a new checkout of a project records (`Checkout.cloneIdentity`), checked against
-// the origin the project recorded when it was added (`Project.originIdentity`), since the folder's
-// git config is anyone's to rewrite who works there (`git remote set-url`).
-
 import { InvalidState, type Project } from "@gram/contracts";
 import { type OriginUrls, type Proc, samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -11,7 +7,6 @@ import { effectiveOriginsReach, sameRepo } from "../host/origin-reach.ts";
 const refused = (message: string): Effect.Effect<void, InvalidState> =>
   githubRelayed() ? Effect.fail(new InvalidState({ message })) : Effect.logWarning(message);
 
-/** The project at `repoRoot`: its own folder, or the repository it is a folder of. */
 const projectAt = (projects: ReadonlyArray<Project>, repoRoot: string) =>
   projects.find(
     (each) =>
@@ -19,14 +14,6 @@ const projectAt = (projects: ReadonlyArray<Project>, repoRoot: string) =>
       (each.repoRoot !== undefined && samePath(each.repoRoot, repoRoot)),
   );
 
-/**
- * `live`, an origin identity of a folder of `project`, as long as it names the repository the
- * project recorded when it was added. The same repository by any transport (https or ssh, another
- * account) is the project's own. Behind an embedding deployment's GitHub route, where the
- * repository decides what the thread may read and push with the deployment's access, one that
- * names another repository is refused. Elsewhere reach is the person's own, so the mismatch is only
- * logged. No project, or no origin now, keeps what it has.
- */
 const checkedAgainst = (
   project: Project | undefined,
   live: string | undefined,

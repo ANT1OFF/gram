@@ -25,13 +25,8 @@ import { makeAccountScope } from "./account-scope.ts";
 
 type UsageLimitEvent = Extract<ServerEvent, { type: "usageLimit" }>;
 
-/**
- * A reading that only moved its `at` is written again once this much later, so a window read on
- * every request isn't a write per request while its age after a restart stays close.
- */
 const LIMIT_WRITE_EVERY_MS = 60_000;
 
-/** A broken database is a defect, as in `ThreadStore`. */
 const run = <A>(effect: Effect.Effect<A, SqlError>) =>
   effect.pipe(Effect.catch((error) => Effect.die(error)));
 const decode = Schema.decodeUnknownOption(Schema.fromJsonString(LimitRecord));
@@ -40,7 +35,6 @@ const keyOf = (record: Pick<LimitRecord, "agent" | "profileId" | "accountScope" 
   record.accountScope === undefined
     ? `${record.agent}/${record.profileId ?? ""}/${record.window}`
     : JSON.stringify([record.agent, record.profileId ?? "", record.accountScope, record.window]);
-/** What a record says apart from when it was read. */
 const restOf = (record: LimitRecord) => JSON.stringify({ ...record, at: undefined });
 
 export interface UsageLimitReadingsShape {
@@ -108,7 +102,6 @@ export class UsageLimitReadings extends Context.Service<
         const changed = yield* PubSub.unbounded<void>();
         const records = new Map<string, LimitRecord>();
         const selected = new Map<AgentKind, string | undefined>();
-        /** When each key was last written, and what was written apart from `at`. */
         const written = new Map<string, { readonly at: number; readonly rest: string }>();
 
         const now = yield* Clock.currentTimeMillis;

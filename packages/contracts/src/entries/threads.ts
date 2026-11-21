@@ -1,4 +1,3 @@
-// A thread and what it shows: its feed and events, plan, composer, files, terminals and connectors.
 export * from "../events.ts";
 export * from "../thread-summary.ts";
 export * from "../threads.ts";

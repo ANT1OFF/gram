@@ -15,7 +15,6 @@ import { installed, otherAgent, switchOffer, type SwitchOffer } from "./agent-sw
 export function useSwitchOffer(threadId: ThreadId): SwitchOffer {
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const { checks } = useLaunchChecks();
-  // Partial summaries (a thread still loading) have no model yet: nothing is offered.
   const agent = summary?.thread.model?.agent;
   const to = summary?.thread.sessionSwitch?.target.agent ?? otherAgent(agent ?? "claude");
   const wanted = agent !== undefined;

@@ -11,7 +11,6 @@ export const agentRuntimeRpc = ({ client, connection }: RpcContext): AgentRuntim
       (s) => iterate(client["agentRuntime.watchInstall"]({ agent }), s),
       connection,
       signal,
-      // A refusal (an agent the store doesn't serve) stays a refusal on every retry.
       (error) => (error as { _tag?: unknown } | null)?._tag === "RuntimeInstallRefused",
     ),
   installRuntime: (agent, version) => run(client["agentRuntime.install"]({ agent, version })),

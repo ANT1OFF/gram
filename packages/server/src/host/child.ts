@@ -23,17 +23,10 @@ export const hostEntry = (): string =>
       ? join(__dirname, "gram-host.js")
       : fileURLToPath(new URL("./gram-host.js", import.meta.url));
 
-/**
- * How long a host gets to exit on its own before it is killed: past its terminals' worst reap (a
- * HUP, 3 s, a KILL, 3 s), so a shell that ignores HUP is still killed by the host rather than
- * orphaned when the host is.
- */
 const STOP_GRACE_MS = 7_000;
 
-/** Stops our own child: its stream closes first, then a TERM, then a KILL if it lingers. */
 const stop = (child: ChildProcess) =>
   Effect.callback<void>((resume) => {
-    // Never started (a spawn error), or already gone: nothing to stop or wait for.
     if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
       return resume(Effect.void);
     }
@@ -56,7 +49,6 @@ export const spawnHost = (
     file: process.execPath,
     args: [hostEntry(), ...hostSwitches()],
   },
-  /** Set in the host's environment beside the server's own. */
   env: Readonly<Record<string, string>> = {},
 ): Effect.Effect<HostConnection, HostUnavailable, Scope.Scope> =>
   Effect.gen(function* () {
@@ -72,7 +64,6 @@ export const spawnHost = (
           stdio: ["ignore", "ignore", "inherit", "pipe"],
           env: { ...process.env, ...env, ELECTRON_RUN_AS_NODE: "1" },
         });
-        // Before anything else: a spawn that fails emits `error`, which unheard ends the server.
         spawned.on("error", (error) => end(`The host process failed: ${error.message}`));
         spawned.once("exit", (code, signal) =>
           end(`The host process exited (${signal ?? `code ${code}`}).`),
@@ -82,8 +73,6 @@ export const spawnHost = (
       stop,
     );
     const stream = child.stdio[3] as Duplex | null | undefined;
-    // A pipe reset when the child goes is the exit's news, which `end` reports; unheard, the
-    // stream's own `error` would end the server.
     stream?.on("error", () => {});
     if (child.pid === undefined || stream === null || stream === undefined) {
       return yield* new HostUnavailable({
@@ -95,7 +84,6 @@ export const spawnHost = (
     return yield* connectHost(socket, {
       hostId: LOCAL_HOST_ID,
       gone: Deferred.await(ended),
-      // A host found gone over its stream (it stopped answering) may still be running: stop it.
       onEnded: () => stop(child),
     }).pipe(
       Effect.tapError((error) =>

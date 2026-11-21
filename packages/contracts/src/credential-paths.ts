@@ -1,8 +1,3 @@
-// Which files are never previewed from a path an agent wrote. The UI offers only "Reveal" and
-// "Copy path" for these, and the server refuses `fs.file` and `fs.image` on them outside a thread's
-// checkouts even when a message names them, so a crafted path can't put a key on screen.
-
-/** Names that hold tokens or passwords whatever folder they're in. */
 const CREDENTIAL_NAMES = new Set([
   ".npmrc",
   ".yarnrc.yml",
@@ -18,7 +13,6 @@ const CREDENTIAL_NAMES = new Set([
   ".vault-token",
   ".terraformrc",
   "credentials.tfrc.json",
-  // Claude Code's login, in `~/.claude` or wherever `CLAUDE_CONFIG_DIR` puts it.
   ".credentials.json",
   "credentials",
   "credentials.json",
@@ -29,7 +23,6 @@ const CREDENTIAL_NAMES = new Set([
   "secrets.toml",
 ]);
 
-/** Key, certificate-store and password-vault formats. */
 const CREDENTIAL_EXTENSIONS = new Set([
   "pem",
   "key",
@@ -44,7 +37,6 @@ const CREDENTIAL_EXTENSIONS = new Set([
   "keychain-db",
 ]);
 
-/** Folders whose every file is a credential store or configures one. */
 const CREDENTIAL_FOLDERS = [
   [".ssh"],
   [".aws"],
@@ -56,17 +48,11 @@ const CREDENTIAL_FOLDERS = [
   [".config", "gcloud"],
   [".config", "gh"],
   ["Library", "Keychains"],
-  // Linux's keychains: GNOME Keyring's files, KWallet's, and the NSS database Chromium-based apps
-  // keep certificates and client keys in.
   [".local", "share", "keyrings"],
   [".local", "share", "kwalletd"],
   [".pki", "nssdb"],
 ] as const;
 
-/**
- * Files that hold an agent's login only in their own folder: Codex's, Grok Build's and OpenCode's,
- * and the plugin and MCP server tokens Antigravity keeps beside its keyring sign-in.
- */
 const CREDENTIAL_FILES = [
   [".codex", "auth.json"],
   [".grok", "auth.json"],
@@ -76,7 +62,6 @@ const CREDENTIAL_FILES = [
   [".local", "share", "opencode", "auth.json"],
 ] as const;
 
-/** OpenSSH's default private key names, and their `.pub` halves. */
 const SSH_KEY = /^id_(?:rsa|dsa|ecdsa|ed25519|ecdsa_sk|ed25519_sk|xmss)(?:\.pub)?$/;
 
 const contains = (segments: readonly string[], folder: readonly string[]) =>
@@ -95,7 +80,6 @@ export function isCredentialPath(path: string): boolean {
   const segments = path.split(/[\\/]+/).filter((segment) => segment !== "");
   const name = segments.at(-1);
   if (name === undefined) return false;
-  // Folders on macOS and Windows are case-insensitive, and `.ENV` is `.env` there.
   const lower = name.toLowerCase();
   if (lower.startsWith(".env") || CREDENTIAL_NAMES.has(lower) || SSH_KEY.test(lower)) return true;
   const dot = lower.lastIndexOf(".");
@@ -107,11 +91,6 @@ export function isCredentialPath(path: string): boolean {
   );
 }
 
-/**
- * The coding agents' own folders, which hold their logins (Claude Code's `.credentials.json`,
- * Codex's `auth.json`) beside their settings. No session runs in one; a file in one is judged by
- * `isCredentialPath` as anywhere else.
- */
 const AGENT_LOGIN_FOLDERS = [[".claude"], [".codex"]] as const;
 
 /**

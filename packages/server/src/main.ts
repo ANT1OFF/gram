@@ -67,7 +67,6 @@ import { writeServerAgentGuide } from "./guide/agent-guide.ts";
 import { usageHistoryRootsLayer } from "./usage/history-roots.ts";
 import { keepServerFolders } from "./host/foreign-paths.ts";
 
-/** Present when Electron runs the server as a `utilityProcess`. */
 const parentPort = (
   process as {
     parentPort?: {
@@ -83,10 +82,6 @@ const config = {
 };
 keepServerFolders(config.dataDir);
 
-/** Codex and Claude Code use installed subscription CLIs or an explicitly selected gateway.
- * Gateway keys and child homes remain separate from the developer's subscription credentials.
- * ManagedRuntimes supplies Codex only when the user explicitly chose that runtime.
- */
 type AgentNeeds = GatewayCredentials | ManagedRuntimes;
 
 const CodexAgent = Layer.unwrap(
@@ -149,11 +144,8 @@ const ClaudeAgents: Layer.Layer<AgentHosts, never, AgentNeeds> = Layer.effect(
 );
 
 const fakeAgent = process.env["GRAM_FAKE_AGENT"] === "1";
-/** Servers the fake `claude mcp` holds, so a live check can add one and see the session list it. */
 const fakeMcpServers: FakeMcpServers = new Map();
 
-// A headless control plane (`GRAM_HEADLESS=1`) is given no agents: no CLI is looked for or started
-// on this machine, and the server offers what its joined machines run (`host/headless.ts`).
 const Agents: Layer.Layer<AgentHosts, never, AgentNeeds> = config.headless
   ? AgentHosts.layerNone
   : fakeAgent
@@ -163,16 +155,11 @@ const Agents: Layer.Layer<AgentHosts, never, AgentNeeds> = config.headless
       })
     : ClaudeAgents;
 
-// The fake never writes a real Claude Code config.
 const McpCliLayer = fakeAgent ? Layer.succeed(McpCli, makeFakeMcpCli(fakeMcpServers)) : McpCliLive;
-// Nor does it reach GitHub for the platform's catalogue.
-// A public connector catalogue will be configured separately. No private repo lookups.
 const McpCatalogueLayer = Layer.empty;
 
-// Owner-only before anything is written under it: the database, logs and attachments.
 const dataDirTightened = securePrivateDir(config.dataDir);
 const logDir = logDirFor(config.dataDir);
-// Standalone (dev, headless) runs echo to stdout; under Electron the file is the only sink.
 const { logger } = createLogger({ dir: logDir, name: "server", echo: parentPort === undefined });
 if (dataDirTightened)
   logger.warn(
@@ -186,39 +173,25 @@ const LogLive = serverLogLayer({
   setLevel: (level) =>
     Effect.sync(() => {
       logger.level = level;
-      // The desktop shell mirrors the level for its own log.
       // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron MessagePortMain
       parentPort?.postMessage({ type: "logLevel", level });
     }),
 });
 
-/**
- * How many of each kind of handle keeps the process up (`TCPSocketWrap`, `ProcessWrap`, `Timeout`):
- * kinds and counts only, so an overrun says whether teardown waits on sockets, children or workers.
- */
 const activeResourceCounts = (): Record<string, number> => {
   const counts: Record<string, number> = {};
   for (const kind of process.getActiveResourcesInfo()) counts[kind] = (counts[kind] ?? 0) + 1;
   return counts;
 };
 
-/** Settles when main asks the server to shut down (`runtime/shutdown.ts`), which only main does. */
 const shutdownRequested = Promise.withResolvers<void>();
 let shutdownRequestedAt: number | undefined;
 let ownedChildrenOrderly = () => false;
 let sessionsStopped: boolean | undefined;
-/** Set by an update's shutdown request; an ordinary quit never seals or attests essentials. */
 let forUpdate = false;
-/** Settles with how many owned agent processes were left once an update stopped them. */
 const agentsStopped = Promise.withResolvers<number | undefined>();
-/** Set once the essentials are sealed: from then on main kills the rest, so the server waits. */
 let essentialsSealed = false;
 
-/**
- * An update's teardown still running at `ESSENTIALS_SEAL_MS`: attests the essentials
- * (`UPDATE_ESSENTIALS`) and seals the database, so main may kill the rest at once, or names the
- * first essential that failed, which refuses the update as an overrun does.
- */
 const sealEssentials = async (requestedAt: number) => {
   const left = await agentsStopped.promise;
   const failed = await failedEssential({
@@ -246,11 +219,6 @@ const sealEssentials = async (requestedAt: number) => {
   parentPort?.postMessage(message);
 };
 
-/**
- * Set when a signal, not main, stopped a server no shell runs (in a container, `docker stop` or a
- * pod's deletion; in a terminal, Ctrl-C). `runMain` interrupts the program on it; the program then
- * stops the sessions as main's request does, and an exit by interruption alone is a clean one.
- */
 let signalled = false;
 
 if (parentPort === undefined) {
@@ -266,8 +234,6 @@ if (parentPort === undefined) {
         "shutdown overran its deadline",
       );
     }, SHUTDOWN_DEADLINE_MS).unref();
-    // No main kills this server when its teardown hangs, so it ends itself: past the bound, only a
-    // SIGKILL would, and that one leaves no line saying what held it.
     setTimeout(() => {
       logger.error(
         { ms: Date.now() - requestedAt, waitingOn: activeResourceCounts() },
@@ -276,7 +242,6 @@ if (parentPort === undefined) {
       process.exit(1);
     }, SIGNAL_STOP_DEADLINE_MS).unref();
   };
-  // Before `runMain`'s own listeners, so the stop is marked before the program is interrupted.
   process.on("SIGTERM", onSignal);
   process.on("SIGINT", onSignal);
 }
@@ -289,9 +254,6 @@ parentPort?.on("message", ({ data }) => {
   ownedChildrenOrderly = beginChildShutdownCheck();
   shutdownRequested.resolve();
   if (forUpdate) setTimeout(() => void sealEssentials(requestedAt), ESSENTIALS_SEAL_MS).unref();
-  // The layers' finalizers have no bound of their own. Past this, main kills the server with
-  // everything under it (`process-tree.ts`); exiting here instead would leave its agents running,
-  // out of that tree.
   setTimeout(() => {
     logger.warn(
       { ms: Date.now() - requestedAt, waitingOn: activeResourceCounts() },
@@ -317,16 +279,12 @@ const program = Effect.gen(function* () {
     },
     "server started",
   );
-  // Every tool is registered once the server is up: the guide lists them as this release has them.
   yield* writeServerAgentGuide(config);
-  // The emulator's WASM is read out of the package at runtime, so a packaging mistake that loses it
-  // would otherwise show only when an agent first reads a terminal. A smoke run dies here instead.
   if (process.env["GRAM_SMOKE"] === "1") {
     const { text } = yield* Effect.promise(() => plainTail("emulator \x1b[1mok\x1b[0m", 1));
     if (text !== "emulator ok") return yield* Effect.die(`terminal emulator read "${text}"`);
     logger.info("terminal emulator loaded");
   }
-  // Behind a fronting proxy the launch token signs nobody in, so it isn't printed either.
   const fronted = config.frontedIdentity !== undefined && (yield* embeddingEnabled);
   if (config.frontedIdentity !== undefined && !fronted)
     logger.warn(
@@ -336,7 +294,6 @@ const program = Effect.gen(function* () {
     if (parentPort === undefined) {
       console.log(fronted ? `boot http://127.0.0.1:${port}/` : bootLine(port, token));
     } else {
-      // The desktop shell's stdout ends up in logs, so the token only travels over the parent port.
       // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron MessagePortMain
       parentPort.postMessage({ type: "boot", url: `http://127.0.0.1:${port}/?boot=${token}` });
       console.log(`boot http://127.0.0.1:${port}/`);
@@ -355,14 +312,10 @@ const program = Effect.gen(function* () {
       Exit.isFailure(exit) ? Effect.sync(() => agentsStopped.resolve(undefined)) : Effect.void,
     ),
   );
-  // A signal interrupts the wait (`runMain`): the sessions stop here, bounded, before the layers
-  // close, as on main's request. Nothing new starts while the rest of the teardown runs.
   yield* Effect.promise(() => shutdownRequested.promise).pipe(
     Effect.onInterrupt(() => (signalled ? Effect.asVoid(Effect.exit(stopSessions)) : Effect.void)),
   );
   const stopped = yield* stopSessions;
-  // An update stops the owned agent processes before the layers close rather than after, so the
-  // essentials don't wait on the HTTP and core teardown (`UPDATE_ESSENTIALS`).
   if (forUpdate) {
     const left = yield* Effect.promise(() => stopOwnedAgentsForUpdate(AGENTS_STOP_TIMEOUT_MS));
     agentsStopped.resolve(left);
@@ -376,7 +329,6 @@ program.pipe(
       Layer.provide(Agents),
       Layer.provide(McpCliLayer),
       Layer.provide(McpCatalogueLayer),
-      // One instance shared by the agents (readers) and the gateway handlers (installer).
       Layer.provideMerge(GatewayCredentials.layer),
       Layer.provideMerge(ManagedRuntimes.layer),
       Layer.provide(GitTurnHooksLive),
@@ -390,10 +342,7 @@ program.pipe(
         ),
       ),
       Layer.provideMerge(LogLive),
-      // Phone access turned on from Settings adds Gram's own Tailscale Serve listener.
       Layer.provide(TailscaleLive),
-      // Under the shell, so a forced quit spares the editors and file managers it opened. A server
-      // with no local user (headless, or signed in to through a proxy) starts none.
       Layer.provide(
         OpenerLive(
           (pid) => {
@@ -405,16 +354,10 @@ program.pipe(
       ),
     ),
   ),
-  // The server's own work, from its layers' fibers to its listeners', holds the capability; every
-  // RPC, route and tool call made for someone says whom for over it (`host/ownership.ts`).
   Effect.provideService(ServerWork, true),
-  // After the layers have closed, so it times the whole teardown. The exit is explicit: `runMain`
-  // leaves a program that ends without a signal to the event loop, which `parentPort` keeps alive.
   Effect.onExit((ended) =>
     essentialsSealed
-      ? // Main is killing the server with the rest of its tree. Exiting, which `runMain` does after
-        // a failure, would leave what is still under the server out of main's reach.
-        Effect.sync(() =>
+      ? Effect.sync(() =>
           logger.info(
             { ms: Date.now() - (shutdownRequestedAt ?? Date.now()) },
             "shutdown: teardown ended after the seal; waiting for main",
@@ -423,7 +366,6 @@ program.pipe(
       : Effect.sync(() => {
           if (shutdownRequestedAt === undefined) return;
           agentsStopped.resolve(undefined);
-          // A signal's stop ends the program by interrupting it: that alone is no failure.
           const exit =
             signalled && Exit.isFailure(ended) && Cause.hasInterruptsOnly(ended.cause)
               ? Exit.succeed(sessionsStopped === true)
@@ -437,7 +379,6 @@ program.pipe(
           };
           if (diagnostics.result === "complete") logger.info(fields, "shutdown: completed");
           else logger.error(fields, "shutdown: incomplete or failed; update refused");
-          // Ended before the seal: main still hears which essential refused the update.
           const failed = forUpdate
             ? unattestedEssential(exit, sessionsStopped, orderly)
             : undefined;

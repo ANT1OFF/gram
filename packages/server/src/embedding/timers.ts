@@ -1,24 +1,3 @@
-// Where a wake, a snooze or a routine waits for its time. On the desktop that is a sleep in the
-// server's own process. A server run behind another service may be stopped while it is idle, and a
-// stopped server fires nothing: there each wait is also registered with the deployment's scheduler
-// (`GRAM_SCHEDULER_URL`), which starts the server if it has to and calls back when the time comes.
-//
-//   PUT    <scheduler>/timers/<key>   { "key": "...", "at": "2026-01-01T09:00:00.000Z", "atMs": 1767258000000 }
-//   DELETE <scheduler>/timers/<key>
-//   POST   /embed/v1/timers/fire      { "key": "..." }   →  { "fired": true | false }
-//   GET    /embed/v1/timers           →  { "timers": [ { "key", "at", "atMs" } ] }
-//
-// What is waited for stays in the server's own store, as before: the scheduler holds a key and a
-// time and nothing else, and learns nothing of what the wake is for. So the two can't disagree
-// about what is due. A server that starts arms every stored wait again, fires at once whatever
-// fell due while it was down, and registers the rest, which is how a registration the scheduler
-// lost comes back. A call for a key nothing waits on answers `fired: false`, and the scheduler
-// drops it: the wait was cancelled, or already fired.
-//
-// The scheduler's call is the trigger, and a wait also ends by itself a little after its time
-// (`FALLBACK_GRACE`), so a scheduler that is down delays a running server's wakes and never loses
-// them.
-
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -40,12 +19,7 @@ export interface TimersShape {
   readonly until: (key: string, at: number) => Effect.Effect<void>;
 }
 
-/**
- * Sleeps until this clock reads `at` or later. A timer may wake a millisecond early by the wall
- * clock, so it sleeps again for what is left rather than end before its time.
- */
 const sleepUntil = (at: number): Effect.Effect<void> =>
-  // No time at all is no wait, as it always was; a time that never comes is never.
   Number.isNaN(at)
     ? Effect.void
     : at === Number.POSITIVE_INFINITY
@@ -63,10 +37,8 @@ export const FALLBACK_GRACE = Duration.seconds(30);
 
 const pathOf = (key: string) => `/timers/${encodeURIComponent(key)}`;
 
-/** How long until a registration the scheduler couldn't be told of is tried again. */
 const RETRY_EVERY = Duration.seconds(30);
 
-/** A key as the scheduler is given it: printable, with no separator a path could be split on. */
 const KEY = /^[A-Za-z0-9_.:@-]{1,200}$/;
 
 /**
@@ -93,18 +65,10 @@ export const TimersLive = Layer.effect(
     const waiting = new Map<string, Waiting>();
 
     const scope = yield* Effect.scope;
-    /** Keys whose registration may not be what `waiting` says; each is made so, one at a time. */
     const stale = yield* Queue.unbounded<string>();
-    /** Keys the scheduler couldn't be told of, so the log says so once, not on every retry. */
     const failing = new Set<string>();
     const touch = (key: string) => Queue.offer(stale, key).pipe(Effect.asVoid);
 
-    /**
-     * Makes the scheduler's copy of `key` what `waiting` holds now: registered at its time, or
-     * gone. Told from the state rather than as a queue of puts and deletes, so a wait cancelled and
-     * armed again can't end up deleted, whichever call lands last. A call that fails is tried
-     * again while the server runs; the wait's own fallback covers the time between.
-     */
     const reconcile = (key: string) =>
       Effect.suspend(() => {
         const wanted = waiting.get(key);
@@ -135,7 +99,6 @@ export const TimersLive = Layer.effect(
       );
     yield* Queue.take(stale).pipe(
       Effect.flatMap(reconcile),
-      // Nothing one key does may end the worker every other key is told through.
       Effect.catchCause((cause) =>
         Effect.logWarning("telling the scheduler of a timer failed").pipe(
           Effect.annotateLogs({ cause: Cause.pretty(cause) }),
@@ -171,20 +134,16 @@ export const TimersLive = Layer.effect(
     const until: TimersShape["until"] = (key, at) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
-        // Due already: nothing to register. Off, or a key no scheduler could be told: a sleep.
         if (at <= now) return;
         if (!Number.isFinite(at) || !KEY.test(key) || !(yield* embedding.on)) {
           return yield* local.until(key, at);
         }
         const mine: Waiting = { at, fired: yield* Deferred.make<void>() };
-        /** Forgets the wait, unless the key was armed again and holds a newer one. */
         const forget = Effect.suspend(() => {
           if (waiting.get(key) !== mine) return Effect.void;
           waiting.delete(key);
           return touch(key);
         });
-        // Registered and awaited as one step: an interrupt between the two would leave the wait,
-        // and its timer at the scheduler, with nobody to forget them.
         const outcome = yield* Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
             waiting.set(key, mine);
@@ -205,10 +164,7 @@ export const TimersLive = Layer.effect(
           );
           return yield* forget;
         }
-        // The scheduler fired it and holds it no longer.
         if (waiting.get(key) === mine) waiting.delete(key);
-        // Its clock decided, and this one may be a moment behind: whoever waits checks the time by
-        // this clock, and would only arm the wait again.
         yield* sleepUntil(Math.min(at, (yield* Clock.currentTimeMillis) + 60_000));
       });
 

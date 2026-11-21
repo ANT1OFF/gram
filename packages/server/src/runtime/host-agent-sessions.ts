@@ -34,18 +34,12 @@ export const HOST_STOPPED_ENDED: AgentEvent = {
   reason: "This machine's host stopped, and the agent with it.",
 };
 
-/**
- * How a taken-up session's app tools are pointed at this Gram: again every second for up to ten
- * minutes; its MCP endpoint answers once the server is up.
- */
 const RETARGET_RETRY = Schedule.spaced("1 second").pipe(
   Schedule.upTo({ duration: Duration.minutes(10) }),
 );
 
-/** How often the events a session's consumer has received are confirmed to its host. */
 const ACK_EVERY = "250 millis";
 
-/** The event a session ends with when its host no longer has it. */
 const HOST_SESSION_GONE_ENDED: AgentEvent = {
   type: "ended",
   reason: "This machine's host no longer has the session.",
@@ -91,7 +85,6 @@ export const machineAwayEnded = (machine: string): AgentEvent => ({
 export const opensOnHost = (agent: AgentKind, options: OpenSessionOptions): boolean =>
   agent === "claude" && options.waitForPreviousSession === undefined && crossesAsData(options);
 
-/** What both kinds of host need of a session's options: nothing that only the server holds. */
 const crossesAsData = (options: OpenSessionOptions): boolean =>
   options.model?.profileId === undefined &&
   options.switchStartup === undefined &&
@@ -115,12 +108,6 @@ export const opensOnMachine = (agent: AgentKind, options: OpenSessionOptions): b
       ? crossesAsData(options)
       : opensOnHost(agent, options);
 
-/**
- * Whether a memory update can open on a joined machine, for a server that runs no work itself: a
- * Claude Code one with no native tools (`dreamFilesOnly`), whose files it reaches through its app
- * tools over the MCP endpoint, so they stay this server's. A guided Codex one reads and writes its
- * folder with native tools, and that folder is here, so it doesn't.
- */
 const dreamOpensOnMachine = (agent: AgentKind, options: OpenSessionOptions): boolean =>
   agent === "claude" &&
   options.audience === "dream" &&
@@ -135,7 +122,6 @@ const dreamOpensOnMachine = (agent: AgentKind, options: OpenSessionOptions): boo
 const defined = <A extends object>(value: A): A =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as A;
 
-/** The options as the host takes them: data only, the app tools over the MCP endpoint. */
 const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): HostSessionOpen =>
   defined({
     handle,
@@ -178,10 +164,6 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
           },
   }) as HostSessionOpen;
 
-/**
- * A send or steer the host didn't take, or can't say it took, dies as `InputUndelivered`, so the
- * runtime keeps the input rather than count it taken.
- */
 const undelivered = (error: HostFailed) =>
   Effect.die(
     new InputUndelivered({ message: `The agent's machine didn't take it: ${error.message}` }),
@@ -215,41 +197,23 @@ export interface KeepHooks {
   readonly detaching: () => boolean;
 }
 
-/** The statuses of an agent between turns. */
 const AT_REST: ReadonlySet<string> = new Set(["idle", "error", "starting"]);
 
-/** Whether `event` leaves the agent between turns, or mid-turn. */
 const turnStateAfter = (event: AgentEvent, inTurn: boolean): boolean =>
   event.type === "turnEnd" ? false : event.type === "status" ? !AT_REST.has(event.status) : inTurn;
 
-/**
- * A session opened in the host process, as the runtime holds it. Its events come numbered, and the
- * ones received are confirmed to the host, which keeps the rest for a stream that picks up again
- * (as a reconnecting host's will). A host that goes ends the session with an `ended` event, which
- * names the joined `machine` the session ran on, if it ran on one.
- *
- * A session on a joined `machine` has no process id here: its agent's is that machine's, so the
- * port chips never look for it among this machine's processes.
- */
 const openOnHost = (
   host: HostSessionsConnection,
   agent: AgentKind,
   o: OpenSessionOptions,
   machine?: string,
-  /** The input as the host's machine reads it; this machine's own host reads it as it is. */
   carry: (input: UserInput) => Effect.Effect<UserInput> = Effect.succeed,
-  /**
-   * This machine's host kept running after Gram quits: the record to keep, and with `attach`, the
-   * session a Gram before this one left running, followed on instead of opening one.
-   */
   keep?: { readonly hooks: KeepHooks; readonly attach?: KeptSession },
 ) =>
   Effect.gen(function* () {
     const attach = keep?.attach;
     const handle = attach?.handle ?? randomUUID();
     const threadId = o.threadId;
-    // Added first, so a session whose open was given up on is closed on the host too. A Gram that
-    // quits with the host kept running leaves it running there, for the next one.
     yield* Effect.addFinalizer(() =>
       keep?.hooks.detaching() === true
         ? Effect.void
@@ -274,9 +238,6 @@ const openOnHost = (
           ),
         ),
       ));
-    // Its app tools still point at the Gram that opened it, whose address and token are gone. At
-    // a Gram's start the session is taken up before that Gram serves its MCP endpoint, so pointing
-    // them here is tried again until it takes, for as long as the session lasts, rather than once.
     const mcp = o.mcp;
     if (attach !== undefined && mcp !== undefined) {
       const retarget = host.retarget;
@@ -302,7 +263,6 @@ const openOnHost = (
         );
       }
     }
-    /** What a kept session confirmed: the host's last event handled with the agent at rest. */
     let confirmed = attach?.confirmed ?? 0;
     const remember = () => {
       if (keep !== undefined && threadId !== undefined)
@@ -316,9 +276,7 @@ const openOnHost = (
         Effect.forkScoped,
       );
     }
-    /** Done once the session's events end: input still on its way to it has nowhere to go. */
     const over = yield* Deferred.make<void>();
-    /** `call`, given up once the session has ended. */
     const whileOpen = (call: Effect.Effect<void, HostFailed>) =>
       Effect.raceFirst(
         call,
@@ -328,12 +286,9 @@ const openOnHost = (
       );
     let received = attach?.confirmed ?? 0;
     let acked = received;
-    /** How many events this side has read, and those read with the agent at rest, in order. */
     let read = 0;
     let inTurn = attach !== undefined;
     const atRest: Array<{ readonly local: number; readonly host: number }> = [];
-    // A kept session confirms only what was handled with the agent at rest, so the host keeps the
-    // open turn whole for a Gram that opens after this one; any other confirms what arrived.
     yield* Effect.suspend(() => {
       const upTo = keep === undefined ? received : confirmed;
       if (upTo <= acked) return Effect.void;
@@ -341,10 +296,6 @@ const openOnHost = (
       return host.ack(handle, acked);
     }).pipe(Effect.repeat(Schedule.spaced(ACK_EVERY)), Effect.forkScoped);
 
-    /**
-     * The host's events after the last one received. A session the host no longer has ended there;
-     * a host that went ended it too.
-     */
     const events: Stream.Stream<AgentEvent> = Stream.suspend(() =>
       host.events(handle, received).pipe(
         Stream.map((next) => {
@@ -362,9 +313,7 @@ const openOnHost = (
               ? error._tag === "NotFound"
                 ? HOST_SESSION_GONE_ENDED
                 : HOST_STOPPED_ENDED
-              : // A machine that came back without the session restarted under it, on the same
-                // disk; one that came back on another was replaced, and the session lost with it.
-                error._tag === "NotFound"
+              : error._tag === "NotFound"
                 ? host.replaced?.(handle) === true
                   ? machineReplacedEnded(machine)
                   : machineRestartedEnded(machine)
@@ -426,7 +375,6 @@ const openOnHost = (
               if (moved) remember();
             },
           }),
-      // Each under an id of its own, so the host takes it once however often it is asked.
       send: (input, sendOptions) =>
         carry(input).pipe(
           Effect.flatMap((carried) =>
@@ -446,7 +394,6 @@ const openOnHost = (
           ),
           Effect.catch(undelivered),
         ),
-      // A host that went has no turn left to stop.
       interrupt: host.interrupt(handle).pipe(Effect.catchTag("HostFailed", logFailed("interrupt"))),
       respond: (requestId, answer) =>
         host
@@ -464,8 +411,6 @@ const openOnHost = (
               Effect.fail(new ModeRefused({ mode, message: e.message })),
             ),
           ),
-      // As the agent's own does: a switch that didn't happen is a defect, never a model recorded
-      // that the session isn't on.
       setModel: (model) => host.setModel(handle, model).pipe(Effect.orDie),
       ...(opened.closeToolGate
         ? {
@@ -522,7 +467,6 @@ export const agentHostThroughHost = (
   host: HostSessionsConnection,
   gone: () => boolean,
   inServer: AgentHost,
-  /** This machine's host kept running after Gram quits: its record, and what it kept. */
   keep?: {
     readonly hooks: KeepHooks;
     readonly take: (threadId: ThreadId) => KeptSession | undefined;
@@ -536,8 +480,6 @@ export const agentHostThroughHost = (
     ...inServer,
     open: (options) =>
       Effect.suspend(() =>
-        // A host that can't hold the browser off (`browser-policy`) would run the CLI's own
-        // Chrome default, so the server's own adapter, which holds it off, opens the session.
         gone() || !opensOnHost(kind, options) || host.browserPolicy !== true
           ? inServer.open(options)
           : openOnHost(
@@ -555,10 +497,7 @@ export const agentHostThroughHost = (
                       ? { hooks: keep.hooks }
                       : { hooks: keep.hooks, attach };
                   })(),
-            ).pipe(
-              // The host went before the session opened: the server opens it instead.
-              Effect.catch((error) => (gone() ? inServer.open(options) : Effect.fail(error))),
-            ),
+            ).pipe(Effect.catch((error) => (gone() ? inServer.open(options) : Effect.fail(error)))),
       ),
     ...(invalidateRuntime === undefined
       ? {}
@@ -602,10 +541,8 @@ export const AgentHostsThroughHost: Layer.Layer<AgentHosts, never, AgentHosts | 
       const inner = yield* AgentHosts;
       const connection = (yield* LocalHostProcess).connection;
       if (connection === undefined) return inner;
-      // Absent in layers without it; off unless the host is the one kept running after Gram quits.
       const kept = Option.getOrUndefined(yield* Effect.serviceOption(KeptSessions));
       const keep = kept?.on === true ? { hooks: kept.hooks, take: kept.take } : undefined;
-      // One wrapper per agent, so the runtime always holds the same object for it.
       const wrapped = new WeakMap<AgentHost, AgentHost>();
       return AgentHosts.of({
         get: (kind) =>
@@ -677,19 +614,13 @@ export const agentHostOnMachine = (
   gone: () => boolean,
   inServer: AgentHost,
   machineName: string,
-  /** The tailnet address the machine reaches this Gram at, for its sessions' app tools. */
   origin: () => string | undefined,
-  /** Told when a session there couldn't start for its sign-in, so the machine is asked again. */
   onSignInProblem?: () => void,
-  /** Where the machine keeps what users attach, for each session's sends to carry them there. */
   attachments: AttachmentsOnMachine = () => Effect.fail(`${machineName} holds no attachments`),
-  /** The one folder attachments are carried from, on a server with no local user. */
   carriedFrom?: string,
-  /** Why its sessions can't reach their app tools now, when it isn't for being offline. */
   unreachable?: () => string | undefined,
 ): AgentHost => {
   const kind = inServer.kind;
-  /** A start that failed there, named for the machine and logged here, where nothing else is. */
   const failedThere = (error: AgentUnavailable) =>
     Effect.gen(function* () {
       yield* Effect.logWarning("machines: an agent couldn't start on a joined machine").pipe(
@@ -702,10 +633,6 @@ export const agentHostOnMachine = (
       if (isSignInProblem(error)) onSignInProblem?.();
       return yield* onMachineUnavailable(error, machineName);
     });
-  /**
-   * The app tools' endpoint as the machine reaches it: this Gram's tailnet address, where the
-   * thread's own token is let through only for a thread placed on that machine.
-   */
   const overTailnet = (options: OpenSessionOptions): OpenSessionOptions | undefined => {
     if (options.mcp === undefined) return options;
     const at = origin();
@@ -715,7 +642,6 @@ export const agentHostOnMachine = (
   };
   return {
     ...inServer,
-    // A joined machine's subscription is never identified by this server's own CLI.
     readAccountScope: (host.accountScope?.(kind) ?? Effect.succeed(undefined)).pipe(
       Effect.mapError((error) =>
         error instanceof AgentUnavailable ? error : unavailable(kind, error),
@@ -739,9 +665,7 @@ export const agentHostOnMachine = (
                   message: `This session can't run on ${machineName} yet.`,
                 }),
               )
-            : // A host there without `browser-policy` refuses the open itself
-              // (`HOST_BROWSER_POLICY_MISSING`), checked against whichever host is connected then.
-              Effect.suspend(() => {
+            : Effect.suspend(() => {
                 const reaching = overTailnet(options);
                 return reaching === undefined
                   ? Effect.fail(

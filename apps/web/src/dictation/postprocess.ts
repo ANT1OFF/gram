@@ -48,32 +48,25 @@ export const postprocess = (text: string, options: PostprocessOptions): string =
   return out;
 };
 
-// ---------------------------------------------------------------------------------------------
-// Shared
-
 const isAlnum = (c: string | undefined): boolean => c !== undefined && /^[\p{L}\p{N}]$/u.test(c);
-/** Part of a word: "uh-huh", "don't" and "um_count" are one word each. */
 const joinsWord = (c: string | undefined): boolean =>
   isAlnum(c) || c === "-" || c === "_" || c === "'" || c === "’";
 const isSpace = (c: string | undefined): boolean =>
   c !== undefined && c !== "\n" && /^\s$/u.test(c);
 const isUpper = (c: string): boolean => c !== c.toLowerCase() && c === c.toUpperCase();
 
-/** `out` without trailing spaces (never newlines) or any of `also`, never below `floor`. */
 const trimEnd = (out: string, also: string, floor = 0): string => {
   let end = out.length;
   while (end > floor && (isSpace(out[end - 1]) || also.includes(out[end - 1] ?? "\0"))) end--;
   return out.slice(0, end);
 };
 
-/** Past any spaces (not newlines) or `also` from `index`. */
 const skip = (chars: readonly string[], index: number, also: string): number => {
   let at = index;
   while (at < chars.length && (isSpace(chars[at]) || also.includes(chars[at] ?? "\0"))) at++;
   return at;
 };
 
-/** Where `words` end if they're spoken from `start` as whole words, ignoring case. */
 const phraseAt = (
   chars: readonly string[],
   start: number,
@@ -95,11 +88,6 @@ const phraseAt = (
   return joinsWord(chars[at]) ? undefined : at;
 };
 
-/**
- * Words that make the next one a noun, as in "a dot on the screen", "the colon", "start a new
- * paragraph" or "polka dot": a phrase after one stays as spoken. Not "this" or "my", which start
- * code as often ("this dot props", "my underscore var").
- */
 const DETERMINERS = new Set([
   "a",
   "an",
@@ -117,7 +105,6 @@ const DETERMINERS = new Set([
   "which",
 ]);
 
-/** Whether the last word written is one of `DETERMINERS`. */
 const afterDeterminer = (out: string): boolean => {
   const last = /(\p{L}+)[^\S\n]*$/u.exec(out)?.[1];
   return last !== undefined && DETERMINERS.has(last.toLowerCase());
@@ -127,7 +114,6 @@ interface Phrase {
   readonly words: readonly string[];
 }
 
-/** The first of `phrases` spoken at `start`; list longer phrases first. */
 const matchAt = <P extends Phrase>(
   chars: readonly string[],
   start: number,
@@ -140,11 +126,6 @@ const matchAt = <P extends Phrase>(
   return undefined;
 };
 
-/**
- * One step of a phrase pass at `index`: "literal" before a phrase writes the phrase as spoken, and
- * a phrase after a determiner stays as spoken. Returns where to continue, or `undefined` when
- * neither applies.
- */
 const verbatimAt = <P extends Phrase>(
   chars: readonly string[],
   index: number,
@@ -168,19 +149,10 @@ const verbatimAt = <P extends Phrase>(
   return undefined;
 };
 
-// ---------------------------------------------------------------------------------------------
-// Filler words, ported from Hex's filler_words.rs: a filler matches as a whole word, lowercase or
-// with only its first letter capitalised, so "umbrella", "error", "uh-huh" and "ER" stay. The comma
-// or ellipsis that comes with one goes too, the spaces around it close up, and a capitalised filler
-// that started a sentence hands its capital to the next word. Line breaks are kept. Real words such
-// as "like" or "so" are never fillers.
-
 const FILLERS = ["um", "umm", "uh", "uhh", "uhm", "erm", "er", "ah"];
 
-/** Ends a phrase, so a filler before it leaves no space. */
 const CLOSING = new Set([".", ",", ";", ":", "!", "?", ")", "]", "}", "”", "’", "…"]);
 
-/** Where the filler starting at `start` ends, if one does. */
 const fillerAt = (chars: readonly string[], start: number): number | undefined => {
   if (start > 0 && joinsWord(chars[start - 1])) return undefined;
   for (const word of FILLERS) {
@@ -195,7 +167,6 @@ const fillerAt = (chars: readonly string[], start: number): number | undefined =
   return undefined;
 };
 
-/** Where the text goes on after a filler ending at `end`, past its own comma or ellipsis. */
 const afterFiller = (chars: readonly string[], end: number): number => {
   let at = skip(chars, end, "");
   if (chars[at] === "," || chars[at] === "…") at++;
@@ -218,7 +189,6 @@ const needsSpace = (out: string): boolean => {
 export const removeFillers = (text: string): string => {
   const chars = Array.from(text);
   let out = "";
-  // A filler was just removed: the next text decides the spacing.
   let removed = false;
   let capitalize = false;
   let index = 0;
@@ -260,10 +230,6 @@ export const removeFillers = (text: string): string => {
   }
   return removed ? trimEnd(out, ",") : out;
 };
-
-// ---------------------------------------------------------------------------------------------
-// Spoken formatting, ported from Hex's spoken_formatting.rs: whole phrases become line breaks and
-// quotation marks, and the commas, periods and spaces a model puts around one go with it.
 
 type FormattingCommand =
   | { readonly kind: "break"; readonly text: string }
@@ -329,17 +295,6 @@ const emitFormatting = (
   }
 };
 
-// ---------------------------------------------------------------------------------------------
-// Spoken symbols, after Hex's spoken_symbols.rs: whole spoken words for symbols become the
-// characters, joined to their neighbours as written text joins them. The commas, periods and
-// spaces a model puts around one go with it.
-
-/**
- * Which neighbour a symbol attaches to: `next` ("@claude"), `both` ("foo_bar"), `previous` with one
- * space after ("done, thanks"), `spaced` with a space each side ("a => b"), `close` as `previous`
- * but an empty pair joins the word before ("foo()"), and `toggle` opening or closing in turn
- * ("`code`").
- */
 type Join = "next" | "both" | "previous" | "spaced" | "close" | "toggle";
 
 interface SymbolPhrase extends Phrase {
@@ -406,7 +361,6 @@ export const SYMBOLS: readonly SymbolPhrase[] = [
   sym("comma", ",", "previous"),
 ];
 
-/** After these a `previous` or `close` symbol adds no space. */
 const NO_SPACE_BEFORE = '\n,.;:!?)]}"`';
 
 const OPENER_OF: Readonly<Record<string, string>> = { ")": "(", "]": "[" };
@@ -414,7 +368,6 @@ const OPENER_OF: Readonly<Record<string, string>> = { ")": "(", "]": "[" };
 export const applySymbols = (text: string): string => {
   const chars = Array.from(text);
   const out = { text: "" };
-  // Where the last symbol written ends, so trimming never removes it.
   let floor = 0;
   let backticks = 0;
   let index = 0;
@@ -435,7 +388,6 @@ export const applySymbols = (text: string): string => {
     if (join === "toggle") join = backticks++ % 2 === 0 ? "next" : "close";
     const lineStart = /(?:^|\n)[^\S\n]*$/u.test(out.text);
     if (join === "both" && symbol === "-" && lineStart) {
-      // A list item: "dash milk" at the start of a line is "- milk".
       out.text = `${trimEnd(out.text, "")}- `;
       floor = out.text.length;
       index = skip(chars, match.end, ",.");
@@ -443,7 +395,6 @@ export const applySymbols = (text: string): string => {
     }
     if (join !== "next") out.text = trimEnd(out.text, ",", floor);
     if (join === "close") {
-      // "foo open paren close paren" is "foo()".
       const opener = OPENER_OF[symbol];
       if (
         opener !== undefined &&
@@ -457,7 +408,6 @@ export const applySymbols = (text: string): string => {
       out.text += " ";
     out.text += symbol;
     floor = out.text.length;
-    // A closing mark's punctuation is the sentence's; an opening one's is the model's.
     const next = skip(chars, match.end, join === "close" ? "" : ",.");
     const following = chars[next];
     if (join === "spaced" && following !== undefined && following !== "\n") out.text += " ";

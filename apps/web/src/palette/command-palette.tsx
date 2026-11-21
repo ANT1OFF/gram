@@ -20,10 +20,8 @@ export function CommandPalette() {
   const initialQuery = useLayoutStore((s) => s.paletteQuery);
   const initialScope = useLayoutStore((s) => s.paletteScope);
   const closePalette = useLayoutStore((s) => s.closePalette);
-  // Opens once its body is in hand, which the shell preloads after first paint.
   const body = paletteBody.useModule(requested);
   const open = requested && body !== undefined;
-  // Opened from a shortcut or the store, with no trigger to return to.
   const opener = useOpener(open);
 
   return (
@@ -40,8 +38,6 @@ export function CommandPalette() {
           data-surface="overlay"
           aria-label="Command palette"
           finalFocus={() => {
-            // A palette action can open a thread dialog before this popup's exit ends. Returning
-            // focus to the opener then steals that dialog's first keystroke (real e2e clone flow).
             if (useThreadDialogs.getState().dialog !== undefined) return false;
             return returnFocusTo(opener)();
           }}

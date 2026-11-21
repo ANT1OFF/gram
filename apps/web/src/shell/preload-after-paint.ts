@@ -45,14 +45,11 @@ export function usePreloadAfterPaint() {
         });
     };
     const frame = requestAnimationFrame(() => {
-      // Over a slow link not even the markdown: a transcript asks for it once its messages are in
-      // (see `useMarkdown`), since what is asked for first arrives first there.
       if (thisLinkIsConstrained()) return;
       loadMarkdown().catch(ignore);
       whenIdle(() => {
         preloadRightPanel().catch(ignore);
         preloadWorkspaceSheet().catch(ignore);
-        // `/settings` redirects to the page open last, which the preload follows.
         router.preloadRoute({ to: "/settings" }).catch(ignore);
         whenIdle(next);
       });

@@ -12,7 +12,6 @@ import { delimiter, dirname, isAbsolute, resolve } from "node:path";
  */
 export const SECRET_PATHS_ENV = "GRAM_SECRET_PATHS";
 
-/** Settings that name a file a deployment supplies as a secret, by their variable's name. */
 const namesSecretFile = (name: string): boolean =>
   name.startsWith("GRAM_") &&
   (name.endsWith("_TOKEN_FILE") ||
@@ -43,7 +42,6 @@ export const secretPathsFrom = (
   for (const listed of (env[SECRET_PATHS_ENV] ?? "").split(delimiter)) {
     const path = listed.trim();
     if (path === "") continue;
-    // A secret named from the working directory, or mistyped, must not leave the server unfenced.
     if (!isAbsolute(path))
       throw new Error(`${SECRET_PATHS_ENV} takes absolute paths only; ${path} isn't one.`);
     paths.add(resolve(path));
@@ -51,7 +49,6 @@ export const secretPathsFrom = (
   return [...paths];
 };
 
-/** What a read of a deployment's secret is refused with; it names only the path asked for. */
 const secretRefusal = (path: string) =>
   new InvalidState({ message: `Gram doesn't preview files that may hold credentials: ${path}` });
 

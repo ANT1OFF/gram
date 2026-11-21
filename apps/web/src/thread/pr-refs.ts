@@ -1,20 +1,12 @@
-// Pull request references in an agent's text, found where the markdown is rendered and resolved
-// against what the thread already knows. A bare `#N` doesn't say which repository it is in, so it
-// becomes a link only when exactly one repository can be meant: a wrong link is worse than none.
-// `owner/repo#N` and a github.com PR or issue URL say it themselves, and always link.
-
 import type { BoundPr, GitState, WorkerLedgerEntry } from "@gram/contracts";
 
 import { prLifecycleOf, prUrlOf, type PrLifecycle } from "@/components/pr-marks-model";
 import { identityOf, samePrIdentity, targetBadge } from "@/panels/pr-identity";
 
-/** A PR the thread knows by repository and number. */
 interface KnownPr {
-  /** `owner/repo`. */
   readonly repo: string;
   readonly number: number;
   readonly url?: string | undefined;
-  /** Its state, once a badge or the ledger has it. */
   readonly state?: PrLifecycle | undefined;
 }
 
@@ -97,7 +89,6 @@ export function prRefIndexOf({
       repo: extra.repo,
       number: extra.number,
       url: badge?.url,
-      // A followed PR is never this branch's, so its merge or close always holds.
       state: badge === undefined ? undefined : prLifecycleOf({ ...badge, headMatches: true }),
     });
   }
@@ -172,7 +163,6 @@ interface HastElement {
 
 type HastNode = HastText | HastElement | { type: string; children?: HastNode[] };
 
-/** Whose text is never read for references: code, links (a thread's among them), and headings. */
 const OPAQUE = new Set([
   "code",
   "pre",
@@ -188,19 +178,13 @@ const OPAQUE = new Set([
   "h6",
 ]);
 
-/**
- * `#N`, `repo#N` or `owner/repo#N`, starting the text or after whitespace or `(`: never inside a
- * word, a path or a URL's fragment.
- */
 const REF = /(^|[\s(])((?:[\w.-]+\/)?[\w.-]+)?#(\d+)\b/g;
 
-/** Longer than this, a bare `#N` is more likely an id or a date than a PR; a named repo has none. */
 const BARE_DIGITS = 6;
 
 const GITHUB_URL =
   /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)\/?(?:[?#]|$)/i;
 
-/** Any positive safe integer, as `parsePrRef` takes: GitHub puts no ceiling on the number. */
 const isPrNumber = (digits: string) => {
   const number = Number(digits);
   return Number.isSafeInteger(number) && number >= 1;
@@ -217,7 +201,6 @@ const refElement = (ref: PrRef, children: HastNode[]): HastElement => ({
   children,
 });
 
-/** `text` with every reference in it made a `pr-ref` element; the same node when there is none. */
 function splitPrRefs(text: HastText): HastNode[] {
   const out: HastNode[] = [];
   let last = 0;

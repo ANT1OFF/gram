@@ -2,8 +2,6 @@ import * as Schema from "effect/Schema";
 import { CodexHome } from "./codex-home.ts";
 import { ThreadId } from "./ids.ts";
 
-// Resume from history, keybindings.json and Open in editor.
-
 /** A past agent conversation for a folder, resumable into a new thread. */
 export const AgentSessionSummary = Schema.Struct({
   agentSessionId: Schema.String,

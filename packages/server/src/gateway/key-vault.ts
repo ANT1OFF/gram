@@ -21,9 +21,6 @@ export interface KeyVault {
 /** The ref a profile's key is stored under. */
 export const profileKeyRef = (profileId: string) => `profile:${profileId}`;
 
-// ---------------------------------------------------------------------------------------------
-// Electron bridge: the server asks desktop main, which owns `safeStorage`.
-
 export type VaultRequest =
   | {
       readonly type: "vault.request";
@@ -70,7 +67,6 @@ export interface VaultPort {
   on(event: "message", listener: (event: { readonly data: unknown }) => void): unknown;
 }
 
-// Main may wait on the person answering macOS's one-time keychain permission prompt.
 const BRIDGE_TIMEOUT_MS = 60_000;
 
 export const makeBridgeVault = (
@@ -127,9 +123,6 @@ export const makeBridgeVault = (
     remove: (ref) => call({ op: "delete", ref }).pipe(Effect.asVoid),
   };
 };
-
-// ---------------------------------------------------------------------------------------------
-// Browser dev mode: no Electron, so no safeStorage. Keys live only while the server runs.
 
 export const makeMemoryVault = (initial: Record<string, string> = {}): KeyVault => {
   const keys = new Map(Object.entries(initial));

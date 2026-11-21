@@ -1,8 +1,3 @@
-// The agent guide: `AGENTS.md` in Gram's data folder, written at every start from the version
-// that runs, so what it says always matches the tools and settings this Gram has. A session's tool
-// list carries each tool's description; the guide holds what is worth reading only on demand (the
-// classes, the roles, the files an agent may edit, every setting) and costs nothing until read.
-
 import type { ToolAudience } from "@gram/agents";
 import {
   type AppToolClass,
@@ -82,7 +77,6 @@ export const guideTools = (definitions: ReadonlyArray<AppToolDefinition>): Array
     }))
     .toSorted((a, b) => a.name.localeCompare(b.name));
 
-/** A cell's text on one line, its pipes escaped. */
 const cell = (text: string) => text.replaceAll("|", "\\|").replaceAll(/\s+/g, " ").trim();
 
 const variantText = (tool: GuideTool): Array<string> => {
@@ -102,7 +96,6 @@ const variantText = (tool: GuideTool): Array<string> => {
   return lines;
 };
 
-/** One tool's section: a name defined once per role (`spawn_task`) lists each role's version. */
 const toolSection = (variants: ReadonlyArray<GuideTool>): string =>
   [
     `### \`${variants[0]!.name}\``,
@@ -110,7 +103,6 @@ const toolSection = (variants: ReadonlyArray<GuideTool>): string =>
     ...variants.flatMap((tool, index) => [...(index === 0 ? [] : [""]), ...variantText(tool)]),
   ].join("\n");
 
-/** The tools by name, each name's versions together. */
 const byName = (tools: ReadonlyArray<GuideTool>): Array<ReadonlyArray<GuideTool>> => {
   const groups = new Map<string, Array<GuideTool>>();
   for (const tool of tools) {

@@ -30,7 +30,6 @@ export const diagnosticsHandlers = Effect.gen(function* () {
   const logDir = log.logDir ?? logDirFor(config.dataDir);
   const diagnostics = makeDiagnostics({ runtimes, config, log });
 
-  // The log folder is known here, so the tool that reads it registers from here too.
   yield* (yield* AppToolRegistry).register([readAppLogsTool(logDir)]);
 
   return {
@@ -38,7 +37,6 @@ export const diagnosticsHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const info = yield* diagnostics;
         const settings = yield* store.getSettings;
-        // Nothing of a thread the caller may not see (`embedding/readable-by.ts`).
         const reader = yield* currentReader;
         const logs = yield* Effect.sync(() =>
           LOG_NAMES.flatMap((name): LogTail[] => {

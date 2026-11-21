@@ -1,5 +1,3 @@
-// Opening a pull request for the current branch through `gh`, with a title and body from its commits.
-
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -65,7 +63,6 @@ export interface CreatedPr {
   readonly url: string;
 }
 
-/** Creating a PR talks to GitHub; `gh`'s 10 s default is for status reads. */
 const PR_CREATE_TIMEOUT_MS = 60_000;
 
 /** `gh pr create` for the current branch into `base`; resolves with the new PR's repo, number and URL. */
@@ -84,8 +81,6 @@ export const createPr = (
       "create",
       "--title",
       input.title,
-      // The body goes over stdin: a newline can't pass through `cmd.exe` when `gh` is a batch shim,
-      // and a long body can pass Windows' command-line limit.
       "--body-file",
       "-",
       "--base",

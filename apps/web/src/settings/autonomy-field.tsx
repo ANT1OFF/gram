@@ -119,7 +119,6 @@ export function AutonomyField({
             <span>{error}</span>
           </p>
         )}
-        {/* Keyed by the level, so the words for a new one fade in rather than swapping under the eye. */}
         <p
           key={value}
           data-testid="autonomy-description"

@@ -51,13 +51,11 @@ export type PrGlyphThread = PrBadgeThread & Pick<Thread, "extraPrs" | "babysit">
 
 const checkoutName = (checkout: Thread["checkout"]) => checkout.branch ?? checkout.path;
 
-/** The bound PR's address, on the host the branch's PR is on (GitHub Enterprise included). */
 const boundPrUrl = (branchPrUrl: string, repo: string, number: number): string => {
   const host = URL.canParse(branchPrUrl) ? new URL(branchPrUrl).origin : "https://github.com";
   return `${host}/${repo}/pull/${number}`;
 };
 
-/** Checks GitHub doesn't require are failing, which the glyph leaves out since it would merge. */
 const optionalFailing = (pr: Pick<PrFacts, "checks" | "requiredChecks">) =>
   pr.checks === "failing" && pr.requiredChecks !== undefined && pr.requiredChecks !== "failing";
 
@@ -191,7 +189,6 @@ export function PrGlyphCardEntry({
   marks?: ReturnType<typeof prMarksOf>;
 }) {
   const display = PR_GLYPH_DISPLAY[entry.glyph.kind];
-  // The review bot's and the stale read's notes are lines of their own below; keep the rest.
   const notes = entry.notes.filter(
     (note) => !note.startsWith("Review bot:") && !note.startsWith("Reviewers:"),
   );
@@ -211,7 +208,6 @@ export function PrGlyphCardEntry({
         </span>
       </span>
       <span className="flex w-full min-w-0 items-center gap-1.5 text-meta text-muted-foreground">
-        {/* Failing CI its worker is fixing is the worker's to act on: the working tone, not red. */}
         <span
           className={cn(
             "shrink-0",

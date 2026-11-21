@@ -8,13 +8,7 @@ import { toEase } from "./transitions";
 
 interface AttentionPulseProps {
   active: boolean;
-  /** Change to replay the pulses. */
   trigger?: string | number;
-  /**
-   * Draw the still ring on the children's own edge rather than a pixel outside it: for a card in
-   * a box that clips what overhangs it (a message's content does), where the ring outside lost
-   * its sides and showed along the top and bottom only.
-   */
   inset?: boolean;
   className?: string;
   children: ReactNode;

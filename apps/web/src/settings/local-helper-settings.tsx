@@ -84,7 +84,6 @@ export function LocalHelperSettings({
 }) {
   const source = helperSource(settings);
   const fallback = helperLocalFallback(settings);
-  // Automatic edits the preferred harness first; the other one is the fallback below.
   const provider = source === "codex" ? "codex" : "claude";
   const other = provider === "claude" ? "codex" : "claude";
   const refreshInfoId = useId();
@@ -118,7 +117,6 @@ export function LocalHelperSettings({
         description="Models come from your installed CLI and its login."
         keywords={["refresh", "status"]}
         detail={
-          // The last attempt, or why a refresh failed; nothing to add before either.
           retryError !== undefined || status?.lastOutcome !== undefined ? (
             <p role="status" className="text-meta text-muted-foreground">
               {retryError ?? `Last attempt: ${status?.lastOutcome}`}
@@ -194,18 +192,8 @@ export function LocalHelperSettings({
   );
 }
 
-/**
- * One provider's rows: its model, its effort, and the context it may read. The main one is what
- * helpers run on; the other is the fallback, named so.
- */
-
-/** Capitalised effort, as the effort picker names it: `Medium`. */
 const effortWord = (effort: string) => `${effort[0]!.toUpperCase()}${effort.slice(1)}`;
 
-/**
- * What "Automatic" runs a helper at on `model`: the recommendation's Cheap tier, titles at medium
- * and the rest at low, each as the model lists it; the CLI's own default for one without effort.
- */
 const automaticEffortLabel = (model: AgentModel): string => {
   const title = localHelperEffort(model, undefined, "title");
   const rest = localHelperEffort(model, undefined, "recap");

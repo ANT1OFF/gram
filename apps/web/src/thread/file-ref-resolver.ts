@@ -1,6 +1,5 @@
 import { FS_RESOLVE_LIMIT, type FsResolveResult, type ThreadId } from "@gram/contracts";
 
-/** What a path is known to be: the file it names, or `null` when it names none. */
 type FileRefEntry = { readonly resolved: string } | null;
 
 export interface FileRefResolver {
@@ -17,7 +16,6 @@ export interface FileRefResolver {
   subscribe(listener: () => void): () => void;
 }
 
-/** `map`'s value for `threadId`, made first when it has none. */
 const bucket = <V>(map: Map<ThreadId, V>, threadId: ThreadId, make: () => V): V => {
   let value = map.get(threadId);
   if (value === undefined) map.set(threadId, (value = make()));
@@ -36,7 +34,6 @@ export function createFileRefResolver(
   const known = new Map<ThreadId, Map<string, FileRefEntry>>();
   const pending = new Map<ThreadId, Set<string>>();
   const asked = new Map<ThreadId, Set<string>>();
-  /** Bumped by `refresh`: an answer asked for before it may be about checkouts the thread left. */
   const generations = new Map<ThreadId, number>();
   const listeners = new Set<() => void>();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -50,7 +47,6 @@ export function createFileRefResolver(
     for (const path of paths) inFlight.add(path);
     const generation = generations.get(threadId) ?? 0;
     const settle = (files: FsResolveResult["files"]) => {
-      // Stale: `refresh` has queued these paths again, and that call's answer is the one to keep.
       if ((generations.get(threadId) ?? 0) !== generation) return;
       const answers = bucket(known, threadId, () => new Map<string, FileRefEntry>());
       const found = new Map(files.map((file) => [file.path, file.resolved]));
@@ -64,7 +60,6 @@ export function createFileRefResolver(
     resolve(threadId, paths).then(
       (result) => settle(result.files),
       (error: unknown) => {
-        // An older server without `fs.resolve`, or a thread gone: its paths stay plain text.
         console.warn("file refs", error);
         settle([]);
       },
@@ -99,8 +94,6 @@ export function createFileRefResolver(
           known.get(threadId)!.delete(path);
           dropped = true;
         } else {
-          // Kept until the new answer comes, so a link doesn't blink; it may have moved, or a second
-          // file of its name may have appeared since.
           again.add(path);
         }
       }

@@ -13,14 +13,11 @@ import { ApiProvider } from "@/api/context";
 import { servedAllBut } from "@/api/served";
 import type { Api } from "@/api/types";
 
-/** A thread feed that ends at once, for views that subscribe to a thread the test doesn't script. */
 async function* emptyThreadFeed(): AsyncGenerator<never> {}
 
 /** Renders `ui` inside a fresh query client (no retries) and the given api. */
 export function renderWithApi(ui: ReactNode, api: Partial<Api>): RenderResult {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  // Fills only the gap, without copying: a MockApi keeps its methods and a test's own object stays live.
-  // A server that serves every RPC, unless the test says otherwise.
   const provided =
     "threadFeed" in api && "served" in api
       ? api

@@ -46,17 +46,12 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
     thread: (threadId) => world.summary(threadId).thread,
     replace: (thread) => world.replaceThread(thread),
   });
-  /** Per-thread CI rollups set by `simulateChecks`; the seed is failing. */
   const checks = new Map<ThreadId, PrStatus["checks"]>();
-  /** What the PR panel's merge, draft, close and reopen changed, per thread. */
   const prWrites = new Map<ThreadId, MockPrWrites>();
-  /** Threads whose failed checks were rerun; their detail shows the rerun as queued. */
   const rerunChecks = new Set<ThreadId>();
-  /** Threads whose branch the mock has published, and the PRs it created. */
   const published = new Set<ThreadId>();
   const createdPrs = new Map<ThreadId, NonNullable<MockCreated["pr"]>>();
   const createdBodies = new Map<ThreadId, string>();
-  /** Commits per thread that origin doesn't have yet, set by `simulateUnpushed`. */
   const unpushed = new Map<ThreadId, number>();
 
   const created = (threadId: ThreadId): MockCreated => {
@@ -64,7 +59,6 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
     return { published: published.has(threadId), ...(pr ? { pr } : {}) };
   };
 
-  /** Pushes the thread's git state with its current review counts, as the server's poll would. */
   const emitReviewState = (threadId: ThreadId) => {
     const summary = world.summary(threadId);
     const git = mockGitState(
@@ -80,7 +74,6 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
     world.publishGit(threadId, extras.length === 0 ? git : { ...git, extraPrs: extras });
   };
 
-  /** Rejects as the server does for an orchestrator, which follows no PR of its own. */
   const refuseOrchestratorPr = (threadId: ThreadId) => {
     if (world.summary(threadId).thread.role === "orchestrator") {
       throw new MockInvalidState(ORCHESTRATOR_HAS_NO_PR);
@@ -150,7 +143,6 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
         throw new Error("Auto-merge isn't allowed in babysit mode; merge by hand.");
       }
       writePr(threadId, auto ? {} : { state: "MERGED" });
-      // Like the server settling the refreshed badge: the thread completes, with one toast.
       if (!auto && thread.completedAt === undefined) {
         world.updateThread(threadId, { completedAt: Date.now() });
         world.emit({
@@ -205,7 +197,6 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
           _tag: "InvalidState",
         });
       }
-      // As the server does: publishing is for a branch origin doesn't have under its own name yet.
       const first = git?.upstream === undefined;
       published.add(threadId);
       unpushed.delete(threadId);
@@ -251,7 +242,6 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
     prBind: async (threadId, repo, number, monitor) => {
       refuseOrchestratorPr(threadId);
       const bound = await deps.bind(threadId, repo, number, monitor);
-      // Like the server: a PR bound as the main one is no longer followed as an extra.
       extraPrs.unbind(threadId, repo, number);
       emitReviewState(threadId);
       return bound;

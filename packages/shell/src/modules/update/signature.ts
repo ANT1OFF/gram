@@ -33,7 +33,6 @@ export function authenticodeScript(installer: string): string {
   ].join("; ");
 }
 
-/** One `KEY=` line's value from the probe's stdout; empty when it's missing. */
 function probeField(psStdout: string, key: string): string {
   const lines = psStdout.split("\n").map((l) => l.replace(/^\uFEFF/, "").trimStart());
   return (

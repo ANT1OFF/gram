@@ -26,7 +26,6 @@ export interface Attention {
   readonly label: string;
 }
 
-/** Nobody is working the PR in these statuses, so a change request on a thread of the user's is theirs. */
 const QUIET: ReadonlySet<string> = new Set(["idle", "cold", "ended"]);
 
 const LABELS: Record<AttentionReason, string> = {
@@ -97,17 +96,12 @@ export const ACK_LIMIT = 200;
 interface AttentionState {
   readonly ledgers: Readonly<Record<string, OrchestratorLedger>>;
   setLedger(ledger: OrchestratorLedger): void;
-  /** False until `attention.acknowledged` arrives from settings; nothing is raised before that. */
   readonly loaded: boolean;
-  /** Per thread, the attention key the user has seen. */
   readonly acknowledged: Readonly<Record<string, string>>;
-  /** Merges the saved acknowledgements under the ones seen here. */
   hydrate(saved: readonly string[]): void;
-  /** True when `key` is new for the thread. */
   acknowledge(threadId: ThreadId, key: string): boolean;
 }
 
-/** `<thread id> <key>` entries, as `attention.acknowledged` stores them, into a per-thread record. */
 const parseSaved = (saved: readonly string[]): Record<string, string> => {
   const record: Record<string, string> = {};
   for (const entry of saved) {

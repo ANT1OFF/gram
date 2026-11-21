@@ -32,7 +32,6 @@ export const YOUR_BROWSER_KEYWORDS = [
 const PATCH: Record<AgentKind, (on: boolean) => SettingsPatch> = {
   claude: (claudeInChrome) => ({ agents: { claudeInChrome } }),
   codex: (codexComputerUse) => ({ agents: { codexComputerUse } }),
-  // OpenCode has no browser of its own to turn on.
   opencode: () => ({}),
   grok: () => ({}),
   antigravity: () => ({}),
@@ -96,7 +95,6 @@ export function YourBrowserSection() {
     return {
       checked,
       onChange: apply,
-      // Off is the default, so only an on switch has something to reset.
       onReset: checked ? () => apply(false) : undefined,
       error: failed?.agent === agent ? failed.message : undefined,
     };
@@ -114,7 +112,6 @@ export function YourBrowserSection() {
     return {
       checked: kept[surface],
       onChange: apply,
-      // Kept is the default, so only one turned off has something to reset.
       onReset: kept[surface] ? undefined : () => apply(true),
       disabled: !codexOn,
       disabledReason: codexOn ? undefined : "Turn on Codex computer use first.",

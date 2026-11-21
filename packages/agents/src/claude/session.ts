@@ -133,15 +133,6 @@ import {
 /** Claude Code's ask tool, which holds the turn until the user answers (`noBlockingAsk`). */
 export const BLOCKING_ASK_TOOL = "AskUserQuestion";
 
-/**
- * One `mcpAllowlist` or `mcpDenylist` entry as Claude Code's `allowedMcpServers` and
- * `deniedMcpServers` take it. A hosted claude.ai connector isn't matched by the name Claude Code
- * shows for it ("claude.ai Teams"), only by its URL, so an entry with `://` is a URL pattern and
- * anything else a server's name. Passed as flag settings: Claude Code honours both lists from
- * there, by name and by URL, with the denylist winning (verified on SDK 0.3.292 with a temp home
- * and two local servers), where `managedSettings` is dropped whenever the organisation has a
- * managed tier. Gram's own in-process server needs no entry.
- */
 const mcpServerEntry = (entry: string): { serverName: string } | { serverUrl: string } =>
   entry.includes("://") ? { serverUrl: entry } : { serverName: entry };
 
@@ -178,13 +169,8 @@ export const widenedEntries = (
     return as !== undefined && coveredBy(allowlist, as) ? [] : [record];
   });
 
-/** What Claude Code loads when `settingSources` is left out. */
 const ALL_SETTING_SOURCES: ReadonlyArray<SettingSource> = ["user", "project", "local"];
 
-/**
- * The `allowedMcpServers` entries the other settings files Claude Code reads list, for the sources
- * it reads: the user's, under `userDir`, and the folder's own shared and local ones.
- */
 const otherAllowlists = async (
   cwd: string,
   userDir: string | undefined,
@@ -205,9 +191,7 @@ const otherAllowlists = async (
     try {
       const listed = (JSON.parse(text) as { allowedMcpServers?: unknown }).allowedMcpServers;
       if (Array.isArray(listed)) found.push(...listed);
-    } catch {
-      // Claude Code drops a settings file it can't parse, and its allowlist with it.
-    }
+    } catch (_claudeCodeDropsASettingsFileItCantParse) {}
   }
   return found;
 };
@@ -229,7 +213,6 @@ export const chromeArgs = (
     ? { chrome: null }
     : { "no-chrome": null };
 
-/** The flag settings that hold a session to `o`'s MCP lists; empty when it names neither. */
 const mcpListSettings = (
   o: McpLists,
   widened: ReadonlyArray<Record<string, unknown>> = [],
@@ -323,7 +306,6 @@ export const promptText = (input: UserInput): string => {
   return mentions.length ? `${input.text}\n\n${mentions.join(" ")}` : input.text;
 };
 
-/** `ModelRef.variant` as SDK effort. `none` sends no effort, so the model's default applies. */
 const effortOf = (model: ModelRef | undefined): EffortLevel | undefined =>
   model?.variant === undefined || model.variant === "none" ? undefined : model.variant;
 
@@ -356,7 +338,6 @@ interface Pending {
   readonly settle: (result: PermissionResult) => void;
 }
 
-/** An MCP server's permission prompt waiting on its card. */
 interface PendingPrompt {
   readonly prompt: ElicitationRequest;
   readonly settle: (result: ElicitationResult, remember: boolean) => void;
@@ -388,10 +369,8 @@ export const BROWSER_GATE_REASON =
   "Gram asks before this thread acts in your browser, where it is signed in as you, whatever " +
   "its permission mode and allow rules say.";
 
-/** Claude in Chrome's MCP server, as its tools are named (`mcp__claude-in-chrome__<tool>`). */
 const CHROME_TOOL_PREFIX = "mcp__claude-in-chrome__";
 
-/** Claude in Chrome's tools that only read the browser (CLI 2.1.322); every other one acts. */
 const CHROME_READ_TOOLS: ReadonlySet<string> = new Set([
   "find",
   "get_page_text",
@@ -412,7 +391,6 @@ export const actsInBrowser = (toolName: string): boolean =>
   toolName.startsWith(CHROME_TOOL_PREFIX) &&
   !CHROME_READ_TOOLS.has(toolName.slice(CHROME_TOOL_PREFIX.length));
 
-/** A `PreToolUse` hook's answer that sends the call to `canUseTool`, ahead of rules and mode. */
 const askFirst = (reason: string) => ({
   hookSpecificOutput: {
     hookEventName: "PreToolUse" as const,
@@ -421,10 +399,6 @@ const askFirst = (reason: string) => ({
   },
 });
 
-/**
- * A `PreToolUse` hook's answer for Gram's own tools, whose gate is inside the tool: the SDK
- * neither asks nor lets its mode, rules or classifier decide.
- */
 const APP_TOOL_ALLOWED = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse" as const,
@@ -433,7 +407,6 @@ const APP_TOOL_ALLOWED = {
   },
 };
 
-/** A `PreToolUse` hook's answer for a subagent's call to a tool only the main agent may make. */
 const SUBAGENT_DENIED = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse" as const,
@@ -443,14 +416,8 @@ const SUBAGENT_DENIED = {
   },
 };
 
-/** An explicit address of another session, which a session's own subagents never have. */
 const PEER_ADDRESS = /^(?:uds|bridge|did):/;
 
-/**
- * Whether a call would reach another session past Gram (`PEER_MESSAGING_SWITCH`). `ListAgents`
- * always would. `SendMessage` would by an explicit address, and by any name once the switch is
- * seen not to hold, since a peer's name then looks like a subagent's.
- */
 const reachesPeer = (toolName: string, toolInput: unknown, switchFailed: boolean): boolean => {
   if (toolName === "ListAgents") return true;
   if (toolName !== "SendMessage") return false;
@@ -459,8 +426,6 @@ const reachesPeer = (toolName: string, toolInput: unknown, switchFailed: boolean
   return typeof to === "string" && PEER_ADDRESS.test(to.trim());
 };
 
-/** A `PreToolUse` hook's answer for a call that would reach another session past Gram. */
-/** A `PreToolUse` hook's refusal of an address outside the sites the browser is limited to. */
 const offSiteDenied = (address: string, sites: ReadonlyArray<string>) => ({
   hookSpecificOutput: {
     hookEventName: "PreToolUse" as const,
@@ -483,7 +448,6 @@ const CANCELLED: PermissionResult = { behavior: "deny", message: "The request wa
 /** Why a call is refused while the tool gate is closed (`AgentSession.closeToolGate`). */
 export const TOOL_GATE_REASON = PAUSE_STOP_TEXT;
 
-/** A `PreToolUse` hook's answer while the tool gate is closed. */
 const GATE_CLOSED = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse" as const,
@@ -543,13 +507,7 @@ export const SHELL_OUTPUT_POLL_MS = 1_000;
 export const SHELL_OUTPUT_READ_TIMEOUT_MS = 5_000;
 /** Unanswered reads in a row after which a task counts as one the CLI won't read. */
 export const SHELL_OUTPUT_TIMEOUTS = 3;
-/** How long a closing session gives the turn under way to end on an interrupt and report it. */
 const CLOSE_INTERRUPT_MS = 1_500;
-/**
- * How long a closing session waits for its CLI to save and exit once its input ends, before the
- * SDK's `close` SIGTERMs it 2 s later. With `CLOSE_INTERRUPT_MS`, within the shutdown's 4 s for
- * the sessions.
- */
 const CLOSE_EXIT_MS = 2_000;
 
 type ShellRead =
@@ -557,11 +515,6 @@ type ShellRead =
   | { readonly kind: "timeout" }
   | { readonly kind: "refused" };
 
-/**
- * `Query.getTaskOutput`: the `get_task_output` control request (`SDKControlGetTaskOutputRequest`
- * in SDK 0.3.296's `sdk.d.ts`, "a host polls it while the task runs"). The SDK's `sdk.mjs` has the
- * method, but its `Query` type leaves it out, so it is looked up rather than called.
- */
 const taskOutputReader = (q: object): ((taskId: string) => Promise<unknown>) | undefined => {
   const method: unknown = Reflect.get(q, "getTaskOutput");
   return typeof method === "function"
@@ -590,15 +543,10 @@ export const makeClaudeHost = (
   Effect.gen(function* () {
     const sdk = yield* ClaudeSdk;
     const environment = yield* ClaudeEnvironment;
-    // Optional: without it, a thread on a gateway profile can't open.
     const gatewayKeys = yield* Effect.serviceOption(GatewayKeyProvider);
     const newId = config.newId ?? randomUUID;
     const interruptTimeoutMs = config.interruptTimeoutMs ?? 5_000;
     const startupTimeoutMs = config.startupTimeoutMs ?? 30_000;
-    /**
-     * What sessions have learned a model costs, for the next session's first-turn estimate. Kept per
-     * profile: a gateway may price the same model id differently from the subscription.
-     */
     const learnedRates = new Map<string, Map<string, number>>();
 
     const releasedSwitches = new Set<string>();
@@ -608,7 +556,6 @@ export const makeClaudeHost = (
     >();
     const openSession = Effect.fnUntraced(function* (o: OpenSessionOptions) {
       if (o.dreamFilesOnly === true) o = { ...o, confineWrites: true };
-      // On a joined machine's host the bridge is the control plane's, over its MCP endpoint.
       if (
         o.dreamFilesOnly === true &&
         o.audience === "dream" &&
@@ -621,16 +568,12 @@ export const makeClaudeHost = (
           message: "Memory update file bridge is unavailable; no session was started",
         });
       const prepared = yield* environment.prepare;
-      // Someone else's tree (a fork's PR head): the folder's project and local settings are its
-      // author's, with hooks, env and allow rules, so only the user's own load.
       const settingSources: ReadonlyArray<SettingSource> | undefined =
         o.untrustedTree === true
           ? (config.settingSources ?? ALL_SETTING_SOURCES).filter(
               (source) => source !== "project" && source !== "local",
             )
           : config.settingSources;
-      // A thread on a gateway profile runs `claude` against the gateway with the user's key, so the
-      // subscription guard doesn't apply to it; every other thread keeps the guard.
       const profileId = o.model?.profileId;
       const gateway =
         profileId === undefined
@@ -647,7 +590,6 @@ export const makeClaudeHost = (
             });
       const accountScope =
         gateway === undefined ? yield* signedInAccount(environment, prepared) : undefined;
-      // A profile without models would hand `claude` an empty model id.
       if (gateway !== undefined && (o.model?.model ?? "").trim() === "") {
         return yield* new AgentUnavailable({
           agent: "claude",
@@ -663,22 +605,16 @@ export const makeClaudeHost = (
               gateway.key,
               gatewayModelEnv(gateway.profile.models, o.model?.model),
             );
-      // Without tool search every schema of every server would sit in the context all session.
       const noToolSearch = o.mcpNoneWithoutToolSearch === true && !toolSearchOn(childEnv);
       const lists: OpenSessionOptions = noToolSearch ? { ...o, mcpAllowlist: [] } : o;
-      // Narrowed by either list, the session's listing is a part of the account's catalogue.
       const whole = gateway === undefined && o.confineWrites !== true && !narrowsMcp(lists);
       const seen = (detailed: boolean, connectors: ReadonlyArray<ConnectorStatus>) =>
         o.onConnectorsSeen?.({ detailed, whole, connectors });
-      // Claude Code's Bash keeps the directory a `cd` left it in for the rest of the session; this
-      // puts it back in the project folder after every command.
       const env = {
         ...(o.peerMessaging === true ? withPeerMessaging(childEnv) : childEnv),
         ...(o.pinCwd === true ? { CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1" } : {}),
         ...(o.confineWrites === true ? CONFINED_MCP.env : {}),
       };
-      // Another source's allowlist would widen the session's, so what it adds is denied
-      // (`widenedEntries`).
       const widened =
         o.confineWrites !== true && lists.mcpAllowlist !== undefined
           ? widenedEntries(
@@ -688,14 +624,10 @@ export const makeClaudeHost = (
               ),
             )
           : [];
-      // The one server the session was given by address, as a remote server of this session
-      // alone: nothing is written to the user's or the folder's config. Never when confined.
       const extraServer =
         o.mcpServer === undefined || o.confineWrites === true
           ? undefined
           : { [o.mcpServer.name]: { type: "http" as const, url: o.mcpServer.url } };
-      // WebSearch is read once, for the model the session opens on; `needsReopenFor` reopens the
-      // session on a switch across the EU boundary, the only kind that changes it.
       const disallowedTools = [
         ...new Set([
           ...(o.confineWrites === true ? CONFINED_DISALLOWED : []),
@@ -712,8 +644,6 @@ export const makeClaudeHost = (
       };
       const rates = learnedRates.get(profileId ?? "") ?? new Map<string, number>();
       learnedRates.set(profileId ?? "", rates);
-      // Claude Code carries a resumed or forked session's cost on from its transcript, and the
-      // server adds a thread's sessions up, so the mapper takes the carried total back off.
       const readTranscript = sdk.importSessionToStore;
       const resumeId = o.resumeId;
       const runningCli =
@@ -724,7 +654,6 @@ export const makeClaudeHost = (
         resumeId === undefined || readTranscript === undefined || !restoresSessionCost(runningCli)
           ? 0
           : yield* Effect.tryPromise(() => savedSessionCost(readTranscript, resumeId, o.cwd)).pipe(
-              // An unreadable transcript is one the CLI can't resume from either.
               Effect.orElseSucceed(() => 0),
             );
       const mapper = makeMapper({
@@ -732,10 +661,8 @@ export const makeClaudeHost = (
         rates,
         carriedCost,
       });
-      // Connectors that used to work and need signing in again, from each init and status read.
       let lapsed = NO_LAPSED_CONNECTORS;
       let everConnected: ReadonlySet<string> = new Set();
-      /** The latest listing, judged again once the remembered names are in. */
       let lastListed: ReadonlyArray<SeenServer> = [];
       const observeConnectors = (servers: ReadonlyArray<SeenServer>): void => {
         lastListed = servers;
@@ -747,18 +674,13 @@ export const makeClaudeHost = (
       void (config.readEverConnected?.(env) ?? Promise.resolve([])).then(
         (names) => {
           everConnected = new Set(names);
-          // An init may have come before the read finished.
           if (names.length > 0) observeConnectors(lastListed);
         },
-        // Unreadable is the same as a Claude Code that remembers none: only this session counts.
         () => undefined,
       );
       const input = new AsyncPushQueue<SDKUserMessage>();
       const pending = new Map<RequestId, Pending>();
       const stderr: Array<string> = [];
-      // A session opened away from the server (in the host process) has no registry here: it serves
-      // the tools the server's MCP endpoint lists, in-process all the same, each call going to the
-      // endpoint, whose transport carries the approval gate.
       const appServer = o.appTools
         ? buildAppToolServer(o.threadId, o.appTools, sdk, o.audience)
         : o.remoteAppTools
@@ -808,8 +730,6 @@ export const makeClaudeHost = (
         });
       };
 
-      // Where the main agent is working, so the thread can follow it into another worktree: after a
-      // tool call that moved it, and at every turn end. Subagent excursions don't count.
       let reportedCwd = o.cwd;
       const reportCwd: HookCallbackMatcher["hooks"][number] = async (hookInput) => {
         if (hookInput.agent_id !== undefined) return {};
@@ -820,11 +740,7 @@ export const makeClaudeHost = (
         return {};
       };
 
-      // A `/model` typed into the thread switches the session without going through `setModel`, so
-      // the thread would keep naming the model it was opened with.
       const reportModel: HookCallbackMatcher["hooks"][number] = async (hookInput) => {
-        // Every main-loop switch, our own `setModel` and a fallback included: the context meter
-        // picks the running model's `modelUsage` entry by the variant tag only this id carries.
         if (hookInput.hook_event_name === "PostModelSwitch" && hookInput.agent_id === undefined) {
           mapper.setSessionModel(hookInput.to_model);
         }
@@ -833,14 +749,12 @@ export const makeClaudeHost = (
         return {};
       };
 
-      // The summary a compaction leaves the main agent with, for the transcript's marker.
       const reportCompaction: HookCallbackMatcher["hooks"][number] = async (hookInput) => {
         if (hookInput.hook_event_name === "PostCompact" && hookInput.agent_id === undefined) {
           for (const event of mapper.compacted(hookInput.compact_summary)) emit(event);
         }
         return {};
       };
-      // Who started the compaction under way, which its `compacting` status doesn't say.
       const reportCompacting: HookCallbackMatcher["hooks"][number] = async (hookInput) => {
         if (hookInput.hook_event_name === "PreCompact" && hookInput.agent_id === undefined) {
           for (const event of mapper.compacting(hookInput.trigger)) emit(event);
@@ -848,51 +762,25 @@ export const makeClaudeHost = (
         return {};
       };
 
-      // The outward gate. A hook runs ahead of the loaded allow
-      // rules and of the permission mode, and its "ask" is what sends the call to `canUseTool`:
-      // an allow rule such as `Bash(git *)` is otherwise decided before `canUseTool` is asked, and
-      // `bypassPermissions` doesn't ask at all. Verified live in every mode on SDK 0.3.272.
-      // Subagents' calls are gated too, so there is no `agent_id` filter here.
-      //
-      // Gram's own tools are the exception, let through here in every mode: the registry's
-      // gate inside each tool is what asks about them, with the same rules as for
-      // every other agent. The SDK's own layer could only be skipped (by `bypassPermissions`, an
-      // allow rule, an "always" answer, or Auto's classifier) or ask a second time, so it doesn't
-      // get a say; a deny rule still outranks a hook's "allow".
-      //
-      // The gate is levelled: at `irreversible` a push and a new PR get an empty answer here, which
-      // leaves them to the mode and the rules like any other command.
-      //
-      // `o.confineWrites` takes the shell, the network and subagents away (`CONFINED_DISALLOWED`
-      // below): `acceptEdits` does confine an unasked edit to the session's folders, but it asks
-      // about the shell, and a dream that reached for `find … | xargs … && cat` to read its inputs
-      // stopped on a card five seconds into a live run, with nobody watching to answer it.
       const level = gateLevel(o.outwardGate);
       const gateAsksAbout = (toolName: string, toolInput: unknown): boolean =>
         gateAsks(level, outwardBashKind(toolName, toolInput));
       const isAppTool = (toolName: string): boolean => appServer?.names.has(toolName) ?? false;
-      // Every MCP server but Gram's own is a connector here, a subagent's call to one included.
       const asksAboutConnector = (toolName: string): boolean =>
         o.gateConnectors === true && toolName.startsWith("mcp__") && !isAppTool(toolName);
-      // A hook, not a deny rule: a rule would take the tool from the main agent too.
       const mainAgentOnly = new Set([...MAIN_AGENT_APP_TOOLS].map(appToolName));
       const toolGate = makeToolGate();
-      // Claude Code's peer messaging is off by the env switch alone; a CLI that dropped or renamed
-      // it would still list `ListAgents` at init, and from then on every send is refused here.
       const peerAllowed = o.peerMessaging === true;
       const peerSwitchSet =
         (env as Record<string, string | undefined>)[PEER_MESSAGING_SWITCH] === "0";
       let peerSwitchFailed = false;
-      // The sites a session given the browser may open (`browserScope.sites`); absent, any.
       const limitedSites =
         o.browser === true && o.browserScope?.sites !== undefined && o.browserScope.sites.length > 0
           ? o.browserScope.sites
           : undefined;
-      // Each browser action asks, whatever the gate (`browserAsk`).
       const browserAsks = o.browser === true && o.browserAsk === true;
       const gateCalls: HookCallbackMatcher["hooks"][number] = async (hookInput, toolUseId) => {
         if (hookInput.hook_event_name !== "PreToolUse") return {};
-        // Before every other answer: a closed gate refuses even Gram's own tools.
         if (!toolGate.admit(toolUseId ?? hookInput.tool_use_id)) return GATE_CLOSED;
         if (isAppTool(hookInput.tool_name)) {
           return hookInput.agent_id !== undefined && mainAgentOnly.has(hookInput.tool_name)
@@ -939,7 +827,6 @@ export const makeClaudeHost = (
         appServer !== undefined ||
         o.dreamFilesOnly === true ||
         o.gateConnectors === true;
-      // An admitted call ends here however it ends: run, failed, or refused by a rule or a card.
       const toolEnded: HookCallbackMatcher["hooks"][number] = async (hookInput, toolUseId) => {
         if (
           hookInput.hook_event_name === "PostToolUse" ||
@@ -951,12 +838,10 @@ export const makeClaudeHost = (
         return {};
       };
 
-      /** Set once the scope closes, so a card still being raised is denied instead. */
       let closed = false;
       const canUseTool: CanUseTool = (toolName, toolInput, { signal, ...options }) =>
         new Promise<PermissionResult>((resolve) => {
           if (signal.aborted) return resolve(CANCELLED);
-          // Reached only if an "ask" rule outranks the hook's "allow"; the tool's gate still asks.
           if (isAppTool(toolName)) return resolve({ behavior: "allow", updatedInput: toolInput });
           if (o.dreamFilesOnly === true)
             return resolve({
@@ -968,8 +853,6 @@ export const makeClaudeHost = (
             toolName,
             toolInput,
             options,
-            // "Always" would write an allow rule, and the gate's hook asks again whatever the
-            // rules say.
             gateAsksAbout(toolName, toolInput) || asksAboutConnector(toolName),
           );
           const settle = (result: PermissionResult) => {
@@ -989,12 +872,7 @@ export const makeClaudeHost = (
         });
 
       const prompts = new Map<RequestId, PendingPrompt>();
-      /** Prompts granted for the session, by `elicitationKey`. */
       const granted = new Set<string>();
-      /**
-       * An MCP server asks before it acts, as a computer-use server does for each app. A yes or
-       * no is a card; anything else is declined with a notice, as the SDK does with no handler.
-       */
       const onElicitation: OnElicitation = (prompt, { signal, requestId }) =>
         new Promise<ElicitationResult>((resolve) => {
           if (signal.aborted || closed || o.dreamFilesOnly === true)
@@ -1025,16 +903,11 @@ export const makeClaudeHost = (
           emit({ type: "status", status: "awaitingApproval" });
         });
 
-      // Our own id for new sessions and forks, so identity is known before the first turn.
       const agentSessionId =
         o.resumeId !== undefined && o.fork !== true ? o.resumeId : (o.sessionId ?? newId());
       let processId: number | undefined;
       let ownedChild: ChildProcess | undefined;
       let acceptSwitchStartup: (() => void) | undefined;
-      // What the CLI's own exit says once its input ends: it runs on through a turn under way,
-      // and exits 1 when its last result was an error, else 0 (Claude Code 2.1.299). Exit 1 is
-      // expected only on an error result read for the latest turn: a turn starting clears the
-      // last one's, so a crash (exit 1) after an interrupt that reported no result isn't orderly.
       let turnRunning = false;
       let resultFailed: boolean | undefined;
       const turnStarts = (): void => {
@@ -1051,28 +924,22 @@ export const makeClaudeHost = (
         }
       };
       let initialized = false;
-      // Set once the pump reads: what the CLI says after the pump stopped, to the turn's end.
       let readToTurnEnd: (() => Promise<void>) | undefined;
       const executable = prepared.sdkExecutable;
       const options: Options = {
         ...(executable === undefined ? {} : { pathToClaudeCodeExecutable: executable }),
         env,
         cwd: o.cwd,
-        // The SDK's default spawn, plus the child's pid for port chips. A custom spawn takes over
-        // stderr, so it's forwarded to `stderr` below.
         spawnClaudeCodeProcess: ({ command, args, cwd, env: spawnEnv, signal }) => {
           const attempt =
             o.switchStartup === undefined ? undefined : switchAttempts.get(o.switchStartup);
           if (attempt !== undefined) {
             if (!attempt.allowSpawn || attempt.spawned)
               throw new Error("This switch attempt no longer permits a child to start.");
-            // Before spawn: an exception from spawn is unknown ownership, never fabricated no-child proof.
             attempt.spawned = true;
           }
           const child = spawn(command, args, {
             cwd,
-            // A child that holds a setup-token token gets the token-child policy here too, after
-            // the SDK's own changes (it turns `DEBUG_CLAUDE_AGENT_SDK` into `DEBUG`).
             env: spawnEnvFor(spawnEnv),
             signal,
             stdio: ["pipe", "pipe", "pipe"],
@@ -1080,7 +947,6 @@ export const makeClaudeHost = (
           });
           processId = child.pid;
           ownedChild = child;
-          // The session's close ends it; an update attests that it has (`stopOwnedAgentsForUpdate`).
           ownAgentChild(child, "session", () =>
             turnRunning ? undefined : resultFailed === true ? 1 : 0,
           );
@@ -1090,15 +956,12 @@ export const makeClaudeHost = (
           child.stderr.setEncoding("utf8").on("data", (data: string) => options.stderr?.(data));
           return child;
         },
-        // Always said: a session that wasn't lent the browser, `browser` unsaid included, runs
-        // with `--no-chrome`, never the CLI's own default.
         extraArgs: chromeArgs(o, gateway !== undefined),
         includePartialMessages: true,
         forwardSubagentText: true,
         canUseTool,
         onElicitation,
         hooks: {
-          // The tool gate (`closeToolGate`) rides on the same hook, so it is there only where that is.
           ...(gated
             ? {
                 PreToolUse: [{ hooks: [gateCalls] }],
@@ -1126,13 +989,7 @@ export const makeClaudeHost = (
           : settingSources === undefined
             ? {}
             : { settingSources: [...settingSources] }),
-        // Agent SDK 0.3.286 leaves an omitted mode to Claude Code, which starts a gateway session
-        // in auto mode, decided by its classifier instead of by `canUseTool`.
         permissionMode: o.permissionMode ?? "default",
-        // Claude Code only lets a session into `bypassPermissions` if it launched in that mode or
-        // with this flag: without it, picking Bypass on a live thread is refused ("the session was
-        // not launched with --dangerously-skip-permissions") and the agent keeps asking. The flag
-        // only makes the mode available; nothing bypasses until the user picks it.
         allowDangerouslySkipPermissions: true,
         ...(o.model === undefined ? {} : { model: o.model.model }),
         ...(effort === undefined ? {} : { effort }),
@@ -1149,7 +1006,6 @@ export const makeClaudeHost = (
           : {
               mcpServers: {
                 ...extraServer,
-                // Last, so no server a session is given can stand in for Gram's own.
                 ...(appServer === undefined ? {} : { [APP_TOOL_SERVER]: appServer.config }),
               },
             }),
@@ -1160,22 +1016,12 @@ export const makeClaudeHost = (
         ...(disallowedTools.length === 0 ? {} : { disallowedTools }),
         ...(o.confineWrites === true ? { strictMcpConfig: CONFINED_MCP.strictMcpConfig } : {}),
         settings: {
-          // Confinement outranks an allowlist: an exception for a confined session is its own
-          // decision.
           ...(o.confineWrites === true
             ? { allowedMcpServers: [...CONFINED_MCP.allowedMcpServers] }
             : mcpListSettings(lists, widened)),
           ...(speed === undefined ? {} : { fastMode: speed === "fast" }),
-          // A peer session's message would reach the agent past Gram's routing and fence.
           ...REFUSE_PEER_MESSAGES,
         },
-        // Claude Code's own prompt, plus the thread's role prompt if it has one. Omitting the option
-        // isn't the CLI default: the SDK sends an empty custom prompt, and the model gets a
-        // 136-character system prompt instead of the ~27k one a terminal session gets (SDK 0.3.284,
-        // CLI 2.1.286). `snapshot: false` because the default records the first value in the
-        // transcript and replays it on every resume, so a changed or withdrawn role prompt would
-        // never take effect (verified on SDK 0.3.272), nor would this fix reach a thread that
-        // recorded the empty prompt.
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
@@ -1184,10 +1030,6 @@ export const makeClaudeHost = (
         },
       };
 
-      // The CLI ended as its own protocol ends it, so it saves its session and exits by itself
-      // rather than to the SIGTERM `close` sends a CLI still running 2 s on: a turn under way is
-      // interrupted and its result read, then the input ends. One that does neither in time is
-      // left to `close`, and an update's shutdown check takes that exit as not orderly.
       const stopCli = (query: Query) =>
         Effect.gen(function* () {
           const child = ownedChild;
@@ -1223,8 +1065,6 @@ export const makeClaudeHost = (
           orElse: () => Effect.fail(new Error(`no response within ${startupTimeoutMs} ms`)),
         }),
         Effect.mapError((error) => {
-          // A spawn in a folder that is gone fails with ENOENT, which the SDK words as its binary
-          // failing to launch: a merged worker's worktree, removed after its PR landed.
           const cwdGone =
             /failed to launch|ENOENT/.test(describeError(error)) && !existsSync(o.cwd);
           const detail = cwdGone
@@ -1232,7 +1072,6 @@ export const makeClaudeHost = (
             : `${describeError(error)}${stderr.length ? `\n${stderr.join("\n")}` : ""}`;
           return new AgentUnavailable({
             agent: "claude",
-            // `--resume` of an id that never got a transcript; the runtime opens it fresh instead.
             reason:
               o.resumeId !== undefined && /No conversation found/i.test(detail)
                 ? "session-not-found"
@@ -1272,26 +1111,10 @@ export const makeClaudeHost = (
       emit(identity);
       emit({ type: "status", status: "idle" });
 
-      // Background tasks still running, by the SDK's task id, which is what `stopTask` takes. The
-      // mapper tracks the same tasks by tool-use id, for the transcript; this is the handle to stop
-      // one, kept here because only the session holds the query.
       const backgroundTasks = new Set<string>();
-      // An interrupting steer goes at priority 'now': the CLI aborts the running iteration (what it
-      // cut off reads "The user doesn't want to take this action…") and returns an aborted result
-      // before continuing with the input (CLI 2.1.286). That result ends an SDK iteration, not the
-      // logical turn the runtime is still following.
       let interrupts = 0;
-      // A plain steer goes at priority 'next' under its own uuid and cancels nothing: the CLI folds
-      // it into the running turn between tool rounds, or, if the turn ends first, runs it as the
-      // turn after. Each waits here until a result lists it among the prompts it consumed.
       const pendingSteers = new Set<string>();
       let continuingSteer = false;
-      /**
-       * Takes the steers `result` consumed off the list, and says whether one still waits, so the
-       * CLI runs it as the turn after this one: the logical turn goes on. A result that names no
-       * consumed prompts (an older CLI) goes by `queued_turn_count`, and without that the steer
-       * counts as taken.
-       */
       const steerStillWaits = (result: SDKResultMessage): boolean => {
         if (pendingSteers.size === 0) return false;
         const consumed =
@@ -1328,7 +1151,6 @@ export const makeClaudeHost = (
       const trackBackgroundTask = (message: SDKMessage) => {
         if (message.type !== "system") return;
         if (message.subtype === "background_tasks_changed") {
-          // The level also has the shells the CLI moved to the background itself.
           backgroundTasks.clear();
           for (const task of message.tasks)
             if (task.ambient !== true) backgroundTasks.add(task.task_id);
@@ -1376,7 +1198,6 @@ export const makeClaudeHost = (
           });
         }
         trackBackgroundTask(message);
-        // Guarded, since a throw here would end the session over a report nobody needs.
         if (
           message.type === "system" &&
           message.subtype === "init" &&
@@ -1394,7 +1215,6 @@ export const makeClaudeHost = (
         if (message.type === "result") {
           interrupts = 0;
           continuingSteer = continues;
-          // A late result after a result-less idle still describes the same SDK iteration.
           resultlessIdle = false;
         }
         for (const event of mapper.map(message)) {
@@ -1431,7 +1251,6 @@ export const makeClaudeHost = (
           }
           if (event.type === "usage") {
             iterationTokens = event.tokens;
-            // Cost is already session-cumulative and context belongs to the latest request.
             emit({
               ...event,
               tokens:
@@ -1446,12 +1265,8 @@ export const makeClaudeHost = (
       };
 
       const iterator = q[Symbol.asyncIterator]();
-      // A continuation timeout leaves the read in flight: its next message must not be discarded
-      // or overtaken by another iterator.next() call.
       let pendingNext: Promise<IteratorResult<SDKMessage, void>> | undefined;
-      // Only once the pump has stopped, so this is the iterator's one reader.
       readToTurnEnd = async () => {
-        // `observeTurn` clears `turnRunning` once the turn's result is read.
         while (true) {
           if (!turnRunning) return;
           const next = await (pendingNext ??= iterator.next());
@@ -1460,8 +1275,6 @@ export const makeClaudeHost = (
           observeTurn(next.value, false);
         }
       };
-      // Interrupting this must not wait for `next()`: it only settles once the query closes, and
-      // the scope closes the query after interrupting the pump.
       const nextMessage = Effect.callback<IteratorResult<SDKMessage, void>, unknown>((resume) => {
         pendingNext ??= iterator.next();
         pendingNext.then(
@@ -1477,8 +1290,6 @@ export const makeClaudeHost = (
       );
       const pump = Effect.gen(function* () {
         while (true) {
-          // If the CLI aborts for a steer but drops its continuation, don't keep the
-          // logical turn open forever. A running continuation's tools have their own watchdog.
           const next = yield* continuingSteer
             ? nextMessage.pipe(
                 Effect.timeoutOrElse({
@@ -1543,12 +1354,6 @@ export const makeClaudeHost = (
       );
       yield* Effect.forkScoped(pump);
 
-      // A running shell command's output, read back from the CLI while its Bash call waits (the
-      // stream carries none until it exits) or while it runs in the background (its call already
-      // has its result). A control request, not a tool call, so the model sees nothing of it. A task the CLI won't read for us (an older CLI, a diskless or
-      // redacting lane) is left alone after its first refusal or a reply in another shape, or
-      // after SHELL_OUTPUT_TIMEOUTS unanswered reads in a row. Shells are read side by side, so
-      // one slow read holds up no other.
       const readTaskOutput = taskOutputReader(q);
       if (readTaskOutput !== undefined) {
         const unreadable = new Set<string>();
@@ -1636,7 +1441,6 @@ export const makeClaudeHost = (
                   }),
                 ),
           ),
-        // Single consumer: the thread runtime.
         events: Stream.fromQueue(events).pipe(
           Stream.map((event) =>
             event.type === "identity" && accountScope !== undefined
@@ -1651,7 +1455,6 @@ export const makeClaudeHost = (
             return Effect.die(new Error(`send: messageId must be a UUID, got "${messageId}"`));
           }
           return Effect.sync(() => {
-            // The next reply answers this send, not a background subagent's report.
             mapper.sent();
             resetUsage();
             turnStarts();
@@ -1679,8 +1482,6 @@ export const makeClaudeHost = (
             pendingSteers.add(uuid);
             input.push(userMessage(message, { priority: "next", uuid }));
           }),
-        // One `stopTask` each. A task that ended in the meantime rejects, which is the outcome
-        // wanted; its `task_notification` takes it off the list either way.
         stopBackgroundTasks: Effect.suspend(() => {
           const ids = [...backgroundTasks];
           return Effect.forEach(
@@ -1692,7 +1493,6 @@ export const makeClaudeHost = (
             },
           ).pipe(Effect.as(ids.length));
         }),
-        // A task that ended in the meantime rejects: that is a `false`, as for one never running.
         stopTask: (taskId) =>
           backgroundTasks.has(taskId)
             ? Effect.tryPromise(() => q.stopTask(taskId)).pipe(
@@ -1730,9 +1530,6 @@ export const makeClaudeHost = (
             if (p === undefined) return;
             const resolution = resolveRequest(p.request, p.input, answer, settingSources);
             const mode = resolution.setMode;
-            // Switch before returning from `canUseTool`, so the next tool call sees the new mode.
-            // A refused mode must not strand the answer: the request settles either way, and the
-            // session stays in the mode it was in.
             if (mode !== undefined) {
               yield* setMode(mode).pipe(
                 Effect.catch((refused) =>
@@ -1749,10 +1546,6 @@ export const makeClaudeHost = (
             p.settle(resolution.result);
           }),
         setMode,
-        // `gatewayModelEnv` routes subagents by the opening model's data zone, and the child's env
-        // can't change, so a switch across the EU boundary reopens rather than leave an EU
-        // thread's subagents on US routes (or a US thread's on EU ones). So does one between a
-        // model with hosted web search and one without, which `disallowedTools` was set for.
         needsReopenFor: (model) =>
           gateway !== undefined &&
           (inEuZone(model) !== inEuZone(o.model?.model) ||
@@ -1771,8 +1564,6 @@ export const makeClaudeHost = (
               );
               if (problem !== undefined) throw new Error(problem);
             }
-            // Disable Fast before switching to a model that doesn't support it. Flag overlays
-            // affect this session only; never write user/project settings or invoke /fast.
             if (model.speed === "standard" && model.speed !== speed) {
               await q.applyFlagSettings({ fastMode: false });
               speed = model.speed;
@@ -1784,7 +1575,6 @@ export const makeClaudeHost = (
                 },
               });
             }
-            // Before the await, so the hook's resolved id lands after what was merely asked for.
             mapper.setSessionModel(model.model);
             await q.setModel(model.model);
             advertise(model.model);
@@ -1801,7 +1591,6 @@ export const makeClaudeHost = (
             }
             const next = effortOf(model);
             if (next === effort) return;
-            // `null` resets to the model's default effort.
             await q.applyFlagSettings({ effortLevel: next ?? null });
             effort = next;
           }).pipe(Effect.orDie),
@@ -1817,7 +1606,6 @@ export const makeClaudeHost = (
               );
             },
           }),
-          // What the options above let in: none when confined, else the lists there are.
           ...(o.confineWrites === true ? { allowlist: [] } : reportedLists(lists)),
         },
         addDirectories: (paths) =>
@@ -1857,7 +1645,6 @@ export const makeClaudeHost = (
       });
 
     let models: { readonly list: ReadonlyArray<AgentModel>; readonly at: number } | undefined;
-    // Bumped by each reset, so a listing that began before one can't store what it got after.
     let modelsGeneration = 0;
     const modelsLock = yield* Semaphore.make(1);
     const fetchModels = Effect.gen(function* () {
@@ -1872,9 +1659,6 @@ export const makeClaudeHost = (
               ...(prepared.sdkExecutable === undefined
                 ? {}
                 : { pathToClaudeCodeExecutable: prepared.sdkExecutable }),
-              // The listing needs no MCP server, and Claude Code connects every one it has as it
-              // starts, only to drop them at `close` a moment later: a remote server is connected
-              // and a stdio server is started and killed for nothing.
               strictMcpConfig: CONFINED_MCP.strictMcpConfig,
               env: { ...prepared.env, ...CONFINED_MCP.env },
               cwd: homedir(),
@@ -1915,9 +1699,6 @@ export const makeClaudeHost = (
       if (generation === modelsGeneration) models = { list, at: yield* Clock.currentTimeMillis };
       return list;
     });
-    // What the account offers changes under a running server (a model granted, or withdrawn), so a
-    // listing is only trusted for `MODELS_TTL_MS`. A transient failure keeps the last list, but
-    // an authentication failure must withdraw it instead of presenting stale account access.
     const listModels = modelsLock.withPermits(1)(
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
@@ -1969,11 +1750,7 @@ export const makeClaudeHost = (
         Effect.sync(() => releasedSwitches.has(id) || switchAttempts.get(id)?.notStarted === true),
       capabilities: CLAUDE_CAPABILITIES,
       open,
-      // Each session runs its own process, so only sessions opened from now on start the new one.
-      // A new CLI, or settings re-read, may offer other models, so the next listing asks afresh.
       invalidateRuntime: environment.invalidate.pipe(Effect.andThen(forgetModels)),
-      // The new process reads settings, MCP config, claude.ai connectors and CLAUDE.md itself; only
-      // the executable and the login shell's environment are kept, and re-read here.
       reloadConfig: () => environment.invalidate.pipe(Effect.andThen(forgetModels)),
       listModels: () => listModels,
       readSubscriptionLimits: Effect.gen(function* () {
@@ -2040,7 +1817,6 @@ export const makeClaudeHost = (
             deleteSession: ({ cwd, agentSessionId }) =>
               Effect.tryPromise({
                 try: async () => {
-                  // Only a session this folder's listing shows, never another project's transcript.
                   const listed = await sdkListSessions({ dir: cwd });
                   if (!listed.some((info) => info.sessionId === agentSessionId)) return false;
                   await sdkDeleteSession(agentSessionId, { dir: cwd });
@@ -2068,8 +1844,6 @@ export const makeClaudeHost = (
       ...(sdkArchiveSession === undefined || sdkUnarchiveSession === undefined
         ? {}
         : {
-            // Scoped to the folder's project, as `deleteSession`; the SDK throws for a session it
-            // doesn't find there.
             setSessionArchived: ({ cwd, agentSessionId, archived }) =>
               Effect.tryPromise({
                 try: () =>
@@ -2086,7 +1860,6 @@ export const makeClaudeHost = (
       ...(sdkSessionMessages === undefined
         ? {}
         : {
-            // Scoped to the folder's project: another project's transcript reads as empty.
             previewSession: ({ cwd, agentSessionId }) =>
               Effect.tryPromise({
                 try: () => sdkSessionMessages(agentSessionId, { dir: cwd }),
@@ -2111,7 +1884,6 @@ export const makeClaudeHost = (
                   }),
               }).pipe(
                 Effect.flatMap((messages) =>
-                  // The SDK answers an id this folder doesn't have with no messages, not an error.
                   messages.length === 0
                     ? Effect.fail(
                         new NotFound({

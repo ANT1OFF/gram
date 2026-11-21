@@ -56,11 +56,6 @@ export const Route = createFileRoute("/settings")({
   component: SettingsLayout,
 });
 
-/**
- * Settings: the groups beside the open page. A search shows every page's matches instead, the
- * open page's among them without remounting it, so a draft on it survives the search; Enter opens
- * the first match's page with it marked.
- */
 function SettingsLayout() {
   const headingRef = useSettingsKeyboard();
   const [query, setQuery] = useState("");
@@ -77,15 +72,11 @@ function SettingsLayout() {
     },
   });
   const pathname = useLocation({ select: (location) => location.pathname });
-  // A page's own sub-pages, such as one workspace's settings, keep its tab selected.
-  // On Gram's own every page; in front of an embedding app its own and the ones of Gram's it keeps.
   const pages = shownSettingsPages();
   const current = pages.find(
     (page) => pathname === page.path || pathname.startsWith(`${page.path}/`),
   );
   const subpage = current !== undefined && pathname !== current.path;
-  // From the location rather than `Route.useSearch()`, which lags a commit behind the path when a
-  // link moves between two pages under this layout, so the page would arrive without its highlight.
   const highlight = useLocation({ select: (location) => highlightOf(location.search) });
   const searching = searchWords(query).length > 0;
   useEffect(() => {
@@ -101,9 +92,6 @@ function SettingsLayout() {
   const phone = usePhone();
   const navigate = useNavigate();
   const router = useRouter();
-  // A page the embedding app left out (a link from a menu, or an old address) opens the first.
-  // Only while the window is still in Settings: on a step out, the location moves before this
-  // layout unmounts, and sending it back here would undo Back and every link out of Settings.
   const first = pages[0];
   useEffect(() => {
     if (
@@ -115,13 +103,11 @@ function SettingsLayout() {
       void navigate({ to: first.path as "/settings/general", replace: true });
   }, [current, first, pathname, navigate]);
   const resultsRef = useRef<HTMLDivElement>(null);
-  /** Opens the page of the first setting the search finds, with that setting marked. */
   const openFirstMatch = () => {
     const path = firstMatchedPage(resultsRef.current);
     const page = pages.find((each) => each.path === path);
     if (page === undefined) return;
     const words = query.trim();
-    // Once the page's code is in: the results went at once and the page came a few frames later.
     void router
       .preloadRoute({ to: page.path })
       .catch(() => undefined)
@@ -146,9 +132,6 @@ function SettingsLayout() {
           currentPage={current?.id}
           headingRef={headingRef}
           needsYou={
-            // The overview's pill, in its place: what needs you sits at the top of the column left
-            // of the page in every view, Settings too. Before setup the title bar's Inbox has it.
-            // A phone's header has the Inbox already, so the row would say it twice.
             beforeSetup || phone ? undefined : (
               <NeedsYouEntry
                 variant="row"
@@ -164,7 +147,6 @@ function SettingsLayout() {
                 if (!searching && searchWords(next).length > 0) holdScroll();
                 setQuery(next);
               }}
-              // Back on the heading, the next Esc leaves Settings.
               onLeave={() => headingRef.current?.focus({ preventScroll: true })}
               onSubmit={openFirstMatch}
               inputRef={searchRef}
@@ -179,9 +161,6 @@ function SettingsLayout() {
             ref={resultsRef}
             data-settings-results
             className={cn(
-              // Beside the nav and leaning into the room past it (`settings-column`), so the eye
-              // crosses no blank band between a page's name and its first control, and a wide
-              // window keeps no dead half to the page's right.
               "settings-column flex flex-col gap-10 px-8 py-6 @max-2xl/settings:gap-8! @max-2xl/settings:p-4!",
               current?.wide &&
                 !searching &&
@@ -215,8 +194,6 @@ function SettingsLayout() {
                   searching
                 >
                   {Search && (
-                    // The page's settings arrive on the first search. Until they do, the marker
-                    // keeps "No settings match" from showing over an answer still loading.
                     <Suspense fallback={<span hidden data-settings-loading />}>
                       <Search />
                     </Suspense>
@@ -232,10 +209,6 @@ function SettingsLayout() {
   );
 }
 
-/**
- * One page under its heading. While searching, the heading links to the page and the page shows
- * only what the query finds; opening it marks those same settings there.
- */
 function PageSection({
   page,
   query,
@@ -249,7 +222,6 @@ function PageSection({
   query: string;
   spotlight?: boolean;
   searching: boolean;
-  /** One of the page's own sub-pages is open, which brings its own heading. */
   subpage?: boolean;
   onOpen: () => void;
   children: ReactNode;
@@ -270,8 +242,6 @@ function PageSection({
         data-settings-page={page.path}
         className="flex flex-col gap-6 text-reading"
       >
-        {/* On a phone the page's actions go under its description, which keeps the column's
-            width: beside the heading, "Restore defaults" squeezed it into three short lines. */}
         <header
           className={cn(
             "flex items-start gap-3 phone:flex-col phone:gap-1",
@@ -323,7 +293,6 @@ function PageSection({
             )}
           </div>
           {!searching && (Actions || restore.button) && (
-            // A phone's button is padded 16 px: pulled back so its words start on the text's edge.
             <div className="flex shrink-0 items-center gap-1 phone:-ms-4">
               {restore.button}
               {Actions && <Actions />}
@@ -338,7 +307,6 @@ function PageSection({
   );
 }
 
-/** The end of a group's own page: a row for each page that opens from it, with a short value. */
 function GroupSubpages({ page }: { page: SettingsPage }) {
   const pages = subpagesOf(page.group);
   if (pages.length === 0) return null;

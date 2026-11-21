@@ -1,13 +1,3 @@
-// A joined machine's long steps (its resume, readying it to stop) as jobs: started by one call,
-// followed by others, each shorter than its caller's own deadline
-// (`docs/design/long-steps-as-jobs.md`). A job runs in this server's scope, not its caller's, so
-// it outlives the call that started it. A machine runs one job at a time; a second waits queued,
-// and its budget starts once it runs. At most one job of a kind is queued or running per machine:
-// a start that comes meanwhile, or that names the key of one still kept, gets that one back.
-//
-// Jobs are this process's alone: after a restart none is known, and the caller starts again. What
-// makes that safe is the step's own durable record (`StopMarks`), not the job.
-
 import { HostFailed, type HostId, type HostUnavailable, type ThreadId } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -106,7 +96,6 @@ export interface MachineJobs {
   readonly interrupt: (id: string) => Effect.Effect<void>;
 }
 
-/** The most jobs kept, ended ones dropped oldest first past it. */
 const JOBS_MAX = 512;
 
 const active = (job: MachineJob) => job.state === "queued" || job.state === "running";
@@ -124,7 +113,6 @@ export const makeMachineJobs = (): Effect.Effect<MachineJobs, never, Scope.Scope
   Effect.gen(function* () {
     const run = yield* FiberSet.makeRuntime<never>();
     const entries = new Map<string, Entry>();
-    /** One job at a time per machine. */
     const turns = makeKeyedLock<HostId>();
     let counter = 0;
 
@@ -136,7 +124,6 @@ export const makeMachineJobs = (): Effect.Effect<MachineJobs, never, Scope.Scope
       if (!active(entry.job)) Deferred.doneUnsafe(entry.ended, Exit.void);
     };
 
-    /** Drops ended jobs kept past `JOB_KEPT_MS`, and the oldest ended past `JOBS_MAX`. */
     const prune = (at: number) => {
       for (const [id, entry] of entries)
         if (!active(entry.job) && at - (entry.job.endedAt ?? at) > JOB_KEPT_MS) entries.delete(id);
@@ -191,7 +178,6 @@ export const makeMachineJobs = (): Effect.Effect<MachineJobs, never, Scope.Scope
       ),
     });
 
-    /** Fails once the job goes `budgetMs` without progress. */
     const watchdog = (entry: Entry, budgetMs: number): Effect.Effect<never, HostFailed> =>
       Effect.gen(function* () {
         while (true) {
@@ -290,7 +276,6 @@ export const makeMachineJobs = (): Effect.Effect<MachineJobs, never, Scope.Scope
         const seen = options.seen;
         if (waitMs === 0 || seen === undefined || entry.job.version > seen || !active(entry.job))
           return entry.job;
-        // Changes one at a time until past `seen`, or the wait is up.
         yield* Effect.gen(function* () {
           while (entry.job.version <= seen && active(entry.job))
             yield* Deferred.await(entry.changed);
@@ -317,7 +302,6 @@ export const makeMachineJobs = (): Effect.Effect<MachineJobs, never, Scope.Scope
     };
   });
 
-/** What a failed job's route would answer: away is a conflict, a refusal the machine's own. */
 const errorOf = (exit: Exit.Exit<unknown, HostFailed | HostUnavailable>) => {
   if (Exit.isSuccess(exit)) return { status: 500, message: "It failed." };
   const error = Option.getOrUndefined(Cause.findErrorOption(exit.cause));

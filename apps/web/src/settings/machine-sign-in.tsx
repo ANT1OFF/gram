@@ -17,7 +17,6 @@ import {
   MachinesError,
 } from "./machines-api";
 
-/** The grid the sign-in terminal opens at, before it fits its box. */
 const COLS = 100;
 const ROWS = 16;
 
@@ -41,7 +40,6 @@ export function MachineSignIn({
   machine: JoinedMachine;
   onClose: () => void;
 }) {
-  // Each run is its own terminal: Run again starts a fresh one.
   const [attempt, setAttempt] = useState(0);
   return (
     <SignInRun
@@ -66,7 +64,6 @@ function SignInRun({
   const queryClient = useQueryClient();
   const [stage, setStage] = useState<Stage>({ kind: "opening" });
   const opened = useRef<TerminalId | undefined>(undefined);
-  /** Set once the sign-in was checked after this terminal: closing it then needn't ask again. */
   const checked = useRef(false);
 
   useEffect(() => {
@@ -83,7 +80,6 @@ function SignInRun({
       });
     return () => {
       live = false;
-      // Closing the panel ends its shell, and asks the machine again how its sign-in stands.
       if (opened.current !== undefined) void api.terminalClose(opened.current).catch(() => {});
       opened.current = undefined;
       if (!checked.current)

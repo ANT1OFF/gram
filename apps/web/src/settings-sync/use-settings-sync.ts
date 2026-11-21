@@ -39,8 +39,6 @@ export function useSettingsSync() {
     };
   }, [api]);
 
-  // The overview's mode is pushed from the layout store, like the layout itself; the copy of the
-  // settings Settings reads (its rows, Restore defaults) follows it at once.
   useEffect(
     () =>
       useLayoutStore.subscribe((state, before) => {
@@ -55,7 +53,6 @@ export function useSettingsSync() {
       }),
     [],
   );
-  // The sections Settings turns off, the same way.
   useEffect(
     () =>
       useLayoutStore.subscribe((state, before) => {

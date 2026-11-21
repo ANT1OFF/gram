@@ -37,8 +37,6 @@ export const moveToWorktreeTool = (
       Effect.gen(function* () {
         const tool = "move_to_worktree";
         const thread = yield* store.getThread(threadId);
-        // The worktree is made on this machine, from this disk's repository: a thread whose
-        // session runs on another machine would be moved off its own folder onto this one's.
         if (sessionHostOf(thread) !== LOCAL_HOST_ID) {
           return yield* new AppToolError({ tool, message: RUNS_ELSEWHERE });
         }
@@ -50,7 +48,6 @@ export const moveToWorktreeTool = (
           (yield* store.listThreads).filter((t) => t.id !== threadId),
           LOCAL_HOST_ID,
         );
-        // Someone else's code stays someone else's: the new worktree is marked so too.
         const untrusted = thread.checkout.untrusted === true;
         const checkout = yield* checkouts
           .prepare(

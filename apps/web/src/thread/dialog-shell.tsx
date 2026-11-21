@@ -61,12 +61,9 @@ export function PhoneSheetHeader({
 }
 
 /** The window's dim behind a dialog or a sheet, fading with it. */
-// On the popups' own layer: each backdrop comes just before its popup in the page, so a dialog
-// opened beside an open sheet (not inside it) dims and covers the sheet as well as the page.
 export const DIALOG_BACKDROP =
   "fixed inset-0 z-50 scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0";
 
-/** Whether what renders here is inside one of these overlays, so a dialog opened in it is nested. */
 const InsideOverlay = createContext(false);
 
 /** Wraps an overlay's content, so the dialogs opened from it know they are nested. */
@@ -204,7 +201,6 @@ export function Sheet({
           <OverlayContent>
             <SheetHeader title={title} beside={beside} actions={actions} closeLabel={closeLabel} />
             <div
-              // Scrolls by keyboard where it holds nothing to focus, as a page read in it may.
               tabIndex={0}
               className={cn(
                 "min-h-0 flex-1 overflow-y-auto p-5 outline-none focus-visible:focus-ring-inset",

@@ -16,10 +16,6 @@ import { useFlash } from "@/lib/timers";
 
 import { useDoc } from "./doc-queries";
 
-/**
- * The doc's own headings on the pane's scale, as Memory's rendered files have them: its `# Title`
- * at the pane title's size rather than the transcript's largest, so it reads beside the panel.
- */
 const HEADINGS = {
   h1: ({ children }: ComponentProps<"h1">) => (
     <h3 className="mt-5 mb-2 text-title first:mt-0">{children}</h3>
@@ -49,10 +45,6 @@ export function withoutRepeatedTitle(content: string, title: string): string {
 
 const sameWords = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
 
-/**
- * Its tables read in the page's own scroll at their full height, with no box of their own to
- * scroll and no toolbar: Copy Markdown already copies the doc, tables and all.
- */
 const DOC_TABLES = { table: false } as const;
 
 /**
@@ -75,7 +67,6 @@ export function DocView({
   const doc = useDoc(workspaceId, id);
   const ref = useRef<HTMLElement>(null);
   const now = useNow(true, ref, 60_000);
-  /** The Markdown being edited and the revision it was opened at; absent while reading. */
   const [draft, setDraft] = useState<{ text: string; revision: number } | undefined>();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>();
@@ -183,10 +174,6 @@ export function DocView({
         </div>
       </header>
       {draft === undefined ? (
-        // Styled by the transcript's own rules (`data-transcript`): the reading size and measure
-        // set in Settings → Appearance → Reading, and its scale of headings, code and tables.
-        // A table keeps only its own edge, as everywhere (globals.css), and here its cells pad
-        // by a list's step so a narrow panel wraps them less.
         <div
           data-transcript=""
           data-testid="doc-body"

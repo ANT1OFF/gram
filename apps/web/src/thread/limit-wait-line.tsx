@@ -46,7 +46,6 @@ export function LimitWaitLine({
   const wait = thread.limitWait;
   const [now, setNow] = useState(() => Date.now());
   const [pending, setPending] = useState(false);
-  // Only to turn "resumes 12:50" into "on hold" once the time passes with the thread still held.
   useEffect(() => {
     if (wait === undefined) return;
     const left = wait.resumeAt - Date.now();
@@ -102,8 +101,6 @@ export function LimitWaitLine({
         )}
       </div>
       {wait.detail !== undefined && (
-        // What the provider said, under the line and in line with its words: the reply it came as
-        // is not shown.
         <p data-testid="limit-wait-detail" className="line-clamp-2 pl-6">
           {wait.detail}
         </p>

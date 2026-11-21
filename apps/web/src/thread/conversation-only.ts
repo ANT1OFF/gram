@@ -13,11 +13,6 @@ import { hasOwnImages } from "./tool-images";
 export const isWork = (part: MessagePart): boolean =>
   isToolPart(part) || part.type === "reasoning" || part.type === "data-memory-write";
 
-/**
- * What the agent and Gram keep track of around the conversation, which the mode also leaves out:
- * a compaction, a restarted session, an undone turn, a wait, a report from a monitor, a dream, a
- * handoff between agents.
- */
 const AROUND: ReadonlySet<string> = new Set([
   "data-compaction",
   "data-session-restart",
@@ -35,10 +30,6 @@ const AROUND: ReadonlySet<string> = new Set([
  */
 export const leavesOut = (part: MessagePart): boolean => isWork(part) || AROUND.has(part.type);
 
-/**
- * Parts that make a person's side of the transcript something Gram wrote rather than they did: a
- * review monitor's notice, the orchestrator's digest, the request to compact an idle session.
- */
 const NOTICES: ReadonlySet<string> = new Set([
   "data-review-notice",
   "data-human-review-notice",
@@ -50,7 +41,6 @@ const NOTICES: ReadonlySet<string> = new Set([
 export const isNotice = (message: GramUIMessage): boolean =>
   message.parts.some((part) => NOTICES.has(part.type));
 
-/** Parts that draw nothing wherever they are. A tool's image is drawn for its call (`showsImages`). */
 const SILENT: ReadonlySet<string> = new Set([
   "step-start",
   "data-tool-image",
@@ -72,7 +62,6 @@ export function showsInConversation(message: GramUIMessage): boolean {
   return shows;
 }
 
-/** Stored messages keep their identity, so each is read once. */
 const shown = new WeakMap<GramUIMessage, boolean>();
 
 function draws(message: GramUIMessage): boolean {
@@ -87,10 +76,6 @@ function draws(message: GramUIMessage): boolean {
   );
 }
 
-/**
- * Whether any of a message's tool calls returned an image: a screenshot or a picture it read stays
- * in the conversation, as a thumbnail where the call was, though the call itself is left out.
- */
 const showsImages = (message: GramUIMessage): boolean =>
   message.parts.some(
     (part) => part.type === "data-tool-image" || (isToolPart(part) && hasOwnImages(part)),

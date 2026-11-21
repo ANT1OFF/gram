@@ -46,13 +46,11 @@ export function MachineLostCard({
   const [viewing, setViewing] = useState(false);
   const canResume = useServes("thread.resumeAfterMachineLost");
   const canDiff = useServes("thread.savedDiff");
-  // The last save before the loss: its time and its files, as the machine said them.
   const saved = useThreadsStore((s) => savedBefore(s.byId[threadId]?.thread.savedWork, error));
   const count = saved === undefined ? 0 : saved.files.length + saved.more;
   const state = useThreadsStore((s): MachineLostState => {
     const summary = s.byId[threadId];
     const current = summary?.thread.lastError;
-    // Gone, or resumed: its error no longer says the machine was lost.
     if (summary === undefined || current === undefined) return "resumed";
     if (current.at === error.at && current.machineLost === undefined) return "resumed";
     if (current.at !== error.at)

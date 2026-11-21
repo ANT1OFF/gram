@@ -101,9 +101,7 @@ export interface SessionPolicyDeps {
 export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
   const { resumeOptions } = makeResumePlans({ store });
   let sessionPolicy: SessionPolicyPort | undefined;
-  /** Policy failure keeps strict gates, guided native approvals, and every Dream's bounded bridge. */
   const policyFor = (thread: Thread): Effect.Effect<SessionPolicy> =>
-    // A profile's charter, gate and MCP server hold whatever the port says, and when it fails.
     Effect.map(rolePolicyFor(thread), (policy) => withProfile(policy, thread));
 
   const rolePolicyFor = (thread: Thread): Effect.Effect<SessionPolicy> =>
@@ -126,7 +124,6 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
           ),
         );
 
-  /** A session of `thread` is opening; a failing port changes nothing about the open. */
   const opening = (thread: Thread): Effect.Effect<void> =>
     sessionPolicy?.opening === undefined
       ? Effect.void
@@ -140,7 +137,6 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
             ),
           );
 
-  /** The mode a switch's confirmed session moves to before its release; none if the port fails. */
   const modeAfterSwitch = (thread: Thread): Effect.Effect<PermissionMode | undefined> =>
     sessionPolicy?.modeAfterSwitch === undefined
       ? Effect.succeed(undefined)
@@ -155,7 +151,6 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
             ),
           );
 
-  /** The delivery `thread`'s role hands a switch over with, if it has one of its own. */
   const switchHandoff = (thread: Thread): Effect.Effect<SystemDelivery | undefined> =>
     sessionPolicy?.switchHandoff === undefined
       ? Effect.succeed(undefined)
@@ -180,7 +175,6 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
         Effect.gen(function* () {
           const thread = yield* store.getThread(threadId);
           const settings = yield* store.getSettings;
-          // The options the next open resumes or forks with, as `openSession` reads them.
           const resume = yield* resumeOptions(thread, undefined);
           return browserStatus(thread, settings, yield* policyFor(thread), resume);
         }),

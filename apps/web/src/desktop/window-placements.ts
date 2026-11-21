@@ -2,7 +2,6 @@ import type { ThreadId, WindowPlacement } from "@gram/contracts";
 import { create } from "zustand";
 
 interface WindowPlacementsState {
-  /** Every window (this one included) and the threads it shows. */
   readonly windows: readonly WindowPlacement[];
   setWindows(windows: readonly WindowPlacement[]): void;
 }

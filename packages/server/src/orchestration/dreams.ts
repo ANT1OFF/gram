@@ -5,20 +5,6 @@ import {
   defaultDreamModel,
   makeAutomaticDream,
 } from "./automatic-dream.ts";
-// A dream's life: gathering what it reads, running it as a visible thread in a folder of its own,
-// judging what it left behind, and the user's Adopt or Discard. The folder is `dream-files.ts`'s,
-// discovery is `import.ts`'s, the words are `dream-prompt.ts`'s; this module owns the row and its
-// transitions.
-//
-// Three invariants. **Adoption policy belongs to the user**: reviewed adoption is an RPC;
-// explicit per-run auto adoption is server-owned, never an agent tool. **Nothing the
-// dream could write is believed**: completion re-hashes the inputs against the manifest kept
-// outside its folder, the output is read back under memory's rules, and the review is recomputed
-// at adoption rather than remembered. And **a row leaves `running` exactly once**, through
-// `settle`, which re-reads it under a lock, so a turn end, a closed thread, a cancel and the
-// setting going off can race without a dream ending twice.
-//
-// A dream's cost is shown, never enforced: `usage` is what its thread reported.
 
 import {
   DREAM_BUDGET_TOKENS_DEFAULT,
@@ -189,34 +175,25 @@ export interface DreamsShape {
 
 export class Dreams extends Context.Service<Dreams, DreamsShape>()("@gram/server/Dreams") {}
 
-/** What the consumer fiber works through, one at a time, in the order things happened. */
 type Signal =
   | { readonly type: "turnEnd"; readonly thread: Thread; readonly end: ObservedTurnEnd }
   | { readonly type: "hub"; readonly event: ServerEvent };
 
 const refuse = (message: string) => new InvalidState({ message });
-/** An automatic launch's refusal is a deferral, which keeps its batch for a later try. */
 const refuseOrDefer = (automatic: boolean, message: string) =>
   automatic ? new AutomaticDreamDeferred({ message }) : refuse(message);
 
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${count} ${count === 1 ? one : many}`;
 
-/** One transcript on its way into a dream, with what orders it and what the row remembers of it. */
 interface Gathered extends DreamSessionFile {
-  /** Epoch ms of its last activity; 0 when nothing says. */
   readonly at: number;
   readonly threadId?: ThreadId;
   readonly agentSession?: DreamAgentSession;
-  /** How far a Gram thread was read; its file name is given once the order is known. */
   readonly read?: Omit<DreamRead, "file">;
-  /** New messages of it left for the next dream, past what one file holds. */
   readonly left?: number;
-  /** What it is, for `input/INDEX.md`: `orchestrator`, `worker`, `thread` or `agent session`. */
   readonly kind?: string;
-  /** The digest its file opens with, when some of it was consolidated before. */
   readonly digest?: string;
-  /** `Unread.unsaved`. */
   readonly unsaved?: boolean;
 }
 
@@ -253,11 +230,6 @@ export interface Unread {
   readonly unsaved?: boolean;
 }
 
-/**
- * A fingerprint of a dream's candidate memory, so an adoption can tell the output the user
- * reviewed from one rewritten since: the dream's thread stays open after it completes, and one
- * more turn in it may write `output/` again.
- */
 const outputDigest = (output: DreamOutput): string => {
   const hash = createHash("sha256");
   for (const file of output.files.toSorted((a, b) => a.path.localeCompare(b.path))) {
@@ -266,7 +238,6 @@ const outputDigest = (output: DreamOutput): string => {
   return hash.digest("hex");
 };
 
-/** The `data-dream-report` card of a dream that has ended. */
 const dreamReportOf = (
   dream: Dream,
   files: ReadonlyArray<DreamFileDiff>,
@@ -284,16 +255,10 @@ const dreamReportOf = (
     : { reportExcerpt: report.trim().slice(0, DREAM_REPORT_EXCERPT_MAX) }),
 });
 
-/**
- * The dream's report with what Gram's own check of its output still finds, under a heading of its
- * own, so the reviewer sees a broken link or a split subject the dream left without hunting for
- * it. Nothing is added when the check is clean.
- */
 const reportWithChecks = (output: {
   readonly files: ReadonlyArray<MemorySetFile>;
   readonly report?: string | undefined;
 }): { readonly report?: string } => {
-  // Tidiness (a long index line, a missing description) is the dream's to see with `dream_check`.
   const problems = lintMemory(output.files).filter(
     (problem) => problem.kind !== "no_description" && problem.kind !== "index_line_long",
   );
@@ -307,10 +272,6 @@ const reportWithChecks = (output: {
   };
 };
 
-/**
- * A fingerprint of the three sides of a conflict, which a merge belongs to: a live write or a
- * rewritten output since makes it a merge of something else, so it is no longer offered.
- */
 const conflictSides = (file: DreamFileDiff): string =>
   createHash("sha256")
     .update(JSON.stringify([file.before ?? null, file.after ?? null, file.current ?? null]), "utf8")
@@ -318,11 +279,9 @@ const conflictSides = (file: DreamFileDiff): string =>
 
 const mergeKey = (dreamId: DreamId, path: string) => `${dreamId}\0${path}`;
 
-/** `≈80k tokens`: a count of `estimateTokens`, rounded as the estimate deserves. */
 const tokensText = (tokens: number): string =>
   `≈${tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : tokens} tokens`;
 
-/** `12 threads (340 new messages, ≈80k tokens)`. */
 const backlogText = (backlog: DreamBacklog): string =>
   `${plural(backlog.threads, "thread")} (${
     backlog.messages === 0 ? "" : `${plural(backlog.messages, "new message")}, `
@@ -358,7 +317,6 @@ export const readingOrder = (unread: ReadonlyArray<Unread>): ReadonlyArray<Unrea
 export const digestOf = (unread: Unread): string | undefined =>
   unread.earlier === undefined || unread.rewound === true ? undefined : unread.held?.digest;
 
-/** What a header's message range and dates can grow by past those of a file's first message. */
 const DELTA_RANGE_SLACK = 32;
 
 /** The header of an archived transcript: everything before the line that opens its record. */
@@ -367,14 +325,8 @@ export const archiveHeader = (text: string): string => {
   return end === -1 ? "" : text.slice(0, end);
 };
 
-/** Room in one session file for the new messages, besides its header and context. */
 const DELTA_MAX_CHARS = TRANSCRIPT_MAX_CHARS - 4 * TRANSCRIPT_CONTEXT_MAX_CHARS;
 
-/**
- * An unread part as the file a dream reads, with how far that takes its watermark. Past
- * `maxChars` only the oldest of the new messages are taken, at least one: the mark ends on the last
- * taken, so the rest wait for the next dream rather than being cut from the middle.
- */
 const gatheredOf = (unread: Unread, maxChars = DELTA_MAX_CHARS): Gathered => {
   if (unread.whole !== undefined) {
     const held = unread.held;
@@ -498,9 +450,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
       const archive = yield* ThreadArchive;
       const hosts = yield* AgentHosts;
       const orchestration = yield* Orchestration;
-      // Who each joined machine was started for, where one was; absent where none can join.
       const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
-      // Absent in runtime-only layers, where an import asks for each project's root alone.
       const worktrees = Option.getOrUndefined(yield* Effect.serviceOption(Worktrees));
       const importDeps: ImportDeps = {
         hosts,
@@ -511,24 +461,13 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
       };
 
       const signals = yield* Queue.unbounded<Signal>();
-      /** Two starts for one workspace must not both find it free. */
       const startLock = yield* Semaphore.make(1);
-      /** Serialises every transition of a dream's row. */
       const rowLock = yield* Semaphore.make(1);
-      /** Serialises adoption and discard, including duplicate user requests. */
       const adoptionLock = yield* Semaphore.make(1);
-      /** The running dreams by the thread each runs as: what a turn end is looked up in. */
       const running = new Map<ThreadId, DreamId>();
-      /** Dreams Gram has sent back once to fix what `lintMemory` found; held only while they run. */
       const checkedOnce = new Set<DreamId>();
-      /**
-       * The merges asked for, by dream and path, with the sides each read. Held here and nowhere
-       * else, so an adoption's `merged` can only take a text the server made: a restart forgets
-       * them, and the user merges again.
-       */
       const merges = new Map<DreamId, Map<string, { readonly sides: string; state: DreamMerge }>>();
       const mergeFibers = yield* FiberMap.make<string>();
-      /** Forgets a dream's merges and stops the ones still running. */
       const dropMerges = (dreamId: DreamId) =>
         Effect.gen(function* () {
           for (const path of merges.get(dreamId)?.keys() ?? []) {
@@ -574,11 +513,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           return { version: after.version, files: current, digest: memorySnapshotDigest(after) };
         });
 
-      // -------------------------------------------------------------------------------------
-      // Gathering (inputs are files)
-      // -------------------------------------------------------------------------------------
-
-      /** What of an open thread is past `held`, its watermark; `undefined` when nothing is. */
       const unreadOfThread = (
         thread: Thread,
         held: DreamWatermark | undefined,
@@ -624,10 +558,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           };
         });
 
-      /**
-       * What of an archived transcript is past `held`, by its anchors. One from before anchors is
-       * read whole, unless it was archived no later than its mark was read.
-       */
       const unreadOfArchive = (
         workspaceId: WorkspaceId,
         entry: Pick<ArchivedThread, "threadId" | "archivedAt">,
@@ -644,13 +574,10 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             source: "archive" as const,
             at: entry.archivedAt,
             held,
-            // The archive is the workspace's own, so an orchestrator archived there was its own.
-            // Only the header says what the thread was; a message may quote a `Source:` line.
             ownOrchestrator: /^Source: orchestrator thread /m.test(archiveHeader(text)),
           };
           const parsed = parseArchived(text);
           if (parsed === undefined) {
-            // Read whole once: archived no later than its mark was read, it holds nothing new.
             if (held !== undefined && held.readAt >= entry.archivedAt) return undefined;
             return {
               ...common,
@@ -691,7 +618,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           };
         });
 
-      /** The watermarks of memory `version`; none for a version no dream consolidated. */
       const marksOf = (
         state: WorkspaceState,
         version: string,
@@ -743,12 +669,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           };
         });
 
-      /**
-       * What a `dream` reads of `projects`' threads and the archive: what is past the watermarks of
-       * memory `version`, offered to the budget in reading order (`readingOrder`) and filled by
-       * `fillBudget`. What doesn't fit keeps its watermark, so it is the next dream's to read, and
-       * is counted as the backlog.
-       */
       const planDream = (
         state: WorkspaceState,
         version: string,
@@ -762,8 +682,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           const unread: Array<Unread> = [];
           const wanted = new Set<ProjectId>(projects.map((project) => project.id));
           const open = new Set<string>();
-          // Never a thread readable by someone the workspace isn't readable by: what a dream
-          // writes, everyone who sees the workspace reads (`embedding/readable-by.ts`).
           const holder = state.workspace.orchestratorThreadId;
           const reader = { subject: readableByOfWorkspace(state.workspace.id, holder) };
           for (const thread of yield* store.listThreads) {
@@ -777,7 +695,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             .list(state.workspace.id)
             .pipe(Effect.orElseSucceed(() => []));
           for (const entry of archived) {
-            // A reopened thread is read where it lives now.
             if (open.has(entry.threadId)) continue;
             const one = yield* unreadOfArchive(
               state.workspace.id,
@@ -792,9 +709,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               blocks: one.blocks,
               ...(one.whole === undefined
                 ? {
-                    // The header, the quoted context and the range lines each file is written with:
-                    // rendered as for its first message alone with a `Later:` line, its body empty,
-                    // since the bodies are what `fillBudget` counts itself.
                     overheadChars:
                       renderDelta({
                         title: one.title,
@@ -838,12 +752,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           return { sessions, plan, notes };
         });
 
-      /**
-       * The transcripts a dream reads. An explicit selection is read whole. Without one, an
-       * `import` reads what discovery found, and a `dream` what of the workspace's threads and
-       * archived transcripts is past the watermarks of the memory version it starts from: what that
-       * memory has not consolidated yet.
-       */
       const gather = (
         state: WorkspaceState,
         input: StartDreamInput,
@@ -943,15 +851,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           };
         });
 
-      // -------------------------------------------------------------------------------------
-      // Transitions
-      // -------------------------------------------------------------------------------------
-
-      /**
-       * Takes a dream out of `running`, once. `next` is asked with the row as it is now, since a
-       * closed thread has already had its `threadId` cleared by the store. `undefined` when the
-       * dream had already ended, or is gone.
-       */
       const settle = (dreamId: DreamId, next: (dream: Dream, now: number) => Dream) =>
         rowLock.withPermits(1)(
           Effect.gen(function* () {
@@ -969,7 +868,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
       const usageOf = (threadId: ThreadId | undefined) =>
         threadId === undefined ? Effect.succeed(undefined) : store.lastTurnUsage(threadId);
 
-      /** The card in the dream's own thread, and the word to everyone watching the workspace. */
       const announce = (
         dream: Dream,
         review: ReadonlyArray<DreamFileDiff>,
@@ -1018,11 +916,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           return ended;
         });
 
-      /**
-       * Drain already authorized file operations and revoke staged/new ones before validation.
-       * Match settlement's row -> store lock order. Release both before filesystem reads or
-       * runtime actions, so cancellation can still win while validation is in progress.
-       */
       const closeFiles = (dreamId: DreamId) =>
         rowLock.withPermits(1)(
           store.withDreamFileCommit(
@@ -1031,8 +924,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                 .getDream(dreamId)
                 .pipe(Effect.orElseSucceed(() => undefined));
               if (dream === undefined || dream.status !== "running") return undefined;
-              // Closure is durable authority revocation, not proof that validation settled.
-              // Reuse it on recovery without granting the agent file access again.
               if (dream.filesClosedAt !== undefined) return dream;
               const closed = { ...dream, filesClosedAt: yield* Clock.currentTimeMillis };
               yield* store.putDream(closed);
@@ -1041,7 +932,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           ),
         );
 
-      /** The dream said it is done. Whether it is, is for the manifest and the caps to say. */
       const finish = (dreamId: DreamId) =>
         Effect.gen(function* () {
           const dream = yield* closeFiles(dreamId);
@@ -1108,12 +998,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           });
         });
 
-      /**
-       * The second look a dream gets when it says it is done: Gram lints its output as a whole,
-       * and if a link leads nowhere, a subject is split in two or the index has outgrown its
-       * target, sends it back once with the list. What it leaves after that reaches the reviewer.
-       * Any trouble reading the output finishes it as it is, where the real check refuses it.
-       */
       const checkThenFinish = (thread: Thread, dreamId: DreamId) =>
         Effect.gen(function* () {
           if (!checkedOnce.has(dreamId)) {
@@ -1146,9 +1030,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
         if (end.reason === "error") {
           return fail(dreamId, "agent_error", "its agent ended the turn in an error");
         }
-        // Only the adapter's own `completed` with nothing queued behind it is the dream saying
-        // `done`. An interrupt is the user's, who may steer it and let it go on; a synthesized end
-        // is the host giving up on a turn, not the agent finishing one.
         return end.reason === "completed" && !end.synthesized && end.queueEmpty
           ? checkThenFinish(thread, dreamId)
           : Effect.void;
@@ -1157,7 +1038,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
       const cancelRunning = (dream: Dream, why: string) =>
         Effect.gen(function* () {
           if (dream.threadId !== undefined) {
-            // Forgotten first, so the interrupted turn's end isn't read as the dream's own.
             running.delete(dream.threadId);
             yield* runtimes.interrupt(dream.threadId).pipe(Effect.ignore);
           }
@@ -1211,16 +1091,11 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           }
         });
 
-      // -------------------------------------------------------------------------------------
-      // The user's calls
-      // -------------------------------------------------------------------------------------
-
       const preview: DreamsShape["preview"] = (input) =>
         Effect.gen(function* () {
           const state = yield* store.getWorkspace(input.workspaceId);
           const projects = yield* projectsOf(state, input.projectIds);
           const dreaming = input.kind === "dream";
-          // A dream reads Gram's own threads, so the agents' histories aren't searched.
           const discovery = dreaming
             ? { sessions: [], seeds: [], notes: [], worktreesCovered: 0, worktreesTotal: 0 }
             : yield* discoverHistory(importDeps, {
@@ -1242,7 +1117,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             closedThreadsKept: closed.length,
             archivedThreads: archived.length,
             includeMemory: input.includeMemory === true,
-            // A following slot is never on a gateway.
             throughGateway:
               model !== undefined &&
               isPinned(model) &&
@@ -1266,13 +1140,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           };
         });
 
-      /**
-       * The machine a dream's session runs on, on a server that runs no work itself
-       * (`AgentHosts.elsewhere`): the workspace's orchestrator's, whose owner may read everything
-       * the dream reads (`planDream` keeps to what everyone who sees the workspace may). Its
-       * folder and files stay here, reached through its app tools alone, so only a Claude Code
-       * dream, which has no native tools, goes. `undefined` where dreams run here.
-       */
       const dreamMachine = (
         workspace: WorkspaceState["workspace"],
         model: ModelRef,
@@ -1301,11 +1168,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           return machine;
         });
 
-      /**
-       * `effect` as made for the owner of `workspace`'s orchestrator's machine, on a server that
-       * runs no work itself: an automatic dream's models are that machine's, and its session opens
-       * there. Anywhere else, and for a workspace with no orchestrator on a machine, as it is.
-       */
       const asWorkspaceOwner =
         (workspace: WorkspaceState) =>
         <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
@@ -1318,7 +1180,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                     ? undefined
                     : yield* store.getThread(id).pipe(Effect.orElseSucceed(() => undefined));
                 if (orchestrator === undefined) return yield* effect;
-                // Reaching that machine only: what the attempt reads is still the server's to read.
                 return yield* effect.pipe(
                   Effect.provideService(RoutedFor, {
                     person: workerHosts.ownerOf(hostOf(effectiveCheckout(orchestrator))),
@@ -1411,8 +1272,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               ? {}
               : { budgetTokens: plan.budgetTokens, backlog: plan.backlog }),
           };
-          // Made where a removal can't come between: the workspace could otherwise go after it
-          // was read here, and leave this dream's row, or its thread, with no workspace to end in.
           yield* orchestration
             .whileWorkspaceStays(
               workspace.id,
@@ -1439,15 +1298,8 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                     });
                   }
                 }
-                // The row and the lookup exist before the thread does, so a turn that ends at
-                // once is still this dream's.
                 yield* store.putDream(dream);
                 running.set(threadId, dreamId);
-                // The dream's folder is not a git repository. A thread in a plain folder is a
-                // `main` checkout with no branch, which is all `CheckoutService` makes of one too,
-                // so the runtime is asked directly: there is no worktree to prepare and no guard
-                // to take. It is filed under the workspace's home project rather than given one
-                // of its own, which `create` would otherwise make for the dream's folder.
                 yield* runtimes
                   .create({
                     id: threadId,
@@ -1455,8 +1307,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                     checkout: { kind: "main", path: outputDir },
                     title: `${input.kind === "import" ? "Import" : "Memory update"} · ${workspace.name}`,
                     model,
-                    // Keep normal sandbox and approvals. The runtime selects file-only
-                    // tools or guided native permissions through the shared Dream decision.
                     mode: "acceptEdits",
                     role: "dream",
                     ...(dreamHost === undefined ? {} : { dreamHost }),
@@ -1510,7 +1360,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           startUnlocked({ workspaceId, kind: "dream", model }, threshold, claim),
       });
 
-      // Revalidate old ready rows on read without rewriting their persisted run or transcript.
       const verifiedRow = (dream: Dream): Effect.Effect<Dream> =>
         dream.status !== "completed" || dream.adoptedVersion !== undefined
           ? Effect.succeed(dream)
@@ -1541,7 +1390,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           );
         });
 
-      /** The review, with each conflict's merge where it was made of the sides the review holds now. */
       const reviewOf = (dream: Dream) =>
         Effect.gen(function* () {
           const baseline = yield* files.baseline(dream.workspaceId, dream.id);
@@ -1574,8 +1422,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             );
           }
           const found = yield* reviewOf(dream).pipe(
-            // A failed or cancelled dream's leftovers may be no memory at all. It is shown as it
-            // is, which is nothing to adopt, rather than as an error.
             Effect.catchTag("DreamOutputRefused", (refused) =>
               dream.status === "completed"
                 ? Effect.fail(refuse(refused.message))
@@ -1629,7 +1475,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                 : "A memory update that failed or was cancelled can't be adopted, only discarded.",
             );
           }
-          // Hashed again here as at completion: the folder has been the agent's to write since.
           const inputs = yield* files.verifyInputs(dream.workspaceId, dream.id);
           if (!inputs.ok) {
             return yield* refuse(
@@ -1706,8 +1551,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               read.file === undefined ? undefined : capDigest(written.get(read.file) ?? "");
             if (digest !== undefined) digests.set(read.threadId, digest);
           }
-          // A mark, and the digest with it, goes with its thread: one open, closed or archived
-          // nowhere any more is not carried into the new version.
           const live = new Set<string>([
             ...(yield* store.listThreads).map((thread) => thread.id),
             ...(yield* store.listClosed).map((closed) => closed.thread.id),
@@ -1715,8 +1558,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               (entry) => entry.threadId,
             ),
           ]);
-          // Under the lock a start gathers by, so no dream starts from the new version before its
-          // marks are written, and no second adoption folds onto a version still without them.
           const adopted = yield* startLock.withPermits(1)(
             orchestration.whileWorkspaceStays(
               dream.workspaceId,
@@ -1726,8 +1567,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                     const base = yield* marksOf(state, found.memoryVersion);
                     const made = yield* store.withDreamFileCommit(
                       Effect.gen(function* () {
-                        // Re-read under the transaction before memory is touched: deletion, rebind and
-                        // duplicate completions cannot reuse an earlier row's authority.
                         const fresh = yield* store.getDream(dream.id);
                         if (
                           fresh.workspaceId !== dream.workspaceId ||
@@ -1860,7 +1699,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             if (dream.status === "running") {
               return yield* refuse("The memory update is still running. Cancel it first.");
             }
-            // Its thread's cwd is the folder about to go, so the thread goes first.
             if (dream.threadId !== undefined) {
               yield* runtimes.close(dream.threadId).pipe(Effect.ignore);
             }
@@ -1871,7 +1709,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           }),
         );
 
-      /** Runs one merge to its end and records it, unless a newer one for the file replaced it. */
       const runMerge = (dream: Dream, file: DreamFileDiff, started: DreamMerge) =>
         Effect.scoped(
           Effect.gen(function* () {
@@ -1882,7 +1719,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                 host,
                 cwd,
                 model: dream.model,
-                // The gate a dream on this agent opens with: the merge reads the same memory.
                 outwardGate: outwardGateFor({
                   thread: {
                     id: `merge-${dream.id}` as ThreadId,
@@ -1910,7 +1746,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               const entry = merges.get(dream.id)?.get(file.path);
               if (entry?.state !== started) return;
               entry.state = { ...ended, endedAt: yield* Clock.currentTimeMillis };
-              // Whether it worked, never the text or the reason: both can quote memory.
               yield* Effect.logInfo("dream merge ended").pipe(
                 Effect.annotateLogs({ dreamId: dream.id, status: ended.status }),
               );
@@ -1953,7 +1788,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           const made = merges.get(dream.id) ?? new Map();
           made.set(path, { sides: conflictSides(file), state: started });
           merges.set(dream.id, made);
-          // Keyed by file, so asking again interrupts the merge it replaces.
           yield* FiberMap.run(
             mergeFibers,
             mergeKey(dream.id, path),
@@ -1963,13 +1797,10 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           return started;
         });
 
-      // After a restart: a dream whose thread is still there carries on when its thread does; one
-      // whose thread is gone can never say `done`.
       const threads = new Set((yield* store.listThreads).map((thread) => thread.id));
       for (const dream of yield* store.listRunningDreams) {
         if (dream.threadId !== undefined && threads.has(dream.threadId)) {
           if (dream.filesClosedAt !== undefined) {
-            // Its agent already ended: resume server validation, never a provider turn.
             yield* finish(dream.id);
           } else {
             running.set(dream.threadId, dream.id);
@@ -1979,8 +1810,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
         }
       }
 
-      // Completion persisted before adoption is attempted. Do not replay an interrupted
-      // automatic write after restart: CURRENT may already have switched before a DB failure.
       for (const state of yield* store.listWorkspaces) {
         for (const dream of yield* store.listDreams(state.workspace.id)) {
           if (
@@ -2035,7 +1864,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           Stream.runForEach((event) => Queue.offer(signals, { type: "hub", event })),
           Effect.forkScoped,
         );
-      // The runtime's callbacks share one fiber, so this only hands the news to the queue.
       yield* runtimes.observe({
         onTurnEnd: (thread, end) =>
           running.has(thread.id)
@@ -2044,8 +1872,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
       });
 
       return Dreams.of({
-        // A status read must not expose the transient spent claim while start admission
-        // is still deciding whether to launch or restore a proven deferral.
         automaticStatus: (workspaceId) =>
           startLock.withPermits(1)(automaticDream.status(workspaceId)),
         automaticConfigurationChanged: startLock.withPermits(1)(automaticDream.onConfiguration),

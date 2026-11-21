@@ -12,7 +12,6 @@ const NOTHING: FolderSettings = {
   none: true,
 };
 
-/** The mock folders that bring agent settings of their own, so Add repository asks about them. */
 const BRINGING: Record<string, FolderSettings> = {
   "client-app": {
     hooks: [{ event: "SessionStart", command: "./scripts/setup.sh" }],

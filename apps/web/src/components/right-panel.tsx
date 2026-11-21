@@ -54,10 +54,6 @@ import { foldedTabs, tabNamed, useTabLabelFit } from "./panel-tab-labels";
 import { useKeepReadingPlace } from "./review-room";
 import type * as PanelTabs from "./right-panel-tabs";
 
-/**
- * A tab of the strip: the stored ones, the worker open beside the chat, and the command opened from
- * its line above the composer, those two kept per window.
- */
 type ShownTab = RightPanelTab | "thread" | "command";
 
 interface PanelTab {
@@ -67,13 +63,7 @@ interface PanelTab {
   primary?: true;
 }
 
-/**
- * The tabs in strip order. The rest are always in More, however wide the panel, so a review in
- * focus shows the same tabs as one beside the chat; short of room the primary ones fold there too,
- * from the strip's end, so the tabs left in the strip keep their names (`panel-tab-labels.ts`).
- */
 const TABS: PanelTab[] = [
-  // A workspace's workers by where they stand: only beside a thread of a workspace.
   { value: "workers", label: "Workers", icon: Workflow, primary: true },
   { value: "diff", label: "Diff", icon: FileDiff, primary: true },
   { value: "pr", label: "PR", icon: GitPullRequest, primary: true },
@@ -87,7 +77,6 @@ const TABS: PanelTab[] = [
   { value: "notifications", label: "Notifications", icon: Bell },
 ];
 
-/** First while a worker is open beside the chat (`beside-store`), and only then. */
 const THREAD_TAB: PanelTab = {
   value: "thread",
   label: "Thread",
@@ -95,7 +84,6 @@ const THREAD_TAB: PanelTab = {
   primary: true,
 };
 
-/** While a command opened from the strip above the composer is in reach (`command-view-store`). */
 const COMMAND_TAB: PanelTab = {
   value: "command",
   label: "Command",
@@ -126,7 +114,6 @@ const RightPanelTabs = lazy(() =>
 
 const WorkersMode = lazy(() => preloadRightPanel().then((tabs) => ({ default: tabs.WorkersMode })));
 
-/** The tabs that are the orchestrator's own views, which its menu in the Workers list opens. */
 const NOT_ORCHESTRATOR_VIEWS: ReadonlySet<ShownTab> = new Set([
   "workers",
   "thread",
@@ -161,25 +148,16 @@ export function RightPanel() {
   const reviewsHere = useLayoutStore(reviewsTabShown);
   const requestsHere = useLayoutStore((s) => s.reviewRequestsPlacement === "panel");
   const openPrsHere = useLayoutStore((s) => s.openPrsPlacement === "panel");
-  // The shell's pane, or with no shell the agents' pages in the server's own browser.
   const shellPreview = useFeature("previewPane");
   const previewHere = useServerBrowser() || shellPreview;
   const workspaceId = useRouteWorkspace();
   const workersHere = workspaceId !== undefined;
-  // Pages, only while the workspace has one pinned or the tab is open: pinning opens it, and an
-  // empty tab would push the narrow panel's More past what it holds.
   const pinnedHere = (usePages(workspaceId).data?.pages.length ?? 0) > 0;
   const pagesHere = workspaceId !== undefined && (pinnedHere || storedTab === "pages");
-  // Only review requests count as waiting: the user's own open PRs wait on others.
   const notificationCount = useNotificationHistory(unreadNotifications);
   const reviewCount = useReviewRequests().data?.requests.length ?? 0;
-  // The tab is synced between machines and the list's placement is not, so the stored tab can name
-  // a Reviews tab this window doesn't have, or a Preview tab where the shell has no preview. Needs
-  // you was a tab before the Inbox took its place.
   const params = useParams({ strict: false });
   const routeThreadId = params.threadId as ThreadId | undefined;
-  // An app in front of Gram may offer the pane on an orchestrator outside a repository for its
-  // workers alone: none of its own views.
   const routeIsOrchestrator = useThreadsStore(
     (s) => routeThreadId === undefined || s.byId[routeThreadId]?.thread.spawnedBy === undefined,
   );
@@ -203,12 +181,10 @@ export function RightPanel() {
           storedTab === "needsYou"
         ? "diff"
         : storedTab;
-  // A worker open beside the chat has the Thread tab, picked over the stored one while it shows.
   const besideWorker = useBesideStore((s) => (s.restored ? undefined : s.worker));
   const besideRecord = useBesideStore((s) => s.record);
   const besideOn = useBesideStore((s) => besideShown(s) !== undefined);
   const setBesideShown = useBesideStore((s) => s.setShown);
-  // A command opened from a thread's strip is in reach while that thread is in view.
   const openCommand = useCommandViewStore((s) => s.open);
   const commandHere = useLayoutStore(
     (s) =>
@@ -218,7 +194,6 @@ export function RightPanel() {
   const command = commandHere ? openCommand : undefined;
   const commandOn = useCommandViewStore((s) => s.shown) && command !== undefined;
   const setCommandShown = useCommandViewStore((s) => s.setShown);
-  // Over the chat on a phone, the panel has a header of its own: its name, its thread, and Back.
   const phone = usePhone();
   const over = useLayoutStore((s) => fitShell(s).panel === "over");
   const roomy = useRoomySidebar();
@@ -227,14 +202,12 @@ export function RightPanel() {
   const setPanelTab = useLayoutStore((s) => s.setPanelTab);
   const setTab = (value: ShownTab) => {
     setCommandShown(value === "command");
-    // Workers comes back to the worker it showed, if one is still open there.
     setBesideShown(value === "thread" || (value === "workers" && besideWorker !== undefined));
     if (value !== "thread" && value !== "command") setPanelTab(value);
   };
   const tabList = useRef<HTMLDivElement>(null);
   const word = useWorkersWord();
   const shownTabs = [
-    // Off a phone the worker is in the Workers mode, not a tab of its own.
     ...(besideWorker === undefined || !phoneHeader ? [] : [THREAD_TAB]),
     ...(command === undefined ? [] : [COMMAND_TAB]),
     ...TABS,
@@ -250,19 +223,15 @@ export function RightPanel() {
     .map((t) => (t.value === "workers" ? { ...t, label: word } : t));
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const focused = useLayoutStore((s) => s.reviewFocus);
-  // On a review the action beside the tabs is Focus review, in words; elsewhere an icon at the end.
   const reviewAction = tab !== "thread" && tab !== "command" && isReviewTab(tab) && !expanded;
   const labelFit = useTabLabelFit(tabList, tab);
   const aside = useRef<HTMLElement>(null);
   useKeepReadingPlace(aside);
   useEffect(() => {
-    // The bell may select a tab beyond the narrow strip's edge without focusing that tab.
     tabList.current
       ?.querySelector<HTMLElement>(`[data-panel-tab="${tab}"]`)
       ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [tab]);
-  // A thread the server no longer has, such as a worker closed with its worktree and shown
-  // read-only, has no diff, files or terminal to show, so the panels say there is no thread.
   const known = useThreadsStore(
     (s) => routeThreadId !== undefined && (!s.ready || s.byId[routeThreadId] !== undefined),
   );
@@ -278,7 +247,6 @@ export function RightPanel() {
           ? reviewCount
           : 0;
     const busy = t.value === "terminal" && busyTerminals !== "";
-    // The tooltip and the accessible name say the same.
     const name =
       count > 0
         ? `${t.label}, ${count} ${t.value === "notifications" ? "unread" : "waiting"}`
@@ -287,14 +255,11 @@ export function RightPanel() {
           : t.label;
     return { tab: t, count, busy, name };
   });
-  // A tab with something waiting or running stays out of More, so its count or dot does too.
   const flags = faces.map((f) => ({
     primary: f.tab.primary === true,
     active: f.tab.value === tab,
     pinned: f.count > 0 || f.busy,
   }));
-  // Over a phone's chat the strip is the row the chat has under its title, so a panel's name
-  // stands where it was tapped: every primary tab named, the rarer ones always in More.
   const rareFolds = flags.some((f) => !f.primary && !f.active && !f.pinned) ? 1 : 0;
   const foldFlags = foldedTabs(flags, phoneHeader ? rareFolds : labelFit.folds);
   const changed = useThreadsStore((s) =>
@@ -304,10 +269,6 @@ export function RightPanel() {
   const folded = faces.filter((_, i) => foldFlags[i]);
   const inStrip = faces.filter((_, i) => !foldFlags[i]);
 
-  // On a workspace's thread, Workers is a mode of the pane rather than a tab: the list, or one
-  // worker under "‹ Workers › its title", with the pane's whole height and no tab strip above it.
-  // The orchestrator's own views are in the list's "Orchestrator" menu; with a worker in the main
-  // view they are that worker's, and the menu says "This thread". A phone keeps its strip.
   if (!phoneHeader && workspaceId !== undefined && (tab === "workers" || tab === "thread")) {
     const views = faces
       .filter((face) => !NOT_ORCHESTRATOR_VIEWS.has(face.tab.value))
@@ -378,20 +339,11 @@ export function RightPanel() {
             ref={tabList}
             data-label-fit={phoneHeader ? "all" : labelFit.tabs}
             className={cn(
-              // Each tab draws its own underline, so the list's 1 px indicator is hidden: it hangs
-              // below the list, which scrolls sideways and so up and down too, and with classic
-              // scrollbars it showed a vertical scrollbar beside More.
               "min-w-0 overflow-x-auto border-b-0 [&>[data-slot=tabs-indicator]]:hidden",
-              // The row's own children there, so each segment is as wide as its name needs.
               phoneHeader ? "contents" : !reviewAction && "flex-1",
             )}
           >
-            {/* An icon and a name each, the rarer tabs always in More and Terminal, Files, PR and
-                Diff folding there, named, as room runs out; only a panel too narrow for the
-                open tab's name beside More drops to icons. Each is named on hover in every case. */}
             {inStrip.map((face) => (
-              // Above the strip, which has the panel's empty top beside the title bar: below, a
-              // tab's name would cover the notice or the toolbar under the tabs.
               <Hint
                 key={face.tab.value}
                 label={face.name}
@@ -402,8 +354,6 @@ export function RightPanel() {
                     data-panel-tab={face.tab.value}
                     data-primary={face.tab.primary}
                     aria-label={face.name}
-                    // A 28 px tab with its background on hover and focus; the open one is named,
-                    // on a background and underlined, not told apart by colour alone.
                     className={
                       phoneHeader
                         ? cn(
@@ -433,7 +383,6 @@ export function RightPanel() {
             ))}
           </TabsList>
           {folded.length > 0 && <MoreTabs faces={folded} onPick={setTab} phone={phoneHeader} />}
-          {/* Every tab and More as they'd stand, named, out of sight: what the fit is measured on. */}
           <div
             aria-hidden
             inert
@@ -458,7 +407,6 @@ export function RightPanel() {
           {reviewAction ? (
             <ReviewFocusAction focused={focused} words={labelFit.action} />
           ) : (
-            // The phone header's Back is the way out there.
             !phoneHeader && <ExpandToggle />
           )}
         </div>
@@ -480,23 +428,17 @@ export function RightPanel() {
   );
 }
 
-/** A tab's box, as `TabsTrigger` draws it: the strip's tabs and their measured copies share it. */
-// A bare tab is its 28 px minimum: the 16 px glyph and 6 px either side.
 const TAB_BOX =
   "flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md px-1.5 text-meta font-medium";
 const MORE_BOX = "flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-meta font-medium";
 
 interface TabFaceProps {
   tab: PanelTab;
-  /** Unread notifications or waiting review requests; 0 for none. */
   count: number;
-  /** A terminal is running something. */
   busy: boolean;
-  /** The accessible name and tooltip. */
   name: string;
 }
 
-/** A tab's icon, its name (collapsed, not removed, when not `named`) and any count. */
 function TabFace({
   tab,
   count,
@@ -507,7 +449,6 @@ function TabFace({
 }: TabFaceProps & { named: boolean; plain?: boolean; testIds?: boolean }) {
   return (
     <>
-      {/* A phone's row is words alone; a busy terminal keeps its dot. */}
       <span className={cn("relative flex", plain && !busy && "hidden")}>
         {!plain && <tab.icon aria-hidden className="size-icon-row" />}
         {busy && (
@@ -556,10 +497,6 @@ const MENU_POPUP =
 const MENU_ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor";
 
-/**
- * The tabs folded out of a short strip, in strip order, each named with its icon. None has a count:
- * a tab with something waiting stays in the strip.
- */
 function MoreTabs({
   faces,
   onPick,
@@ -567,15 +504,12 @@ function MoreTabs({
 }: {
   faces: readonly TabFaceProps[];
   onPick: (tab: ShownTab) => void;
-  /** In a phone's row: a segment as tall as the others, its glyph alone. */
   phone?: boolean;
 }) {
   return (
     <Menu.Root>
       <Hint
         label={`More tabs: ${faces.map((f) => f.tab.label).join(", ")}`}
-        // Beside it, not under it: back on the trigger after its menu closes, the hint stays open,
-        // and under it it would cover the review bar's View menu.
         side="left"
         render={
           <Menu.Trigger
@@ -623,7 +557,6 @@ function MoreTabs({
   );
 }
 
-/** Lets the panel take the chat's place beside the sidebar, and gives the chat back. */
 function ExpandToggle() {
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const setExpanded = useLayoutStore((s) => s.setPanelExpanded);
@@ -648,16 +581,8 @@ function ExpandToggle() {
   );
 }
 
-/**
- * Beside a review's tabs, puts the review in focus, leaving a strip of the chat, and gives the chat
- * back. Its words fold away, leaving the icon, once keeping them would fold a primary tab into
- * More (`panel-tab-labels.ts`). Its shortcut is in its tooltip, so the words stay short. The words live in a
- * `[data-action-label]` that collapses rather than unmounts, so they can be measured.
- */
 function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolean }) {
   const toggle = useLayoutStore((s) => s.toggleReviewFocus);
-  // Narrower than a review reads well beside the chat: the action is offered as an outlined
-  // button, its hint saying why, rather than a notice of its own under the tabs.
   const narrow = useLayoutStore((s) => !focused && fitShell(s).reviewNarrow);
   const focusHint = useShortcutHint("review.focus");
   const restoreHint = useShortcutHint("panel.restore");
@@ -701,13 +626,11 @@ function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolea
   );
 }
 
-/** "pnpm dev running", or "pnpm dev and vim running"; empty while no terminal is busy. */
 const terminalsBusyText = (processes: ThreadSummary["terminalProcesses"]): string =>
   processes === undefined || processes.length === 0
     ? ""
     : `${processes.map((p) => p.command).join(" and ")} running`;
 
-/** The workspace of the thread in view, whose workers the Workers tab lists; none for a solo one. */
 function useRouteWorkspace(): WorkspaceId | undefined {
   const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
   return useThreadsStore((s) =>

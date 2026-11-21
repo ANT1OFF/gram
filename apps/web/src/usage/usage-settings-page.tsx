@@ -124,8 +124,6 @@ export function UsageSettingsPage() {
         </p>
       ) : (
         <div className={cn("flex flex-col gap-8", query.isPlaceholderData && "opacity-60")}>
-          {/* Once for every chart below: what the line, its breaks and drops, the dashed line and
-              the bars' marks mean. */}
           {history !== undefined && (
             <ChartLegend step={stepWords(history.step)} className="-mt-4" />
           )}
@@ -165,7 +163,6 @@ export function UsageSettingsPage() {
   );
 }
 
-/** "Kept since 3 Oct · 35 days of history": when the history starts, so a blank early part reads. */
 function sinceText(history: UsageLimitHistory | undefined, now: number): string {
   const base = "As your agents report them, and the history Gram keeps";
   if (history?.since === undefined || history.since <= history.from) return base;
@@ -327,7 +324,6 @@ function WindowCard({
               style={{ width: `${percent}%`, background: colour }}
             />
             {pace !== undefined && (
-              // Where an even pace through the window would be now.
               <span
                 aria-hidden
                 data-testid="usage-window-even"

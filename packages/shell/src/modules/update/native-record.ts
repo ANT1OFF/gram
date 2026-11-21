@@ -1,6 +1,3 @@
-// The record an install writes just before it restarts into an update, read once at the next
-// launch: still on the old version means Squirrel.Mac (or, on Linux, the AppImage replacement)
-// didn't take, and the user is told so instead of silently staying old.
 import type { AppUpdateNotApplied } from "@gram/contracts";
 
 import { parseVersion } from "./semver.ts";
@@ -58,7 +55,6 @@ export function judgeInstallRecord(
   currentVersion: string,
   now: number,
   logHint: string,
-  /** Who was to apply it: Squirrel.Mac on macOS, Gram itself replacing the AppImage on Linux. */
   applier: "macOS" | "appimage" = "macOS",
 ):
   | { readonly kind: "applied" | "stale" }

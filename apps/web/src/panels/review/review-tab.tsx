@@ -47,7 +47,6 @@ export function ReviewTab({ threadId }: { threadId: ThreadId }) {
     queryKey: ["git.prReview", threadId, reviewStamp],
     queryFn: () => api.prReview(threadId),
     retry: false,
-    // Actions change the stamp; keep showing the review (and any open reply) while it refetches.
     placeholderData: keepPreviousData,
   });
 

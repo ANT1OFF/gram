@@ -67,10 +67,6 @@ const textResult = (text: string, isError = false): CallToolResult =>
     ? { isError: true, content: [{ type: "text", text }] }
     : { content: [{ type: "text", text }] };
 
-/**
- * Runs the tool on the arguments as sent, which `run` decodes, and renders the outcome as an MCP
- * result. Never fails.
- */
 const runAppTool = (appTool: AppTool, args: unknown): Effect.Effect<CallToolResult> =>
   appTool.run(args).pipe(
     Effect.map((output): CallToolResult => ({ content: appToolResultContent(output) })),
@@ -86,7 +82,6 @@ export interface AppToolServer {
   readonly names: ReadonlySet<string>;
 }
 
-/** The MCP request's abort signal, which the SDK hands a tool handler as `extra.signal`. */
 const signalOf = (extra: unknown): AbortSignal | undefined => {
   const signal = (extra as { readonly signal?: unknown } | undefined)?.signal;
   return signal instanceof AbortSignal ? signal : undefined;
@@ -111,10 +106,7 @@ export const buildAppToolServer = (
       sdk.tool(
         appTool.descriptor.name,
         appTool.descriptor.description,
-        // The SDK's types take a raw shape, which its MCP server parses as a stripping object, so
-        // `{ pr: 13 }` reached the tool as `{}`. At runtime it takes an object schema as it is.
         toZodObject(appTool.input) as unknown as z.ZodRawShape,
-        // An interrupted call withdraws the card its gate may be showing.
         (args, extra) => {
           const signal = signalOf(extra);
           return Effect.runPromise(

@@ -1,6 +1,4 @@
 import { macFs, macFsPromises } from "./mac-fs.ts";
-// Narrow ZIP reader for private arm64 releases. Never pass an uninspected archive to a system
-// extractor: symlinks are created last and no archive path can write through one.
 
 import { dirname, join, posix } from "node:path";
 import { Readable, Transform } from "node:stream";
@@ -111,7 +109,6 @@ export async function extractMacArchive(archive: string, destination: string): P
         packed > MAX_ARCHIVE_BYTES
       )
         throw new Error("Unsafe or unsupported update ZIP entry");
-      // ditto's resource-fork records are ignored, never extracted or executed.
       if (
         !(
           path === "Gram.app" ||

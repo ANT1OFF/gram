@@ -34,7 +34,6 @@ import { ReplyTokens } from "./reply-tokens";
 import { useForkAvailability, useForkThread, WORKTREE_NOTICE } from "./use-fork";
 import { useReadOnlyTranscript } from "./read-only-transcript";
 
-/** A turn in progress: rewinding now would race the agent. */
 const BUSY: ReadonlySet<ThreadStatus> = new Set([
   "starting",
   "running",
@@ -50,7 +49,6 @@ const MENU_ITEM =
 export const messageText = (message: GramUIMessage): string =>
   message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n");
 
-/** The agent has reported its own ids for this reply, so it's a resume and fork point. */
 const hasAgentIds = (message: GramUIMessage) =>
   (message.metadata?.agentMessageIds?.length ?? 0) > 0;
 
@@ -76,21 +74,12 @@ export async function copyMarkdown(text: string, options: { toast?: boolean } = 
   }
 }
 
-/** Under the message, in its own row: the default, where a transcript is read turn by turn. */
 const IN_FLOW =
   "-mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 has-data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100";
 
-/**
- * On a raised strip over the message, taking no room of its own: the orchestrator's chat, where a
- * reserved row under every message would set its replies further from what follows than an update
- * is from them, and the rhythm would be uneven. Only where `float-actions` holds (a pointer that
- * hovers, a message at least 40 rem wide, its `@container/message`); on touch or in a narrow
- * column the strip is the in-flow row, always shown on touch. The message is positioned.
- */
 const FLOATING =
   "float-actions:absolute float-actions:z-10 float-actions:mt-0 float-actions:flex-nowrap float-actions:whitespace-nowrap float-actions:rounded-(--radius-sm) float-actions:border float-actions:border-edge float-actions:bg-popover float-actions:p-0.5 float-actions:shadow-overlay";
 
-/** A reply's strip sits at its end, over the last line's end; a user's beside its bubble's top. */
 const FLOAT_REPLY = "float-actions:right-0 float-actions:bottom-0";
 const FLOAT_USER = "float-actions:top-0 float-actions:right-full float-actions:mr-2";
 
@@ -114,7 +103,6 @@ export function MessageActions({
   turnEnd?: boolean;
   floating?: boolean;
 }) {
-  // Another thread's message sits on the agents' side, so its actions do too.
   const isUser =
     message.role === "user" && !message.parts.some((part) => part.type === "data-thread-origin");
   const readOnly = useReadOnlyTranscript();
@@ -126,7 +114,6 @@ export function MessageActions({
   );
   return (
     <div data-testid="message-actions" data-floating={floating || undefined} className={place}>
-      {/* On the side towards the conversation, so the buttons keep their place at the edge. */}
       {isUser && <SentAt message={message} />}
       <CopyAction
         testId="message-copy"
@@ -140,7 +127,6 @@ export function MessageActions({
   );
 }
 
-/** How a message went into a running turn, as its mark under the bubble says it. */
 const DELIVERY = {
   steer: {
     icon: Send,
@@ -195,10 +181,6 @@ export function ConversationLine({ message }: { message: GramUIMessage }) {
   );
 }
 
-/**
- * When the message arrived, using notification dates, with the full date, seconds and zone's offset
- * in its hint. A message without a date shows none, rather than a guess.
- */
 function SentAt({ message }: { message: GramUIMessage }) {
   const createdAt = message.metadata?.createdAt;
   if (createdAt === undefined) return null;
@@ -214,7 +196,6 @@ function SentAt({ message }: { message: GramUIMessage }) {
   );
 }
 
-/** A menu item's glyph, its name, and a line under it: what it does, or why it can't now. */
 function ItemText({ icon, label, line }: { icon: ReactNode; label: string; line: string }) {
   return (
     <>
@@ -227,10 +208,6 @@ function ItemText({ icon, label, line }: { icon: ReactNode; label: string; line:
   );
 }
 
-/**
- * The "…" beside Copy, and what its items open: the rewind or edit confirmation, anchored to the
- * "…" and handing focus back to it, and the worktree fork's dialog.
- */
 function MessageMenu({
   threadId,
   message,
@@ -242,8 +219,6 @@ function MessageMenu({
 }) {
   const more = useRef<HTMLButtonElement>(null);
   const [confirming, setConfirming] = useState(false);
-  // Rewind or Edit was chosen: its confirmation opens once the menu has closed and handed focus
-  // back to the "…", so that hand-back can't pull focus out of the confirmation.
   const confirmNext = useRef(false);
   const [dialog, setDialog] = useState<{ notice?: string }>();
   const wait = useWait(threadId, message);
@@ -378,11 +353,6 @@ function MessageMenu({
   );
 }
 
-/**
- * "Add to Waiting on you": keeps the message in the thread's tray, as a draft whose Copy takes its
- * quoted or fenced block, titled by its first line. Shown done while an open item already points
- * at it.
- */
 function useWait(threadId: ThreadId, message: GramUIMessage) {
   const api = useApi();
   const kept = useThreadsStore(
@@ -414,7 +384,6 @@ function useWait(threadId: ThreadId, message: GramUIMessage) {
   };
 }
 
-/** Primary message copy, or a secondary menu item with the same copy feedback. */
 function CopyAction({
   testId,
   label,
@@ -484,7 +453,6 @@ function CopyAction({
   );
 }
 
-/** Rewinding with files to a message that has no checkpoint, e.g. one copied into a fork. */
 const rewindFailure = (error: unknown) =>
   errorMessage(error).includes("no checkpoint")
     ? "Files can't be restored to this message. Rewind without “Restore files too”."
@@ -492,20 +460,13 @@ const rewindFailure = (error: unknown) =>
 
 type Rewind = NonNullable<ReturnType<typeof useRewind>>;
 
-/**
- * "Rewind to here" (assistant) or "Edit from here" (user), confirmed in a popover with an optional
- * "Restore files too". Undefined when the agent can't rewind; disabled while a turn runs.
- */
 function useRewind(threadId: ThreadId, message: GramUIMessage) {
   const status = useThreadsStore((s) => s.byId[threadId]?.status);
   const rewindSupport = useThreadsStore((s) => s.byId[threadId]?.capabilities?.rewind);
-  // Capabilities reach the store with the next snapshot, not with `thread.upsert`, so a thread created
-  // this session has none yet. Offer history only until we know files can be restored too.
   const support = rewindSupport ?? "history";
   if (support === "none") return undefined;
   const isUser = message.role === "user";
   const busy = status !== undefined && BUSY.has(status);
-  // User targets resume from the reply before them, which the server resolves.
   const disabledReason = busy
     ? "Wait for the turn to finish"
     : isUser || hasAgentIds(message)
@@ -528,7 +489,6 @@ function useRewind(threadId: ThreadId, message: GramUIMessage) {
   };
 }
 
-/** The rewind or edit's confirmation, under the "…" it was chosen from, which focus returns to. */
 function RewindConfirm({
   rewind,
   anchor,
@@ -587,7 +547,6 @@ function RewindConfirm({
         >
           <Popover.Popup
             data-testid="rewind-confirm"
-            // Into the confirmation, on its safe choice, however it was opened.
             initialFocus={cancel}
             finalFocus={anchor}
             className="z-50 flex w-64 flex-col gap-2 rounded-(--radius-lg) border border-edge bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised) transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
@@ -633,10 +592,6 @@ function RewindConfirm({
   );
 }
 
-/**
- * "Fork from here" and "Fork into worktree…" on a reply, each with why it can't while forking isn't
- * possible. A refused fork into the source checkout continues in the worktree dialog (`openDialog`).
- */
 function useForkFromHere(
   threadId: ThreadId,
   message: GramUIMessage,

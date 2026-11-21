@@ -1,7 +1,5 @@
 import { create } from "zustand";
 
-// The window's view: Chat or Board over the same asks and workers, and Quiet on top of either. Per window and not persisted, so a launch opens on Chat. No React beyond the store.
-
 /** What the window's main area shows. Chat is the route itself: a thread, Settings, a new task. */
 export type AppView = "chat" | "board";
 

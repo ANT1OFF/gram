@@ -15,13 +15,11 @@ export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
-/** Gram's home, or the one an app in front of Gram supplies in its place. */
 function HomePage() {
   return useHostHome() ? <EmbedHome /> : <GramHome />;
 }
 
 function GramHome() {
-  // A launch with a workspace goes on to its orchestrator; nothing shows until that's decided.
   const deciding = useLandOnOrchestrator();
   const firstRun = useFirstRun();
   return (
@@ -35,10 +33,6 @@ function GramHome() {
   );
 }
 
-/**
- * Home with nothing open. With no workspace and no thread yet (the first run skipped), the way in
- * is a repository; otherwise a thread from the sidebar, or a new task.
- */
 function HomeEmpty() {
   const navigate = useNavigate();
   const { workspaces, settled } = useWorkspacesQuery();

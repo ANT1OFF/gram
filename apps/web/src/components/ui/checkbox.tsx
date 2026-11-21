@@ -2,19 +2,8 @@ import { useId, type ComponentProps, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-/**
- * The box itself, as Gram's dialogs and Settings draw a native checkbox or radio: 14 px, in the
- * accent once ticked, and the focus ring only for the keyboard. A disabled box takes the browser's
- * own disabled look and nothing more.
- */
 const BOX = "size-3.5 shrink-0 accent-primary outline-none focus-visible:focus-ring";
 
-/**
- * A choice's words: its name, and one muted line under it on what ticking it does. The name is UI
- * text (`text-body`) unless the row's `className` gives another step; the box sits on the name's
- * first line (`h-lh`) at any of them. Disabled, the words dim; the box is already drawn disabled,
- * so it isn't dimmed a second time.
- */
 function ChoiceLabel({
   label,
   description,
@@ -45,7 +34,6 @@ function ChoiceLabel({
 }
 
 type CheckboxProps = Omit<ComponentProps<"input">, "type" | "children"> & {
-  /** Called with the new state, beside `onChange` with its event. */
   onCheckedChange?: (checked: boolean) => void;
 } & (
     | { label: ReactNode; description?: ReactNode }

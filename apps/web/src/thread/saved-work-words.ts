@@ -2,9 +2,6 @@ import { savedFileCount, type SavedWork, type ThreadError } from "@gram/contract
 
 import { formatStamp } from "@/lib/time";
 
-// The words for a worker's last save (`Thread.savedWork`) and a machine lost under it, shared by
-// the machine-lost card, the task's card and the worker's row, so each says it alike.
-
 /** "6 files" or "1 file". */
 export const filesWord = (count: number): string => (count === 1 ? "1 file" : `${count} files`);
 

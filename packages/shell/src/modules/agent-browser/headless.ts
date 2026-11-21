@@ -1,13 +1,3 @@
-// Agents' pages in a headless Chromium, for a Gram that runs without the desktop app (the Docker
-// image, a server on its own). The same pane module (`pane.ts`) drives them; this file gives it
-// each thread's page as `PaneContents`, over the DevTools Protocol on a pipe, and stands in for
-// the desktop Preview's request checks.
-//
-// This first version reaches loopback only. The browser starts with every connection sent to a
-// closed proxy, which Chromium skips only for loopback, so a page here can't reach the internet or
-// the private network whatever a check below decides. Each request is also paused and put to the
-// pane's own rules first (`AgentPanes.navigation` and `request`), as the desktop shell does.
-
 import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -21,9 +11,6 @@ import { previewNavigation, previewRequest } from "../../core/preview-rules.ts";
 import type { PreviewRequestDetails } from "../preview/main.ts";
 import type { PaneContents, PaneViews } from "./pane.ts";
 import { setTimeout as sleep } from "node:timers/promises";
-
-// ---------------------------------------------------------------------------------------------
-// The protocol connection.
 
 /** One DevTools Protocol connection to the browser; `sessionId` addresses an attached page. */
 export interface CdpConnection {
@@ -123,9 +110,6 @@ export const pipeConnection = (write: Writable, read: Readable): CdpConnection =
   };
 };
 
-// ---------------------------------------------------------------------------------------------
-// The browser.
-
 /** The flags the headless browser starts with. */
 export const headlessArgs = (userDataDir: string, sandbox: boolean): Array<string> => [
   "--headless=new",
@@ -139,18 +123,11 @@ export const headlessArgs = (userDataDir: string, sandbox: boolean): Array<strin
   "--disable-extensions",
   "--metrics-recording-only",
   "--mute-audio",
-  // Every frame in the page's own process, so the page's paused requests are all of them.
   "--disable-site-isolation-trials",
   "--disable-features=IsolateOrigins,site-per-process",
-  // Everything but loopback goes to a closed port and fails. Chromium's own bypass covers
-  // link-local addresses too (where a cloud's metadata service lives), so that one is taken away
-  // (`<-loopback>`) and loopback alone is named.
   "--proxy-server=http://127.0.0.1:9",
   "--proxy-bypass-list=<-loopback>;127.0.0.1;[::1];localhost",
-  // WebRTC sends UDP past any proxy unless told to use the proxy or nothing.
   "--webrtc-ip-handling-policy=disable_non_proxied_udp",
-  // No name but loopback's resolves, so nothing a page writes leaves in a DNS query: WebRTC looks
-  // up a candidate's or a TURN server's name itself, past the proxy.
   "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1, EXCLUDE [::1]",
   ...(sandbox ? [] : ["--no-sandbox"]),
   "about:blank",
@@ -162,7 +139,6 @@ export interface HeadlessBrowser {
   close(): Promise<void>;
 }
 
-/** The variables the browser starts with: where it is, its locale and fonts, and nothing else. */
 const BROWSER_ENV = [
   "PATH",
   "HOME",
@@ -203,8 +179,6 @@ export const launchHeadless = (options: {
     Readable,
   ];
   const connection = pipeConnection(toBrowser, fromBrowser);
-  // The profile goes once the browser has stopped writing to it; its helpers can outlive it by a
-  // moment, so a removal that finds the folder still filling is tried again.
   const removeProfile = async () => {
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
@@ -233,7 +207,6 @@ export const launchHeadless = (options: {
     close: () => {
       if (closing) return exited;
       closing = true;
-      // Asked to close first, so it stops its own helpers; killed if it hasn't in two seconds.
       const asked = connection.send("Browser.close").catch(() => {});
       const kill = setTimeout(() => {
         if (running()) child.kill("SIGKILL");
@@ -243,9 +216,6 @@ export const launchHeadless = (options: {
     },
   };
 };
-
-// ---------------------------------------------------------------------------------------------
-// Each thread's page.
 
 /** A proxy a page's loopback may go to: a SOCKS5 listener on this machine's own IPv4 loopback. */
 export const isLoopbackProxy = (proxy: string): boolean =>
@@ -297,11 +267,6 @@ interface FrameEvent {
 export const openHeadlessPage = async (
   connection: CdpConnection,
   gate: () => HeadlessGate | undefined,
-  /**
-   * Where the page's loopback is, when it isn't this machine's: a SOCKS proxy on this machine's
-   * loopback (`isLoopbackProxy`) that the server holds to the thread's own machine. Every
-   * request then goes to it, loopback's included.
-   */
   loopbackProxy?: string,
 ): Promise<PaneContents> => {
   const held = await holdNewTargets(connection);
@@ -325,18 +290,11 @@ export const openHeadlessPage = async (
   }
 };
 
-/**
- * Run in every frame of a thread's page before its own scripts. It takes away what has no use on
- * a page that reaches loopback alone and that no person is looking at: WebRTC, and opening
- * windows. Neither is the guard: the browser's flags hold WebRTC to loopback, and a window that
- * opens all the same is closed with its requests failed (`holdNewTargets`).
- */
 const PAGE_SETUP = `for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCIceTransport", "RTCDtlsTransport", "RTCSctpTransport"]) { try { delete globalThis[name]; } catch {} }
 try { Object.defineProperty(globalThis, "open", { value: () => null, writable: false, configurable: false }); } catch {}`;
 
 const ALL_REQUESTS = { patterns: [{ urlPattern: "*", requestStage: "Request" }] };
 
-/** Pauses a worker's requests and lets through what the local rules do, then lets it start. */
 const gateWorker = (connection: CdpConnection, sessionId: string) =>
   connection
     .send("Fetch.enable", ALL_REQUESTS, sessionId)
@@ -363,30 +321,17 @@ interface AttachedTarget {
 }
 
 interface Held {
-  /** Each thread's browser context, and its own page's target once `createTarget` has named it. */
   readonly contexts: Map<string, string | undefined>;
-  /** The pages that attached in a context before its own page was named. */
   readonly waiting: Map<string, Array<AttachedTarget>>;
-  /** Names the context's own page, and settles the pages that were waiting on it. */
   own(context: string, targetId: string): void;
 }
 
 const holding = new WeakMap<CdpConnection, Promise<Held>>();
 
-/**
- * Has the browser hold every new target before it loads anything, once per connection. In a
- * thread's context the page `createTarget` made is the thread's own and starts; any other is a
- * window the page opened, which no command drives: it starts with its requests failed, since a
- * held window holds its opener's process too, and is closed. A navigation the browser had already
- * begun for it isn't caught, so its first request can reach loopback, and nothing further. A service or shared worker there
- * starts with its requests paused. Anything outside the threads' contexts (the browser's own
- * pages) just starts.
- */
 const holdNewTargets = (connection: CdpConnection): Promise<Held> => {
   const known = holding.get(connection);
   if (known !== undefined) return known;
   const workers = new Set<string>();
-  /** The sessions of windows being closed, none of whose requests go anywhere. */
   const doomed = new Set<string>();
   const release = (sessionId: string) =>
     void connection
@@ -443,23 +388,18 @@ const holdNewTargets = (connection: CdpConnection): Promise<Held> => {
       waitingForDebugger?: boolean;
       targetInfo: { targetId: string; type: string; url?: string; browserContextId?: string };
     };
-    // Only what the browser attached by itself is held; a session this file asked for isn't.
     if (attached.waitingForDebugger !== true) return;
     const context = attached.targetInfo.browserContextId ?? "";
     const target = { sessionId: attached.sessionId, targetId: attached.targetInfo.targetId };
-    // A window of the browser's own (a new window, its developer tools, a settings page), which
-    // only a browser shortcut opens: no command drives it and no thread owns it, so it closes.
     const own = /^(devtools|chrome|chrome-untrusted):/.test(attached.targetInfo.url ?? "");
     if (own || (!held.contexts.has(context) && attached.targetInfo.type === "page"))
       return doom(target);
     if (!held.contexts.has(context)) return release(attached.sessionId);
     if (attached.targetInfo.type === "page") {
       if (held.contexts.get(context) !== undefined) return settle(context, target);
-      // Its own page isn't named yet: this may be it, so it waits for `createTarget`'s answer.
       held.waiting.set(context, [...(held.waiting.get(context) ?? []), target]);
       return;
     }
-    // Chromium's own helpers in the context (its UI pages, an extension's worker) just start.
     if (
       attached.targetInfo.type !== "service_worker" &&
       attached.targetInfo.type !== "shared_worker"
@@ -547,11 +487,9 @@ export const inputCommand = (input: ViewInput): { method: string; params: object
   };
 };
 
-/** Whether the history entry is one to go to: not the blank page every page starts on. */
 const real = (entry: { url?: string } | undefined): boolean =>
   entry !== undefined && entry.url !== "about:blank";
 
-/** Ends each page: its target, and the browser context that held its cookies and storage. */
 const closers = new WeakMap<PaneContents, () => void>();
 
 /** Closes a page `openHeadlessPage` made, with everything it stored. */
@@ -585,9 +523,7 @@ const openIn = async (
     currentIndex: 0,
     entries: [],
   };
-  /** The address `loadURL` asked for, whose request is the app's own and not the page's. */
   let appLoad: string | undefined;
-  /** A request's number across its redirects, by the browser's network id. */
   const ids = new Map<string, number>();
   let nextId = 1;
   let debuggerSession: string | undefined;
@@ -602,10 +538,6 @@ const openIn = async (
   const refreshHistory = () => {
     void readHistory().catch(() => {});
   };
-  /**
-   * Goes one entry back or forward in the history as it is now, read afresh: the copy kept for
-   * `canGoBack` is read after each load, and a navigation since may not be in it yet.
-   */
   const step = (by: -1 | 1) => {
     if (destroyed) return;
     void readHistory()
@@ -624,7 +556,6 @@ const openIn = async (
       })
       .catch(() => {});
 
-  /** Rejects when the page ends, so a command its renderer never answers ends with it. */
   const { promise: gone, reject: endGone } = Promise.withResolvers<never>();
   gone.catch(() => {});
   const destroy = () => {
@@ -646,7 +577,6 @@ const openIn = async (
     loadURL: async (target) => {
       if (destroyed) throw new Error("The page closed.");
       appLoad = target;
-      // A server that never answers would hold the thread's commands for good.
       let deadline: ReturnType<typeof setTimeout> | undefined;
       const late = new Promise<never>((_resolve, reject) => {
         deadline = setTimeout(() => {
@@ -691,8 +621,6 @@ const openIn = async (
         const session = debuggerSession;
         attaching = undefined;
         debuggerSession = undefined;
-        // Not for a page that is ending: its sessions go with its target, and a detach sent into
-        // a page stuck behind its own dialogs has brought the whole browser down.
         if (session !== undefined && !destroyed)
           void connection.send("Target.detachFromTarget", { sessionId: session }).catch(() => {});
         debuggerEvents.emit("detach");
@@ -701,8 +629,6 @@ const openIn = async (
         if (attaching === undefined) throw new Error("The debugger isn't attached.");
         const session = await attaching;
         const result = await Promise.race([connection.send(method, params, session), gone]);
-        // A page's script retitles it without an event, so the title is read again after each
-        // command, ready for the result the pane builds next.
         await refreshTitle();
         return result;
       },
@@ -717,7 +643,6 @@ const openIn = async (
     off: (event, listener) => events.off(event, listener),
   };
 
-  /** Who gets the page's frames now; one watcher at a time. */
   let onFrame: ((frame: HeadlessFrame) => void) | undefined;
   let lastFrameAt = 0;
   let focused = false;
@@ -742,12 +667,10 @@ const openIn = async (
     input: async (input) => {
       if (destroyed) return;
       if (!focused) {
-        // Keys go to a page that believes it has the focus, which no headless page has by itself.
         focused = true;
         await ownSend("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
       }
       const { method, params } = inputCommand(input);
-      // What is held is remembered, so it can be let go when the page goes back to its agent.
       if (input.type === "key") {
         if (input.action === "up") heldKeys.delete(input.keyCode);
         else if (heldKeys.size < 16 || heldKeys.has(input.keyCode)) {
@@ -766,7 +689,6 @@ const openIn = async (
         heldButton = { ...heldButton, x: input.x, y: input.y };
       }
       await Promise.race([ownSend(method, params), gone]).catch(() => {});
-      // What the input did may have retitled the page, which no event says.
       if (input.type !== "pointer" || input.action === "up") await refreshTitle();
     },
     reload: () => {
@@ -796,7 +718,6 @@ const openIn = async (
     },
   });
 
-  /** `stay` stops a navigation the page itself started and keeps the document it is on. */
   const decide = async (paused: PausedRequest): Promise<"allow" | "block" | "stay"> => {
     const verdict = await judge(paused);
     if (verdict === "allow") return "allow";
@@ -805,9 +726,7 @@ const openIn = async (
       resourceType === "Document" && (mainFrameId === undefined || frameId === mainFrameId);
     return mainFrame && !appLoads.delete(paused.requestId) ? "stay" : "block";
   };
-  /** The sessions of what the page started (workers), whose requests are paused too. */
   const children = new Set<string>();
-  /** The paused requests that were the app's own load, which fail loudly so `loadURL` hears. */
   const appLoads = new Set<string>();
   const judge = async (paused: PausedRequest): Promise<"allow" | "block"> => {
     const { request, frameId, resourceType } = paused;
@@ -876,15 +795,12 @@ const openIn = async (
       return;
     }
     if (sessionId !== undefined && children.has(sessionId)) {
-      // A worker's own request, which the page's session never sees: the local rules alone.
       if (method === "Fetch.requestPaused") answerWorker(connection, sessionId, params);
       return;
     }
     if (sessionId !== own) return;
     switch (method) {
       case "Target.attachedToTarget": {
-        // What the page starts inside itself (a worker) is held too, and runs with its requests
-        // paused like the page's.
         const attached = params as { sessionId: string };
         children.add(attached.sessionId);
         void gateWorker(connection, attached.sessionId);
@@ -898,8 +814,6 @@ const openIn = async (
             appLoads.delete(paused.requestId);
             if (verdict === "allow")
               return ownSend("Fetch.continueRequest", { requestId: paused.requestId });
-            // No content: the navigation ends and the page stays where it was, as a stopped
-            // navigation does in the desktop app, where failing it would leave an error page.
             if (verdict === "stay")
               return ownSend("Fetch.fulfillRequest", {
                 requestId: paused.requestId,
@@ -934,8 +848,6 @@ const openIn = async (
         return;
       }
       case "Page.javascriptDialogOpening": {
-        // Nobody is here to answer a dialog, and an open one stops every command: an alert,
-        // confirm or prompt is dismissed, and a page is let leave.
         void ownSend("Page.handleJavaScriptDialog", {
           accept: (params as { type?: string }).type === "beforeunload",
         }).catch(() => {});
@@ -952,8 +864,6 @@ const openIn = async (
           width: frame.metadata.deviceWidth,
           height: frame.metadata.deviceHeight,
         });
-        // The browser sends the next frame once this one is acknowledged, so a late answer is
-        // what paces a page that repaints all the time.
         const wait = Math.max(0, lastFrameAt + FRAME_INTERVAL_MS - Date.now());
         lastFrameAt = Date.now() + wait;
         setTimeout(() => {
@@ -964,10 +874,7 @@ const openIn = async (
       }
       case "Page.frameStoppedLoading": {
         if ((params as { frameId: string }).frameId !== mainFrameId) return;
-        // The history as the load left it: asked for when the navigation commits, the browser
-        // answers that no page is attached yet.
         refreshHistory();
-        // The title first, so whoever waits on the load reads the page's own.
         void refreshTitle().then(() => {
           loading = false;
           events.emit("did-stop-loading");
@@ -986,7 +893,6 @@ const openIn = async (
   await ownSend("Page.enable");
   await ownSend("Fetch.enable", ALL_REQUESTS);
   await ownSend("Page.addScriptToEvaluateOnNewDocument", { source: PAGE_SETUP });
-  // No page is loaded ahead of a navigation: such a load is the browser's own, and isn't paused.
   await ownSend("Page.setPrerenderingAllowed", { isAllowed: false }).catch(() => {});
   await ownSend("Target.setAutoAttach", {
     autoAttach: true,
@@ -996,12 +902,10 @@ const openIn = async (
   await connection.send("Target.setDiscoverTargets", { discover: true }).catch(() => {});
   refreshHistory();
   closers.set(contents, () => {
-    // Ended for the pane first, so nothing more is sent to a page on its way out.
     destroy();
     void connection.send("Target.closeTarget", { targetId }).catch(() => {});
     dispose();
   });
-  // A browser that died takes its pages with it: the next command starts another.
   connection.onClose(destroy);
   return contents;
 };
@@ -1021,9 +925,7 @@ export const headlessViews = (
   gate: () => HeadlessGate | undefined,
   failed: (error: unknown) => void = () => {},
   closed: (threadId: string) => void = () => {},
-  /** Whether a command is running on the thread's page, which is then never the one closed. */
   busy: (threadId: string) => boolean = () => false,
-  /** Where a thread's loopback is, when not this machine's (`openHeadlessPage`). */
   loopbackProxyOf: (threadId: string) => string | undefined = () => undefined,
 ): PaneViews & {
   touch(threadId: string): void;
@@ -1033,9 +935,7 @@ export const headlessViews = (
   /** The loopback proxy the thread's page was made with; `undefined` when it has no page. */
   builtWith(threadId: string): { readonly proxy: string | undefined } | undefined;
 } => {
-  // In order of use, the least recent first.
   const pages = new Map<string, Promise<PaneContents | undefined>>();
-  /** The proxy each page in `pages` was made with. */
   const proxies = new WeakMap<Promise<PaneContents | undefined>, string | undefined>();
   const touch = (threadId: string) => {
     const page = pages.get(threadId);
@@ -1085,7 +985,6 @@ export const headlessViews = (
         touch(threadId);
         return known.then((page) => {
           if (page !== undefined && !page.isDestroyed()) return page;
-          // What a page that ended by itself stored goes with it.
           if (page !== undefined) closeHeadlessPage(page);
           if (pages.get(threadId) === known) pages.delete(threadId);
           return create ? openFor(threadId) : undefined;

@@ -20,8 +20,6 @@ import {
 
 import { MOCK_HEAD_OID } from "./mock-review";
 
-// Git fixtures for MockApi: diffs, PR detail and git state per seeded thread.
-
 /** What the PR panel's writes changed on t-flaky's PR. */
 export interface MockPrWrites {
   readonly state?: PrState;
@@ -40,11 +38,9 @@ export function mockGitState(
   review: PrReviewState | undefined,
   created: MockCreated = { published: false },
   checks: PrStatus["checks"] = "failing",
-  /** Commits t-flaky made after its PR opened that origin doesn't have yet. */
   aheadUpstream: number | undefined = undefined,
   writes: MockPrWrites = {},
 ): GitState | undefined {
-  // t-dark's branch was never pushed: its PR panel offers Publish, then Create PR.
   if (threadId === "t-dark") {
     return {
       repo: true,
@@ -122,10 +118,6 @@ const RETRY_FILE: DiffFile = {
   tooLarge: false,
 };
 
-/**
- * A lockfile bump the size of a real one, +1,840 −912 over 16 hunks, so the Diff panel meets a patch
- * that can hold it up.
- */
 function lockfilePatch(): string {
   const rows: string[] = [];
   for (let h = 0; h < 16; h++) {
@@ -165,7 +157,6 @@ const UNCOMMITTED: DiffFile[] = [
     status: "renamed",
     additions: 2,
     deletions: 2,
-    // The second line is only re-indented, which Ignore whitespace leaves out.
     patch:
       "@@ -1,3 +1,3 @@\n-export const sleep = (ms: number) =>\n+export const wait = (ms: number) =>\n-  new Promise((r) => setTimeout(r, ms));\n+    new Promise((r) => setTimeout(r, ms));\n \\ No newline at end of file",
     binary: false,
@@ -194,10 +185,6 @@ const UNCOMMITTED: DiffFile[] = [
 /** t-deps's finished turn, seeded on its reply so the transcript offers a files chip. */
 export const MOCK_DEPS_TURN = "turn-deps-1" as TurnId;
 
-/**
- * t-deps's lockfile bump in full, +212 −188 over 25 hunks: what `git.diffChunk` pages through when
- * the listing sends the file without its body.
- */
 function depsLockPatch(): string {
   const rows: string[] = [];
   const packages = ["vitest", "zod", "vite", "esbuild", "rollup", "@vitest/expect", "tinypool"];
@@ -224,7 +211,6 @@ function depsLockPatch(): string {
   return rows.join("\n");
 }
 
-/** Whole patches of the files the mock lists without their bodies, by path. */
 const FULL_PATCHES: Readonly<Record<string, () => string>> = {
   "pnpm-lock.yaml": depsLockPatch,
 };
@@ -251,7 +237,6 @@ const DEPS_TURN_FILES: DiffFile[] = [
   },
 ];
 
-/** t-docs committed its README rewrite and has a clean tree, so Uncommitted falls back to the branch. */
 const README_FILE: DiffFile = {
   path: "README.md",
   status: "modified",
@@ -263,7 +248,6 @@ const README_FILE: DiffFile = {
   tooLarge: false,
 };
 
-/** A patch line without its sign and whitespace, as `git diff -w` compares lines. */
 const bare = (line: string) => line.slice(1).replace(/\s+/g, "");
 
 /**
@@ -306,7 +290,6 @@ export function withoutWhitespaceChanges(file: DiffFile): DiffFile | undefined {
   };
 }
 
-/** Shaped like the contract's `NotFound` for a file no longer in the diff. */
 class MockFileNotFound extends Error {
   readonly _tag = "NotFound";
   readonly entity = "file";
@@ -318,7 +301,6 @@ class MockFileNotFound extends Error {
   }
 }
 
-/** A short stand-in for the server's fingerprint of a patch. */
 const fingerprint = (text: string) => {
   let hash = 0;
   for (let i = 0; i < text.length; i++) hash = (Math.imul(hash, 31) + text.charCodeAt(i)) | 0;
@@ -386,7 +368,6 @@ export function mockDiff(
   return { ...diff, files: diff.files.flatMap((file) => withoutWhitespaceChanges(file) ?? []) };
 }
 
-/** Files a scenario's finished turns changed, by `thread:turn` (`registerMockTurnFiles`). */
 const scenarioTurnFiles = new Map<string, readonly DiffFile[]>();
 
 /** A scenario's finished turn changed `files`, for its "N files changed" card and Undo. */
@@ -398,7 +379,6 @@ export function registerMockTurnFiles(
   scenarioTurnFiles.set(`${threadId}:${turnId}`, files);
 }
 
-/** Uncommitted files a perf seed gave a thread (`registerMockThreadDiff`). */
 const scenarioDiffs = new Map<ThreadId, readonly DiffFile[]>();
 
 /** A seeded thread's uncommitted changes are `files`, for the Diff panel. */
@@ -406,7 +386,6 @@ export function registerMockThreadDiff(threadId: ThreadId, files: readonly DiffF
   scenarioDiffs.set(threadId, files);
 }
 
-/** Branches a scenario gave its threads: the name, and what the branch changed against main. */
 const scenarioBranches = new Map<
   ThreadId,
   { readonly branch: string; readonly files: readonly DiffFile[] }
@@ -494,10 +473,8 @@ export function mockCreatedPrDetail(
 
 const RUNS = "https://github.com/example/api/actions/runs";
 
-/** PRs a scenario seeds for its threads, as a merged worker's: read before the fixed ones below. */
 const seededPrDetails = new Map<ThreadId, PrDetail>();
 
-/** An open seeded PR's checks: two passed, its end-to-end run still going. */
 const OPEN_PR_RUNS: PrDetail["checkRuns"] = [
   {
     name: "lint",
@@ -654,7 +631,6 @@ export function mockPrDetail(
           link: `${RUNS}/9103/job/4`,
           runId: "9103",
           phase: "running",
-          // Still running, so its start counts back from now: a fixed date read as weeks of e2e.
           startedAt: new Date(Date.now() - 298_000).toISOString(),
         },
       ],

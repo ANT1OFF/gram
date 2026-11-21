@@ -32,11 +32,6 @@ export function easingCss(easing: Easing): string {
 const round = (v: number, digits = 3) => Number(v.toFixed(digits));
 const rem = (px: number) => `${round(px / 16, 4)}rem`;
 
-/**
- * The type scale as `--type-<step>-size`, `-line`, `-tracking` and, where a step has one,
- * `-weight`; globals.css maps them to the `text-<step>` utilities. A step without a weight inherits
- * its parent's.
- */
 function typeVariables(look: Look): CssVariables {
   const vars: CssVariables = {};
   for (const step of TYPE_STEPS) {
@@ -156,7 +151,6 @@ export function themeVariables(
   };
 }
 
-/** Matches the repo formatter (`bun fmt`), so generated files pass `bun run fmt:check` unchanged. */
 const PRINT_WIDTH = 100;
 
 function declaration(name: string, value: string): string {
@@ -194,14 +188,11 @@ export const SAFE_PALETTE_ID = /^[A-Za-z0-9_.:~-]{1,200}$/;
 
 /** The `[data-palette]` blocks for a palette at standard and more contrast. */
 export function paletteCss(palette: Palette, { isDefault = false } = {}): string {
-  // The id goes into the stylesheet as selector text, and a palette can come from another person
-  // on a shared server: only an id that can't close the selector is written.
   if (!SAFE_PALETTE_ID.test(palette.id))
     throw new Error(`Not a palette id: ${JSON.stringify(palette.id)}`);
   const selector = `[data-palette="${palette.id}"]`;
   return (
     cssBlock(
-      // A fallback must not override an explicit palette earlier in the stylesheet.
       isDefault ? [":where(:root)", selector] : [selector],
       paletteVariables(derivePalette(palette)),
     ) +

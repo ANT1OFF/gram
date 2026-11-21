@@ -1,6 +1,3 @@
-// The review monitor's and babysit mode's decisions as pure functions, so the
-// stop conditions, flake reruns and SHA citations are testable without a server.
-
 import {
   mergeStateAllowsMerge,
   requiredChecksGreen,
@@ -21,7 +18,6 @@ import {
 } from "@gram/contracts";
 import { actionsRunId, matchesBotLogin } from "@gram/git";
 
-/** Rounds a declined thread may stay open before babysitting hands the point to the user. */
 const DISAGREEMENT_ROUNDS = 2;
 
 const BODY_LIMIT = 600;
@@ -66,7 +62,6 @@ export type NoticeReason = "ci" | "ciCatchUp" | "round" | "verdict" | "merge";
 export const isCiOnly = (reasons: ReadonlySet<NoticeReason>): boolean =>
   reasons.size > 0 && [...reasons].every((reason) => reason === "ci" || reason === "ciCatchUp");
 
-/** Merge states worth waking the agent for: ready, conflicting, or behind its base. */
 const ACTIONABLE_MERGE_STATES: ReadonlySet<string> = new Set([
   "CLEAN",
   "UNSTABLE",
@@ -76,7 +71,6 @@ const ACTIONABLE_MERGE_STATES: ReadonlySet<string> = new Set([
   "BLOCKED",
 ]);
 
-/** UNSTABLE is CLEAN with a check nobody requires still red or running: no news between them. */
 const mergeClass = (mergeState: string): string =>
   mergeState === "UNSTABLE" ? "CLEAN" : mergeState;
 
@@ -91,7 +85,6 @@ export const noticeReasons = (
     (previous.checks !== "failing" && current.checks === "failing")
   )
     reasons.push("ci");
-  // A verdict first read is a baseline, as the monitor's first look is.
   if (previous.reviewed && current.verdict !== undefined && current.verdict !== previous.verdict)
     reasons.push("verdict");
   if (
@@ -236,7 +229,6 @@ export const stopReasonOf = (state: BabysitState, badge: PrStatus): Halt | undef
       detail: `Review thread ${disputed[0]} stayed open after ${disputed[1]} declined rounds`,
     };
   }
-  // A badge that didn't read the reviews can't say the head isn't approved.
   if (
     state.rounds >= state.budget.rounds &&
     badge.reviewUnread !== true &&

@@ -61,22 +61,11 @@ const SCOPES = [
 ] as const;
 type ScopeKind = (typeof SCOPES)[number]["kind"];
 
-/** How long a diff whose stamp hasn't moved is shown again on a remount without asking. */
 const SWITCH_BACK_FRESH_MS = 30_000;
 
-/** The file list's narrowest width for split view; below it the panel shows unified. */
 const SPLIT_VIEW_MIN_WIDTH = 560;
-/**
- * The panel's narrowest width for the file tree, beside the files. Narrower, the file list is the
- * only list: the tree above it would name the same files a second time.
- */
 const TREE_BESIDE_MIN_WIDTH = 720;
-/**
- * The most files a patch can touch and still open with its tree folded away: so few are read top
- * to bottom, and the tree would only name them again. "Files (n)" opens it.
- */
 const SMALL_PATCH_FILES = 3;
-/** The file tree's width beside the files: `w-52`. */
 const TREE_WIDTH = 208;
 
 const LAYOUTS = [
@@ -84,7 +73,6 @@ const LAYOUTS = [
   { kind: "split", label: "Split" },
 ] as const;
 
-/** The element's width, following resizes; 0 until measured. */
 function useWidth(ref: RefObject<HTMLElement | null>): number {
   const [width, setWidth] = useState(0);
   useEffect(() => {
@@ -97,7 +85,6 @@ function useWidth(ref: RefObject<HTMLElement | null>): number {
   return width;
 }
 
-/** Tree and hunk jumps count down, so they never collide with an agent request's id. */
 let jumpSeq = 0;
 
 /**
@@ -129,27 +116,21 @@ export function DiffPanel({
   const toggleWrap = useLayoutStore((s) => s.toggleDiffWrap);
   const ignoreWhitespace = useLayoutStore((s) => s.diffIgnoreWhitespace);
   const toggleIgnoreWhitespace = useLayoutStore((s) => s.toggleDiffIgnoreWhitespace);
-  // What the diff is a function of, as the server's `diffToken` has it: the working tree and HEAD,
-  // and the base a branch diff (or a clean tree's fallback to one) compares against.
   const diffStamp = useThreadsStore((s) => {
     const git = s.byId[threadId]?.git;
     return git === undefined
       ? null
       : `${git.changesToken}:${git.base ?? ""}:${git.behindBase}:${git.aheadBase}`;
   });
-  // The turns, not the messages: a streamed frame that leaves them alone doesn't re-render the diff.
   const turns = useThreadFeed(
     threadId,
     useStableSelector((s) => turnOptions(s.messages), sameTurnOptions),
   );
-  // The user's pick of scope; until there is one, the scope follows the tree (`autoScope`).
   const [chosen, setScope] = useState<ScopeKind>();
   const branchAhead = useThreadsStore((s) => {
     const git = s.byId[threadId]?.git;
     return git !== undefined && git.changedFiles === 0 && git.aheadBase > 0;
   });
-  // The stamp at which an Uncommitted diff came back as the clean tree's branch fallback: the
-  // server's base can say so where the published state hasn't yet.
   const [fellBackAt, setFellBackAt] = useState<string | null>();
   const autoScope: ScopeKind =
     branchAhead || (fellBackAt !== undefined && fellBackAt === diffStamp)
@@ -179,14 +160,9 @@ export function DiffPanel({
         ? api.gitDiff(threadId, diffScope!, { ignoreWhitespace })
         : api.gitDiff(threadId, diffScope!),
     enabled: diffScope !== undefined,
-    // A new stamp refetches, so a remount (switching back to the thread) can reuse the diff for a
-    // while, sparing several `git` runs. Only a while: the stamp's `status` doesn't list inside an
-    // untracked directory, so an edit to a file there moves the diff but not the stamp.
     staleTime: diffStamp === null ? 0 : SWITCH_BACK_FRESH_MS,
     retry: false,
   });
-  // Uncommitted, unpicked, came back as the branch: select Branch rather than leave Uncommitted
-  // selected over the branch's files.
   if (
     chosen === undefined &&
     scope === "uncommitted" &&
@@ -199,9 +175,6 @@ export function DiffPanel({
   const autoBranch = chosen === undefined && scope === "branch";
   const treeFits = width >= TREE_BESIDE_MIN_WIDTH;
   const fileCount = query.data?.files?.length ?? 0;
-  // How much the selected scope holds, beside it: shown once there is a diff with something in it.
-  // Uncommitted on a clean tree comes back as the branch, which the body says is nothing
-  // uncommitted: the branch's totals beside that would contradict it, so it shows none.
   const diffFiles =
     diffScope === undefined || branchInstead(scope, query.data) ? undefined : query.data?.files;
   const summary =
@@ -212,14 +185,11 @@ export function DiffPanel({
           additions: diffFiles.reduce((sum, f) => sum + f.additions, 0),
           deletions: diffFiles.reduce((sum, f) => sum + f.deletions, 0),
         };
-  // A small patch's tree starts folded whatever the stored choice, which is a larger patch's.
   const smallPatch = fileCount <= SMALL_PATCH_FILES;
-  // Where the diff stands, in the toolbar rather than a row of its own under it.
   const branch = diffScope === undefined ? undefined : query.data?.branch;
   const compared = scope === "uncommitted" ? undefined : query.data?.base?.replace(/^origin\//, "");
   const [smallTreeOpen, setSmallTreeOpen] = useState(false);
   const treeOpen = smallPatch ? smallTreeOpen : treeShown;
-  // A single file gets no tree, so the tree takes no width from split view.
   const treeBeside = treeOpen && treeFits && fileCount > 1;
   const splitFits = width - (treeBeside ? TREE_WIDTH : 0) >= SPLIT_VIEW_MIN_WIDTH;
   const refetch = () => (diffScope === undefined ? Promise.resolve() : query.refetch());
@@ -229,7 +199,6 @@ export function DiffPanel({
   const pendingTurn = pending === undefined ? undefined : targetTurnId(pending.target);
   const settled = !query.isPending;
 
-  // A `turn:<id>` target from a transcript chip selects that turn, once per request.
   const [appliedTarget, setAppliedTarget] = useState<number>();
   if (pending !== undefined && pendingTurn !== undefined && pending.id !== appliedTarget) {
     setAppliedTarget(pending.id);
@@ -240,7 +209,6 @@ export function DiffPanel({
     if (pending !== undefined && pendingTurn !== undefined) consumePanelTarget("diff", pending.id);
   }, [pending, pendingTurn, consumePanelTarget]);
 
-  // Runs after the rows' own effects, so the target row has already expanded and scrolled.
   useEffect(() => {
     if (pending && pendingTurn === undefined && settled) consumePanelTarget("diff", pending.id);
   }, [pending, pendingTurn, settled, consumePanelTarget]);
@@ -252,10 +220,6 @@ export function DiffPanel({
       data-layout={layout === "split" && splitFits ? "split" : "unified"}
       className="flex min-h-0 flex-1 flex-col"
     >
-      {/* The review's one toolbar: the scope, on a track with its pick on the selected slab, how
-          much it holds and on which branch, then the turn, the display choices and Refresh. In a
-          narrow panel it is two rows that stay put: the controls, then what the diff holds. Left
-          to wrap where it would, the display choices fell to a row of their own. */}
       <div className="@container/diffbar shrink-0 border-b border-border px-2 py-1.5 text-meta">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <div
@@ -330,7 +294,6 @@ export function DiffPanel({
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-1">
             {scope === "turn" && turnId !== undefined && (
-              // The app's dropdown, as every other picker in the panel; its value is the turn's prompt.
               <Select
                 value={turnId}
                 onValueChange={(value) => {
@@ -407,7 +370,6 @@ export function DiffPanel({
   );
 }
 
-/** A view toggle: a 28 px glyph button on a fill while on, named with its state on hover. */
 const VIEW_TOGGLE =
   "flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent aria-pressed:text-foreground";
 
@@ -416,17 +378,10 @@ const VIEW_MENU_POPUP =
 const VIEW_MENU_ITEM =
   "flex cursor-default items-start gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor data-[disabled]:text-muted-foreground [&_svg]:size-icon-row [&_svg]:shrink-0";
 
-/** A menu item's check column, so the items' words start on one edge. */
 function MenuCheck({ children }: { children: ReactNode }) {
   return <span className="flex h-lh w-4 shrink-0 items-center justify-center">{children}</span>;
 }
 
-/**
- * The diff's display choices, in the review's toolbar: the file tree, the one used often, as a
- * toggle that shows a fill while on, then one "View" menu holding unified or split, Wrap lines and
- * Hide whitespace changes. Each is remembered. Split says in the menu when the panel is too narrow
- * for it (it shows unified until there is room), and Wrap lines when split view holds it on.
- */
 function DiffViewControls({
   layout,
   onLayout,
@@ -444,11 +399,9 @@ function DiffViewControls({
   onWrap: () => void;
   ignoreWhitespace: boolean;
   onIgnoreWhitespace: () => void;
-  /** The file tree's choice, while the panel has room for it beside more than one file. */
   tree: { open: boolean; toggle: () => void } | undefined;
 }) {
   const shown = layout === "split" && splitFits ? "split" : "unified";
-  // Each side of a split is half as wide, so its lines always wrap.
   const wrapFixed = shown === "split";
   return (
     <div data-testid="diff-view" className="flex shrink-0 items-center gap-1">
@@ -471,7 +424,6 @@ function DiffViewControls({
             "px-2 data-popup-open:bg-accent data-popup-open:text-foreground",
           )}
         >
-          {/* The word where the toolbar has room for it beside the scope; the glyph alone below. */}
           <SlidersHorizontal aria-hidden className="size-icon-row @[21rem]/diffbar:hidden" />
           <span className="@max-[21rem]/diffbar:hidden">View</span>
           <ChevronDown
@@ -553,7 +505,6 @@ function DiffViewControls({
   );
 }
 
-/** A remembered on/off view choice, named with its state on hover. */
 function ViewToggle({
   label,
   icon: Icon,
@@ -604,11 +555,9 @@ function DiffBody({
 }: {
   threadId: ThreadId;
   scope: ScopeKind;
-  /** Branch is selected because the tree is clean, not by the user's pick. */
   autoBranch: boolean;
   onScope: (scope: ScopeKind) => void;
   prLink: boolean;
-  /** What `query` asked for, and what a file too large for it is asked for again in chunks. */
   diffScope: DiffScope | undefined;
   query: UseQueryResult<Diff>;
   layout: DiffLayout;
@@ -620,18 +569,14 @@ function DiffBody({
 }) {
   const { root, actions } = useDiffFileActions(threadId);
   const review = useDiffReviewState(threadId, query.data);
-  // Its agent's session is still opening: no change could have been made yet.
   const starting = useThreadsStore((s) => s.byId[threadId]?.status === "starting");
   const focusPath = request && checkoutRelative(request.target, root);
-  // An empty diff of a thread with a PR offers the PR's files, where the PR tab is beside it.
   const prNumber = useThreadsStore((s) => s.byId[threadId]?.git?.pr?.number);
   const requestPanel = useLayoutStore((s) => s.requestPanel);
-  // Its consumers re-render with the list anyway: the query keys, not this object, decide reuse.
   const chunkSource =
     diffScope === undefined ? undefined : { threadId, scope: diffScope, ignoreWhitespace };
   const nodes = useMemo(() => buildDiffTree(query.data?.files ?? []), [query.data]);
   const files = useMemo(() => treeOrder(nodes), [nodes]);
-  // Every hunk of every file, in the order the list shows them: what n / p step through.
   const hunks = useMemo(
     () =>
       files.flatMap((file, position) =>
@@ -648,19 +593,16 @@ function DiffBody({
   const [jump, setJump] = useState<DiffFocus & { index?: number }>();
   const [seenRequest, setSeenRequest] = useState(request?.id);
   const [jumpHunks, setJumpHunks] = useState(hunks);
-  // Another scope or a refreshed diff has other hunks: a jump into the old ones means nothing now.
   if (hunks !== jumpHunks) {
     setJumpHunks(hunks);
     setJump(undefined);
   }
-  // An agent's newer request wins over the user's last jump.
   if (request?.id !== seenRequest) {
     setSeenRequest(request?.id);
     if (request !== undefined) setJump(undefined);
   }
   const stepHunk = (delta: 1 | -1) => {
     const from = jump?.index;
-    // A cursor between hunks (`k - 0.5`) steps to the one either side of it.
     const index =
       from === undefined
         ? delta === 1
@@ -708,8 +650,6 @@ function DiffBody({
   }
   const diff = query.data;
   if (!diff.repo) return <PanelMessage>Not a git repository</PanelMessage>;
-  // Uncommitted, picked on a clean tree: the server answers with the branch, which is Branch's to
-  // show. Here it is nothing uncommitted, and the branch one click away.
   const branchBase = branchInstead(scope, diff) ? diff.base?.replace(/^origin\//, "") : undefined;
   if (branchBase !== undefined) {
     return (
@@ -718,7 +658,6 @@ function DiffBody({
       </EmptyDiff>
     );
   }
-  // Nothing to show is one line, not a heading, a notice and an empty state.
   if (files.length === 0) {
     const base = diff.base?.replace(/^origin\//, "");
     if (starting) {
@@ -728,7 +667,6 @@ function DiffBody({
         </p>
       );
     }
-    // Changes too large to list are not "no changes".
     if (diff.note === DIFF_TOO_LARGE_NOTE) {
       return (
         <p data-testid="diff-empty" className="px-3 py-2 text-meta text-muted-foreground">
@@ -782,8 +720,6 @@ function DiffBody({
             nodes={nodes}
             selected={focus?.path}
             onJump={(path) => {
-              // The cursor sits just before the file's first hunk, or where it would be if the
-              // file has none, so n and p go on to the hunks either side.
               const position = files.findIndex((file) => file.path === path);
               const next = hunks.findIndex((h) => h.position >= position);
               setJump({ path, key: --jumpSeq, index: (next === -1 ? hunks.length : next) - 0.5 });
@@ -803,14 +739,9 @@ function DiffBody({
   );
 }
 
-/**
- * Whether the diff is the branch the server answered Uncommitted with, the tree being clean: it
- * holds nothing of the selected scope, so neither the body nor the totals show its files.
- */
 const branchInstead = (scope: ScopeKind, diff: Pick<Diff, "base"> | undefined): boolean =>
   scope === "uncommitted" && diff?.base !== undefined;
 
-/** An empty scope in one line, with any note, and at most one way on to something to read. */
 function EmptyDiff({
   note,
   action,

@@ -69,7 +69,6 @@ const MODELS: readonly SpeechModelId[] = [
   ...SPEECH_ACCURATE_MODELS,
 ];
 
-/** The statuses of what `accurate` mode adds, once every one of them is known. */
 const accurateStatuses = (
   statuses: Readonly<Record<string, SpeechStatus | undefined>>,
 ): readonly SpeechStatus[] | undefined => {
@@ -77,7 +76,6 @@ const accurateStatuses = (
   return known.length === SPEECH_ACCURATE_MODELS.length ? known : undefined;
 };
 
-/** Every pinned variant's status, kept current through each one's watch. */
 function useSpeechStatuses(): Readonly<Record<string, SpeechStatus | undefined>> {
   const api = useApi();
   const [statuses, setStatuses] = useState<Record<string, SpeechStatus>>({});
@@ -95,7 +93,6 @@ function useSpeechStatuses(): Readonly<Record<string, SpeechStatus | undefined>>
   return statuses;
 }
 
-/** The system's microphone permission, asked again whenever the window comes back. */
 function useMicrophoneAccess(): MicrophoneAccess | undefined {
   const [access, setAccess] = useState<MicrophoneAccess>();
   useEffect(() => {
@@ -133,7 +130,6 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
   const current = statuses[model];
   const all = MODELS.map((id) => statuses[id]);
 
-  /** Runs a switch change after any still under way, with the switch held until it's done. */
   const change = (step: () => Promise<void>) => {
     setAsking(undefined);
     setError(undefined);
@@ -147,7 +143,6 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
         for (const id of SPEECH_ACCURATE_MODELS) await api.installSpeechModel(id);
       await api.installSpeechModel(model);
     });
-  // The switch reads on until everything is gone, so turning it on again can't race the deletion.
   const turnOff = () =>
     change(async () => {
       await stopSpeechProcess();
@@ -225,7 +220,6 @@ export function VoiceInputSection() {
   const download = (id: SpeechModelId) => {
     setError(undefined);
     inOrder(async () => {
-      // Queued behind turning off, a download has nothing left to download for.
       const latest = useServerSettings.getState().settings;
       if (latest !== undefined && voiceInputOn(latest)) await api.installSpeechModel(id);
     }).catch(fail);
@@ -279,7 +273,6 @@ export function VoiceInputSection() {
           <Toggle
             label="Keep microphone ready"
             description="Catches the half second before you press. Audio stays in memory on this computer."
-            // In the open, not in the hover: it's what turning this on consents to.
             detail={
               <p className="text-meta text-muted-foreground">
                 The microphone stays open for 2 minutes after you focus a composer or dictate, so{" "}
@@ -299,7 +292,6 @@ export function VoiceInputSection() {
             }
             onChange={(next) => {
               setError(undefined);
-              // Now, not when a composer next renders: there may be none behind Settings.
               if (!next) microphone.keepReady(false);
               save({ voice: { keepMicrophoneReady: next } }).catch(fail);
             }}
@@ -391,7 +383,6 @@ export function VoiceInputSection() {
   );
 }
 
-/** An installed variant dictation uses while the slider's own downloads, if there is one. */
 const fallbackStop = (
   stop: SpeechPerformance,
   statuses: Readonly<Record<string, SpeechStatus | undefined>>,
@@ -400,7 +391,6 @@ const fallbackStop = (
   return STOPS.find((other) => statuses[SPEECH_MODEL_FOR_STOP[other]]?.installed !== undefined);
 };
 
-/** One model on a consent screen: its name and size, and the licence that comes with it. */
 function ConsentModel({ status }: { status: SpeechStatus }) {
   const { model } = status;
   return (
@@ -433,19 +423,13 @@ const totalSize = (statuses: readonly SpeechStatus[]) =>
 const totalMemory = (statuses: readonly SpeechStatus[]) =>
   statuses.reduce((sum, status) => sum + status.model.memoryBytes, 0);
 
-/**
- * What a download fetches, under what licences, before anything is fetched: every model named,
- * each with its own licence and notice.
- */
 function DownloadNotice({
   status,
   accurate,
   onCancel,
   onDownload,
 }: {
-  /** The streaming model. */
   status: SpeechStatus;
-  /** What `accurate` adds; absent where it doesn't fit, and then only `status` is offered. */
   accurate: readonly SpeechStatus[] | undefined;
   onCancel: () => void;
   onDownload: (mode: SpeechMode) => void;
@@ -487,7 +471,6 @@ function DownloadNotice({
   );
 }
 
-/** Accurate or Live, with what the choice does. */
 function ModeRow({
   mode,
   disabled,
@@ -515,7 +498,6 @@ function ModeRow({
   );
 }
 
-/** What Accurate adds: consent, then its download, as one row. */
 function AccurateModelsRow({
   statuses,
   disabled,
@@ -640,7 +622,6 @@ function AccurateModelsRow({
   }
 }
 
-/** The consent for adding Accurate to a voice input that is already on. */
 function AccurateNotice({
   statuses,
   onCancel,
@@ -680,7 +661,6 @@ function AccurateNotice({
   );
 }
 
-/** The slider's model: ready, on its way, paused, or why it stopped. */
 function ModelRow({
   status,
   fallback,
@@ -690,7 +670,6 @@ function ModelRow({
   status: SpeechStatus;
   fallback: SpeechPerformance | undefined;
   onDownload: (id: SpeechModelId) => void;
-  /** While the switch is changing what's installed. */
   disabled: boolean;
 }) {
   const api = useApi();
@@ -786,7 +765,6 @@ function ModelRow({
   }
 }
 
-/** A thin determinate bar, or an indeterminate one without `value`. */
 function ProgressBar({ value, max }: { value: number | undefined; max: number | undefined }) {
   const ratio = value === undefined || max === undefined || max === 0 ? undefined : value / max;
   return (
@@ -809,15 +787,10 @@ function ProgressBar({ value, max }: { value: number | undefined; max: number | 
   );
 }
 
-/**
- * Whether the system lets Gram use the microphone, with the way to change it. `held` is "Keep
- * microphone ready", which makes "only while you dictate" untrue.
- */
 function MicrophoneRow({ held }: { held: boolean }) {
   const access = useMicrophoneAccess();
   if (access === undefined) return null;
   if (access === "unknown") {
-    // Linux has no per-app permission to show: Chromium opens the sound server's default input.
     if (window.gram?.platform !== "linux") return null;
     return (
       <SettingRow
@@ -859,14 +832,12 @@ function MicrophoneRow({ held }: { held: boolean }) {
   );
 }
 
-/** The start and stop tones: on or off, and how loud, with a tone to hear each change by. */
 function SoundsRow({
   on,
   stored,
   onChange,
 }: {
   on: boolean;
-  /** The volume kept for when they're on. */
   stored: number;
   onChange: (patch: { sounds?: boolean; soundVolume?: number }) => void;
 }) {
@@ -916,7 +887,6 @@ function SoundsRow({
   );
 }
 
-/** Responsive · Balanced · Efficient, with what the chosen stop costs in plain words. */
 function PerformanceSlider({
   stop,
   disabled,
@@ -925,7 +895,6 @@ function PerformanceSlider({
 }: {
   stop: SpeechPerformance;
   disabled: boolean;
-  /** Bytes the chosen stop's model still needs, while it isn't installed. */
   needsDownload: number | undefined;
   onChange: (stop: SpeechPerformance) => void;
 }) {

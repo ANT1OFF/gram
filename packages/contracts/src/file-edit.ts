@@ -1,9 +1,5 @@
 import type { StructuredPatchHunk } from "./ui-message.ts";
 
-// One shape for a file an agent changed, whichever agent and tool did it, so the transcript draws
-// every edit with one component: Claude's Edit, MultiEdit and Write calls, and the file changes a
-// Codex patch makes, which its mapper stores as `Edit` and `Write` calls carrying `changes`.
-
 /** What happened to the file. `write` is a whole-file write over contents nobody reported. */
 export type FileEditKind = "create" | "modify" | "delete" | "write";
 
@@ -59,7 +55,6 @@ export function unifiedDiffHunks(diff: string): StructuredPatchHunk[] {
   return hunks;
 }
 
-/** A file's lines; a final newline ends the last line rather than starting an empty one. */
 const linesOf = (text: string) => (text === "" ? [] : text.replace(/\n$/, "").split("\n"));
 
 /** A whole file as one hunk of additions (a new file) or removals (a deleted one). */
@@ -92,12 +87,10 @@ export const patchChangeHunks = (change: PatchChange): StructuredPatchHunk[] =>
     ? unifiedDiffHunks(change.diff)
     : wholeFileHunks(change.diff, change.kind.type === "add" ? "+" : "-");
 
-/** Edits past this many compared line pairs are shown as all removed, then all added. */
 const MAX_DIFF_CELLS = 1_000_000;
 
 type Op = { sign: " " | "-" | "+"; text: string };
 
-/** A line diff of `before` against `after`: the longest common subsequence, kept as context. */
 function diffLines(before: readonly string[], after: readonly string[]): Op[] {
   let head = 0;
   while (head < before.length && head < after.length && before[head] === after[head]) head++;
@@ -115,7 +108,6 @@ function diffLines(before: readonly string[], after: readonly string[]): Op[] {
     middle.push(...a.map((text) => ({ sign: "-" as const, text })));
     middle.push(...b.map((text) => ({ sign: "+" as const, text })));
   } else {
-    // lcs[i][j]: the common subsequence length of a[i..] and b[j..], flattened.
     const width = b.length + 1;
     const lcs = new Uint32Array((a.length + 1) * width);
     for (let i = a.length - 1; i >= 0; i--) {
@@ -152,7 +144,6 @@ function diffLines(before: readonly string[], after: readonly string[]): Op[] {
   ];
 }
 
-/** Unchanged lines kept around each change in a whole-file diff, as `git diff` does. */
 const CONTEXT = 3;
 
 /** Hunks for a change of a whole file from `before` to `after`, with `CONTEXT` lines around each. */
@@ -162,7 +153,6 @@ export function fileDiffHunks(before: string, after: string): StructuredPatchHun
   let oldNo = 1;
   let newNo = 1;
   let current: StructuredPatchHunk | undefined;
-  /** Context lines seen since the last change, not yet in a hunk. */
   let pending: Op[] = [];
   let pendingStart = { oldNo, newNo };
   for (const op of ops) {
@@ -171,7 +161,6 @@ export function fileDiffHunks(before: string, after: string): StructuredPatchHun
       pending.push(op);
       oldNo++;
       newNo++;
-      // Far enough from the last change that the next one starts a hunk of its own.
       if (current !== undefined && pending.length === CONTEXT * 2) {
         const kept = pending.slice(0, CONTEXT);
         current.lines.push(...kept.map((line) => ` ${line.text}`));
@@ -322,7 +311,6 @@ export function fileEditsOf(toolName: string, input: unknown, output: unknown): 
   if (toolName === "Write") {
     const content = text(result["content"]) ?? text(args["content"]) ?? "";
     if (result["type"] === "create") return [edit(path, "create", wholeFileHunks(content, "+"))];
-    // Codex stores a patch that adds one file as a Write whose one hunk adds everything.
     const first = patch?.[0];
     if (patch?.length === 1 && first?.oldStart === 0 && first.oldLines === 0) {
       return [edit(path, "create", patch)];

@@ -51,7 +51,6 @@ export const readImage = (
     });
     if (info.isDirectory()) return yield* new InvalidState({ message: `Is a folder: ${path}` });
     if (info.size > maxBytes) return { path, mediaType, size: info.size, tooLarge: true };
-    // At most one byte past the limit, so an image that grew since `stat` is still cut off there.
     const bytes = yield* Effect.tryPromise({
       try: () => readUpTo(handle, maxBytes + 1),
       catch: () => new InvalidState({ message: `Can't read ${path}` }),

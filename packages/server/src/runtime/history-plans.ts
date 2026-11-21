@@ -1,5 +1,3 @@
-// Resuming, forking and rewinding a thread's agent session.
-
 import {
   type AgentUnavailable,
   effectiveCheckout,
@@ -60,10 +58,6 @@ export const BEFORE_HANDOFF =
 export const RESERVED_REWIND =
   "the thread is closing or its worktree is being cleaned up; rewind it after";
 
-/**
- * The thread's last message that `keep` keeps, read from the end in growing windows: what it skips
- * (unsent launches, restart markers) is a few messages, and a fork can copy a history of thousands.
- */
 const lastMessageWhere = (
   store: ThreadStoreShape,
   threadId: ThreadId,
@@ -84,14 +78,8 @@ export interface ResumePlansDeps {
 
 /** How a thread's next session resumes its agent's conversation. */
 export const makeResumePlans = ({ store }: ResumePlansDeps) => {
-  /**
-   * A thread resumes its own agent session, optionally at `resumeAt`. A session that never received
-   * a message has no transcript, so it opens fresh under the same id. A fork without a used session
-   * forks the source's session at `resumeAt` or the last message it copied.
-   */
   const resumeOptions = (thread: Thread, resumeAt: string | undefined) =>
     Effect.gen(function* () {
-      // A Codex session stays in the home it was first opened in.
       const home: ResumeOptions =
         thread.codexHome === undefined ? {} : { codexHome: thread.codexHome };
       if (thread.agentSessionId !== undefined && thread.agentSessionUnused !== true) {
@@ -108,8 +96,6 @@ export const makeResumePlans = ({ store }: ResumePlansDeps) => {
       };
       const source = thread.forkedFrom;
       if (source?.agentSessionId === undefined) return sameId;
-      // A launch the agent hasn't had yet, as a reopen before its session ever ran it leaves, is in
-      // the feed under its queue item's id; the source session has no such message.
       const unsent = new Set<string>((yield* store.listQueue(thread.id)).map((item) => item.id));
       const anchor =
         resumeAt ??
@@ -118,7 +104,6 @@ export const makeResumePlans = ({ store }: ResumePlansDeps) => {
           thread.id,
           (m) => !unsent.has(m.id) && !isRestartMarker(m),
         ))?.metadata?.agentMessageIds?.at(-1);
-      // A fork runs in its source session's home.
       const options: ResumeOptions =
         anchor === undefined
           ? sameId
@@ -193,8 +178,6 @@ export const makeHistoryMethods = ({
       const rt = yield* getRuntime(threadId);
       const invalid = (message: string) =>
         Effect.fail(new InvalidState({ message, threadId, status: rt.status }));
-      // Before the handler restores any files: a rewind reopens the session, which neither a
-      // close nor `whileAtRest` may have opened under it.
       if (rt.closing || rt.reserved) return yield* invalid(RESERVED_REWIND);
       if (
         yield* locked(
@@ -211,7 +194,6 @@ export const makeHistoryMethods = ({
       }
       let anchor =
         target.role === "user" ? yield* store.previousMessage(threadId, messageId) : target;
-      // A restart's divider holds no agent message: the conversation resumes from before it.
       while (anchor !== undefined && target.role === "user" && isRestartMarker(anchor)) {
         anchor = yield* store.previousMessage(threadId, anchor.id);
       }
@@ -256,7 +238,6 @@ export const makeHistoryMethods = ({
             rt,
             Effect.gen(function* () {
               const committed = yield* store.rewindThread(threadId, plan, restoreFiles);
-              // No live feed/in-flight mutation until the whole store transaction commits.
               rt.open.clear();
               yield* replaceFeed(rt);
               return committed;
@@ -343,9 +324,7 @@ export const makeHistoryMethods = ({
           ...(source.agentSessionId === undefined ? {} : { agentSessionId: source.agentSessionId }),
           ...(source.codexHome === undefined ? {} : { codexHome: source.codexHome }),
         },
-        // A fork of a thread started from a profile is held to the same charter and MCP server.
         ...(source.profile === undefined ? {} : { profile: source.profile }),
-        // And a fork of a thread readable by one person is readable by them alone.
         ...(source.readableBy === undefined ? {} : { readableBy: source.readableBy }),
         ...(source.readableBy === undefined || source.readers === undefined
           ? {}

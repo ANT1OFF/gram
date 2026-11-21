@@ -10,9 +10,7 @@ import * as Effect from "effect/Effect";
 import { SqlClient } from "../platform/unstable.ts";
 import { addTotals, emptyTotals, type UsageRecord } from "./aggregate.ts";
 
-/** Most models one breakdown row lists; the rest still count in its totals. */
 const BREAKDOWN_MODELS = 16;
-/** Longest title a breakdown carries, in characters. */
 const TITLE_CHARS = 200;
 
 interface Tally {
@@ -182,7 +180,6 @@ export const readBreakdownNames = (threadIds: readonly string[]) =>
         role: text(row.role),
       });
     }
-    // A row holds a `WorkspaceState`, so the name is under `workspace`.
     const workspaceRows = yield* sql<{ readonly id: string; readonly name: unknown }>`
       SELECT id,
         substr(json_extract(CASE WHEN json_valid(data) THEN data ELSE '{}' END, '$.workspace.name'), 1, ${TITLE_CHARS}) AS name

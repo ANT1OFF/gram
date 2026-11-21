@@ -17,11 +17,6 @@ import {
   type TimedLine,
 } from "./stream-model";
 
-/**
- * A count's tone, only where it is an alarm or an ask: amber for what needs the user (#121), red
- * for a failure. Everything else on the line (merges, reports, digests) stays muted meta, so the
- * orchestrator's reply around it is the strongest thing in the pane.
- */
 const COUNT_TONE: Record<string, string> = {
   ask: "text-status-needs",
   failed: "text-destructive",
@@ -60,7 +55,6 @@ export function UpdateBlock({
   const [everOpened, setOpened] = useState(false);
   const opened = everOpened || open;
   const bodyId = useId();
-  // A line, not a card: the answers around it carry the weight, and the row step its space.
   const box = "w-full";
   if (quiet) {
     return (
@@ -124,11 +118,6 @@ export function UpdateBlock({
   );
 }
 
-/**
- * A quiet update: digests, their lines and the orchestrator's replies that changed nothing for the
- * user, as one line that updates in place. It starts closed; open, it shows every line, every reply
- * and the digests behind them, so nothing it folds is out of reach.
- */
 function QuietUpdate({
   lines,
   digests,
@@ -245,7 +234,6 @@ export function UpdateRun({
   const words = runWords(parts, undefined, endWord);
   const said = words.counts.map((count) => count.text);
   if (words.digest !== undefined) said.push(words.digest);
-  // Merged lines alone need no heading: "6 merged" says it.
   const head = parts.some((part) => part.kind === "update") ? "Updates" : undefined;
   const phrases = [
     ...(head === undefined ? [] : [{ key: "head", text: head, tone: undefined }]),
@@ -319,7 +307,6 @@ export function UpdateRun({
   );
 }
 
-/** An update's time, first on its line, as the stream's other markers put it. */
 function UpdateTime({ time }: { time: string | undefined }) {
   if (time === undefined) return null;
   return (
@@ -329,10 +316,6 @@ function UpdateTime({ time }: { time: string | undefined }) {
   );
 }
 
-/**
- * What the line does, in words, after what it says: a cut preview ends in "…", so the fold says
- * "More" rather than leaving the chevron alone to tell it opens. The toggle's name already says it.
- */
 function FoldWord({ open }: { open: boolean }) {
   return (
     <span
