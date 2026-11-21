@@ -173,16 +173,17 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
   const surface2 = s.bg;
   const lighterSurface = luminance(surface1) > luminance(surface2) ? surface1 : surface2;
   // A raised card, a field or a menu: in dark a clear step off the page, so a card reads by its fill
-  // rather than by an outline; in light, a step toward white, its edge carrying the rest. Near-black
-  // surfaces take the larger step, where a small one barely shows; mid-tone ones already separate.
+  // rather than by an outline; in light, white, the step a light page leaves room for (the light
+  // presets keep their page a step under white so it shows). Near-black surfaces take the larger
+  // step, where a small one barely shows; mid-tone ones already separate.
   const raisedStep = hexToOklch(lighterSurface).l < 0.3 ? 0.055 : 0.035;
-  const surface3 = dark
-    ? shiftLightness(lighterSurface, raisedStep)
-    : mix(lighterSurface, "#ffffff", 0.5);
+  const surface3 = dark ? shiftLightness(lighterSurface, raisedStep) : "#ffffff";
   // Hover sits a shade past the raised step in dark, so a row on a card still lights under the
   // pointer; on a palette whose surfaces are already light enough that the shade would cost the text
-  // its floor, it keeps the plain step toward the text.
-  const plainHover = mix(surface2, s.text, 0.07);
+  // its floor, it keeps the plain step toward the text. In light it steps off the darker of the page
+  // and the chrome, so a lit row and a control's track still show on chrome that sits below the page.
+  const darkerSurface = luminance(surface1) < luminance(surface2) ? surface1 : surface2;
+  const plainHover = mix(dark ? surface2 : darkerSurface, s.text, 0.07);
   const surfaceHover = dark
     ? ([mix(surface3, s.text, 0.05), plainHover].find(
         (hover) => contrastRatio(s.text, hover) >= target.text,
