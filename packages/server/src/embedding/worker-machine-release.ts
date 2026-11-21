@@ -244,9 +244,15 @@ export const releaseTeller = (
     run: MachineRun | null | undefined,
   ): Effect.Effect<void, Error> =>
     Effect.suspend(() => {
+      const at = now();
+      // One not asked again within the longest wait after its own is no longer being told (told
+      // since, or forgotten): let go.
+      for (const [each, entry] of refused) if (at - entry.until > TOLD_FOR_MS) refused.delete(each);
       const key = toldKey(machine);
       const before = refused.get(key);
-      if (before !== undefined && now() < before.until)
+      // Held off until its time, but never longer than its own wait from now: a clock stepped
+      // back since keeps it no longer.
+      if (before !== undefined && at < before.until && before.until - at <= before.waitMs)
         return Effect.fail(new ReleaseHeldOff("the server refused it before; told again later"));
       return tellSignedInRelease(
         port,
@@ -302,6 +308,20 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
       if (machines.length === 0) return;
+      // Each hosted machine's run, taken before anything the decision reads: a start of it in
+      // between (a wake) is a newer run, which its release is then never told for.
+      const runs = new Map<string, MachineRun | null | undefined>(
+        machines.flatMap((machine) =>
+          machine.via === undefined
+            ? []
+            : [
+                [
+                  machine.id,
+                  relayed?.knownRun?.(machine.via, machine.name, machine.viaAccount),
+                ] as const,
+              ],
+        ),
+      );
       const threads = yield* store.listThreads;
       const finished = new Set<ThreadId>();
       const embeddedFinished = new Set<ThreadId>();
@@ -311,7 +331,6 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         for (const id of releasableWorkers(ledger.value.features)) finished.add(id);
         for (const id of finishedWorkers(ledger.value.features)) embeddedFinished.add(id);
       }
-      // A hosted machine's run is taken as its release is decided: the one it is told for.
       const decided = releaseDecisions(
         machines,
         threads,
@@ -319,17 +338,7 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         Date.now(),
         told,
         embeddedFinished,
-      ).map((decision) => ({
-        ...decision,
-        run:
-          decision.machine.via === undefined
-            ? undefined
-            : relayed?.knownRun?.(
-                decision.machine.via,
-                decision.machine.name,
-                decision.machine.viaAccount,
-              ),
-      }));
+      ).map((decision) => ({ ...decision, run: runs.get(decision.machine.id) }));
       for (const { machine, released, run } of decided) {
         const sent = yield* tell(machine, released, run).pipe(Effect.result);
         // Kept only once the provider took it: one it didn't apply is told again next pass.
