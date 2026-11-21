@@ -112,6 +112,13 @@ const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
  * The folder under `.worktrees/`: slashes flattened. A name Windows reserves for a device gets a
  * `wt-` prefix, since no folder can carry it there.
  */
+/**
+ * The branch a folder's own changes are set aside on before a thread's work is put back over it
+ * (`setAsideFor`): `aside/<name>-<yyyymmddhhmm>`, from the thread's branch or id and the time.
+ */
+export const asideBranchOf = (name: string, at: number): string =>
+  `aside/${folderName(name)}-${new Date(at).toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
+
 export const folderName = (safeBranch: string): string => {
   const flat = safeBranch.replaceAll("/", "-");
   return WINDOWS_DEVICE_NAME.test(flat) ? `wt-${flat}` : flat;

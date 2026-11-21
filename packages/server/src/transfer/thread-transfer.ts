@@ -45,6 +45,7 @@ import {
   THREAD_BUNDLE_FORMAT,
 } from "@gram/contracts/thread-transfer";
 import {
+  asideBranchOf,
   copyWorktreeIncludes,
   excludeWorktreesFolder,
   fetchBranchTip,
@@ -731,8 +732,7 @@ const make = (options: ThreadTransferOptions) =>
         const cloneIdentity = yield* withGit("", recordedOriginAt(store, top));
         const recorded = cloneIdentity === undefined ? {} : { cloneIdentity };
         if (inPlace) {
-          const stamp = new Date(now).toISOString().slice(0, 16).replace(/[-:T]/g, "");
-          const aside = `aside/${folderName(branch ?? bundle.thread.id)}-${stamp}`;
+          const aside = asideBranchOf(branch ?? bundle.thread.id, now);
           const put = yield* withGit(
             "The thread's edits couldn't be put back in its folder here",
             Effect.gen(function* () {

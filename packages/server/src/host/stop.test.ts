@@ -1057,11 +1057,11 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       const asked = { threadId: THREAD, cwd: clone, url: URL, branch: "main" };
       expect(yield* stop.restore!(asked)).toMatchObject({ restored: true });
       expect(readFileSync(join(clone, "new.txt"), "utf8")).toBe("untracked\n");
-      // Over changes that aren't the kept work: nothing is put back over them.
+      // Over changes that aren't the kept work: they go on a branch of their own, and the work
+      // comes back over the folder.
       write(join(clone, "mine.txt"), "mine\n");
-      const again = yield* stop.restore!(asked).pipe(Effect.flip);
-      expect(again.message).toContain("changes of its own");
-      expect(readFileSync(join(clone, "mine.txt"), "utf8")).toBe("mine\n");
+      const aside = /branch (aside\/main-\d{12})\.$/.exec((yield* stop.restore!(asked)).note!);
+      expect(run(clone, "show", `${aside?.[1]}:mine.txt`)).toBe("mine\n");
     }).pipe(Effect.scoped, live),
   );
 
