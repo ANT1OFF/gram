@@ -64,6 +64,7 @@ import {
 } from "./ask-limits.ts";
 import { postJson } from "./endpoint.ts";
 import { messageEvent } from "./message-event.ts";
+import { backfillPage } from "./backfill-page.ts";
 import {
   isUsersQuestion,
   workerQuestionAsk,
@@ -133,6 +134,11 @@ export interface EventSinkShape {
   setFeatureCardRefresh(
     refresh: (workspaceId: WorkspaceId) => Effect.Effect<void>,
   ): Effect.Effect<void>;
+  /**
+   * How the sink tells which of a thread's stored messages are still streaming, stored only in
+   * part: the backfill leaves each to be sent when it settles. Set once, by the runtimes.
+   */
+  setStreaming(streaming: (threadId: ThreadId) => ReadonlySet<string>): Effect.Effect<void>;
 }
 
 /** A workspace's orchestrator as the sink reads it (`EventSinkOptions.orchestrators`). */
@@ -218,6 +224,8 @@ export const SINK_MAX_UNSENT = 200_000;
  * hundred large messages are not one request. It always carries one event at least.
  */
 export const SINK_BATCH_BYTES = 1024 * 1024;
+
+const noneStreaming = (): ReadonlySet<string> => new Set();
 
 /** How many messages a thread's stored messages are read and recorded at a time. */
 const MESSAGES_PAGE = 50;
@@ -353,6 +361,7 @@ export const makeEventSink = (
     /** True while the sink is being made: a `sink.started` then is the server's own start. */
     let booting = true;
     let refreshCards: ((workspaceId: WorkspaceId) => Effect.Effect<void>) | undefined;
+    let streaming: (threadId: ThreadId) => ReadonlySet<string> = noneStreaming;
     let on = false;
     let checkedAt = Number.NEGATIVE_INFINITY;
 
@@ -1004,29 +1013,27 @@ export const makeEventSink = (
         }
         if (outbox.last() > outbox.confirmed()) return "wait" as const;
         const threadId = next.threadId as ThreadId;
+        const streamingBefore = streaming(threadId);
         const page = yield* read(threadId, { afterSeq: next.afterSeq, limit: MESSAGES_PAGE });
         const now = yield* Clock.currentTimeMillis;
         yield* Effect.sync(() => {
           // Removed since the page was read: its `thread.removed` is recorded or about to be,
           // and a receiver that deleted its messages is sent none after.
           if (removed.has(threadId)) return outbox.appendBackfill(threadId, [], "done");
-          // As many as one batch carries, and one at least.
-          let bytes = 0;
-          let taken = 0;
-          const events: Array<SinkEventInput> = [];
-          for (const stored of page) {
-            const event = messageEvent(scoped(threadId), stored, now);
-            bytes += JSON.stringify(event).length;
-            if (taken > 0 && bytes > batchBytes) break;
-            taken++;
-            // One that went as it changed, while this waited its turn, is at the receiver as it
-            // is now.
-            if (owed(threadId, stored, false)) events.push({ ...event, at: now });
-          }
+          const streamingNow = streaming(threadId);
+          const taken = backfillPage(
+            { page, afterSeq: next.afterSeq, limit: MESSAGES_PAGE },
+            {
+              streaming: (id) => streamingBefore.has(id) || streamingNow.has(id),
+              event: (stored) => messageEvent(scoped(threadId), stored, now),
+              batchBytes,
+              owed: (stored) => owed(threadId, stored, false),
+            },
+          );
           outbox.appendBackfill(
             threadId,
-            events,
-            taken === page.length && page.length < MESSAGES_PAGE ? "done" : page[taken - 1]!.seq,
+            taken.events.map((event) => ({ ...event, at: now })),
+            taken.afterSeq,
           );
         });
         yield* Queue.offer(wake, true);
@@ -1097,6 +1104,10 @@ export const makeEventSink = (
         Effect.sync(() => {
           refreshCards = refresh;
         }),
+      setStreaming: (ofThread) =>
+        Effect.sync(() => {
+          streaming = ofThread;
+        }),
     };
   });
 
@@ -1125,6 +1136,7 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
     noteCreator: () => Effect.void,
     featureCards: () => Effect.void,
     setFeatureCardRefresh: () => Effect.void,
+    setStreaming: () => Effect.void,
   };
 
   /** From the server's config and settings; `off` with no endpoint configured. */

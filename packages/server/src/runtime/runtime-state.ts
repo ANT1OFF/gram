@@ -63,6 +63,11 @@ export interface InFlight {
   nested: boolean;
   /** Saw `finish` or `abort`: clients treat any later chunk as the message streaming again. */
   finished: boolean;
+  /**
+   * What is stored of it is whole, as `message.settled` last said: until then the stored copy is
+   * part of it, and the event sink's backfill leaves it to be sent when it settles.
+   */
+  settled: boolean;
   /** `performance.now()` before which a completed part isn't stored on its own. */
   nextPersistAt: number;
   /** A completed part is held here and not yet stored, which `flushUnsaved` stores. */

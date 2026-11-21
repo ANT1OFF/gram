@@ -2,10 +2,12 @@
 // endpoints, a fake agent, and the steps those tests share.
 import {
   applySettingsPatch,
+  type GramUIMessage,
   type ServerEvent,
   type SinkEvent,
   type ThreadId,
 } from "@gram/contracts";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -88,6 +90,7 @@ export const serverLayer = (
   sinkMessages = false,
   /** A data folder for a server that is started again; absent, nothing outlives the layer. */
   dir?: string,
+  toolStepDelay: Duration.Input = "20 millis",
 ) =>
   AppToolRegistry.layer.pipe(
     Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
@@ -97,7 +100,7 @@ export const serverLayer = (
     Layer.provideMerge(
       ThreadStore.layerSqlite(dir === undefined ? ":memory:" : join(dir, "gram.db")),
     ),
-    Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo", toolStepDelay: "20 millis" })),
+    Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo", toolStepDelay })),
     Layer.provideMerge(TurnHooks.layerNoop),
     Layer.provideMerge(CheckoutService.layerNoGit),
     Layer.provideMerge(
@@ -155,6 +158,20 @@ export const sessionOf = (threadId: ThreadId) =>
     const control = yield* FakeAgentControl;
     return yield* control.latest(threadId);
   });
+
+/** Waits for the receiver to hold the message `messageId` with its turn's end stamped on it. */
+export const sentTurnEnd = (to: { readonly held: ReadonlyArray<SinkEvent> }, messageId: string) =>
+  eventually(
+    "the reply with its turn's end",
+    Effect.sync(() =>
+      to.held.some(
+        (event) =>
+          event.type === "message" &&
+          event.data["id"] === messageId &&
+          (event.data["message"] as GramUIMessage).metadata?.turnEnd !== undefined,
+      ),
+    ),
+  );
 
 /** What the receiver holds once the sink has nothing more to send it. */
 export const settledAt = (to: { readonly held: ReadonlyArray<SinkEvent> }) =>
