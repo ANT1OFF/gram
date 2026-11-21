@@ -20,7 +20,7 @@ import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 import { FAKE_CAPABILITIES, FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
-import { makeRuntimeTestLayer, RuntimeTestLayer, waitFor } from "./test-harness.ts";
+import { makeRuntimeTestLayer, RuntimeTestLayer, waitFor, respondAsShown } from "./test-harness.ts";
 import { ThreadRuntimes, type JoinQueued } from "./thread-runtimes.ts";
 
 /** An input another thread sent, as `send_message` makes one. */
@@ -1075,14 +1075,17 @@ describe("ThreadRuntimes into a turn waiting on the user", () => {
       return Effect.gen(function* () {
         const { runtimes, thread, session } = yield* atCard;
         const scope = yield* Effect.scope;
+        const threads = yield* ThreadStore;
         finishOld = Effect.forkIn(
-          runtimes
-            .respond(thread.id, "req-1" as RequestId, {
-              kind: "approval",
-              decision: "deny",
-              scope: "once",
-            })
-            .pipe(Effect.andThen(session.completeTurn()), Effect.ignore),
+          respondAsShown(runtimes, thread.id, "req-1" as RequestId, {
+            kind: "approval",
+            decision: "deny",
+            scope: "once",
+          }).pipe(
+            Effect.provideService(ThreadStore, threads),
+            Effect.andThen(session.completeTurn()),
+            Effect.ignore,
+          ),
           scope,
         ).pipe(Effect.asVoid);
         yield* runtimes.steer(
@@ -1151,7 +1154,7 @@ describe("ThreadRuntimes into a turn waiting on the user", () => {
       ).pipe(Layer.provide(FakeAgentAdapter));
       return Effect.gen(function* () {
         const { runtimes, thread, session } = yield* atCard;
-        yield* runtimes.respond(thread.id, "req-1" as RequestId, {
+        yield* respondAsShown(runtimes, thread.id, "req-1" as RequestId, {
           kind: "approval",
           decision: "deny",
           scope: "once",

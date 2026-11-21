@@ -44,7 +44,7 @@ import { AgentHosts } from "./agent-hosts.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
 import { agentHostThroughHost } from "./host-agent-sessions.ts";
 import { KeptSessions, makeKeptSessions, readRecord } from "./kept-sessions.ts";
-import { makeRuntimeTestLayer, replyStart } from "./test-harness.ts";
+import { makeRuntimeTestLayer, replyStart, respondAsShown } from "./test-harness.ts";
 import { stopForShutdown } from "./shutdown.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
@@ -304,7 +304,7 @@ describe("a session kept running after Gram quits", () => {
             expect(turn?.endedAt).toBeUndefined();
 
             // Answered here, the answer reaches the same agent session.
-            yield* runtimes.respond(first.threadId, "req-1" as RequestId, {
+            yield* respondAsShown(runtimes, first.threadId, "req-1" as RequestId, {
               kind: "approval",
               decision: "allow",
               scope: "once",

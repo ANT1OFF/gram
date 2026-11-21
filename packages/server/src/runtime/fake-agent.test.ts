@@ -11,7 +11,7 @@ import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FAKE_CAPABILITIES, FakeAgentControl, makeFakeAgentAdapter } from "./fake-agent.ts";
 import { CheckoutService, TurnHooks } from "./hooks.ts";
-import { TEST_CONFIG, waitFor } from "./test-harness.ts";
+import { TEST_CONFIG, waitFor, respondAsShown } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 const EchoLayer = AppToolRegistry.layer.pipe(
@@ -122,7 +122,7 @@ describe("fake agent echo replies", () => {
       expect(request).toMatchObject({ kind: "approval", toolName: "Bash" });
       expect(yield* replies(thread.id)).toEqual([]);
 
-      yield* runtimes.respond(thread.id, request!.id, {
+      yield* respondAsShown(runtimes, thread.id, request!.id, {
         kind: "approval",
         decision: "allow",
         scope: "once",
@@ -153,7 +153,7 @@ describe("fake agent echo replies", () => {
       const allow = { kind: "approval", decision: "allow", scope: "once" } as const;
 
       yield* fake.setRespondFailure("Codex didn't take the approval: HTTP 503");
-      const refused = yield* Effect.flip(runtimes.respond(thread.id, request!.id, allow));
+      const refused = yield* Effect.flip(respondAsShown(runtimes, thread.id, request!.id, allow));
       expect(refused).toMatchObject({
         _tag: "InvalidState",
         message: "Codex didn't take the approval: HTTP 503",
@@ -162,7 +162,7 @@ describe("fake agent echo replies", () => {
       expect(yield* runtimes.status(thread.id)).toBe("needsApproval");
 
       yield* fake.setRespondFailure(undefined);
-      yield* runtimes.respond(thread.id, request!.id, allow);
+      yield* respondAsShown(runtimes, thread.id, request!.id, allow);
       expect(yield* store.listRequests(thread.id)).toEqual([]);
       const [reply] = yield* waitFor(
         "the reply after approval",
@@ -291,7 +291,7 @@ describe("fake agent /call", () => {
             runtimes.status(thread.id).pipe(Effect.map((s) => s === "needsApproval")),
           );
           const [request] = yield* store.listRequests(thread.id);
-          yield* runtimes.respond(thread.id, request!.id, {
+          yield* respondAsShown(runtimes, thread.id, request!.id, {
             kind: "approval",
             decision,
             scope: "once",

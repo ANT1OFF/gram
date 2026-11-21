@@ -5,7 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { AgentEvent, RequestAnswer, RequestId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { HttpServerResponse, HttpServerRequest } from "../platform/unstable.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { KEYLESS_ANSWER } from "../runtime/card-key.ts";
 import { RuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
@@ -27,11 +27,22 @@ const approval: AgentEvent = {
   },
 };
 
+/** The thread as a check made before its card was asked reads it: no card yet. */
+const before = (real: ThreadStoreShape) => ({
+  appendActorEvents: real.appendActorEvents,
+  listRequests: () => Effect.succeed([]),
+});
+
 /** An answer posted as an embedding posts it, and what the route said. */
-const post = (threadId: string, shown: string | undefined) =>
+const post = (
+  threadId: string,
+  shown: string | undefined,
+  seen?: (store: ThreadStoreShape) => Pick<ThreadStoreShape, "appendActorEvents" | "listRequests">,
+) =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
-    const store = yield* ThreadStore;
+    const real = yield* ThreadStore;
+    const store = seen === undefined ? real : seen(real);
     const body = JSON.stringify({
       threadId,
       requestId: ID,
@@ -96,6 +107,28 @@ describe("an embedding's answer to a card", () => {
       expect((yield* store.listRequests(thread.id)).map((request) => request.id)).toEqual([ID]);
       expect(yield* post(thread.id, card.shown)).toEqual({ status: 200, body: {} });
       expect(session.responses.map((response) => response.requestId)).toEqual([ID]);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("is refused without a key when the card is asked again with one after the check", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const { thread, session } = yield* running;
+      yield* session.emit(approval);
+      yield* waitFor(
+        "the card",
+        store
+          .listRequests(thread.id)
+          .pipe(Effect.map((requests) => requests.some((request) => request.id === ID))),
+      );
+      // The route's early check reads the thread as it stood before the keyed card was asked;
+      // the answer must still be refused where it is taken.
+      expect(yield* post(thread.id, undefined, before)).toEqual({
+        status: 409,
+        body: { _tag: "InvalidState", message: KEYLESS_ANSWER },
+      });
+      expect(session.responses).toEqual([]);
+      expect((yield* store.listRequests(thread.id)).map((request) => request.id)).toEqual([ID]);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 

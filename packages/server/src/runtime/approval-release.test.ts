@@ -14,7 +14,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ServerConfig } from "../config.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
 import { CheckoutService, TurnHooks } from "./hooks.ts";
-import { TEST_CONFIG, waitFor } from "./test-harness.ts";
+import { TEST_CONFIG, waitFor, respondAsShown } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 // Explicit invented Codex/account-free fixtures, in-memory SQL and no-op checkout hooks.
@@ -149,7 +149,9 @@ describe("approval release survives diagnostic defects", () => {
           });
         for (const card of cards)
           expect(
-            Exit.isFailure(yield* Effect.exit(rt.respond(thread.id, card.id, answer("allow")))),
+            Exit.isFailure(
+              yield* Effect.exit(respondAsShown(rt, thread.id, card.id, answer("allow"))),
+            ),
           ).toBe(true);
         if (fault === "list" || fault === "hub") expect(Exit.isFailure(stop)).toBe(true);
         if (fault === "resolved-log") {
@@ -175,7 +177,9 @@ describe("approval release survives diagnostic defects", () => {
             store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),
           );
           h.inject(fault);
-          const response = yield* Effect.exit(rt.respond(thread.id, card.id, answer(decision)));
+          const response = yield* Effect.exit(
+            respondAsShown(rt, thread.id, card.id, answer(decision)),
+          );
           h.inject("none");
           expect(yield* settled(call)).toMatchObject({
             _tag: "Success",
@@ -206,7 +210,9 @@ describe("approval release survives diagnostic defects", () => {
           store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),
         );
         h.inject(fault);
-        const response = yield* Effect.exit(rt.respond(thread.id, card.id, answer("allow")));
+        const response = yield* Effect.exit(
+          respondAsShown(rt, thread.id, card.id, answer("allow")),
+        );
         h.inject("none");
         expect(Exit.isFailure(response)).toBe(true);
         expect(yield* settled(call)).toMatchObject({
@@ -217,7 +223,9 @@ describe("approval release survives diagnostic defects", () => {
           },
         });
         expect(
-          Exit.isFailure(yield* Effect.exit(rt.respond(thread.id, card.id, answer("allow")))),
+          Exit.isFailure(
+            yield* Effect.exit(respondAsShown(rt, thread.id, card.id, answer("allow"))),
+          ),
         ).toBe(true);
         yield* rt.interrupt(thread.id);
       }).pipe(Effect.provide(h.layer));
@@ -236,7 +244,7 @@ describe("approval release survives diagnostic defects", () => {
           store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),
         );
         h.inject("none");
-        yield* rt.respond(thread.id, card.id, answer("deny"));
+        yield* respondAsShown(rt, thread.id, card.id, answer("deny"));
         expect(yield* settled(call)).toMatchObject({
           _tag: "Success",
           value: { decision: "deny", resolution: { origin: "user", reason: "rejected" } },
@@ -263,7 +271,9 @@ describe("approval release survives diagnostic defects", () => {
         h.inject("none");
         expect(yield* store.listRequests(thread.id)).toHaveLength(1);
         expect(
-          Exit.isFailure(yield* Effect.exit(rt.respond(thread.id, cards[0]!.id, answer("allow")))),
+          Exit.isFailure(
+            yield* Effect.exit(respondAsShown(rt, thread.id, cards[0]!.id, answer("allow"))),
+          ),
         ).toBe(true);
         expect(second.pollUnsafe()).toBeUndefined();
         yield* rt.interrupt(thread.id);
@@ -316,7 +326,7 @@ describe("orphan routing retains server-card ownership", () => {
             for (const id of [thread.id, other.id]) {
               for (const decision of ["allow", "deny"] as const) {
                 const result = yield* Effect.exit(
-                  rt.respond(id, card.id, { ...answer(decision), scope }),
+                  respondAsShown(rt, id, card.id, { ...answer(decision), scope }),
                 );
                 expect(Exit.isFailure(result)).toBe(true);
               }
@@ -344,11 +354,11 @@ describe("orphan routing retains server-card ownership", () => {
             "native card",
             store.listRequests(thread.id).pipe(Effect.map((rs) => rs.length === 1)),
           );
-          yield* rt.respond(thread.id, cards[0]!.id, answer("deny"));
+          yield* respondAsShown(rt, thread.id, cards[0]!.id, answer("deny"));
           expect(native.responses.length).toBe(forwardedBefore + 1);
           expect(
             Exit.isFailure(
-              yield* Effect.exit(rt.respond(thread.id, cards[0]!.id, answer("allow"))),
+              yield* Effect.exit(respondAsShown(rt, thread.id, cards[0]!.id, answer("allow"))),
             ),
           ).toBe(true);
         }).pipe(Effect.provide(h.layer));
@@ -379,10 +389,14 @@ describe("orphan routing retains server-card ownership", () => {
         expect(yield* store.listRequests(thread.id)).toEqual([]);
         for (const card of cards) {
           expect(
-            Exit.isFailure(yield* Effect.exit(rt.respond(thread.id, card.id, answer("allow")))),
+            Exit.isFailure(
+              yield* Effect.exit(respondAsShown(rt, thread.id, card.id, answer("allow"))),
+            ),
           ).toBe(true);
           expect(
-            Exit.isFailure(yield* Effect.exit(rt.respond(thread.id, card.id, answer("deny")))),
+            Exit.isFailure(
+              yield* Effect.exit(respondAsShown(rt, thread.id, card.id, answer("deny"))),
+            ),
           ).toBe(true);
         }
         expect(native.responses).toHaveLength(0);
@@ -431,7 +445,7 @@ describe("orphan routing retains server-card ownership", () => {
         store.listRequests(thread.id).pipe(Effect.map((rs) => rs.length === 2 && rs)),
       );
       expect(cards.find((r) => r.id === card.id)).toEqual(card);
-      yield* rt.respond(thread.id, card.id, answer("allow"));
+      yield* respondAsShown(rt, thread.id, card.id, answer("allow"));
       expect(yield* settled(call)).toMatchObject({ _tag: "Success", value: { decision: "allow" } });
     }).pipe(Effect.provide(h.layer));
   });
@@ -454,7 +468,7 @@ describe("orphan routing retains server-card ownership", () => {
         fake.latest(thread.id).pipe(Effect.map((s) => s !== old && s)),
       );
       expect(
-        Exit.isFailure(yield* Effect.exit(rt.respond(thread.id, card.id, answer("allow")))),
+        Exit.isFailure(yield* Effect.exit(respondAsShown(rt, thread.id, card.id, answer("allow")))),
       ).toBe(true);
       yield* rt.send(thread.id, { text: "invented replacement turn" });
       yield* waitFor("running", rt.status(thread.id).pipe(Effect.map((s) => s === "running")));
@@ -473,7 +487,7 @@ describe("orphan routing retains server-card ownership", () => {
         "native replacement card",
         store.listRequests(thread.id).pipe(Effect.map((rs) => rs.length === 1)),
       );
-      yield* rt.respond(thread.id, card.id, answer("deny"));
+      yield* respondAsShown(rt, thread.id, card.id, answer("deny"));
       expect(fresh.responses).toHaveLength(1);
       expect(old.responses).toHaveLength(0);
     }).pipe(Effect.provide(h.layer));
@@ -529,7 +543,9 @@ describe("orphan routing retains server-card ownership", () => {
         const session = yield* waitFor("new session", fake.latest(saved.threadId));
         expect(
           Exit.isFailure(
-            yield* Effect.exit(rt.respond(saved.threadId, saved.requestId, answer("allow"))),
+            yield* Effect.exit(
+              respondAsShown(rt, saved.threadId, saved.requestId, answer("allow")),
+            ),
           ),
         ).toBe(true);
         yield* session.emit({
@@ -547,7 +563,7 @@ describe("orphan routing retains server-card ownership", () => {
           "native restart card",
           store.listRequests(saved.threadId).pipe(Effect.map((rs) => rs.length === 1)),
         );
-        yield* rt.respond(saved.threadId, saved.requestId, answer("deny"));
+        yield* respondAsShown(rt, saved.threadId, saved.requestId, answer("deny"));
         expect(session.responses).toHaveLength(1);
       }).pipe(Effect.provide(fresh.layer));
     }),

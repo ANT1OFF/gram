@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { ServerConfig } from "../config.ts";
 import type { OwnEvent } from "../events/event-hub.ts";
 import { type StoredMessage, ThreadStore } from "../persistence/thread-store.ts";
-import { TEST_CONFIG } from "../runtime/test-harness.ts";
+import { TEST_CONFIG, respondAsShown } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { DECISION_UNAVAILABLE, DecisionHook, REFUSAL_FOR_AGENT } from "./decision-hook.ts";
 import { makeEventSink, type EventSinkShape } from "./event-sink.ts";
@@ -207,9 +207,11 @@ describe("decision hook: an agent's outward command", () => {
             decisionReason: "A maintainer signs off merges.",
           });
           expect(session.responses).toEqual([]);
-          yield* runtimes
-            .respond(thread.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
-            .pipe(Effect.provideService(ActingPerson, "person-7"));
+          yield* respondAsShown(runtimes, thread.id, card.id, {
+            kind: "approval",
+            decision: "allow",
+            scope: "once",
+          }).pipe(Effect.provideService(ActingPerson, "person-7"));
           expect(session.responses.map((response) => response.answer.kind)).toEqual(["approval"]);
           expect(session.responses[0]!.answer).toMatchObject({ decision: expected });
           expect(asked).toHaveLength(2);
@@ -273,9 +275,11 @@ describe("decision hook: an agent's outward command", () => {
           "the other thread's events",
           store.listRequests(other.id).pipe(Effect.map((requests) => requests.length === 2)),
         );
-        yield* runtimes
-          .respond(first.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
-          .pipe(Effect.provideService(ActingPerson, "person-7"));
+        yield* respondAsShown(runtimes, first.id, card.id, {
+          kind: "approval",
+          decision: "allow",
+          scope: "once",
+        }).pipe(Effect.provideService(ActingPerson, "person-7"));
         expect(asked).toHaveLength(2);
         expect(asked[1]).toMatchObject({ approval: { askId: card.id } });
         expect(session.responses[0]!.answer).toMatchObject({ decision: "deny" });
@@ -327,9 +331,11 @@ describe("decision hook: an agent's outward command", () => {
           store.listRequests(thread.id).pipe(Effect.map((requests) => requests[0])),
         );
         yield* setHosted(true);
-        yield* runtimes
-          .respond(thread.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
-          .pipe(Effect.provideService(ActingPerson, "person-7"));
+        yield* respondAsShown(runtimes, thread.id, card.id, {
+          kind: "approval",
+          decision: "allow",
+          scope: "once",
+        }).pipe(Effect.provideService(ActingPerson, "person-7"));
         expect(session.responses.map((response) => response.answer)).toEqual([
           { kind: "approval", decision: "deny", scope: "once", message: DECISION_UNAVAILABLE },
         ]);
@@ -769,9 +775,11 @@ describe("event sink", () => {
         });
         // A person's answer closes it as answered, with who and what they said.
         const runtimes = yield* ThreadRuntimes;
-        yield* runtimes
-          .respond(thread.id, card.id, { kind: "approval", decision: "allow", scope: "once" })
-          .pipe(Effect.provideService(ActingPerson, "person-7"));
+        yield* respondAsShown(runtimes, thread.id, card.id, {
+          kind: "approval",
+          decision: "allow",
+          scope: "once",
+        }).pipe(Effect.provideService(ActingPerson, "person-7"));
         const resolved = yield* eventually(
           "ask.resolved at the receiver",
           Effect.sync(() => to.held.find((event) => event.type === "ask.resolved")),

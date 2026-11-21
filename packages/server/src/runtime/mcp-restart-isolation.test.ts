@@ -24,7 +24,7 @@ import * as Redacted from "effect/Redacted";
 import { AgentHosts } from "./agent-hosts.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { makeRuntimeTestLayer, TEST_CONFIG } from "./test-harness.ts";
+import { makeRuntimeTestLayer, TEST_CONFIG, respondAsShown } from "./test-harness.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
@@ -525,7 +525,7 @@ describe.skipIf(process.platform === "win32")("MCP restart across a shared owned
                 ),
               ),
           );
-          yield* r.respond(approval.id, requests[0]!.id, {
+          yield* respondAsShown(r, approval.id, requests[0]!.id, {
             kind: "approval",
             decision: "allow",
             scope: "once",
@@ -644,7 +644,7 @@ describe.skipIf(process.platform === "win32")("MCP restart across a shared owned
                 ),
               ),
           );
-          yield* r.respond(approval.id, requests[0]!.id, {
+          yield* respondAsShown(r, approval.id, requests[0]!.id, {
             kind: "approval",
             decision: "allow",
             scope: "once",
@@ -1071,7 +1071,7 @@ describe.skipIf(process.platform === "win32")("MCP restart across a shared owned
                 ),
               ),
           );
-          yield* r.respond(approval.id, requests[0]!.id, {
+          yield* respondAsShown(r, approval.id, requests[0]!.id, {
             kind: "approval",
             decision: "allow",
             scope: "once",

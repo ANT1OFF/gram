@@ -138,11 +138,12 @@ describe.skipIf(!hasGit || process.platform === "win32")(
               ),
           );
           expect(approval.kind).toBe("approval");
-          yield* (yield* ThreadRuntimes).respond(dream.threadId as ThreadId, approval.id, {
-            kind: "approval",
-            decision: "deny",
-            scope: "once",
-          });
+          yield* (yield* ThreadRuntimes).respond(
+            dream.threadId as ThreadId,
+            approval.id,
+            { kind: "approval", decision: "deny", scope: "once" },
+            approval.shown,
+          );
           yield* waitReal(
             "synthetic Codex Dream completion",
             store.getDream(dream.id).pipe(Effect.map((row) => row.status !== "running" && row)),

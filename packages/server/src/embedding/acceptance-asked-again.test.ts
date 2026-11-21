@@ -104,18 +104,19 @@ describe("decision hook: a request asked again under its id", () => {
         );
         const session = yield* sessionOf(thread.id);
         yield* session.emit(approval("gh pr merge 12"));
-        yield* eventually(
+        const first = yield* eventually(
           "the merge's card",
           store
             .listRequests(thread.id)
-            .pipe(Effect.map((requests) => requests.some((request) => request.id === "again"))),
+            .pipe(Effect.map((requests) => requests.find((request) => request.id === "again"))),
         );
         const answering = yield* Effect.forkScoped(
-          runtimes.respond(thread.id, "again" as RequestId, {
-            kind: "approval",
-            decision: "allow",
-            scope: "once",
-          }),
+          runtimes.respond(
+            thread.id,
+            "again" as RequestId,
+            { kind: "approval", decision: "allow", scope: "once" },
+            first.shown,
+          ),
         );
         yield* eventually(
           "the approval put to the hook",
