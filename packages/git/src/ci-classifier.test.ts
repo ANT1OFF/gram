@@ -190,6 +190,7 @@ it("the qualification entrypoint passes only the lanes classify selected, every 
     "macos-package",
     "linux-package",
     ...[1, 2, 3, 4, 5, 6, 7, 8].map((shard) => `e2e-${shard}`),
+    "e2e-embed",
   ];
   const needs = (kind: string, lanes: string[], override: Record<string, unknown> = {}) => ({
     classify: { result: "success", outputs: { kind, lanes: JSON.stringify(lanes) } },

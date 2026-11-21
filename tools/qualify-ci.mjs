@@ -9,6 +9,7 @@ const JOB_LANES = {
   "macos-package": "package",
   "linux-package": "package",
   ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((shard) => [`e2e-${shard}`, "e2e"])),
+  "e2e-embed": "e2e",
 };
 
 const needs = JSON.parse(process.env.CI_NEEDS ?? "{}");

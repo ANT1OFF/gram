@@ -224,11 +224,6 @@ jobs:
       - run: bun run --filter @gram/web e2e --shard="$SHARD/8" --workers=1
         env:
           GRAM_E2E_SERVER: preview
-      # The embeddable package's acceptance run, in one shard: the package is built as it ships and
-      # mounted by a separate app that adds pages of its own (docs/EMBEDDED_WEB_APP.md).
-      - name: Mount the embeddable package in another app
-        if: env.SHARD == '1'
-        run: bun run --filter @gram/web e2e:embed
       - name: Upload the Playwright report and traces
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -237,8 +232,6 @@ jobs:
           path: |
             apps/web/playwright-report
             apps/web/test-results
-            apps/web/playwright-report-embed
-            apps/web/test-results-embed
           retention-days: 14
           if-no-files-found: ignore
       - name: Upload per-spec timings (including successful shards)
@@ -354,6 +347,56 @@ jobs:
       # Keep Vite's localhost binding consistent with Node fetch.
       NODE_OPTIONS: --dns-result-order=ipv4first
     steps: *e2e-steps
+
+  # The embeddable package's acceptance run, in a job of its own beside the e2e shards: the package
+  # is built as it ships and mounted by a separate app that adds pages of its own
+  # (docs/EMBEDDED_WEB_APP.md).
+  e2e-embed:
+    needs: classify
+    name: e2e embed
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON(needs.classify.outputs.lanes), 'e2e')
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Keep Vite's localhost binding consistent with Node fetch.
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # Cache downloads only, never source or build results.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: gram-chromium-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+      # --with-deps installs Chromium's system libraries even when the browser came from cache.
+      - run: bun run playwright install --with-deps chromium
+        working-directory: apps/web
+      - run: bun run --filter @gram/web e2e:embed
+      - name: Upload the Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-${{ github.run_attempt }}-embed
+          path: |
+            apps/web/playwright-report-embed
+            apps/web/test-results-embed
+          retention-days: 14
+          if-no-files-found: ignore
 
   # The Vitest suite and an unsigned package on the platform Gram ships for, in parallel jobs: the
   # suite in three shards (in one job on this 3-core runner it took 14 minutes) and the package
@@ -570,6 +613,7 @@ jobs:
         e2e-6,
         e2e-7,
         e2e-8,
+        e2e-embed,
       ]
     # On a pull request it always reports, so a cancelled run never reads as a skipped, passing
     # required check. On a push it skips a cancelled run: `always()` queued it even then, and the
