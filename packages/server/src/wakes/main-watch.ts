@@ -24,6 +24,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { forThread } from "../embedding/gh-thread.ts";
+import { githubRelayed } from "../embedding/github-relay.ts";
 import { asBackground, GhBudget } from "../github/budget.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -329,10 +331,16 @@ export const MainWatchLive = Layer.effect(
       const threads = yield* store.listThreads;
       for (const state of watching) {
         const own = threads.filter((thread) => thread.workspaceId === state.workspace.id);
+        // Read as the workspace's orchestrator, whom the notes are for: behind a GitHub route the
+        // reads then go out with its thread's handle, never the deployment's own access, and one
+        // with no orchestrator to read for reads nothing there.
+        const orchestrator = state.workspace.orchestratorThreadId;
+        if (orchestrator === undefined && githubRelayed()) continue;
+        const asOrchestrator = orchestrator === undefined ? Effect.asVoid : forThread(orchestrator);
         for (const projectId of state.workspace.projectIds) {
           const project = projects.get(projectId);
           if (project === undefined) continue;
-          yield* look(state.workspace.id, project, own).pipe(
+          yield* asOrchestrator(look(state.workspace.id, project, own)).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("default-branch watch couldn't look").pipe(
                 Effect.annotateLogs({ project: project.name, cause: Cause.pretty(cause) }),

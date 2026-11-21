@@ -3,6 +3,7 @@
 import type { AgentSession } from "@gram/agents";
 import type { PendingRequest, RequestId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
+import { randomUUID } from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import {
@@ -24,6 +25,35 @@ import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { locked, type Runtime } from "./runtime-state.ts";
 import type { TurnLifecycle } from "./turn-lifecycle.ts";
 
+/** A value with its object keys in order, so two spellings of one value compare equal. */
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : typeof value === "object" && value !== null
+      ? Object.fromEntries(
+          Object.keys(value)
+            .toSorted()
+            .map((key) => [key, canonical((value as Record<string, unknown>)[key])]),
+        )
+      : value;
+
+/**
+ * Whether a card asks what `request` asks, leaving out what the server added to it. A card stored
+ * with no key (by a server before keys) never does, so asking again puts it up with one.
+ */
+const sameAsk = (card: PendingRequest, request: PendingRequest): boolean => {
+  if (card.shown === undefined) return false;
+  const { shown: _shown, ...asked } = card;
+  const { shown: _given, ...again } = request;
+  const { decisionReason: _reason, ...shownCard } = asked as typeof asked & {
+    readonly decisionReason?: string;
+  };
+  const { decisionReason: _again, ...plain } = again as typeof again & {
+    readonly decisionReason?: string;
+  };
+  return JSON.stringify(canonical(shownCard)) === JSON.stringify(canonical(plain));
+};
+
 /** What raising a card, and putting a request to the hook, go through. */
 export interface HookedDecisionsDeps {
   readonly store: ThreadStoreShape;
@@ -41,9 +71,11 @@ export const makeHookedDecisions = ({
   setStatus,
 }: HookedDecisionsDeps) => {
   /** Puts an agent's request in front of the user. Holds the lock. */
-  const raiseCard = (rt: Runtime, request: PendingRequest) =>
+  const raiseCard = (rt: Runtime, asked: PendingRequest) =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
+      // Its own key, whatever the agent sent: an answer given for it is for this card alone.
+      const request: PendingRequest = { ...asked, shown: randomUUID() };
       yield* store.putRequest(rt.threadId, request, now);
       yield* hub.publish({ type: "thread.request", threadId: rt.threadId, request });
       yield* setStatus(rt, request.kind === "question" ? "needsInput" : "needsApproval");
@@ -195,5 +227,17 @@ export const makeHookedDecisions = ({
       return key;
     });
 
-  return { raiseCard, decideRequest, replaceAsked };
+  /**
+   * Whether `request` is one already up as a card, asked again as it was (a session that redialled
+   * replays what it still waits on), with the hook not deciding it: the card, and what the hook
+   * said of it, stay as they are, and an answer given for it still goes.
+   */
+  const replayed = (rt: Runtime, request: PendingRequest) =>
+    Effect.gen(function* () {
+      if (hooked.deciding.has(hookedKey(rt.threadId, request.id))) return false;
+      const card = (yield* store.listRequests(rt.threadId)).find((each) => each.id === request.id);
+      return card !== undefined && sameAsk(card, request);
+    });
+
+  return { raiseCard, decideRequest, replaceAsked, replayed };
 };

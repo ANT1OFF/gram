@@ -78,6 +78,7 @@ import {
   orchestratorQuestionHow,
 } from "./orchestrator-question-asks.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
+import { type OpenAsk, openAsksOf } from "./open-asks.ts";
 
 /** An event as server code records it: the sink adds when, and the outbox its number. */
 export type SinkRecord = Omit<SinkEventInput, "at" | "type"> & { readonly type: SinkEventType };
@@ -160,8 +161,8 @@ export interface EventSinkOptions {
   readonly on: Effect.Effect<boolean>;
   /** Every open thread, for `sink.started`. */
   readonly threads: Effect.Effect<ReadonlyArray<Thread>>;
-  /** The ids of the cards open now, for a `sink.started` that isn't the server's start. */
-  readonly openAsks?: Effect.Effect<ReadonlyArray<string>>;
+  /** The cards open now, for a `sink.started` that isn't the server's start. */
+  readonly openAsks?: Effect.Effect<ReadonlyArray<OpenAsk>>;
   /**
    * A workspace's worker questions, or every workspace's without one, for the asks of those that
    * wait on the user (`worker-question-asks.ts`). Absent, none is sent.
@@ -588,8 +589,7 @@ export const makeEventSink = (
             ...first.data,
             openAsks: [
               ...first.data.openAsks,
-              ...openQuestions.keys(),
-              ...openOrchestratorAsks.keys(),
+              ...[...openQuestions.keys(), ...openOrchestratorAsks.keys()].map((id) => ({ id })),
             ],
           },
         },
@@ -730,6 +730,7 @@ export const makeEventSink = (
               data: {
                 id: request.id,
                 kind: request.kind,
+                ...(request.shown === undefined ? {} : { shown: request.shown }),
                 title: note?.title ?? askTitle(request),
                 ...(request.kind === "approval" ? { toolName: request.toolName } : {}),
                 ...askContent(request),
@@ -1152,12 +1153,7 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
           file: inMemory ? ":memory:" : eventSinkFile(config.dataDir),
           on: store.getSettings.pipe(Effect.map(embeddingOn)),
           threads: store.listThreads,
-          openAsks: store.listThreads.pipe(
-            Effect.flatMap(
-              Effect.forEach((thread) => store.listRequests(thread.id), { concurrency: 8 }),
-            ),
-            Effect.map((lists) => lists.flat().map((request) => request.id)),
-          ),
+          openAsks: openAsksOf(store),
           workerQuestions: (workspaceId) =>
             Effect.gen(function* () {
               const ids =

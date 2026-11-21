@@ -18,6 +18,7 @@ import { create } from "zustand";
 
 import type { ApiServerEvent, CloseThreadOptions } from "@/api/types";
 import { useBindingsStore } from "@/keyboard/bindings-store";
+import { endWebRtcWhereAgentsWork } from "@/panels/preview-webrtc";
 import { limitPercent, resetText, windowWord } from "@/usage/limit-format";
 
 import { useNotificationHistory } from "./notifications";
@@ -173,6 +174,8 @@ export const createThreadsSlice = (
             event.threads.flatMap((t) => (t.turnPlan ? [[t.thread.id, t.turnPlan]] : [])),
           ),
         }));
+        // Turns that started while disconnected end the WebRTC switch as an event's would.
+        endWebRtcWhereAgentsWork(Object.fromEntries(event.threads.map((t) => [t.thread.id, t])));
         return;
       case "thread.upsert":
         set((s) => {
@@ -229,6 +232,9 @@ export const createThreadsSlice = (
                 : { ...s.statusDetail, [event.threadId]: detail },
           };
         });
+        // A turn under way ends the user's WebRTC switch on every page its folders serve: on each
+        // such status, since turning it off is a no-op where it is off.
+        if (get !== undefined) endWebRtcWhereAgentsWork(get().byId, [event.threadId]);
         return;
       case "thread.request":
         set((s) => ({

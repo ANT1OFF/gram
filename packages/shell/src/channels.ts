@@ -89,6 +89,7 @@ export const Channels = {
   previewBack: "gram:preview-back",
   previewForward: "gram:preview-forward",
   previewReload: "gram:preview-reload",
+  previewSetWebRtc: "gram:preview-set-webrtc",
   previewStateGet: "gram:preview-state-get",
   previewInspect: "gram:preview-inspect",
   previewViewport: "gram:preview-viewport",

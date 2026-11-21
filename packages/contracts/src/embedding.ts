@@ -114,8 +114,10 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *
  * - `sink.started`: the server started, with `data.threads`, every open thread as `thread.upsert`
  *   would send it, so a receiver can put right anything a crash kept from the outbox, and
- *   `data.openAsks`, the ids of every card open now: any other card a receiver holds open is
- *   withdrawn (a server that restarts drops its cards, so the list is then empty).
+ *   `data.openAsks`, every card open now as `{id, shown?}` (`shown` the card's key, as
+ *   `ask.opened` carried it, for an answer through `asks/answer` to name): any other card a
+ *   receiver holds open is withdrawn (a server that restarts drops its cards, so the list is then
+ *   empty).
  *   `data.restarted` is true on the first one a server process sends.
  * - `thread.upsert` `{id, title?, role?, status?, spawnedByThreadId?, model?, createdBy?,
  *   limitWait?}` (`createdBy` is the id of the signed-in person who started the thread, where
@@ -124,8 +126,10 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *   `resumeAt` unless `cancelled`; absent once the wait has ended, and every change to it sends
  *   the thread again),
  *   `thread.removed` `{id}`, `thread.status` `{id, status, idle}`.
- * - `ask.opened` `{id, kind, title, toolName?, questions?, plan?, planTruncated?, decisionId?,
- *   assignees?}`. A question carries `questions`, each `{question, header?, options: [{label,
+ * - `ask.opened` `{id, kind, shown?, title, toolName?, questions?, plan?, planTruncated?,
+ *   decisionId?, assignees?}`. `shown` is the card's own key: an answer through `asks/answer`
+ *   that carries it is taken only by that card, never by a later one an agent raised under the
+ *   same `id`. A question carries `questions`, each `{question, header?, options: [{label,
  *   description?}], multiSelect}`, what a receiver needs to answer it through `asks/answer`: the
  *   answer is keyed by each `question` and names choices by `label`, exactly as given here. A
  *   question ask too large to carry whole carries none. A plan carries `plan`, its Markdown, cut

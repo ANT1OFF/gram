@@ -194,11 +194,12 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       const answer = clipped(redactText(input.answer.trim()), WORKER_ANSWER_MAX);
       // A question card's answer is keyed by each question's own text (`QuestionAnswer`). The
       // tool takes one text, so a request that asks several things gets it under each of them.
+      const answers = Object.fromEntries(
+        request.questions.map((each) => [each.question, [answer]]),
+      );
+      // For the card read above (`shown`): one the worker asked again under its id refuses it.
       yield* runtimes
-        .respond(target.id, request.id, {
-          kind: "question",
-          answers: Object.fromEntries(request.questions.map((each) => [each.question, [answer]])),
-        })
+        .respond(target.id, request.id, { kind: "question", answers }, request.shown)
         .pipe(
           Effect.mapError((e) =>
             toolError(

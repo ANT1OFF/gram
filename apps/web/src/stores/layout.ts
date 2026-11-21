@@ -862,8 +862,9 @@ interface PreviewPage {
   /** The thread's agent opened it in the pane (`browser_navigate`): shown as it is, never loaded. */
   driven?: boolean;
   /**
-   * The user just typed a web address for it (`openWebPreview`): its first load asks the shell for
-   * a web page, once. The first report of the shell's page replaces it.
+   * The user just typed its address (`openWebPreview`): its first load asks the shell for a web
+   * page, or tells it a loopback one was typed, once. The first report of the shell's page
+   * replaces it.
    */
   typed?: boolean;
   /**
@@ -1033,8 +1034,9 @@ export interface LayoutState
    */
   openPreview(threadId: ThreadId, url: string, options?: { thread?: boolean }): void;
   /**
-   * Loads `url`, a web page off loopback (`webUrl`), in `threadId`'s Preview tab, in the session
-   * with the user's sign-ins: only for what the user typed in the address strip.
+   * Loads what the user typed in the address strip in `threadId`'s Preview tab: a web page off
+   * loopback (`webUrl`), in the session with the user's sign-ins, or a loopback page, which the
+   * shell is told was typed (the one page its WebRTC switch is offered on).
    */
   openWebPreview(threadId: ThreadId, url: string): void;
   /**
@@ -1448,7 +1450,7 @@ export const useLayoutStore = create<LayoutState>()(
           get().revealPanel("preview", options);
         },
         openWebPreview: (threadId, raw) => {
-          const url = loopbackUrl(raw) === undefined ? webUrl(raw) : undefined;
+          const url = loopbackUrl(raw) ?? webUrl(raw);
           if (url === undefined) return;
           set((s) => ({
             previewPages: { ...s.previewPages, [threadId]: { id: ++requestSeq, url, typed: true } },

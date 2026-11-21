@@ -1339,6 +1339,12 @@ const requestFields = {
   id: RequestId,
   /** The tool call this request gates, when the agent exposes one. */
   toolUseId: Schema.optionalKey(Schema.String),
+  /**
+   * This card's own key, which the server mints each time it puts a card up. An agent can ask
+   * again under the same `id`; an answer that names the `shown` it was given for is taken only by
+   * that card, never by a later one under the id (`thread.respond`).
+   */
+  shown: Schema.optionalKey(Schema.String),
 };
 
 export const ApprovalRequest = Schema.Struct({

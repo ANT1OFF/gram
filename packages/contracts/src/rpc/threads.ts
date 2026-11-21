@@ -178,8 +178,18 @@ export const ThreadRpcs = RpcGroup.make(
     payload: { ...threadRef, taskId: Schema.String },
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),
+  /**
+   * Answers a card, naming it by `shown`, its key as it was listed: only that card takes it,
+   * `RequestNotFound` once the agent has asked again under the id. An answer that names no card
+   * is refused (`InvalidState`) for one that has a key; a card the server raised has none.
+   */
   Rpc.make("thread.respond", {
-    payload: { ...threadRef, requestId: RequestId, answer: RequestAnswer },
+    payload: {
+      ...threadRef,
+      requestId: RequestId,
+      answer: RequestAnswer,
+      shown: Schema.optionalKey(Schema.String),
+    },
     error: errors(ThreadNotFound, RequestNotFound, InvalidState),
   }),
   /**
@@ -191,7 +201,12 @@ export const ThreadRpcs = RpcGroup.make(
   Rpc.make("thread.respondMany", {
     payload: {
       answers: Schema.Array(
-        Schema.Struct({ threadId: ThreadId, requestId: RequestId, answer: RequestAnswer }),
+        Schema.Struct({
+          threadId: ThreadId,
+          requestId: RequestId,
+          answer: RequestAnswer,
+          shown: Schema.optionalKey(Schema.String),
+        }),
       ),
     },
     success: Schema.Array(RespondManyResult),
