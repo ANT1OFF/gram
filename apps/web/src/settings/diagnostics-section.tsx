@@ -27,16 +27,18 @@ const LOG_LEVELS: readonly { value: LogLevel; label: string }[] = [
  * "Copy diagnostics" both.
  */
 export function InstallInfo() {
-  const { data: info } = useDiagnostics();
-  if (!info) return null;
+  const { data: info, isError } = useDiagnostics();
+  if (isError) return null;
+  // Its rows hold their place while the version loads: arriving later, the group pushed what is
+  // under it down.
   return (
     <SettingsGroup
       label="This version"
       description="Which version of Gram this is, and what it runs on."
       keywords={["about", "build"]}
     >
-      <InfoRow label="Version" value={info.version} />
-      <InfoRow label="Platform" value={`${info.platform} ${info.arch}`} />
+      <InfoRow label="Version" value={info?.version} />
+      <InfoRow label="Platform" value={info && `${info.platform} ${info.arch}`} />
     </SettingsGroup>
   );
 }
@@ -165,11 +167,12 @@ export function DiagnosticsSection() {
 }
 
 /** A fact about this install: its name, and the value in mono on the right. */
-function InfoRow({ label, value }: { label: string; value: string }) {
+/** A label and its value, the line kept while the value is still `undefined`. */
+function InfoRow({ label, value }: { label: string; value: string | undefined }) {
   return (
     <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-8">
       <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-mono text-meta break-all">{value}</span>
+      <span className="text-right font-mono text-meta break-all">{value ?? "\u00a0"}</span>
     </div>
   );
 }
