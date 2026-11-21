@@ -198,6 +198,8 @@ export const resolveWorkerPicks = (
   return { picks: resolved };
 };
 
+const refusedRequest = (status: number) => status >= 400 && status < 500;
+
 /** The provider's answer to a start, or why none came. */
 export type StartAnswer =
   | { readonly status: number; readonly body: unknown }
@@ -290,7 +292,10 @@ export const askWorkerMachine = <R>(
     if (status < 200 || status >= 300)
       return {
         kind: "refused",
-        message: `The machine couldn't be asked for: the server answered ${status}.`,
+        message:
+          (refusedRequest(status)
+            ? text((body as { message?: unknown } | undefined)?.message, 300)
+            : undefined) ?? `The machine couldn't be asked for: the server answered ${status}.`,
       } as const;
     return { kind: "started", name: ask.name } as const;
   });

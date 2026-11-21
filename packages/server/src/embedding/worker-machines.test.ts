@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { makeOnDemandHosts } from "./on-demand.ts";
 import {
+  askWorkerMachine,
   awaitWorkerMachine,
   isWorkerMachineName,
   overTotalWords,
@@ -46,6 +47,9 @@ const ask = {
   isolation: "container",
   environment: "6f0c7a4e-2d1b-4c3a-9e8f-1a2b3c4d5e6f",
 };
+
+const answered = (status: number, body: unknown) =>
+  askWorkerMachine(ask, Effect.succeed({ status, body }));
 
 describe("a worker's own machine", () => {
   it("names a retry of the same spawn the same, and a new spawn anew", () => {
@@ -152,6 +156,20 @@ describe("a worker's own machine", () => {
       );
       yield* Effect.promise(fake.close);
       expect(fake.got).toHaveLength(1);
+    }),
+  );
+
+  it.effect("gives a request the server refused in its own words, else its status", () =>
+    Effect.gen(function* () {
+      const sizes = "huge isn't a size here. Name one of: small, medium.";
+      expect(yield* answered(400, { code: "size_not_offered", message: sizes })).toEqual({
+        kind: "refused",
+        message: sizes,
+      });
+      expect(yield* answered(400, {})).toEqual({
+        kind: "refused",
+        message: "The machine couldn't be asked for: the server answered 400.",
+      });
     }),
   );
 
