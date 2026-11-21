@@ -382,15 +382,15 @@ describe.skipIf(!hasGit)("worker questions", () => {
           forwardedBy: "timeout",
         });
 
-        // Nobody triages in a paused workspace: the question is the user's from the start.
+        // Nobody triages in a paused workspace: one in triage goes on at the pause, a later one
+        // is the user's from the start.
+        yield* asked(worker.session, { question: "Rename the table?" });
         yield* orchestration.setPaused(workspaceId, true);
-        expect(yield* asked(worker.session, { question: "Rename the table?" })).toMatchObject({
-          id: "WQ2",
+        yield* settle;
+        expect(yield* stored(workspaceId, "WQ2")).toMatchObject({ forwardedBy: "paused" });
+        expect(yield* asked(worker.session, { question: "Drop the index?" })).toMatchObject({
+          id: "WQ3",
           stage: "forwarded",
-        });
-        expect(yield* stored(workspaceId, "WQ2")).toMatchObject({
-          stage: "forwarded",
-          forwardedBy: "paused",
         });
       }),
     ),

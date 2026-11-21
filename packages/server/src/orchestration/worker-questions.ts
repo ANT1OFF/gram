@@ -4,6 +4,7 @@
 
 import {
   isOpenQuestion,
+  WORKER_QUESTION_TRIAGE_MS,
   WORKER_QUESTIONS_KEPT_CLOSED,
   type ForwardedBy,
   type QuestionDelivery,
@@ -75,6 +76,28 @@ export const replaceQuestion = (outbox: OutboxState, question: StoredWorkerQuest
     questionsOf(outbox).map((each) => (each.id === question.id ? question : each)),
   );
 
+/**
+ * The outbox with every question in triage due now, for a pause: nobody triages while paused, so
+ * none waits out its time (`triageCutShort`). Answers the ids it made due.
+ */
+export const dueAtPause = (
+  outbox: OutboxState,
+  now: number,
+): readonly [OutboxState, readonly string[]] => {
+  const due = questionsOf(outbox).filter(
+    (question) => question.stage === "triage" && question.triageUntil > now,
+  );
+  const ids = new Set(due.map((question) => question.id));
+  const questions = questionsOf(outbox).map((question) =>
+    ids.has(question.id) ? { ...question, triageUntil: now } : question,
+  );
+  return [ids.size === 0 ? outbox : withQuestions(outbox, questions), [...ids]];
+};
+
+/** Whether a question's triage ended before its time: a pause cut it short (`dueAtPause`). */
+export const triageCutShort = (question: StoredWorkerQuestion): boolean =>
+  question.triageUntil < question.askedAt + WORKER_QUESTION_TRIAGE_MS;
+
 /** A move refused, in words for whoever tried it. */
 export interface QuestionRefusal {
   readonly refused: string;
@@ -96,7 +119,10 @@ const closedRefusal = (question: StoredWorkerQuestion): QuestionRefusal => ({
         }.`,
 });
 
-/** The question moved to the user: by the orchestrator with its line, by the timeout or a pause. */
+/**
+ * The question moved to the user: by the orchestrator with its line, by the timeout or a pause. A
+ * timeout a pause brought forward (`dueAtPause`) is the pause's.
+ */
 export const forwarded = (
   question: StoredWorkerQuestion,
   by: ForwardedBy,
@@ -112,7 +138,7 @@ export const forwarded = (
     ...question,
     stage: "forwarded",
     forwardedAt: at,
-    forwardedBy: by,
+    forwardedBy: by === "timeout" && triageCutShort(question) ? "paused" : by,
     ...(line === undefined || line === "" ? {} : { note: line }),
   };
 };

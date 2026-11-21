@@ -167,7 +167,7 @@ export function OpenQuestion({
   sheet?: boolean;
   /** Why it can't be answered right now; the Answer button says so. */
   unavailable?: string | undefined;
-  /** Sends the answer: the sheet's. */
+  /** Sends the answer: the sheet's, or the card's own where Answer opens nowhere else. */
   onAnswer?: ((answer: string) => Promise<unknown>) | undefined;
   onDismiss?: ((reason: string | undefined) => Promise<unknown>) | undefined;
   /** Where Answer goes outside the sheet: the Asks dock turned to it, or the ask sheet. */
@@ -185,6 +185,7 @@ export function OpenQuestion({
   const answer = choiceAnswer(choice).join("; ");
   const questionId = useId();
   const worker = card.to === "worker";
+  const inPlace = sheet || (onOpen === undefined && onAnswer !== undefined);
 
   const run = (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -260,9 +261,11 @@ export function OpenQuestion({
                 size="xs"
                 variant="outline"
                 data-testid="question-answer"
-                disabled={unavailable !== undefined || onOpen === undefined}
+                disabled={
+                  unavailable !== undefined || (onOpen === undefined && onAnswer === undefined)
+                }
                 title={unavailable}
-                onClick={() => onOpen?.()}
+                onClick={() => (onOpen === undefined ? setMode("answering") : onOpen())}
               >
                 Answer
               </Button>
@@ -308,7 +311,7 @@ export function OpenQuestion({
           </span>
         </p>
       )}
-      <ExpandPresence open={sheet && mode === "answering"}>
+      <ExpandPresence open={inPlace && mode === "answering"}>
         <form
           id={answerFormId}
           className="flex flex-col gap-1.5 pt-1 text-reading"
@@ -345,7 +348,7 @@ export function OpenQuestion({
       </ExpandPresence>
       {/* Outside the form, so it sticks to the foot of the whole question rather than only the
           form: a long question pushes the form below the fold, and its Send must stay in sight. */}
-      {sheet && mode === "answering" && (
+      {inPlace && mode === "answering" && (
         <div
           data-testid={sheet ? "ask-sheet-answer-row" : undefined}
           className={cn("flex items-center gap-2", answerRow)}
@@ -362,6 +365,11 @@ export function OpenQuestion({
             {worker ? "Goes straight to the worker" : "Goes to the orchestrator"}
           </span>
           <span className="flex-1" />
+          {!sheet && (
+            <Button type="button" size="xs" variant="ghost" onClick={() => setMode("idle")}>
+              Cancel
+            </Button>
+          )}
           {card.dismissable && onDismiss !== undefined && (
             <Button
               type="button"

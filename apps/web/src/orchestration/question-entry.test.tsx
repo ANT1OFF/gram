@@ -45,6 +45,17 @@ describe("OpenQuestion", () => {
     expect(screen.queryByTestId("question-send")).toBeNull();
   });
 
+  it("with nowhere else to answer it, Answer opens the choices on the card itself", async () => {
+    const onAnswer = vi.fn(async () => undefined);
+    render(<OpenQuestion card={card()} compact={false} onAnswer={onAnswer} />);
+    const answer = screen.getByRole("button", { name: "Answer" }) as HTMLButtonElement;
+    expect(answer.disabled).toBe(false);
+    fireEvent.click(answer);
+    fireEvent.click(screen.getByRole("radio", { name: /^404/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("404"));
+  });
+
   it("says it is open in the Asks dock instead of offering Answer again", () => {
     render(<OpenQuestion card={card()} compact onOpen={vi.fn()} answering />);
     expect(screen.queryByRole("button", { name: "Answer" })).toBeNull();

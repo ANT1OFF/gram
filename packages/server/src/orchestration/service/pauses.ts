@@ -27,6 +27,7 @@ import {
   spanText,
 } from "../../runtime/limit-wait.ts";
 import { type WorkerFacts } from "../ledger.ts";
+import { dueAtPause } from "../worker-questions.ts";
 import { readOutbox as readStoredOutbox, type PauseResume } from "../outbox.ts";
 import { type PendingReason } from "../rules.ts";
 import {
@@ -175,6 +176,13 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       yield* afterPause(workspaceId, state, reason, detail, at);
     });
 
+  const forwardQuestionsInTriageToTheUser = (workspaceId: WorkspaceId, at: number) =>
+    Effect.gen(function* () {
+      const due = yield* updateOutbox(workspaceId, (outbox) => dueAtPause(outbox, at));
+      for (const questionId of due)
+        yield* signals.offer({ type: "questionDue", workspaceId, questionId });
+    }).pipe(Effect.ignore);
+
   /** What a pause just stored sets off: delivery stops, the audit, and the user is told. */
   const afterPause = (
     workspaceId: WorkspaceId,
@@ -195,6 +203,7 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
         Effect.annotateLogs({ workspaceId, reason }),
       );
       if (reason === "user") yield* haltWorkspace(workspaceId);
+      yield* forwardQuestionsInTriageToTheUser(workspaceId, at);
       yield* workspacesChanged;
       yield* orchestrationChanged(workspaceId);
       if (reason === "user" || reason === "parked") return;
