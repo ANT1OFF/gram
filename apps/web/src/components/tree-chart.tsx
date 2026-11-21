@@ -23,12 +23,22 @@ export interface TreeChartProps {
   nodeHeight?: number;
   /** The chart's height on the page, such as `32rem`. */
   height?: string;
+  /**
+   * Children that open nothing themselves stand in one column under their box, as an organisation
+   * chart lists a lead's reports, rather than side by side. On by default.
+   */
+  stackLeaves?: boolean;
+  /** Opens zoomed out to fit its frame, never below half size, then brings `focusId` into view. */
+  fit?: boolean;
   className?: string;
   testId?: string;
 }
 
 const GAP_X = 16;
 const GAP_Y = 40;
+const GAP_STACK = 8;
+const INDENT = 24;
+const FIT_FLOOR = 0.5;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 1.5;
 
@@ -38,6 +48,8 @@ export interface Placed {
   readonly y: number;
   /** The box above it, where its line starts. */
   readonly parent?: { readonly x: number; readonly y: number };
+  /** It stands in a column under its parent, joined from the parent's left side. */
+  readonly stacked?: boolean;
   /** How many entries are folded away under it. */
   readonly hidden: number;
 }
@@ -47,53 +59,64 @@ const countAll = (node: TreeNode): number =>
 
 /**
  * Lays the open part of a tree out top-down: each leaf in the next free column, each parent over
- * the middle of its children. Folded entries are left out, so a large tree draws only what is open.
+ * the middle of its children. With `stack`, children that open nothing stand in one column under
+ * their parent instead. Folded entries are left out, so a large tree draws only what is open.
  */
 export function layOut(
   nodes: readonly TreeNode[],
   open: (id: string) => boolean,
   width: number,
   height: number,
+  stack = false,
 ): { placed: Placed[]; width: number; height: number } {
-  const order: { node: TreeNode; depth: number; parentId?: string; shut: boolean }[] = [];
-  const xs = new Map<string, number>();
+  const placed: Placed[] = [];
   let column = 0;
-  let deepest = 0;
-  const place = (node: TreeNode, depth: number, parentId: string | undefined): number => {
-    deepest = Math.max(deepest, depth);
-    const children = open(node.id) ? (node.children ?? []) : [];
-    order.push({
-      node,
-      depth,
-      ...(parentId === undefined ? {} : { parentId }),
-      shut: children.length === 0,
-    });
+  let bottom = 0;
+  const shownChildren = (node: TreeNode) => (open(node.id) ? (node.children ?? []) : []);
+  const place = (
+    node: TreeNode,
+    y: number,
+    parent: { x: number; y: number } | undefined,
+  ): number => {
+    bottom = Math.max(bottom, y + height);
+    const children = shownChildren(node);
+    const at = placed.length;
+    placed.push({ node, x: 0, y, hidden: children.length === 0 ? countAll(node) : 0 });
     let x: number;
     if (children.length === 0) {
       x = column * (width + GAP_X);
       column += 1;
+    } else if (stack && children.every((child) => shownChildren(child).length === 0)) {
+      x = column * (width + GAP_X);
+      column += 1;
+      children.forEach((child, index) => {
+        const childY = y + (index + 1) * (height + GAP_STACK) + GAP_STACK;
+        bottom = Math.max(bottom, childY + height);
+        placed.push({
+          node: child,
+          x: x + INDENT,
+          y: childY,
+          parent: { x, y },
+          stacked: true,
+          hidden: countAll(child),
+        });
+      });
+      if (children.length > 0) column += INDENT / (width + GAP_X);
     } else {
-      const under = children.map((child) => place(child, depth + 1, node.id));
+      const under = children.map((child) => place(child, y + height + GAP_Y, undefined));
       x = (under[0]! + under.at(-1)!) / 2;
     }
-    xs.set(node.id, x);
+    placed[at] = { ...placed[at]!, x, ...(parent === undefined ? {} : { parent }) };
+    for (const entry of placed.slice(at + 1))
+      if (!entry.stacked && entry.parent === undefined && entry.y === y + height + GAP_Y)
+        Object.assign(entry, { parent: { x, y } });
     return x;
   };
   for (const node of nodes) place(node, 0, undefined);
-  const yOf = (depth: number) => depth * (height + GAP_Y);
-  const depths = new Map(order.map((entry) => [entry.node.id, entry.depth]));
   return {
-    placed: order.map(({ node, depth, parentId, shut }) => ({
-      node,
-      x: xs.get(node.id)!,
-      y: yOf(depth),
-      ...(parentId === undefined
-        ? {}
-        : { parent: { x: xs.get(parentId)!, y: yOf(depths.get(parentId)!) } }),
-      hidden: shut ? countAll(node) : 0,
-    })),
+    placed,
     width: Math.max(width, column * (width + GAP_X) - GAP_X),
-    height: (deepest + 1) * (height + GAP_Y) - GAP_Y,
+    height: bottom,
   };
 }
 
@@ -112,6 +135,8 @@ export function TreeChart({
   nodeWidth = 224,
   nodeHeight = 64,
   height = "32rem",
+  stackLeaves = true,
+  fit: fitted = false,
   className,
   testId,
 }: TreeChartProps) {
@@ -123,7 +148,7 @@ export function TreeChart({
   const [zoom, setZoom] = useState(1);
   const frame = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; left: number; top: number } | undefined>(undefined);
-  const { placed, width, height: tall } = layOut(nodes, open, nodeWidth, nodeHeight);
+  const { placed, width, height: tall } = layOut(nodes, open, nodeWidth, nodeHeight, stackLeaves);
   const toggle = (id: string) => {
     const next = new Set(shown);
     if (next.has(id)) next.delete(id);
@@ -136,6 +161,14 @@ export function TreeChart({
     const box = frame.current;
     if (box === null) return;
     setZoom(clamp(Math.min((box.clientWidth - 32) / width, (box.clientHeight - 32) / tall)));
+  };
+  const fittedOnce = useRef(false);
+  const holdFrame = (box: HTMLDivElement | null) => {
+    frame.current = box;
+    if (box === null || !fitted || fittedOnce.current) return;
+    fittedOnce.current = true;
+    const whole = Math.min((box.clientWidth - 32) / width, (box.clientHeight - 32) / tall, 1);
+    setZoom(clamp(Math.max(FIT_FLOOR, whole)));
   };
   const focused = placed.find((entry) => entry.node.id === focusId);
   const focusLeft = focused === undefined ? undefined : (focused.x + nodeWidth / 2) * zoom;
@@ -176,7 +209,7 @@ export function TreeChart({
         </Button>
       </div>
       <div
-        ref={frame}
+        ref={holdFrame}
         role="tree"
         aria-label={label}
         className="relative cursor-grab overflow-auto rounded-lg border border-edge-group bg-card active:cursor-grabbing"
@@ -221,7 +254,11 @@ export function TreeChart({
                 entry.parent === undefined ? null : (
                   <path
                     key={entry.node.id}
-                    d={`M${entry.parent.x + nodeWidth / 2},${entry.parent.y + nodeHeight} V${entry.y - GAP_Y / 2} H${entry.x + nodeWidth / 2} V${entry.y}`}
+                    d={
+                      entry.stacked
+                        ? `M${entry.parent.x + INDENT / 2},${entry.parent.y + nodeHeight} V${entry.y + nodeHeight / 2} H${entry.x}`
+                        : `M${entry.parent.x + nodeWidth / 2},${entry.parent.y + nodeHeight} V${entry.y - GAP_Y / 2} H${entry.x + nodeWidth / 2} V${entry.y}`
+                    }
                     fill="none"
                     stroke="currentColor"
                     strokeWidth={1}
