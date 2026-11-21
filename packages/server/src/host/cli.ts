@@ -65,7 +65,8 @@ const USAGE = `gram-host: run this machine's work for a Gram on another machine,
 GRAM_HOST_HOME sets the folder the host keeps its join and key in, and GRAM_HOST_REPOS the one
 it clones repositories into for the workers placed on it (by default, repos in GRAM_HOST_HOME).
 GRAM_HOST_DIAL_TOKEN_FILE names a file whose token every dial of gram-host run carries, for
-whatever launched the host to tell its hosts apart by.`;
+whatever launched the host to tell its hosts apart by. GRAM_HOST_AGENTS (such as claude, or
+claude,codex) limits gram-host run to those agents: it starts no other agent's CLI.`;
 
 /** A join link's origin and code, or why it isn't one. */
 export const parseJoinLink = (

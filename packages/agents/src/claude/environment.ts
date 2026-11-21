@@ -50,6 +50,10 @@ export interface ClaudeEnvironmentShape {
   readonly accountScope?: (
     prepared: PreparedClaude,
   ) => Effect.Effect<string | undefined, AgentUnavailable>;
+  /** `checkAuth` and `accountScope` from one fresh run of `claude auth status --json`. */
+  readonly signIn?: (
+    prepared: PreparedClaude,
+  ) => Effect.Effect<string | undefined, AgentUnavailable>;
   /**
    * Claude Code's own key auth (an API key, `ANTHROPIC_AUTH_TOKEN` or an `apiKeyHelper`) is this
    * machine's operator's choice, so sessions aren't held to the subscription login.
@@ -234,11 +238,14 @@ export const ClaudeEnvironmentLive = (
         } satisfies PreparedClaude;
       });
 
-      const checkAuth = (prepared: PreparedClaude) =>
-        runCommand(prepared.binaryPath, ["auth", "status", "--json"], {
-          env: prepared.env,
+      const authStatus = (ready: Pick<PreparedClaude, "binaryPath" | "env">) =>
+        runCommand(ready.binaryPath, ["auth", "status", "--json"], {
+          env: ready.env,
           timeoutMs,
-        }).pipe(
+        });
+
+      const checked = (prepared: PreparedClaude) =>
+        authStatus(prepared).pipe(
           Effect.mapError(
             (error) =>
               new AgentUnavailable({
@@ -250,10 +257,11 @@ export const ClaudeEnvironmentLive = (
           Effect.flatMap((output) => {
             const problem = checkAuthStatus(output.stdout);
             return problem === undefined || (problem === "api-key-auth" && config.keyAuth === true)
-              ? Effect.void
+              ? Effect.succeed(output.stdout)
               : Effect.fail(authUnavailable(problem));
           }),
         );
+      const checkAuth = (prepared: PreparedClaude) => Effect.asVoid(checked(prepared));
 
       const prepared = yield* resettableOnSuccess(prepare);
       // Read after the cache, so a token set or forgotten applies to the next session.
@@ -272,11 +280,9 @@ export const ClaudeEnvironmentLive = (
               ),
         invalidate: prepared.reset,
         checkAuth,
+        signIn: (ready) => Effect.map(checked(ready), accountScopeFromStatus),
         accountScope: (ready) =>
-          runCommand(ready.binaryPath, ["auth", "status", "--json"], {
-            env: ready.env,
-            timeoutMs,
-          }).pipe(
+          authStatus(ready).pipe(
             Effect.map((output) => accountScopeFromStatus(output.stdout)),
             Effect.mapError(
               () =>
@@ -291,3 +297,24 @@ export const ClaudeEnvironmentLive = (
       } satisfies ClaudeEnvironmentShape;
     }),
   );
+
+/**
+ * The subscription guard and the account it signs in as, from one fresh run of
+ * `claude auth status` where the environment reads both at once (`signIn`): fails as `checkAuth`
+ * does, and the account is undefined where it can't be read.
+ */
+export const signedInAccount = (
+  environment: ClaudeEnvironmentShape,
+  prepared: PreparedClaude,
+): Effect.Effect<string | undefined, AgentUnavailable> =>
+  environment.signIn !== undefined
+    ? environment.signIn(prepared)
+    : environment
+        .checkAuth(prepared)
+        .pipe(
+          Effect.andThen(
+            environment.accountScope === undefined
+              ? Effect.succeed(undefined)
+              : environment.accountScope(prepared).pipe(Effect.orElseSucceed(() => undefined)),
+          ),
+        );

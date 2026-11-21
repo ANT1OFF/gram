@@ -208,7 +208,9 @@ can still reuse a different repository origin or silently choose a default base.
 | Linux    | systemd user unit `~/.config/systemd/user/gram-host.service`             |
 
 It starts at login, restarts when it stops, and dials the main Gram again whenever the connection
-ends, waiting longer each time up to 30 seconds. A connection the main Gram has sent nothing on for
+ends, waiting longer each time up to 30 seconds. Until one of its dials has got through, it waits
+a quarter second at first, doubling to 2 seconds: a host just provisioned may dial a moment
+before its main Gram has registered its key. A connection the main Gram has sent nothing on for
 20 seconds counts as ended too: the main Gram pings every 5 seconds, so a link that broke without
 a word (its tailnet went down, a sleep) is dialled again rather than waited on. The main Gram
 gives the host the same 20 seconds to answer, so a machine that stalls for a few seconds under
@@ -449,6 +451,17 @@ worker on OpenCode placed there opens there; this Gram never starts OpenCode for
   as for Codex.
 - A machine with an older `gram-host` opens no OpenCode session: "Its gram-host is older than this
   Gram and doesn't run OpenCode sessions. Update Gram there (Settings → Machines), then try again."
+
+## A machine for some agents only
+
+A host started with `GRAM_HOST_AGENTS` (a comma-separated list such as `claude` or `claude,codex`)
+runs only those agents. It starts none of the others' CLIs, in its status or otherwise, and its
+hello offers none of their sessions, so a thread on another agent is refused there: "codex
+sessions don't run on this machine: its host runs only claude (GRAM_HOST_AGENTS)." A machine
+started for one agent's threads, such as a small sandbox a platform starts for one thread, comes
+up without the other CLIs (Codex's app-server, OpenCode's server) taking its CPU while that
+thread's session opens. Unset, empty, or naming no agent Gram knows, the host runs every agent;
+a name that is no agent is left out, with a warning in the host's log.
 
 ## When it drops or restarts
 

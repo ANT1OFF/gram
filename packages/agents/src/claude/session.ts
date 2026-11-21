@@ -91,7 +91,7 @@ import {
   toolSearchOn,
   withPeerMessaging,
 } from "./env.ts";
-import { ClaudeEnvironment } from "./environment.ts";
+import { ClaudeEnvironment, signedInAccount } from "./environment.ts";
 import {
   gatewayChildEnv,
   gatewayModelEnv,
@@ -645,11 +645,8 @@ export const makeClaudeHost = (
                 ),
               onSome: (provider) => provider.credentials(profileId, "claude"),
             });
-      if (gateway === undefined) yield* environment.checkAuth(prepared);
       const accountScope =
-        gateway === undefined && environment.accountScope !== undefined
-          ? yield* environment.accountScope(prepared).pipe(Effect.orElseSucceed(() => undefined))
-          : undefined;
+        gateway === undefined ? yield* signedInAccount(environment, prepared) : undefined;
       // A profile without models would hand `claude` an empty model id.
       if (gateway !== undefined && (o.model?.model ?? "").trim() === "") {
         return yield* new AgentUnavailable({

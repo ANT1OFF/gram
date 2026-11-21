@@ -91,6 +91,8 @@ const mainGram = (
    * does, with this close code.
    */
   refuseWith?: number,
+  /** How many things it says before it refuses: past the first (the hello), the dial was served. */
+  saysBeforeRefusing = 1,
 ) =>
   Effect.acquireRelease(
     Effect.promise(
@@ -120,7 +122,8 @@ const mainGram = (
               const ping = Buffer.from('{"_tag":"Ping"}\n');
               if (refuseWith !== undefined) {
                 const code = Buffer.from([refuseWith >> 8, refuseWith & 0xff]);
-                socket.write(Buffer.concat([Buffer.from([0x81, ping.length]), ping]));
+                for (let said = 0; said < saysBeforeRefusing; said++)
+                  socket.write(Buffer.concat([Buffer.from([0x81, ping.length]), ping]));
                 socket.write(Buffer.concat([Buffer.from([0x88, code.length]), code]));
                 return;
               }
@@ -385,5 +388,65 @@ describe("dialForever after the machine left", () => {
       expect(main.dials()).toBe(0);
       expect(counts.built).toBe(counts.ended);
     }).pipe(Effect.scoped),
+  );
+});
+
+/** A main Gram that hangs up on every dial before its upgrade, as one that hasn't registered the key. */
+const hangingUp = () =>
+  Effect.acquireRelease(
+    Effect.promise(
+      () =>
+        new Promise<{ port: number; dials: () => number; close: () => void }>((resolve) => {
+          let dials = 0;
+          const server = createServer((socket) => {
+            dials += 1;
+            socket.destroy();
+          });
+          server.listen(0, "127.0.0.1", () => {
+            const address = server.address();
+            resolve({
+              port: typeof address === "object" && address !== null ? address.port : 0,
+              dials: () => dials,
+              close: () => server.close(),
+            });
+          });
+        }),
+    ),
+    (main) => Effect.sync(main.close),
+  );
+
+describe("dialForever before any dial got through", () => {
+  // A platform registers a host it just provisioned from the line the host prints, and the host
+  // dialled first about half the time: refused, it waited two seconds to dial again.
+  it.live("dials again within a quarter second, and as before once one has got through", () =>
+    Effect.gen(function* () {
+      const fresh = yield* hangingUp();
+      const key = generateHostKey();
+      const options = (port: number) => ({
+        origin: `http://127.0.0.1:${port}`,
+        hostId: hostIdOf(key.publicKey),
+        key: privateKeyFrom(key.privateKeyPem),
+        url: `ws://127.0.0.1:${port}/host/connect`,
+      });
+      const unserved = yield* Effect.forkScoped(
+        dialForever(options(fresh.port), servedHost(hostIdOf(key.publicKey)), {
+          detachedMs: 60_000,
+        }),
+      );
+      yield* Effect.sleep("1 second");
+      expect(fresh.dials()).toBeGreaterThanOrEqual(3);
+      yield* Fiber.interrupt(unserved);
+
+      // Served (its hello answered), then refused: two seconds, as before.
+      const refusing = yield* mainGram(undefined, 4001, 2);
+      const served = yield* Effect.forkScoped(
+        dialForever(options(refusing.port), servedHost(hostIdOf(key.publicKey)), {
+          detachedMs: 60_000,
+        }),
+      );
+      yield* Effect.sleep("1 second");
+      expect(refusing.dials()).toBe(1);
+      yield* Fiber.interrupt(served);
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 });

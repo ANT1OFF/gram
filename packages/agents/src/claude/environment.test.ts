@@ -1,15 +1,17 @@
 import { spawn } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import {
   ClaudeEnvironment,
   ClaudeEnvironmentLive,
   OAUTH_TOKEN_VAR,
   type PreparedClaude,
+  signedInAccount,
   withOAuthToken,
 } from "./environment.ts";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -201,4 +203,130 @@ describe("Claude Code's own key auth", () => {
       expect(allowed.result._tag).toBe("Success");
     }),
   );
+});
+
+/**
+ * A `claude` whose `auth status` says what `status` holds and counts its runs in `runs`, under a
+ * folder of its own.
+ */
+const countingFixture = () => {
+  const base = fixture();
+  const runs = join(base.root, "runs");
+  const status = join(base.root, "status");
+  const held = join(base.root, "held");
+  writeFileSync(runs, "");
+  writeFileSync(
+    status,
+    JSON.stringify({ loggedIn: true, authMethod: "claude.ai", email: "someone@example.test" }),
+  );
+  writeFileSync(
+    base.binary,
+    `#!${process.execPath}\nconst fs = require("node:fs");\nif (process.argv[2] === "auth") {\n  fs.appendFileSync(${JSON.stringify(runs)}, "x");\n  const answer = fs.readFileSync(${JSON.stringify(status)}, "utf8");\n  const wait = setInterval(() => { if (!fs.existsSync(${JSON.stringify(held)})) { clearInterval(wait); console.log(answer); } }, 10);\n}\nelse console.log("2.1.311 (Claude Code)");\n`,
+  );
+  return {
+    ...base,
+    runs: () => readFileSync(runs, "utf8").length,
+    status,
+    /** From now, each `auth status` answers what it read as it started, once `release` is called. */
+    hold: () => writeFileSync(held, ""),
+    release: () => rmSync(held, { force: true }),
+  };
+};
+
+const signedOutStatus = JSON.stringify({ loggedIn: false });
+
+const environmentOf = (held: ReturnType<typeof countingFixture>) =>
+  ClaudeEnvironmentLive({ shell: held.shell, binaryPath: held.binary }).pipe(Layer.provide(sdk));
+
+/** Waits until the fake `claude` has started `count` auth checks. */
+const startedChecks = (held: ReturnType<typeof countingFixture>, count: number) =>
+  Effect.gen(function* () {
+    while (held.runs() < count) yield* Effect.sleep("10 millis");
+  }).pipe(Effect.timeout("5 seconds"));
+
+describe("claude auth status", () => {
+  it.effect(
+    "runs once for a launch's sign-in and account, and afresh for every check, so a sign-out counts at once",
+    () => {
+      const { binary, shell, done, runs, status } = countingFixture();
+      return Effect.gen(function* () {
+        yield* Effect.addFinalizer(() => Effect.sync(done));
+        const environment = yield* ClaudeEnvironment;
+        const prepared = yield* environment.prepare;
+        expect(yield* signedInAccount(environment, prepared)).toBeTypeOf("string");
+        expect(runs()).toBe(1);
+        writeFileSync(status, JSON.stringify({ loggedIn: false }));
+        expect((yield* Effect.exit(signedInAccount(environment, prepared)))._tag).toBe("Failure");
+        expect((yield* Effect.exit(environment.checkAuth(prepared)))._tag).toBe("Failure");
+        writeFileSync(status, JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }));
+        expect((yield* Effect.exit(environment.checkAuth(prepared)))._tag).toBe("Success");
+        expect(runs()).toBe(4);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          ClaudeEnvironmentLive({ shell, binaryPath: binary }).pipe(Layer.provide(sdk)),
+        ),
+      );
+    },
+  );
+
+  // Review cases for #955: two launches, or a launch and a readiness check, at once on one machine.
+  it.live(
+    "a launch started after a sign-out fails, though a check from before it is still running",
+    () => {
+      const held = countingFixture();
+      return Effect.gen(function* () {
+        yield* Effect.addFinalizer(() => Effect.sync(held.done));
+        const environment = yield* ClaudeEnvironment;
+        const prepared = yield* environment.prepare;
+        held.hold();
+        const before = yield* Effect.forkScoped(signedInAccount(environment, prepared));
+        yield* startedChecks(held, 1);
+        writeFileSync(held.status, signedOutStatus);
+        const launch = yield* Effect.forkScoped(
+          Effect.exit(signedInAccount(environment, prepared)),
+        );
+        const readiness = yield* Effect.forkScoped(Effect.exit(environment.checkAuth(prepared)));
+        yield* startedChecks(held, 3);
+        held.release();
+        expect(yield* Fiber.join(before)).toBeTypeOf("string");
+        expect((yield* Fiber.join(launch))._tag).toBe("Failure");
+        expect((yield* Fiber.join(readiness))._tag).toBe("Failure");
+      }).pipe(Effect.scoped, Effect.provide(environmentOf(held)));
+    },
+  );
+
+  it.live("a launch cancelled while its check runs leaves another launch's check alone", () => {
+    const held = countingFixture();
+    return Effect.gen(function* () {
+      yield* Effect.addFinalizer(() => Effect.sync(held.done));
+      const environment = yield* ClaudeEnvironment;
+      const prepared = yield* environment.prepare;
+      held.hold();
+      const cancelled = yield* Effect.forkScoped(signedInAccount(environment, prepared));
+      const other = yield* Effect.forkScoped(Effect.exit(signedInAccount(environment, prepared)));
+      yield* startedChecks(held, 2);
+      yield* Fiber.interrupt(cancelled);
+      held.release();
+      expect((yield* Fiber.join(other))._tag).toBe("Success");
+    }).pipe(Effect.scoped, Effect.provide(environmentOf(held)));
+  });
+
+  it.live("a check interrupted as it starts leaves no later check waiting on it", () => {
+    const held = countingFixture();
+    return Effect.gen(function* () {
+      yield* Effect.addFinalizer(() => Effect.sync(held.done));
+      const environment = yield* ClaudeEnvironment;
+      const prepared = yield* environment.prepare;
+      held.hold();
+      const interrupted = yield* Effect.forkScoped(environment.checkAuth(prepared));
+      yield* Effect.yieldNow;
+      yield* Fiber.interrupt(interrupted);
+      held.release();
+      const later = yield* Effect.exit(
+        signedInAccount(environment, prepared).pipe(Effect.timeout("5 seconds")),
+      );
+      expect(later._tag).toBe("Success");
+    }).pipe(Effect.scoped, Effect.provide(environmentOf(held)));
+  });
 });

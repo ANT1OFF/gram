@@ -71,6 +71,7 @@ import {
 } from "./protocol.ts";
 import { foregroundOf } from "../ports/pure.ts";
 import { runCli } from "./cli.ts";
+import { HOST_AGENTS_ENV, hostAgentsFrom, limitedAgentHosts } from "./host-agents.ts";
 import type { HostBusy, HostId } from "@gram/contracts";
 import { selfUpdater } from "./self-update-host.ts";
 import { hostTeardown, prepareHostProcess } from "./launch.ts";
@@ -105,36 +106,44 @@ const hostAgents = (
   oauthToken?: () => string | undefined,
   keyAuth = false,
   codexData?: string,
+  limit?: ReturnType<typeof hostAgentsFrom>,
 ): Layer.Layer<AgentHosts> =>
   process.env["GRAM_FAKE_AGENT"] === "1"
     ? makeFakeAgentAdapter(process.env["GRAM_FAKE_AGENT_REPLY"] === "echo" ? { reply: "echo" } : {})
     : Layer.effect(
         AgentHosts,
         Effect.gen(function* () {
+          if (limit !== undefined && limit.ignored.length > 0)
+            yield* Effect.logWarning(`gram-host: ${HOST_AGENTS_ENV} names no such agent`).pipe(
+              Effect.annotateLogs({ ignored: limit.ignored.join(",") }),
+            );
           const claude = yield* ClaudeHost;
           const codex = Option.getOrUndefined(yield* Effect.serviceOption(CodexHost));
           const opencode = Option.getOrUndefined(yield* Effect.serviceOption(OpenCodeHost));
           const grok = Option.getOrUndefined(yield* Effect.serviceOption(GrokHost));
           const antigravity = Option.getOrUndefined(yield* Effect.serviceOption(AntigravityHost));
-          return AgentHosts.of({
-            get: (agent) =>
-              agent === "claude"
-                ? Effect.succeed(claude)
-                : agent === "codex" && codex !== undefined
-                  ? Effect.succeed(codex)
-                  : agent === "opencode" && opencode !== undefined
-                    ? Effect.succeed(opencode)
-                    : agent === "grok" && grok !== undefined
-                      ? Effect.succeed(grok)
-                      : agent === "antigravity" && antigravity !== undefined
-                        ? Effect.succeed(antigravity)
-                        : Effect.fail(
-                            new AgentUnavailable({
-                              agent,
-                              message: `${agent} sessions don't run in this machine's host yet.`,
-                            }),
-                          ),
-          });
+          return limitedAgentHosts(
+            AgentHosts.of({
+              get: (agent) =>
+                agent === "claude"
+                  ? Effect.succeed(claude)
+                  : agent === "codex" && codex !== undefined
+                    ? Effect.succeed(codex)
+                    : agent === "opencode" && opencode !== undefined
+                      ? Effect.succeed(opencode)
+                      : agent === "grok" && grok !== undefined
+                        ? Effect.succeed(grok)
+                        : agent === "antigravity" && antigravity !== undefined
+                          ? Effect.succeed(antigravity)
+                          : Effect.fail(
+                              new AgentUnavailable({
+                                agent,
+                                message: `${agent} sessions don't run in this machine's host yet.`,
+                              }),
+                            ),
+            }),
+            limit?.only,
+          );
         }),
       ).pipe(
         Layer.provide(
@@ -361,10 +370,15 @@ const hostService = (
     };
   });
 
-const hostLayer = (oauthToken?: () => string | undefined, keyAuth = false, codexData?: string) =>
+const hostLayer = (
+  oauthToken?: () => string | undefined,
+  keyAuth = false,
+  codexData?: string,
+  limit?: ReturnType<typeof hostAgentsFrom>,
+) =>
   Layer.mergeAll(
     WorktreesLive.pipe(Layer.provideMerge(ProcLive)),
-    hostAgents(oauthToken, keyAuth, codexData),
+    hostAgents(oauthToken, keyAuth, codexData, limit),
   );
 
 /** This machine's host, for the server that started it. */
@@ -480,7 +494,12 @@ NodeRuntime.runMain(
                 ),
               ),
             // Its Codex homes go in its own folder, beside its token.
-            layer: hostLayer(() => readClaudeToken(joinedHome), keyAuth, joinedHome),
+            layer: hostLayer(
+              () => readClaudeToken(joinedHome),
+              keyAuth,
+              joinedHome,
+              hostAgentsFrom(process.env[HOST_AGENTS_ENV]),
+            ),
             release: RELEASE,
           }),
           () =>
