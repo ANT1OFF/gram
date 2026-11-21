@@ -94,7 +94,17 @@ export interface ThreadsApi {
    * `InvalidState` when the agent can't stop one; its end arrives as a `thread.background` event.
    */
   stopTask(threadId: ThreadId, taskId: string): Promise<void>;
-  respond(threadId: ThreadId, requestId: RequestId, answer: RequestAnswer): Promise<void>;
+  /**
+   * With `shown`, the card's key as it was listed (`PendingRequest.shown`): a card the agent put
+   * up again under the id since rejects it with `RequestNotFound`, so an answer is never given to
+   * something it wasn't given for.
+   */
+  respond(
+    threadId: ThreadId,
+    requestId: RequestId,
+    answer: RequestAnswer,
+    shown?: string,
+  ): Promise<void>;
   /**
    * Several answers in one round trip, given in order. Never rejects for one of them: a request
    * already answered or a thread since closed says so in its own row, and the rest still go out.

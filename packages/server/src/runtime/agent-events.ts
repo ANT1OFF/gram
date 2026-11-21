@@ -276,7 +276,7 @@ export const makeAgentEvents = ({
       yield* becomeIdle(rt);
     });
 
-  const { raiseCard, decideRequest, replaceAsked } = makeHookedDecisions({
+  const { raiseCard, decideRequest, replaceAsked, replayed } = makeHookedDecisions({
     store,
     hub,
     hooked,
@@ -735,7 +735,8 @@ export const makeAgentEvents = ({
             );
             return;
           }
-          // A request under an id already in hand is another request (`replaceAsked`).
+          // Under an id already in hand, another request (`replaceAsked`), unless it is the same.
+          if (yield* replayed(rt, request)) return;
           const key = yield* replaceAsked(rt, request.id);
           if (
             request.kind === "approval" &&

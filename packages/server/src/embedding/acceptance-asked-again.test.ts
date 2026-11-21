@@ -148,4 +148,56 @@ describe("decision hook: a request asked again under its id", () => {
       }).pipe(Effect.provide(serverLayer(hook.url)));
     }),
   );
+
+  it.live("never asks the hook to approve a card for an answer given to the one before", () =>
+    Effect.gen(function* () {
+      const asked: Array<DecisionRequest> = [];
+      const hook = yield* endpoint<DecisionRequest>((body) => {
+        asked.push(body);
+        return { json: { decision: body.approval === undefined ? "ask" : "allow" } };
+      });
+      yield* Effect.gen(function* () {
+        yield* setHosted(true);
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        const thread = yield* startThread("look /approve{echo hi}");
+        yield* eventually(
+          "the first card",
+          store.listRequests(thread.id).pipe(Effect.map((requests) => requests.length === 1)),
+        );
+        const session = yield* sessionOf(thread.id);
+        const cardFor = (command: string) =>
+          eventually(
+            `the card for ${command}`,
+            store
+              .listRequests(thread.id)
+              .pipe(
+                Effect.map((requests) =>
+                  requests.find(
+                    (request) =>
+                      request.id === "again" &&
+                      request.kind === "approval" &&
+                      request.input["command"] === command,
+                  ),
+                ),
+              ),
+          );
+        yield* session.emit(approval("gh pr merge 12"));
+        const first = yield* cardFor("gh pr merge 12");
+        yield* session.emit(approval("gh pr merge 13"));
+        yield* cardFor("gh pr merge 13");
+        const exit = yield* Effect.exit(
+          runtimes.respond(
+            thread.id,
+            "again" as RequestId,
+            { kind: "approval", decision: "allow", scope: "once" },
+            first.shown,
+          ),
+        );
+        expect(Exit.isFailure(exit)).toBe(true);
+        expect(asked.filter((body) => body.approval !== undefined)).toEqual([]);
+        expect(session.responses.filter((response) => response.requestId === "again")).toEqual([]);
+      }).pipe(Effect.provide(serverLayer(hook.url)));
+    }),
+  );
 });

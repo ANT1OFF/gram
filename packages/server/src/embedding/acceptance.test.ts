@@ -665,7 +665,7 @@ describe("event sink", () => {
           file,
           on: Effect.sync(() => on),
           threads: Effect.succeed([thread]),
-          openAsks: Effect.succeed(["card-4"]),
+          openAsks: Effect.succeed([{ id: "card-4", shown: "key-4" }]),
           retryBase: Duration.millis(5),
           recheck: Duration.millis(5),
         });
@@ -681,7 +681,7 @@ describe("event sink", () => {
         const latest = to.held.findLast((event) => event.type === "sink.started")!;
         expect(turnedOn.type).toBe("sink.started");
         expect(latest.data).toMatchObject({
-          openAsks: ["card-4"],
+          openAsks: [{ id: "card-4", shown: "key-4" }],
           threads: [{ id: "thread-9", createdBy: "person-3" }],
         });
         expect(latest.data["restarted"]).toBeUndefined();

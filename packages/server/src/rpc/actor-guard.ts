@@ -2,6 +2,7 @@ import {
   type DreamId,
   effectiveCheckout,
   isPersonalSetting,
+  LOCAL_HOST_ID,
   settingsPatchPaths,
   type SettingsPatch,
   type ThreadId,
@@ -717,13 +718,31 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           const paths = pathsMentioned(payload, bases);
           // Behind a proxy, nor a repository such a thread has a checkout of: another checkout
           // of it, a branch list, a worktree list share that thread's `.git` and its commits.
-          // A call that reads this disk follows a link here, whoever else holds its path.
-          const onDisk = readsServerDisk(action, payload);
+          // A path read on this disk follows its links here, whoever else holds or once held it:
+          // a call that reads this disk, and any path placed on this machine.
+          const here: Array<string> = [];
+          const elsewhere: Array<string> = [];
+          for (const path of paths) {
+            if (yield* readsHere(action, payload, path)) here.push(path);
+            else elsewhere.push(path);
+          }
           return (
-            touchesUnreadable(reader, paths, level, onDisk) ||
-            (sharedToo && sharesRepoWithUnreadable(reader, paths, level, onDisk))
+            touchesUnreadable(reader, here, level, true) ||
+            touchesUnreadable(reader, elsewhere, level) ||
+            (sharedToo &&
+              (sharesRepoWithUnreadable(reader, here, level, true) ||
+                sharesRepoWithUnreadable(reader, elsewhere, level)))
           );
         });
+      /**
+       * Whether `path` of a call is read on this server's own disk: the call reads this disk
+       * (`readsServerDisk`), or the path is placed on this machine (`WorkerHosts.placeOf`), as
+       * every path is where no other machine works.
+       */
+      const readsHere = (action: string, payload: unknown, path: string) =>
+        readsServerDisk(action, payload) || workerHosts === undefined
+          ? Effect.succeed(true)
+          : Effect.map(workerHosts.placeOf(path), (host) => host === LOCAL_HOST_ID);
       /** The folder a listing's relative entries are under: its own path, or its thread's. */
       const listedUnder = (payload: unknown) =>
         Effect.gen(function* () {
@@ -754,17 +773,14 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           ? effect
           : Effect.flatMap(effect, (result) =>
               anyPrivate()
-                ? Effect.map(
-                    listedUnder(payload),
-                    (base) =>
-                      withoutUnreadable(
-                        reader,
-                        result,
-                        base,
-                        level,
-                        readsServerDisk(action, payload),
-                      ) as A,
-                  )
+                ? Effect.gen(function* () {
+                    const base = yield* listedUnder(payload);
+                    const onDisk =
+                      base === undefined
+                        ? readsServerDisk(action, payload)
+                        : yield* readsHere(action, payload, base);
+                    return withoutUnreadable(reader, result, base, level, onDisk) as A;
+                  })
                 : Effect.succeed(result),
             );
       return ActorGuard.of((call, { rpc, payload, headers }) =>
