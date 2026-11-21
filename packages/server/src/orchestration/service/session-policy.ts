@@ -119,6 +119,7 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
         return {
           audience,
           outwardGate,
+          noBlockingAsk: true,
           ...browserGrant(thread, audience, settings, state?.charter),
           ...mcpListsFor({ audience, orchestrated: undefined, charter: state?.charter }),
           instructions: workerPrompt({
