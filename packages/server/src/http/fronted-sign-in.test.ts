@@ -721,18 +721,13 @@ describe("sign-in through a fronting proxy", () => {
         );
         // Over the socket an answer is refused: the proxy can't sign one message on it.
         const answer = { kind: "approval", decision: "allow", scope: "once" } as const;
-        expect(
-          yield* refusal(adaClient["thread.respond"]({ threadId, requestId: request.id, answer })),
-        ).toContain(ANSWER_OVER_HTTP);
-        expect(
-          yield* refusal(
-            adaClient["thread.respondMany"]({
-              answers: [{ threadId, requestId: request.id, answer }],
-            }),
-          ),
-        ).toContain(ANSWER_OVER_HTTP);
+        const given = { threadId, requestId: request.id, answer };
+        expect(yield* refusal(adaClient["thread.respond"](given))).toContain(ANSWER_OVER_HTTP);
+        expect(yield* refusal(adaClient["thread.respondMany"]({ answers: [given] }))).toContain(
+          ANSWER_OVER_HTTP,
+        );
         // As its own request it is taken, and what the proxy signed for it reaches the sink.
-        const answerBody = JSON.stringify({ threadId, requestId: request.id, answer });
+        const answerBody = JSON.stringify({ ...given, shown: request.shown });
         const adaStatement = proxy.statement(ada);
         expect(
           yield* post(port, ASK_ANSWER_PATH, answerBody, { [IDENTITY_HEADER]: adaStatement }),

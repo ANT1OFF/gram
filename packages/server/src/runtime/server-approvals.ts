@@ -42,6 +42,7 @@ import {
   type HookedRequests,
   requestActions,
 } from "../embedding/hooked-requests.ts";
+import { KEYLESS_ANSWER } from "./card-key.ts";
 
 /** Why one answer of `respondMany` wasn't given, in words a row of the inbox can show. */
 export const respondFailure = (cause: Cause.Cause<unknown>): string => {
@@ -405,6 +406,8 @@ export const makeServerApprovals = ({
       // Checked again under the lock (`deliverToSession`).
       if (shown !== undefined && card?.shown !== shown)
         return yield* new RequestNotFound({ threadId, requestId });
+      if (shown === undefined && card?.shown !== undefined)
+        return yield* new InvalidState({ message: KEYLESS_ANSWER, threadId });
       const confirmed = (given: RequestAnswer): Confirmed => ({ answer: given, asked, card });
       if (decisions === undefined || answer.kind !== "approval" || answer.decision !== "allow") {
         return confirmed(answer);
@@ -490,6 +493,9 @@ export const makeServerApprovals = ({
         const waiting = (yield* store.listRequests(threadId)).find(
           (request) => request.id === requestId,
         );
+        if (shown === undefined && waiting?.shown !== undefined) {
+          return yield* new InvalidState({ message: KEYLESS_ANSWER, threadId, status: rt.status });
+        }
         if (
           waiting === undefined ||
           (shown !== undefined && waiting.shown !== shown) ||

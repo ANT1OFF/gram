@@ -31,7 +31,7 @@ import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { closeAtRest } from "./close-at-rest.ts";
 import { FakeAgentControl, type FakeSession } from "./fake-agent.ts";
-import { RuntimeTestLayer, waitFor } from "./test-harness.ts";
+import { RuntimeTestLayer, waitFor, respondAsShown } from "./test-harness.ts";
 import { failureText, requestHost, unavailableError } from "./thread-error.ts";
 import { RETRY_DEADLINE, retryFacts, ThreadRuntimes } from "./thread-runtimes.ts";
 import { machineAwayEnded } from "./host-agent-sessions.ts";
@@ -1450,16 +1450,14 @@ describe("ThreadRuntimes", () => {
       // The turn is still open while it waits, so a quit would cut it off.
       expect(yield* runtimes.working).toHaveLength(1);
 
-      const missing = yield* runtimes
-        .respond(thread.id, "nope" as RequestId, {
-          kind: "approval",
-          decision: "deny",
-          scope: "once",
-        })
-        .pipe(Effect.flip);
+      const missing = yield* respondAsShown(runtimes, thread.id, "nope" as RequestId, {
+        kind: "approval",
+        decision: "deny",
+        scope: "once",
+      }).pipe(Effect.flip);
       expect(missing).toBeInstanceOf(RequestNotFound);
 
-      yield* runtimes.respond(thread.id, requestId, {
+      yield* respondAsShown(runtimes, thread.id, requestId, {
         kind: "approval",
         decision: "allow",
         scope: "once",
@@ -1481,12 +1479,13 @@ describe("ThreadRuntimes", () => {
       yield* waitStatus(first.thread.id, "needsApproval");
       yield* waitStatus(second.thread.id, "needsApproval");
       const allow = { kind: "approval", decision: "allow", scope: "once" } as const;
-
+      const [a] = yield* store.listRequests(first.thread.id);
+      const [b] = yield* store.listRequests(second.thread.id);
       const results = yield* runtimes.respondMany([
-        { threadId: first.thread.id, requestId: "req-a" as RequestId, answer: allow },
-        { threadId: first.thread.id, requestId: "req-a" as RequestId, answer: allow },
+        { threadId: first.thread.id, requestId: a!.id, answer: allow, shown: a!.shown },
+        { threadId: first.thread.id, requestId: a!.id, answer: allow, shown: a!.shown },
         { threadId: "gone" as ThreadId, requestId: "req-x" as RequestId, answer: allow },
-        { threadId: second.thread.id, requestId: "req-b" as RequestId, answer: allow },
+        { threadId: second.thread.id, requestId: b!.id, answer: allow, shown: b!.shown },
       ]);
       expect(results).toEqual([
         { threadId: first.thread.id, requestId: "req-a", ok: true },

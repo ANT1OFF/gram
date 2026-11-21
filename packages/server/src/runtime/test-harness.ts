@@ -1,4 +1,11 @@
-import type { GramUIMessageChunk, TurnId, UserInput } from "@gram/contracts";
+import type {
+  GramUIMessageChunk,
+  RequestAnswer,
+  RequestId,
+  ThreadId,
+  TurnId,
+  UserInput,
+} from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -17,6 +24,7 @@ import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
 import { CheckoutService, TurnHooks } from "./hooks.ts";
 import {
   ThreadRuntimes,
+  type ThreadRuntimesShape,
   type ObservedTurnEnd,
   type RuntimeObserver,
   type SystemDelivery,
@@ -84,6 +92,20 @@ export const waitFor = <A, E, R>(
       yield* Effect.yieldNow;
     }
     return yield* Effect.die(new Error(`timed out waiting for ${label}`));
+  });
+
+/** Answers the card under `requestId` as it is shown now, naming its key when it has one. */
+export const respondAsShown = (
+  runtimes: Pick<ThreadRuntimesShape, "respond">,
+  threadId: ThreadId,
+  requestId: RequestId,
+  answer: RequestAnswer,
+) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    const requests = yield* store.listRequests(threadId).pipe(Effect.orElseSucceed(() => []));
+    const shown = requests.find((request) => request.id === requestId)?.shown;
+    return yield* runtimes.respond(threadId, requestId, answer, shown);
   });
 
 /**

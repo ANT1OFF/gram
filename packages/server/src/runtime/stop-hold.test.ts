@@ -15,7 +15,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
-import { makeRuntimeTestLayer, RuntimeTestLayer, waitFor } from "./test-harness.ts";
+import { makeRuntimeTestLayer, RuntimeTestLayer, waitFor, respondAsShown } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 /** A thread whose first turn waits on the agent's approval card. */
@@ -55,7 +55,7 @@ const atCard = Effect.gen(function* () {
  */
 const atServerCard = Effect.gen(function* () {
   const state = yield* atCard;
-  yield* state.runtimes.respond(state.thread.id, "agent-card" as RequestId, {
+  yield* respondAsShown(state.runtimes, state.thread.id, "agent-card" as RequestId, {
     kind: "approval",
     decision: "deny",
     scope: "once",

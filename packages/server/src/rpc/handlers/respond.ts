@@ -9,33 +9,18 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../../persistence/thread-store.ts";
+import { KEYLESS_ANSWER, keylessRefusal } from "../../runtime/card-key.ts";
 import type { ThreadRuntimesShape } from "../../runtime/thread-runtimes-shape.ts";
 
-/** The refusal of an answer over the socket that names no card, for one that has a key. */
-export const KEYLESS_ANSWER =
-  "This answer doesn't say which card it was given for. Answer the card as it is shown now.";
+export { KEYLESS_ANSWER };
 
 /** `thread.respond` and `thread.respondMany`. */
 export const makeRespondHandlers = (
   store: Pick<ThreadStoreShape, "listRequests">,
   runtimes: Pick<ThreadRuntimesShape, "respond" | "respondMany">,
 ) => {
-  /**
-   * Why an answer that names no card (`shown`) is refused, if it is: the card it answers has a
-   * key, which a client that listed it has. Unkeyed, a click meant for an earlier card under the
-   * id could land on this one. A card the server raised has none.
-   */
   const keyless = (threadId: ThreadId, requestId: RequestId, shown: string | undefined) =>
-    shown !== undefined
-      ? Effect.succeed(undefined)
-      : store.listRequests(threadId).pipe(
-          Effect.map((requests) =>
-            requests.find((request) => request.id === requestId)?.shown === undefined
-              ? undefined
-              : KEYLESS_ANSWER,
-          ),
-          Effect.orElseSucceed(() => undefined),
-        );
+    keylessRefusal(store, threadId, requestId, shown);
   return {
     "thread.respond": ({
       threadId,

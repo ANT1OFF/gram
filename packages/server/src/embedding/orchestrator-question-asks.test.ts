@@ -56,7 +56,7 @@ const fakeDeps = (found: MemoryQuestion | undefined, reach = true, on = threadId
   const notes: Array<[string, AnswerNote | undefined]> = [];
   const deps: AskAnswerDeps = {
     runtimes: { respond: () => Effect.die("not a harness ask") },
-    store: { appendActorEvents: () => Effect.succeed(0) },
+    store: { appendActorEvents: () => Effect.succeed(0), listRequests: () => Effect.succeed([]) },
     noteAnswer: (id, note) => Effect.sync(() => void notes.push([id, note])),
     orchestratorQuestions: {
       find: () =>
