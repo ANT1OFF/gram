@@ -4,7 +4,9 @@ import {
   effectiveCheckout,
   hostOf,
   isLocalHost,
+  LOCAL_HOST_ID,
   previewFileKind,
+  sessionHostOf,
   FileRpcs,
   FsError,
   InvalidState,
@@ -23,6 +25,7 @@ import {
   mayBeOutside,
   mentionForms,
   mentionHints,
+  openForRead,
   type OutsideGate,
   previewTarget,
   readFilePreview,
@@ -32,6 +35,14 @@ import {
   writesPath,
 } from "../../fs/files.ts";
 import { browseFolders, expandHome } from "../../fs/folders.ts";
+import {
+  isSecretPath,
+  realSecretPaths,
+  refuseSecretHandle,
+  refuseSecretPath,
+} from "../../fs/secret-paths.ts";
+import { ServerConfig } from "../../config.ts";
+import { openerFenced } from "../../platform/opener.ts";
 import { IMAGE_MAX_BYTES, readImage } from "../../fs/images.ts";
 import { makeVocabularyCache, projectTerms } from "../../fs/vocabulary.ts";
 import type { HostFileReads, OutsideAllowed } from "../../host/file-reads.ts";
@@ -78,6 +89,16 @@ export const fsHandlers = Effect.gen(function* () {
   const hosts = yield* WorkerHosts;
   const hostFiles = hosts.placed.files;
   const nameOf = yield* machineNames;
+  const config = yield* ServerConfig;
+  const secrets = config.secretPaths ?? [];
+  const realSecrets = realSecretPaths(secrets);
+  /**
+   * Whether a thread's transcript may vouch for a path outside its folders on this disk: only on
+   * a server with a local user, for a thread whose session runs here. Anywhere else whoever writes
+   * the messages (a session on another machine, a person signed in) is who the gate holds back.
+   */
+  const transcriptVouches = (thread: Thread) =>
+    !openerFenced(config) && sessionHostOf(thread) === LOCAL_HOST_ID;
 
   const threadOf = (threadId: ThreadId) =>
     store
@@ -138,6 +159,14 @@ export const fsHandlers = Effect.gen(function* () {
     allows: wrote,
     refusal: "is outside this thread's folders, and the thread didn't write it",
   };
+  /** No path outside the thread's folders, whatever its messages say. */
+  const confined: Gate = {
+    allows: () => Effect.succeed(false),
+    refusal: "is outside this thread's folders",
+  };
+  /** `gate`, or `confined` for a thread whose transcript doesn't vouch for paths here. */
+  const gateOf = (thread: Thread, gate: Gate): Gate =>
+    transcriptVouches(thread) ? gate : confined;
   /** `gate` for `path` in `threadId`, as `previewTarget` asks it. */
   const gateFor = (threadId: ThreadId, path: string, gate: Gate): OutsideGate => ({
     allows: gate.allows(threadId, path),
@@ -151,11 +180,20 @@ export const fsHandlers = Effect.gen(function* () {
    */
   const preview = <A>(
     path: string,
-    threadId: ThreadId,
+    thread: Thread,
     roots: ReadonlyArray<string>,
     read: (target: string, opened?: FileHandle) => Effect.Effect<A, NotFound | InvalidState>,
     gate: Gate = inMessages,
-  ) => readPreview(path, roots, gateFor(threadId, path, gate), read);
+  ) =>
+    readPreview(path, roots, gateFor(thread.id, path, gateOf(thread, gate)), (target, opened) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const handle = opened ?? (yield* openForRead(target));
+          yield* refuseSecretHandle(handle, target, realSecrets);
+          return yield* read(target, handle);
+        }),
+      ),
+    );
 
   /**
    * The machine a thread's files are on when it isn't this one: its host, for the reads that are
@@ -258,7 +296,7 @@ export const fsHandlers = Effect.gen(function* () {
           const reads = yield* machine.reads;
           return yield* reads.file(path, roots, yield* outsideOn(threadId, path, roots), limit);
         }
-        return yield* preview(path, threadId, roots, (target, opened) =>
+        return yield* preview(path, thread, roots, (target, opened) =>
           readFilePreview(target, limit, opened),
         );
       }),
@@ -338,10 +376,15 @@ export const fsHandlers = Effect.gen(function* () {
           const outside = yield* reads.resolve(vouched, roots, vouched);
           return { files: [...first.files, ...outside.files] };
         }
+        const vouches = transcriptVouches(thread);
         const files = yield* resolveFileRefs(paths, roots, (path) =>
-          mentioned(threadId, path),
+          vouches ? mentioned(threadId, path) : Effect.succeed(false),
         ).pipe(Effect.provideService(Proc, proc));
-        return { files };
+        // A deployment's secret is answered as no file at all, so the link says nothing of it.
+        const readable = yield* Effect.filter(files, (file) =>
+          Effect.map(isSecretPath(file.resolved, secrets), (secret) => !secret),
+        );
+        return { files: readable };
       }),
 
     "fs.preview": ({ threadId, path }) =>
@@ -382,14 +425,15 @@ export const fsHandlers = Effect.gen(function* () {
           const { target, outside } = yield* previewTarget(
             path,
             roots,
-            gateFor(threadId, path, writtenByThread),
+            gateFor(threadId, path, gateOf(thread, writtenByThread)),
           );
           const real = yield* pageFolderCheck(target, outside, roots);
+          yield* refuseSecretPath(real, secrets);
           return { kind, path: target, url: yield* previewFiles.urlFor(real) } as const;
         }
         const file = yield* preview(
           path,
-          threadId,
+          thread,
           roots,
           (target, opened) => readFilePreview(target, FILE_MAX_BYTES, opened),
           writtenByThread,
@@ -415,7 +459,7 @@ export const fsHandlers = Effect.gen(function* () {
           const reads = yield* machine.reads;
           return yield* reads.image(path, roots, yield* outsideOn(threadId, path, roots), limit);
         }
-        return yield* preview(path, threadId, roots, (target, opened) =>
+        return yield* preview(path, thread, roots, (target, opened) =>
           readImage(target, limit, opened),
         );
       }),
