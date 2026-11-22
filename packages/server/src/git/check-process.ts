@@ -209,7 +209,7 @@ export const diagnoseExit = (
   }
   return {
     ok: false,
-    reason: `exited ${code}`,
+    reason: `exited ${code}${tail === "" ? " without producing any check output" : ""}`,
     failure: withTail({ kind: "exited", ...(code === null ? {} : { exitCode: code }) }),
   };
 };
@@ -254,7 +254,14 @@ const WRAPPER = `status=$1 setup=$2 command=$3 limit=$4 grace=$5
 ) &
 code=0
 if [ -n "$setup" ]; then /bin/sh -c "$setup"; code=$?; fi
-if [ "$code" -eq 0 ]; then /bin/sh -c "$command"; code=$?; fi
+if [ "$code" -ne 0 ]; then
+  printf 'Gram: local check setup failed (exit %s). The check command did not run.\\n' "$code" >&2
+else
+  /bin/sh -c "$command"; code=$?
+  if [ "$code" -ne 0 ]; then
+    printf 'Gram: local check command failed (exit %s).\\n' "$code" >&2
+  fi
+fi
 if [ -n "$status" ]; then printf '%s\\n' "$code" > "$status.tmp" && mv -f "$status.tmp" "$status"; fi
 exit "$code"`;
 

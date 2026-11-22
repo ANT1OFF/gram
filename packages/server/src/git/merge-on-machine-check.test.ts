@@ -19,7 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HostCheckRequest } from "../host/checks.ts";
@@ -353,6 +353,35 @@ describe("Gram's own check of a thread on a joined machine", () => {
         // Not this machine's: no folder of the joined machine's was asked of this disk's git.
         expect(yield* checks.lookup(dir, HEAD, BASE, thread.projectId)).toBeUndefined();
         expect(localGit.filter((call) => call.includes("/home/invented/"))).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(layer));
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("logs when an older joined host exits without sending any check output", () =>
+    Effect.gen(function* () {
+      const host = machine(() =>
+        Effect.succeed({
+          tree: "c".repeat(40),
+          ok: false,
+          reason: "exited 1",
+          failure: { kind: "exited", exitCode: 1 },
+          host: "invented-host",
+        }),
+      );
+      const { dir, merged, layer } = yield* armed(host.layer);
+      yield* Effect.gen(function* () {
+        const { thread, site } = yield* placed(dir);
+        const checks = yield* LocalChecks;
+        const done = yield* Deferred.make<LocalCheck>();
+        yield* checks.ensure(site, HEAD, BASE, {
+          since: 0,
+          projectId: thread.projectId,
+          onDone: (check) => Deferred.succeed(done, check).pipe(Effect.asVoid),
+        });
+        const failed = yield* Deferred.await(done);
+        expect(failed).toMatchObject({ status: "failed", failure: { exitCode: 1 } });
+        expect(readFileSync(failed.log!, "utf8")).toMatch(/exit.*1.*without.*output/i);
+        expect(merged).toEqual([]);
       }).pipe(Effect.scoped, Effect.provide(layer));
     }).pipe(Effect.scoped),
   );
