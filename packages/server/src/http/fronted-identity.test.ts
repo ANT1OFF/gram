@@ -6,6 +6,7 @@ import {
   frontedIdentityFrom,
   IDENTITY_ENV,
   MAX_LIFETIME_SECONDS,
+  DEVICE_TYP,
   SERVICE_TYP,
   verifyIdentity,
 } from "./fronted-identity.ts";
@@ -27,6 +28,43 @@ describe("a fronting proxy's signed identity", () => {
       ok: true,
       actor: { id: "user-ada", name: "user-ada", role: "viewer" },
     });
+  });
+
+  test("names a person's lent device apart from the person, by its header, key and workspace", () => {
+    const device = { header: { typ: DEVICE_TYP } };
+    const key = "A".repeat(42) + "E";
+    const claims = { device_key: key, workspace: "w1", path: "/desktop/device" };
+    expect(check(proxy.statement(claims, device))).toEqual({
+      ok: true,
+      device: {
+        actor: { id: "user-ada", name: "Ada", role: "member" },
+        publicKey: key,
+        workspace: "w1",
+        path: "/desktop/device",
+      },
+    });
+    // Without the header the same claims are the person's own statement, never a device's.
+    expect(check(proxy.statement(claims))).toEqual({
+      ok: true,
+      actor: { id: "user-ada", name: "Ada", role: "member" },
+    });
+    // A viewer lends nothing, and each claim must be there and of its shape.
+    expect(check(proxy.statement({ ...claims, role: "viewer" }, device))).toEqual({
+      ok: false,
+      reason: "role",
+    });
+    for (const broken of [
+      { device_key: undefined },
+      { device_key: "short" },
+      { workspace: undefined },
+      { workspace: "a b" },
+      { path: undefined },
+      { path: "desktop/device" },
+    ])
+      expect(check(proxy.statement({ ...claims, ...broken }, device))).toEqual({
+        ok: false,
+        reason: "role",
+      });
   });
 
   test("names the platform itself apart from any person, by its header and for one path", () => {
