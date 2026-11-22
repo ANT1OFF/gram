@@ -483,10 +483,29 @@ const recording = (
   } as unknown as ThreadRuntimesShape;
   return { reached, owned: ownedRuntimes(runtimes, threadOf, ownersHere) };
 };
+/** Owned runtimes whose `respond` keeps each answer as it reached them. */
+const recordingAnswers = (
+  threadOf: typeof getThread,
+  ownersHere: Parameters<typeof ownedRuntimes>[2],
+  given: Array<unknown>,
+) =>
+  ownedRuntimes(
+    {
+      respond: (_threadId: ThreadId, _requestId: unknown, answer: unknown) =>
+        Effect.sync(() => void given.push(answer)),
+    } as unknown as ThreadRuntimesShape,
+    threadOf,
+    ownersHere,
+  );
 const as =
   (person: string | undefined) =>
   <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
     Effect.provideService(effect, RoutedFor, { person });
+/** As a person signed in through the proxy, as `/asks/answer` answers for them. */
+const signedIn =
+  (person: string) =>
+  <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+    as(person)(Effect.provideService(effect, ActingPerson, person));
 const adaWorker = ThreadId.make("ada-worker");
 const sharedThread = ThreadId.make("shared-orchestrator");
 const answer = { kind: "approval", decision: "allow", scope: "once" } as never;
@@ -540,10 +559,12 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
     const onHome = stored("run-home", "m-run");
     const homeThreads = (threadId: ThreadId) =>
       threadId === home ? Effect.succeed(onHome) : getThread(threadId);
+    const given: Array<unknown> = [];
     const open = recording(homeThreads, owners(true));
-    await Effect.runPromise(as("grace")(open.owned.respond(home, "r-1" as never, answer)));
+    const respond = open.owned.respond;
+    await Effect.runPromise(signedIn("grace")(respond(home, "r-1" as never, answer)));
     const many = await Effect.runPromise(
-      as("grace")(
+      signedIn("grace")(
         open.owned.respondMany([
           { threadId: home, requestId: "r-2" as never, answer },
           { threadId: adaWorker, requestId: "r-3" as never, answer },
@@ -558,18 +579,50 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
       open.owned.send(home, { text: "Grace's" }) as Effect.Effect<unknown, { message: string }>,
       open.owned.steer(home, { text: "Grace's" }),
     ])
-      expect(await outcome(as("grace")(call))).toBe(NOT_YOUR_MACHINE);
-    // No signed-in person is no member.
-    expect(await outcome(as(undefined)(open.owned.respond(home, "r-4" as never, answer)))).toBe(
-      NOT_YOUR_MACHINE,
-    );
+      expect(await outcome(signedIn("grace")(call))).toBe(NOT_YOUR_MACHINE);
+    // An agent's call made as its machine's owner is no signed-in person, nor is no one.
+    for (const caller of [as("run/2"), as(undefined)])
+      expect(await outcome(caller(respond(home, "r-4" as never, answer)))).toBe(NOT_YOUR_MACHINE);
     expect(open.reached).toEqual([`respond:${home}`, `respondMany:${home}`]);
 
     const closed = recording(homeThreads, owners(false));
-    expect(await outcome(as("grace")(closed.owned.respond(home, "r-5" as never, answer)))).toBe(
-      NOT_YOUR_MACHINE,
-    );
+    expect(
+      await outcome(signedIn("grace")(closed.owned.respond(home, "r-5" as never, answer))),
+    ).toBe(NOT_YOUR_MACHINE);
     expect(closed.reached).toEqual([]);
+
+    // A member's answer is for this request alone: no standing rule, no mode switched.
+    const kept = recordingAnswers(homeThreads, owners(true), given);
+    await Effect.runPromise(
+      signedIn("grace")(
+        kept.respond(
+          home,
+          "r-6" as never,
+          {
+            kind: "approval",
+            decision: "allow",
+            scope: "always",
+          } as never,
+        ),
+      ),
+    );
+    await Effect.runPromise(
+      signedIn("grace")(
+        kept.respond(
+          home,
+          "r-7" as never,
+          {
+            kind: "plan",
+            decision: "approve",
+            mode: "bypassPermissions",
+          } as never,
+        ),
+      ),
+    );
+    expect(given).toEqual([
+      { kind: "approval", decision: "allow", scope: "once" },
+      { kind: "plan", decision: "approve" },
+    ]);
   });
 
   it("lets the owner, and the server's own work, through", async () => {

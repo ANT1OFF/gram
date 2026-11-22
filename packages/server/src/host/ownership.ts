@@ -4,6 +4,7 @@ import {
   type HostId,
   HostUnavailable,
   InvalidState,
+  type RequestAnswer,
   type Thread,
   type ThreadId,
   sessionHostOf,
@@ -229,28 +230,44 @@ export const mayReachMachinesOf = (
   });
 
 /**
- * Whether this fiber's caller may answer a request `threadId` waits on: they may reach it
- * (`mayReachThread`), or they are a signed-in person and every machine it works on lets members
- * answer (`OwnerOf.answeredByMembers`). Only answering: nothing else of the thread opens to them.
+ * How this fiber's caller may answer a request `threadId` waits on: as one who may reach it
+ * (`owner`, `mayReachThread`); as a member (`member`), a person signed in (`ActingPerson`, never an
+ * agent's call made as its machine's owner) on a thread whose every machine lets members answer
+ * (`OwnerOf.answeredByMembers`), whose answer is held to `asAMembersAnswer`; or not at all.
  */
-export const mayAnswerThread = (
+export const answerAdmission = (
   getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
   ownerOf: OwnerOf,
   threadId: ThreadId,
-): Effect.Effect<boolean> =>
+): Effect.Effect<"owner" | "member" | undefined> =>
   Effect.gen(function* () {
-    if (yield* mayReachThread(getThread, ownerOf, threadId)) return true;
+    if (yield* mayReachThread(getThread, ownerOf, threadId)) return "owner";
     const answeredByMembers = ownerOf.answeredByMembers;
-    if (answeredByMembers === undefined) return false;
-    if ((yield* currentCaller)?.person === undefined) return false;
+    if (answeredByMembers === undefined || (yield* ActingPerson) === undefined) return undefined;
     const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
-    if (thread === undefined || thread.awaitingMachine !== undefined) return false;
+    if (thread === undefined || thread.awaitingMachine !== undefined) return undefined;
     const hosts = [
       ...checkoutsOf(thread).map((checkout) => hostOf(checkout)),
       ...(thread.dreamHost === undefined ? [] : [thread.dreamHost]),
     ];
-    return hosts.every((hostId) => ownerOf(hostId) === undefined || answeredByMembers(hostId));
+    return hosts.every((hostId) => ownerOf(hostId) === undefined || answeredByMembers(hostId))
+      ? "member"
+      : undefined;
   });
+
+/**
+ * A member's answer as it is taken (`answerAdmission`): this one request alone. An approval holds
+ * for this call only (`scope: "once"`, never a rule kept for the session or after), and a plan's
+ * approval switches no mode, since a member may not set the thread's mode.
+ */
+export const asAMembersAnswer = (answer: RequestAnswer): RequestAnswer => {
+  if (answer.kind === "approval") return { ...answer, scope: "once" };
+  if (answer.kind === "plan") {
+    const { mode: _notTheirs, ...rest } = answer;
+    return rest;
+  }
+  return answer;
+};
 
 /** Refused, with why, unless this fiber's caller may reach `threadId` (`mayReachThread`). */
 export const admitThread = (

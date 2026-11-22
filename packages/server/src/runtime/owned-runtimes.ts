@@ -3,7 +3,8 @@ import * as Effect from "effect/Effect";
 import {
   admitThread,
   keepsOwner,
-  mayAnswerThread,
+  answerAdmission,
+  asAMembersAnswer,
   mayPlaceAwaited,
   mayReachThread,
   MOVE_CHANGES_OWNER,
@@ -19,10 +20,6 @@ export const ownedRuntimes = (
   ownerOf: OwnerOf,
 ): ThreadRuntimesShape => {
   const admit = (threadId: ThreadId) => admitThread(getThread, ownerOf, threadId);
-  const admitAnswer = (threadId: ThreadId) =>
-    Effect.flatMap(mayAnswerThread(getThread, ownerOf, threadId), (ok) =>
-      ok ? Effect.void : Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE, threadId })),
-    );
   const admitOrAbsent = (threadId: ThreadId) =>
     Effect.flatMap(mayReachThread(getThread, ownerOf, threadId), (ok) =>
       ok ? Effect.void : Effect.fail(new ThreadNotFound({ threadId })),
@@ -81,15 +78,30 @@ export const ownedRuntimes = (
       Effect.andThen(admitOrAbsent(threadId), runtimes.interrupt(threadId, options)),
     stopAtToolBoundary: (threadId) =>
       Effect.andThen(admitOrAbsent(threadId), runtimes.stopAtToolBoundary(threadId)),
-    respond: (threadId, ...rest) =>
-      Effect.andThen(admitAnswer(threadId), runtimes.respond(threadId, ...rest)),
+    respond: (threadId, requestId, answer, shown) =>
+      Effect.flatMap(answerAdmission(getThread, ownerOf, threadId), (how) =>
+        how === undefined
+          ? Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE, threadId }))
+          : runtimes.respond(
+              threadId,
+              requestId,
+              how === "member" ? asAMembersAnswer(answer) : answer,
+              shown,
+            ),
+      ),
     respondMany: (answers) =>
       Effect.gen(function* () {
         const reachable: Array<boolean> = [];
-        for (const each of answers)
-          reachable.push(yield* mayAnswerThread(getThread, ownerOf, each.threadId));
-        const allowed = answers.filter((_, index) => reachable[index]);
-        const given = allowed.length === 0 ? [] : yield* runtimes.respondMany(allowed);
+        const taken: Array<(typeof answers)[number]> = [];
+        for (const each of answers) {
+          const how = yield* answerAdmission(getThread, ownerOf, each.threadId);
+          reachable.push(how !== undefined);
+          if (how !== undefined)
+            taken.push(
+              how === "member" ? { ...each, answer: asAMembersAnswer(each.answer) } : each,
+            );
+        }
+        const given = taken.length === 0 ? [] : yield* runtimes.respondMany(taken);
         let next = 0;
         return answers.map((each, index) =>
           reachable[index]
