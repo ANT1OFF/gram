@@ -621,7 +621,7 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
     );
     expect(given).toEqual([
       { kind: "approval", decision: "allow", scope: "once" },
-      { kind: "plan", decision: "approve" },
+      { kind: "plan", decision: "approve", mode: "default" },
     ]);
   });
 

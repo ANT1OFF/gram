@@ -258,14 +258,12 @@ export const answerAdmission = (
 /**
  * A member's answer as it is taken (`answerAdmission`): this one request alone. An approval holds
  * for this call only (`scope: "once"`, never a rule kept for the session or after), and a plan's
- * approval switches no mode, since a member may not set the thread's mode.
+ * approval leaves the session in `default`, where each change it makes asks again, never a mode
+ * that lets changes through unasked, since a member may not set the thread's mode.
  */
 export const asAMembersAnswer = (answer: RequestAnswer): RequestAnswer => {
   if (answer.kind === "approval") return { ...answer, scope: "once" };
-  if (answer.kind === "plan") {
-    const { mode: _notTheirs, ...rest } = answer;
-    return rest;
-  }
+  if (answer.kind === "plan") return { ...answer, mode: "default" };
   return answer;
 };
 
