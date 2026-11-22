@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { BrowserWindow, ipcMain, session as sessions, type WebContents } from "electron";
+import { app, BrowserWindow, ipcMain, session as sessions, type WebContents } from "electron";
 import type { SignedTurnGrant } from "@gram/contracts";
 import { markDecisionWindow } from "../../electron/decision-windows.ts";
 import { HOSTED_SITE_TURN_GRANT } from "./site-channel.ts";
@@ -8,6 +8,7 @@ import {
   makeSiteGestures,
   type SiteGestures,
   siteThreadIdOf,
+  siteTitle,
   staysIn,
 } from "./site-gesture.ts";
 
@@ -42,6 +43,7 @@ const partitionOf = (origin: string) =>
   `persist:gram-hosted-site-${createHash("sha256").update(origin).digest("hex").slice(0, 32)}`;
 
 const DENY_ALL = () => false;
+const ONE_LINK_PROMPT_IN_MS = 3_000;
 
 export const makeSiteWindows = (options: SiteWindowsOptions) => {
   const open = new Map<string, BrowserWindow>();
@@ -56,8 +58,26 @@ export const makeSiteWindows = (options: SiteWindowsOptions) => {
     kept.setPermissionCheckHandler(DENY_ALL);
     kept.setDevicePermissionHandler(DENY_ALL);
     kept.on("will-download", (event) => event.preventDefault());
+    kept.on("select-hid-device", (event, _details, choose) => {
+      event.preventDefault();
+      choose();
+    });
+    kept.on("select-serial-port", (event, _ports, _contents, choose) => {
+      event.preventDefault();
+      choose("");
+    });
+    kept.on("select-usb-device", (event, _details, choose) => {
+      event.preventDefault();
+      choose();
+    });
   };
 
+  app.on("select-client-certificate", (event, contents, _url, _list, choose) => {
+    if (contents === null || !sites.has(contents)) return;
+    event.preventDefault();
+    choose();
+  });
+  ipcMain.removeHandler(HOSTED_SITE_TURN_GRANT);
   ipcMain.handle(HOSTED_SITE_TURN_GRANT, (event, arg: unknown) => {
     const site = sites.get(event.sender);
     if (site === undefined) return null;
@@ -113,27 +133,36 @@ export const makeSiteWindows = (options: SiteWindowsOptions) => {
       contents.on("input-event", (_event, input) => {
         if (input.type === "mouseDown") gestures.pointer();
       });
-      contents.setWindowOpenHandler(({ url }) => {
+      let offered = -Infinity;
+      const offer = (url: string) => {
+        const now = performance.now();
+        if (now - offered < ONE_LINK_PROMPT_IN_MS) return;
+        offered = now;
         options.openLink(url, win);
+      };
+      contents.setWindowOpenHandler(({ url }) => {
+        offer(url);
         return { action: "deny" };
       });
       const stay = (event: { preventDefault(): void; url: string }) => {
         if (staysIn(event.url, origin)) return;
         event.preventDefault();
-        options.openLink(event.url, win);
+        offer(event.url);
       };
       contents.on("will-navigate", stay);
       contents.on("will-redirect", stay);
+      contents.on("did-start-navigation", (event) => {
+        if (event.isMainFrame && !event.isSameDocument) gestures.navigated();
+      });
+      contents.on("select-bluetooth-device", (event, _devices, choose) => {
+        event.preventDefault();
+        choose("");
+      });
+      const retitle = (words: string) => win.setTitle(siteTitle(contents.getURL(), origin, words));
+      contents.on("did-navigate", () => retitle(""));
       contents.on("page-title-updated", (event, title) => {
         event.preventDefault();
-        const host = (() => {
-          try {
-            return new URL(contents.getURL()).host;
-          } catch {
-            return new URL(origin).host;
-          }
-        })();
-        win.setTitle(title.trim() === "" ? host : `${host}: ${title.slice(0, 120)}`);
+        retitle(title);
       });
       win.once("ready-to-show", () => win.show());
       win.on("closed", () => {

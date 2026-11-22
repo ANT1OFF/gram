@@ -321,7 +321,10 @@ main process withdraws a thread's grants when lending stops, the screen locks or
 
 So a server, however compromised, can raise an ask only within ten minutes of the person writing
 to that thread from this machine, and only naming that thread. A message sent from a browser or a
-phone can't wake this machine's ask at all.
+phone can't wake this machine's ask at all. As built the view is the server's own site, which asks
+for the grant itself, so this holds only as far as
+[the hosted site window](#the-hosted-site-window-as-built) says: within ten minutes of the person
+pressing Enter or clicking in that window, for a thread of the server's choosing.
 
 ### The device's service
 
@@ -1086,7 +1089,9 @@ discovery names it, else the server's origin. The window:
 - has a session partition of that server's alone, kept, so the person signs in there once; every
   permission, device and download is refused in it;
 - keeps `https:` pages in the window (a sign-in may go through another site) and sends anything
-  else, and every new window, through the app's link-trust prompt;
+  else, and every new window, through the app's link-trust prompt, one prompt in three seconds;
+  off the server's origin its title names that host and the server's, never the page's words;
+- presents no client certificate and picks no Bluetooth, HID, serial or USB device;
 - is left out of every all-windows loop, and none of the app's bridge or local server reaches it;
 - has a preload of its own (`hosted-site.js`) that gives the page one call,
   `window.gramHostedSite.turnGrant(threadId)`.
@@ -1094,9 +1099,11 @@ discovery names it, else the server's origin. The window:
 The main process answers that call with a turn grant, signed as any other
 ([the turn grant](#the-turn-grant)) for the server, the workspace the window was opened for and
 that thread, only when all of these hold: it came from the window's main frame on the server's
-origin; Enter was pressed or a mouse button pressed in the window within five seconds before and
-no grant was given for that gesture yet (a page can't make either by script); and this machine
-lends to that workspace, is connected there, signed in and not paused. Otherwise it answers null.
+origin; Enter (or ⌘/Ctrl+Enter, not Shift or Option) was pressed or a mouse button pressed in
+the window within two seconds before, on the page that is there now, and no grant was given for
+that gesture yet (a page can't make either by script); the window gave fewer than six in the last
+minute; and this machine lends to that workspace, is connected there, signed in and not paused.
+Otherwise it answers null.
 Gram's composer asks for one as it sends (`hostedSiteGrant`, two seconds at most) and sends the
 message with it as `thread.send`'s `deviceGrant`, or without it; the server binds it as above.
 
@@ -1107,5 +1114,8 @@ Where this differs from the design above:
   gesture, the server's own binding (only the person's own thread, that turn alone) and the ask
   on this machine, which shows every command exactly. A grant never carries more than the turn
   binding gives.
+- **The window outlives a sign-out.** Signing out, forgetting the server or turning the hosted
+  features off leaves an open window open and its partition kept; it gets no grant then, since
+  each is checked against the device as it is.
 - **A window opened for one workspace grants for that one.** A send from another workspace's page
   in it carries a grant naming the first, which binds nothing there.

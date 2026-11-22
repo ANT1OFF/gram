@@ -3,7 +3,9 @@ import {
   fromSitePage,
   makeSiteGestures,
   SITE_GESTURE_MS,
+  SITE_GRANTS_PER_MINUTE,
   siteThreadIdOf,
+  siteTitle,
   staysIn,
 } from "./site-gesture.ts";
 
@@ -25,12 +27,32 @@ describe("a hosted site's turn grant", () => {
     expect(gestures.take()).toBe(true);
   });
 
-  it("isn't had for other keys, a held Enter, or a key let go", () => {
+  it("isn't had for other keys, a held Enter, a new line, or a key let go", () => {
     const gestures = makeSiteGestures(() => 0);
     gestures.input({ type: "keyDown", key: "a" });
     gestures.input({ type: "keyUp", key: "Enter" });
     gestures.input({ type: "keyDown", key: "Enter", isAutoRepeat: true });
+    gestures.input({ type: "keyDown", key: "Enter", shift: true });
+    gestures.input({ type: "keyDown", key: "Enter", alt: true });
     expect(gestures.take()).toBe(false);
+  });
+
+  it("isn't had for a page the window went to after the gesture, nor past a few a minute", () => {
+    let time = 0;
+    const gestures = makeSiteGestures(() => time);
+    gestures.pointer();
+    gestures.navigated();
+    expect(gestures.take()).toBe(false);
+    for (let given = 0; given < SITE_GRANTS_PER_MINUTE; given += 1) {
+      gestures.pointer();
+      expect(gestures.take()).toBe(true);
+      time += 1_000;
+    }
+    gestures.pointer();
+    expect(gestures.take()).toBe(false);
+    time += 60_000;
+    gestures.pointer();
+    expect(gestures.take()).toBe(true);
   });
 
   it("comes only from the server's own top page", () => {
@@ -50,5 +72,15 @@ describe("a hosted site's turn grant", () => {
     expect(staysIn("http://127.0.0.1:4310/w", "http://127.0.0.1:4310")).toBe(true);
     expect(staysIn("file:///etc/passwd", "https://hosted.example")).toBe(false);
     expect(staysIn("vscode://open", "https://hosted.example")).toBe(false);
+  });
+
+  it("names the host it shows, and off the server's origin never the page's own words", () => {
+    const origin = "https://hosted.example";
+    expect(siteTitle(`${origin}/w/ws_1`, origin, "Orchestrator")).toBe(
+      "hosted.example: Orchestrator",
+    );
+    expect(siteTitle("https://idp.example/login", origin, "Sign in to hosted.example")).toBe(
+      "idp.example, not hosted.example",
+    );
   });
 });

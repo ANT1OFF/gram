@@ -500,12 +500,13 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
 
   const send = async (newDraft = false) => {
     if (intercept()) return;
+    const granting = hostedSiteGrant(threadId);
     if (!(await connected())) return;
     const taken = take();
     if (!taken) return;
     const { input, giveBack, release, active } = taken;
     try {
-      const deviceGrant = await hostedSiteGrant(threadId);
+      const deviceGrant = await granting;
       if (editing) {
         await api.rewind(threadId, editing.messageId, editing.files);
         if (!active()) return;
