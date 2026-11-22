@@ -571,6 +571,18 @@ export interface ThreadRuntimesShape {
    */
   restSession(threadId: ThreadId): Effect.Effect<"rested" | "none" | "working">;
   /**
+   * `restSession`, then `then` under the thread's lock when the thread is not at work, so no send
+   * lands between the rest and what `then` writes: `working` and no `value` otherwise. A thread
+   * with no runtime yet gets one, so a send to it waits for the lock too.
+   */
+  restSessionThen<A, E>(
+    threadId: ThreadId,
+    then: Effect.Effect<A, E>,
+  ): Effect.Effect<
+    { readonly state: "rested" | "none" | "working"; readonly value?: A },
+    E | ThreadNotFound
+  >;
+  /**
    * Places the thread on the checkout `prepare` makes, its old placement being `from`, with
    * nothing of it running on the old one: claimed under the thread's lock first, so no send,
    * delivery, turn or session starts until it lets go (a send meanwhile is refused); then any

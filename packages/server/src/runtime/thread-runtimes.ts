@@ -1409,6 +1409,30 @@ const make = Effect.gen(function* () {
       );
     });
 
+  const restSessionThen: ThreadRuntimesShape["restSessionThen"] = (threadId, then) =>
+    Effect.gen(function* () {
+      const rt = yield* getRuntime(threadId);
+      const rested = yield* stopSession(
+        rt,
+        "evict",
+        () => evictable(rt) && rt.background.length === 0 && rt.queue.length === 0,
+      );
+      return yield* locked(
+        rt,
+        Effect.gen(function* () {
+          if (
+            rt.session !== undefined ||
+            rt.launch !== undefined ||
+            rt.queue.length > 0 ||
+            !NOTHING_RUNNING.has(rt.status)
+          )
+            return { state: "working" as const };
+          const value = yield* then;
+          return { state: rested ? ("rested" as const) : ("none" as const), value };
+        }),
+      );
+    });
+
   const relocate: ThreadRuntimesShape["relocate"] = (threadId, plan) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
@@ -1562,6 +1586,7 @@ const make = Effect.gen(function* () {
   const service = ThreadRuntimes.of({
     ...switchMethods,
     restSession,
+    restSessionThen,
     relocate,
     switchSession,
     switchAgent: agentSwitch.switchAgent,
