@@ -115,8 +115,11 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *   `resumeAt` unless `cancelled`; absent once the wait has ended, and every change to it sends
  *   the thread again),
  *   `thread.removed` `{id}`, `thread.status` `{id, status, idle}`.
- * - `ask.opened` `{id, kind, shown?, title, toolName?, questions?, plan?, planTruncated?,
- *   decisionId?, assignees?}`. `shown` is the card's own key: an answer through `asks/answer`
+ * - `ask.opened` `{id, kind, shown?, title, toolName?, command?, description?, reason?,
+ *   questions?, plan?, planTruncated?, decisionId?, assignees?}`. An approval carries, where it
+ *   has them, the exact `command` its call runs (up to 10,000 characters), the model's own
+ *   `description` of the call and the `reason` it asks (the permission rule or mode that held it),
+ *   each up to 1,000, with hidden characters shown, so a receiver can show what is decided. `shown` is the card's own key: an answer through `asks/answer`
  *   to a card that has one must carry it, and is taken only by that card, never by a later one
  *   an agent raised under the same `id` (409 `InvalidState` without it, 404 with another). A question carries `questions`, each `{question, header?, options: [{label,
  *   description?}], multiSelect}`, what a receiver needs to answer it through `asks/answer`: the
