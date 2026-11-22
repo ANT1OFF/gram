@@ -32,6 +32,12 @@ import {
   RECLAIMED_EVERY,
 } from "./signed-in-reclaim.ts";
 import {
+  type FinalCheck,
+  setAsideNames,
+  setAsideStoppedSignedIn,
+  takeBackSetAside,
+} from "./signed-in-set-aside.ts";
+import {
   NO_APP,
   NO_SIGNED_IN_SERVER,
   type RelayedDial,
@@ -70,6 +76,8 @@ import {
 } from "./worker-machine-stops.ts";
 import { plainName } from "./server-name.ts";
 import { askOnDrop } from "./signed-in-drops.ts";
+import { relaysOf, restingBy, roomFor } from "./signed-in-room.ts";
+import { takeRelayedDial } from "./signed-in-dial.ts";
 
 export { plainName } from "./server-name.ts";
 
@@ -78,9 +86,8 @@ export * from "./signed-in-port.ts";
 export * from "./signed-in-reclaim.ts";
 export * from "./signed-in-calls.ts";
 export * from "./worker-machine-stops.ts";
-
-/** The most machines from hosted servers this Gram registers at once (and the app relays). */
-export const RELAYED_MOST = 32;
+export * from "./signed-in-room.ts";
+export * from "./signed-in-dial.ts";
 
 const STOP_ATTEMPTS = 3;
 const STOP_RETRY_MS = 2_000;
@@ -99,7 +106,8 @@ export interface SignedInDeps {
     readonly list: () => ReadonlyArray<ProvidedMachine>;
     /** Its host's hello once online, to refuse one that can't carry app tools; absent in fakes. */
     readonly connection?: RemoteHostsShape["connection"];
-    readonly machines: Pick<RemoteHostsShape["machines"], "provision">;
+    readonly machines: Pick<RemoteHostsShape["machines"], "provision"> &
+      Partial<Pick<RemoteHostsShape["machines"], "get" | "setAside">>;
   };
   readonly now?: () => number;
   readonly timeoutMs?: number;
@@ -281,6 +289,8 @@ export const signedInSource = (
         return true;
       }),
     );
+  const aside = (id: string) => hosts.machines.get?.(id)?.setAside !== undefined;
+  const resting = restingBy(deps.asleep, aside);
   return {
     label: plainName(server.server),
     choices: Effect.map(asked, (kept) => kept.value),
@@ -415,6 +425,8 @@ export const signedInSource = (
     arrive: (name) =>
       Effect.gen(function* () {
         const deadline = now() + (deps.timeoutMs ?? ARRIVE_TIMEOUT_MS);
+        const taken = named(name);
+        if (taken !== undefined && aside(taken.id)) hosts.machines.setAside?.(taken.id, undefined);
         let relayed = false;
         let woken = false;
         let notFound = 0;
@@ -475,11 +487,8 @@ export const signedInSource = (
                 };
             }
             if (machine === undefined && status.publicKey !== undefined) {
-              const held = hosts.list().filter((each) => each.via !== undefined).length;
-              if (held >= RELAYED_MOST)
-                return {
-                  failed: `This Gram already has ${held} machines from hosted servers. Remove ones no worker uses under Settings → Machines, then spawn again.`,
-                };
+              const full = yield* roomFor(port, hosts, deps, resting, deadline - now());
+              if (full !== undefined) return { failed: full };
               const result = hosts.machines.provision({
                 name,
                 publicKey: status.publicKey,
@@ -521,31 +530,21 @@ export class SignedInWorkers extends Context.Service<
       | { readonly source: WorkerMachineSource; readonly server: WorkerMachineServer }
       | { readonly refused: string }
     >;
+    /**
+     * Sets hosted worker machines aside, and takes them back (`setAsideStoppedSignedIn`,
+     * `takeBackSetAside`). Absent without the app.
+     */
+    readonly setAside?: {
+      /** Sets one aside once its server says it is stopped and `final` still lets it go. */
+      readonly stopped: (id: string, final: FinalCheck) => Effect.Effect<boolean>;
+      /** Takes one back: a thread here needs it again. */
+      readonly takeBack: (id: string) => void;
+    };
   }
 >()("@gram/server/SignedInWorkers") {}
 
 /** How often the app is told the whole list of machines it carries, whether or not it changed. */
 export const RELAYS_RESYNC = Duration.minutes(1);
-/** Takes one relayed connection as its machine's dial, or ends it with why. */
-export const takeRelayedDial = (hosts: RemoteHostsShape, dial: RelayedDial) =>
-  Effect.gen(function* () {
-    const machine = hosts.machines.list().find((each) => each.name === dial.name);
-    if (machine?.via === undefined || machine.via !== dial.origin) {
-      dial.end(4401, "unauthorized: machine not joined");
-      return;
-    }
-    const decision = hosts.machines.authorizeConnect(dial.origin, dial.headers, "relayed");
-    if (decision.kind === "refused") {
-      dial.end(4000 + decision.status, decision.message);
-      return;
-    }
-    if (decision.machine.id !== machine.id) {
-      dial.end(4401, "unauthorized: another machine's dial");
-      return;
-    }
-    yield* hosts.attach(hosts.admit(decision.machine, dial.origin), yield* dial.socket);
-  });
-
 /**
  * Provides `SignedInWorkers` in the desktop app, where there are joined machines to register
  * worker hosts with; takes each relayed connection; and asks the app, once at start, to carry
@@ -564,7 +563,7 @@ export const SignedInWorkersLive = Layer.effect(
     const owed = config === undefined ? memoryOwedStops() : fileOwedStops(config.dataDir);
     const starting = new Set<string>();
     const locks: NameLocks = makeKeyedLock<string>();
-    const asleep = new Set<string>();
+    const asleep = new Set<string>(setAsideNames(hosts));
     const sent: StartsSent = new Map();
     const claimed = claimedHere(hosts);
     const dials = yield* Queue.unbounded<RelayedDial>();
@@ -582,17 +581,10 @@ export const SignedInWorkersLive = Layer.effect(
       Effect.forkScoped,
     );
     const relayed = () =>
-      hosts
-        .list()
-        .filter(
-          (machine) =>
-            machine.via !== undefined && machine.onDemand === "worker" && !asleep.has(machine.name),
-        )
-        .map((machine) => ({
-          origin: machine.via!,
-          name: machine.name,
-          ...(machine.viaAccount === undefined ? {} : { account: machine.viaAccount }),
-        }));
+      relaysOf(
+        hosts,
+        restingBy(asleep, (id) => hosts.machines.get(id)?.setAside !== undefined),
+      );
     let told = "";
     const sync = (fresh: boolean) => {
       const machines = relayed();
@@ -625,8 +617,9 @@ export const SignedInWorkersLive = Layer.effect(
     const wokenFor = new Map<string, number>();
     const goneFor = new Map<string, number>();
     const wants = yield* Queue.unbounded<void>();
-    const wakeWanted = Effect.suspend(() =>
-      Effect.forEach(
+    const wakeWanted = Effect.suspend(() => {
+      takeBackSetAside(hosts, starting);
+      return Effect.forEach(
         hosts.list(),
         (machine) => {
           if (
@@ -680,8 +673,8 @@ export const SignedInWorkersLive = Layer.effect(
           );
         },
         { discard: true },
-      ),
-    );
+      );
+    });
     const unwatchWants = hosts.watch(() => {
       Queue.offerUnsafe(wants, undefined);
     });
@@ -715,6 +708,11 @@ export const SignedInWorkersLive = Layer.effect(
     );
     return {
       port,
+      setAside: {
+        stopped: (id: string, final: FinalCheck) =>
+          setAsideStoppedSignedIn(port, hosts, { locks, asleep, sent, starting }, id, final),
+        takeBack: (id: string) => takeBackSetAside(hosts, starting, (each) => each === id),
+      },
       source: port.server().pipe(
         Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
         Effect.map((answered) =>

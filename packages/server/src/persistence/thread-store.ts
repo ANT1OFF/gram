@@ -501,11 +501,13 @@ export interface ThreadStoreShape {
   listThreads: Effect.Effect<ReadonlyArray<Thread>>;
   /**
    * Every thread as a claim check reads them, failing closed: the rows that decode, and the ids of
-   * unparked rows that don't (`unknown`), which a conflict check must count as a claim.
+   * unparked rows that don't (`unknown`), which a conflict check must count as a claim. Parked rows
+   * that don't decode are `unknownParked`, for a check that archived threads count for too.
    */
   listThreadsForClaims: Effect.Effect<{
     readonly threads: ReadonlyArray<Thread>;
     readonly unknown: ReadonlyArray<ThreadId>;
+    readonly unknownParked: ReadonlyArray<ThreadId>;
   }>;
   updateThread(
     id: ThreadId,
@@ -2089,7 +2091,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         Effect.flatMap((rows) =>
           Effect.gen(function* () {
             const threads: Array<Thread> = [];
-            const unknown: Array<ThreadId> = [];
+            const [unknown, unknownParked]: [Array<ThreadId>, Array<ThreadId>] = [[], []];
             for (const row of rows) {
               const decoded = decodeStored(Thread, row.data);
               if (decoded.ok) {
@@ -2097,9 +2099,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 continue;
               }
               yield* unreadable("threads", row.id, decoded.paths);
-              if (row.parked !== 1) unknown.push(row.id as ThreadId);
+              (row.parked === 1 ? unknownParked : unknown).push(row.id as ThreadId);
             }
-            return { threads, unknown } as const;
+            return { threads, unknown, unknownParked } as const;
           }),
         ),
       );
