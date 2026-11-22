@@ -1,6 +1,4 @@
 import {
-  InvalidState,
-  NotFound,
   WORKER_ANSWER_MAX,
   WORKER_REPORT_SUMMARY_MAX,
   type ThreadId,
@@ -9,12 +7,8 @@ import {
   askQuestionProblem,
   forwardContextProblem,
   isOpenQuestion,
-  workerAnswerMessage,
-  workerDismissMessage,
-  workerWithdrawnMessage,
   userAnswerProblem,
   ANSWER_SOURCE_MAX,
-  DISMISS_REASON_MAX,
   WORKER_QUESTION_ANSWER_MAX,
   WORKER_QUESTIONS_KEPT_CLOSED,
   WORKER_QUESTION_TRIAGE_MS,
@@ -38,6 +32,7 @@ import {
   publicQuestion,
   questionsOf,
   replaceQuestion,
+  revisedByUser,
   withDelivery,
   withdrawn,
   type QuestionRefusal,
@@ -48,44 +43,15 @@ import { USER_ANSWERS_MAX, userMessagesOf } from "../user-words.ts";
 import { findUserMessages } from "../../persistence/thread-store.ts";
 import { toolError, pausedFeatureOf, clipped, type OrchestrationKit } from "./kit.ts";
 import { NOT_YOUR_MACHINE, recordActor } from "../../host/ownership.ts";
-
-const questionWords = (text: string): string => redactText(text.trim());
-
-const closedQuestionText = (question: StoredWorkerQuestion) =>
-  question.withdrawal !== undefined
-    ? workerWithdrawnMessage(question, question.withdrawal.how, question.reason ?? "")
-    : question.stage === "dismissed"
-      ? workerDismissMessage(question, question.reason)
-      : workerAnswerMessage(
-          question,
-          question.answer ?? "",
-          question.closedBy === "orchestrator"
-            ? { closedBy: "orchestrator", source: question.source ?? "" }
-            : { closedBy: "user", recordedBy: question.recordedBy },
-        );
-
-const LEFT_REASON = {
-  archived: "Its thread was archived.",
-  deleted: "Its thread was deleted.",
-  detached: "Its thread left its orchestrator.",
-  moved: "Its thread moved to another workspace.",
-} as const;
-
-const withdrawReason = (tool: string, reason: string | undefined) => {
-  const words = redactText((reason ?? "").trim());
-  if (words === "") {
-    return Effect.fail(
-      toolError(tool, "Say why it no longer needs an answer: the user reads it in its history."),
-    );
-  }
-  if (words.length > DISMISS_REASON_MAX) {
-    return Effect.fail(toolError(tool, `Keep the reason to ${DISMISS_REASON_MAX} characters.`));
-  }
-  return Effect.succeed(words);
-};
-
-const questionTimerKey = (workspaceId: WorkspaceId, questionId: string) =>
-  `${workspaceId}\u0000${questionId}`;
+import {
+  LEFT_REASON,
+  closedQuestionText,
+  questionTimerKey,
+  questionWords,
+  withClosedFor,
+  userRefusal,
+  withdrawReason,
+} from "./question-words.ts";
 
 /** What the questions take from the rest of the service. */
 export interface WorkerQuestionsDeps {
@@ -97,11 +63,6 @@ export interface WorkerQuestionsDeps {
     about?: Omit<PendingReason, "reason">,
   ) => Effect.Effect<void>;
 }
-
-const withClosedFor = (
-  moved: StoredWorkerQuestion | QuestionRefusal,
-  closedFor: StoredWorkerQuestion["closedFor"],
-) => (isRefusal(moved) || closedFor === undefined ? moved : { ...moved, closedFor });
 
 /** The worker-question tools and the timers and deliveries behind them. */
 export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestionsDeps) => {
@@ -212,6 +173,13 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         answer,
         at,
       };
+    });
+
+  const answerEvent = (workspaceId: WorkspaceId, at: number, question: StoredWorkerQuestion) =>
+    store.appendOrchestrationEvent(workspaceId, {
+      at,
+      kind: "answer",
+      data: { threadId: question.threadId, questionId: question.id },
     });
 
   const showQuestionToWorker = (question: StoredWorkerQuestion) =>
@@ -565,19 +533,14 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       let before: StoredWorkerQuestion | undefined;
       const claimed = yield* moveQuestion(workspaceId, input.questionId, (question) => {
         before = question;
-        return withClosedFor(
-          answeredByOrchestrator(question, answer, redactText(source), at),
-          closedFor,
-        );
+        const moved = answeredByOrchestrator(question, answer, redactText(source), at);
+        return moved === question ? question : withClosedFor(moved, closedFor);
       });
       if (isRefusal(claimed)) return yield* toolError(tool, refusal(claimed.code, claimed.refused));
-      const delivered = yield* deliverToWorker(
-        claimed,
-        workerAnswerMessage(claimed, answer, {
-          closedBy: "orchestrator",
-          source: claimed.source ?? source,
-        }),
-      ).pipe(
+      if (claimed === before) {
+        return publicQuestion(claimed);
+      }
+      const delivered = yield* deliverToWorker(claimed, closedQuestionText(claimed)).pipe(
         Effect.tapError(() =>
           before === undefined ? Effect.void : restoreQuestion(workspaceId, before, claimed),
         ),
@@ -586,11 +549,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         ),
       );
       const settled = yield* settleDelivery(workspaceId, claimed, delivered);
-      yield* store.appendOrchestrationEvent(workspaceId, {
-        at,
-        kind: "answer",
-        data: { threadId: claimed.threadId, questionId: claimed.id },
-      });
+      yield* answerEvent(workspaceId, at, claimed);
       const final = yield* afterClose(workspaceId, settled);
       yield* showQuestionToOrchestrator(callerId, final);
       return publicQuestion(final);
@@ -621,11 +580,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         newlyClosed = !isRefusal(moved);
         return moved;
       });
-      if (isRefusal(claimed)) {
-        return yield* claimed.code === "unknown_question"
-          ? new NotFound({ entity: "question", id: questionId, message: claimed.refused })
-          : new InvalidState({ message: claimed.refused });
-      }
+      if (isRefusal(claimed)) return yield* userRefusal(questionId, claimed);
       if (!newlyClosed && claimed.deliveryOwed !== true) return publicQuestion(claimed);
       const final = yield* afterClose(
         workspaceId,
@@ -641,13 +596,43 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       return publicQuestion(final);
     });
 
+  const reviseAsUser = (
+    workspaceId: WorkspaceId,
+    questionId: string,
+    text: string,
+    seen: { readonly closedAt: number },
+  ) =>
+    Effect.gen(function* () {
+      yield* store.getWorkspace(workspaceId);
+      const closedFor = yield* decidedFor;
+      const at = yield* Clock.currentTimeMillis;
+      const answer = clipped(redactText(text.trim()), WORKER_QUESTION_ANSWER_MAX);
+      let changed = false;
+      const claimed = yield* moveQuestion(workspaceId, questionId, (question) => {
+        const moved = revisedByUser(question, answer, at, seen);
+        changed = !isRefusal(moved) && moved !== question;
+        return changed ? withClosedFor(moved, closedFor) : moved;
+      });
+      if (isRefusal(claimed)) return yield* userRefusal(questionId, claimed);
+      if (!changed) return publicQuestion(claimed);
+      yield* answerEvent(workspaceId, at, claimed);
+      const final = yield* afterClose(
+        workspaceId,
+        (yield* deliverOwed(workspaceId, claimed.id, false)) ?? claimed,
+      );
+      yield* wake(workspaceId, "the user changed their answer to a worker's question", true);
+      return publicQuestion(final);
+    });
+
   const answerQuestionAsUser: OrchestrationShape["answerQuestionAsUser"] = (input, options) =>
-    closeAsUser(
-      input.workspaceId,
-      input.questionId,
-      { answer: input.answer },
-      options?.onlyIfOpen === true,
-    );
+    input.replaces !== undefined && options?.onlyIfOpen !== true
+      ? reviseAsUser(input.workspaceId, input.questionId, input.answer, input.replaces)
+      : closeAsUser(
+          input.workspaceId,
+          input.questionId,
+          { answer: input.answer },
+          options?.onlyIfOpen === true,
+        );
 
   const dismissQuestionAsUser: OrchestrationShape["dismissQuestionAsUser"] = (input) =>
     closeAsUser(input.workspaceId, input.questionId, {
@@ -694,7 +679,13 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         words === undefined
           ? undefined
           : { text: words.text, sentAt: message?.metadata?.createdAt };
-      const problem = userAnswerProblem(found.id, latest, found.askedAt);
+      const answered = found.stage === "answered" && found.withdrawal === undefined;
+      const problem = userAnswerProblem(
+        found.id,
+        latest,
+        found.askedAt,
+        answered ? (found.closedAt ?? found.askedAt) : undefined,
+      );
       if (problem !== undefined || latest === undefined) {
         return yield* toolError(tool, problem ?? "There is no message of the user's to record.");
       }
@@ -702,14 +693,13 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       const by = asWorker ? ("worker" as const) : ("orchestrator" as const);
       const at = yield* Clock.currentTimeMillis;
       const moved = yield* moveQuestion(workspaceId, found.id, (question) =>
-        answeredFromMessage(question, answer, by, at),
+        answered
+          ? revisedByUser(question, answer, at, { closedAt: found.closedAt }, by)
+          : answeredFromMessage(question, answer, by, at),
       );
       if (isRefusal(moved)) return yield* toolError(tool, refusal(moved.code, moved.refused));
-      yield* store.appendOrchestrationEvent(workspaceId, {
-        at,
-        kind: "answer",
-        data: { threadId: moved.threadId, questionId: moved.id },
-      });
+      if (answered && moved.closedAt === found.closedAt) return publicQuestion(moved);
+      yield* answerEvent(workspaceId, at, moved);
       const final = yield* afterClose(
         workspaceId,
         moved.deliveryOwed === true

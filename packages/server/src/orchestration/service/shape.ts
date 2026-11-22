@@ -823,7 +823,8 @@ export interface OrchestrationShape {
   ): Effect.Effect<WorkerQuestion, AppToolError>;
   /**
    * `answer_worker` with a `questionId`: the orchestrator answers a question still in triage, citing
-   * what settles it, and the worker is sent the answer at once.
+   * what settles it, and the worker is sent the answer at once. Again on one it answered, it changes
+   * that answer (`revised`) and the worker is sent the new one; never an answer of the user's.
    */
   answerWorkerQuestion(
     callerId: ThreadId,
@@ -853,7 +854,8 @@ export interface OrchestrationShape {
   /**
    * `record_user_answer`: the worker that asked an open question, or its orchestrator, records that
    * the user answered it in a message to the caller. The answer is that message, copied word for
-   * word from the caller's transcript.
+   * word from the caller's transcript. On an answered question, a message written after its answer
+   * changes it (`revised`).
    */
   recordUserAnswer(
     callerId: ThreadId,
@@ -881,7 +883,9 @@ export interface OrchestrationShape {
   /**
    * `workerQuestion.answer`: the user's answer, to the worker now and to the orchestrator's next
    * digest. A repeat of an answer the user already gave is taken as that answer, unless
-   * `onlyIfOpen`: then it is refused, so the caller knows its answer is the one that closed it.
+   * `onlyIfOpen`: then it is refused, so the caller knows its answer is the one that closed it. With
+   * `replaces`, it changes the answer given at `replaces.closedAt`, and is refused (`InvalidState`)
+   * when the answer has changed since; the worker is sent the new one.
    */
   answerQuestionAsUser(
     input: AnswerWorkerQuestionInput,

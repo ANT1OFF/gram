@@ -2,6 +2,8 @@ import {
   isOpenQuestion,
   workerAnswerMessage,
   workerDismissMessage,
+  workerRevisedAnswerMessage,
+  type GramUIMessage,
   type ThreadId,
   type WorkerQuestion,
   type WorkspaceId,
@@ -20,7 +22,7 @@ export interface MockQuestionDeps {
 }
 
 export type MockQuestionClose =
-  | { readonly answer: string }
+  | { readonly answer: string; readonly replaces?: { readonly closedAt: number } | undefined }
   | { readonly dismissed: true; readonly reason?: string };
 
 /**
@@ -43,16 +45,31 @@ export const closeWorkerQuestion = async (
       id: questionId,
     });
   }
-  if (!isOpenQuestion(question)) {
+  const replaces = "answer" in close ? close.replaces : undefined;
+  if (replaces !== undefined) {
+    if (question.stage !== "answered" || question.withdrawal !== undefined) {
+      throw new MockInvalidState(`${question.id} has no answer to change.`);
+    }
+    if (question.closedAt !== replaces.closedAt) {
+      throw new MockInvalidState(
+        `${question.id}'s answer changed since you saw it: it is now “${question.answer ?? ""}”. Nothing was changed; look at that answer first.`,
+      );
+    }
+  } else if (!isOpenQuestion(question)) {
     throw new MockInvalidState(`${question.id} is ${question.stage} already.`);
   }
   const text =
     "answer" in close
-      ? workerAnswerMessage(question, close.answer, { closedBy: "user" })
+      ? (replaces === undefined ? workerAnswerMessage : workerRevisedAnswerMessage)(
+          question,
+          close.answer,
+          { closedBy: "user" },
+        )
       : workerDismissMessage(question, close.reason);
   const delivered = await deps.deliver(question.threadId, text);
+  const { recordedBy: _by, source: _source, ...was } = question;
   const closed: WorkerQuestion = {
-    ...question,
+    ...(replaces === undefined ? question : { ...was, revised: true as const }),
     stage: "answer" in close ? "answered" : "dismissed",
     ...("answer" in close ? { answer: close.answer } : {}),
     ...("dismissed" in close && close.reason !== undefined ? { reason: close.reason } : {}),
@@ -68,4 +85,30 @@ export const closeWorkerQuestion = async (
   deps.showQuestion(closed);
   deps.changed(workspaceId);
   return closed;
+};
+
+/**
+ * The forwards' cards in the orchestrator's transcript, as `forward_question` draws them: once,
+ * as the question was then, for each one the orchestrator forwarded that is still open.
+ */
+export const showForwardCards = (
+  host: { putMessage(threadId: ThreadId, message: GramUIMessage): void; ids(): string },
+  orchestratorThreadId: ThreadId,
+  questions: readonly WorkerQuestion[],
+): void => {
+  for (const question of questions) {
+    if (question.forwardedBy !== "orchestrator" || question.stage !== "forwarded") continue;
+    host.putMessage(orchestratorThreadId, {
+      id: host.ids(),
+      role: "assistant",
+      metadata: { createdAt: question.forwardedAt ?? question.askedAt },
+      parts: [
+        {
+          type: "data-worker-question",
+          id: `worker-question:${question.id}:forwarded`,
+          data: question,
+        },
+      ],
+    });
+  }
 };

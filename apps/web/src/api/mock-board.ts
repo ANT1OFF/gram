@@ -13,6 +13,7 @@ import {
 
 import { seedCommittedBranches, setupGuideQuestion } from "./mock-board-fixtures";
 import type { MockBoardSimulation, MockFinishedSimulation, MockScenes } from "./mock-orchestration";
+import { showForwardCards } from "./mock-worker-questions";
 
 /**
  * A workspace across `projectIds` with its orchestrator and three features. `mail-trigger` spans
@@ -506,6 +507,7 @@ export function simulateWorkerQuestions(
   ];
   questionsOf.set(board.workspaceId, questions);
   for (const question of questions) showQuestion(question);
+  showForwardCards(host, board.orchestratorThreadId, questions);
   for (const question of questions.filter(isOpenQuestion)) {
     reports.set(question.threadId, {
       threadId: question.threadId,
