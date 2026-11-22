@@ -55,6 +55,7 @@ import { OrchestrationMemory } from "../orchestration/memory.ts";
 import { questionAnswerer } from "../orchestration/dream-handler.ts";
 import { Orchestration, OrchestrationLive } from "../orchestration/service.ts";
 import { WorkerMachineReleaseLive } from "../embedding/worker-machine-release.ts";
+import { IdleMeasureLive } from "../embedding/idle-measure-live.ts";
 import { WorkerMachineSourcesLive } from "../embedding/worker-machine-sources.ts";
 import { RoutineEventSourcesLive } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
@@ -894,6 +895,7 @@ export const ServerCore = Layer.unwrap(
             ThreadArchiverLive,
             WorktreeSweepLive,
             WorkerMachineReleaseLive,
+            IdleMeasureLive,
             MainWatchLive.pipe(Layer.provide(BranchHeadsLive)),
           ),
         ),
