@@ -11,7 +11,7 @@ import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { ThreadMachineMarker } from "@/thread/machine-marker";
 import { askFingerprint } from "@/orchestration/ask-actions";
-import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
+import { holdAnswer, holdOneAnswer, type SendAction } from "@/orchestration/ask-answer";
 import {
   answerKey,
   clock,
@@ -524,7 +524,11 @@ export function InboxDetail({
           </ul>
         ) : null}
         {!card && publishing !== undefined && publishing.length > 0 && (
-          <InboxPublish entries={publishing} onReview={reviewChanges} />
+          <InboxPublish
+            entries={publishing}
+            onReview={reviewChanges}
+            onDecide={(entry, decision) => holdOneAnswer(api, entry, decision)}
+          />
         )}
         {!card && item.threadId !== undefined && item.owned && (
           <InboxContext key={item.threadId} threadId={item.threadId} />

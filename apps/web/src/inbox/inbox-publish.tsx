@@ -19,10 +19,14 @@ import { publishSummaryOf } from "./inbox-publish-model";
 export function InboxPublish({
   entries,
   onReview,
+  onDecide,
 }: {
-  entries: readonly Pick<InboxEntry, "threadId" | "title" | "checkout">[];
+  entries: readonly InboxEntry[];
   onReview: (threadId: ThreadId) => void;
+  /** Answers one thread's request alone, which a group's Allow answers with the others. */
+  onDecide: (entry: InboxEntry, decision: "allow" | "deny") => void;
 }) {
+  const several = entries.length > 1;
   const heading = useId();
   return (
     <section
@@ -31,7 +35,9 @@ export function InboxPublish({
       className="mx-2 mt-3 flex flex-col gap-1.5 rounded-(--radius-md) border border-border px-3 py-2"
     >
       <h3 id={heading} className="text-meta text-muted-foreground">
-        {entries.length === 1 ? "What it would publish" : "What they would publish"}
+        {several
+          ? `What they would publish · Allow ${entries.length} answers ${entries.length === 2 ? "both" : `all ${entries.length}`}, or decide each one on its row`
+          : "What it would publish"}
       </h3>
       <ul className="flex flex-col gap-1.5">
         {entries.map((entry) => (
@@ -40,8 +46,9 @@ export function InboxPublish({
             threadId={entry.threadId}
             title={entry.title}
             branch={entry.checkout?.branch}
-            named={entries.length > 1}
+            named={several}
             onReview={() => onReview(entry.threadId)}
+            onDecide={several ? (decision) => onDecide(entry, decision) : undefined}
           />
         ))}
       </ul>
@@ -55,12 +62,14 @@ function PublishRow({
   branch,
   named,
   onReview,
+  onDecide,
 }: {
   threadId: ThreadId;
   title: string;
   branch: string | undefined;
   named: boolean;
   onReview: () => void;
+  onDecide: ((decision: "allow" | "deny") => void) | undefined;
 }) {
   const api = useApi();
   const stamp = useThreadsStore((s) => {
@@ -115,15 +124,39 @@ function PublishRow({
           )}
         </p>
       </div>
-      <Button
-        size="xs"
-        variant="outline"
-        data-testid="inbox-publish-review"
-        aria-label={named ? `Review changes: ${title}` : undefined}
-        onClick={onReview}
-      >
-        Review changes
-      </Button>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          size="xs"
+          variant="outline"
+          data-testid="inbox-publish-review"
+          aria-label={named ? `Review changes: ${title}` : undefined}
+          onClick={onReview}
+        >
+          Review changes
+        </Button>
+        {onDecide !== undefined && (
+          <>
+            <Button
+              size="xs"
+              variant="ghost"
+              data-testid="inbox-publish-allow"
+              aria-label={`Allow only ${title}`}
+              onClick={() => onDecide("allow")}
+            >
+              Allow
+            </Button>
+            <Button
+              size="xs"
+              variant="ghost"
+              data-testid="inbox-publish-deny"
+              aria-label={`Deny only ${title}`}
+              onClick={() => onDecide("deny")}
+            >
+              Deny
+            </Button>
+          </>
+        )}
+      </div>
     </li>
   );
 }

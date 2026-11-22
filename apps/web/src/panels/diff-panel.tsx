@@ -52,6 +52,7 @@ import { PanelMessage } from "./panel-message";
 import { keptDiff } from "./kept-diff";
 import { countHunks } from "./patch";
 import { RefreshButton } from "./refresh-button";
+import { type BranchShownBecause, DiffBranchNote } from "./diff-branch-note";
 import { BRANCH_TARGET, sameTurnOptions, targetTurnId, turnOptions } from "./turn-diff";
 
 const SCOPES = [
@@ -126,7 +127,12 @@ export function DiffPanel({
     threadId,
     useStableSelector((s) => turnOptions(s.messages), sameTurnOptions),
   );
-  const [chosen, setScope] = useState<ScopeKind>();
+  const [chosen, setChosen] = useState<ScopeKind>();
+  const [forPush, setForPush] = useState(false);
+  const setScope = (kind: ScopeKind) => {
+    setForPush(false);
+    setChosen(kind);
+  };
   const branchAhead = useThreadsStore((s) => {
     const git = s.byId[threadId]?.git;
     return git !== undefined && git.changedFiles === 0 && git.aheadBase > 0;
@@ -172,7 +178,8 @@ export function DiffPanel({
   ) {
     setFellBackAt(diffStamp);
   }
-  const autoBranch = chosen === undefined && scope === "branch";
+  const branchNote: BranchShownBecause | undefined =
+    scope !== "branch" ? undefined : chosen === undefined ? "clean" : forPush ? "push" : undefined;
   const treeFits = width >= TREE_BESIDE_MIN_WIDTH;
   const fileCount = query.data?.files?.length ?? 0;
   const diffFiles =
@@ -204,8 +211,10 @@ export function DiffPanel({
   const [appliedTarget, setAppliedTarget] = useState<number>();
   if (pending !== undefined && pendingScope && pending.id !== appliedTarget) {
     setAppliedTarget(pending.id);
-    if (pendingTurn === undefined) setScope("branch");
-    else {
+    if (pendingTurn === undefined) {
+      setChosen("branch");
+      setForPush(true);
+    } else {
       setScope("turn");
       setPicked(pendingTurn);
     }
@@ -357,7 +366,7 @@ export function DiffPanel({
           <DiffBody
             threadId={threadId}
             scope={scope}
-            autoBranch={autoBranch}
+            branchNote={branchNote}
             onScope={setScope}
             prLink={prLink}
             diffScope={diffScope}
@@ -546,7 +555,7 @@ function ViewToggle({
 function DiffBody({
   threadId,
   scope,
-  autoBranch,
+  branchNote,
   onScope,
   prLink,
   diffScope,
@@ -560,7 +569,7 @@ function DiffBody({
 }: {
   threadId: ThreadId;
   scope: ScopeKind;
-  autoBranch: boolean;
+  branchNote: BranchShownBecause | undefined;
   onScope: (scope: ScopeKind) => void;
   prLink: boolean;
   diffScope: DiffScope | undefined;
@@ -702,15 +711,7 @@ function DiffBody({
 
   return (
     <>
-      {autoBranch && (
-        <p
-          data-testid="diff-fallback"
-          className="shrink-0 px-3 pb-2 text-meta text-muted-foreground"
-        >
-          No uncommitted changes. Showing branch vs{" "}
-          {(diff.base ?? "its base").replace(/^origin\//, "")}
-        </p>
-      )}
+      {branchNote !== undefined && <DiffBranchNote because={branchNote} base={diff.base} />}
       {diff.note && (
         <p className="shrink-0 px-3 pb-2 text-meta text-muted-foreground">{diff.note}</p>
       )}

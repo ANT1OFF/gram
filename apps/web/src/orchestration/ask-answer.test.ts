@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "@/api/types";
 
-import { holdAnswer } from "./ask-answer";
+import { holdAnswer, holdOneAnswer } from "./ask-answer";
 import { askOf, asksOf } from "./ask-model";
 import { hiddenIds, UNDO_MS, useAskStackStore } from "./ask-stack-store";
 import { groupInbox, type InboxEntry } from "./inbox-model";
@@ -71,5 +71,22 @@ describe("answering an ask from outside the stack", () => {
     await vi.advanceTimersByTimeAsync(UNDO_MS * 2);
     expect(respondMany).not.toHaveBeenCalled();
     expect(asksOf({ groups, hidden: hiddenIds(useAskStackStore.getState()) })).toHaveLength(1);
+  });
+
+  it("answers one member of a group alone, and the others still wait as their own ask", async () => {
+    const groups = groupInbox([entry("a"), entry("b"), entry("c")]);
+    const respondMany = vi.fn(async (answers: Parameters<Api["respondMany"]>[0]) =>
+      answers.map((a) => ({ threadId: a.threadId, requestId: a.requestId, ok: true as const })),
+    );
+
+    holdOneAnswer({ respondMany } as unknown as Api, groups[0]!.entries[1]!, "deny");
+
+    const left = asksOf({ groups, hidden: hiddenIds(useAskStackStore.getState()) });
+    expect(left.map((ask) => ask.ids)).toEqual([["r-a", "r-c"]]);
+    await vi.advanceTimersByTimeAsync(UNDO_MS);
+    expect(respondMany.mock.calls.flatMap(([answers]) => answers.map((a) => a.requestId))).toEqual([
+      "r-b",
+    ]);
+    expect(respondMany.mock.calls[0]![0][0]!.answer).toMatchObject({ decision: "deny" });
   });
 });
