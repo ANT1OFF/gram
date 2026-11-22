@@ -761,6 +761,7 @@ describe("GramRpcs", () => {
           "rewind",
           "rename",
           "pin",
+          "hideDoc",
           "park",
           "label",
           "close",

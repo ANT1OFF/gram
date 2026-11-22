@@ -126,15 +126,14 @@ test("a published doc shows as a card and a chip, and reads and saves in the Doc
   await expect(view).toHaveAttribute("data-revision", "2");
   await expect(view.getByTestId("doc-meta")).toHaveText(/updated \d{2}:\d{2} by you$/);
   await expect(body.getByRole("heading", { name: "Decision" })).toBeVisible();
-  await expect(chip).toBeVisible();
-  await dismiss.click();
+  // Once dismissed, the chip stays away through the user's save and the agent's update.
   await expect(chip).toHaveCount(0);
 
   // An agent update over the revision it last saw would be refused; over the current one it lands.
   await publish(page, made.workerThreadId, { id: doc.id, content: `${CONTENT}\nRevised.\n` });
   await expect(view).toHaveAttribute("data-revision", "3");
-  await expect(chip).toBeVisible();
   await expect(page.getByTestId("doc-card")).toHaveCount(2);
+  await expect(chip).toHaveCount(0);
   await expect(page.getByTestId("doc-card").last()).toContainText("Updated by");
 
   // All docs is the workspace's list.

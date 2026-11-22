@@ -310,6 +310,7 @@ export const MEMBER_RPCS: ReadonlySet<string> = new Set([
   "thread.label",
   "thread.markCompleted",
   "thread.markUnread",
+  "thread.hideDoc",
   "thread.park",
   "thread.pin",
   "thread.promptHistory",

@@ -6,6 +6,7 @@ import { BabysitBudget } from "../babysit.ts";
 import { CheckoutInUse, CheckoutUsers, CheckoutUsersPayload } from "../checkout-use.ts";
 import { ClosedThread, ReopenedClosedThread } from "../closed-threads.ts";
 import { CodexHome } from "../codex-home.ts";
+import { DocId } from "../docs.ts";
 import {
   ModelRef,
   PermissionMode,
@@ -218,6 +219,10 @@ export const ThreadRpcs = RpcGroup.make(
   }),
   Rpc.make("thread.pin", {
     payload: { ...threadRef, pinned: Schema.Boolean },
+    error: errors(ThreadNotFound),
+  }),
+  Rpc.make("thread.hideDoc", {
+    payload: { ...threadRef, docId: DocId },
     error: errors(ThreadNotFound),
   }),
   Rpc.make("thread.park", {

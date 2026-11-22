@@ -1,6 +1,7 @@
 import {
   docExcerpt,
   docTitle,
+  hideDoc,
   type Doc,
   type DocId,
   type ThreadId,
@@ -81,6 +82,10 @@ export function createDocsMock(world: MockWorld) {
       of(workspaceId).set(id, saved);
       world.emit({ type: "docs.changed", workspaceId });
       return metaOf(saved);
+    },
+    hideDoc: async (threadId, id) => {
+      await world.delay(20);
+      world.replaceThread(hideDoc(world.summary(threadId).thread, id));
     },
   };
 
