@@ -211,6 +211,16 @@ describe.skipIf(!hasGit)("a joined machine's git, through the machine's own prox
     }),
   );
 
+  it.effect(
+    "passes a project folder whose origin names the repository in another case, with .git",
+    () =>
+      Effect.gen(function* () {
+        machineRewrites(PROXY);
+        run(clone, "remote", "set-url", "origin", "https://github.com/Acme/Web.git");
+        expect((yield* guard(clone))._tag).toBe("Success");
+      }),
+  );
+
   it.effect("pushes a work-in-progress snapshot through it", () =>
     Effect.gen(function* () {
       const proxied = join(root, "proxy");
