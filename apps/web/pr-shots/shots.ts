@@ -7,6 +7,7 @@ import { openOverviewDensity } from "../e2e/overview-density";
 import { openPanelTab } from "../e2e/panel-tab";
 import { openBoardSidebar, openBoardView } from "./board";
 import { MACHINE_MARKER_SHOTS } from "./machine-marker-shots";
+import { MOVE_THREAD_SHOTS } from "./move-thread-shots";
 
 // The screens `bun run --filter @gram/web pr:shots` can capture for a PR's before/after images.
 // The working tree's list drives both runs: the base checkout serves the app, these drive it. So a
@@ -6778,6 +6779,7 @@ export const SHOTS: readonly Shot[] = [
   },
   ...NAVIGATION_SHOTS,
   ...WORKER_HEAD_SHOTS,
+  ...MOVE_THREAD_SHOTS,
 ];
 
 /**
