@@ -16,6 +16,8 @@ export interface ToolRow {
   readonly detail: string;
   /** Where its install instructions are, for a tool that isn't installed. */
   readonly installUrl?: string;
+  /** The command that installs it, for a tool that isn't installed, to copy. */
+  readonly installCommand?: string;
 }
 
 const AGENTS: ReadonlySet<LaunchTool> = new Set(["claude", "codex"]);
@@ -69,12 +71,13 @@ export function toolRows(checks: LaunchChecks): ToolRow[] {
         ...(optional ? { optional } : {}),
         state: "missing",
         installUrl: INSTALL_DOCS[row.tool],
+        ...(install === undefined ? {} : { installCommand: install }),
         detail:
           install === undefined
             ? "Not found on your login-shell PATH."
-            : `Not found. Install it with \`${install}\`${
-                agent === undefined ? "" : `, then sign in with \`${agent.signIn}\``
-              }.`,
+            : `Install it with \`${install}\`${
+                agent === undefined ? "" : `, sign in with \`${agent.signIn}\``
+              }, then check again.`,
       };
     }
     const attention =
@@ -131,5 +134,12 @@ export function runsWith(rows: readonly ToolRow[]): {
   const signIn = agents.filter((row) => row.state === "attention");
   return signIn.length > 0
     ? { ready: false, agents: [], words: `Sign in to ${names(signIn)} to start` }
-    : { ready: false, agents: [], words: `Install ${names(agents)} to start` };
+    : {
+        ready: false,
+        agents: [],
+        words:
+          agents.length > 1
+            ? `Install ${names(agents)} to start: one is enough`
+            : `Install ${names(agents)} to start`,
+      };
 }
