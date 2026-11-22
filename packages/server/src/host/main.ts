@@ -66,6 +66,7 @@ import {
 import { foregroundOf } from "../ports/pure.ts";
 import { runCli } from "./cli.ts";
 import { HOST_AGENTS_ENV, hostAgentsFrom, limitedAgentHosts } from "./host-agents.ts";
+import { MACHINE_MCP_SERVER_ENV, machineMcpServerFrom } from "./machine-mcp-server.ts";
 import type { HostBusy, HostId } from "@gram/contracts";
 import { selfUpdater } from "./self-update-host.ts";
 import { hostTeardown, prepareHostProcess } from "./launch.ts";
@@ -189,10 +190,19 @@ const hostService = (
       keptTerminals === undefined ? undefined : keptTerminalsIn(keptTerminals),
     );
     const folders = foldersOn(proc);
+    const machineMcp =
+      hostId === LOCAL_HOST_ID
+        ? { server: undefined }
+        : machineMcpServerFrom(process.env[MACHINE_MCP_SERVER_ENV]);
+    if (machineMcp.error !== undefined)
+      yield* Effect.logWarning(
+        `gram-host: ${MACHINE_MCP_SERVER_ENV} ${machineMcp.error}, so sessions get no server of this machine's`,
+      );
     const opened = yield* sessionsOnHost(
       agents.get,
       undefined,
       local === undefined ? {} : { graceFrom: local.graceFrom },
+      machineMcp.server === undefined ? {} : { mcpServer: machineMcp.server },
     );
     const sessions = hostId === LOCAL_HOST_ID ? opened : gatedSessions(opened, folders.gate);
     let clones = 0;

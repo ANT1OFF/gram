@@ -14,6 +14,7 @@ import {
   type AgentKind,
   type AgentStatus,
   AgentUnavailable,
+  connectorListed,
   HostFailed,
   type HostAgentReload,
   NotFound,
@@ -34,6 +35,7 @@ import * as Stream from "effect/Stream";
 import { lstat, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { MachineMcpServer } from "./machine-mcp-server.ts";
 import { appToolsAt } from "./remote-app-tools.ts";
 
 /** The agents a host runs sessions for, by kind. */
@@ -146,14 +148,38 @@ const DELIVERIES_KEPT = 256;
 
 const noSession = (handle: string) => new HostFailed({ message: `No agent session ${handle}.` });
 
+/**
+ * Whether a session opened with `request` is given the machine's own MCP server: not when the
+ * control plane named a server of its own, nor for a confined session or a memory update, and only
+ * when the session's own lists keep it, matched by its name and address here, before any agent's
+ * own handling of the lists (a denylist entry wins). An agent that would load a server its lists
+ * leave out never sees it.
+ */
+export const takesMachineServer = (
+  request: Pick<
+    HostSessionOpen,
+    "mcpServer" | "mcpAllowlist" | "mcpDenylist" | "confineWrites" | "dreamFilesOnly"
+  >,
+  server: MachineMcpServer,
+): boolean =>
+  request.mcpServer === undefined &&
+  request.confineWrites !== true &&
+  request.dreamFilesOnly !== true &&
+  (request.mcpAllowlist === undefined || connectorListed(request.mcpAllowlist, server)) &&
+  !connectorListed(request.mcpDenylist ?? [], server);
+
 const optionsFor = (
   request: HostSessionOpen,
   remoteAppTools: RemoteAppTools | undefined,
   onConnectorsSeen: (seen: ConnectorsSeen) => void,
+  machineMcpServer: MachineMcpServer | undefined,
 ): OpenSessionOptions => {
   const { handle: _handle, agent: _agent, mcp, waitForPrevious, ...rest } = request;
   return {
     ...rest,
+    ...(machineMcpServer !== undefined && takesMachineServer(request, machineMcpServer)
+      ? { mcpServer: { name: machineMcpServer.name, url: machineMcpServer.url } }
+      : {}),
     ...(waitForPrevious === true ? { waitForPreviousSession: { onWait: Effect.void } } : {}),
     ...(mcp === undefined ? {} : { mcp: { url: mcp.url, headers: mcp.headers } }),
     ...(remoteAppTools === undefined ? {} : { remoteAppTools }),
@@ -266,6 +292,14 @@ export const sessionsOnHost = (
      * for it, approvals included, and one that comes back gets the whole grace to follow them.
      */
     readonly graceFrom?: () => number | undefined;
+  } = {},
+  machine: {
+    /**
+     * The machine's own MCP server (`GRAM_HOST_MCP_SERVER`), given to each session the control
+     * plane names none for, as `OpenSessionOptions.mcpServer`. It is subject to the session's
+     * lists like any, and a confined session never gets it.
+     */
+    readonly mcpServer?: MachineMcpServer;
   } = {},
 ): Effect.Effect<HostSessionsService, never, Scope.Scope> =>
   Effect.gen(function* () {
@@ -421,10 +455,15 @@ export const sessionsOnHost = (
                 (remoteAppTools) =>
                   Effect.flatMap(sessionFolder(request), (cwd) =>
                     host.open(
-                      optionsFor({ ...request, cwd }, remoteAppTools, (report) => {
-                        seen.last = report;
-                        PubSub.publishUnsafe(changes, report);
-                      }),
+                      optionsFor(
+                        { ...request, cwd },
+                        remoteAppTools,
+                        (report) => {
+                          seen.last = report;
+                          PubSub.publishUnsafe(changes, report);
+                        },
+                        machine.mcpServer,
+                      ),
                     ),
                   ),
               ),
