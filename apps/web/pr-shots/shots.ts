@@ -917,6 +917,37 @@ const STEER_STATE_SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "phone-inbox",
+    title: "At a phone's width, the Inbox over a thread: what needs you, a question among it",
+    open: async (page) => {
+      await atPhone(page);
+      await page.goto("/t/t-question");
+      await page.getByTestId("question-card").waitFor();
+      await page.getByTestId("inbox-button").click();
+      await page.getByTestId("inbox").waitFor();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "phone-question",
+    title: "At a phone's width, a thread asking two questions: its card, choices and Next",
+    open: async (page) => {
+      await atPhone(page);
+      await page.goto("/t/t-question");
+      await page.getByTestId("question-card").waitFor();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "phone-approval",
+    title: "At a phone's width, a running turn stopped at an approval: its card and buttons",
+    open: async (page) => {
+      await atPhone(page);
+      await openFlakyAtApproval(page);
+      await page.waitForTimeout(600);
+    },
+  },
+  {
     name: "steer-narrow",
     title: "A 260 px composer, running with a draft",
     open: async (page) => {
