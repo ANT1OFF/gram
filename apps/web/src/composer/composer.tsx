@@ -1339,7 +1339,7 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
                 </PressScale>,
               )
             ) : (
-              <PressScale>
+              <PressScale className="phone:ml-3">
                 <Hint
                   label={actionLabels.stop.hint}
                   render={

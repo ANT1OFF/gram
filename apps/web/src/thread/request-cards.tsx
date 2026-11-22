@@ -78,7 +78,7 @@ import {
   approvalExtras,
   approvalSubject,
   mcpServerProposal,
-  mustReadDetails,
+  opensDetails,
   settingsProposal,
   workspaceProposal,
   type AlwaysRule,
@@ -609,7 +609,7 @@ function CardShell({
         "border border-status-needs-mark/70 bg-card text-reading outline-none focus-visible:focus-ring",
         compact
           ? "rounded-(--radius-md) p-2"
-          : "flex max-h-[calc(var(--pane-height,100vh)*0.5)] flex-col rounded-(--radius-lg) p-3 shadow-(--shadow-raised)",
+          : "flex max-h-[calc(var(--pane-height,100vh)*0.5)] flex-col rounded-(--radius-lg) p-3 shadow-(--shadow-raised) phone:max-h-none",
       )}
     >
       <h3
@@ -625,7 +625,10 @@ function CardShell({
       {compact ? (
         children
       ) : (
-        <div data-testid="request-card-body" className="-m-1 min-h-0 overflow-y-auto p-1">
+        <div
+          data-testid="request-card-body"
+          className="-m-1 min-h-0 overflow-y-auto p-1 phone:overflow-visible"
+        >
           {children}
         </div>
       )}
@@ -1304,6 +1307,7 @@ export function ApprovalCard({
               data-testid="approval-deny"
               disabled={pending}
               onClick={deny}
+              className="phone:border-border dark:phone:border-input"
             >
               {DENY} <CardKbd id="approval.deny" />
             </Button>
@@ -1330,11 +1334,8 @@ export function ApprovalCard({
           <p data-testid="approval-summary" className={cn("break-words", compact && "text-meta")}>
             {summary}
           </p>
-          {(!compact || mustReadDetails(request)) && (
-            <ApprovalDetailsFold
-              details={approvalDetails(request)}
-              open={mustReadDetails(request)}
-            />
+          {(!compact || opensDetails(request)) && (
+            <ApprovalDetailsFold details={approvalDetails(request)} open={opensDetails(request)} />
           )}
         </>
       )}
@@ -1474,7 +1475,7 @@ export function QuestionCard({
               aria-current={i === page ? "step" : undefined}
               onClick={() => setIndex(i)}
               className={cn(
-                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-meta text-muted-foreground",
+                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-meta text-muted-foreground phone:min-h-11 phone:px-3",
                 i === page && "border-primary bg-primary/10 text-foreground",
               )}
             >

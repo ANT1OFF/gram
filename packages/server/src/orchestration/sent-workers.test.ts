@@ -348,6 +348,7 @@ describe("where a worker goes, and what it reports", () => {
             workspace: "Platform · gram.example.com",
             organisation: "Example Co",
             model: "Claude · opus-there",
+            repository: "acme/shop",
             brief: BRIEF.brief,
           });
         }),

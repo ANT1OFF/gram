@@ -7,6 +7,8 @@ import { openOverviewDensity } from "../e2e/overview-density";
 import { openPanelTab } from "../e2e/panel-tab";
 import { openBoardSidebar, openBoardView } from "./board";
 import { MACHINE_MARKER_SHOTS } from "./machine-marker-shots";
+import { MOVE_THREAD_SHOTS } from "./move-thread-shots";
+import { SENT_WORKER_SHOTS } from "./sent-worker-shots";
 
 // The screens `bun run --filter @gram/web pr:shots` can capture for a PR's before/after images.
 // The working tree's list drives both runs: the base checkout serves the app, these drive it. So a
@@ -914,6 +916,34 @@ const STEER_STATE_SHOTS: readonly Shot[] = [
       await openFlakyAtApproval(page);
       await typed(page);
       await openDelivery(page);
+    },
+  },
+  {
+    name: "phone-inbox",
+    title: "At a phone's width, the Inbox over a thread: what needs you, a question among it",
+    open: async (page) => {
+      await atPhone(page);
+      await page.goto("/t/t-question");
+      await page.getByTestId("question-card").waitFor();
+      await page.getByTestId("inbox-button").click();
+      await page.getByTestId("inbox").waitFor();
+    },
+  },
+  {
+    name: "phone-question",
+    title: "At a phone's width, a thread asking two questions: its card, choices and Next",
+    open: async (page) => {
+      await atPhone(page);
+      await page.goto("/t/t-question");
+      await page.getByTestId("question-card").waitFor();
+    },
+  },
+  {
+    name: "phone-approval",
+    title: "At a phone's width, a running turn stopped at an approval: its card and buttons",
+    open: async (page) => {
+      await atPhone(page);
+      await openFlakyAtApproval(page);
     },
   },
   {
@@ -3151,6 +3181,7 @@ export const SHOTS: readonly Shot[] = [
   ...CONTINUE_IN_SHOTS,
   ...MACHINE_SHOTS,
   ...MACHINE_MARKER_SHOTS,
+  ...SENT_WORKER_SHOTS,
   ...OLDER_SERVER_SHOTS,
   ...KEPT_WORK_GONE_SHOTS,
   ...PHONE_ACCESS_SHOTS,
@@ -6750,6 +6781,7 @@ export const SHOTS: readonly Shot[] = [
   },
   ...NAVIGATION_SHOTS,
   ...WORKER_HEAD_SHOTS,
+  ...MOVE_THREAD_SHOTS,
 ];
 
 /**

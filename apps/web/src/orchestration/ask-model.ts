@@ -24,6 +24,7 @@ import {
   limitPauseAsk,
   approvalExtras,
   mustReadDetails,
+  opensDetails,
   type ApprovalDetailField,
   type ApprovalDetails,
 } from "@/thread/request-model";
@@ -153,6 +154,8 @@ export interface Ask {
   readonly visuals?: AskVisuals | undefined;
   /** The whole input, behind Details, when there is more to it than `command` and `extras`. */
   readonly details?: ApprovalDetails | undefined;
+  /** Shows `details` without the fold (`opensDetails`): where a sent worker goes, say. */
+  readonly detailsOpen?: boolean | undefined;
   /** Who asks and where an allowed command runs, behind Details. */
   readonly members: readonly AskMember[];
   /** "× 3" after the command for a group. */
@@ -326,7 +329,14 @@ export const askOf = (group: InboxGroup): Ask => {
       extras.some((field) => field.value.endsWith("…"));
     const details = summary !== undefined || more ? approvalDetails(request) : undefined;
     if (summary !== undefined) {
-      return { ...base, icon: "approval", lead: summary, details, options };
+      return {
+        ...base,
+        icon: "approval",
+        lead: summary,
+        details,
+        ...(opensDetails(request) ? { detailsOpen: true } : {}),
+        options,
+      };
     }
     const isCommand = typeof request.input["command"] === "string";
     return {

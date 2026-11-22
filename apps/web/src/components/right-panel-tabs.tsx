@@ -1,4 +1,5 @@
-import type { ThreadId, WorkspaceId } from "@gram/contracts";
+import type { SentTo, ThreadId, WorkspaceId } from "@gram/contracts";
+import { CloudUpload } from "lucide-react";
 
 import { TabsContent } from "@/components/ui/tabs";
 import { DocsPanel } from "@/docs/docs-panel";
@@ -18,6 +19,8 @@ import { OpenPrsPanel } from "@/reviews/open-prs";
 import { CommandPanel } from "@/thread/command-panel";
 import type { OpenCommand } from "@/thread/command-view-model";
 import { ReviewRequestsPanel } from "@/reviews/review-requests";
+import { useThreadsStore } from "@/stores/threads";
+import { sentHost } from "@/thread/machine-mark";
 
 /**
  * The pane's Workers mode: an orchestrator's workers, or one of them open (`worker`), in place of
@@ -73,6 +76,9 @@ export function RightPanelTabs({
   requestsHere: boolean;
   openPrsHere: boolean;
 }) {
+  const sent = useThreadsStore((s) =>
+    threadId === undefined ? undefined : s.byId[threadId]?.thread.sentTo,
+  );
   return (
     <>
       {workspaceId !== undefined && (
@@ -94,18 +100,36 @@ export function RightPanelTabs({
         </TabsContent>
       )}
       <TabsContent value="diff" className="flex min-h-0 flex-col">
-        {threadId && <WorktreeBanner threadId={threadId} />}
-        {threadId ? <DiffPanel key={threadId} threadId={threadId} prLink /> : <NoThread />}
+        {threadId && sent === undefined && <WorktreeBanner threadId={threadId} />}
+        {sent !== undefined ? (
+          <OnServer sent={sent} />
+        ) : threadId ? (
+          <DiffPanel key={threadId} threadId={threadId} prLink />
+        ) : (
+          <NoThread />
+        )}
       </TabsContent>
       <TabsContent value="pr" className="flex min-h-0 flex-col">
         {threadId ? <PrPanel key={threadId} threadId={threadId} /> : <NoThread />}
       </TabsContent>
       <TabsContent value="files" className="flex min-h-0 flex-col">
-        {threadId && <WorktreeBanner threadId={threadId} />}
-        {threadId ? <FilesPanel key={threadId} threadId={threadId} /> : <NoThread />}
+        {threadId && sent === undefined && <WorktreeBanner threadId={threadId} />}
+        {sent !== undefined ? (
+          <OnServer sent={sent} />
+        ) : threadId ? (
+          <FilesPanel key={threadId} threadId={threadId} />
+        ) : (
+          <NoThread />
+        )}
       </TabsContent>
       <TabsContent value="terminal" className="flex min-h-0 flex-col">
-        {threadId ? <TerminalPanel key={threadId} threadId={threadId} /> : <NoThread />}
+        {sent !== undefined ? (
+          <OnServer sent={sent} />
+        ) : threadId ? (
+          <TerminalPanel key={threadId} threadId={threadId} />
+        ) : (
+          <NoThread />
+        )}
       </TabsContent>
       {previewHere && (
         <TabsContent value="preview" className="flex min-h-0 flex-col">
@@ -136,4 +160,13 @@ export function RightPanelTabs({
 
 function NoThread() {
   return <PanelMessage>Open a thread to see its changes.</PanelMessage>;
+}
+
+function OnServer({ sent }: { sent: SentTo }) {
+  return (
+    <PanelMessage icon={CloudUpload}>
+      Its files are on the server, in the {sent.workspace} workspace on {sentHost(sent.origin)}, not
+      on this computer. Its changes come back as its pull request.
+    </PanelMessage>
+  );
 }
