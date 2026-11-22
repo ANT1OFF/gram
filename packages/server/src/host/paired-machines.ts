@@ -83,6 +83,14 @@ export interface PairedMachine {
    */
   readonly person?: string;
   /**
+   * Who besides its owner and `person` may answer the requests its threads wait on (an approval,
+   * a question): `members`, any member a fronted sign-in states, as for a host an embedder
+   * started for a subject no person signs in with, whose own decisions say who approves. It opens
+   * nothing else of the machine to them: sending to its threads, steering, placing or linking work
+   * stay its owner's and `person`'s (`host/ownership.ts`). Only with an owner.
+   */
+  readonly answeredBy?: "members";
+  /**
    * What an on-demand host is for: `personal`, the person's own host for work in a folder or a
    * repository, or `thread`, a host for the threads placed on it by name (and their workers),
    * such as one an embedder started for a single run, or `worker`, a host its owner's
@@ -184,6 +192,8 @@ export interface ProvisionRequest {
   readonly owner?: string;
   /** The person who may reach it beside its owner (`PairedMachine.person`): only with an owner. */
   readonly person?: string;
+  /** Who besides may answer its threads' requests (`PairedMachine.answeredBy`): only with an owner. */
+  readonly answeredBy?: "members";
   readonly onDemand?: OnDemandKind;
   /** The hosted server it came through (`PairedMachine.via`): only for a worker host with no owner. */
   readonly via?: string;
@@ -281,7 +291,8 @@ const isMachine = (value: unknown): value is PairedMachine => {
         m["onDemand"] === "worker" &&
         m["owner"] === undefined)) &&
     (m["viaAccount"] === undefined || (m["via"] !== undefined && isAccountMark(m["viaAccount"]))) &&
-    (m["viaName"] === undefined || (m["via"] !== undefined && isViaName(m["viaName"])))
+    (m["viaName"] === undefined || (m["via"] !== undefined && isViaName(m["viaName"]))) &&
+    (m["answeredBy"] === undefined || (m["answeredBy"] === "members" && m["owner"] !== undefined))
   );
 };
 
@@ -581,7 +592,8 @@ export const createPairedMachines = (
           };
       } else if (
         (request.onDemand === undefined) !== (request.owner === undefined) ||
-        (request.person !== undefined && request.owner === undefined)
+        (request.person !== undefined && request.owner === undefined) ||
+        (request.answeredBy !== undefined && request.owner === undefined)
       )
         return {
           kind: "refused",
@@ -601,6 +613,7 @@ export const createPairedMachines = (
           existing.platform === request.platform &&
           existing.owner === request.owner &&
           existing.person === request.person &&
+          existing.answeredBy === request.answeredBy &&
           existing.onDemand === request.onDemand &&
           existing.via === request.via &&
           existing.viaAccount === request.viaAccount
@@ -637,6 +650,7 @@ export const createPairedMachines = (
         kind: "provisioned",
         ...(request.owner === undefined ? {} : { owner: request.owner }),
         ...(request.person === undefined ? {} : { person: request.person }),
+        ...(request.answeredBy === undefined ? {} : { answeredBy: request.answeredBy }),
         ...(request.onDemand === undefined ? {} : { onDemand: request.onDemand }),
         ...(request.via === undefined ? {} : { via: request.via }),
         ...(request.via === undefined || request.viaAccount === undefined
@@ -844,6 +858,7 @@ export const machineView = (
     ...(machine.kind === undefined ? {} : { kind: machine.kind }),
     ...(machine.owner === undefined ? {} : { owner: machine.owner }),
     ...(machine.person === undefined ? {} : { person: machine.person }),
+    ...(machine.answeredBy === undefined ? {} : { answeredBy: machine.answeredBy }),
     ...(machine.onDemand === undefined ? {} : { onDemand: machine.onDemand }),
     ...(machine.via === undefined ? {} : { via: machine.via }),
     ...(machine.viaAccount === undefined ? {} : { viaAccount: machine.viaAccount }),

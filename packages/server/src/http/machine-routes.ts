@@ -409,7 +409,15 @@ export const machineManagement = (
             409,
           );
         const body = yield* jsonBody(JOIN_BODY_MAX);
-        const { name, publicKey, platform = "linux", owner, person, onDemand } = body ?? {};
+        const {
+          name,
+          publicKey,
+          platform = "linux",
+          owner,
+          person,
+          answeredBy,
+          onDemand,
+        } = body ?? {};
         if (
           typeof name !== "string" ||
           typeof publicKey !== "string" ||
@@ -425,7 +433,8 @@ export const machineManagement = (
           (owner !== undefined && onDemand === undefined) ||
           (onDemand !== undefined && owner === undefined) ||
           (person !== undefined &&
-            (typeof person !== "string" || !OWNER.test(person) || owner === undefined))
+            (typeof person !== "string" || !OWNER.test(person) || owner === undefined)) ||
+          (answeredBy !== undefined && (answeredBy !== "members" || owner === undefined))
         )
           return json({ message: "An on-demand host names its kind and its owner." }, 400);
         const result = (() => {
@@ -436,6 +445,7 @@ export const machineManagement = (
               platform,
               ...(typeof owner === "string" ? { owner } : {}),
               ...(typeof person === "string" ? { person } : {}),
+              ...(answeredBy === "members" ? { answeredBy } : {}),
               ...(onDemand === "personal" || onDemand === "thread" || onDemand === "worker"
                 ? { onDemand }
                 : {}),

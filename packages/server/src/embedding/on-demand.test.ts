@@ -449,7 +449,10 @@ describe("hosts provisioned on demand: configuration", () => {
 });
 
 /** Runtimes that record what reached them. */
-const recording = () => {
+const recording = (
+  threadOf: typeof getThread = getThread,
+  ownersHere: Parameters<typeof ownedRuntimes>[2] = ownerOf,
+) => {
   const reached: Array<string> = [];
   const note =
     (name: string) =>
@@ -478,7 +481,7 @@ const recording = () => {
         }),
       ),
   } as unknown as ThreadRuntimesShape;
-  return { reached, owned: ownedRuntimes(runtimes, getThread, ownerOf) };
+  return { reached, owned: ownedRuntimes(runtimes, threadOf, ownersHere) };
 };
 const as =
   (person: string | undefined) =>
@@ -496,6 +499,13 @@ const placing = (hostId: string) => ({
   from: onto("awaited"),
   prepare: Effect.succeed(onto(hostId)),
 });
+
+/** Owners with a run's machine, `m-run`, whose answers are open to members or not. */
+const owners = (answeredBy: boolean) =>
+  Object.assign((hostId: HostId) => (hostId === "m-run" ? "run/1" : ownerOf(hostId)), {
+    personOf: (hostId: HostId) => (hostId === "m-run" ? "identity@agent" : undefined),
+    answeredByMembers: (hostId: HostId) => answeredBy && hostId === "m-run",
+  });
 
 describe("hosts provisioned on demand: what reaches a person's threads", () => {
   // An already running session needs no machine looked up: the delivery itself is checked.
@@ -520,6 +530,46 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
       { threadId: sharedThread, requestId: "r-2", ok: true },
     ]);
     expect(reached).toEqual([`respondMany:${sharedThread}`]);
+  });
+
+  // A host an embedder started for a subject no person signs in with (a run's), whose own
+  // decisions say who approves: any signed-in member answers what its threads wait on, and
+  // nothing else of it opens to them.
+  it("lets members answer, and only answer, on a machine whose answers are open to them", async () => {
+    const home = ThreadId.make("run-home");
+    const onHome = stored("run-home", "m-run");
+    const homeThreads = (threadId: ThreadId) =>
+      threadId === home ? Effect.succeed(onHome) : getThread(threadId);
+    const open = recording(homeThreads, owners(true));
+    await Effect.runPromise(as("grace")(open.owned.respond(home, "r-1" as never, answer)));
+    const many = await Effect.runPromise(
+      as("grace")(
+        open.owned.respondMany([
+          { threadId: home, requestId: "r-2" as never, answer },
+          { threadId: adaWorker, requestId: "r-3" as never, answer },
+        ]),
+      ),
+    );
+    expect(many).toEqual([
+      { threadId: home, requestId: "r-2", ok: true },
+      { threadId: adaWorker, requestId: "r-3", ok: false, error: NOT_YOUR_MACHINE },
+    ]);
+    for (const call of [
+      open.owned.send(home, { text: "Grace's" }) as Effect.Effect<unknown, { message: string }>,
+      open.owned.steer(home, { text: "Grace's" }),
+    ])
+      expect(await outcome(as("grace")(call))).toBe(NOT_YOUR_MACHINE);
+    // No signed-in person is no member.
+    expect(await outcome(as(undefined)(open.owned.respond(home, "r-4" as never, answer)))).toBe(
+      NOT_YOUR_MACHINE,
+    );
+    expect(open.reached).toEqual([`respond:${home}`, `respondMany:${home}`]);
+
+    const closed = recording(homeThreads, owners(false));
+    expect(await outcome(as("grace")(closed.owned.respond(home, "r-5" as never, answer)))).toBe(
+      NOT_YOUR_MACHINE,
+    );
+    expect(closed.reached).toEqual([]);
   });
 
   it("lets the owner, and the server's own work, through", async () => {

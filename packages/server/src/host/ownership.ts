@@ -77,6 +77,11 @@ export const callerPerson: Effect.Effect<string | undefined> = Effect.map(
  */
 export type OwnerOf = ((hostId: HostId) => string | undefined) & {
   readonly personOf?: (hostId: HostId) => string | undefined;
+  /**
+   * Whether any signed-in member may answer the requests a machine's threads wait on
+   * (`PairedMachine.answeredBy`). Made without it, no one besides its owner and person may.
+   */
+  readonly answeredByMembers?: (hostId: HostId) => boolean;
 };
 
 const CLOSED = "\u0000closed:";
@@ -115,6 +120,7 @@ export const ownersOf = (
           readonly id: string;
           readonly owner?: string | undefined;
           readonly person?: string | undefined;
+          readonly answeredBy?: "members" | undefined;
           readonly onDemand?: string | undefined;
           readonly via?: string | undefined;
         }>;
@@ -130,6 +136,10 @@ export const ownersOf = (
       personOf: (hostId: HostId) => {
         const machine = machines?.list().find((each) => each.id === hostId);
         return machine?.owner === undefined ? undefined : machine.person;
+      },
+      answeredByMembers: (hostId: HostId) => {
+        const machine = machines?.list().find((each) => each.id === hostId);
+        return machine?.owner !== undefined && machine.answeredBy === "members";
       },
     },
   );
@@ -216,6 +226,30 @@ export const mayReachMachinesOf = (
     if (thread.dreamHost !== undefined && !(yield* mayReach(ownerOf, thread.dreamHost)))
       return false;
     return true;
+  });
+
+/**
+ * Whether this fiber's caller may answer a request `threadId` waits on: they may reach it
+ * (`mayReachThread`), or they are a signed-in person and every machine it works on lets members
+ * answer (`OwnerOf.answeredByMembers`). Only answering: nothing else of the thread opens to them.
+ */
+export const mayAnswerThread = (
+  getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
+  ownerOf: OwnerOf,
+  threadId: ThreadId,
+): Effect.Effect<boolean> =>
+  Effect.gen(function* () {
+    if (yield* mayReachThread(getThread, ownerOf, threadId)) return true;
+    const answeredByMembers = ownerOf.answeredByMembers;
+    if (answeredByMembers === undefined) return false;
+    if ((yield* currentCaller)?.person === undefined) return false;
+    const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
+    if (thread === undefined || thread.awaitingMachine !== undefined) return false;
+    const hosts = [
+      ...checkoutsOf(thread).map((checkout) => hostOf(checkout)),
+      ...(thread.dreamHost === undefined ? [] : [thread.dreamHost]),
+    ];
+    return hosts.every((hostId) => ownerOf(hostId) === undefined || answeredByMembers(hostId));
   });
 
 /** Refused, with why, unless this fiber's caller may reach `threadId` (`mayReachThread`). */

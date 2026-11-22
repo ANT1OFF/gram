@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import {
   admitThread,
   keepsOwner,
+  mayAnswerThread,
   mayPlaceAwaited,
   mayReachThread,
   MOVE_CHANGES_OWNER,
@@ -18,6 +19,10 @@ export const ownedRuntimes = (
   ownerOf: OwnerOf,
 ): ThreadRuntimesShape => {
   const admit = (threadId: ThreadId) => admitThread(getThread, ownerOf, threadId);
+  const admitAnswer = (threadId: ThreadId) =>
+    Effect.flatMap(mayAnswerThread(getThread, ownerOf, threadId), (ok) =>
+      ok ? Effect.void : Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE, threadId })),
+    );
   const admitOrAbsent = (threadId: ThreadId) =>
     Effect.flatMap(mayReachThread(getThread, ownerOf, threadId), (ok) =>
       ok ? Effect.void : Effect.fail(new ThreadNotFound({ threadId })),
@@ -77,12 +82,12 @@ export const ownedRuntimes = (
     stopAtToolBoundary: (threadId) =>
       Effect.andThen(admitOrAbsent(threadId), runtimes.stopAtToolBoundary(threadId)),
     respond: (threadId, ...rest) =>
-      Effect.andThen(admit(threadId), runtimes.respond(threadId, ...rest)),
+      Effect.andThen(admitAnswer(threadId), runtimes.respond(threadId, ...rest)),
     respondMany: (answers) =>
       Effect.gen(function* () {
         const reachable: Array<boolean> = [];
         for (const each of answers)
-          reachable.push(yield* mayReachThread(getThread, ownerOf, each.threadId));
+          reachable.push(yield* mayAnswerThread(getThread, ownerOf, each.threadId));
         const allowed = answers.filter((_, index) => reachable[index]);
         const given = allowed.length === 0 ? [] : yield* runtimes.respondMany(allowed);
         let next = 0;

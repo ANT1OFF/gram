@@ -16,6 +16,7 @@ import { pathToFileURL } from "node:url";
 import { attachmentsDir } from "../attachments/attachments.ts";
 import { ServerConfig } from "../config.ts";
 import { Conversations, type ConversationsShape } from "../embedding/conversations.ts";
+import { DecisionHook, type DecisionHookShape } from "../embedding/decision-hook.ts";
 import { readReplyFiles, type ReplyFile } from "../embedding/reply-files.ts";
 import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
@@ -34,6 +35,17 @@ const supervised = (store: ThreadStoreShape, threadId: ThreadId) =>
     return autonomyOf(state.charter) === "supervised";
   }).pipe(Effect.orElseSucceed(() => true));
 
+const supervisedUnlessTheHostDecides = (
+  hook: DecisionHookShape | undefined,
+  store: ThreadStoreShape,
+  threadId: ThreadId,
+) =>
+  hook === undefined
+    ? supervised(store, threadId)
+    : Effect.flatMap(hook.enabled, (decided) =>
+        decided ? Effect.succeed(false) : supervised(store, threadId),
+      );
+
 const replyFailed = (message: string) => new AppToolError({ tool: "reply", message });
 
 const kilobytes = (bytes: number) =>
@@ -50,6 +62,7 @@ export const replyTool = (
   runtimes: Pick<ThreadRuntimesShape, "emitChunk"> | undefined,
   machines: SentFromMachines | undefined,
   attachments: string,
+  hook?: DecisionHookShape,
 ) =>
   defineAppTool({
     descriptor: {
@@ -92,7 +105,7 @@ export const replyTool = (
         ...(target.files.length === 0 ? {} : { files: filesWithoutBytes(target.files) }),
       },
     }),
-    needsApproval: (threadId) => supervised(store, threadId),
+    needsApproval: (threadId) => supervisedUnlessTheHostDecides(hook, store, threadId),
     describe: (_threadId, target) =>
       Effect.succeed(
         `Post in ${target.conversation}:\n\n${target.text}${
@@ -173,8 +186,9 @@ export const ConversationAppToolsLive = Layer.effectDiscard(
     const store = yield* ThreadStore;
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const machines = yield* sentFromMachinesHere;
+    const hook = Option.getOrUndefined(yield* Effect.serviceOption(DecisionHook));
     yield* registry.register([
-      replyTool(conversations, store, runtimes, machines, attachmentsDir(config.dataDir)),
+      replyTool(conversations, store, runtimes, machines, attachmentsDir(config.dataDir), hook),
       takeConversationTool(conversations),
     ]);
   }),
