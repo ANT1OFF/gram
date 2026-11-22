@@ -268,24 +268,29 @@ const HANDOFF_REASON: Record<Handoff["reason"], string> = {
   switch: "continued in another agent",
 };
 
+const unsavedWords = (handoff: Pick<Handoff, "unsaved" | "unsavedBecause">): string =>
+  handoff.unsaved !== true
+    ? ""
+    : handoff.unsavedBecause === "failed"
+      ? ", not saved first: the old session had failed"
+      : ", without saving first";
+
 /** The handoff divider's words. */
-export const handoffLabel = (handoff: Pick<Handoff, "reason" | "unsaved">): string =>
-  `New session · ${known(HANDOFF_REASON, handoff.reason) ?? handoff.reason}${
-    handoff.unsaved === true ? ", without saving first" : ""
-  }`;
+export const handoffLabel = (
+  handoff: Pick<Handoff, "reason" | "unsaved" | "unsavedBecause">,
+): string =>
+  `New session · ${known(HANDOFF_REASON, handoff.reason) ?? handoff.reason}${unsavedWords(handoff)}`;
 
 /**
  * A fresh session onto another model's divider: "Fresh session on Claude Code · Opus 5.5 · 14:02",
  * and ", without saving first" after a hard cut.
  */
 export const freshOnDividerLabel = (
-  handoff: Pick<Handoff, "unsaved" | "at">,
+  handoff: Pick<Handoff, "unsaved" | "unsavedBecause" | "at">,
   agentName: string,
   modelName: string,
 ): string =>
-  `Fresh session on ${agentName} · ${modelName} · ${formatClockTime(handoff.at)}${
-    handoff.unsaved === true ? ", without saving first" : ""
-  }`;
+  `Fresh session on ${agentName} · ${modelName} · ${formatClockTime(handoff.at)}${unsavedWords(handoff)}`;
 
 /**
  * A worker-authored URL when it is safe to make a link of: `https` only, so a `javascript:` or

@@ -208,6 +208,8 @@ export const HandoffMarker = Schema.Struct({
   previousAgentSessionId: Schema.optionalKey(Schema.String),
   /** No checkpoint was taken (`Handoff.unsaved`): skipped by the user, or the session was in error. */
   unsaved: Schema.optionalKey(Schema.Boolean),
+  /** `Handoff.unsavedBecause`. */
+  unsavedBecause: Schema.optionalKey(Schema.Literal("failed")),
 });
 export type HandoffMarker = typeof HandoffMarker.Type;
 

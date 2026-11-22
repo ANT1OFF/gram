@@ -2,10 +2,8 @@ import {
   autonomyOf,
   InvalidState,
   serializeDigest,
-  type AgentKind,
   type Handoff,
   type HandoffNote,
-  type OrchestratorHandoffReason,
   type ModelRef,
   type OrchestrationDigest,
   type SessionSwitch,
@@ -23,7 +21,6 @@ import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Option from "effect/Option";
 import { randomUUID } from "node:crypto";
-import { AGENT_NAMES } from "../../runtime/agent-names.ts";
 import { checkFreshTarget, checkSwitchTarget, turnNote } from "../../runtime/agent-switch.ts";
 import {
   type ObservedTurnEnd,
@@ -40,6 +37,12 @@ import {
   kindName,
 } from "../rules.ts";
 import { OUTBOX_UNREADABLE_DETAIL, DIGEST_KEY, type OrchestrationKit, underKeysOf } from "./kit.ts";
+import {
+  checkpointNote,
+  HANDOFF_BOOT_REASON,
+  HANDOFF_UNSAVED_BOOT_REASON,
+  switchCheckpointNote,
+} from "./handoff-words.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 
@@ -55,26 +58,6 @@ export const HANDOFF_KEY = "handoff";
 export const HANDOFF_RETRY = Duration.seconds(15);
 /** A handoff that still hasn't happened this long after it was asked for is given up. */
 export const HANDOFF_GIVE_UP_MS = 3_600_000;
-const HANDOFF_WHY: Record<OrchestratorHandoffReason, string> = {
-  user: "The user asked for a handoff",
-  context: "Your context is nearly full",
-  compactions: "Your conversation has been compacted more than once",
-};
-
-const checkpointNote = (reason: OrchestratorHandoffReason): string =>
-  `${HANDOFF_WHY[reason]}, so when this turn ends your session is replaced by a fresh one. It starts from your role, MEMORY.md, the ledger, the charter and your last few exchanges with the user, and remembers nothing else of this conversation. Write down now, with \`memory_write\`, whatever isn't in memory yet and can't be derived: goals and priorities, decisions and why, open questions for the user, what you were in the middle of. Only flush; tidying is for later. Don't spawn or message workers in this turn. When you are done, reply \`ready\` and end your turn.`;
-
-const switchCheckpointNote = (from: AgentKind, to: AgentKind): string =>
-  `The user asked to move you to ${from === to ? `a fresh ${AGENT_NAMES[to]} session` : AGENT_NAMES[to]}, so when this turn ends your session is replaced by a fresh one. It starts from your role, MEMORY.md, the ledger and the charter, with your handoff note and the last exchanges with the user, and remembers nothing else of this conversation. Write down now, with \`memory_write\`, whatever isn't in memory yet and can't be derived: goals and priorities, decisions and why, open questions for the user, what you were in the middle of. Only flush; tidying is for later. Don't spawn or message workers in this turn. When you are done, reply with a handoff note for the new session: the goal, what's done, what's in progress, decisions and why, what's next, and traps. Reply with the note only, and end your turn.`;
-
-const HANDOFF_BOOT_REASON = "a fresh session after a handoff";
-/**
- * The same, when the old session wrote nothing to memory first: what it was in the middle of may
- * be missing from memory, so the new one checks the ledger before acting on memory alone.
- */
-export const HANDOFF_UNSAVED_BOOT_REASON =
-  "a fresh session after a handoff that skipped saving to memory, so memory may be missing what the last session was doing: check the ledger and workers' reports before acting on memory alone";
-
 /** What handoff takes from the rest of the service. */
 export interface HandoffDeps {
   readonly armWake: (workspaceId: WorkspaceId, delay: Duration.Duration) => Effect.Effect<void>;
@@ -256,6 +239,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
               ? "switch"
               : marker.reason,
           ...(marker.unsaved === true ? { unsaved: true } : {}),
+          ...(marker.unsavedBecause === undefined ? {} : { unsavedBecause: marker.unsavedBecause }),
           ...(carried?.handoff === undefined
             ? {}
             : {
@@ -400,6 +384,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
               ? {}
               : { previousAgentSessionId: thread.agentSessionId }),
             ...(outbox.handoff.unsaved === true ? { unsaved: true } : {}),
+            ...(outbox.handoff.unsavedBecause && { unsavedBecause: "failed" }),
           };
           return [{ ...outbox, handoff: next }, next];
         });
@@ -748,6 +733,9 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
           ? { previousAgentSessionId: thread.agentSessionId }
           : {}),
         ...(target === undefined && (broken || skipped) ? { unsaved: true } : {}),
+        ...(target === undefined && broken && !skipped
+          ? { unsavedBecause: "failed" as const }
+          : {}),
       };
       const claim = Effect.gen(function* () {
         if (target !== undefined) {

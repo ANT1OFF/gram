@@ -1,6 +1,8 @@
 import * as Schema from "effect/Schema";
 import { AgentFailureKind } from "./agent-failure.ts";
 import { AgentKind } from "./agent-kind.ts";
+import { HANDOFF_FACTS_MAX_CHARS, HandoffNote, SwitchNoteMode } from "./handoff-note.ts";
+export * from "./handoff-note.ts";
 import { defuseTags, inline, quoted, TITLE_MAX } from "./agent-text.ts";
 export { AGENT_TITLE_MAX, agentTitle, inlineText } from "./agent-text.ts";
 import { ChecksRollup } from "./git.ts";
@@ -1509,22 +1511,6 @@ export const WorkerAnswer = Schema.Struct({
 });
 export type WorkerAnswer = typeof WorkerAnswer.Type;
 
-/** The longest a switch's handoff note may be; a longer reply is cut. */
-export const HANDOFF_NOTE_MAX_CHARS = 4000;
-/** The longest a switch's facts block may be. */
-export const HANDOFF_FACTS_MAX_CHARS = 16_000;
-
-/** How a switch's handoff note is written (`Handoff.noteMode`). */
-export const SwitchNoteMode = Schema.Literals(["outgoing", "limit", "none"]);
-export type SwitchNoteMode = typeof SwitchNoteMode.Type;
-
-/** A switch's handoff note: its text, and the agent that wrote it. */
-export const HandoffNote = Schema.Struct({
-  text: Schema.String.check(Schema.isMaxLength(HANDOFF_NOTE_MAX_CHARS)),
-  by: AgentKind,
-});
-export type HandoffNote = typeof HandoffNote.Type;
-
 /**
  * A thread's agent session was replaced by a fresh one: an orchestrator's carrying a checkpoint,
  * or (`switch`) any thread moved to the other agent.
@@ -1537,6 +1523,11 @@ export const Handoff = Schema.Struct({
    * was in error and couldn't take one.
    */
   unsaved: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Why nothing was saved, with `unsaved`: `failed` when the old session was in error, though a
+   * save was asked for. Absent: the user skipped it.
+   */
+  unsavedBecause: Schema.optionalKey(Schema.Literal("failed")),
   /** A switch's: the agent the thread left. */
   previousAgent: Schema.optionalKey(AgentKind),
   /**
