@@ -102,12 +102,16 @@ with a browser's `Origin`.
    signs in with (a run's, say), which leaves it to the server's own work and its own threads. A
    host whose owner is no person may name, in `"person"`, the one person who may reach it besides,
    such as the person a run acts for; that makes it theirs to reach, never to place new work on or
-   to link to. A host started on demand with no owner is refused (`400`): it would be open to every
+   to link to. A host with an owner may also say `"answeredBy": "members"`: any member a fronted
+   sign-in states may then answer what its threads wait on (an approval, a question), as for a host
+   started for a subject no person signs in with whose platform decides who approves. Nothing else
+   of it opens to them: sending, steering and placing work stay its owner's and its person's.
+   A host started on demand with no owner is refused (`400`): it would be open to every
    signed-in person. One registered by an older build with none is reached by the server's own
    work alone.
 
    Either kind is never anyone's default machine, so no thread that names no machine lands on it.
-   An `owner` always comes with a kind. The same key registered again must name the same ones.
+   An `owner` always comes with a kind. The same key registered again must name the same ones, `person` and `answeredBy` included.
 
    It answers `{ "hostId", "fingerprint", "created", "origin" }`. Registering the same key again
    with the same name changes nothing and answers `created: false`. These are refused with `409`:

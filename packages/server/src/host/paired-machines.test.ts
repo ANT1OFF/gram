@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { ownersOf } from "./ownership.ts";
 import {
   CONNECT_SKEW_MS,
   fingerprintOf,
@@ -622,6 +623,38 @@ describe("provisioned hosts", () => {
       owner: "ada",
       onDemand: "personal",
     });
+  });
+
+  it("keeps whether members answer a host's requests as part of what its key was registered as", () => {
+    const { machines } = setup();
+    const key = generateHostKey();
+    const run = {
+      name: "run-box",
+      platform: "linux",
+      publicKey: key.publicKey,
+      owner: "run/1",
+      person: "identity@agent",
+      onDemand: "thread" as const,
+    };
+    // Only a host with an owner may open its answers to members.
+    expect(
+      machines.provision({
+        name: "loose",
+        platform: "linux",
+        publicKey: generateHostKey().publicKey,
+        answeredBy: "members",
+      }),
+    ).toMatchObject({ kind: "refused", status: 400 });
+    expect(machines.provision({ ...run, answeredBy: "members" })).toMatchObject({
+      created: true,
+      machine: { answeredBy: "members" },
+    });
+    expect(machines.provision({ ...run, answeredBy: "members" })).toMatchObject({
+      created: false,
+    });
+    // The same key without it is another registration: refused, never quietly narrowed or widened.
+    expect(machines.provision(run)).toMatchObject({ kind: "refused", status: 409 });
+    expect(ownersOf(machines).answeredByMembers?.(hostIdOf(key.publicKey))).toBe(true);
   });
 
   it("registers a key as confirmed, once, and never confirms a machine that joined with a link", () => {

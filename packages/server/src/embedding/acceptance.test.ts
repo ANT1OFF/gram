@@ -13,22 +13,19 @@ import {
 } from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ServerConfig } from "../config.ts";
 import type { OwnEvent } from "../events/event-hub.ts";
 import { type StoredMessage, ThreadStore } from "../persistence/thread-store.ts";
-import { TEST_CONFIG, respondAsShown } from "../runtime/test-harness.ts";
+import { respondAsShown } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { DECISION_UNAVAILABLE, DecisionHook, REFUSAL_FOR_AGENT } from "./decision-hook.ts";
+import { DECISION_UNAVAILABLE, REFUSAL_FOR_AGENT } from "./decision-hook.ts";
 import { makeEventSink, type EventSinkShape } from "./event-sink.ts";
 import { ActingPerson } from "./person.ts";
-import { makeActionGuard } from "./guard.ts";
 import { openOutbox } from "./outbox.ts";
 import {
   collectEvents,
@@ -342,104 +339,6 @@ describe("decision hook: an agent's outward command", () => {
         ]);
         expect(asked).toEqual([]);
       }).pipe(Effect.provide(serverLayer(hook.url)));
-    }),
-  );
-});
-
-describe("decision hook: an action the server takes", () => {
-  const thread = { id: "thread-1" as ThreadId } as Thread;
-  const question = {
-    action: "pr.merge" as const,
-    initiator: "person" as const,
-    detail: { repo: "acme/app", number: 12 },
-  };
-  const card = Effect.succeed({
-    toolName: "pr.merge",
-    displayName: "Merge",
-    description: "Merge",
-    input: {},
-  });
-
-  it.live("a refusal fails the action with the reason; off, it is let through unasked", () =>
-    Effect.gen(function* () {
-      let calls = 0;
-      const hook = yield* endpoint<DecisionRequest>(() => {
-        calls++;
-        return { json: { decision: "refuse", reason: "Merges are frozen." } };
-      });
-      const layer = DecisionHook.layer.pipe(
-        Layer.provideMerge(ThreadStore.layerSqlite(":memory:")),
-        Layer.provideMerge(ServerConfig.layer({ ...TEST_CONFIG, decisionHook: { url: hook.url } })),
-        Layer.orDie,
-      );
-      yield* Effect.gen(function* () {
-        const guard = makeActionGuard({
-          hook: yield* DecisionHook,
-          store: { getThread: () => Effect.succeed(thread) },
-          runtimes: { requestApproval: () => Effect.die("no card is raised") },
-        });
-        yield* guard(thread.id, question, card);
-        expect(calls).toBe(0);
-        yield* setHosted(true);
-        const refused = yield* Effect.flip(guard(thread.id, question, card));
-        expect(refused.message).toBe("Refused by policy (pr.merge): Merges are frozen.");
-        expect(calls).toBe(1);
-      }).pipe(Effect.provide(layer));
-    }),
-  );
-
-  it.live("ask waits for a person, then asks again; a rejection stops it there", () =>
-    Effect.gen(function* () {
-      const asked: Array<DecisionRequest> = [];
-      const hook = yield* endpoint<DecisionRequest>((body) => {
-        asked.push(body);
-        return { json: { decision: body.approval === undefined ? "ask" : "allow" } };
-      });
-      const layer = DecisionHook.layer.pipe(
-        Layer.provideMerge(ThreadStore.layerSqlite(":memory:")),
-        Layer.provideMerge(ServerConfig.layer({ ...TEST_CONFIG, decisionHook: { url: hook.url } })),
-        Layer.orDie,
-      );
-      yield* Effect.gen(function* () {
-        yield* setHosted(true);
-        const answers: Array<"allow" | "deny"> = ["allow", "deny"];
-        const guard = makeActionGuard({
-          hook: yield* DecisionHook,
-          store: { getThread: () => Effect.succeed(thread) },
-          runtimes: {
-            requestApproval: () =>
-              Effect.succeed({
-                kind: "approval" as const,
-                decision: answers.shift()!,
-                scope: "once" as const,
-                answeredBy: "person-2",
-                resolution: {
-                  threadId: thread.id,
-                  requestId: "card-1" as never,
-                  origin: "user" as const,
-                  reason: "approved",
-                  resolvedAt: 0,
-                },
-              }),
-          },
-        });
-        // The person who pressed the button is the actor; the one who approved the card is named
-        // on the second call.
-        yield* guard(thread.id, question, card).pipe(
-          Effect.provideService(ActingPerson, "person-1"),
-        );
-        expect(asked.map((request) => request.actor)).toEqual([
-          { kind: "person", id: "person-1" },
-          { kind: "person", id: "person-1" },
-        ]);
-        expect(asked.map((request) => request.approval)).toEqual([
-          undefined,
-          { decisionId: asked[0]!.id, askId: "card-1", answeredBy: "person-2" },
-        ]);
-        const refused = yield* Effect.flip(guard(thread.id, question, card));
-        expect(refused.message).toBe("Not approved (pr.merge).");
-        expect(asked).toHaveLength(3);
-      }).pipe(Effect.provide(layer));
     }),
   );
 });

@@ -201,7 +201,7 @@ export const makeServerApprovals = ({
       }
     });
 
-  const requestApproval: ThreadRuntimesShape["requestApproval"] = (threadId, fields) =>
+  const requestApproval: ThreadRuntimesShape["requestApproval"] = (threadId, fields, decided) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const request: ApprovalRequest = {
@@ -234,6 +234,8 @@ export const makeServerApprovals = ({
             }),
             Effect.catchCause(() => Effect.void),
           );
+          if (decided !== undefined && eventSink !== undefined)
+            yield* eventSink.noteAsk(request.id, decided, threadId);
           yield* hub.publish({ type: "thread.request", threadId, request });
           yield* setStatus(rt, "needsApproval");
         }),

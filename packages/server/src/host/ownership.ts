@@ -4,6 +4,7 @@ import {
   type HostId,
   HostUnavailable,
   InvalidState,
+  type RequestAnswer,
   type Thread,
   type ThreadId,
   sessionHostOf,
@@ -77,6 +78,11 @@ export const callerPerson: Effect.Effect<string | undefined> = Effect.map(
  */
 export type OwnerOf = ((hostId: HostId) => string | undefined) & {
   readonly personOf?: (hostId: HostId) => string | undefined;
+  /**
+   * Whether any signed-in member may answer the requests a machine's threads wait on
+   * (`PairedMachine.answeredBy`). Made without it, no one besides its owner and person may.
+   */
+  readonly answeredByMembers?: (hostId: HostId) => boolean;
 };
 
 const CLOSED = "\u0000closed:";
@@ -115,6 +121,7 @@ export const ownersOf = (
           readonly id: string;
           readonly owner?: string | undefined;
           readonly person?: string | undefined;
+          readonly answeredBy?: "members" | undefined;
           readonly onDemand?: string | undefined;
           readonly via?: string | undefined;
         }>;
@@ -130,6 +137,10 @@ export const ownersOf = (
       personOf: (hostId: HostId) => {
         const machine = machines?.list().find((each) => each.id === hostId);
         return machine?.owner === undefined ? undefined : machine.person;
+      },
+      answeredByMembers: (hostId: HostId) => {
+        const machine = machines?.list().find((each) => each.id === hostId);
+        return machine?.owner !== undefined && machine.answeredBy === "members";
       },
     },
   );
@@ -217,6 +228,44 @@ export const mayReachMachinesOf = (
       return false;
     return true;
   });
+
+/**
+ * How this fiber's caller may answer a request `threadId` waits on: as one who may reach it
+ * (`owner`, `mayReachThread`); as a member (`member`), a person signed in (`ActingPerson`, never an
+ * agent's call made as its machine's owner) on a thread whose every machine lets members answer
+ * (`OwnerOf.answeredByMembers`), whose answer is held to `asAMembersAnswer`; or not at all.
+ */
+export const answerAdmission = (
+  getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
+  ownerOf: OwnerOf,
+  threadId: ThreadId,
+): Effect.Effect<"owner" | "member" | undefined> =>
+  Effect.gen(function* () {
+    if (yield* mayReachThread(getThread, ownerOf, threadId)) return "owner";
+    const answeredByMembers = ownerOf.answeredByMembers;
+    if (answeredByMembers === undefined || (yield* ActingPerson) === undefined) return undefined;
+    const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
+    if (thread === undefined || thread.awaitingMachine !== undefined) return undefined;
+    const hosts = [
+      ...checkoutsOf(thread).map((checkout) => hostOf(checkout)),
+      ...(thread.dreamHost === undefined ? [] : [thread.dreamHost]),
+    ];
+    return hosts.every((hostId) => ownerOf(hostId) === undefined || answeredByMembers(hostId))
+      ? "member"
+      : undefined;
+  });
+
+/**
+ * A member's answer as it is taken (`answerAdmission`): this one request alone. An approval holds
+ * for this call only (`scope: "once"`, never a rule kept for the session or after), and a plan's
+ * approval leaves the session in `default`, where each change it makes asks again, never a mode
+ * that lets changes through unasked, since a member may not set the thread's mode.
+ */
+export const asAMembersAnswer = (answer: RequestAnswer): RequestAnswer => {
+  if (answer.kind === "approval") return { ...answer, scope: "once" };
+  if (answer.kind === "plan") return { ...answer, mode: "default" };
+  return answer;
+};
 
 /** Refused, with why, unless this fiber's caller may reach `threadId` (`mayReachThread`). */
 export const admitThread = (
