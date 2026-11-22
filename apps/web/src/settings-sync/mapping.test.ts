@@ -46,8 +46,9 @@ describe("appearance mapping", () => {
 });
 
 describe("settingsPatch", () => {
+  const appearance = appearanceFromPrefs(DEFAULT_THEME);
   const base: SyncedSettings = {
-    appearance: appearanceFromPrefs(DEFAULT_THEME),
+    appearance,
     sidebarWidth: 280,
     panelOpen: true,
     panelWidth: 352,
@@ -115,7 +116,7 @@ describe("settingsPatch", () => {
   it("holds only the changed fields and sections", () => {
     const next: SyncedSettings = {
       ...base,
-      appearance: { ...base.appearance, mode: "light" },
+      appearance: { ...appearance, mode: "light" },
       sidebarWidth: 300,
     };
     expect(settingsPatch(base, next)).toEqual({
@@ -131,7 +132,7 @@ describe("settingsPatch", () => {
   });
 
   it("is undefined when nothing changed", () => {
-    expect(settingsPatch(base, { ...base, appearance: { ...base.appearance } })).toBeUndefined();
+    expect(settingsPatch(base, { ...base, appearance: { ...appearance } })).toBeUndefined();
   });
 });
 

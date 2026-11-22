@@ -1,1 +1,1 @@
-export { pullServerSettings, useSettingsSync } from "./use-settings-sync";
+export { keepAppearanceOn, pullServerSettings, useSettingsSync } from "./use-settings-sync";

@@ -581,6 +581,22 @@ Each part applies only while the person hasn't chosen it; their own choice alway
 same `defaults` to `applyGramTheme` on the pages you draw before Gram mounts, so they paint the
 same palette.
 
+### Where a person's look is kept
+
+By default a person's look (Settings → Appearance, and the palettes they make) is saved with the
+server's settings, and the server's copy wins when the app starts and each time its event stream
+reconnects. On a server several people share, that look is everyone's: one person's change of mode
+reaches the others at their next reconnect. An app that mounts several servers from one origin sees
+each server's own look in turn. `appearance: "device"` keeps the look in the browser instead,
+the same against every server the page mounts, and leaves the server's saved look unread and
+unchanged:
+
+```tsx
+await mountGram({ element, server, appearance: "device" });
+```
+
+The rest of the settings (the sidebar and panel, the overview) are still the server's.
+
 ### Gram's palette as data
 
 An app that draws its own pages in Gram's colours, and would rather not run Gram's code to learn
@@ -885,7 +901,8 @@ one lands, and carry its "Embedders" line into the merge's description.
 ## Limits today
 
 - Layout, drafts and theme are kept in the browser's storage for the origin, not per server. Two
-  servers shown from one origin share them.
+  servers shown from one origin share them. With `appearance: "server"` (the default) each server's
+  saved look still replaces the stored theme when the app starts against it.
 - The browser tab's title is Gram's.
 
 ## Checking it
