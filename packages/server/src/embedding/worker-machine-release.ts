@@ -24,7 +24,6 @@ import {
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
 
-/** How often worker machines are looked at. */
 /**
  * The workers whose machine may be told its work is over: finished as the ledger reads them and
  * with nothing still going on (`isLiveWorker`), so one whose pull request merged while its turn,
@@ -40,7 +39,8 @@ export const releasableWorkers = (
       .map((worker) => worker.threadId),
   );
 
-export const WORKER_RELEASE_EVERY = Duration.minutes(10);
+/** How often worker machines are looked at. */
+export const WORKER_RELEASE_EVERY = Duration.minutes(2);
 /** How long a newly online machine is given before it can be released. */
 export const WORKER_RELEASE_SETTLE_MS = 30 * 60_000;
 
@@ -55,6 +55,8 @@ export interface ReleaseMachine {
   /** The sign-in there it was asked for under: told only under it. */
   readonly viaAccount?: string | undefined;
   readonly onlineSince?: number | undefined;
+  /** When it first joined: a hosted server's machine settles from this, not from its last dial. */
+  readonly joinedAt?: number | undefined;
 }
 
 /**
@@ -93,8 +95,10 @@ export const workerMachineWork = (
  * what changed, as it always was. A hosted server's: one at work is told it is working
  * unless that was told this run already: after a restart nothing is kept of what was told, and a
  * release the provider still holds would have it reclaim a machine its worker came back to. One
- * whose work is over is told it is released once it has settled (`WORKER_RELEASE_SETTLE_MS`, so
- * its first worker is placed first), unless that was told already. `told` is by `toldKey`.
+ * whose work is over is told it is released, unless that was told already: at once once a thread
+ * was placed on it, else once it has settled (`WORKER_RELEASE_SETTLE_MS` from when it joined, so
+ * its first worker is placed first). Never from its last dial: a relay that drops and dials again
+ * every few minutes would keep it settling for good. `told` is by `toldKey`.
  * `finished`: the workers whose machine may be released (`releasableWorkers`); an embedder's
  * machine is judged by `embeddedFinished` (`finishedWorkers`), as it always was.
  */
@@ -134,8 +138,9 @@ export const releaseDecisions = (
       const fresh = (released: boolean) =>
         said !== undefined && said.released === released && now - said.at < TOLD_FOR_MS;
       if (atWork) return fresh(false) ? [] : [{ machine, released: false }];
-      const settling =
-        machine.onlineSince !== undefined && now - machine.onlineSince < WORKER_RELEASE_SETTLE_MS;
+      const placed = threads.some((thread) => hostOf(effectiveCheckout(thread)) === machine.id);
+      const since = machine.joinedAt ?? machine.onlineSince;
+      const settling = !placed && since !== undefined && now - since < WORKER_RELEASE_SETTLE_MS;
       return settling || fresh(true) ? [] : [{ machine, released: true }];
     });
 

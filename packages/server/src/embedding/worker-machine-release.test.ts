@@ -156,6 +156,44 @@ describe("a worker machine's work", () => {
     expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([["bbbb", true]]);
   });
 
+  it("releases a hosted machine whose workers are all over at once, however lately it dialled again", () => {
+    // Its relay dropped and dialled again a minute ago, as these do every few minutes.
+    const archived = on("t1", "aaaa", { parked: true });
+    const decided = releaseDecisions(
+      [
+        relayed("aaaa", { onlineSince: now - 60_000, joinedAt: now - 5 * 60_000 }),
+        relayed("bbbb", { onlineSince: now - 60_000, joinedAt: now - 5 * 60_000 }),
+      ],
+      [archived, on("t2", "bbbb"), on("t3", "bbbb")],
+      new Set(["t1", "t2"] as ThreadId[]),
+      now,
+      new Map<string, { released: boolean; at: number }>(),
+    );
+    // bbbb is shared, and t3 on it still needs it: told it is working, never released.
+    expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([
+      ["aaaa", true],
+      ["bbbb", false],
+    ]);
+  });
+
+  it("settles a hosted machine nothing was placed on from when it joined, not from its last dial", () => {
+    const decided = releaseDecisions(
+      [
+        relayed("aaaa", {
+          onlineSince: now - 60_000,
+          joinedAt: now - 2 * WORKER_RELEASE_SETTLE_MS,
+        }),
+        relayed("bbbb", { onlineSince: now - 60_000, joinedAt: now - 60_000 }),
+      ],
+      [],
+      new Set(),
+      now,
+      new Map<string, { released: boolean; at: number }>(),
+    );
+    // bbbb has only just joined, so its first worker may still be on its way.
+    expect(decided.map(({ machine: m, released }) => [m.id, released])).toEqual([["aaaa", true]]);
+  });
+
   it("tells an embedder's provider of a machine only what changed, once it has settled", () => {
     const decided = releaseDecisions(
       [
