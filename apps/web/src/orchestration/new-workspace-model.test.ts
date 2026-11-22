@@ -1,7 +1,18 @@
-import { DEFAULT_SETTINGS, type AgentModel, type ModelRef } from "@gram/contracts";
+import {
+  DEFAULT_SETTINGS,
+  type AgentModel,
+  type ModelRef,
+  type WorkspaceId,
+  type WorkspaceState,
+} from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { subscriptionWorkspaceCharter } from "./new-workspace-model";
+import {
+  autonomySource,
+  emptyNewWorkspace,
+  startFrom,
+  subscriptionWorkspaceCharter,
+} from "./new-workspace-model";
 
 const claude: AgentModel[] = [
   { id: "sonnet", displayName: "Sonnet", supportsEffort: false, isDefault: true },
@@ -43,5 +54,32 @@ describe("subscription workspace defaults", () => {
     const charter = subscriptionWorkspaceCharter(settings, undefined, undefined);
     expect(charter.workerModels).toEqual(workerModels);
     expect(charter.orchestratorModel).toBeUndefined();
+  });
+});
+
+describe("where the sheet's autonomy comes from", () => {
+  const starting = subscriptionWorkspaceCharter(DEFAULT_SETTINGS, claude, codex);
+  const careful = {
+    workspace: { id: "w-careful" as WorkspaceId, name: "Careful" },
+    charter: { ...starting, autonomy: "supervised" },
+  } as unknown as WorkspaceState;
+
+  it("says the default for an untouched sheet, and nothing once the user picks another level", () => {
+    expect(autonomySource(emptyNewWorkspace, starting, [])).toEqual({ kind: "default" });
+    const picked = { ...emptyNewWorkspace, charter: { ...starting, autonomy: "publish" as const } };
+    expect(autonomySource(picked, starting, [])).toBeUndefined();
+    // Another field edited leaves the level as it came.
+    const otherField = { ...emptyNewWorkspace, charter: { ...starting, maxConcurrentWorkers: 3 } };
+    expect(autonomySource(otherField, starting, [])).toEqual({ kind: "default" });
+  });
+
+  it("names the workspace a copied charter came from", () => {
+    const copied = startFrom(emptyNewWorkspace, careful);
+    expect(autonomySource(copied, starting, [careful])).toEqual({
+      kind: "copied",
+      name: "Careful",
+    });
+    const changed = { ...copied, charter: { ...careful.charter, autonomy: "full" as const } };
+    expect(autonomySource(changed, starting, [careful])).toBeUndefined();
   });
 });

@@ -4,7 +4,6 @@ import {
   effectiveCheckout,
   helperOn,
   sendKeyOf,
-  supersededModels,
   type DraftStash,
   type PermissionMode,
   type ReasoningVariant,
@@ -114,6 +113,7 @@ import { effortSection, modelSection, modeSection, speedSection } from "./choice
 import { ComposerChoices, type ChoiceSection } from "./choices";
 import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, MODE_OPTIONS } from "./options";
 import type { PickerOption } from "./picker";
+import { chipSwitchAgent, switchChoices } from "./switch-choices";
 import { inOpenFence } from "./mention";
 import { sendAction, type SendAction } from "./send-action";
 import { enterSends, imeComposing } from "./send-key";
@@ -900,25 +900,14 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
         : undefined;
   const isFavourite = useIsFavourite(model?.agent ?? "claude");
   const offer = useSwitchOffer(threadId);
-  const otherAgent =
-    offer.offered && summary?.thread.role !== "orchestrator" ? offer.to : undefined;
+  const otherAgent = chipSwitchAgent(offer);
   const otherModels = useModelsSettled(otherAgent ?? "codex", otherAgent !== undefined).models;
-  const otherSuperseded = supersededModels(otherModels ?? []);
-  const otherRow = (id: string, label: string): PickerOption<string> => ({
-    ...(otherSuperseded.has(id) ? { legacy: true } : {}),
-    value: `${SWITCH_PREFIX}${id}`,
-    label: `${label}…`,
+  const otherChoices = switchChoices({
+    offer,
+    models: otherModels,
     group: agentLabel(otherAgent ?? "codex"),
     icon: <AgentIcon agent={otherAgent ?? "codex"} className="size-icon-row" />,
-    opens: true,
-    disabled: offer.offered && offer.refusal !== undefined,
   });
-  const otherChoices: PickerOption<string>[] =
-    otherAgent === undefined
-      ? []
-      : otherModels !== undefined && otherModels.length > 0
-        ? otherModels.map((m) => otherRow(m.id, m.displayName))
-        : [{ ...otherRow("", agentLabel(otherAgent)), headingOnly: true }];
   const heads =
     model === undefined || otherAgent === undefined || otherChoices.length === 0
       ? undefined

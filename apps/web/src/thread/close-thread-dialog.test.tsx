@@ -51,6 +51,7 @@ const summary = (overrides: Partial<GitState> = {}) =>
     thread: {
       id: T,
       title: "Fix the flake",
+      model: { agent: "codex", model: "gpt-6.2-sol" },
       completedReason: "prMerged",
       checkout: {
         kind: "worktree",
