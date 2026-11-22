@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.39.0](https://github.com/ANT1OFF/gram/compare/v1.38.0...v1.39.0) (2026-11-22)
+
+
+### Features
+
+* **embed:** a host's decision hook decides its replies, and a host can open answers to members ([#999](https://github.com/ANT1OFF/gram/issues/999)) ([5d52449](https://github.com/ANT1OFF/gram/commit/5d52449c80587372ffb7603f0866853ad619589b))
+* **embed:** an embedding app can keep a person's look in the browser ([#997](https://github.com/ANT1OFF/gram/issues/997)) ([ce14a62](https://github.com/ANT1OFF/gram/commit/ce14a620a8f592c9a58369660bd3f89f92b86cd5))
+* **server:** measure when on-demand worker machines could pause, observe only ([#995](https://github.com/ANT1OFF/gram/issues/995)) ([9addc19](https://github.com/ANT1OFF/gram/commit/9addc193fe51b52ca6a48a8ec4fc2b29c4ba0060))
+* **sidebar:** show a machine's real state on its icon, with why and since when on hover ([#993](https://github.com/ANT1OFF/gram/issues/993)) ([914344e](https://github.com/ANT1OFF/gram/commit/914344e0621f36db40340e7369d96b5208c7c01c))
+* **verify:** run an added project's default-branch recipe without asking ([#998](https://github.com/ANT1OFF/gram/issues/998)) ([4e4f704](https://github.com/ANT1OFF/gram/commit/4e4f70414c4e4601d59c1b38ffb0fdfb5cfff02c))
+
+
+### Bug Fixes
+
+* a question card follows the question's state, and an answer can be updated ([#1003](https://github.com/ANT1OFF/gram/issues/1003)) ([36da5b7](https://github.com/ANT1OFF/gram/commit/36da5b765c4bd2ec8d2981cdcc5c01e0c6c691e3))
+* **orchestration:** release a hosted worker machine once its workers are over ([#994](https://github.com/ANT1OFF/gram/issues/994)) ([e11703f](https://github.com/ANT1OFF/gram/commit/e11703fd3fd4e48eff7fb2527edbb81c97dd01b5))
+* preview a worker's file from the right pane, and show what it wrote once it's gone ([#1001](https://github.com/ANT1OFF/gram/issues/1001)) ([3cc6632](https://github.com/ANT1OFF/gram/commit/3cc66322ce5a771489bee5fd379e267cdbe3438f))
+* **server:** bound the set-aside status call and keep set-aside out of release-pass failures ([#1002](https://github.com/ANT1OFF/gram/issues/1002)) ([86c80a6](https://github.com/ANT1OFF/gram/commit/86c80a6970de014b91bcb9282d84e2bb5dd3a89c))
+* **server:** count only hosted machines that cost something, and give back unused ones ([#1000](https://github.com/ANT1OFF/gram/issues/1000)) ([aad135d](https://github.com/ANT1OFF/gram/commit/aad135dfe7dce9770b50d4e5d725a7ccc428d4f2))
+* **server:** keep worker restore errors retryable ([#992](https://github.com/ANT1OFF/gram/issues/992)) ([d629646](https://github.com/ANT1OFF/gram/commit/d629646d49df0c2f624d9c422b91d349c98fb032))
+
 ## [1.38.0](https://github.com/ANT1OFF/gram/compare/v1.37.0...v1.38.0) (2026-11-22)
 
 
