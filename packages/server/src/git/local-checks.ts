@@ -235,6 +235,13 @@ export const LocalCheck = Schema.Struct({
   timeoutMs: Schema.optionalKey(Schema.Number),
   profile: Schema.optionalKey(Schema.String),
   qualification: Schema.optionalKey(Schema.String),
+  /**
+   * A verify driver's recipe as Gram read it: its file's SHA-256, and the default-branch ref it
+   * was committed on when it ran without asking the user.
+   */
+  recipe: Schema.optionalKey(
+    Schema.Struct({ sha256: Schema.String, ref: Schema.optionalKey(Schema.String) }),
+  ),
   mergedCommit: Schema.optionalKey(Schema.String),
   /** The joined machine it ran on, by id, through its host; absent for this machine. */
   machine: Schema.optionalKey(Schema.String),

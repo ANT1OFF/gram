@@ -1572,9 +1572,19 @@ output fenced as data. A pass is reused for that commit only. A driver's records
 the project's merge check, so no driver's pass counts for `merge_when_ready`.
 
 The recipe is read from the repository's own clone, not the thread's worktree, so an agent editing
-its worktree's copy changes nothing until it is merged and pulled. A folder the user hasn't
-trusted runs no drivers. The first run of each command in a project asks the user, naming the
-command; a changed command asks again. That approval lasts until Gram restarts.
+its worktree's copy changes nothing until it is merged and pulled. Only a thread in a project the
+user added runs drivers, and a folder the user hasn't trusted runs none. Adding the repository is
+the trust: a driver whose name and command are as the recipe committed on the project's default
+branch has them runs without a card, on this machine or one the user joined or provisioned. Gram
+reads that copy from the clone the user added, on this machine, at `origin/HEAD` (else
+`origin/main` or `origin/master`), as last fetched. A driver an agent adds or changes on its own
+branch, or in the clone's working tree, isn't there until it is merged and fetched, so its first
+run asks the user, naming the command, and a changed command asks again; that approval lasts until
+Gram restarts. That guards against an agent's ordinary work on its branch; an agent that rewrites
+the clone's remote-tracking refs on purpose could still change what runs without a card.
+
+Each run's record keeps its command and the SHA-256 of the recipe file it came from, with the
+default-branch ref for a run that needed no card, and Gram's log names each run it was asked for.
 
 A worker whose repository has a recipe is told about it in its role prompt; one without a recipe
 hears nothing of drivers. When such a worker reports `done`, Gram looks up the required drivers
