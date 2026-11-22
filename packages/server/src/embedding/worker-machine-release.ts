@@ -23,6 +23,7 @@ import {
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
+import { WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
 
 /**
  * The workers whose machine may be told its work is over: finished as the ledger reads them and
@@ -42,7 +43,7 @@ export const releasableWorkers = (
 /** How often worker machines are looked at. */
 export const WORKER_RELEASE_EVERY = Duration.minutes(2);
 /** How long a newly online machine is given before it can be released. */
-export const WORKER_RELEASE_SETTLE_MS = 30 * 60_000;
+export const WORKER_RELEASE_SETTLE_MS = WORKER_MACHINE_SETTLE_MS;
 
 /** A joined machine as this reads it. */
 export interface ReleaseMachine {

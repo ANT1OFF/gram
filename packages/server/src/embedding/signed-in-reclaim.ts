@@ -8,7 +8,9 @@ import {
   sentOf,
   settledSince,
   type StartsSent,
+  tellSignedInRelease,
 } from "./signed-in-calls.ts";
+import type { UsedMachine } from "./hosted-machine-use.ts";
 import type { WorkerMachinePortShape } from "./signed-in-port.ts";
 import { isNotFound, type OwedStop, RECLAIMED_AFTER_MISSES } from "./worker-machine-stops.ts";
 
@@ -27,9 +29,19 @@ export const isLegacyRelayed = (
 export const RECLAIMED_EVERY = Duration.minutes(10);
 
 /**
+ * Whether each registered machine is still needed here (`hostedMachineInUse`), read afresh each
+ * time it is run. Absent: every one is.
+ */
+export type MachinesInUse = Effect.Effect<(machine: UsedMachine) => boolean>;
+
+/**
  * Forgets each relayed worker machine that is offline and that its server answers it doesn't know
  * (`…/status` 404 `not_found`, `RECLAIMED_AFTER_MISSES` passes in a row): reclaimed there once
- * released, or removed. Online ones aren't asked. Nothing else forgets one a server started.
+ * released, or removed. Online ones aren't asked. With `inUse`, it also forgets one its server
+ * says is stopped or failed that nothing here needs, once the server takes its release: no worker
+ * will dial it again, so it would only sit under Machines. One kept from before its sign-in was
+ * (`isLegacyRelayed`) is never forgotten so. Nothing else forgets one a server started, but a
+ * give-back's stop (`signedInSource`).
  */
 export const forgetReclaimed = (
   port: WorkerMachinePortShape,
@@ -37,8 +49,10 @@ export const forgetReclaimed = (
   misses: Map<string, number> = new Map(),
   asleep?: Set<string>,
   sent?: StartsSent,
+  inUse?: MachinesInUse,
 ) =>
   Effect.gen(function* () {
+    const used = inUse === undefined ? undefined : yield* inUse;
     for (const machine of hosts.list()) {
       if (machine.via === undefined || machine.onDemand !== "worker") continue;
       if (machine.onlineSince !== undefined) {
@@ -63,6 +77,15 @@ export const forgetReclaimed = (
         asleep?.delete(machine.name);
       if (asleep !== undefined && (phase === "stopped" || phase === "failed")) {
         misses.delete(machine.id);
+        if (
+          inUse !== undefined &&
+          used?.(machine) === false &&
+          !isLegacyRelayed(machine) &&
+          (yield* forgetOnceReleased(port, hosts, machine, inUse, sent, before))
+        ) {
+          asleep.delete(machine.name);
+          continue;
+        }
         if (!asleep.has(machine.name)) {
           asleep.add(machine.name);
           port.unrelay(machine.name);
@@ -86,6 +109,38 @@ export const forgetReclaimed = (
       port.unrelay(machine.name);
       hosts.remove(HostId.make(machine.id));
     }
+  });
+
+const forgetOnceReleased = (
+  port: WorkerMachinePortShape,
+  hosts: Pick<RemoteHostsShape, "list" | "remove">,
+  machine: {
+    readonly id: string;
+    readonly name: string;
+    readonly via?: string | undefined;
+    readonly viaAccount?: string | undefined;
+  },
+  inUse: MachinesInUse,
+  sent: StartsSent | undefined,
+  before: number,
+) =>
+  Effect.gen(function* () {
+    const told = yield* tellSignedInRelease(
+      port,
+      { name: machine.name, via: machine.via!, account: machine.viaAccount },
+      true,
+      { attempts: 1 },
+    ).pipe(Effect.option);
+    if (told._tag === "None" || told.value !== "applied") return false;
+    const now = hosts.list().find((each) => each.id === machine.id);
+    if (now === undefined || now.onlineSince !== undefined) return false;
+    if (!settledSince(sent, machine.name, before) || (yield* inUse)(now)) return false;
+    port.unrelay(machine.name);
+    hosts.remove(HostId.make(machine.id));
+    yield* Effect.logInfo("a stopped worker machine nothing here needs was forgotten").pipe(
+      Effect.annotateLogs({ machine: machine.name }),
+    );
+    return true;
   });
 
 /**

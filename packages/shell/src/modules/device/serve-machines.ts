@@ -8,6 +8,7 @@ import {
   type WorkerMachineRelayMessage,
   type WorkerMachineResult,
   type WorkerMachineSignInsMessage,
+  WORKER_MACHINE_RELAYS_MOST,
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 
@@ -21,7 +22,6 @@ const RETRY_MOST_MS = 60_000;
 const STEADY_MS = 60_000;
 const FIRST_FRAME_MS = 30_000;
 const FRAME_MOST_BYTES = 16 * 1024 * 1024;
-const RELAYS_MOST = 64;
 const REVALIDATE_MS = 30_000;
 /**
  * How often a live relay's lease is renewed: a token is had for it again, which renews the sign-in
@@ -236,7 +236,7 @@ export const makeWorkerMachineRelays = (options: {
     if (kept !== undefined && kept.origin === origin && kept.account === account && !kept.stopped)
       return;
     if (kept !== undefined) stop(kept);
-    if (wanted.size >= RELAYS_MOST && kept === undefined) return;
+    if (wanted.size >= WORKER_MACHINE_RELAYS_MOST && kept === undefined) return;
     const entry: Wanted = {
       origin,
       ...(account === undefined ? {} : { account }),
@@ -384,7 +384,7 @@ const relaysOf = (
 ):
   | ReadonlyArray<{ readonly origin: string; readonly name: string; readonly account?: string }>
   | undefined => {
-  if (!Array.isArray(value) || value.length > 64) return undefined;
+  if (!Array.isArray(value) || value.length > WORKER_MACHINE_RELAYS_MOST) return undefined;
   const listed: Array<{ origin: string; name: string; account?: string }> = [];
   for (const each of value) {
     if (typeof each !== "object" || each === null) return undefined;

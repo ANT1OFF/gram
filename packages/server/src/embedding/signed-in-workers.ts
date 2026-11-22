@@ -29,8 +29,10 @@ import {
   claimedHere,
   forgetReclaimed,
   isLegacyRelayed,
+  type MachinesInUse,
   RECLAIMED_EVERY,
 } from "./signed-in-reclaim.ts";
+import { ThreadStore } from "../persistence/thread-store.ts";
 import {
   NO_APP,
   NO_SIGNED_IN_SERVER,
@@ -70,6 +72,7 @@ import {
 } from "./worker-machine-stops.ts";
 import { plainName } from "./server-name.ts";
 import { askOnDrop } from "./signed-in-drops.ts";
+import { machinesInUse, relaysOf, roomForOne } from "./signed-in-room.ts";
 
 export { plainName } from "./server-name.ts";
 
@@ -78,9 +81,7 @@ export * from "./signed-in-port.ts";
 export * from "./signed-in-reclaim.ts";
 export * from "./signed-in-calls.ts";
 export * from "./worker-machine-stops.ts";
-
-/** The most machines from hosted servers this Gram registers at once (and the app relays). */
-export const RELAYED_MOST = 32;
+export * from "./signed-in-room.ts";
 
 const STOP_ATTEMPTS = 3;
 const STOP_RETRY_MS = 2_000;
@@ -122,6 +123,11 @@ export interface SignedInDeps {
    * a start of the name wakes it (`forgetReclaimed`, `wakeSignedIn`, `SignedInWorkersLive`).
    */
   readonly asleep?: Set<string>;
+  /**
+   * Which registered machines something here still needs (`hostedMachineInUse`): at the bound, the
+   * oldest of this sign-in's that nothing needs is given back to make room. Absent: none is.
+   */
+  readonly inUse?: MachinesInUse;
   /** The starts sent of each name, shared by every source and pass (`StartsSent`). */
   readonly sent?: StartsSent;
   /**
@@ -475,11 +481,8 @@ export const signedInSource = (
                 };
             }
             if (machine === undefined && status.publicKey !== undefined) {
-              const held = hosts.list().filter((each) => each.via !== undefined).length;
-              if (held >= RELAYED_MOST)
-                return {
-                  failed: `This Gram already has ${held} machines from hosted servers. Remove ones no worker uses under Settings → Machines, then spawn again.`,
-                };
+              const full = yield* roomForOne(deps, mine, forget, name);
+              if (full !== undefined) return { failed: full };
               const result = hosts.machines.provision({
                 name,
                 publicKey: status.publicKey,
@@ -567,6 +570,8 @@ export const SignedInWorkersLive = Layer.effect(
     const asleep = new Set<string>();
     const sent: StartsSent = new Map();
     const claimed = claimedHere(hosts);
+    const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+    const inUse = store === undefined ? undefined : machinesInUse(store, hosts.stops, starting);
     const dials = yield* Queue.unbounded<RelayedDial>();
     port.onDial((dial) => {
       Queue.offerUnsafe(dials, dial);
@@ -581,18 +586,7 @@ export const SignedInWorkersLive = Layer.effect(
       Effect.forever,
       Effect.forkScoped,
     );
-    const relayed = () =>
-      hosts
-        .list()
-        .filter(
-          (machine) =>
-            machine.via !== undefined && machine.onDemand === "worker" && !asleep.has(machine.name),
-        )
-        .map((machine) => ({
-          origin: machine.via!,
-          name: machine.name,
-          ...(machine.viaAccount === undefined ? {} : { account: machine.viaAccount }),
-        }));
+    const relayed = () => relaysOf(hosts, asleep);
     let told = "";
     const sync = (fresh: boolean) => {
       const machines = relayed();
@@ -696,7 +690,7 @@ export const SignedInWorkersLive = Layer.effect(
     };
     yield* port.server().pipe(
       Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
-      Effect.andThen(forgetReclaimed(port, hosts, misses, asleep, sent)),
+      Effect.andThen(forgetReclaimed(port, hosts, misses, asleep, sent, inUse)),
       Effect.tap(() => Effect.sync(() => sync(false))),
       Effect.andThen(
         settleOwedStops(
@@ -730,6 +724,7 @@ export const SignedInWorkersLive = Layer.effect(
                   asleep,
                   sent,
                   markOf,
+                  ...(inUse === undefined ? {} : { inUse }),
                 }),
                 server: answered.server,
               }
