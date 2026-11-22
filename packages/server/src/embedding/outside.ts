@@ -1,6 +1,7 @@
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import type { OutsideService } from "./config.ts";
+import { bearerOf, TokenFileUnusable } from "./endpoint.ts";
 
 export class OutsideCallFailed extends Data.TaggedError("OutsideCallFailed")<{
   readonly service: string;
@@ -32,7 +33,7 @@ export const callOutside = (
   call: OutsideCall,
 ): Effect.Effect<Response, OutsideCallFailed> =>
   Effect.tryPromise({
-    try: (signal) =>
+    try: async (signal) =>
       fetch(`${service.url}${call.path}`, {
         method: call.method,
         redirect: "error",
@@ -41,7 +42,9 @@ export const callOutside = (
           AbortSignal.timeout(call.timeoutMs ?? DEFAULT_TIMEOUT_MS),
         ]),
         headers: {
-          ...(service.token === undefined ? {} : { authorization: `Bearer ${service.token}` }),
+          ...(await bearerOf(service).then((token) =>
+            token === undefined ? {} : { authorization: `Bearer ${token}` },
+          )),
           ...(call.json !== undefined
             ? { "content-type": "application/json" }
             : call.bytes !== undefined || call.body !== undefined
@@ -60,7 +63,10 @@ export const callOutside = (
       new OutsideCallFailed({
         service: name,
         status: undefined,
-        message: `The ${name} didn't answer (${error instanceof Error ? error.name : "error"})`,
+        message:
+          error instanceof TokenFileUnusable
+            ? `The ${name} wasn't called: ${error.message}`
+            : `The ${name} didn't answer (${error instanceof Error ? error.name : "error"})`,
       }),
   }).pipe(
     Effect.flatMap((response) =>

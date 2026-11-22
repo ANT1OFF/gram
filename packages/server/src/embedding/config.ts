@@ -1,10 +1,16 @@
+import { isAbsolute } from "node:path";
+
 /** The least a token may be: shorter is refused at start rather than trusted. */
 export const EMBED_TOKEN_MIN = 32;
 
-/** One outside service the server calls: where it is, and the bearer token it is sent, if any. */
+/**
+ * One outside service the server calls: where it is, and the bearer token it is sent, if any:
+ * `token`, or the file `tokenFile` names, read again for every call.
+ */
 export interface OutsideService {
   readonly url: string;
   readonly token?: string;
+  readonly tokenFile?: string;
 }
 
 export interface EmbedConfigShape {
@@ -20,17 +26,18 @@ export interface EmbedConfigShape {
   readonly repoEvents: "poll" | "pushed";
   /**
    * Where wakes and routine timers are registered, to be fired from there (`GRAM_SCHEDULER_URL`,
-   * `GRAM_SCHEDULER_TOKEN`).
+   * with `GRAM_SCHEDULER_TOKEN` or `GRAM_SCHEDULER_TOKEN_FILE`).
    */
   readonly scheduler?: OutsideService;
   /**
-   * Where attachments, docs and outputs are kept (`GRAM_OBJECT_STORE_URL`,
-   * `GRAM_OBJECT_STORE_TOKEN`).
+   * Where attachments, docs and outputs are kept (`GRAM_OBJECT_STORE_URL`, with
+   * `GRAM_OBJECT_STORE_TOKEN` or `GRAM_OBJECT_STORE_TOKEN_FILE`).
    */
   readonly objectStore?: OutsideService;
   /**
    * Where a person's machine is asked for, for a headless server whose deployment provisions hosts
-   * on demand (`GRAM_HOST_PROVIDER_URL`, `GRAM_HOST_PROVIDER_TOKEN`; see `on-demand.ts`).
+   * on demand (`GRAM_HOST_PROVIDER_URL`, with `GRAM_HOST_PROVIDER_TOKEN` or
+   * `GRAM_HOST_PROVIDER_TOKEN_FILE`; see `on-demand.ts`).
    */
   readonly hostProvider?: OutsideService;
 }
@@ -72,11 +79,22 @@ const service = (
 ): OutsideService | undefined => {
   const url = serviceUrl(`${prefix}_URL`, env[`${prefix}_URL`]);
   const token = tokenOf(`${prefix}_TOKEN`, env[`${prefix}_TOKEN`]);
+  const tokenFile = env[`${prefix}_TOKEN_FILE`]?.trim() || undefined;
+  if (tokenFile !== undefined) {
+    if (token !== undefined)
+      throw new Error(`${prefix}_TOKEN and ${prefix}_TOKEN_FILE are both set; give one`);
+    if (!isAbsolute(tokenFile)) throw new Error(`${prefix}_TOKEN_FILE must be an absolute path`);
+  }
   if (url === undefined) {
-    if (token !== undefined) throw new Error(`${prefix}_TOKEN is set without ${prefix}_URL`);
+    if (token !== undefined || tokenFile !== undefined)
+      throw new Error(`${prefix}_TOKEN is set without ${prefix}_URL`);
     return undefined;
   }
-  return { url, ...(token === undefined ? {} : { token }) };
+  return {
+    url,
+    ...(token === undefined ? {} : { token }),
+    ...(tokenFile === undefined ? {} : { tokenFile }),
+  };
 };
 
 const SECRET_VARIABLES = [

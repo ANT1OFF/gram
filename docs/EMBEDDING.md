@@ -16,16 +16,18 @@ value stops the server at start rather than half-configuring it.
 | `GRAM_EMBED_TOKEN`         | The bearer token the platform's services send on `/embed/v1/*`                    |
 | `GRAM_REPO_EVENTS`         | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token    |
 | `GRAM_SCHEDULER_URL`       | Where wakes, snoozes and routine runs are registered; needs the token             |
-| `GRAM_SCHEDULER_TOKEN`     | The bearer token sent to the scheduler                                            |
+| `GRAM_SCHEDULER_TOKEN`     | The bearer token sent to the scheduler (or `GRAM_SCHEDULER_TOKEN_FILE`)           |
 | `GRAM_OBJECT_STORE_URL`    | Where attachments, docs and outputs are kept as well as on the disk               |
-| `GRAM_OBJECT_STORE_TOKEN`  | The bearer token sent to the object store                                         |
+| `GRAM_OBJECT_STORE_TOKEN`  | The bearer token sent to the object store (or `GRAM_OBJECT_STORE_TOKEN_FILE`)     |
 | `GRAM_HOST_PROVIDER_URL`   | Where a person's machine is asked for, on a headless server; needs the token      |
-| `GRAM_HOST_PROVIDER_TOKEN` | The bearer token sent to the host provider                                        |
+| `GRAM_HOST_PROVIDER_TOKEN` | The bearer token sent to the host provider (or `GRAM_HOST_PROVIDER_TOKEN_FILE`)   |
 | `GRAM_GITHUB_ROUTE_URL`    | Where a headless server's `gh` reaches GitHub ([A GitHub route](#a-github-route)) |
 | `GRAM_GITHUB_ROUTE_TOKEN`  | The bearer token sent to the GitHub route (or `GRAM_GITHUB_ROUTE_TOKEN_FILE`)     |
 | `GRAM_SECRET_PATHS`        | More places holding the deployment's secrets, which no file preview reads         |
 
-Tokens are at least 32 characters with no whitespace. The server takes them out of its own
+Tokens are at least 32 characters with no whitespace. A `*_TOKEN_FILE` is an absolute path in
+place of its token, never beside it, and is read again for every call, so a deployment can hand
+the server short-lived workload tokens that it rotates on disk. The server takes them out of its own
 environment once it has read them, so no agent, terminal or `git` process it starts inherits one.
 A file a `*_TOKEN_FILE`, `*_SECRET_FILE` or provisioned TLS setting names, and the folder holding
 it, are never read by a file preview or a file link, whatever a thread's messages say; so is every

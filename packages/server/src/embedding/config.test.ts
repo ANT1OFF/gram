@@ -32,6 +32,31 @@ describe("embedFromEnv", () => {
     });
   });
 
+  it("reads a token file for an outside service, and refuses one that can't be meant", () => {
+    expect(
+      embedFromEnv({
+        GRAM_EMBED_TOKEN: TOKEN,
+        GRAM_SCHEDULER_URL: "http://scheduler.svc",
+        GRAM_SCHEDULER_TOKEN_FILE: "/var/run/tokens/scheduler",
+      })?.scheduler,
+    ).toEqual({ url: "http://scheduler.svc", tokenFile: "/var/run/tokens/scheduler" });
+    const both = {
+      GRAM_OBJECT_STORE_URL: "http://objects.svc",
+      GRAM_OBJECT_STORE_TOKEN: TOKEN,
+      GRAM_OBJECT_STORE_TOKEN_FILE: "/var/run/tokens/objects",
+    };
+    expect(() => embedFromEnv(both)).toThrow("give one");
+    expect(() =>
+      embedFromEnv({
+        GRAM_OBJECT_STORE_URL: "http://objects.svc",
+        GRAM_OBJECT_STORE_TOKEN_FILE: "t",
+      }),
+    ).toThrow("absolute");
+    expect(() => embedFromEnv({ GRAM_HOST_PROVIDER_TOKEN_FILE: "/t" })).toThrow(
+      "GRAM_HOST_PROVIDER_URL",
+    );
+  });
+
   it("refuses a short token, and never repeats a value in what it throws", () => {
     expect(() => embedFromEnv({ GRAM_EMBED_TOKEN: "short" })).toThrow("GRAM_EMBED_TOKEN");
     expect(() => embedFromEnv({ GRAM_EMBED_TOKEN: `${TOKEN} ${TOKEN}` })).toThrow("whitespace");
