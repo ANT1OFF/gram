@@ -170,7 +170,6 @@ export const workerTone = (facts: ToneFacts): RailTone => {
   if (status === "needsApproval" || status === "needsInput") return "needs";
   if (status === "running" || status === "starting" || facts.working === true) return "working";
   if (triage) return "waiting";
-  // Spawned and not begun: starting, never stopped. One with a wait armed already says that wait.
   if (workerStarting(facts) && activity !== "automation") return "working";
   return activity === "working"
     ? "working"

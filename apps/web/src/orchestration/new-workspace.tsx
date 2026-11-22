@@ -73,7 +73,6 @@ import { sleep } from "@/lib/sleep";
 
 const MACHINE_POLL_MS = 1000;
 
-/** Where a key press belongs to an open menu, list or dialog rather than to the sheet. */
 const inPopup = (target: EventTarget) =>
   target instanceof Element &&
   target.closest('[role="menu"], [role="listbox"], [role="dialog"], [role="alertdialog"]') !== null;
@@ -301,8 +300,6 @@ function SheetForm({
               target: { workspaceId: state.workspace.id },
               input: { text },
             });
-      // A new workspace discovers itself when the person keeps that on, as the Discover menu item
-      // asks: queued behind the first message, if there is one. A failure costs only the survey.
       if (reads && !discovered.current) {
         discovered.current = true;
         await sendDiscover(api, thread.id).catch((e: unknown) =>
@@ -419,7 +416,6 @@ function SheetForm({
         void start();
       }}
     >
-      {/* What it is on the left, how it runs on the right; one column where they don't fit. */}
       <fieldset
         disabled={created !== undefined}
         data-testid="new-workspace-fields"
@@ -544,7 +540,6 @@ function SheetForm({
           ) : (
             <SavedNotOpened name={created.state.workspace.name} reason={issue} />
           ))}
-        {/* Where the machine reaches every repository, Start starts it: no second start. */}
         {machineWanted && !reachesTheirs && <StartMachineCard />}
         <div className="flex flex-wrap items-center gap-2">
           <PressScale>
@@ -591,10 +586,6 @@ function SheetForm({
   );
 }
 
-/**
- * The workspace's repositories as chips, removed with ×; Add opens the known and found
- * repositories not picked yet, to tick, and a field for a folder or a GitHub repo to clone. The first is home.
- */
 function ReposField({
   draft,
   projects,
