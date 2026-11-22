@@ -12,6 +12,7 @@ import { focusPaneComposer } from "@/shell/pane-focus";
 import { useLayoutStore } from "@/stores/layout";
 import { closeThread, useThreadsStore } from "@/stores/threads";
 
+import { AGENT_SHORT } from "./agent-switch-model";
 import { closeWarning, waitingWarning } from "./close-warning";
 import { Dialog, DialogShell } from "./dialog-shell";
 import { cleanAndPushed, mergedPrRef } from "./merged-cleanup";
@@ -151,7 +152,7 @@ export function CloseThreadDialog({
     <DialogShell
       testId="close-thread-dialog"
       title={`Close “${thread.title}”?`}
-      description="The agent stops and the thread leaves the list. Its conversation is kept by Claude."
+      description={`The agent stops and the thread leaves the list. Its conversation is kept by ${AGENT_SHORT[thread.model.agent]}.`}
       onClose={onClose}
       returnFocus={focusRemainingPane}
     >

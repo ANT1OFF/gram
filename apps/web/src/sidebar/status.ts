@@ -259,9 +259,34 @@ export const rowStatus = (
       working: false,
     };
   }
+  if (resting && profileRunDone(thread)) {
+    const label = STATUS_WORDS.done;
+    return {
+      icon: CircleCheck,
+      tone: "text-success",
+      label,
+      title: "Completed: its task ran to the end",
+      working: false,
+    };
+  }
   const display = STATUS_DISPLAY[status];
   return { ...display, title: display.label, working: false };
 };
+
+/**
+ * A thread started from a profile is a run of one task, given as it started: at rest after its
+ * session ran, with no error, the task is done, as the profile's supplier records it. It is not
+ * stopped the way a conversation at rest waits on its person. An orchestrator's profile rests
+ * between its turns, so it is left out.
+ */
+export const profileRunDone = (
+  thread: Pick<Thread, "profile" | "role" | "lastError" | "agentSessionId" | "agentSessionUnused">,
+): boolean =>
+  thread.profile !== undefined &&
+  thread.role !== "orchestrator" &&
+  thread.lastError === undefined &&
+  thread.agentSessionId !== undefined &&
+  thread.agentSessionUnused !== true;
 
 /** How long a resting row stays as it is before it fades. */
 export const SETTLED_AFTER_MS = 86_400_000;

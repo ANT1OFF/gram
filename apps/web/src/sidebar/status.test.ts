@@ -112,6 +112,29 @@ describe("rowStatus", () => {
     expect(status.icon).toBe(STATUS_DISPLAY.ended.icon);
   });
 
+  it("says a profile's run that rested after its session ran is done, not stopped", () => {
+    const ran = {
+      profile: { charter: "" },
+      agentSessionId: "s-1",
+    } as unknown as Thread;
+    for (const status of ["idle", "cold", "ended"] as const) {
+      expect(rowStatus(ran, status, undefined).label).toBe("Done");
+    }
+    // Still at work, failed, never started, or an orchestrator resting between its turns: as before.
+    expect(rowStatus(ran, "running", undefined).label).toBe(STATUS_DISPLAY.running.label);
+    expect(rowStatus(ran, "error", undefined).label).toBe(STATUS_DISPLAY.error.label);
+    const failed = { ...ran, lastError: { text: "boom" } } as unknown as Thread;
+    expect(rowStatus(failed, "idle", undefined).label).toBe(STATUS_DISPLAY.idle.label);
+    const unstarted = { ...ran, agentSessionId: undefined } as unknown as Thread;
+    expect(rowStatus(unstarted, "cold", undefined).label).toBe(STATUS_DISPLAY.cold.label);
+    const orchestrator = { ...ran, role: "orchestrator" } as unknown as Thread;
+    expect(rowStatus(orchestrator, "idle", undefined).label).toBe(STATUS_DISPLAY.idle.label);
+    // A conversation of its own at rest stays stopped.
+    expect(rowStatus({ agentSessionId: "s-1" } as unknown as Thread, "idle", undefined).label).toBe(
+      STATUS_DISPLAY.idle.label,
+    );
+  });
+
   it("shows unseen attention on a quiet thread, but never over a working one", () => {
     const attention = { reason: "ciFailed", key: "ci:1:abc", label: "CI failed" } as const;
     const plain = {} as Thread;

@@ -9,6 +9,9 @@ import type {
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
+import { matchesModel } from "@/composer/models";
+import { switchChoices } from "@/composer/switch-choices";
+
 import {
   carriesLine,
   defaultTarget,
@@ -92,6 +95,33 @@ const CODEX_MODELS: AgentModel[] = [
   },
   { id: "gpt-6-luna", displayName: "GPT-6 Luna", supportsEffort: true, efforts: ["low", "high"] },
 ] as AgentModel[];
+
+// The composer chip's rows for the other agent, as a thread offers it.
+const rows = (s: ReturnType<typeof summary>, c: LaunchChecks = checks()) =>
+  switchChoices({ offer: offer(s, c), models: CODEX_MODELS, group: "Codex", icon: null });
+const found = (s: ReturnType<typeof summary>, query: string, c?: LaunchChecks) =>
+  rows(s, c).filter((row) => matchesModel(row, query));
+
+describe("the chip's other-agent rows", () => {
+  it("finds the other agent's model by search, on an orchestrator as on any thread", () => {
+    for (const s of [summary(), orchestrator()]) {
+      expect(found(s, "GPT-6.1").map((row) => row.value)).toEqual(["continue-in:gpt-6.1-sol"]);
+      expect(found(s, "codex luna").map((row) => row.value)).toEqual(["continue-in:gpt-6-luna"]);
+    }
+  });
+
+  it("opens the move rather than setting the model, and greys it when the move can't happen", () => {
+    expect(rows(orchestrator()).every((row) => row.opens === true && !row.disabled)).toBe(true);
+    const signedOut = rows(orchestrator(), checks({ codexSignIn: "notSignedIn" }));
+    expect(signedOut.length).toBeGreaterThan(0);
+    expect(signedOut.every((row) => row.disabled === true)).toBe(true);
+  });
+
+  it("lists nothing where the switch isn't offered", () => {
+    const one = checks({ tools: [{ tool: "claude", found: true }] });
+    expect(rows(orchestrator(), one)).toEqual([]);
+  });
+});
 
 describe("switchOffer", () => {
   it("offers the other agent on an idle plain thread", () => {

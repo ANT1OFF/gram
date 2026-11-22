@@ -49,6 +49,7 @@ import { useLayoutStore } from "@/stores/layout";
 import { useWelcome } from "@/welcome/welcome-state";
 
 import {
+  autonomySource,
   charterOf,
   createInput,
   emptyNewWorkspace,
@@ -189,6 +190,16 @@ const seedDraft = (
   const withRepo = picked === undefined ? empty : toggleRepo(empty, picked, true);
   return source === undefined ? withRepo : startFrom(withRepo, source);
 };
+
+const autonomySourceLine = (
+  source: ReturnType<typeof autonomySource>,
+  kind: string,
+): string | undefined =>
+  source === undefined
+    ? undefined
+    : source.kind === "copied"
+      ? `As in ${source.name}, whose settings this copies.`
+      : `The default for every new ${kind.toLowerCase()}. Pick another to change it.`;
 
 function SheetForm({
   initial,
@@ -493,6 +504,7 @@ function SheetForm({
           <AutonomyChoice
             testId="autonomy"
             value={autonomyOf(charter)}
+            source={autonomySourceLine(autonomySource(draft, starting, workspaces), kind)}
             onChange={(autonomy) =>
               setDraft((current) => ({
                 ...current,

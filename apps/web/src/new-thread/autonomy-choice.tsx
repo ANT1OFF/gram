@@ -32,12 +32,15 @@ export function AutonomyChoice({
   disabled = false,
   label = "Autonomy",
   testId = "task-autonomy",
+  source,
 }: {
   value: Autonomy;
   onChange: (autonomy: Autonomy) => void;
   disabled?: boolean;
   label?: string;
   testId?: string;
+  /** Where the level it opens on comes from, while nobody has picked one here. */
+  source?: string | undefined;
 }) {
   const personMerges = usePersonMerges();
   const lines = useAutonomyLine();
@@ -46,6 +49,11 @@ export function AutonomyChoice({
       <span aria-hidden className="text-meta font-medium text-muted-foreground">
         {label}
       </span>
+      {source !== undefined && (
+        <span data-testid={`${testId}-source`} className="text-meta text-description">
+          {source}
+        </span>
+      )}
       <OptionGroup<Autonomy>
         label={label}
         options={autonomyLevels(personMerges).map((level) => ({

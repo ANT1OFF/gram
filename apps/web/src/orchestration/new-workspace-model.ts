@@ -1,4 +1,5 @@
 import {
+  autonomyOf,
   newWorkspaceCharter,
   localSubscriptionDefault,
   type AgentModel,
@@ -47,6 +48,30 @@ export const charterOf = (
   draft: NewWorkspaceDraft,
   starting: OrchestratorCharter,
 ): OrchestratorCharter => draft.charter ?? starting;
+
+/**
+ * Where the autonomy the sheet opens on comes from, so a level nobody picked never reads as one
+ * somebody did: `copied` from the workspace the charter was copied from, the `default` every new
+ * one starts at (`DEFAULT_CHARTER`), or `undefined` once the user picked another level here.
+ */
+export const autonomySource = (
+  draft: Pick<NewWorkspaceDraft, "charter" | "from">,
+  starting: OrchestratorCharter,
+  workspaces: readonly Pick<WorkspaceState, "workspace" | "charter">[],
+):
+  | { readonly kind: "copied"; readonly name: string }
+  | { readonly kind: "default" }
+  | undefined => {
+  const source =
+    draft.from === undefined
+      ? undefined
+      : workspaces.find((state) => state.workspace.id === draft.from);
+  const base = source?.charter ?? starting;
+  if (autonomyOf(draft.charter ?? starting) !== autonomyOf(base)) return undefined;
+  return source === undefined
+    ? { kind: "default" }
+    : { kind: "copied", name: source.workspace.name };
+};
 
 /**
  * The draft with its charter copied from `source`, everything but its repos: the roster with its
