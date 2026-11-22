@@ -29,10 +29,9 @@ import {
   claimedHere,
   forgetReclaimed,
   isLegacyRelayed,
-  type MachinesInUse,
   RECLAIMED_EVERY,
 } from "./signed-in-reclaim.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { forgetStoppedSignedIn } from "./signed-in-forget.ts";
 import {
   NO_APP,
   NO_SIGNED_IN_SERVER,
@@ -72,7 +71,7 @@ import {
 } from "./worker-machine-stops.ts";
 import { plainName } from "./server-name.ts";
 import { askOnDrop } from "./signed-in-drops.ts";
-import { machinesInUse, relaysOf, roomForOne } from "./signed-in-room.ts";
+import { noRoomWords, relaysOf } from "./signed-in-room.ts";
 
 export { plainName } from "./server-name.ts";
 
@@ -123,11 +122,6 @@ export interface SignedInDeps {
    * a start of the name wakes it (`forgetReclaimed`, `wakeSignedIn`, `SignedInWorkersLive`).
    */
   readonly asleep?: Set<string>;
-  /**
-   * Which registered machines something here still needs (`hostedMachineInUse`): at the bound, the
-   * oldest of this sign-in's that nothing needs is given back to make room. Absent: none is.
-   */
-  readonly inUse?: MachinesInUse;
   /** The starts sent of each name, shared by every source and pass (`StartsSent`). */
   readonly sent?: StartsSent;
   /**
@@ -481,7 +475,7 @@ export const signedInSource = (
                 };
             }
             if (machine === undefined && status.publicKey !== undefined) {
-              const full = yield* roomForOne(deps, mine, forget, name);
+              const full = noRoomWords(hosts.list(), deps.asleep);
               if (full !== undefined) return { failed: full };
               const result = hosts.machines.provision({
                 name,
@@ -524,6 +518,11 @@ export class SignedInWorkers extends Context.Service<
       | { readonly source: WorkerMachineSource; readonly server: WorkerMachineServer }
       | { readonly refused: string }
     >;
+    /**
+     * Forgets a hosted worker machine's registration once its server says it is stopped and
+     * nothing on it waits (`forgetStoppedSignedIn`): whether it did. Absent without the app.
+     */
+    readonly forgetStopped?: (id: string) => Effect.Effect<boolean>;
   }
 >()("@gram/server/SignedInWorkers") {}
 
@@ -570,8 +569,6 @@ export const SignedInWorkersLive = Layer.effect(
     const asleep = new Set<string>();
     const sent: StartsSent = new Map();
     const claimed = claimedHere(hosts);
-    const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
-    const inUse = store === undefined ? undefined : machinesInUse(store, hosts.stops, starting);
     const dials = yield* Queue.unbounded<RelayedDial>();
     port.onDial((dial) => {
       Queue.offerUnsafe(dials, dial);
@@ -690,7 +687,7 @@ export const SignedInWorkersLive = Layer.effect(
     };
     yield* port.server().pipe(
       Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
-      Effect.andThen(forgetReclaimed(port, hosts, misses, asleep, sent, inUse)),
+      Effect.andThen(forgetReclaimed(port, hosts, misses, asleep, sent)),
       Effect.tap(() => Effect.sync(() => sync(false))),
       Effect.andThen(
         settleOwedStops(
@@ -709,6 +706,8 @@ export const SignedInWorkersLive = Layer.effect(
     );
     return {
       port,
+      forgetStopped: (id: string) =>
+        forgetStoppedSignedIn(port, hosts, { locks, asleep, sent, starting }, id),
       source: port.server().pipe(
         Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
         Effect.map((answered) =>
@@ -724,7 +723,6 @@ export const SignedInWorkersLive = Layer.effect(
                   asleep,
                   sent,
                   markOf,
-                  ...(inUse === undefined ? {} : { inUse }),
                 }),
                 server: answered.server,
               }

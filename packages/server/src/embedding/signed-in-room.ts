@@ -1,16 +1,11 @@
 import { HostId, WORKER_MACHINE_RELAYS_MOST } from "@gram/contracts";
-import * as Effect from "effect/Effect";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
-import type { StopMarks } from "../host/stop-marks.ts";
-import type { ThreadStore } from "../persistence/thread-store.ts";
-import { hostedMachineInUse, type UsedMachine } from "./hosted-machine-use.ts";
-import { isLegacyRelayed, type MachinesInUse } from "./signed-in-reclaim.ts";
 import type { ProvidedMachine } from "./worker-machines.ts";
 
 /**
  * The most machines from hosted servers this Gram carries at once: registered and not asleep
  * there, so the app relays them. Below the app's own bound (`APP_RELAYS_MOST`). A machine its
- * server says is stopped isn't counted, and one nothing here needs is given back to make room.
+ * server says is stopped isn't counted.
  */
 export const RELAYED_MOST = 32;
 /** The most relays the app takes in one list: it drops a longer list whole. */
@@ -22,57 +17,19 @@ export const carriedOf = (
   asleep: ReadonlySet<string> | undefined,
 ) => machines.filter((each) => each.via !== undefined && asleep?.has(each.name) !== true);
 
-const fullWords = (held: ReadonlyArray<ProvidedMachine>) =>
-  `This Gram already carries ${held.length} machines from hosted servers, the most it carries at once (${held.filter((each) => each.onlineSince !== undefined).length} online now), and none could be given back: each has a worker that isn't archived, a wake or resume waiting for it, joined within the last 30 minutes, or is another sign-in's. Archive workers you're done with, or wait for a machine to stop there, then spawn again.`;
-
 /**
- * Makes room for one more machine, `name`: at `RELAYED_MOST` carried, gives back the oldest of
- * this sign-in's (`mine`) that nothing here needs (`inUse`), as many as it takes. Undefined: there
- * is room; else why there isn't. Without `inUse`, nothing is given back.
+ * Why there's no room for another machine from a hosted server, or undefined while there is: at
+ * `RELAYED_MOST` carried, with how many of them are online and what keeps the rest.
  */
-export const roomForOne = (
-  deps: {
-    readonly hosts: { readonly list: () => ReadonlyArray<ProvidedMachine> };
-    readonly asleep?: ReadonlySet<string> | undefined;
-    readonly inUse?: MachinesInUse | undefined;
-  },
-  mine: (machine: ProvidedMachine) => boolean,
-  giveBack: (name: string) => Effect.Effect<boolean>,
-  name: string,
-): Effect.Effect<string | undefined> =>
-  Effect.gen(function* () {
-    for (let tries = 0; ; tries += 1) {
-      const held = carriedOf(deps.hosts.list(), deps.asleep);
-      if (held.length < RELAYED_MOST) return undefined;
-      const used = deps.inUse === undefined ? undefined : yield* deps.inUse;
-      const spare =
-        used === undefined || tries >= RELAYED_MOST
-          ? undefined
-          : held
-              .filter(
-                (each) => mine(each) && each.name !== name && !isLegacyRelayed(each) && !used(each),
-              )
-              .toSorted((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0))[0];
-      if (spare === undefined || !(yield* giveBack(spare.name))) return fullWords(held);
-    }
-  });
-
-/**
- * Which registered machines something here needs (`hostedMachineInUse`), from the threads now;
- * every one, when they can't be read.
- */
-export const machinesInUse = (
-  store: Pick<ThreadStore["Service"], "listThreads">,
-  stops: Pick<StopMarks, "wanted" | "owes" | "holding" | "awaited" | "restedOf">,
-  starting: ReadonlySet<string>,
-): MachinesInUse =>
-  store.listThreads.pipe(
-    Effect.map(
-      (threads) => (machine: UsedMachine) =>
-        hostedMachineInUse(machine, threads, stops, Date.now(), starting),
-    ),
-    Effect.orElseSucceed(() => () => true),
-  );
+export const noRoomWords = (
+  machines: ReadonlyArray<ProvidedMachine>,
+  asleep: ReadonlySet<string> | undefined,
+): string | undefined => {
+  const held = carriedOf(machines, asleep);
+  if (held.length < RELAYED_MOST) return undefined;
+  const online = held.filter((each) => each.onlineSince !== undefined).length;
+  return `This Gram already carries ${held.length} machines from hosted servers, the most it carries at once: ${online} online now, the rest not yet stopped there. A machine stops counting once its server stops it, which it does after its workers are archived. Archive workers you're done with, then spawn again.`;
+};
 
 /** The relays the app is asked to carry: every worker machine not asleep, to `APP_RELAYS_MOST`. */
 export const relaysOf = (

@@ -23,7 +23,8 @@ import {
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
-import { WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
+import { threadsLetGo, WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
+import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 
 /**
  * The workers whose machine may be told its work is over: finished as the ledger reads them and
@@ -39,6 +40,73 @@ export const releasableWorkers = (
       .filter((worker) => !isLiveWorker(worker))
       .map((worker) => worker.threadId),
   );
+
+/** The workers with a wake pending, as the ledger reads them: their machine is kept for it. */
+export const wakingWorkers = (
+  features: ReadonlyArray<Pick<FeatureLedgerEntry, "workers">>,
+): ReadonlySet<ThreadId> =>
+  new Set(
+    features
+      .flatMap((feature) => feature.workers)
+      .filter((worker) => (worker.wakes?.length ?? 0) > 0)
+      .map((worker) => worker.threadId),
+  );
+
+/** Whether a session has anything going on: a turn, a queued message or a request waiting. */
+export const sessionBusy = (summary: {
+  readonly status: string;
+  readonly queue: ReadonlyArray<unknown>;
+  readonly pendingRequests: ReadonlyArray<unknown>;
+}) =>
+  summary.status === "running" ||
+  summary.status === "starting" ||
+  summary.queue.length > 0 ||
+  summary.pendingRequests.length > 0;
+
+/**
+ * Forgets each hosted worker machine whose release was taken, that is offline and that no thread
+ * here needs (`threadsLetGo`), once its server says it is stopped (`forget`, the signed-in
+ * `forgetStopped`). `waking`: the workers with a wake pending, as the ledger reads them; every
+ * plain thread's pending wake is added. A parked thread's session is asked whether anything is
+ * going on in it.
+ */
+export const forgetReleased = (
+  machines: ReadonlyArray<ReleaseMachine>,
+  told: ReadonlyMap<string, { readonly released: boolean }>,
+  waking: ReadonlySet<ThreadId>,
+  store: Pick<ThreadStore["Service"], "listThreadsForClaims" | "listThreadWakes">,
+  runtimes: Pick<ThreadRuntimes["Service"], "summaryOf">,
+  forget: (id: string) => Effect.Effect<boolean>,
+) =>
+  Effect.gen(function* () {
+    const released = machines.filter(
+      (machine) =>
+        machine.via !== undefined &&
+        machine.onlineSince === undefined &&
+        told.get(toldKey(machine))?.released === true,
+    );
+    if (released.length === 0) return;
+    const claims = yield* store.listThreadsForClaims;
+    const wakes = new Set(waking);
+    for (const wake of yield* store.listThreadWakes) wakes.add(wake.threadId);
+    const busy = new Set<ThreadId>();
+    for (const thread of claims.threads) {
+      if (thread.parked !== true) continue;
+      const summary = yield* runtimes.summaryOf(thread.id);
+      if (summary !== undefined && sessionBusy(summary)) busy.add(thread.id);
+    }
+    for (const machine of released)
+      if (
+        threadsLetGo(
+          machine,
+          { threads: claims.threads, unreadable: claims.unknown },
+          wakes,
+          (id) => busy.has(id),
+          Date.now(),
+        )
+      )
+        yield* forget(machine.id);
+  });
 
 /** How often worker machines are looked at. */
 export const WORKER_RELEASE_EVERY = Duration.minutes(2);
@@ -285,6 +353,7 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
+    const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const told = new Map<string, { readonly released: boolean; readonly at: number }>();
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
@@ -304,11 +373,17 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
       const threads = yield* store.listThreads;
       const finished = new Set<ThreadId>();
       const embeddedFinished = new Set<ThreadId>();
+      const waking = new Set<ThreadId>();
+      let unread = false;
       for (const workspace of yield* store.listWorkspaces) {
         const ledger = yield* orchestration.ledger(workspace.workspace.id).pipe(Effect.option);
-        if (Option.isNone(ledger)) continue;
+        if (Option.isNone(ledger)) {
+          unread = true;
+          continue;
+        }
         for (const id of releasableWorkers(ledger.value.features)) finished.add(id);
         for (const id of finishedWorkers(ledger.value.features)) embeddedFinished.add(id);
+        for (const id of wakingWorkers(ledger.value.features)) waking.add(id);
       }
       const decided = releaseDecisions(
         machines,
@@ -327,6 +402,9 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
           );
         }
       }
+      const forget = signedIn?.forgetStopped;
+      if (forget === undefined || runtimes === undefined || unread) return;
+      yield* forgetReleased(machines, told, waking, store, runtimes, forget);
     });
     yield* pass.pipe(
       Effect.catchCause((cause) =>

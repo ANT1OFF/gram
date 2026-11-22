@@ -7,14 +7,6 @@ import type { StopMarks } from "../host/stop-marks.ts";
  */
 export const WORKER_MACHINE_SETTLE_MS = 30 * 60_000;
 
-/** A hosted worker machine as `hostedMachineInUse` reads it. */
-export interface UsedMachine {
-  readonly id: string;
-  readonly name: string;
-  /** When it first joined; one with none is taken as just joined. */
-  readonly joinedAt?: number | undefined;
-}
-
 export type UseThread = Pick<
   Thread,
   "id" | "parked" | "checkout" | "currentCheckout" | "extraCheckouts"
@@ -26,28 +18,48 @@ const placedOn = (thread: UseThread, id: string) =>
   );
 
 /**
- * Whether anything here still needs a hosted worker machine, so its registration is kept: a
- * thread not archived is placed on it (at work, waiting, finished but resumable), something waits
- * for it to be started, a resume is owed on it or its stop is held, a thread not archived waits on
- * or was put to rest for its stop, a start of its name is on its way, or it joined within
- * `WORKER_MACHINE_SETTLE_MS` (its worker isn't placed yet). Archived threads alone don't keep it:
- * archiving a worker gives its machine back (`worker-machine-release.ts`).
+ * What the threads say of a hosted worker machine whose release was taken: whether its
+ * registration may be forgotten. Only when every thread placed on it is archived, none of them
+ * has a wake pending (`waking`, a plain thread's or a worker's) or anything going on in its
+ * session (`busy`: a turn, a queued message, a request waiting), and it joined at least
+ * `WORKER_MACHINE_SETTLE_MS` ago. A thread that isn't archived keeps it, finished or not: it
+ * can be taken up again. `unreadable`: threads whose rows don't decode, which might be on it,
+ * so none is forgotten while there are any.
  */
-export const hostedMachineInUse = (
-  machine: UsedMachine,
-  threads: ReadonlyArray<UseThread>,
-  stops: Pick<StopMarks, "wanted" | "owes" | "holding" | "awaited" | "restedOf">,
+export const threadsLetGo = (
+  machine: { readonly id: string; readonly joinedAt?: number | undefined },
+  threads: {
+    readonly threads: ReadonlyArray<UseThread>;
+    readonly unreadable: ReadonlyArray<ThreadId>;
+  },
+  waking: ReadonlySet<ThreadId>,
+  busy: (thread: ThreadId) => boolean,
   now: number,
-  starting?: ReadonlySet<string>,
 ): boolean => {
-  if (starting?.has(machine.name) === true) return true;
+  if (threads.unreadable.length > 0) return false;
   if (machine.joinedAt === undefined || now - machine.joinedAt < WORKER_MACHINE_SETTLE_MS)
-    return true;
-  const open = new Map<ThreadId, UseThread>();
-  for (const thread of threads) if (thread.parked !== true) open.set(thread.id, thread);
-  for (const thread of open.values()) if (placedOn(thread, machine.id)) return true;
-  const id = HostId.make(machine.id);
-  if (stops.wanted(id) || stops.owes(id) || stops.holding(id)) return true;
-  for (const waiting of stops.awaited(id)) if (open.has(waiting)) return true;
-  return stops.restedOf(id).some((rested) => open.has(rested));
+    return false;
+  return threads.threads.every(
+    (thread) =>
+      !placedOn(thread, machine.id) ||
+      (thread.parked === true && !waking.has(thread.id) && !busy(thread.id)),
+  );
+};
+
+/**
+ * Whether the machine's stop marks let it go: nothing waits for it to be started, no resume is
+ * owed on it, its stop isn't held, and no thread, archived or not, waits on or rests for its stop.
+ */
+export const stopsLetGo = (
+  stops: Pick<StopMarks, "wanted" | "owes" | "holding" | "awaited" | "restedOf">,
+  id: string,
+): boolean => {
+  const host = HostId.make(id);
+  return (
+    !stops.wanted(host) &&
+    !stops.owes(host) &&
+    !stops.holding(host) &&
+    stops.awaited(host).size === 0 &&
+    stops.restedOf(host).length === 0
+  );
 };
