@@ -371,6 +371,19 @@ again, a worker reopened, it asks the same with `released: false, reason: "worki
 provider keeps the disk. Each is told once; after a restart it may be told again, which a provider
 takes as the same word. `404` means the provider keeps none of this.
 
+While a worker host is online with work, the server also measures, observe only, whether it could
+have been paused (`embedding/idle-measure.ts`): every minute, whether each thread on it is at rest
+with no queued send, open question, background task or busy terminal, no wake that reads the machine
+itself, and a last save that reached the remote; which of those held it when not; and what each
+wait waited for (the user, the orchestrator, CI or review, a run monitor, `schedule_wake`, a
+provider limit, or unknown). Each cold wake is timed from the session that wanted the host to the
+host's return, its folders being ready and the first turn, with a provider limit's wait counted
+apart. The measurements are kept for two weeks in `remote-access/idle-measure.json`, each wake is
+logged as `machine resume timing`, and an hourly `idle machine measurement` log line sums up the
+last week and hour: eligible machine-minutes after a warm minute, minutes blocked by gate and
+blocker, and the resume latency's p50 and p95. Nothing here stops or starts a host. Desktop-relayed
+hosts are measured only while the desktop runs.
+
 ### Workers' own machines for a desktop orchestrator
 
 The desktop app's orchestrators can have the same machines, from a hosted server the app is signed
