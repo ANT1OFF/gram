@@ -84,7 +84,7 @@ function PausedPill({
   return (
     <Hint
       label={label}
-      side="bottom"
+      side="left"
       render={
         <Button
           size="xs"
