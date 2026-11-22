@@ -2091,7 +2091,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         Effect.flatMap((rows) =>
           Effect.gen(function* () {
             const threads: Array<Thread> = [];
-            const [unknown, unknownParked]: Array<Array<ThreadId>> = [[], []];
+            const [unknown, unknownParked]: [Array<ThreadId>, Array<ThreadId>] = [[], []];
             for (const row of rows) {
               const decoded = decodeStored(Thread, row.data);
               if (decoded.ok) {
