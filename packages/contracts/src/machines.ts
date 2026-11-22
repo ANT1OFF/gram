@@ -46,6 +46,42 @@ export const MachineKind = Schema.Literals(["joined", "provisioned"]);
 export type MachineKind = typeof MachineKind.Type;
 
 /**
+ * Why whoever runs a machine says it stopped, in Gram's own words for any provider:
+ * - `idle`: it paused itself with nothing to do, and starts again when work wants it;
+ * - `released`: its work is over, and it is let go once idle;
+ * - `reclaimed`: its compute was taken away (a spot interruption, a node drained or replaced);
+ * - `requested`: someone stopped it;
+ * - `failed`: it died or couldn't start.
+ */
+export const MachineStopCause = Schema.Literals([
+  "idle",
+  "released",
+  "reclaimed",
+  "requested",
+  "failed",
+]);
+export type MachineStopCause = typeof MachineStopCause.Type;
+
+/** The longest provider message a machine's state carries. */
+export const MACHINE_PROVIDER_MESSAGE_MAX = 300;
+
+/**
+ * What whoever runs a provisioned machine last said of it while it is offline: where it stands
+ * there (`phase`), why it stopped, the provider's own short line, and since when (epoch ms), with
+ * when Gram heard it (`at`). All the provider's word; never kept across a restart of this Gram.
+ */
+export const MachineProviderWord = Schema.Struct({
+  phase: Schema.Literals(["starting", "running", "stopped", "failed"]),
+  cause: Schema.optionalKey(MachineStopCause),
+  message: Schema.optionalKey(
+    Schema.String.check(Schema.isMaxLength(MACHINE_PROVIDER_MESSAGE_MAX)),
+  ),
+  since: Schema.optionalKey(Schema.Number),
+  at: Schema.Number,
+});
+export type MachineProviderWord = typeof MachineProviderWord.Type;
+
+/**
  * A confirmed machine as a thread that runs on it shows it, on every client: its name, how it got
  * in, and whether it is dialled in now. Far less than Settings → Machines lists, which stays the
  * local app's: no fingerprint, sign-in, tools, SSH target or update.
@@ -63,6 +99,24 @@ export const MachineState = Schema.Struct({
    * stopped one when it is wanted; set only while it is offline and something waits.
    */
   starting: Schema.optionalKey(Schema.Number),
+  /**
+   * Epoch ms since its threads' folders have been put back, as near as this Gram knows (it came
+   * back online then): it dialled in after a stop or on another disk and owes a resume, so no
+   * session opens on it until that is done. Set only while it is online.
+   */
+  restoring: Schema.optionalKey(Schema.Number),
+  /**
+   * Epoch ms since putting its threads back has made no progress for long enough that what waits
+   * on it was told so (`StopMarks.stalled`). Set only with `restoring`.
+   */
+  stalled: Schema.optionalKey(Schema.Number),
+  /**
+   * Epoch ms it was readied to stop, for a machine that then left: paused while idle, as whoever
+   * runs the machines stops one with nothing to do. Set only while it is offline.
+   */
+  paused: Schema.optionalKey(Schema.Number),
+  /** What whoever runs it last said of it (`MachineProviderWord`); set only while it is offline. */
+  provider: Schema.optionalKey(MachineProviderWord),
   /**
    * The hosted server a provisioned host came through, for a worker's machine a desktop asked one
    * for: the server's own name for itself, and its mark as a `data:` image where it gave one

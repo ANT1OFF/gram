@@ -2,7 +2,13 @@ import { HostId } from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
-import { parseMachineStatus, sentOf, settledSince, type StartsSent } from "./signed-in-calls.ts";
+import {
+  parseMachineStatus,
+  providerWordOf,
+  sentOf,
+  settledSince,
+  type StartsSent,
+} from "./signed-in-calls.ts";
 import type { WorkerMachinePortShape } from "./signed-in-port.ts";
 import { isNotFound, type OwedStop, RECLAIMED_AFTER_MISSES } from "./worker-machine-stops.ts";
 
@@ -27,7 +33,7 @@ export const RECLAIMED_EVERY = Duration.minutes(10);
  */
 export const forgetReclaimed = (
   port: WorkerMachinePortShape,
-  hosts: Pick<RemoteHostsShape, "list" | "remove">,
+  hosts: Pick<RemoteHostsShape, "list" | "remove" | "providerSaid">,
   misses: Map<string, number> = new Map(),
   asleep?: Set<string>,
   sent?: StartsSent,
@@ -48,8 +54,11 @@ export const forgetReclaimed = (
         { account: machine.viaAccount },
       );
       if (!settledSince(sent, machine.name, before)) continue;
-      const phase =
-        answered.ok && answered.status < 300 ? parseMachineStatus(answered.body).phase : undefined;
+      const status =
+        answered.ok && answered.status < 300 ? parseMachineStatus(answered.body) : undefined;
+      if (status !== undefined)
+        hosts.providerSaid?.(HostId.make(machine.id), providerWordOf(status, Date.now()));
+      const phase = status?.phase;
       if (phase !== undefined && phase !== "stopped" && phase !== "failed")
         asleep?.delete(machine.name);
       if (asleep !== undefined && (phase === "stopped" || phase === "failed")) {

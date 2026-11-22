@@ -1,3 +1,8 @@
+import {
+  type MachineProviderWord,
+  MachineStopCause,
+  MACHINE_PROVIDER_MESSAGE_MAX,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { fenceRefusalOf, RELEASE_ACTS_WITHIN_MS } from "./signed-in-fences.ts";
 import type { MachineRun, Refused, WorkerMachinePortShape } from "./signed-in-port.ts";
@@ -18,6 +23,10 @@ export const parseMachineStatus = (
   readonly message?: string;
   readonly publicKey?: string;
   readonly platform?: string;
+  /** Why it stopped, in Gram's words for any provider (`MachineStopCause`). */
+  readonly cause?: MachineStopCause;
+  /** Since when it has been in its phase, epoch ms: the server's `since`, ms or ISO 8601. */
+  readonly since?: number;
 } => {
   if (typeof value !== "object" || value === null) return {};
   const body = value as Record<string, unknown>;
@@ -28,14 +37,48 @@ export const parseMachineStatus = (
       : undefined;
   };
   const phase = line("phase", 24);
-  const message = line("message", 300);
+  const message = line("message", MACHINE_PROVIDER_MESSAGE_MAX);
   const publicKey = line("publicKey", 64);
   const platform = line("platform", 16);
+  const cause = line("cause", 16);
+  const since =
+    typeof body["since"] === "number"
+      ? body["since"]
+      : typeof body["since"] === "string" && body["since"].length <= 40
+        ? Date.parse(body["since"])
+        : undefined;
   return {
+    ...(cause !== undefined && isStopCause(cause) ? { cause } : {}),
+    ...(since !== undefined && Number.isSafeInteger(since) && since > 0 ? { since } : {}),
     ...(phase === undefined ? {} : { phase }),
     ...(message === undefined ? {} : { message }),
     ...(publicKey !== undefined && PUBLIC_KEY.test(publicKey) ? { publicKey } : {}),
     ...(platform !== undefined && PLATFORM.test(platform) ? { platform } : {}),
+  };
+};
+
+const isStopCause = (value: string): value is MachineStopCause =>
+  (MachineStopCause.literals as ReadonlyArray<string>).includes(value);
+
+const PROVIDER_PHASES = ["starting", "running", "stopped", "failed"] as const;
+
+/**
+ * What a server's `…/status` answer says of a machine, as a thread's mark shows it while the
+ * machine is offline (`MachineProviderWord`), heard at `at`; undefined for a phase Gram doesn't
+ * know, which says nothing it can show.
+ */
+export const providerWordOf = (
+  status: ReturnType<typeof parseMachineStatus>,
+  at: number,
+): MachineProviderWord | undefined => {
+  const phase = PROVIDER_PHASES.find((each) => each === status.phase);
+  if (phase === undefined) return undefined;
+  return {
+    phase,
+    ...(status.cause === undefined ? {} : { cause: status.cause }),
+    ...(status.message === undefined ? {} : { message: status.message }),
+    ...(status.since === undefined ? {} : { since: status.since }),
+    at,
   };
 };
 
@@ -180,6 +223,8 @@ export const wakeSignedIn = (
     /** Whether work here still wants it, read as the start would go: none is sent once not. */
     readonly wanted?: (() => boolean) | undefined;
     readonly heldFor?: ((name: string) => number) | undefined;
+    /** Told what the server said of the machine, for its mark (`providerWordOf`). */
+    readonly said?: ((word: MachineProviderWord | undefined) => void) | undefined;
   } = {},
 ): Effect.Effect<WakeOutcome> =>
   Effect.gen(function* () {
@@ -196,7 +241,9 @@ export const wakeSignedIn = (
     if (isNotFound(read)) return "gone" as const;
     if (read.status === 404) return "retry" as const;
     if (read.status >= 300) return "refused" as const;
-    const phase = parseMachineStatus(read.body).phase;
+    const status = parseMachineStatus(read.body);
+    options.said?.(providerWordOf(status, Date.now()));
+    const phase = status.phase;
     if (phase !== "stopped" && phase !== "failed") {
       options.asleep?.delete(machine.name);
       return "awake" as const;

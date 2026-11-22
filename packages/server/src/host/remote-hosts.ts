@@ -3,6 +3,7 @@ import {
   HostUnavailable,
   type HostId,
   type HostStatus,
+  type MachineProviderWord,
   type MachineState,
 } from "@gram/contracts";
 import * as Context from "effect/Context";
@@ -75,6 +76,14 @@ const hostedOf = (
   return { hosted: { name: machine.viaName, ...(logo === undefined ? {} : { logo }) } };
 };
 
+/** Whether two provider words say the same, whenever each was heard: the first is kept. */
+export const sameWord = (
+  a: MachineProviderWord | undefined,
+  b: MachineProviderWord | undefined,
+): boolean =>
+  JSON.stringify(a === undefined ? a : { ...a, at: 0 }) ===
+  JSON.stringify(b === undefined ? b : { ...b, at: 0 });
+
 /** How old a status check may be before a listing asks the machine again. */
 export const SIGN_IN_FRESH_MS = 60_000;
 
@@ -116,6 +125,12 @@ export interface RemoteHostsShape {
    * it is told again each time the server is asked for.
    */
   readonly hostedLogo?: (origin: string, logo: string | undefined) => void;
+  /**
+   * Keeps what whoever runs the machine last said of it (`MachineProviderWord`), for `states` to
+   * show while it is offline; undefined forgets it. Kept in memory only, and dropped as it dials
+   * in: what the provider says is asked again whenever it matters.
+   */
+  readonly providerSaid?: (id: HostId, word: MachineProviderWord | undefined) => void;
   /**
    * Runs `ready` when a machine's host says it is about to be taken away (`host.stop.going`), with
    * how long it waits: the host holds its exit until every `ready` has ended, or that time has
@@ -214,6 +229,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const machines = createPairedMachines(store, now, nonces, changed);
       const online = new Map<HostId, Online>();
       const logos = new Map<string, string>();
+      const providerWords = new Map<HostId, MachineProviderWord>();
       let readAccess: (() => DialAccess) | undefined;
       const root = yield* Effect.scope;
       const context = yield* Effect.context<never>();
@@ -281,6 +297,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 ),
             },
       );
+      stops.onReady(() => changed());
       let automaticMemory: boolean | undefined;
       const automaticStore: AutomaticStore = options.automatic ?? {
         read: () => automaticMemory,
@@ -472,6 +489,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             };
             entry = live;
             online.set(machine.id, live);
+            providerWords.delete(machine.id);
             machines.note(machine.id, undefined);
             changed();
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
@@ -578,6 +596,10 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             .map((machine): MachineState => {
               const live = online.get(machine.id);
               const starting = stops.wantedSince(machine.id);
+              const restoring = live !== undefined && stops.owes(machine.id);
+              const stalled = restoring ? stops.stalled(machine.id) : undefined;
+              const paused = live === undefined ? stops.stoppedAt(machine.id) : undefined;
+              const provider = live === undefined ? providerWords.get(machine.id) : undefined;
               const { offline } = machineView(
                 machine,
                 live === undefined ? undefined : { since: live.since },
@@ -595,6 +617,10 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 ...(live === undefined ? {} : { onlineSince: live.since }),
                 ...(offline === undefined ? {} : { offline }),
                 ...(live !== undefined || starting === undefined ? {} : { starting }),
+                ...(live !== undefined && restoring ? { restoring: live.since } : {}),
+                ...(stalled === undefined ? {} : { stalled }),
+                ...(paused === undefined ? {} : { paused }),
+                ...(provider === undefined ? {} : { provider }),
                 ...hostedOf(machine, logos),
               };
             }),
@@ -602,6 +628,12 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           if (logos.get(origin) === logo) return;
           if (logo === undefined) logos.delete(origin);
           else logos.set(origin, logo);
+          changed();
+        },
+        providerSaid: (id, word) => {
+          if (sameWord(word, providerWords.get(id))) return;
+          if (word === undefined) providerWords.delete(id);
+          else providerWords.set(id, word);
           changed();
         },
         watch: (listener) => {
@@ -642,6 +674,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           try {
             const removed = machines.remove(id);
             stops.forget(id);
+            providerWords.delete(id);
             return removed;
           } finally {
             close(id);
