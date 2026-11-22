@@ -61,6 +61,7 @@ import { waitAppTools } from "./wait-tools.ts";
 import { showWidgetTool } from "./widget-tool.ts";
 import { moveToWorktreeTool } from "./worktree-tools.ts";
 import { forThread } from "../embedding/gh-thread.ts";
+import { type PendingCard, pendingCardsOf } from "./pending-cards.ts";
 
 export { defineAppTool, type AppToolDefinition } from "./definition.ts";
 
@@ -160,19 +161,6 @@ type Approved =
     }
   | { readonly kind: "joined"; readonly askedIn: ThreadId };
 
-interface PendingCard {
-  readonly threadId: ThreadId;
-}
-
-const pendingCards = new WeakMap<ApprovalGate, Map<string, PendingCard>>();
-const pendingCardsOf = (gate: ApprovalGate): Map<string, PendingCard> => {
-  const known = pendingCards.get(gate);
-  if (known !== undefined) return known;
-  const made = new Map<string, PendingCard>();
-  pendingCards.set(gate, made);
-  return made;
-};
-
 /** What a call gets that joined its caller's own waiting card (`sharedCard`): it did nothing. */
 export const askedElsewhere = (tool: string, askedIn: ThreadId) => ({
   askedElsewhere: askedIn,
@@ -270,15 +258,18 @@ export const bindAppTools = (
     const refuseInstead =
       delegatedCall === undefined ? undefined : definition.refuseInsteadOfAsking;
     const sharedCardOf = definition.sharedCard;
+    const hostDecides = definition.hostDecides === true;
     const approve = (
       decoded: unknown,
       target: unknown,
       act: (call: AppToolCall) => Effect.Effect<unknown, AppToolError>,
+      decidedByHost: boolean,
     ): Effect.Effect<Approved, AppToolError> => {
       const acted = (carded: boolean | undefined, why: AskedDespiteAutonomy | undefined) =>
         act({ carded }).pipe(Effect.map((result): Approved => ({ kind: "acted", result, why })));
       return Effect.gen(function* () {
         if (gate === undefined) return yield* acted(undefined, undefined);
+        if (hostDecides && decidedByHost) return yield* acted(false, undefined);
         const asked =
           asksPerCall === undefined ? undefined : yield* asksPerCall(threadId, decoded, target);
         const delegated =
@@ -483,8 +474,9 @@ export const bindAppTools = (
             const target = yield* resolve(decoded);
             const decision =
               guard === undefined ? undefined : definition.decision?.(threadId, target);
+            let decidedByHost = false;
             if (guard !== undefined && decision !== undefined) {
-              yield* guard(
+              decidedByHost = yield* guard(
                 threadId,
                 { ...decision, initiator: "agent" },
                 (describeCall === undefined
@@ -510,8 +502,11 @@ export const bindAppTools = (
                 ),
               );
             }
-            const approved = yield* approve(decoded, target, (call) =>
-              definition.handle(threadId, target, call).pipe(forThread(threadId)),
+            const approved = yield* approve(
+              decoded,
+              target,
+              (call) => definition.handle(threadId, target, call).pipe(forThread(threadId)),
+              decidedByHost,
             );
             if (approved.kind === "joined")
               return askedElsewhere(descriptor.name, approved.askedIn);
