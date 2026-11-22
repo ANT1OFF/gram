@@ -30,6 +30,16 @@ export interface TreeChartProps {
   stackLeaves?: boolean;
   /** Opens zoomed out to fit its frame, never below half size, then brings `focusId` into view. */
   fit?: boolean;
+  /**
+   * `vertical` draws the top at the top with children below; `horizontal` draws the top at the left
+   * with children in a column to its right, which suits a wide frame and many siblings.
+   */
+  orientation?: "vertical" | "horizontal";
+  /**
+   * Opens zoomed so `focusId` shows with the entries above it and its open children, never below
+   * three quarters size, and draws the entries off that line dimmer.
+   */
+  fitFocus?: boolean;
   className?: string;
   testId?: string;
 }
@@ -39,6 +49,7 @@ const GAP_Y = 40;
 const GAP_STACK = 8;
 const INDENT = 24;
 const FIT_FLOOR = 0.5;
+const FOCUS_FLOOR = 0.75;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 1.5;
 
@@ -53,6 +64,16 @@ export interface Placed {
   /** How many entries are folded away under it. */
   readonly hidden: number;
 }
+
+/** The ids from the top down to `id`, `id` included; empty when it is not in the tree. */
+export const pathTo = (nodes: readonly TreeNode[], id: string): string[] => {
+  for (const node of nodes) {
+    if (node.id === id) return [node.id];
+    const below = pathTo(node.children ?? [], id);
+    if (below.length > 0) return [node.id, ...below];
+  }
+  return [];
+};
 
 const countAll = (node: TreeNode): number =>
   (node.children ?? []).reduce((sum, child) => sum + 1 + countAll(child), 0);
@@ -137,6 +158,8 @@ export function TreeChart({
   height = "32rem",
   stackLeaves = true,
   fit: fitted = false,
+  orientation = "vertical",
+  fitFocus = false,
   className,
   testId,
 }: TreeChartProps) {
@@ -148,7 +171,32 @@ export function TreeChart({
   const [zoom, setZoom] = useState(1);
   const frame = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; left: number; top: number } | undefined>(undefined);
-  const { placed, width, height: tall } = layOut(nodes, open, nodeWidth, nodeHeight, stackLeaves);
+  const across = orientation === "horizontal";
+  const laid = across
+    ? layOut(nodes, open, nodeHeight, nodeWidth, false)
+    : layOut(nodes, open, nodeWidth, nodeHeight, stackLeaves);
+  const placed: Placed[] = across
+    ? laid.placed.map((entry) => ({
+        ...entry,
+        x: entry.y,
+        y: entry.x,
+        ...(entry.parent === undefined ? {} : { parent: { x: entry.parent.y, y: entry.parent.x } }),
+      }))
+    : laid.placed;
+  const width = across ? laid.height : laid.width;
+  const tall = across ? laid.width : laid.height;
+  const line = focusId === undefined ? [] : pathTo(nodes, focusId);
+  const onLine = new Set(line);
+  const focusNode = placed.find((entry) => entry.node.id === focusId);
+  for (const child of focusNode !== undefined && open(focusNode.node.id)
+    ? (focusNode.node.children ?? [])
+    : [])
+    onLine.add(child.id);
+  const region = placed.filter((entry) => onLine.has(entry.node.id));
+  const left0 = Math.min(...region.map((entry) => entry.x));
+  const right0 = Math.max(...region.map((entry) => entry.x + nodeWidth));
+  const top0 = Math.min(...region.map((entry) => entry.y));
+  const bottom0 = Math.max(...region.map((entry) => entry.y + nodeHeight));
   const toggle = (id: string) => {
     const next = new Set(shown);
     if (next.has(id)) next.delete(id);
@@ -170,15 +218,52 @@ export function TreeChart({
     const whole = Math.min((box.clientWidth - 32) / width, (box.clientHeight - 32) / tall, 1);
     setZoom(clamp(Math.max(FIT_FLOOR, whole)));
   };
+  const focusedOnce = useRef(false);
+  const holdFocusFrame = (box: HTMLDivElement | null) => {
+    holdFrame(box);
+    if (box === null || !fitFocus || focusedOnce.current || region.length === 0) return;
+    focusedOnce.current = true;
+    const spans = Math.min(
+      (box.clientWidth - 32) / (right0 - left0),
+      (box.clientHeight - 32) / (bottom0 - top0),
+      1,
+    );
+    setZoom(clamp(Math.max(FOCUS_FLOOR, spans)));
+  };
   const focused = placed.find((entry) => entry.node.id === focusId);
-  const focusLeft = focused === undefined ? undefined : (focused.x + nodeWidth / 2) * zoom;
-  const focusTop = focused === undefined ? undefined : focused.y * zoom;
+  const focusX = focused?.x;
+  const focusY = focused?.y;
+  const hasRegion = fitFocus && region.length > 0;
   useLayoutSync(() => {
     const box = frame.current;
-    if (box === null || focusLeft === undefined || focusTop === undefined) return;
-    box.scrollLeft = Math.max(0, focusLeft - box.clientWidth / 2);
-    box.scrollTop = Math.max(0, focusTop - 48);
-  }, [focusLeft, focusTop]);
+    if (box === null || focusX === undefined || focusY === undefined) return;
+    if (
+      hasRegion &&
+      (right0 - left0) * zoom <= box.clientWidth - 32 &&
+      (bottom0 - top0) * zoom <= box.clientHeight - 32
+    ) {
+      box.scrollLeft = Math.max(0, ((left0 + right0) / 2) * zoom - box.clientWidth / 2);
+      box.scrollTop = Math.max(0, ((top0 + bottom0) / 2) * zoom - box.clientHeight / 2);
+      return;
+    }
+    box.scrollLeft = Math.max(0, (focusX + nodeWidth / 2) * zoom - box.clientWidth / 2);
+    box.scrollTop = Math.max(
+      0,
+      across ? (focusY + nodeHeight / 2) * zoom - box.clientHeight / 2 : focusY * zoom - 48,
+    );
+  }, [
+    focusX,
+    focusY,
+    zoom,
+    hasRegion,
+    left0,
+    right0,
+    top0,
+    bottom0,
+    nodeWidth,
+    nodeHeight,
+    across,
+  ]);
   return (
     <div className={cn("flex flex-col gap-2", className)} data-testid={testId}>
       <div className="flex items-center gap-1" role="group" aria-label={`${label}: zoom`}>
@@ -209,7 +294,7 @@ export function TreeChart({
         </Button>
       </div>
       <div
-        ref={holdFrame}
+        ref={holdFocusFrame}
         role="tree"
         aria-label={label}
         className="relative cursor-grab overflow-auto rounded-lg border border-edge-group bg-card active:cursor-grabbing"
@@ -255,9 +340,11 @@ export function TreeChart({
                   <path
                     key={entry.node.id}
                     d={
-                      entry.stacked
-                        ? `M${entry.parent.x + INDENT / 2},${entry.parent.y + nodeHeight} V${entry.y + nodeHeight / 2} H${entry.x}`
-                        : `M${entry.parent.x + nodeWidth / 2},${entry.parent.y + nodeHeight} V${entry.y - GAP_Y / 2} H${entry.x + nodeWidth / 2} V${entry.y}`
+                      across
+                        ? `M${entry.parent.x + nodeWidth},${entry.parent.y + nodeHeight / 2} H${entry.x - GAP_Y / 2} V${entry.y + nodeHeight / 2} H${entry.x}`
+                        : entry.stacked
+                          ? `M${entry.parent.x + INDENT / 2},${entry.parent.y + nodeHeight} V${entry.y + nodeHeight / 2} H${entry.x}`
+                          : `M${entry.parent.x + nodeWidth / 2},${entry.parent.y + nodeHeight} V${entry.y - GAP_Y / 2} H${entry.x + nodeWidth / 2} V${entry.y}`
                     }
                     fill="none"
                     stroke="currentColor"
@@ -280,6 +367,7 @@ export function TreeChart({
                   className={cn(
                     "absolute flex flex-col justify-center overflow-hidden rounded-md border bg-background px-2",
                     entry.node.id === focusId ? "border-ring ring-2 ring-ring" : "border-border",
+                    fitFocus && focusId !== undefined && !onLine.has(entry.node.id) && "opacity-50",
                   )}
                   style={{ left: entry.x, top: entry.y, width: nodeWidth, height: nodeHeight }}
                 >
