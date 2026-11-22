@@ -177,7 +177,6 @@ export function createSettingsSync(options: SettingsSyncOptions) {
     timer = setTimeout(() => void flush(), debounceMs);
   };
 
-  /** The server's palettes, or `undefined` where they aren't read. */
   const readPalettes = async () => (onServer ? await api.listPalettes() : undefined);
 
   let listening = false;
