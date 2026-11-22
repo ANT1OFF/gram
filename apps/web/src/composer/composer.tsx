@@ -1339,7 +1339,8 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
                 </PressScale>,
               )
             ) : (
-              <PressScale>
+              // On a phone a thumb aimed at Steer must not land on Stop: a wider gap between them.
+              <PressScale className="phone:ml-3">
                 <Hint
                   label={actionLabels.stop.hint}
                   render={
