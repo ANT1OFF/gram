@@ -1309,6 +1309,8 @@ export function ApprovalCard({
               data-testid="approval-deny"
               disabled={pending}
               onClick={deny}
+              // A bare word on a phone reads as a caption under the stacked buttons: outline it.
+              className="phone:border-border dark:phone:border-input"
             >
               {DENY} <CardKbd id="approval.deny" />
             </Button>
