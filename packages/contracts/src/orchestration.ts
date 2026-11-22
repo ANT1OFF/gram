@@ -1325,7 +1325,7 @@ const questionLines = (
         ...questionBody(question),
         question.stage === "dismissed"
           ? `dismissed by the user${at}${question.reason === undefined ? ", no reason given" : `: ${quoted(question.reason, DIGEST_QUESTION_MAX)}`}`
-          : `answered by the user${question.recordedBy === "worker" ? " in a message to the worker, which recorded it word for word" : ""}${at}: ${quoted(question.answer ?? "", DIGEST_QUESTION_MAX)}`,
+          : `${question.revised === true ? "answer changed by the user" : "answered by the user"}${question.recordedBy === "worker" ? " in a message to the worker, which recorded it word for word" : ""}${at}: ${quoted(question.answer ?? "", DIGEST_QUESTION_MAX)}${question.revised === true ? ". This replaces the answer you had: pass the change on to any worker you told the earlier one." : ""}`,
         question.delivered === undefined
           ? "No worker notification is recorded; the user's decision is still closed. Do not reopen or wake an archived worker."
           : `Worker notification: ${question.delivered}.`,

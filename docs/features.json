@@ -169,13 +169,15 @@
       "purpose": "Cards for actions the autonomy level holds back and questions a worker asks, answered in the thread or the Inbox.",
       "code": [
         "apps/web/src/orchestration/ask-*",
+        "apps/web/src/thread/worker-question-card.tsx",
         "packages/server/src/runtime/server-approvals.ts",
         "packages/server/src/app-tools/**",
         "packages/server/src/waits/**"
       ],
       "tests": [
         "apps/web/src/orchestration/ask-*.test.ts",
-        "apps/web/e2e/{approval,ask}*.spec.ts",
+        "apps/web/src/thread/worker-question-card.test.tsx",
+        "apps/web/e2e/{approval,ask,worker-question}*.spec.ts",
         "packages/server/src/app-tools/**/*.test.ts"
       ],
       "docs": [

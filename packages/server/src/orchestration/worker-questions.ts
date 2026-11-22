@@ -93,7 +93,7 @@ export const triageCutShort = (question: StoredWorkerQuestion): boolean =>
 export interface QuestionRefusal {
   readonly refused: string;
   /** `refusal()`'s code, for a tool's message. */
-  readonly code: "unknown_question" | "closed" | "forwarded" | "not_yours";
+  readonly code: "unknown_question" | "closed" | "forwarded" | "not_yours" | "stale_revision";
 }
 
 const closedRefusal = (question: StoredWorkerQuestion): QuestionRefusal => ({
@@ -150,6 +150,24 @@ export const answeredByOrchestrator = (
       refused: `${question.id} has been forwarded to the user, so it is theirs to answer now.`,
     };
   }
+  if (isOrchestratorAnswer(question)) {
+    return question.answer === answer && question.source === source
+      ? question
+      : {
+          ...withoutDelivery(question),
+          answer,
+          source,
+          closedAt: at,
+          revised: true,
+          deliveryOwed: true,
+        };
+  }
+  if (question.stage === "answered" && question.closedBy === "user") {
+    return {
+      code: "closed",
+      refused: `${question.id} was answered by the user, so only they can change its answer.`,
+    };
+  }
   if (question.stage !== "triage") return closedRefusal(question);
   return {
     ...question,
@@ -159,6 +177,54 @@ export const answeredByOrchestrator = (
     source,
     closedAt: at,
     deliveryOwed: true,
+  };
+};
+
+const isOrchestratorAnswer = (question: StoredWorkerQuestion): boolean =>
+  question.stage === "answered" &&
+  question.closedBy === "orchestrator" &&
+  question.withdrawal === undefined;
+
+const withoutDelivery = (question: StoredWorkerQuestion): StoredWorkerQuestion => {
+  const { delivered: _, ...rest } = question;
+  return rest;
+};
+
+/**
+ * The answer the user changed from a card (`recordedBy` absent) or in a message an agent recorded:
+ * only an answered question's, and only the one they saw (`closedAt`), so a card that missed a newer
+ * answer can't overwrite it. The orchestrator gets the copy; the worker the new answer, unless it
+ * recorded it itself. The answer the user changes may be the orchestrator's.
+ */
+export const revisedByUser = (
+  question: StoredWorkerQuestion,
+  answer: string,
+  at: number,
+  seen: { readonly closedAt: number | undefined },
+  recordedBy?: "worker" | "orchestrator" | undefined,
+): StoredWorkerQuestion | QuestionRefusal => {
+  if (question.stage !== "answered" || question.withdrawal !== undefined) {
+    return isOpenQuestion(question)
+      ? { code: "forwarded", refused: `${question.id} has no answer yet to change.` }
+      : closedRefusal(question);
+  }
+  if (question.closedAt !== seen.closedAt) {
+    return {
+      code: "stale_revision",
+      refused: `${question.id}'s answer changed since you saw it: it is now “${question.answer ?? ""}”. Nothing was changed; look at that answer first.`,
+    };
+  }
+  if (question.answer === answer && question.closedBy === "user") return question;
+  const { recordedBy: _by, source: _source, ...rest } = withoutDelivery(question);
+  return {
+    ...rest,
+    answer,
+    closedBy: "user",
+    ...(recordedBy === undefined ? {} : { recordedBy }),
+    closedAt: at,
+    revised: true,
+    copyOwed: true,
+    ...(recordedBy === "worker" ? {} : { deliveryOwed: true as const }),
   };
 };
 
