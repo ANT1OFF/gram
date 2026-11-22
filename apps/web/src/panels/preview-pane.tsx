@@ -9,12 +9,14 @@ import {
   type PreviewState,
   type ThreadId,
 } from "@gram/contracts";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
   ExternalLink,
   Globe,
+  History,
+  PictureInPicture2,
   Pin,
   Radio,
   RotateCw,
@@ -24,6 +26,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
+import { useExternalSync } from "@/lib/effects";
 import { openContentUrl } from "@/api/open-external";
 import { Button } from "@/components/ui/button";
 import { spin } from "@/motion";
@@ -34,6 +37,7 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { errorMessage } from "@/api/errors";
 
+import { FileQuickLook, useFileWrites } from "./files/file-quick-look";
 import { showFileAt } from "./files/files-store";
 import { MarkdownPreview } from "./files/markdown-preview";
 import { markdownRoot } from "@/thread/preview-files";
@@ -155,14 +159,27 @@ function ShellPreview({
   }, [bridge, threadId, pageId, adoptPreviewPage]);
 
   const file = page?.file;
+  const writes = useFileWrites(threadId, file ?? "");
   const filePreview = useQuery({
-    queryKey: ["preview-file", threadId, file, pageId],
+    queryKey: ["preview-file", threadId, file, pageId, writes.count],
     queryFn: () => api.previewFile(threadId, file!),
     enabled: file !== undefined,
     retry: false,
     staleTime: Infinity,
+    placeholderData: keepPreviousData,
   });
+  const [poppedOut, setPoppedOut] = useState(false);
+  const written =
+    file !== undefined && previewFileKind(file) === "markdown" ? writes.content : undefined;
+  const gone = filePreview.isError && Reflect.get(filePreview.error, "_tag") === "NotFound";
   const markdown = filePreview.data?.kind === "markdown" ? filePreview.data : undefined;
+  const htmlWrites = filePreview.data?.kind === "html" ? writes.count : undefined;
+  const firstHtmlWrites = useRef(htmlWrites);
+  useExternalSync(() => {
+    if (htmlWrites === undefined || htmlWrites === firstHtmlWrites.current) return;
+    firstHtmlWrites.current = htmlWrites;
+    bridge?.reload(threadId);
+  }, [bridge, threadId, htmlWrites]);
   const at = page?.at ?? "";
   const pageUrl =
     file === undefined
@@ -409,6 +426,16 @@ function ShellPreview({
             bridge?.handBack === undefined ? undefined : () => bridge.handBack?.(threadId)
           }
         />
+        {file !== undefined && (
+          <ToolButton
+            label="Pop out: read it in a window over the app"
+            disabled={false}
+            testId="preview-pop-out"
+            onClick={() => setPoppedOut(true)}
+          >
+            <PictureInPicture2 />
+          </ToolButton>
+        )}
         {pinnable && (
           <ToolButton
             label="Pin to Pages: keep a copy of this page in Gram"
@@ -478,10 +505,32 @@ function ShellPreview({
             inspection={current.browserInspection}
             onClose={() => setInspecting(false)}
           />
+        ) : fileFailed && written !== undefined ? (
+          <div data-testid="preview-written" className="min-h-0 flex-1 overflow-auto">
+            <p className="m-2 flex items-start gap-2 rounded-md border border-dashed border-edge px-3 py-2 text-meta text-muted-foreground">
+              <History aria-hidden className="mt-0.5 size-icon-row shrink-0" />
+              <span>
+                {gone
+                  ? "No longer in the thread's folder: it may have switched branch or removed the file since."
+                  : `It can't be read now: ${errorMessage(filePreview.error)}.`}{" "}
+                This is what it last wrote there, from the conversation.
+              </span>
+            </p>
+            <MarkdownPreview
+              key={`written:${file}`}
+              threadId={threadId}
+              root={markdownRoot(file!, roots)}
+              path={file!}
+              content={written}
+              onOpen={(target) => showFileAt(threadId, roots, target)}
+            />
+          </div>
         ) : fileFailed ? (
           <div data-testid="preview-error" className="flex flex-col items-center gap-2">
             <PanelMessage>
-              {file} can't be shown: {errorMessage(filePreview.error)}
+              {gone
+                ? `${file} is no longer in the thread's folder: it may have switched branch or removed the file since.`
+                : `${file} can't be shown: ${errorMessage(filePreview.error)}`}
             </PanelMessage>
           </div>
         ) : markdown !== undefined ? (
@@ -541,6 +590,9 @@ function ShellPreview({
           )
         )}
       </div>
+      {poppedOut && file !== undefined && (
+        <FileQuickLook threadId={threadId} path={file} onClose={() => setPoppedOut(false)} />
+      )}
     </div>
   );
 }

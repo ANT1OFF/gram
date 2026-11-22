@@ -1,0 +1,42 @@
+{
+  "title": "Previewing a worker's file",
+  "slug": "worker-file-preview",
+  "status": "approved",
+  "template": "options",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-22"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Sheet over the pane",
+      "board": "a-sheet-over-the-pane",
+      "shots": {
+        "dark": "shots/a-sheet-dark.png",
+        "light": "shots/a-sheet-light.png"
+      }
+    },
+    {
+      "name": "B Quick look window",
+      "board": "b-quick-look-window",
+      "shots": {
+        "dark": "shots/b-quick-look-dark.png",
+        "light": "shots/b-quick-look-light.png"
+      }
+    },
+    {
+      "name": "C Inline in the transcript",
+      "board": "c-inline-in-the-transcript",
+      "shots": {
+        "dark": "shots/c-inline-dark.png",
+        "light": "shots/c-inline-light.png"
+      }
+    }
+  ],
+  "approvedDirection": "B Quick look window"
+}

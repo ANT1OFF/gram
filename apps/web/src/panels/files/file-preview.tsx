@@ -1,7 +1,7 @@
-import type { ThreadId } from "@gram/contracts";
+import type { FsFile, ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { FileCode, FolderOpen, SquareArrowUpRightExit, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { FileCode, FolderOpen, History, SquareArrowUpRightExit, X } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { BundledLanguage } from "shiki";
 
 import { useApi } from "@/api/context";
@@ -23,6 +23,23 @@ import { ImagePreview } from "./image-preview";
 import { MarkdownPreview } from "./markdown-preview";
 import { isImagePath, isMarkdownPath } from "./relative-path";
 
+const errorTag = (error: unknown): unknown =>
+  typeof error === "object" && error !== null ? Reflect.get(error, "_tag") : undefined;
+
+const writtenFileRead = (path: string, content: string): FsFile => ({
+  path,
+  size: new TextEncoder().encode(content).length,
+  binary: false,
+  tooLarge: false,
+  content,
+  ...(/\.html?$/i.test(path) ? { language: "html" } : {}),
+});
+
+const keepWhileRereading =
+  (path: string) =>
+  <T,>(previous: T | undefined, previousQuery: { queryKey: readonly unknown[] } | undefined) =>
+    previousQuery?.queryKey[2] === path ? previous : undefined;
+
 const VIEWS = [
   { value: "preview", label: "Preview" },
   { value: "source", label: "Source" },
@@ -42,6 +59,9 @@ export function FilePreview({
   end,
   reveals,
   elsewhere = false,
+  writes,
+  written,
+  actions,
   onClose,
 }: {
   threadId: ThreadId;
@@ -54,6 +74,18 @@ export function FilePreview({
   end?: number | undefined;
   /** A new value scrolls back to `line` even when it hasn't changed. */
   reveals?: number | undefined;
+  /**
+   * How many times the thread has written the file: a new count reads it again, keeping what was
+   * shown until the new text is in, so a preview follows the agent's edits.
+   */
+  writes?: number | undefined;
+  /**
+   * The text the thread last wrote to it, from its transcript: shown, and said to be, when the file
+   * can't be read (the agent switched branch or deleted it, or its machine is away).
+   */
+  written?: string | undefined;
+  /** Before the size and Close: what the place showing the file adds (where it is, a pop out). */
+  actions?: ReactNode;
   onClose: () => void;
 }) {
   const api = useApi();
@@ -71,14 +103,19 @@ export function FilePreview({
   const revealInFileManager = useRevealInFileManager();
   const local = useOpensLocally();
   const query = useQuery({
-    queryKey: ["fs.file", threadId, path],
+    queryKey:
+      writes === undefined ? ["fs.file", threadId, path] : ["fs.file", threadId, path, writes],
     queryFn: () => api.fsFile(path, { threadId }),
     enabled: !image,
     retry: false,
+    placeholderData: keepWhileRereading(path),
   });
+  const failed = query.status === "error";
+  const gone = failed && errorTag(query.error) === "NotFound";
+  const fallback = failed && written !== undefined;
   const relative = path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
   const scope = elsewhere ? {} : { threadId };
-  const file = image ? undefined : query.data;
+  const file = image ? undefined : fallback ? writtenFileRead(path, written) : query.data;
   const reveal = revealLabel();
   const content = file?.content;
 
@@ -99,7 +136,7 @@ export function FilePreview({
         <Shimmer>Loading…</Shimmer>
       </PanelMessage>
     );
-  } else if (query.status === "error") {
+  } else if (failed && !fallback) {
     body = <PanelMessage>{filesProblem(query.error)}</PanelMessage>;
   } else if (file?.binary) {
     body = <PanelMessage>Binary file · {formatSize(file.size)}</PanelMessage>;
@@ -126,6 +163,26 @@ export function FilePreview({
         highlightLine={line}
         highlightEnd={end}
       />
+    );
+  }
+
+  if (fallback) {
+    body = (
+      <>
+        <p
+          data-testid="file-preview-written"
+          className="m-2 flex items-start gap-2 rounded-md border border-dashed border-edge px-3 py-2 text-meta text-muted-foreground"
+        >
+          <History aria-hidden className="mt-0.5 size-icon-row shrink-0" />
+          <span>
+            {gone
+              ? "No longer in the thread's folder: it may have switched branch or removed the file since."
+              : filesProblem(query.error)}{" "}
+            This is what it last wrote there, from the conversation.
+          </span>
+        </p>
+        {body}
+      </>
     );
   }
 
@@ -166,6 +223,7 @@ export function FilePreview({
             ))}
           </div>
         )}
+        {actions}
         {file && <span className="shrink-0 text-muted-foreground">{formatSize(file.size)}</span>}
         {local && (
           <>
