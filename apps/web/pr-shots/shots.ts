@@ -925,7 +925,6 @@ const STEER_STATE_SHOTS: readonly Shot[] = [
       await page.getByTestId("question-card").waitFor();
       await page.getByTestId("inbox-button").click();
       await page.getByTestId("inbox").waitFor();
-      await page.waitForTimeout(600);
     },
   },
   {
@@ -935,7 +934,6 @@ const STEER_STATE_SHOTS: readonly Shot[] = [
       await atPhone(page);
       await page.goto("/t/t-question");
       await page.getByTestId("question-card").waitFor();
-      await page.waitForTimeout(600);
     },
   },
   {
@@ -944,7 +942,6 @@ const STEER_STATE_SHOTS: readonly Shot[] = [
     open: async (page) => {
       await atPhone(page);
       await openFlakyAtApproval(page);
-      await page.waitForTimeout(600);
     },
   },
   {

@@ -609,9 +609,7 @@ function CardShell({
         "border border-status-needs-mark/70 bg-card text-reading outline-none focus-visible:focus-ring",
         compact
           ? "rounded-(--radius-md) p-2"
-          : // On a phone the card grows with its question and the transcript scrolls: a nested
-            // half-height scroller there hides choices behind a second swipe.
-            "flex max-h-[calc(var(--pane-height,100vh)*0.5)] flex-col rounded-(--radius-lg) p-3 shadow-(--shadow-raised) phone:max-h-none",
+          : "flex max-h-[calc(var(--pane-height,100vh)*0.5)] flex-col rounded-(--radius-lg) p-3 shadow-(--shadow-raised) phone:max-h-none",
       )}
     >
       <h3
@@ -1309,7 +1307,6 @@ export function ApprovalCard({
               data-testid="approval-deny"
               disabled={pending}
               onClick={deny}
-              // A bare word on a phone reads as a caption under the stacked buttons: outline it.
               className="phone:border-border dark:phone:border-input"
             >
               {DENY} <CardKbd id="approval.deny" />
