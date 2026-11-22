@@ -240,6 +240,7 @@ The [wire shapes](../packages/contracts/src/embedding.ts) are version 1.
 | A push, and opening, merging or closing a pull request, a release | An agent's own shell command, read as the [outward gate](../packages/agents/src/outward.ts) reads it; the app's Push and pull request buttons |
 | A connector's call                                                | A Claude agent's call to any MCP server but Gram's own                                                                                        |
 | A spawn, and arming a merge                                       | The orchestrator's `spawn_worker` and `merge_when_ready`, and a thread's `set_auto_merge`                                                     |
+| A reply in a host's conversation (`conversation.reply`)           | The `reply` tool, with the conversation, the text and each file's name, type, size and SHA-256, before anything is sent                       |
 
 - `allow` on an agent's command answers it with no card. On one of Gram's own tools it leaves the
   call to the approval Gram would have asked for anyway.

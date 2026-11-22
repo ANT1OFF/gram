@@ -106,7 +106,11 @@ const gateOf = (outside: OutsideAllowed) => ({
 
 const megabytes = (bytes: number) => Math.max(1, Math.round(bytes / 2 ** 20));
 
-const fetchFile = (
+/**
+ * A file the agent sends (`send_file`, a reply's files), read on this machine relative to `cwd`:
+ * one that may hold credentials is refused, as is one over `maxBytes`.
+ */
+export const fetchSentFile = (
   path: string,
   cwd: string,
   maxBytes: number,
@@ -196,7 +200,7 @@ export const fileReadsOn = (proc: ProcShape): HostFileReads => {
         return { files, unchecked: [...unchecked] };
       }),
     vocabulary: (root) => on(sources(root)),
-    fetch: fetchFile,
+    fetch: fetchSentFile,
     part: filePart,
   };
 };

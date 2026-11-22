@@ -19,6 +19,7 @@ import { EventHub, isThreadRemoved } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { EventSink } from "./event-sink.ts";
+import { keepReplyFiles, type ReplyFile } from "./reply-files.ts";
 
 /** What a reply hears where the server has no host to send it to. */
 export const NO_HOST = "This server sends no replies: it has no embedding host's event sink.";
@@ -45,15 +46,17 @@ export interface ConversationsShape {
     ids: ReadonlyArray<string>,
   ) => Effect.Effect<void, InvalidState>;
   /**
-   * Sends `text` to conversation `id` through the host, as `threadId`, which must own it. `key`
-   * makes the reply's id, so a call sent again is one reply.
+   * Sends `text`, and `files` with it, to conversation `id` through the host, as `threadId`, which
+   * must own it. `key` makes the reply's id, so a call sent again is one reply. The files are kept
+   * for the host to read back by the reply's id (`/embed/v1/conversation-files`).
    */
   readonly reply: (
     threadId: ThreadId,
     id: string,
     text: string,
     key: string,
-  ) => Effect.Effect<{ readonly id: string }, InvalidState>;
+    files?: ReadonlyArray<ReplyFile>,
+  ) => Effect.Effect<{ readonly id: string; readonly kept: ReadonlyArray<string> }, InvalidState>;
 }
 
 const owns = (thread: Pick<Thread, "conversations">, id: string) =>
@@ -158,7 +161,7 @@ export class Conversations extends Context.Service<Conversations, ConversationsS
           }),
         );
 
-      const reply: ConversationsShape["reply"] = (threadId, id, text, key) =>
+      const reply: ConversationsShape["reply"] = (threadId, id, text, key, files = []) =>
         Effect.gen(function* () {
           if (!(yield* on)) return yield* refuse(NO_HOST);
           if (text.trim() === "" || text.length > CONVERSATION_REPLY_MAX)
@@ -174,13 +177,30 @@ export class Conversations extends Context.Service<Conversations, ConversationsS
             .update(`${threadId}\0${id}\0${key}`)
             .digest("hex")
             .slice(0, 32);
+          const kept = yield* keepReplyFiles(config.dataDir, replyId, files).pipe(
+            Effect.mapError(refuse),
+          );
           yield* sink.record({
             type: "conversation.reply",
             threadId,
             ...(thread.workspaceId === undefined ? {} : { workspaceId: thread.workspaceId }),
-            data: { id: replyId, conversation: id, text },
+            data: {
+              id: replyId,
+              conversation: id,
+              text,
+              ...(files.length === 0
+                ? {}
+                : {
+                    files: files.map(({ name, mediaType, size, sha256 }) => ({
+                      name,
+                      mediaType,
+                      size,
+                      sha256,
+                    })),
+                  }),
+            },
           });
-          return { id: replyId };
+          return { id: replyId, kept };
         });
 
       yield* hub.internalEvents(isThreadRemoved, "conversations").pipe(

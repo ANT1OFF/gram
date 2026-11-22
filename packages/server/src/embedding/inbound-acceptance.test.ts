@@ -18,7 +18,7 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
-import { renameSync } from "node:fs";
+import { readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
@@ -398,6 +398,18 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
           { ...message, mode: "shout" },
           { ...message, conversation: { id: "has a space" } },
           { ...message, conversation: { id: "slack:C1", channel: "C1" } },
+          { ...message, attachments: {} },
+          { ...message, attachments: [{ name: "a.png", mediaType: "image/png", data: "%%%" }] },
+          { ...message, attachments: [{ name: "a.png", mediaType: "png", data: "AAAA" }] },
+          { ...message, attachments: [{ name: "a.png", mediaType: "image/png", data: "" }] },
+          {
+            ...message,
+            attachments: Array.from({ length: 11 }, () => ({
+              name: "a.txt",
+              mediaType: "text/plain",
+              data: "AAAA",
+            })),
+          },
         ]) {
           const refused = yield* call(at, "/embed/v1/thread-messages", { token: TOKEN, body });
           expect(refused.status).toBe(400);
@@ -455,6 +467,48 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
         });
         expect(fromChat.status).toBe(200);
         expect((yield* store.getThread(thread.id)).conversations).toEqual([conversation]);
+
+        // With files: kept in the thread's attachments folder and given to the agent as its own
+        // attachments are; sent again under its key, the same files at the same paths.
+        const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7]);
+        const quiet = yield* runtimes.create({
+          projectRoot: repo,
+          checkout: { kind: "main", path: repo },
+        });
+        const withFiles = {
+          ...message,
+          threadId: quiet.id,
+          key: "m-f",
+          text: "What is in the screenshot?",
+          attachments: [
+            { name: "screen shot.png", mediaType: "image/png", data: png.toString("base64") },
+            { name: "notes.md", mediaType: "text/markdown", data: btoa("# Notes") },
+          ],
+        };
+        expect(
+          (yield* call(at, "/embed/v1/thread-messages", { token: TOKEN, body: withFiles })).status,
+        ).toBe(200);
+        expect(
+          (yield* call(at, "/embed/v1/thread-messages", { token: TOKEN, body: withFiles })).status,
+        ).toBe(200);
+        const carried = yield* eventually(
+          "the files with the message",
+          Effect.sync(() => {
+            const found = control.sessions
+              .flatMap((each) => each.sent)
+              .filter((input) => input.text === withFiles.text);
+            return found.length > 0 && found;
+          }),
+        );
+        expect(carried).toHaveLength(1);
+        const attached = carried[0]!.attachments ?? [];
+        expect(attached.map(({ name, mediaType }) => ({ name, mediaType }))).toEqual([
+          { name: "screen shot.png", mediaType: "image/png" },
+          { name: "notes.md", mediaType: "text/markdown" },
+        ]);
+        for (const each of attached)
+          expect(each.path.startsWith(join(tmp, "data", "attachments", quiet.id) + "/")).toBe(true);
+        expect(readFileSync(attached[0]!.path).equals(png)).toBe(true);
 
         // At a card, neither a steer nor an interrupt goes past it: only the user's own composer's
         // does (`pastCard`), and the person's message waits for the turn's end.

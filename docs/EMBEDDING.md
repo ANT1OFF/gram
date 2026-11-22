@@ -520,6 +520,7 @@ POST /embed/v1/thread-interrupt
 - A stop is a person's Stop: a thread waiting out a provider limit stops waiting too, and a turn that meets a limit as it stops ends with the limit as its error. Nothing resumes the thread on its own after it; the person's next message does.
 - `404` for a thread the server doesn't have, `409` when it can't take the message now (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 20,000 characters.
 - `conversation` (`{ "id", "label"? }`) says the message came from one of the platform's own conversations: see [Conversations](#conversations).
+- `attachments` (`[{ "name", "mediaType", "data" }]`, `data` the file's bytes in base64) are files sent with the message, at most 10 and 32 MB together, each at most 20 MB. They are kept in the thread's attachments folder, as a file a person attaches is, and given to the agent the same way: an image as an image the model sees, any other file as one it can read. The platform chooses which kinds of file it sends; the server checks only the count, the sizes and that each is a media type. Sent again under its key, the message writes the same files at the same paths. The route takes a body of up to 44 MB.
 
 ## Conversations
 
@@ -533,7 +534,18 @@ POST /embed/v1/thread-messages
 
 - **The id** is the platform's, 1 to 200 printable characters with no space, and opaque to Gram. `label` (at most 120 characters) is how a person and the agent read where it is. The transcript shows "From Slack · #runbooks" under the message, and the agent reads a line above it naming the conversation and how to answer it.
 - **Who owns it.** The thread the platform first sends a message from it to owns it (`Thread.conversations`), unless another open thread already does: then the message is still delivered, and the agent is told another thread answers there. A thread owns at most 50.
-- **A reply** is the owner's `reply` tool, naming the conversation. It is sent as `conversation.reply` `{id, conversation, text}` on the event sink, for the platform to post; `id` is the reply's own. A thread that doesn't own the conversation is refused, so text one conversation's people wrote can't make an agent post in another. A thread at `supervised`, by its profile or its workspace, asks the user before each reply. With no event sink configured, the tool is absent; with hosted features off, it refuses.
+- **A reply** is the owner's `reply` tool, naming the conversation. It is sent as `conversation.reply` `{id, conversation, text, files?}` on the event sink, for the platform to post; `id` is the reply's own. A thread that doesn't own the conversation is refused, so text one conversation's people wrote can't make an agent post in another. A thread at `supervised`, by its profile or its workspace, asks the user before each reply. With no event sink configured, the tool is absent; with hosted features off, it refuses.
+- **Asked first.** With a [decision hook](DOCKER.md#decision-hook), every reply is asked about as `conversation.reply` before anything is sent, with `{conversation, text, files?}` as its detail: the platform's rules can let it through, refuse it or have a person approve it.
+- **Files with a reply.** `reply`'s `files` names up to 10 files on disk, 25 MB together, as `send_file` does. They are read once, before the hook is asked, so what is decided on is what goes out; a file that may hold credentials is refused. Each is named in the event's `files` as `{name, mediaType, size, sha256}`, and kept for 7 days, outside the thread's folder so a worker that closes as it replies leaves them behind. The platform reads each back in its place in `files`:
+
+```
+POST /embed/v1/conversation-files
+{ "reply": "<the reply's id>", "index": 0 }
+→ 200 { "name": "chart.png", "mediaType": "image/png", "size": 48213, "sha256": "…", "data": "<base64>" }
+```
+
+`404` when the server keeps no such file, or its bytes no longer match its `sha256`.
+
 - **Handing one on.** An orchestrator hands conversations it owns to a worker it spawns (`spawn_worker`'s `conversations`) and takes one back from its worker (`take_conversation`). A worker's go back to the orchestrator that spawned it when it closes, or to nobody when that orchestrator is gone. Each change is sent as `conversation.owner` `{conversation, owner?}`: send the conversation's next messages to `owner`.
 - **What it is not.** Ownership says who may reply, not who may read: the platform chooses which thread a message goes to.
 
