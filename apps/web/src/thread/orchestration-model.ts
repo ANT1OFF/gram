@@ -178,6 +178,24 @@ export const pauseText = (pause: Pick<OrchestrationPause, "reason" | "detail">):
 };
 
 /**
+ * Why an orchestrator stopped, when its own error paused it: the error's words, which the pause's
+ * generic detail ("open it to see why") only points at, and the step that brings it back. Said
+ * where the user resumes it. `undefined` for any other pause, which `pauseText` says.
+ */
+export const pausedOnErrorText = (
+  pause: Pick<OrchestrationPause, "reason">,
+  orchestrator: { readonly status: ThreadStatus; readonly thread: Pick<Thread, "lastError"> },
+): { readonly reason: string; readonly next: string } | undefined =>
+  pause.reason === "deliveryFailed" &&
+  orchestrator.status === "error" &&
+  orchestrator.thread.lastError !== undefined
+    ? {
+        reason: `The orchestrator stopped on an error: ${orchestrator.thread.lastError.text.trim()}`,
+        next: "Sort that out, then Resume to start it again. Gram also tries again by itself from time to time.",
+      }
+    : undefined;
+
+/**
  * What a pause does to the workers, after `pauseText`'s sentence. The user's own pause stops them
  * too, each once it has finished the step it is on, and `working` of them are still at work: finishing a
  * command, or the user's own. Any other pause stops only the orchestrator.

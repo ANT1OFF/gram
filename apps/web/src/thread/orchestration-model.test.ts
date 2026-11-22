@@ -15,6 +15,7 @@ import {
   pauseLeavesRunning,
   workerPauseHint,
   workerPauseLine,
+  pausedOnErrorText,
   pauseText,
   prLabel,
   roleDescription,
@@ -135,6 +136,26 @@ describe("digest words", () => {
         pendingRequests: [{ kind: "approval", ageMin: 12 }],
       }),
     ).toEqual(["held by you", "overlaps 1 other worker", "waiting 12m on approval"]);
+  });
+
+  it("names the orchestrator's own error where it is resumed, only when that error paused it", () => {
+    const lastError = {
+      kind: "unknown" as const,
+      retryable: true,
+      text: "The checkout has changes.",
+      at: 1,
+    };
+    const failed = { status: "error" as const, thread: { lastError } };
+    expect(pausedOnErrorText({ reason: "deliveryFailed" }, failed)?.reason).toContain(
+      lastError.text,
+    );
+    expect(pausedOnErrorText({ reason: "user" }, failed)).toBeUndefined();
+    expect(
+      pausedOnErrorText({ reason: "deliveryFailed" }, { ...failed, status: "idle" }),
+    ).toBeUndefined();
+    expect(
+      pausedOnErrorText({ reason: "deliveryFailed" }, { status: "error", thread: {} }),
+    ).toBeUndefined();
   });
 
   it("says why an orchestrator is paused, with the server's detail", () => {
