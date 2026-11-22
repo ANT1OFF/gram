@@ -116,6 +116,12 @@ export interface PairedMachine {
    * only with `via`. Absent on one registered before.
    */
   readonly viaName?: string;
+  /**
+   * Since when a relayed worker host is set aside (epoch ms): stopped there and needed by no thread
+   * here, so it is neither relayed nor listed, and kept whole (its key, id and stop records) for
+   * whatever takes it up again. Only with `via`.
+   */
+  readonly setAside?: number;
 }
 
 const isViaName = (name: unknown): name is string =>
@@ -292,6 +298,8 @@ const isMachine = (value: unknown): value is PairedMachine => {
         m["owner"] === undefined)) &&
     (m["viaAccount"] === undefined || (m["via"] !== undefined && isAccountMark(m["viaAccount"]))) &&
     (m["viaName"] === undefined || (m["via"] !== undefined && isViaName(m["viaName"]))) &&
+    (m["setAside"] === undefined ||
+      (m["via"] !== undefined && Number.isSafeInteger(m["setAside"]))) &&
     (m["answeredBy"] === undefined || (m["answeredBy"] === "members" && m["owner"] !== undefined))
   );
 };
@@ -690,6 +698,17 @@ export const createPairedMachines = (
       if (machine === undefined) return;
       const { claudeTokenSetAt: _was, ...rest } = machine;
       const next: PairedMachine = sent ? { ...rest, claudeTokenSetAt: now() } : rest;
+      save(machines.map((m) => (m === machine ? next : m)));
+    },
+    /**
+     * Sets a relayed worker host aside since `at`, or takes it back with undefined
+     * (`PairedMachine.setAside`). Nothing else of it changes.
+     */
+    setAside: (id: string, at: number | undefined): void => {
+      const machine = byId(id);
+      if (machine?.via === undefined || machine.setAside === at) return;
+      const { setAside: _was, ...rest } = machine;
+      const next: PairedMachine = at === undefined ? rest : { ...rest, setAside: at };
       save(machines.map((m) => (m === machine ? next : m)));
     },
     /** Records that Gram installed the machine at `target` over SSH, for its updates. */

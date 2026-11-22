@@ -1,16 +1,30 @@
 import type { ThreadId } from "@gram/contracts";
 import { FileText, LayoutDashboard } from "lucide-react";
+import { createContext, lazy, Suspense, useContext, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { closeBeside } from "@/orchestration/beside-store";
 import { useFeature } from "@/settings/use-diagnostics";
+import { useOpenThread } from "@/shell/thread-switcher";
 import { useLayoutStore } from "@/stores/layout";
 
 import type { PreviewableFile } from "./preview-files";
+
+const FileQuickLook = lazy(() =>
+  import("@/panels/files/file-quick-look").then((m) => ({ default: m.FileQuickLook })),
+);
 
 const KIND_LABEL = { markdown: "Markdown", html: "HTML page" } as const;
 
 const nameOf = (path: string) => path.split(/[\\/]/).at(-1) ?? path;
 const folderOf = (path: string) => path.slice(0, path.length - nameOf(path).length - 1);
+
+/**
+ * Where a file card's Preview shows the file: the Preview tab beside the thread (`tab`), or a
+ * window over the app (`window`) for a thread shown in the right pane, which has no Preview tab of
+ * its own. The worker pane sets `window`.
+ */
+export const FilePreviewPlace = createContext<"tab" | "window">("tab");
 
 /**
  * A folder's last part, behind an ellipsis when it is more than two deep: the card has room for where
@@ -23,15 +37,19 @@ export const nearFolder = (folder: string): string => {
 
 /**
  * A Markdown or HTML file the agent wrote, under the message that wrote it: Preview shows it rendered
- * in the Preview tab, or in the Files panel where there is no Preview tab. A long name wraps to a
- * second line rather than being cut, as a published page's card does.
+ * in the Preview tab, or in the Files panel where there is no Preview tab, or in a window over the
+ * app from a worker in the right pane. A long name wraps to a second line rather than being cut, as
+ * a published page's card does.
  */
 export function PreviewFileCard({ threadId, file }: { threadId: ThreadId; file: PreviewableFile }) {
   const previewPane = useFeature("previewPane");
   const previewFile = useLayoutStore((s) => s.previewFile);
+  const place = useContext(FilePreviewPlace);
+  const [looking, setLooking] = useState(false);
   const Icon = file.kind === "html" ? LayoutDashboard : FileText;
   const name = nameOf(file.path);
-  const open = () => previewFile(threadId, file.path, { previewPane });
+  const open = () =>
+    place === "window" ? setLooking(true) : previewFile(threadId, file.path, { previewPane });
   return (
     <div
       data-testid="preview-file-card"
@@ -61,6 +79,38 @@ export function PreviewFileCard({ threadId, file }: { threadId: ThreadId; file: 
       >
         Preview
       </Button>
+      {looking && (
+        <QuickLookFromPane threadId={threadId} path={file.path} onClose={() => setLooking(false)} />
+      )}
     </div>
+  );
+}
+
+function QuickLookFromPane({
+  threadId,
+  path,
+  onClose,
+}: {
+  threadId: ThreadId;
+  path: string;
+  onClose: () => void;
+}) {
+  const previewPane = useFeature("previewPane");
+  const previewFile = useLayoutStore((s) => s.previewFile);
+  const openThread = useOpenThread();
+  return (
+    <Suspense fallback={null}>
+      <FileQuickLook
+        threadId={threadId}
+        path={path}
+        onClose={onClose}
+        onOpenInTab={() => {
+          onClose();
+          closeBeside();
+          openThread(threadId);
+          previewFile(threadId, path, { previewPane, thread: true });
+        }}
+      />
+    </Suspense>
   );
 }

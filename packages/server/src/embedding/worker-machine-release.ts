@@ -23,6 +23,9 @@ import {
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
+import { WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
+import { setAsideReleased } from "./hosted-machine-set-aside.ts";
+import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 
 /**
  * The workers whose machine may be told its work is over: finished as the ledger reads them and
@@ -42,7 +45,7 @@ export const releasableWorkers = (
 /** How often worker machines are looked at. */
 export const WORKER_RELEASE_EVERY = Duration.minutes(2);
 /** How long a newly online machine is given before it can be released. */
-export const WORKER_RELEASE_SETTLE_MS = 30 * 60_000;
+export const WORKER_RELEASE_SETTLE_MS = WORKER_MACHINE_SETTLE_MS;
 
 /** A joined machine as this reads it. */
 export interface ReleaseMachine {
@@ -284,6 +287,7 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
+    const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const told = new Map<string, { readonly released: boolean; readonly at: number }>();
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
@@ -326,6 +330,24 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
           );
         }
       }
+      const aside = signedIn?.setAside;
+      if (aside === undefined || runtimes === undefined) return;
+      const isAside = (machine: ReleaseMachine) =>
+        remote.machines.get(machine.id)?.setAside !== undefined;
+      const candidates = machines.filter(
+        (machine) =>
+          machine.via !== undefined &&
+          machine.onlineSince === undefined &&
+          !isAside(machine) &&
+          told.get(toldKey(machine))?.released === true,
+      );
+      yield* setAsideReleased(
+        candidates,
+        machines.filter(isAside),
+        { store, runtimes },
+        aside.stopped,
+        aside.takeBack,
+      );
     });
     yield* pass.pipe(
       Effect.catchCause((cause) =>

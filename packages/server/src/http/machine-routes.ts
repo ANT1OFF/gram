@@ -327,7 +327,9 @@ const machinesStatus = (
 ) => {
   const joinLink = hosts.machines.joinOpen();
   return {
-    machines: hosts.list(access ?? (remote !== undefined ? "on" : "off")),
+    machines: hosts
+      .list(access ?? (remote !== undefined ? "on" : "off"))
+      .filter((machine) => hosts.machines.get(machine.id)?.setAside === undefined),
     ...(joinLink === undefined ? {} : { joinLink }),
     protocol: HOST_PROTOCOL_VERSION,
     ...(release === undefined ? {} : { release }),

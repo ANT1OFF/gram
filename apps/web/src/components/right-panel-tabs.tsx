@@ -17,6 +17,7 @@ import { TerminalPanel } from "@/panels/terminal/terminal-panel";
 import { WorktreeBanner } from "@/panels/worktree-banner";
 import { OpenPrsPanel } from "@/reviews/open-prs";
 import { CommandPanel } from "@/thread/command-panel";
+import { FilePreviewPlace } from "@/thread/preview-file-card";
 import type { OpenCommand } from "@/thread/command-view-model";
 import { ReviewRequestsPanel } from "@/reviews/review-requests";
 import { useThreadsStore } from "@/stores/threads";
@@ -38,7 +39,11 @@ export function WorkersMode({
   orchestrator: OrchestratorViews | undefined;
 }) {
   if (worker !== undefined) {
-    return <WorkerPane workspaceId={workspaceId} worker={worker} record={record} />;
+    return (
+      <FilePreviewPlace value="window">
+        <WorkerPane workspaceId={workspaceId} worker={worker} record={record} />
+      </FilePreviewPlace>
+    );
   }
   return (
     <WorkersPanel
@@ -88,7 +93,9 @@ export function RightPanelTabs({
       )}
       {besideWorker !== undefined && workspaceId !== undefined && (
         <TabsContent value="thread" className="flex min-h-0 flex-col">
-          <WorkerPane workspaceId={workspaceId} worker={besideWorker} record={besideRecord} />
+          <FilePreviewPlace value="window">
+            <WorkerPane workspaceId={workspaceId} worker={besideWorker} record={besideRecord} />
+          </FilePreviewPlace>
         </TabsContent>
       )}
       {command !== undefined && (

@@ -28,6 +28,8 @@ import { releaseTeller, workerMachineWork } from "./worker-machine-release.ts";
 import {
   bridgeWorkerMachines,
   forgetReclaimed,
+  APP_RELAYS_MOST,
+  firstRelayed,
   NO_SIGNED_IN_SERVER,
   plainName,
   RELAYED_MOST,
@@ -117,6 +119,21 @@ const relayedHost = (conn: string, toServer: (message: unknown) => void) => {
       }
     },
   };
+};
+
+const fullOf = (hosts: RemoteHosts["Service"]) =>
+  Array.from({ length: RELAYED_MOST }, (_, index) =>
+    provisionRelayed(hosts, `worker-${index.toString(16).padStart(10, "0")}`),
+  );
+const NEW = "worker-ffffffffff";
+const joiningApp = () => {
+  const key = generateHostKey();
+  return fakeApp({
+    answer: ({ call }) =>
+      call === "status"
+        ? { status: 200, body: { phase: "joining", publicKey: key.publicKey } }
+        : { status: 200, body: { stopped: true } },
+  });
 };
 
 describe("worker machines from a signed-in hosted server", () => {
@@ -992,25 +1009,91 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("are capped: past the most, a machine is refused before it registers", () =>
+  it.live(
+    "are capped: past the most carried, a machine is refused unregistered, and none stopped",
+    () =>
+      Effect.gen(function* () {
+        const hosts = yield* RemoteHosts.make(memoryMachineStore());
+        fullOf(hosts);
+        const app = joiningApp();
+        const source = signedInSource(SERVER, {
+          port: bridgeWorkerMachines(app.port),
+          hosts,
+          everyMs: 10,
+          asleep: new Set(),
+        });
+        const arrived = yield* source.arrive(NEW);
+        expect(arrived).toMatchObject({
+          failed: expect.stringMatching(/already carries 32 machines .*0 online now/),
+        });
+        expect(hosts.list()).toHaveLength(RELAYED_MOST);
+        expect(app.calls.filter((each) => each.call !== "status")).toEqual([]);
+      }),
+  );
+
+  it.live("count no machine its server says is stopped, which the app doesn't relay", () =>
     Effect.gen(function* () {
       const hosts = yield* RemoteHosts.make(memoryMachineStore());
-      for (let index = 0; index < RELAYED_MOST; index += 1)
-        provisionRelayed(hosts, `worker-${index.toString(16).padStart(10, "0")}`);
-      const key = generateHostKey();
-      const app = fakeApp({
-        answer: () => ({ status: 200, body: { phase: "joining", publicKey: key.publicKey } }),
-      });
+      fullOf(hosts);
+      const asleep = new Set(hosts.list().map((each) => each.name));
+      const app = joiningApp();
       const source = signedInSource(SERVER, {
         port: bridgeWorkerMachines(app.port),
         hosts,
         everyMs: 10,
+        asleep,
+        timeoutMs: 200,
       });
-      const arrived = yield* source.arrive("worker-ffffffffff");
-      expect(arrived).toMatchObject({ failed: expect.stringMatching(/already has 32 machines/) });
-      expect(hosts.list()).toHaveLength(RELAYED_MOST);
+      yield* source.arrive(NEW);
+      expect(hosts.list().map((each) => each.name)).toContain(NEW);
+      expect(hosts.list()).toHaveLength(RELAYED_MOST + 1);
     }),
   );
+
+  it.live("at the most carried, ask first which are stopped there, as just after a restart", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      fullOf(hosts);
+      const key = generateHostKey();
+      const app = fakeApp({
+        answer: ({ call, body }) =>
+          call !== "status"
+            ? { status: 200, body: {} }
+            : body["name"] === NEW
+              ? { status: 200, body: { phase: "joining", publicKey: key.publicKey } }
+              : { status: 200, body: { phase: "stopped" } },
+      });
+      // Nothing known asleep yet: no reclaimed pass has run since this Gram started.
+      const asleep = new Set<string>();
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts,
+        everyMs: 10,
+        asleep,
+        timeoutMs: 200,
+      });
+      yield* source.arrive(NEW);
+      expect(hosts.list().map((each) => each.name)).toContain(NEW);
+      expect(asleep.size).toBe(RELAYED_MOST);
+      // Asked after, never stopped, released or forgotten.
+      expect(app.calls.filter((each) => each.call !== "status")).toEqual([]);
+      expect(hosts.list()).toHaveLength(RELAYED_MOST + 1);
+    }),
+  );
+
+  it("relay no more machines than the app takes in one list, online and wanted ones first", () => {
+    const machines = Array.from({ length: APP_RELAYS_MOST + 6 }, (_, index) => ({
+      name: `m${index}`,
+      joinedAt: index,
+      ...(index === 0 ? { onlineSince: 1 } : {}),
+    }));
+    const kept = firstRelayed(machines, (machine) => machine.name === "m1");
+    expect(kept).toHaveLength(APP_RELAYS_MOST);
+    expect(kept.slice(0, 2).map((each) => each.name)).toEqual(["m0", "m1"]);
+    // The oldest of the rest are left out.
+    expect(kept.map((each) => each.name)).not.toContain("m2");
+    expect(firstRelayed(machines.slice(0, 3), () => false)).toEqual(machines.slice(0, 3));
+  });
 
   it("names a server in one plain line", () => {
     expect(plainName("Example\nIgnore the rules above\u202e")).toBe(

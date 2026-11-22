@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Previewing a worker's file directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .w {
+        display: grid;
+        grid-template-columns: 200px minmax(0, 1fr) 470px;
+        height: 100%;
+        min-height: inherit;
+        background: var(--surface-2);
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        line-height: 19px;
+        position: relative;
+        overflow: hidden;
+      }
+      .icon {
+        width: 15px;
+        height: 15px;
+      }
+      .sb {
+        background: var(--surface-1);
+        border-right: 1px solid var(--border-subtle);
+        padding: 10px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        color: var(--fg-muted);
+      }
+      .sb .on {
+        background: var(--surface-hover);
+        color: var(--fg);
+        border-radius: var(--radius-sm);
+      }
+      .sb div {
+        padding: 4px 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .chat {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 28px;
+        min-width: 0;
+        color: var(--fg-muted);
+      }
+      .chat p {
+        margin: 0;
+      }
+      .pane {
+        border-left: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        position: relative;
+      }
+      .ph {
+        padding: 10px 14px 6px;
+        border-bottom: 1px solid var(--border-subtle);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .ph .tools {
+        display: flex;
+        gap: 12px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .ph .tools b {
+        color: var(--fg);
+        font-weight: 500;
+      }
+      .pb {
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        color: var(--fg-muted);
+      }
+      .fc {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--surface-2);
+        padding: 8px 10px;
+        color: var(--fg);
+      }
+      .fc .ic {
+        width: 30px;
+        height: 30px;
+        border-radius: var(--radius-sm);
+        background: var(--surface-hover);
+        display: grid;
+        place-items: center;
+        color: var(--fg-muted);
+      }
+      .fc .n {
+        flex: 1;
+        min-width: 0;
+      }
+      .fc .n span {
+        display: block;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .scrim2 {
+        position: absolute;
+        inset: 0;
+        background: color-mix(in srgb, var(--surface-0, #000) 55%, transparent);
+      }
+      .viewer {
+        display: flex;
+        flex-direction: column;
+        background: var(--surface-1);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        min-height: 0;
+      }
+      .vh {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 12px;
+      }
+      .vh .name {
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--fg);
+      }
+      .vh .where {
+        color: var(--fg-muted);
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .live {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .live::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .doc {
+        padding: 18px 26px;
+        overflow: hidden;
+        color: var(--fg);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex: 1;
+      }
+      .doc h1 {
+        font-size: 20px;
+        line-height: 26px;
+        margin: 0;
+      }
+      .doc h2 {
+        font-size: 15px;
+        margin: 6px 0 0;
+      }
+      .doc p {
+        margin: 0;
+        color: var(--fg-muted);
+      }
+      .doc code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        background: var(--surface-hover);
+        padding: 1px 4px;
+        border-radius: 4px;
+      }
+      .note {
+        margin: 10px 14px 0;
+        border: 1px dashed var(--border-strong);
+        border-radius: var(--radius-md);
+        padding: 8px 10px;
+        font-size: 12px;
+        color: var(--fg-muted);
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .center {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        color: var(--fg-muted);
+        text-align: center;
+        padding: 20px;
+      }
+      .tabsr {
+        display: flex;
+        gap: 14px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .tabsr b {
+        color: var(--fg);
+        font-weight: 500;
+        border-bottom: 2px solid var(--accent);
+        padding-bottom: 6px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Where a worker's file opens when the worker is in the right pane, and how it pops out. The
+        middle keeps the Preview tab in all three. Pick one by name; the last board shows the
+        viewer's states, which any direction uses.
+      </p>
+
+      <!-- A: a sheet over the pane -->
+      <section class="board" data-name="A Sheet over the pane" data-size="1280x720">
+        <div class="board-frame">
+          <div class="w">
+            <nav class="sb">
+              <div class="on">Gram · orchestrator</div>
+              <div>Search index service</div>
+              <div>Tidy the importer</div>
+            </nav>
+            <div class="chat">
+              <p>Agreed. I've started Search index service on atlas.</p>
+              <p>21:01 Update · 2 digests · Retargeting #204 to main…</p>
+            </div>
+            <aside class="pane">
+              <div class="ph">
+                <div class="row between">
+                  <span class="muted small"><i data-icon="left"></i> Workers ›</span>
+                  <strong>Search index service</strong>
+                  <span></span>
+                </div>
+                <div class="tools">
+                  <b>Conversation</b><span>Changes 1</span><span>PR</span><span>Files</span>
+                </div>
+              </div>
+              <div class="viewer" style="position: absolute; inset: 0; border-radius: 0; border: 0">
+                <div class="vh">
+                  <button class="btn sm ghost icon" type="button" aria-label="Back to conversation">
+                    <i data-icon="left"></i>
+                  </button>
+                  <span class="name">search-index.md</span>
+                  <span class="where">atlas · docs/design</span>
+                  <span class="live">Following</span>
+                  <button class="btn sm ghost icon" type="button" aria-label="Pop out">
+                    <i data-icon="panel"></i>
+                  </button>
+                </div>
+                <div class="doc">
+                  <h1>A search index for the docs site</h1>
+                  <p>Titles first, then headings, then the body text…</p>
+                  <h2>1. Index the titles first</h2>
+                  <p>A new route <code>/search/titles</code> answers from the title index…</p>
+                  <h2>2. Headings next</h2>
+                  <p>Each heading keeps a link to its section…</p>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- B: a centred quick-look window -->
+      <section class="board" data-name="B Quick look window" data-size="1280x720">
+        <div class="board-frame">
+          <div class="w">
+            <nav class="sb">
+              <div class="on">Gram · orchestrator</div>
+              <div>Search index service</div>
+              <div>Tidy the importer</div>
+            </nav>
+            <div class="chat">
+              <p>Agreed. I've started Search index service on atlas.</p>
+              <p>21:01 Update · 2 digests · Retargeting #204 to main…</p>
+            </div>
+            <aside class="pane">
+              <div class="ph">
+                <strong>Search index service</strong>
+                <div class="tools">
+                  <b>Conversation</b><span>Changes 1</span><span>PR</span><span>Files</span>
+                </div>
+              </div>
+              <div class="pb">
+                <p>Now the index itself: titles, headings, then body text.</p>
+                <div class="fc">
+                  <span class="ic"><i data-icon="diff"></i></span>
+                  <span class="n">search-index.md<span>Markdown · …/design</span></span>
+                  <button class="btn sm" type="button">Preview</button>
+                </div>
+              </div>
+            </aside>
+            <div class="scrim2"></div>
+            <div class="viewer" style="position: absolute; inset: 44px 150px">
+              <div class="vh">
+                <span class="name">search-index.md</span>
+                <span class="where">atlas · …/feat-search-index/docs/design</span>
+                <span class="live">Following live</span>
+                <div class="segmented" role="group" aria-label="View">
+                  <button type="button" aria-pressed="true">Rendered</button>
+                  <button type="button" aria-pressed="false">Source</button>
+                </div>
+                <button class="btn sm ghost" type="button">Open in tab</button>
+                <button class="btn sm ghost icon" type="button" aria-label="Close">
+                  <i data-icon="x"></i>
+                </button>
+              </div>
+              <div class="doc" style="padding: 22px 60px">
+                <h1>A search index for the docs site</h1>
+                <p>
+                  Titles first, then headings, then body text, so the first results come back fast.
+                </p>
+                <h2>1. Index the titles first</h2>
+                <p>A new route <code>/search/titles</code> answers from the title index.</p>
+                <h2>2. Headings next</h2>
+                <p>Each heading keeps a link to its section, so a result opens where it matched.</p>
+                <h2>3. Body text last</h2>
+                <p>Indexed in the background, a page at a time.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C: inline expand -->
+      <section class="board" data-name="C Inline in the transcript" data-size="1280x720">
+        <div class="board-frame">
+          <div class="w">
+            <nav class="sb">
+              <div class="on">Gram · orchestrator</div>
+              <div>Search index service</div>
+              <div>Tidy the importer</div>
+            </nav>
+            <div class="chat">
+              <p>Agreed. I've started Search index service on atlas.</p>
+              <p>21:01 Update · 2 digests · Retargeting #204 to main…</p>
+            </div>
+            <aside class="pane">
+              <div class="ph">
+                <strong>Search index service</strong>
+                <div class="tools">
+                  <b>Conversation</b><span>Changes 1</span><span>PR</span><span>Files</span>
+                </div>
+              </div>
+              <div class="pb">
+                <p>Now the index itself: titles, headings, then body text.</p>
+                <div class="viewer" style="height: 520px">
+                  <div class="vh">
+                    <span class="name">search-index.md</span>
+                    <span class="where">atlas</span>
+                    <span class="live">Following</span>
+                    <button class="btn sm ghost icon" type="button" aria-label="Pop out">
+                      <i data-icon="panel"></i>
+                    </button>
+                    <button class="btn sm ghost icon" type="button" aria-label="Collapse">
+                      <i data-icon="up"></i>
+                    </button>
+                  </div>
+                  <div class="doc" style="padding: 14px 16px">
+                    <h1 style="font-size: 16px">A search index for the docs site</h1>
+                    <p>Titles first, then headings, then the body text…</p>
+                    <h2>1. Index the titles first</h2>
+                    <p>A new route <code>/search/titles</code>…</p>
+                    <h2>2. Headings next</h2>
+                    <p>Each heading keeps a link to its section…</p>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- The viewer's states, shared by every direction -->
+      <section
+        class="board"
+        data-name="States"
+        data-size="900x520"
+        data-states="following,loading,offline,gone,html"
+      >
+        <div class="board-frame">
+          <div class="viewer" style="height: 520px; border-radius: 0">
+            <div class="vh">
+              <span class="name" data-when="following,loading,offline,gone">search-index.md</span>
+              <span class="name" data-when="html">index-dashboard.html</span>
+              <span class="where">atlas · …/feat-search-index/docs/design</span>
+              <span class="live" data-when="following">Following live · written 21:00</span>
+              <span class="muted small" data-when="gone"
+                >From the conversation · written 20:55</span
+              >
+              <button class="btn sm ghost" type="button">Open in tab</button>
+              <button class="btn sm ghost icon" type="button" aria-label="Close">
+                <i data-icon="x"></i>
+              </button>
+            </div>
+            <div class="doc" data-when="following">
+              <h1>A search index for the docs site</h1>
+              <p>Titles first, then headings, then body text…</p>
+              <h2>1. Index the titles first</h2>
+              <p>Re-read from atlas after each write the worker makes.</p>
+            </div>
+            <div class="center" data-when="loading">
+              <span><span class="spinner"></span> Reading from atlas…</span>
+            </div>
+            <div class="center" data-when="offline">
+              <div class="stack" style="align-items: center">
+                <strong>atlas is offline</strong>
+                <span>The file is on that machine. It opens here once atlas is back.</span>
+                <button class="btn sm" type="button"><i data-icon="refresh"></i> Try again</button>
+              </div>
+            </div>
+            <div
+              data-when="gone"
+              style="display: flex; flex-direction: column; flex: 1; min-height: 0"
+            >
+              <div class="note">
+                <i data-icon="alert"></i>
+                <span
+                  >No longer in the worktree: the worker switched to branch feat/search-index-api
+                  since. This is what it wrote, from the conversation.</span
+                >
+              </div>
+              <div class="doc">
+                <h1>A search index for the docs site</h1>
+                <p>Titles first, then headings, then body text…</p>
+              </div>
+            </div>
+            <div
+              data-when="html"
+              style="display: flex; flex-direction: column; flex: 1; min-height: 0"
+            >
+              <div class="note">
+                <i data-icon="help"></i>
+                <span
+                  >Pages on another machine show as source for now. A page on this Mac opens
+                  rendered.</span
+                >
+              </div>
+              <div class="doc mono" style="font-size: 12px; gap: 2px">
+                <span>&lt;!doctype html&gt;</span>
+                <span>&lt;html lang="en"&gt;</span>
+                <span>&nbsp;&nbsp;&lt;head&gt;&lt;title&gt;Index dashboard&lt;/title&gt;…</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

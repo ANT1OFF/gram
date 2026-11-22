@@ -35,6 +35,8 @@ export interface LocalCheckRun {
   readonly profile?: string;
   readonly qualification?: string;
   readonly refusal?: string;
+  /** For a verify driver, the recipe it came from, recorded on its run and never in its key. */
+  readonly recipe?: { readonly sha256: string; readonly ref?: string };
 }
 
 /** How long a stopped check's processes get to end on SIGTERM before SIGKILL. */

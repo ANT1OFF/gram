@@ -10,6 +10,7 @@ import {
   type StartsSent,
 } from "./signed-in-calls.ts";
 import type { WorkerMachinePortShape } from "./signed-in-port.ts";
+import type { ProvidedMachine } from "./worker-machines.ts";
 import { isNotFound, type OwedStop, RECLAIMED_AFTER_MISSES } from "./worker-machine-stops.ts";
 
 /**
@@ -33,7 +34,9 @@ export const RECLAIMED_EVERY = Duration.minutes(10);
  */
 export const forgetReclaimed = (
   port: WorkerMachinePortShape,
-  hosts: Pick<RemoteHostsShape, "list" | "remove" | "providerSaid">,
+  hosts: Pick<RemoteHostsShape, "remove" | "providerSaid"> & {
+    readonly list: () => ReadonlyArray<ProvidedMachine>;
+  },
   misses: Map<string, number> = new Map(),
   asleep?: Set<string>,
   sent?: StartsSent,
