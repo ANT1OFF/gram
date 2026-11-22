@@ -30,6 +30,8 @@ const TOOL = "send_worker";
 /** How often the open sent workers are looked for, and how long one unheard waits to try again. */
 export const SENT_LOOK_EVERY = Duration.seconds(30);
 export const SENT_RETRY_AFTER = Duration.seconds(60);
+/** How long a message to an ended worker counts as unanswered before an ended state there is believed. */
+export const SENT_ASK_GRACE_MS = 30 * 60 * 1000;
 /** The least time between two waits on one sent worker. */
 export const SENT_WAIT_FLOOR = Duration.seconds(2);
 
@@ -471,11 +473,20 @@ export const followOnce = (
     yield* runtimes
       .updateThread(thread.id, (current) => {
         if (current.sentTo === undefined) return current;
-        const askedSince = (current.sentTo.askedAt ?? -1) >= began;
-        const { unheard: _heard, ...rest } = current.sentTo;
+        const askedAt = current.sentTo.askedAt;
+        const answered =
+          askedAt !== undefined &&
+          askedAt < began &&
+          (there.working ||
+            !isEnded(there.state) ||
+            (happened && latest !== sent.latest) ||
+            now - askedAt >= SENT_ASK_GRACE_MS);
+        const pending = askedAt !== undefined && !answered;
+        const { unheard: _heard, askedAt: _asked, ...rest } = current.sentTo;
         heard = {
           ...rest,
-          state: askedSince && isEnded(there.state) ? "running" : there.state,
+          ...(pending ? { askedAt } : {}),
+          state: pending && isEnded(there.state) ? "running" : there.state,
           working: there.working,
           heardAt: now,
           ...(latest === undefined ? {} : { latest }),

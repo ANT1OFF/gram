@@ -54,3 +54,22 @@ Finding, fixed on 22 November 2026; `findings/NoneDropped.cfg` is the code befor
   finishes the worker it half made rather than make a second. Keeping the brief without the
   request id breaks `OneWorker`. `held-briefs.test.ts` ("a release cut short leaves the brief
   held, and the next release makes one worker") holds it.
+
+## Sent workers
+
+`sent-workers/SentWorkers.tla`: a worker sent to another server, followed from here by waits
+there (`followOnce` in `packages/server/src/orchestration/sent-workers.ts`), while its
+orchestrator messages it again (`send_message`, which stamps `sentTo.askedAt`) and the thread
+there may read done before it takes the message up, as a machine that is waking does.
+`SentWorkers.cfg` checks `NoReplyMissed`: once the follow has stopped on an end and no message
+is on its way, everything the worker said there has been heard here.
+
+Finding, fixed on 22 November 2026; `findings/NoReplyMissed.cfg` is the code before:
+
+- An end counted as not its last only when the message came during the wait that read it. A
+  message sent between two waits to a worker that had ended, read by a wait that found it still
+  done (the message not yet taken up there), ended the follow, and the reply that came later was
+  never heard: the orchestrator waited on a worker it thought was done. Now a message stays
+  unanswered until a wait that began after it sees the worker at work, not ended, or with a new
+  reply, or until `SENT_ASK_GRACE_MS` passes; until then an end reads as running.
+  `sent-workers.test.ts` ("goes only where the workspace allows it…") holds it.
