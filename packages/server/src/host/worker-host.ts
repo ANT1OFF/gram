@@ -285,9 +285,10 @@ export const awaitedMachines =
             return yield* stop(RESUME_STALLED);
           }
           if (host instanceof HostUnavailable) {
+            if (machine.via === undefined) return yield* host;
             const detail = remote.stops.resuming(id)
               ? "Its folders are still being restored."
-              : "It has not reconnected.";
+              : host.message;
             const minutes = Math.ceil(waitMs / 60_000);
             return yield* stop(
               `${machine.name} was not ready within ${minutes} ${minutes === 1 ? "minute" : "minutes"}. ${detail} Queued work will retry when it's ready.`,

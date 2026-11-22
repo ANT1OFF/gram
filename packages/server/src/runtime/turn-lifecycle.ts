@@ -88,6 +88,7 @@ export interface TurnLifecycleDeps {
    * machine's (`Thread.machineIncident`). Absent where there are no joined machines.
    */
   readonly awayMachine?: (thread: Thread) => string | undefined;
+  readonly restoreGate?: ((thread: Thread) => "wait" | "blocked" | undefined) | undefined;
 }
 
 /** A session a joined machine took with it (`EndedEvent.lostMachine`): which, and what ran. */
@@ -175,6 +176,7 @@ export const makeTurnLifecycle = ({
   setRetrying,
   clearPendingRequests,
   awayMachine,
+  restoreGate,
 }: TurnLifecycleDeps) => {
   const settleDelivery = (rt: Runtime, outcome: "accepted" | SystemDeliveryFailure) =>
     Effect.suspend(() => {
@@ -283,10 +285,10 @@ export const makeTurnLifecycle = ({
       const at = yield* Clock.currentTimeMillis;
       const keptGone = keptWorkGoneError(error, KEPT_WORK_GONE_REASON, at);
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.option);
-      const away = Option.isSome(thread) && awayMachine?.(thread.value) !== undefined;
+      const restoring = Option.isSome(thread) && restoreGate?.(thread.value) !== undefined;
       const gone =
         keptGone === undefined &&
-        !away &&
+        !restoring &&
         rt.cwd !== undefined &&
         !(yield* checkouts.present(rt.cwd));
       const text = gone ? missingThreadFolder(rt.cwd!) : undefined;
