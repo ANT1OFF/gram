@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.38.0](https://github.com/ANT1OFF/gram/compare/v1.37.0...v1.38.0) (2026-11-22)
+
+
+### Features
+
+* **desktop:** open a hosted server's site in a window of its own, and let a send from it ask this machine ([#989](https://github.com/ANT1OFF/gram/issues/989)) ([51078c4](https://github.com/ANT1OFF/gram/commit/51078c4a311d216dbdc172abe2bfcd3ca7ed4db4))
+* **embedding:** files on a host's messages and replies, and every reply asked of the decision hook ([#988](https://github.com/ANT1OFF/gram/issues/988)) ([f8a949d](https://github.com/ANT1OFF/gram/commit/f8a949d4f6ad6fb24992fc6dd315d9ce0a27a300))
+* **host:** a joined machine can give its sessions an MCP server of its own ([#985](https://github.com/ANT1OFF/gram/issues/985)) ([94f3e0e](https://github.com/ANT1OFF/gram/commit/94f3e0e265c4631ee25ca3fb09e76bc268ec80b0))
+* **server:** a turn a person started from their lent device may run a command, read a file or list a folder there ([#986](https://github.com/ANT1OFF/gram/issues/986)) ([6795d95](https://github.com/ANT1OFF/gram/commit/6795d95658f8102b79fa48847c8722d0aaa387bd))
+
+
+### Bug Fixes
+
+* **server:** resume relayed workers after machine loss ([#991](https://github.com/ANT1OFF/gram/issues/991)) ([f185d50](https://github.com/ANT1OFF/gram/commit/f185d50cb2eceb6a7ebe661dac7268dbcbc6b167))
+* **web:** model search across agents, current agent on Close, profile runs Done, autonomy's source ([#984](https://github.com/ANT1OFF/gram/issues/984)) ([ced0fd2](https://github.com/ANT1OFF/gram/commit/ced0fd217748a5952fdb05b1aa66e0125aed2b67))
+
 ## [1.37.0](https://github.com/ANT1OFF/gram/compare/v1.36.0...v1.37.0) (2026-11-22)
 
 
