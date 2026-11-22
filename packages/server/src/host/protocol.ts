@@ -27,7 +27,6 @@ import {
   InterruptHung,
   ModeRefused,
   type HostCapability,
-  type HostFeature,
   hostServes,
   type HostCheckResult,
   type HostRepoIdentity,
@@ -208,29 +207,7 @@ export const HOST_FENCED_CLOSE = 4409;
 export const HOST_FENCED_REASON =
   "Gram runs this machine on another disk now. To make this disk the machine: gram-host new-disk";
 
-/** The features this build's host names in its hello, beside its capabilities. */
-export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
-  "app-tools-tunnel",
-  "account-scope",
-  "thread-places",
-  "browser-policy",
-  "session-retarget",
-  "file-parts",
-  "wip-restore",
-  "wip-restore-ref",
-  "wip-restore-pending",
-  "wip-restore-kept",
-  "wip-keep",
-  "agent-opencode",
-  "agent-codex",
-  "agent-opencode-sessions",
-  "agent-grok",
-  "agent-antigravity",
-  "shared-folders",
-  "dream-sessions",
-  "stop-going",
-  "loopback-tunnels",
-];
+export { HOST_FEATURES } from "./host-features.ts";
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -1188,6 +1165,7 @@ export const connectHost = (
               ),
           }
         : {}),
+      ...(hostServes(hello, "file-parts-contained") ? { partsContained: true } : {}),
     };
     const folders: HostFolders = {
       browse: (input, limit) =>

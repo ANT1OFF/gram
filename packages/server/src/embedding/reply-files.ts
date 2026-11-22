@@ -108,7 +108,7 @@ const readInCheckoutThere = (
   maxBytes: number,
 ): Effect.Effect<{ readonly path: string; readonly bytes: Buffer }, string> =>
   Effect.gen(function* () {
-    const part = reads.part;
+    const part = reads.partsContained === true ? reads.part : undefined;
     if (part === undefined)
       return yield* Effect.fail(
         `gram-host on ${machine} is older than this Gram, so it can't send a reply's files. Update it.`,
