@@ -52,7 +52,7 @@ import { PanelMessage } from "./panel-message";
 import { keptDiff } from "./kept-diff";
 import { countHunks } from "./patch";
 import { RefreshButton } from "./refresh-button";
-import { sameTurnOptions, targetTurnId, turnOptions } from "./turn-diff";
+import { BRANCH_TARGET, sameTurnOptions, targetTurnId, turnOptions } from "./turn-diff";
 
 const SCOPES = [
   { kind: "uncommitted", label: "Uncommitted" },
@@ -197,21 +197,26 @@ export function DiffPanel({
   const consumePanelTarget = useLayoutStore((s) => s.consumePanelTarget);
   const pending = request?.threadId === threadId ? request : undefined;
   const pendingTurn = pending === undefined ? undefined : targetTurnId(pending.target);
+  const pendingBranch = pending?.target === BRANCH_TARGET;
+  const pendingScope = pendingTurn !== undefined || pendingBranch;
   const settled = !query.isPending;
 
   const [appliedTarget, setAppliedTarget] = useState<number>();
-  if (pending !== undefined && pendingTurn !== undefined && pending.id !== appliedTarget) {
+  if (pending !== undefined && pendingScope && pending.id !== appliedTarget) {
     setAppliedTarget(pending.id);
-    setScope("turn");
-    setPicked(pendingTurn);
+    if (pendingTurn === undefined) setScope("branch");
+    else {
+      setScope("turn");
+      setPicked(pendingTurn);
+    }
   }
   useEffect(() => {
-    if (pending !== undefined && pendingTurn !== undefined) consumePanelTarget("diff", pending.id);
-  }, [pending, pendingTurn, consumePanelTarget]);
+    if (pending !== undefined && pendingScope) consumePanelTarget("diff", pending.id);
+  }, [pending, pendingScope, consumePanelTarget]);
 
   useEffect(() => {
-    if (pending && pendingTurn === undefined && settled) consumePanelTarget("diff", pending.id);
-  }, [pending, pendingTurn, settled, consumePanelTarget]);
+    if (pending && !pendingScope && settled) consumePanelTarget("diff", pending.id);
+  }, [pending, pendingScope, settled, consumePanelTarget]);
 
   return (
     <div
@@ -362,7 +367,7 @@ export function DiffPanel({
             ignoreWhitespace={ignoreWhitespace}
             tree={treeBeside ? "beside" : undefined}
             panelRef={rootRef}
-            {...(pending && pendingTurn === undefined ? { request: pending } : {})}
+            {...(pending && !pendingScope ? { request: pending } : {})}
           />
         )}
       </div>
