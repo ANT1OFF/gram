@@ -201,3 +201,92 @@ describe("a machine being started again", () => {
     expect(machineMark(STUDIO, machines, NOW)).not.toHaveProperty("startingSince");
   });
 });
+
+describe("what a machine's mark says of where it stands", () => {
+  const WORKER = HostId.make("m-fedcba987654321001234567");
+  const base: MachineState = { id: WORKER, name: "worker-827d7eaf1e", kind: "provisioned" };
+  const away: MachineState = { ...base, offline: { kind: "lost", at: AT } };
+  const mark = (machine: MachineState) => machineMark(WORKER, [machine], NOW);
+  const shown = (machine: MachineState) => {
+    const { state, badge, since } = mark(machine);
+    return { state, badge, since };
+  };
+
+  it("is online, with no badge, while it is connected and owes nothing", () => {
+    expect(shown({ ...base, onlineSince: AT })).toEqual({
+      state: undefined,
+      badge: undefined,
+      since: undefined,
+    });
+  });
+
+  it("is restoring while its threads are put back, and failed once that stalls", () => {
+    const back = { ...base, onlineSince: AT, restoring: AT };
+    expect(shown(back)).toEqual({ state: "restoring", badge: "busy", since: AT });
+    expect(shown({ ...back, stalled: NOW - 60_000 })).toEqual({
+      state: "failed",
+      badge: "failed",
+      since: NOW - 60_000,
+    });
+  });
+
+  it("is starting while something waits on it, or its provider says it starts", () => {
+    expect(shown({ ...away, starting: AT })).toEqual({
+      state: "starting",
+      badge: "busy",
+      since: AT,
+    });
+    expect(shown({ ...away, provider: { phase: "starting", since: AT, at: AT } })).toEqual({
+      state: "starting",
+      badge: "busy",
+      since: AT,
+    });
+  });
+
+  it("is paused once readied to stop and gone, or when its provider says idle or released", () => {
+    expect(shown({ ...away, paused: AT })).toEqual({
+      state: "paused",
+      badge: "waiting",
+      since: AT,
+    });
+    for (const cause of ["idle", "released"] as const)
+      expect(shown({ ...away, provider: { phase: "stopped", cause, since: AT, at: NOW } })).toEqual(
+        {
+          state: "paused",
+          badge: "waiting",
+          since: AT,
+        },
+      );
+  });
+
+  it("is reclaimed when its provider took it away, busy only while it comes back", () => {
+    const reclaimed = {
+      ...away,
+      paused: AT,
+      provider: { phase: "stopped", cause: "reclaimed", since: AT, at: NOW },
+    } as const;
+    expect(shown(reclaimed)).toEqual({ state: "reclaimed", badge: undefined, since: AT });
+    expect(shown({ ...reclaimed, starting: NOW - 60_000 })).toEqual({
+      state: "reclaimed",
+      badge: "busy",
+      since: AT,
+    });
+    expect(mark({ ...reclaimed, starting: NOW - 60_000 }).hint.split("\n")[1]).toContain(
+      "7 minutes ago, restarting",
+    );
+  });
+
+  it("is failed, with the provider's reason, when its provider says it failed", () => {
+    const failed = mark({
+      ...away,
+      provider: { phase: "failed", message: "No capacity in the zone.", since: AT, at: NOW },
+    });
+    expect(failed).toMatchObject({ state: "failed", badge: "failed", since: AT });
+    expect(failed.hint.split("\n")[2]).toBe("No capacity in the zone.");
+  });
+
+  it("stays offline, with no badge, when nothing more is known", () => {
+    expect(shown(away)).toEqual({ state: "offline", badge: undefined, since: undefined });
+    expect(shown({ ...away, provider: { phase: "running", at: NOW } }).state).toBe("offline");
+  });
+});

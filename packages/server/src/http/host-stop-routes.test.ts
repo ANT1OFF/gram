@@ -18,6 +18,7 @@ import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import {
   hostStopRoute,
   MACHINES_JOBS_GET_PATH,
+  MACHINES_STOP_EXPECT_PATH,
   MACHINES_STOP_RESUME_PATH,
   MACHINES_STOP_RESUME_START_PATH,
 } from "./host-stop-routes.ts";
@@ -238,6 +239,44 @@ describe("a machine's resume as a job, through its routes", () => {
       // there (`pending`): the one confirmed back isn't put back twice.
       expect(second.asked).toEqual([expect.objectContaining({ cwd: "/clones/b", pending: true })]);
       expect(after.owes(MACHINE)).toBe(false);
+    }),
+  );
+});
+
+describe("why the provider stops a machine, or starts it on another disk", () => {
+  it.effect("is kept for the machine's mark, and a word Gram doesn't know is refused", () =>
+    Effect.gen(function* () {
+      const stops = makeStopMarks();
+      const { deps } = machine(stops);
+      const told: Array<unknown> = [];
+      const withWords = {
+        ...deps,
+        hosts: {
+          ...deps.hosts,
+          providerSaid: (id: HostId, word: unknown) => told.push([id, word]),
+        },
+      } as unknown as StopResumeDeps;
+      const jobs = yield* Scope.provide(yield* Scope.make())(makeMachineJobs());
+
+      const expected = yield* post(withWords, jobs, MACHINES_STOP_EXPECT_PATH, {
+        id: MACHINE,
+        cause: "reclaimed",
+      });
+      expect(expected.status).toBe(200);
+      expect(told).toEqual([
+        [MACHINE, { phase: "starting", cause: "reclaimed", at: expect.any(Number) }],
+      ]);
+
+      const refused = yield* post(withWords, jobs, MACHINES_STOP_EXPECT_PATH, {
+        id: MACHINE,
+        cause: "spot-interruption",
+      });
+      expect(refused.status).toBe(400);
+      // Without a cause, nothing is said for it.
+      expect(
+        (yield* post(withWords, jobs, MACHINES_STOP_EXPECT_PATH, { id: MACHINE })).status,
+      ).toBe(200);
+      expect(told).toHaveLength(1);
     }),
   );
 });

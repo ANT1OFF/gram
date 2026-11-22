@@ -3,6 +3,7 @@ import { CloudOff, CloudUpload, Server, ServerOff } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
+import { TONE_DOT } from "@/orchestration/rail-model";
 import { useMachines } from "@/stores/machines";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -63,23 +64,58 @@ export function HostedMark({
   );
 }
 
+const GLYPH_WHOLE_IN: ReadonlySet<MachineMark["state"]> = new Set([
+  undefined,
+  "starting",
+  "restoring",
+  "paused",
+]);
+
+const BADGE_DOT: Readonly<Record<NonNullable<MachineMark["badge"]>, string>> = {
+  busy: cn(TONE_DOT.working, "gram-working"),
+  waiting: TONE_DOT.waiting,
+  failed: TONE_DOT.error,
+};
+
 /**
  * The glyph of a mark: a machine, a server's cloud for a sent worker, or the hosted server's own
- * mark for a worker's machine it gave; struck when out of reach.
+ * mark for a worker's machine it gave; struck when out of reach, and faded for a hosted server's
+ * machine that isn't there now. A machine on its way back, paused or failed wears a corner badge.
  */
 export function MarkGlyph({ mark, className }: { mark: MachineMark; className?: string }) {
-  if (mark.hosted !== undefined && mark.state === undefined)
-    return <HostedMark hosted={mark.hosted} className={className} />;
-  if (mark.sent === true)
-    return mark.state === "signed out" || mark.state === "not heard" ? (
-      <CloudOff aria-hidden className={className} />
+  const glyph = (() => {
+    if (mark.hosted !== undefined && (mark.state === undefined || mark.badge !== undefined))
+      return (
+        <HostedMark
+          hosted={mark.hosted}
+          className={cn(className, mark.state !== undefined && "opacity-60")}
+        />
+      );
+    if (mark.sent === true)
+      return mark.state === "signed out" || mark.state === "not heard" ? (
+        <CloudOff aria-hidden className={className} />
+      ) : (
+        <CloudUpload aria-hidden className={className} />
+      );
+    return GLYPH_WHOLE_IN.has(mark.state) ? (
+      <Server aria-hidden className={className} />
     ) : (
-      <CloudUpload aria-hidden className={className} />
+      <ServerOff aria-hidden className={className} />
     );
-  return mark.state === undefined ? (
-    <Server aria-hidden className={className} />
-  ) : (
-    <ServerOff aria-hidden className={className} />
+  })();
+  if (mark.badge === undefined) return glyph;
+  return (
+    <span className="relative inline-flex shrink-0" data-badge={mark.badge}>
+      {glyph}
+      <span
+        aria-hidden
+        data-testid="machine-badge"
+        className={cn(
+          "absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-1 ring-sidebar",
+          BADGE_DOT[mark.badge],
+        )}
+      />
+    </span>
   );
 }
 

@@ -3,6 +3,7 @@ import {
   type HostFailed,
   HostId,
   type HostUnavailable,
+  MachineStopCause,
   ThreadId,
 } from "@gram/contracts";
 import { isPushRemote } from "@gram/git";
@@ -19,12 +20,16 @@ import {
   type StopResumeDeps,
   stopStatus,
 } from "../host/stop-resume.ts";
+import type { RemoteHostsShape } from "../host/remote-hosts.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 
 /** Each joined machine: dialled in, readied to stop, wanted by a thread. */
 export const MACHINES_STOP_STATUS_PATH = "/machines/stop/status";
-/** Readies a machine to stop: `{ id, force?, remote? }`. */
+/**
+ * Readies a machine to stop: `{ id, force?, remote?, cause? }`, where `cause` says why it stops
+ * (`MachineStopCause`: `idle`, `reclaimed` for a drain or a spot notice), for its mark.
+ */
 export const MACHINES_STOP_PREPARE_PATH = "/machines/stop/prepare";
 /** Takes a stop back: `{ id }`. */
 export const MACHINES_STOP_CANCEL_PATH = "/machines/stop/cancel";
@@ -35,7 +40,8 @@ export const MACHINES_STOP_CANCEL_PATH = "/machines/stop/cancel";
  */
 export const MACHINES_STOP_RESUME_PATH = "/machines/stop/resume";
 /**
- * Says a machine is being started on another disk: `{ id }`. Once it dials in, its sessions wait
+ * Says a machine is being started on another disk: `{ id, cause? }`, `cause` saying why it left
+ * the last (`reclaimed` when its compute was taken away). Once it dials in, its sessions wait
  * for its resume, as after a stop this Gram saw, so none opens before its folders are back.
  */
 export const MACHINES_STOP_EXPECT_PATH = "/machines/stop/expect";
@@ -63,6 +69,9 @@ export const HOST_STOP_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 const KEY_MAX = 256;
+
+const isStopCause = (value: unknown): value is MachineStopCause =>
+  typeof value === "string" && (MachineStopCause.literals as ReadonlyArray<string>).includes(value);
 
 const BODY_MAX = 4_096;
 const RESUME_BODY_MAX = 512 * 1024;
@@ -149,6 +158,7 @@ const answerOf = (job: MachineJob | undefined) =>
  */
 export const hostStopRoute = (
   deps: StopResumeDeps & {
+    readonly hosts: Pick<RemoteHostsShape, "providerSaid">;
     readonly settings: Pick<ThreadStore["Service"], "getSettings">;
     readonly jobs: MachineJobs;
   },
@@ -184,9 +194,10 @@ export const hostStopRoute = (
       });
       return job === undefined ? refuse("No such job here.", 404) : json({ job });
     }
-    const { id, force, remote, key } = body;
+    const { id, force, remote, key, cause } = body;
     if (
       typeof id !== "string" ||
+      (cause !== undefined && !isStopCause(cause)) ||
       deps.hosts.machines.get(id)?.confirmedAt === undefined ||
       (force !== undefined && typeof force !== "boolean") ||
       (remote !== undefined && (typeof remote !== "string" || !isPushRemote(remote))) ||
@@ -194,6 +205,14 @@ export const hostStopRoute = (
     )
       return refuse("bad request", 400);
     const hostId = HostId.make(id);
+    const tellProviderCause = (phase: "starting" | "stopped") => {
+      if (cause !== undefined)
+        deps.hosts.providerSaid?.(hostId, {
+          phase,
+          cause: cause as MachineStopCause,
+          at: Date.now(),
+        });
+    };
     const prepareJob = () =>
       deps.jobs.start({
         kind: "prepare",
@@ -219,6 +238,7 @@ export const hostStopRoute = (
       body["fromBranch"] === undefined ? undefined : (threadIds(body["fromBranch"]) ?? null);
     switch (path) {
       case MACHINES_STOP_PREPARE_PATH: {
+        tellProviderCause("stopped");
         const { job, joined } = yield* prepareJob();
         const ended = deps.jobs.ended(job.id);
         return answerOf(
@@ -226,6 +246,7 @@ export const hostStopRoute = (
         );
       }
       case MACHINES_STOP_PREPARE_START_PATH: {
+        tellProviderCause("stopped");
         const started = yield* prepareJob();
         return json(started, 202);
       }
@@ -239,6 +260,7 @@ export const hostStopRoute = (
         } catch {
           return refuse("The machine's record couldn't be kept; try again.", 503);
         }
+        tellProviderCause("starting");
         return json({ ok: true });
       case MACHINES_STOP_RESUME_PATH: {
         const kept = keptOfBody();

@@ -9,6 +9,7 @@ import {
   type Thread,
 } from "@gram/contracts";
 
+import { agoText } from "@/lib/time";
 import { machineHealth } from "@/settings/machine-status";
 
 /**
@@ -25,11 +26,23 @@ export interface MachineMark {
   readonly state?:
     | "offline"
     | "starting"
+    | "restoring"
+    | "paused"
+    | "reclaimed"
+    | "failed"
     | "needs update"
     | "not joined"
     | "asks you"
     | "signed out"
     | "not heard";
+  /**
+   * The corner mark its glyph wears, beside the glyph's shape: something brings it back (`busy`),
+   * it waits to be woken (`waiting`), or it failed. Absent for a machine that is online, or merely
+   * offline, which its glyph alone says.
+   */
+  readonly badge?: "busy" | "waiting" | "failed";
+  /** Epoch ms since it has been in its state, where that is known. */
+  readonly since?: number;
   /** Set for a worker sent to a server: it runs there, and this app holds none of its files. */
   readonly sent?: true;
   /**
@@ -51,6 +64,113 @@ export interface MachineMark {
 /** A starting machine's hover, under its state. */
 export const STARTING_WHY =
   "It stopped while idle, and is starting again for a thread that waits on it.";
+
+const RESTORING_WHY = "Its threads' folders are being put back. Their sessions open once they are.";
+const STALLED_WHY =
+  "Putting its threads back made no progress, so no session opens over folders that may not be there. It goes on once the restore does.";
+const PAUSED_WHY: Readonly<Record<"idle" | "released", string>> = {
+  idle: "It paused with nothing to do, and starts again when work wants it.",
+  released: "Its work is over, so its provider lets it go once idle.",
+};
+const RECLAIMED_WHY =
+  "Its provider took its compute away, as with a spot interruption or a node replaced.";
+const FAILED_WHY = "Its provider couldn't start it.";
+
+const lasted = (since: number | undefined, now: number) =>
+  since === undefined || now - since < 60_000
+    ? ""
+    : ` for ${agoText(since, now, { long: true }).replace(/ ago$/, "")}`;
+
+const ago = (since: number | undefined, now: number) =>
+  since === undefined ? "" : ` ${agoText(since, now, { long: true })}`;
+
+/**
+ * Where a machine that isn't simply online or offline stands, from what this Gram and whoever runs
+ * the machine said of it: its state's word, its corner mark, since when, the state's line for its
+ * hover and why. Undefined for a machine that is online, or offline with nothing more known.
+ */
+export function machineCondition(
+  machine: MachineState,
+  now = Date.now(),
+):
+  | {
+      readonly state: "starting" | "restoring" | "paused" | "reclaimed" | "failed";
+      readonly badge?: "busy" | "waiting" | "failed";
+      readonly since?: number;
+      readonly line: string;
+      readonly why: string;
+    }
+  | undefined {
+  if (machine.onlineSince !== undefined) {
+    if (machine.restoring === undefined) return undefined;
+    if (machine.stalled !== undefined)
+      return {
+        state: "failed",
+        badge: "failed",
+        since: machine.stalled,
+        line: `restore stalled${ago(machine.stalled, now)}`,
+        why: STALLED_WHY,
+      };
+    return {
+      state: "restoring",
+      badge: "busy",
+      since: machine.restoring,
+      line: `restoring${lasted(machine.restoring, now)}`,
+      why: RESTORING_WHY,
+    };
+  }
+  const said = machine.provider;
+  const offlineAt =
+    machine.offline !== undefined && "at" in machine.offline ? machine.offline.at : undefined;
+  const coming = machine.starting !== undefined || said?.phase === "starting";
+  if (said?.phase === "failed" && machine.starting === undefined) {
+    const since = said.since ?? said.at;
+    return {
+      state: "failed",
+      badge: "failed",
+      since,
+      line: `failed${ago(since, now)}`,
+      why: said.message ?? FAILED_WHY,
+    };
+  }
+  if (said?.cause === "reclaimed") {
+    const since = said.since ?? offlineAt ?? said.at;
+    return {
+      state: "reclaimed",
+      ...(coming ? { badge: "busy" as const } : {}),
+      since,
+      line: `reclaimed by its provider${ago(since, now)}${coming ? ", restarting" : ""}`,
+      why: RECLAIMED_WHY,
+    };
+  }
+  if (coming) {
+    const since = machine.starting ?? said?.since ?? said?.at;
+    return {
+      state: "starting",
+      badge: "busy",
+      ...(since === undefined ? {} : { since }),
+      line: `starting${lasted(since, now)}`,
+      why: machine.starting === undefined ? "Its provider is starting it." : STARTING_WHY,
+    };
+  }
+  const pausedFor =
+    said?.cause === "released"
+      ? "released"
+      : machine.paused !== undefined || said?.cause === "idle"
+        ? "idle"
+        : undefined;
+  if (pausedFor !== undefined) {
+    const since = machine.paused ?? said?.since ?? said?.at;
+    return {
+      state: "paused",
+      badge: "waiting",
+      ...(since === undefined ? {} : { since }),
+      line: `${pausedFor === "released" ? "released, pausing when idle" : "paused while idle"}${lasted(since, now)}`,
+      why: PAUSED_WHY[pausedFor],
+    };
+  }
+  return undefined;
+}
 
 const KIND: Readonly<Record<MachineState["kind"], string>> = {
   joined: "Joined machine",
@@ -100,6 +220,20 @@ export function machineMark(
   const kind =
     hosted === undefined ? KIND[machine.kind] : `${machine.name} · ${KIND[machine.kind]}`;
   const from = hosted === undefined ? {} : { hosted };
+  const condition = health.tone === "update" ? undefined : machineCondition(machine, now);
+  if (condition !== undefined)
+    return {
+      name: machine.name,
+      state: condition.state,
+      ...from,
+      ...(condition.badge === undefined ? {} : { badge: condition.badge }),
+      ...(condition.since === undefined ? {} : { since: condition.since }),
+      ...(condition.state === "starting" && machine.starting !== undefined
+        ? { startingSince: machine.starting }
+        : {}),
+      words: `on ${where}, ${condition.state}`,
+      hint: [head, `${kind} · ${condition.line}`, condition.why].join("\n"),
+    };
   if (health.tone === "online")
     return {
       name: machine.name,

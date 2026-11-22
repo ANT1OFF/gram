@@ -1,6 +1,5 @@
 import type { HostId, Thread } from "@gram/contracts";
 import { effectiveCheckout } from "@gram/contracts";
-import { Server, ServerOff } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { useEmbedShell } from "@/embed/store";
@@ -46,7 +45,8 @@ function PlacedChip({
   className?: string | undefined;
 }) {
   const mark = useMachineMark(hostId);
-  const reachable = mark?.name !== undefined && mark.state === undefined;
+  const reachable =
+    mark?.name !== undefined && (mark.state === undefined || mark.state === "restoring");
   const home = useHome(reachable ? hostId : undefined);
   if (mark === undefined) return null;
   const name = mark.name ?? "another machine";
@@ -54,7 +54,7 @@ function PlacedChip({
   const where = `Runs on ${name} in ${path}`;
   const [, ...state] = mark.hint.split("\n");
   const label = [where, ...state].join("\n");
-  const Glyph = mark.state === undefined ? Server : ServerOff;
+  const { hosted: _namedBesideItInstead, ...plain } = mark;
   return (
     <>
       <Hint
@@ -74,7 +74,7 @@ function PlacedChip({
           />
         }
       >
-        <Glyph aria-hidden className="size-icon-chip shrink-0" />
+        <MarkGlyph mark={plain} className="size-icon-chip shrink-0" />
         <span className="flex h-lh min-w-0 flex-wrap gap-x-1 overflow-hidden">
           <span className="max-w-full min-w-0 truncate">{name}</span>
           {mark.state !== undefined && <span className="shrink-0">{mark.state}</span>}

@@ -370,6 +370,72 @@ describe("joined machines over the network", () => {
     20_000,
   );
 
+  it.live(
+    "says what the provider said of an offline machine until it dials in",
+    () =>
+      Effect.gen(function* () {
+        const { hosts, base } = yield* served;
+        const key = generateHostKey();
+        const hostId = hostIdOf(key.publicKey);
+        const id = HostId.make(hostId);
+        const { url } = hosts.machines.mint(ORIGIN);
+        const code = new URLSearchParams(new URL(url).hash.slice(1)).get("code")!;
+        yield* joinMachine(base, code, key.publicKey);
+        hosts.machines.confirm(hostId);
+
+        let news = 0;
+        const unwatch = hosts.watch(() => {
+          news += 1;
+        });
+        const word = { phase: "stopped", cause: "reclaimed", since: 1, at: 2 } as const;
+        hosts.providerSaid?.(id, word);
+        expect(hosts.states()[0]?.provider).toEqual(word);
+        // The same word heard again is no news, and keeps when it was first heard.
+        const told = news;
+        hosts.providerSaid?.(id, { ...word, at: 3 });
+        expect(news).toBe(told);
+        expect(hosts.states()[0]?.provider?.at).toBe(2);
+
+        // It dials in: online, and neither is said of it any more.
+        const fiber = yield* Effect.forkScoped(
+          dialOnce(
+            {
+              origin: ORIGIN,
+              hostId,
+              key: privateKeyFrom(key.privateKeyPem),
+              url: `${base.replace("http:", "ws:")}/host/connect`,
+            },
+            service(hostId),
+          ),
+        );
+        yield* online(hosts, hostId);
+        const [up] = hosts.states();
+        expect(up?.onlineSince).toEqual(expect.any(Number));
+        expect(up).not.toHaveProperty("provider");
+        unwatch();
+        yield* Fiber.interrupt(fiber);
+      }).pipe(Effect.scoped),
+    20_000,
+  );
+
+  it.live("says a machine readied to stop and gone paused, until it is taken back", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* served;
+      const key = generateHostKey();
+      const hostId = hostIdOf(key.publicKey);
+      const id = HostId.make(hostId);
+      const { url } = hosts.machines.mint(ORIGIN);
+      const code = new URLSearchParams(new URL(url).hash.slice(1)).get("code")!;
+      yield* joinMachine(base, code, key.publicKey);
+      hosts.machines.confirm(hostId);
+      expect(hosts.states()[0]).not.toHaveProperty("paused");
+      hosts.stops.stopped(id, []);
+      expect(hosts.states()[0]?.paused).toEqual(expect.any(Number));
+      hosts.stops.back(id);
+      expect(hosts.states()[0]).not.toHaveProperty("paused");
+    }).pipe(Effect.scoped),
+  );
+
   it("counts a refused dial as news once, however often it repeats", () => {
     const id = HostId.make("m-0123456789abcdef01234567");
     const refused = (at: number) =>

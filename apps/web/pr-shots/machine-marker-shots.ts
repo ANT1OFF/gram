@@ -71,7 +71,85 @@ const openMachineMarkers = async (page: Page, { hosted = false } = {}) => {
   return made;
 };
 
+/**
+ * The board workspace with a worker on a machine in each state whoever runs it can be in: online,
+ * reclaimed by its provider and restarting, paused while idle, its threads being put back, and
+ * failed with the provider's reason. Two came through a hosted server, which gave its logo.
+ */
+const openMachineStates = async (page: Page) => {
+  const made = await openBoardSidebar(page);
+  await page.evaluate(
+    ([ids, logo]) => {
+      const mock = window.gramMock!;
+      const now = Date.now();
+      const hosted = { name: "Example Cloud", logo };
+      const machine = (id: string, name: string, state: Record<string, unknown>) => ({
+        id,
+        name,
+        kind: "provisioned",
+        ...state,
+      });
+      mock.setMachines([
+        {
+          id: "m-0123456789abcdef01234567",
+          name: "atlas",
+          kind: "joined",
+          onlineSince: now - 7_200_000,
+        },
+        machine("m-89abcdef0123456701234567", "worker-827d7eaf1e", {
+          hosted,
+          offline: { kind: "lost", at: now - 240_000 },
+          starting: now - 200_000,
+          provider: {
+            phase: "starting",
+            cause: "reclaimed",
+            since: now - 240_000,
+            at: now - 220_000,
+          },
+        }),
+        machine("m-456789abcdef012301234567", "worker-5c1e9a2b70", {
+          hosted,
+          offline: { kind: "lost", at: now - 3_000_000 },
+          paused: now - 3_000_000,
+        }),
+        machine("m-cdef0123456789ab01234567", "sandbox-1", {
+          onlineSince: now - 90_000,
+          restoring: now - 90_000,
+        }),
+        machine("m-fedcba987654321001234567", "sandbox-2", {
+          offline: { kind: "lost", at: now - 600_000 },
+          provider: {
+            phase: "failed",
+            message: "No capacity for this size in the zone.",
+            since: now - 540_000,
+            at: now - 500_000,
+          },
+        }),
+      ] as never);
+      mock.placeOnMachine(ids.working, "m-0123456789abcdef01234567");
+      mock.placeOnMachine(ids.waiting[0], "m-89abcdef0123456701234567");
+      mock.placeOnMachine(ids.inReview, "m-456789abcdef012301234567");
+      mock.placeOnMachine(ids.ungrouped, "m-cdef0123456789ab01234567");
+      mock.placeOnMachine("t-flaky" as never, "m-fedcba987654321001234567");
+    },
+    [made, HOSTED_LOGO] as const,
+  );
+  await threadRow(page, made.working).getByTestId("overview-worker-machine").waitFor();
+  return made;
+};
+
 export const MACHINE_MARKER_SHOTS: readonly Shot[] = [
+  {
+    name: "machine-marker-states",
+    title:
+      "The sidebar with workers on machines in each state: online, reclaimed and restarting (hosted logo, pulsing badge), paused while idle (hollow ring), restoring, and failed (red badge); the reclaimed one's hover names its state, since when and why",
+    open: async (page) => {
+      const made = await openMachineStates(page);
+      await threadRow(page, made.waiting[0]).hover();
+      await page.getByTestId("overview-worker-card-machine").waitFor();
+      await page.waitForTimeout(500);
+    },
+  },
   {
     name: "machine-marker-sidebar",
     title:

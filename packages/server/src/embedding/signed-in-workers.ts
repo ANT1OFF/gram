@@ -41,6 +41,7 @@ import {
 import {
   isHostedWorkerName,
   parseMachineStatus,
+  providerWordOf,
   sendSignedInStart,
   sentOf,
   settledSince,
@@ -68,6 +69,7 @@ import {
   withName,
 } from "./worker-machine-stops.ts";
 import { plainName } from "./server-name.ts";
+import { askOnDrop } from "./signed-in-drops.ts";
 
 export { plainName } from "./server-name.ts";
 
@@ -93,7 +95,7 @@ const failedWords = (name: string, why: string) => `The machine ${name} didn't j
 
 export interface SignedInDeps {
   readonly port: WorkerMachinePortShape;
-  readonly hosts: Pick<RemoteHostsShape, "remove"> & {
+  readonly hosts: Pick<RemoteHostsShape, "remove" | "providerSaid"> & {
     readonly list: () => ReadonlyArray<ProvidedMachine>;
     /** Its host's hello once online, to refuse one that can't carry app tools; absent in fakes. */
     readonly connection?: RemoteHostsShape["connection"];
@@ -440,6 +442,8 @@ export const signedInSource = (
           const answered = read.value;
           const fresh = answered.ok && settledSince(deps.sent, name, before);
           const status = fresh ? parseMachineStatus(answered.body) : {};
+          if (fresh && machine !== undefined)
+            hosts.providerSaid?.(HostId.make(machine.id), providerWordOf(status, now()));
           const why = status.message ?? `${server.server} says it isn't starting.`;
           notFound = fresh && isNotFound(answered) ? notFound + 1 : 0;
           if (notFound >= RECLAIMED_AFTER_MISSES && machine === undefined)
@@ -648,6 +652,7 @@ export const SignedInWorkersLive = Layer.effect(
               asleep,
               sent,
               wanted: () => hosts.stops.wanted(id),
+              said: (word) => hosts.providerSaid?.(id, word),
               heldFor: (name) => {
                 const until = owed.holds.until(machine.via!, name, Date.now());
                 return until === undefined ? 0 : until - Date.now();
@@ -682,6 +687,7 @@ export const SignedInWorkersLive = Layer.effect(
     });
     yield* Effect.addFinalizer(() => Effect.sync(unwatchWants));
     yield* Queue.take(wants).pipe(Effect.andThen(wakeWanted), Effect.forever, Effect.forkScoped);
+    yield* askOnDrop(port, hosts);
     const misses = new Map<string, number>();
     const stopMisses = new Map<string, number>();
     const heardFrom = (server: WorkerMachineServer) => {
