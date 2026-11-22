@@ -231,28 +231,39 @@ export function TreeChart({
     setZoom(clamp(Math.max(FOCUS_FLOOR, spans)));
   };
   const focused = placed.find((entry) => entry.node.id === focusId);
-  const regionFits = (box: HTMLElement) =>
-    fitFocus &&
-    region.length > 0 &&
-    (right0 - left0) * zoom <= box.clientWidth - 32 &&
-    (bottom0 - top0) * zoom <= box.clientHeight - 32;
-  const scrollKey =
-    focused === undefined ? undefined : `${focused.x}:${focused.y}:${zoom}:${region.length}`;
+  const focusX = focused?.x;
+  const focusY = focused?.y;
+  const hasRegion = fitFocus && region.length > 0;
   useLayoutSync(() => {
     const box = frame.current;
-    if (box === null || focused === undefined) return;
-    if (regionFits(box)) {
+    if (box === null || focusX === undefined || focusY === undefined) return;
+    if (
+      hasRegion &&
+      (right0 - left0) * zoom <= box.clientWidth - 32 &&
+      (bottom0 - top0) * zoom <= box.clientHeight - 32
+    ) {
       box.scrollLeft = Math.max(0, ((left0 + right0) / 2) * zoom - box.clientWidth / 2);
       box.scrollTop = Math.max(0, ((top0 + bottom0) / 2) * zoom - box.clientHeight / 2);
       return;
     }
-    box.scrollLeft = Math.max(0, (focused.x + nodeWidth / 2) * zoom - box.clientWidth / 2);
+    box.scrollLeft = Math.max(0, (focusX + nodeWidth / 2) * zoom - box.clientWidth / 2);
     box.scrollTop = Math.max(
       0,
-      (across ? focused.y + nodeHeight / 2 : focused.y) * zoom -
-        (across ? box.clientHeight / 2 : 48),
+      across ? (focusY + nodeHeight / 2) * zoom - box.clientHeight / 2 : focusY * zoom - 48,
     );
-  }, [scrollKey]);
+  }, [
+    focusX,
+    focusY,
+    zoom,
+    hasRegion,
+    left0,
+    right0,
+    top0,
+    bottom0,
+    nodeWidth,
+    nodeHeight,
+    across,
+  ]);
   return (
     <div className={cn("flex flex-col gap-2", className)} data-testid={testId}>
       <div className="flex items-center gap-1" role="group" aria-label={`${label}: zoom`}>

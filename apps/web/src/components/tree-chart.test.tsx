@@ -62,6 +62,9 @@ describe("TreeChart", () => {
   });
 });
 
+const left = (name: string) => Number.parseFloat(screen.getByRole("treeitem", { name }).style.left);
+const top = (name: string) => Number.parseFloat(screen.getByRole("treeitem", { name }).style.top);
+
 describe("TreeChart horizontal layout and focus", () => {
   it("finds the way down to an entry", () => {
     expect(pathTo(TREE, "a2")).toEqual(["lead", "a", "a2"]);
@@ -79,10 +82,6 @@ describe("TreeChart horizontal layout and focus", () => {
         fitFocus
       />,
     );
-    const left = (name: string) =>
-      Number.parseFloat(screen.getByRole("treeitem", { name }).style.left);
-    const top = (name: string) =>
-      Number.parseFloat(screen.getByRole("treeitem", { name }).style.top);
     expect(left("A")).toBeGreaterThan(left("Lead"));
     expect(left("A1")).toBeGreaterThan(left("A"));
     expect(top("A2")).toBeGreaterThan(top("A1"));
