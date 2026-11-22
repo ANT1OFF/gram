@@ -95,9 +95,31 @@ export const SERVICE_TYP = "gram-service+jwt";
 
 export const SERVICE_ROLE = "service";
 
+/**
+ * A person's lent device dialling in, as the platform in front checked it: the person, the
+ * device's public key it registered to them, the workspace the dial is for, and the public path
+ * the device dialled (which its signature covers). A device statement opens only the device's
+ * own dial (`DEVICE_CONNECT_PATH`), and a person's or a service's never opens that.
+ */
+export interface DeviceCaller {
+  readonly actor: Actor;
+  /** The raw Ed25519 public key, base64url, that the front has registered to `actor`. */
+  readonly publicKey: string;
+  readonly workspace: string;
+  readonly path: string;
+}
+
+/** The JOSE `typ` of a statement for a lent device's dial. */
+export const DEVICE_TYP = "gram-device+jwt";
+
+const DEVICE_WORKSPACE = /^[A-Za-z0-9_.:-]{1,128}$/;
+const DEVICE_PUBLIC_KEY = /^[A-Za-z0-9_-]{43}$/;
+const DEVICE_PATH = /^\/[a-z0-9/_-]{0,64}$/;
+
 export type IdentityResult =
   | { readonly ok: true; readonly actor: Actor }
   | { readonly ok: true; readonly service: ServiceCaller }
+  | { readonly ok: true; readonly device: DeviceCaller }
   | { readonly ok: false; readonly reason: IdentityRefusal };
 
 const refuse = (reason: IdentityRefusal): IdentityResult => ({ ok: false, reason });
@@ -200,6 +222,22 @@ export const verifyIdentity = (
     return { ok: true, service: { id, name, path } };
   }
   if (role !== "member" && role !== "viewer") return refuse("role");
+  if (header["typ"] === DEVICE_TYP) {
+    const publicKey = claims["device_key"];
+    const workspace = claims["workspace"];
+    const path = claims["path"];
+    if (
+      role !== "member" ||
+      typeof publicKey !== "string" ||
+      !DEVICE_PUBLIC_KEY.test(publicKey) ||
+      typeof workspace !== "string" ||
+      !DEVICE_WORKSPACE.test(workspace) ||
+      typeof path !== "string" ||
+      !DEVICE_PATH.test(path)
+    )
+      return refuse("role");
+    return { ok: true, device: { actor: { id, name, role }, publicKey, workspace, path } };
+  }
   return { ok: true, actor: { id, name, role } };
 };
 

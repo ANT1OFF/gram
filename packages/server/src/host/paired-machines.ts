@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { type HostId, type HostStatus, hostedOrigin } from "@gram/contracts";
 import { makeLaunchToken, tokensEqual } from "../http/auth.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
+import { makeDialNonceRecord } from "./dial-nonce-record.ts";
 import {
   CONNECT_SKEW_MS,
   connectClaimOf,
@@ -331,27 +332,45 @@ export const fileMachineStore = (dataDir: string): PairedMachineStore => {
   };
 };
 
-const isNonce = (value: unknown): value is DialNonce =>
-  Array.isArray(value) &&
-  value.length === 2 &&
-  typeof value[0] === "string" &&
-  /^[a-f0-9]{32}$/.test(value[0]) &&
-  Number.isSafeInteger(value[1]);
+const HOST_DIAL_NONCE = /^[a-f0-9]{32}$/;
 
-const dialNoncesPath = (dataDir: string) => join(dataDir, "remote-access", "dial-nonces.json");
+const isNonceOf =
+  (shape: RegExp) =>
+  (value: unknown): value is DialNonce =>
+    Array.isArray(value) &&
+    value.length === 2 &&
+    typeof value[0] === "string" &&
+    shape.test(value[0]) &&
+    Number.isSafeInteger(value[1]);
+
+const DIAL_NONCES_FILE = "dial-nonces.json";
+
+const dialNoncesPath = (dataDir: string, name: string = DIAL_NONCES_FILE) =>
+  join(dataDir, "remote-access", name);
 
 /** The `seen` the nonces file's modified time holds, whether or not its content can be read. */
-export const dialNoncesLastSeen = (dataDir: string): number | undefined => {
+export const dialNoncesLastSeen = (
+  dataDir: string,
+  name: string = DIAL_NONCES_FILE,
+): number | undefined => {
   try {
-    return Math.ceil(lstatSync(dialNoncesPath(dataDir)).mtimeMs) + 1000;
+    return Math.ceil(lstatSync(dialNoncesPath(dataDir, name)).mtimeMs) + 1000;
   } catch {
     return undefined;
   }
 };
 
-/** The accepted dials' nonces in `<dataDir>/remote-access/dial-nonces.json`, as the machines are. */
-export const fileNonceStore = (dataDir: string): DialNonceStore => {
-  const file = privateJsonFile(dataDir, "dial-nonces.json", 256 * 1024);
+/**
+ * The accepted dials' nonces in `<dataDir>/remote-access/dial-nonces.json`, as the machines are.
+ * Another kind of dial keeps its own under `name`, with nonces of its own `shape`.
+ */
+export const fileNonceStore = (
+  dataDir: string,
+  name: string = DIAL_NONCES_FILE,
+  shape: RegExp = HOST_DIAL_NONCE,
+): DialNonceStore => {
+  const file = privateJsonFile(dataDir, name, 256 * 1024);
+  const isNonce = isNonceOf(shape);
   return {
     read: () => {
       const value = file.read();
@@ -375,7 +394,7 @@ export const fileNonceStore = (dataDir: string): DialNonceStore => {
       };
     },
     write: ({ nonces, floor, seen }) => file.write({ version: 1, floor, seen, nonces }, seen),
-    lastSeen: () => dialNoncesLastSeen(dataDir),
+    lastSeen: () => dialNoncesLastSeen(dataDir, name),
   };
 };
 
@@ -412,25 +431,11 @@ export const createPairedMachines = (
 ) => {
   let machines = store.read();
   let invitation: { code: string; origin: string; expiresAt: number } | undefined;
-  const nonces = new Map<string, number>();
-  let floor = 0;
-  let seen = 0;
-  let blind = false;
-  const load = () => {
-    try {
-      const kept = nonceStore.read();
-      ({ floor, seen } = kept);
-      for (const [nonce, until] of kept.nonces) nonces.set(nonce, until);
-      return true;
-    } catch {
-      const last = nonceStore.lastSeen?.();
-      if (last === undefined) return false;
-      floor = Math.max(now(), last) + CONNECT_SKEW_MS;
-      seen = floor;
-      return true;
-    }
-  };
-  blind = !load();
+  const dials = makeDialNonceRecord(nonceStore, now, {
+    skewMs: CONNECT_SKEW_MS,
+    most: NONCES_KEPT,
+    perKey: DIALS_PER_MACHINE,
+  });
   const problems = new Map<string, MachineProblem>();
   const note = (id: string, problem: MachineProblem | undefined) => {
     if (problem === undefined) {
@@ -462,33 +467,6 @@ export const createPairedMachines = (
       keys.set(machine.publicKey, key);
     }
     return key;
-  };
-  const dialsOf = new Map<string, number[]>();
-  const record = (
-    machineId: string,
-    nonce: string,
-    signed: number,
-    at: number,
-  ): "ok" | "stale" | "replayed" | "full" | "unsaved" => {
-    const until = signed + CONNECT_SKEW_MS;
-    const own = (dialsOf.get(machineId) ?? []).filter((expires) => expires >= at);
-    for (const [kept, expires] of nonces)
-      if (expires < at) {
-        nonces.delete(kept);
-        floor = Math.max(floor, expires - CONNECT_SKEW_MS);
-      }
-    if (signed <= floor) return "stale";
-    if (nonces.has(nonce)) return "replayed";
-    if (nonces.size >= NONCES_KEPT || own.length >= DIALS_PER_MACHINE) return "full";
-    dialsOf.set(machineId, [...own, until]);
-    nonces.set(nonce, until);
-    seen = Math.max(seen, at);
-    try {
-      nonceStore.write({ nonces: [...nonces], floor, seen });
-    } catch {
-      return "unsaved";
-    }
-    return "ok";
   };
   return {
     list: (): ReadonlyArray<PairedMachine> => machines,
@@ -716,7 +694,7 @@ export const createPairedMachines = (
     remove: (id: string): boolean => {
       if (byId(id) === undefined) return false;
       problems.delete(id);
-      dialsOf.delete(id);
+      dials.forget(id);
       forget(machines.filter((machine) => machine.id !== id));
       return true;
     },
@@ -749,7 +727,7 @@ export const createPairedMachines = (
           note(machine.id, { kind: "clock", at, skewMs: claim.time - at });
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       }
-      if (claim.time <= floor)
+      if (dials.stale(claim.time))
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       if (!verifyConnect(key, claim, claim.signature)) {
         const kept = problems.get(machine.id)?.kind;
@@ -761,10 +739,9 @@ export const createPairedMachines = (
         note(machine.id, { kind: "unconfirmed", at });
         return { kind: "refused", status: 403, message: "forbidden: confirm this machine first" };
       }
-      if (blind) blind = !load();
-      if (blind)
+      if (!dials.ready())
         return { kind: "refused", status: 503, message: "unavailable: dial history unreadable" };
-      const nonce = record(machine.id, claim.nonce, claim.time, at);
+      const nonce = dials.record(machine.id, claim.nonce, claim.time, at);
       if (nonce === "stale")
         return { kind: "refused", status: 401, message: "unauthorized: dial out of date" };
       if (nonce === "replayed")

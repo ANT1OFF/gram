@@ -4,7 +4,9 @@
 
 Status: design approved on 11 November 2026 with the defaults in
 [section 10](#10-open-decisions), after an independent security review
-([what it changed](#11-what-the-security-review-changed)). Nothing here is built yet. It sits
+([what it changed](#11-what-the-security-review-changed)). The device in the desktop app is built,
+and so is the control plane's dial ([as built](#the-control-planes-dial-as-built)); the tools a
+thread calls a device with are not yet. It sits
 behind the one hosted-features setting (`experimental.embedding`), and with that off none of it
 exists.
 
@@ -988,3 +990,35 @@ says it was changed outside Gram and shows only the lines before the change; a l
 start is said too. Without a keyring nothing is kept, and the list says so. It shows the newest
 200 lines; the file isn't rotated yet, and each read reads all of it. It sits in Settings
 rather than its own window, as the mock's board also draws it as a Settings page.
+
+### The control plane's dial, as built
+
+A headless server takes a device's dial at `/device/connect`, behind sign-in through a proxy
+([Docker](../DOCKER.md#sign-in-through-a-proxy)). The front checks the device's token, its
+registration to the person, the person's membership and the organisation's policy, then forwards
+the upgrade with a statement of its own: a JWT whose header has `typ` `gram-device+jwt`, with the
+person's `sub` and `role` `member`, `device_key` (the raw Ed25519 public key it registered to that
+person, base64url), `workspace` (the one the dial is for) and `path` (the public path the device
+dialled, which its signature covers). It forwards the device's `Authorization` and its four
+`x-gram-device-*` headers unchanged.
+
+`packages/server/src/device/` then checks, against nothing the device says about itself: the
+device id the headers name is the one that key derives; the address's `workspace` is the
+statement's; the signature covers the server's public origin, that path, the workspace, the
+person, the device, the SHA-256 of the token the dial carries, a time within two minutes and a
+nonce never seen. The nonces are kept across restarts in `device-dial-nonces.json`, as a joined
+machine's are, and while that history can't be read no dial is taken. A device statement opens
+that one path and nothing else, and no other statement opens it. With no decision hook on, every
+dial is refused: no device is reached ungoverned.
+
+Once connected, the server asks `device.hello` and takes only protocol 1, the device id it
+admitted, a `read` capability and folders with ids of their own. The device is then online for
+its owner, the person the front named, and found only by that person's id; it pings every five
+seconds and is offline after four missed, when its socket closes, when it dials again (the newer
+connection wins) or after fifteen minutes, when the device dials again with a fresh token the
+front checks again. The event sink gets `device.connected` (the device, its platform, its
+capabilities and its folders' labels) and `device.disconnected` (and why).
+
+Not yet: the three tools, the person binding and the turn grant carried with a message, the
+decision hook's call per request, and the `device.requested`, `device.answered` and
+`device.finished` events. Nothing calls a device yet beyond its hello.

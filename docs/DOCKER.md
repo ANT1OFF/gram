@@ -201,6 +201,12 @@ nothing else, and a member or a viewer reaches none of those.
   then run on. The `typ` header is what marks it, so a role copied from your directory can't.
 - Its calls are recorded like a member's, under its `sub`, with how each was answered.
 
+A statement whose header has `typ` `gram-device+jwt` is for a person's lent device, and for one
+path only: `/device/connect`, where the front forwards a device's dial once it has checked the
+device is registered to that person. It carries `device_key`, `workspace` and `path` beside the
+person's claims, and no other statement reaches that path. See
+[the control plane's dial](design/personal-device.md#the-control-planes-dial-as-built).
+
 The server holds public keys only, so it can't sign a statement itself. What you have to keep
 true around it:
 

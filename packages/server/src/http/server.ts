@@ -105,6 +105,8 @@ import { serverDatabaseFile } from "../persistence/database-file.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { embeddingEnabled, withEmbeddingSeed } from "../settings/embedding.ts";
 import { ActorGuard, FrontedSignIn } from "../rpc/actor-guard.ts";
+import { DEVICE_CONNECT_PATH } from "../device/devices.ts";
+import { deviceStatement, LentDevices, NOT_A_DEVICE } from "../device/service.ts";
 import { markActor, unmarkActor } from "./actor.ts";
 import {
   IDENTITY_HEADER,
@@ -320,6 +322,7 @@ export const AuthMiddleware = HttpRouter.middleware(
     }
     if (stopDeps !== undefined) yield* resumeOwedMachines(stopDeps);
     const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
+    const devices = Option.getOrUndefined(yield* Effect.serviceOption(LentDevices));
     const securityHeaders = {
       "content-security-policy": contentSecurityPolicy(port),
       "cache-control": "no-store",
@@ -420,6 +423,11 @@ export const AuthMiddleware = HttpRouter.middleware(
               HttpServerResponse.text("unauthorized: signed identity required", { status: 401 }),
             );
           }
+          if ("device" in stated)
+            return secureResponse(
+              yield* deviceStatement(devices, target.path, identity.origin, stated.device),
+            );
+          if (target.path === DEVICE_CONNECT_PATH) return secureResponse(NOT_A_DEVICE);
           if ("service" in stated) {
             const servicePath = target.path;
             if (
@@ -1056,6 +1064,7 @@ export const ServerLayer: Layer.Layer<
     ).pipe(
       Layer.merge(LoopStallLog),
       Layer.provide(FrontedSignIn.layer),
+      Layer.provide(LentDevices.layer),
       Layer.provideMerge(ServerCore),
       Layer.provide(RemoteControl.layer),
       Layer.provideMerge(RemoteHosts.layer),

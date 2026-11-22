@@ -172,6 +172,8 @@ export const SinkEventType = Schema.Literals([
   "message",
   "conversation.reply",
   "conversation.owner",
+  "device.connected",
+  "device.disconnected",
 ]);
 export type SinkEventType = typeof SinkEventType.Type;
 
