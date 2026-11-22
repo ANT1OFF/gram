@@ -83,12 +83,6 @@ const openMachineStates = async (page: Page) => {
       const mock = window.gramMock!;
       const now = Date.now();
       const hosted = { name: "Example Cloud", logo };
-      const machine = (id: string, name: string, state: Record<string, unknown>) => ({
-        id,
-        name,
-        kind: "provisioned",
-        ...state,
-      });
       mock.setMachines([
         {
           id: "m-0123456789abcdef01234567",
@@ -96,7 +90,10 @@ const openMachineStates = async (page: Page) => {
           kind: "joined",
           onlineSince: now - 7_200_000,
         },
-        machine("m-89abcdef0123456701234567", "worker-827d7eaf1e", {
+        {
+          id: "m-89abcdef0123456701234567",
+          name: "worker-827d7eaf1e",
+          kind: "provisioned",
           hosted,
           offline: { kind: "lost", at: now - 240_000 },
           starting: now - 200_000,
@@ -106,17 +103,26 @@ const openMachineStates = async (page: Page) => {
             since: now - 240_000,
             at: now - 220_000,
           },
-        }),
-        machine("m-456789abcdef012301234567", "worker-5c1e9a2b70", {
+        },
+        {
+          id: "m-456789abcdef012301234567",
+          name: "worker-5c1e9a2b70",
+          kind: "provisioned",
           hosted,
           offline: { kind: "lost", at: now - 3_000_000 },
           paused: now - 3_000_000,
-        }),
-        machine("m-cdef0123456789ab01234567", "sandbox-1", {
+        },
+        {
+          id: "m-cdef0123456789ab01234567",
+          name: "sandbox-1",
+          kind: "provisioned",
           onlineSince: now - 90_000,
           restoring: now - 90_000,
-        }),
-        machine("m-fedcba987654321001234567", "sandbox-2", {
+        },
+        {
+          id: "m-fedcba987654321001234567",
+          name: "sandbox-2",
+          kind: "provisioned",
           offline: { kind: "lost", at: now - 600_000 },
           provider: {
             phase: "failed",
@@ -124,7 +130,7 @@ const openMachineStates = async (page: Page) => {
             since: now - 540_000,
             at: now - 500_000,
           },
-        }),
+        },
       ] as never);
       mock.placeOnMachine(ids.working, "m-0123456789abcdef01234567");
       mock.placeOnMachine(ids.waiting[0], "m-89abcdef0123456701234567");
@@ -146,8 +152,7 @@ export const MACHINE_MARKER_SHOTS: readonly Shot[] = [
     open: async (page) => {
       const made = await openMachineStates(page);
       await threadRow(page, made.waiting[0]).hover();
-      await page.getByTestId("overview-worker-card-machine").waitFor();
-      await page.waitForTimeout(500);
+      await expect(page.getByTestId("overview-worker-card-machine")).toContainText("reclaimed");
     },
   },
   {
