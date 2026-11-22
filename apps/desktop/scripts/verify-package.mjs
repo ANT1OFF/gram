@@ -57,6 +57,7 @@ const NODE_BUNDLES = [
   "main",
   "preload",
   "page-guard",
+  "hosted-site",
   "server",
   "proc-worker",
   "gram-host",
@@ -96,6 +97,8 @@ const ASAR_ENTRIES = [
   "out/preload/index.js",
   // Pinned pages' clipboard guard, their only preload.
   "out/page-guard/page-guard.js",
+  // A hosted site window's one call, its only preload.
+  "out/hosted-site/hosted-site.js",
   "out/speech/speech.js",
 ];
 

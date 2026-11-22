@@ -33,9 +33,14 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
     threadHistory: (threadId, before) =>
       run(client["thread.history"]({ threadId, before: before as MessageId })),
     createThread: (input) => run(client["thread.create"](input)),
-    send: (threadId, input) =>
+    send: (threadId, input, options) =>
       runMessage(
-        client["thread.send"]({ threadId, input, clientMessageId: crypto.randomUUID() }),
+        client["thread.send"]({
+          threadId,
+          input,
+          clientMessageId: crypto.randomUUID(),
+          ...(options?.deviceGrant === undefined ? {} : { deviceGrant: options.deviceGrant }),
+        }),
         connection,
       ),
     steer: (threadId, input, options) =>

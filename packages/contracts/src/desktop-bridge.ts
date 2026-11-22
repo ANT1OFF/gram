@@ -1,5 +1,5 @@
 import type { DesktopWindows } from "./app-windows.ts";
-import type { DeviceRefusalReason } from "./device.ts";
+import type { DeviceRefusalReason, SignedTurnGrant } from "./device.ts";
 import type { DesktopPreview } from "./preview.ts";
 import type { DesktopPages } from "./page-url.ts";
 import type { UpdateChannel } from "./settings.ts";
@@ -648,6 +648,12 @@ export interface DesktopBridge extends DesktopWindows {
       ): Promise<HostedWorkMessaged>;
       stop(origin: string, workspace: string, threadId: string): Promise<HostedDeviceDone>;
     };
+    /**
+     * Opens the server's own site for a workspace there in a window of its own, signed in to
+     * there as in any browser. A message the person sends from it may carry a turn grant this
+     * machine signs (`HostedSiteBridge`). Absent from shells older than it.
+     */
+    openSite?(origin: string, workspace: string): Promise<HostedDeviceDone>;
     onChange(callback: () => void): () => void;
   };
   /**
@@ -740,4 +746,15 @@ export interface DesktopBridge extends DesktopWindows {
     source?(): Promise<UpdateSource>;
     readonly native?: DesktopNativeUpdates;
   };
+}
+
+/**
+ * What a hosted server's own site gets as `window.gramHostedSite` in the window `openSite` opens:
+ * one call. `turnGrant` answers a grant for the message the person is sending to `threadId` now,
+ * signed by this machine's device key for that server and workspace, or null: when this machine
+ * isn't lending to that workspace, the call didn't come from the server's own page, or no key
+ * was pressed or button clicked in the window just before. One gesture gives one grant.
+ */
+export interface HostedSiteBridge {
+  turnGrant(threadId: string): Promise<SignedTurnGrant | null>;
 }

@@ -98,6 +98,8 @@ export const fakeServer = () => {
     waitAnswer: undefined as { status: number; body: unknown } | undefined,
     /** Start the person's own machine from the device; named in discovery when on. */
     startsMachines: true,
+    /** Names where its own site shows a workspace. */
+    namesPages: true,
     /** Their machine's phase, and the phases a start goes through, one per read after it. */
     machine: "none",
     machineStarts: [] as Array<Record<string, unknown>>,
@@ -121,6 +123,7 @@ export const fakeServer = () => {
         workspaces_endpoint: `${origin}/api/workspaces`,
         devices_endpoint: `${origin}/api/devices`,
         device_connect: `${origin.replace("http:", "ws:")}/device/connect`,
+        ...(state.namesPages ? { workspace_pages: `${origin}/w/` } : {}),
         ...(state.takesThreads ? { thread_import_endpoint: `${origin}/api/threads/import` } : {}),
         ...(state.givesThreads
           ? {

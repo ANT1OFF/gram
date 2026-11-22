@@ -65,6 +65,7 @@ export function composeBridge<const Parts extends readonly object[]>(
 export { agentBrowsePreload } from "./modules/agent-browser/preload.ts";
 export { connectionPreload } from "./modules/connection/preload.ts";
 export { hostedDevicePreload } from "./modules/device/preload.ts";
+export { installHostedSiteBridge } from "./modules/device/site-preload.ts";
 export { fontsPreload } from "./modules/fonts/preload.ts";
 export { installPageGuard } from "./modules/pages/guard.ts";
 export { pagesPreload } from "./modules/pages/preload.ts";

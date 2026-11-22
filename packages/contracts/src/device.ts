@@ -457,6 +457,11 @@ export const HostedDiscovery = Schema.Struct({
    */
   worker_machines_endpoint: Schema.optionalKey(Address),
   worker_machine_connect: Schema.optionalKey(Address),
+  /**
+   * Where the server's own site shows a workspace: this address with the workspace's id after it,
+   * which the app opens in a window of its own. Absent: the window opens on the server's origin.
+   */
+  workspace_pages: Schema.optionalKey(Address),
 });
 export type HostedDiscovery = typeof HostedDiscovery.Type;
 
@@ -537,6 +542,7 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
       discovery.machine_start_endpoint,
       discovery.models_endpoint,
       discovery.worker_machines_endpoint,
+      discovery.workspace_pages,
     ].filter((address) => address !== undefined),
   ];
   if (!calls.every((address) => on(address, secure ? "https:" : "http:")))
