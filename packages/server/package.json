@@ -15,7 +15,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.92",
+    "@ai-sdk/openai-compatible": "3.0.94",
     "@effect/platform-node": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
     "@gram/agents": "workspace:*",
