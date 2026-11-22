@@ -33,3 +33,24 @@ Findings, both fixed on 22 November 2026; each `findings/<name>.cfg` is the code
   wrote `transferredTo`. It was kept and its turn ran on a copy now archived. Now
   `restSessionThen` reads the thread again and writes the move under the thread's lock, where a
   send waits.
+
+## Held briefs
+
+`held-briefs/HeldBriefs.tla`: a worker brief held back (a usage limit, a full slot, the spawn
+breaker) and released later (`releaseDue`, `releaseHeldBrief` in
+`packages/server/src/orchestration/service/held-spawns.ts`, then `spawnFor`), while the server
+may stop between any two steps and releases every due brief again when it starts.
+`HeldBriefs.cfg` checks `NoneDropped`, that a held brief is never dropped: with the server up and
+no release under way, it is still held or it reached a worker. It also checks `OneWorker`, that
+one brief makes at most one worker.
+
+Finding, fixed on 22 November 2026; `findings/NoneDropped.cfg` is the code before:
+
+- A release took the brief out of the outbox before it spawned the worker. A server that stopped
+  in between (a quit, a crash) lost the brief: nothing held it, no worker had it, and the
+  orchestrator, told it was held, waited for a spawn that never came. Now the claim keeps the
+  brief and gives it a request id of its own when it has none (`held-outbox.ts`). It leaves the
+  outbox only when its release ends, so the next start releases it again, and that release
+  finishes the worker it half made rather than make a second. Keeping the brief without the
+  request id breaks `OneWorker`. `held-briefs.test.ts` ("a release cut short leaves the brief
+  held, and the next release makes one worker") holds it.

@@ -375,6 +375,43 @@ describe.skipIf(!hasGit)("holding low-priority briefs near a limit", () => {
   );
 
   it.effect(
+    "a release cut short leaves the brief held, and the next release makes one worker",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          const orchestration = yield* Orchestration;
+          const { thread, workspaceId } = yield* openOrchestrator(world);
+          const session = yield* optedIn(thread.id, workspaceId);
+          yield* report(session, 0.9);
+          const held = (yield* lowCall(session, "cut-short")) as HeldSpawn;
+          // A person starts it now; the server stops (here, the fiber is cut) once the release
+          // has claimed the brief, which keeps it, under a request id of its own.
+          const release = yield* orchestration
+            .releaseHeldBrief(workspaceId, held.id)
+            .pipe(Effect.forkScoped);
+          yield* waitReal(
+            "the release's claim",
+            outboxOf(workspaceId).pipe(
+              Effect.map(
+                (outbox) =>
+                  outbox.heldBriefs?.find((brief) => brief.id === held.id)?.input
+                    .clientRequestId !== undefined,
+              ),
+            ),
+          );
+          yield* Fiber.interrupt(release);
+          if ((yield* outboxOf(workspaceId)).heldBriefs?.some((brief) => brief.id === held.id))
+            yield* orchestration.releaseHeldBrief(workspaceId, held.id);
+          const workers = yield* workersOn(workspaceId, "cut-short");
+          expect(workers).toHaveLength(1);
+          yield* waitSent(workers[0]!.id, 1);
+          expect((yield* outboxOf(workspaceId)).heldBriefs).toBeUndefined();
+        }),
+      ),
+    { timeout: 90_000 },
+  );
+
+  it.effect(
     "retargeting rechecks destination limits and refuses missing model or workspace pause",
     () =>
       inServer((world) =>

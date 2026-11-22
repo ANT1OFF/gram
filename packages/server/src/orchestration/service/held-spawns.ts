@@ -69,6 +69,7 @@ import {
   type SpawnedWorker,
   type OrchestrationShape,
 } from "./shape.ts";
+import { claimedHeld, heldAgain, withoutHeld } from "./held-outbox.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Digests } from "./digests.ts";
 import type { Projects } from "./projects.ts";
@@ -598,14 +599,9 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
     });
 
   const claimHeld = (workspaceId: WorkspaceId, id: string) =>
-    updateOutbox(workspaceId, (outbox) => {
-      const held = outbox.heldBriefs ?? [];
-      const claimed = held.find((brief) => brief.id === id);
-      if (claimed === undefined) return [outbox, undefined];
-      const kept = held.filter((brief) => brief.id !== id);
-      const { heldBriefs: _, ...rest } = outbox;
-      return [kept.length === 0 ? rest : { ...rest, heldBriefs: kept }, claimed];
-    });
+    updateOutbox(workspaceId, (outbox) => claimedHeld(outbox, id));
+  const dropHeld = (workspaceId: WorkspaceId, id: string) =>
+    updateOutbox(workspaceId, (outbox) => withoutHeld(outbox, id));
 
   const spawnHeld = (workspaceId: WorkspaceId, stored: StoredHeldBrief) =>
     Effect.gen(function* () {
@@ -643,10 +639,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
     ]);
 
   const putBackHeld = (workspaceId: WorkspaceId, brief: StoredHeldBrief) =>
-    updateOutbox(workspaceId, (outbox) => [
-      { ...outbox, heldBriefs: [...(outbox.heldBriefs ?? []), brief] },
-      undefined,
-    ]);
+    updateOutbox(workspaceId, (outbox) => [heldAgain(outbox, brief), undefined]);
 
   const slotFree = (state: WorkspaceState) =>
     survey(state, false).pipe(
@@ -718,6 +711,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
           Effect.catch((error) => Effect.succeed({ error: error.message })),
         );
         if ("worker" in spawned) {
+          yield* dropHeld(workspaceId, claimed.id);
           notes.push(releasedNote(claimed, spawned.worker.threadId, false));
           continue;
         }
@@ -744,6 +738,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
           yield* putBackHeld(workspaceId, { ...rest, attempts, retryAt: now + HELD_RETRY_MS });
           continue;
         }
+        yield* dropHeld(workspaceId, claimed.id);
         notes.push(releaseFailedNote(claimed, spawned.error.replace(/^[a-z_]+: /, "")));
       }
       yield* armLimitResume(workspaceId);
@@ -785,7 +780,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       if (input.action === "cancel") {
         if (input.model !== undefined)
           return yield* toolError(tool, "model is only used with action retarget.");
-        yield* claimHeld(workspaceId, input.id);
+        yield* dropHeld(workspaceId, input.id);
         yield* armLimitResume(workspaceId);
         yield* orchestrationChanged(workspaceId);
         return { id: input.id, cancelled: true, held: false };
@@ -858,7 +853,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       const spawned = yield* spawnHeld(workspaceId, claimed).pipe(
         Effect.catch((error) =>
           (error.message.startsWith("routine_changed: ")
-            ? Effect.void
+            ? dropHeld(workspaceId, claimed.id)
             : putBackHeld(workspaceId, claimed)
           ).pipe(
             Effect.andThen(armLimitResume(workspaceId)),
@@ -870,7 +865,9 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         ),
       );
       yield* updateOutbox(workspaceId, (outbox) => [
-        withNotes(outbox, [releasedNote(claimed, spawned.threadId, true)]),
+        withNotes(withoutHeld(outbox, claimed.id)[0], [
+          releasedNote(claimed, spawned.threadId, true),
+        ]),
         undefined,
       ]);
       yield* armLimitResume(workspaceId);
