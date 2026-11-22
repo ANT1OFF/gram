@@ -19,7 +19,7 @@ import {
   goesLines,
   type MoveStage,
   moveSteps,
-  staysLines,
+  staysSentence,
 } from "./move-thread-model";
 import { stopTurn } from "./stop-store";
 import {
@@ -264,9 +264,8 @@ export function MoveThreadDialog({
           </div>
         ) : null}
         <div className="flex flex-col gap-2 text-meta">
-          <p data-testid="move-thread-stays" className="flex flex-col gap-0.5">
-            <span className="text-muted-foreground">Stays on {machine()}</span>
-            <span>{staysLines(machine()).join(" · ")}</span>
+          <p data-testid="move-thread-stays" className="text-muted-foreground">
+            {staysSentence(machine())}
           </p>
         </div>
         {working && (
@@ -372,7 +371,9 @@ function Destination({
   reading: boolean;
   unpushed: number;
 }) {
-  const shown = biggestFirst(edits ?? []).slice(0, FILES_LISTED_AT_MOST);
+  const [all, setAll] = useState(false);
+  const sorted = biggestFirst(edits ?? []);
+  const shown = all ? sorted : sorted.slice(0, FILES_LISTED_AT_MOST);
   const more = (edits?.length ?? 0) - shown.length;
   const additions = edits?.reduce((sum, file) => sum + file.additions, 0) ?? 0;
   const deletions = edits?.reduce((sum, file) => sum + file.deletions, 0) ?? 0;
@@ -402,6 +403,7 @@ function Destination({
             </span>
             <span className="text-meta text-muted-foreground">
               {target.organisation}'s rules, models, limits and audit apply there from the move on.
+              The copy on {machine()} stays, read-only.
             </span>
           </>
         )}
@@ -412,8 +414,8 @@ function Destination({
       <div data-testid="move-thread-ref" className="flex flex-col gap-1.5">
         <span className="text-meta text-muted-foreground">Who can read its edits</span>
         <span>
-          Anyone who can read <span className="font-mono">{repository}</span>: they go on a hidden
-          ref there, not on a branch.
+          Anyone who can read <span className="font-mono">{repository}</span>. They're stored in
+          that repository, on no branch, and stay there after the move.
         </span>
         {reading ? (
           <span className="text-meta text-muted-foreground">Reading its edits…</span>
@@ -434,7 +436,7 @@ function Destination({
             </span>
             <ul
               data-testid="move-thread-files"
-              className="flex flex-col rounded-md border border-border/60 [&>li~li]:border-t [&>li~li]:border-border/60"
+              className="flex max-h-48 flex-col overflow-y-auto rounded-md border border-border/60 [&>li~li]:border-t [&>li~li]:border-border/60"
             >
               {shown.map((file) => {
                 const status = FILE_STATUS[file.status];
@@ -467,8 +469,15 @@ function Destination({
                 );
               })}
               {more > 0 && (
-                <li className="px-2 py-1 text-meta text-muted-foreground">
-                  and {plural(more, "more file", "more files")}
+                <li>
+                  <button
+                    type="button"
+                    data-testid="move-thread-files-all"
+                    onClick={() => setAll(true)}
+                    className="w-full cursor-pointer px-2 py-1 text-left text-meta text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring"
+                  >
+                    Show {plural(more, "more file", "more files")}
+                  </button>
                 </li>
               )}
             </ul>

@@ -125,14 +125,9 @@ export const goesLines = (input: { readonly branch?: string }): readonly string[
   ...(input.branch === undefined ? [] : [`Its branch, ${input.branch}`]),
 ];
 
-/** What stays, wherever it goes. */
-export const staysLines = (machine: string): readonly string[] => [
-  "Your sign-ins and any keys",
-  "Ignored files, such as .env, and build caches",
-  `${machine.charAt(0).toUpperCase()}${machine.slice(1)}'s hooks and MCP servers`,
-  "Terminals and what runs in them",
-  "The agent's own session: it carries on there from the conversation",
-];
+/** What stays, wherever it goes, as one sentence of the review. */
+export const staysSentence = (machine: string): string =>
+  `Stays on ${machine}: your sign-ins and keys, ignored files such as .env, its hooks, MCP servers and terminals.`;
 
 /** The steps of a move under way, each done, under way or next. */
 export type MoveStage = "export" | "send" | "settle";
