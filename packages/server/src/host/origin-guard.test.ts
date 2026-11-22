@@ -1,7 +1,8 @@
 // A joined machine's host reaches only the repository each of its clones was made for: none of
 // its git that reaches a clone's origin follows an origin rewritten to another repository.
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
 import {
   guardOrigins,
@@ -157,6 +158,98 @@ describe.skipIf(!hasGit)("a joined machine's git, to a clone's rewritten origin"
       run(own, "remote", "add", "origin", URL);
       run(own, "config", "remote.origin.pushurl", ELSEWHERE);
       expect((yield* guard(own))._tag).toBe("Success");
+    }),
+  );
+});
+
+/** Has git's system configuration send every github.com remote to `base`. */
+const machineRewrites = (base: string) => {
+  const file = join(root, "system.gitconfig");
+  writeFileSync(
+    file,
+    [
+      `[url "${base}"]`,
+      "\tinsteadOf = https://github.com/",
+      "\tinsteadOf = git://github.com/",
+      "\tinsteadOf = git@github.com:",
+      "",
+    ].join("\n"),
+  );
+  process.env["GIT_CONFIG_SYSTEM"] = file;
+  delete process.env["GIT_CONFIG_NOSYSTEM"];
+};
+
+// A machine that sends every GitHub remote through a proxy of its own, by a rewrite in git's
+// system configuration (`url.<proxy>.insteadOf`), reaches the recorded repository through it:
+// git reports the proxy's URL as where origin goes, and that is still the same repository.
+describe.skipIf(!hasGit)("a joined machine's git, through the machine's own proxy", () => {
+  const PROXY = "https://proxy.test:4321/workload/git/github.com/";
+  const saved = {
+    system: process.env["GIT_CONFIG_SYSTEM"],
+    nosystem: process.env["GIT_CONFIG_NOSYSTEM"],
+  };
+
+  afterEach(() => {
+    for (const [name, value] of [
+      ["GIT_CONFIG_SYSTEM", saved.system],
+      ["GIT_CONFIG_NOSYSTEM", saved.nosystem],
+    ] as const)
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+  });
+
+  it.effect("passes the recorded repository by the proxy's URL", () =>
+    Effect.gen(function* () {
+      machineRewrites(PROXY);
+      const guarded = yield* guard(clone);
+      expect(guarded._tag).toBe("Success");
+      if (guarded._tag === "Success")
+        expect(guarded.success).toEqual({
+          fetch: `${PROXY}acme/web.git`,
+          push: `${PROXY}acme/web.git`,
+        });
+    }),
+  );
+
+  it.effect(
+    "passes a project folder whose origin names the repository in another case, with .git",
+    () =>
+      Effect.gen(function* () {
+        machineRewrites(PROXY);
+        run(clone, "remote", "set-url", "origin", "https://github.com/Acme/Web.git");
+        expect((yield* guard(clone))._tag).toBe("Success");
+      }),
+  );
+
+  it.effect("pushes a work-in-progress snapshot through it", () =>
+    Effect.gen(function* () {
+      const proxied = join(root, "proxy");
+      run(root, "init", "-q", "--bare", join(proxied, "github.com", "acme", "web.git"));
+      machineRewrites(`${pathToFileURL(proxied).href}/github.com/`);
+      const snapshot = { ref: wipRef("t-1"), commit: head(), head: head(), uncommitted: false };
+      const pushed = yield* pushWip(clone, snapshot, "origin", "file").pipe(
+        Effect.provideService(Proc, spy),
+        Effect.result,
+      );
+      expect(pushed._tag).toBe("Success");
+      expect(run(join(proxied, "github.com", "acme", "web.git"), "rev-parse", wipRef("t-1"))).toBe(
+        `${head()}\n`,
+      );
+    }),
+  );
+
+  it.effect("refuses the proxy's URL for another repository", () =>
+    Effect.gen(function* () {
+      machineRewrites(PROXY);
+      run(clone, "config", `url.${PROXY}someone/private.git.insteadOf`, URL);
+      expect((yield* guard(clone))._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("refuses the same rewrite when only the folder's own config makes it", () =>
+    Effect.gen(function* () {
+      run(clone, "config", `url.${PROXY}.insteadOf`, "https://github.com/");
+      expect((yield* guard(clone))._tag).toBe("Failure");
     }),
   );
 });

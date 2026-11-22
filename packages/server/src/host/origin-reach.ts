@@ -30,22 +30,61 @@ const LFS_ENDPOINTS = String.raw`^(lfs\.url|lfs\.pushurl|remote\.origin\.lfsurl|
 
 const lfsRepository = (url: string) => url.replace(/\/info\/lfs\/?$/, "");
 
-const reachChecked = <E>(
+const MACHINE_REWRITES = String.raw`^url\..*\.(insteadof|pushinsteadof)$`;
+
+interface MachineRewrite {
+  readonly base: string;
+  readonly prefix: string;
+}
+
+const parseMachineRewrites = (stdout: string): ReadonlyArray<MachineRewrite> =>
+  stdout.split("\n").flatMap((line) => {
+    const match = /^url\.(.+)\.(?:insteadof|pushinsteadof) (.+)$/i.exec(line.trim());
+    return match === null ? [] : [{ base: match[1]!, prefix: match[2]! }];
+  });
+
+const urlsMachineRewroteTo = (rewrites: ReadonlyArray<MachineRewrite>, url: string) => {
+  const longest = rewrites
+    .filter((rewrite) => rewrite.base !== "" && url.startsWith(rewrite.base))
+    .reduce((most, rewrite) => Math.max(most, rewrite.base.length), 0);
+  return longest === 0
+    ? []
+    : rewrites
+        .filter((rewrite) => rewrite.base.length === longest && url.startsWith(rewrite.base))
+        .map((rewrite) => rewrite.prefix + url.slice(longest));
+};
+
+const machineRewroteFromRecorded = (
+  rewrites: ReadonlyArray<MachineRewrite>,
+  url: string,
+  recorded: string,
+): boolean => {
+  const named = urlsMachineRewroteTo(rewrites, url).flatMap((original) => {
+    const identity = cloneIdentityOf(original);
+    return identity === undefined ? [] : [identity];
+  });
+  return named.length > 0 && named.every((identity) => sameRepo(recorded, identity));
+};
+
+const reachChecked = <E, R>(
   record: OriginRecord,
   url: string,
+  rewrites: Effect.Effect<ReadonlyArray<MachineRewrite>, never, R>,
   refuse: (message: string) => Effect.Effect<void, E>,
-): Effect.Effect<void, E> => {
-  const identity = cloneIdentityOf(url);
-  const recorded = record.originIdentity;
-  if (identity === undefined && recorded === undefined) return Effect.void;
-  if (identity !== undefined && recorded !== undefined && sameRepo(recorded, identity))
-    return Effect.void;
-  return refuse(
-    recorded === undefined
-      ? `Gram has no origin recorded for ${record.name}, and its folder sends git to ${redactUrlCredentials(url).slice(0, 200)}. If its origin couldn't be read when it was added, Gram reads it again when the next thread starts in it or Gram starts; if it had none, remove the project and add it again.`
-      : `${record.name}'s folder sends git to ${redactUrlCredentials(url).slice(0, 200)}, which isn't the repository it was added with. Set its origin back, or remove the project and add it again.`,
-  );
-};
+): Effect.Effect<void, E, R> =>
+  Effect.gen(function* () {
+    const identity = cloneIdentityOf(url);
+    const recorded = record.originIdentity;
+    if (identity === undefined && recorded === undefined) return;
+    if (identity !== undefined && recorded !== undefined && sameRepo(recorded, identity)) return;
+    if (recorded !== undefined && machineRewroteFromRecorded(yield* rewrites, url, recorded))
+      return;
+    yield* refuse(
+      recorded === undefined
+        ? `Gram has no origin recorded for ${record.name}, and its folder sends git to ${redactUrlCredentials(url).slice(0, 200)}. If its origin couldn't be read when it was added, Gram reads it again when the next thread starts in it or Gram starts; if it had none, remove the project and add it again.`
+        : `${record.name}'s folder sends git to ${redactUrlCredentials(url).slice(0, 200)}, which isn't the repository it was added with. Set its origin back, or remove the project and add it again.`,
+    );
+  });
 
 /**
  * Where git in `dir` fetches `origin` from and pushes it to, after the repository's own
@@ -57,6 +96,12 @@ const reachChecked = <E>(
  * timeout, an error), since nothing then says where it goes; a folder with no origin, where none is
  * recorded, has nothing to check. Gives the first URL each way, for that git to be given in place
  * of `origin` (`remoteGit`), so the URL checked is the URL used.
+ *
+ * A URL that git's system configuration rewrote a URL for the recorded repository to (a machine
+ * that sends every remote of a host through a proxy, by `url.<proxy>.insteadOf`) reaches that
+ * repository too: the system configuration is the machine's, set for the process that runs this
+ * git, where the folder's own and the user's could have been written by an agent. Only the system
+ * configuration's rewrites count, and only back to the recorded repository.
  */
 export const effectiveOriginsReach = <E>(
   record: OriginRecord,
@@ -67,6 +112,15 @@ export const effectiveOriginsReach = <E>(
     const read = (args: ReadonlyArray<string>) =>
       git(dir, args, { timeoutMs: 2_000 }).pipe(Effect.option);
     const first: Array<string | undefined> = [];
+    let machine: ReadonlyArray<MachineRewrite> | undefined;
+    const rewrites = Effect.gen(function* () {
+      if (machine !== undefined) return machine;
+      const out = yield* read(["config", "--system", "--get-regexp", MACHINE_REWRITES]);
+      machine =
+        Option.isSome(out) && out.value.status === 0 ? parseMachineRewrites(out.value.stdout) : [];
+      return machine;
+    });
+    const checked = (url: string) => reachChecked(record, url, rewrites, refuse);
     for (const args of EFFECTIVE_ORIGINS) {
       const out = yield* read(args);
       if (
@@ -85,7 +139,7 @@ export const effectiveOriginsReach = <E>(
         .split("\n")
         .map((line) => line.trim())
         .filter((url) => url !== "");
-      for (const url of urls) yield* reachChecked(record, url, refuse);
+      for (const url of urls) yield* checked(url);
       first.push(urls[0]);
     }
     const lfsconfig = join(dir, ".lfsconfig");
@@ -104,7 +158,7 @@ export const effectiveOriginsReach = <E>(
       }
       for (const line of out.value.stdout.split("\n")) {
         const url = line.trim().split(/\s+/).slice(1).join(" ");
-        if (url !== "") yield* reachChecked(record, lfsRepository(url), refuse);
+        if (url !== "") yield* checked(lfsRepository(url));
       }
     }
     const [fetch, push] = first;
