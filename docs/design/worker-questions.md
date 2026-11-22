@@ -94,6 +94,15 @@ triage or forwarded ──ask_question(withdraw, reason)──► withdrawn (by 
   keeps. Recorded by the worker, the orchestrator gets the digest copy as for any answer of the
   user's; recorded by the orchestrator, the worker gets the answer. The card reads "Answered by
   you in its thread" or "Answered by you to the orchestrator".
+- **A changed answer.** An answered question's card offers Update answer, which reopens its
+  choices with the answer given picked. It goes through `workerQuestion.answer` with `replaces`,
+  the `closedAt` of the answer the card showed, and is refused when the answer has changed since
+  (on another card, in a message), so a stale card never overwrites a newer answer: the card shows
+  the newer one first. The user may change the orchestrator's answer too. `record_user_answer` on
+  an answered question takes a message written after its answer; `answer_worker` again changes
+  only the orchestrator's own answer. The question is marked `revised`, its `closedAt` moves on,
+  the worker is sent the new answer as a new message, and the orchestrator's digest copy says the
+  answer changed. The card reads "Answer changed by you · 14:20".
 - **A worker that leaves.** When a worker's thread is archived, deleted, detached from its
   orchestrator or moved to another workspace, Gram withdraws its open questions in its name
   (`withdrawal.threadLeft`), since nobody would act on an answer. They leave the board at once,
@@ -180,8 +189,10 @@ Dismiss.
 Every change (asked, forwarded, answered, dismissed, withdrawn) is emitted as a `worker-question`
 data part, keyed by the question's id. The worker's transcript therefore shows one card
 that moves through its states: who answered and when, in 24-hour time. The orchestrator's
-transcript gets the same card for the answers it gave. The feature card on the Board lists
-the feature's questions with the same facts.
+transcript gets a card for each forward and for the answers it gave, drawn once; every card reads
+the workspace's live ledger and shows the newer of its own copy and the ledger's, so a card
+drawn while the question was open shows an answer given anywhere else without a reload. The
+feature card on the Board lists the feature's questions with the same facts.
 
 ## Routing
 

@@ -122,8 +122,13 @@ export const WorkerQuestion = Schema.Struct({
   recordedBy: Schema.optionalKey(Schema.Literals(["worker", "orchestrator"])),
   /** Set when the worker or its orchestrator withdrew it rather than the user dismissing it. */
   withdrawal: Schema.optionalKey(QuestionWithdrawal),
-  /** Epoch ms. */
+  /** Epoch ms: when it was closed, or when its answer was last changed (`revised`). */
   closedAt: Schema.optionalKey(Schema.Number),
+  /**
+   * Set once an answer is changed after it was first given: by the user from its card or in a
+   * message an agent recorded, or by the orchestrator changing its own. `closedAt` is then when.
+   */
+  revised: Schema.optionalKey(Schema.Literal(true)),
   delivered: Schema.optionalKey(QuestionDelivery),
 });
 export type WorkerQuestion = typeof WorkerQuestion.Type;
@@ -132,11 +137,16 @@ export type WorkerQuestion = typeof WorkerQuestion.Type;
 export const isOpenQuestion = (question: Pick<WorkerQuestion, "stage">): boolean =>
   question.stage === "triage" || question.stage === "forwarded";
 
-/** The user's answer from any surface. */
+/**
+ * The user's answer from any surface. With `replaces`, it changes an answer already given: the
+ * `closedAt` of the answer the user saw, so one changed since (on another card, in a message) is
+ * refused rather than silently overwritten.
+ */
 export const AnswerWorkerQuestionInput = Schema.Struct({
   workspaceId: WorkspaceId,
   questionId: Schema.NonEmptyString,
   answer: Schema.NonEmptyString.check(Schema.isMaxLength(WORKER_QUESTION_ANSWER_MAX)),
+  replaces: Schema.optionalKey(Schema.Struct({ closedAt: Schema.Number })),
 });
 export type AnswerWorkerQuestionInput = typeof AnswerWorkerQuestionInput.Type;
 
@@ -156,8 +166,13 @@ export const userAnswerProblem = (
   questionId: string,
   message: { readonly text: string; readonly sentAt: number | undefined } | undefined,
   askedAt: number,
+  answeredAt?: number | undefined,
 ): string | undefined => {
-  if (message === undefined || message.sentAt === undefined || message.sentAt < askedAt) {
+  if (answeredAt !== undefined) {
+    if (message === undefined || message.sentAt === undefined || message.sentAt <= answeredAt) {
+      return `${questionId} is answered already, and the user hasn't written in your thread since, so there are no newer words of theirs to change its answer to. Nothing was changed.`;
+    }
+  } else if (message === undefined || message.sentAt === undefined || message.sentAt < askedAt) {
     return `The user hasn't written in your thread since ${questionId} was asked, so there are no words of theirs to record as its answer. Nothing was closed.`;
   }
   const text = message.text.trim();
@@ -256,6 +271,27 @@ export const workerAnswerMessage = (
       ? `The user answered your question ${question.id} (${quote(question)}): ${answer.trim()}\n\nYour orchestrator has a copy. Go on with this answer.`
       : `Your orchestrator answered your question ${question.id} (${quote(question)}), settled by ${oneLine(by.source)}: ${answer.trim()}\n\nGo on with this answer. If it doesn't fit what you found, say why with \`report\`.`;
 
+/**
+ * What the worker is sent when an answer it already has is changed: the new answer, who changed it,
+ * and that it replaces the earlier one.
+ */
+export const workerRevisedAnswerMessage = (
+  question: Pick<WorkerQuestion, "id" | "question">,
+  answer: string,
+  by:
+    | { readonly closedBy: "user"; readonly recordedBy?: "worker" | "orchestrator" | undefined }
+    | { readonly closedBy: "orchestrator"; readonly source: string },
+): string => {
+  const head =
+    by.closedBy === "orchestrator"
+      ? `Your orchestrator changed its answer to your question ${question.id} (${quote(question)}), settled by ${oneLine(by.source)}`
+      : by.recordedBy === "orchestrator"
+        ? `The user changed their answer to your question ${question.id} (${quote(question)}) in a message to your orchestrator, copied here word for word`
+        : `The user changed their answer to your question ${question.id} (${quote(question)})`;
+  const copy = by.closedBy === "user" ? " Your orchestrator has a copy." : "";
+  return `${head}: ${answer.trim()}\n\nThis replaces the earlier answer: go on with this one.${copy} If you already acted on the earlier answer, say what you are changing with \`report\`.`;
+};
+
 /** What the worker is sent when the user dismisses its question. */
 export const workerDismissMessage = (
   question: Pick<WorkerQuestion, "id" | "question">,
@@ -287,13 +323,21 @@ export const questionTime = (ms: number): string => {
 
 /**
  * "Answered by you · 14:05", "Answered by the orchestrator · 09:12", "Dismissed by you · 16:40",
- * "Forwarded to you · 11:02", "With the orchestrator", "Superseded by the worker with WQ9 · 10:30":
+ * "Forwarded to you · 11:02", "With the orchestrator", "Superseded by the worker with WQ9 · 10:30",
+ * "Answer changed by you · 14:20":
  * where a question stands, in a card's words.
  */
 export const questionStatusLine = (
   question: Pick<
     WorkerQuestion,
-    "stage" | "closedBy" | "closedAt" | "forwardedAt" | "forwardedBy" | "withdrawal" | "recordedBy"
+    | "stage"
+    | "closedBy"
+    | "closedAt"
+    | "forwardedAt"
+    | "forwardedBy"
+    | "withdrawal"
+    | "recordedBy"
+    | "revised"
   >,
 ): string => {
   const at = question.closedAt === undefined ? "" : ` · ${questionTime(question.closedAt)}`;
@@ -330,7 +374,12 @@ export const questionStatusLine = (
     }
     case "answered":
     case "dismissed": {
-      const verb = question.stage === "answered" ? "Answered" : "Dismissed";
+      const verb =
+        question.stage === "dismissed"
+          ? "Dismissed"
+          : question.revised === true
+            ? "Answer changed"
+            : "Answered";
       const who = question.closedBy === "orchestrator" ? "the orchestrator" : "you";
       const where =
         question.recordedBy === "worker"

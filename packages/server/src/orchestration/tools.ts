@@ -636,7 +636,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "answer_worker",
         class: "crossThread",
         description:
-          "Answer one of your own workers' questions. Two kinds: (1) a question it asked you with `ask_question`, named by `questionId` (`WQ7`) from the digest's triage list: answer it only when the brief, a standing decision or a memory entry already settles it, and say which in `source`; otherwise forward it with `forward_question`. Once forwarded it is the user's and can't be answered here. (2) A question it is waiting on the user for (its harness's ask), named by `threadId` and `requestId` from list_workers or the digest: only when the answer is in the brief, the memory or what the user has told you; never an approval or a plan request, which stay the user's. Give one or the other. The worker gets the answer at once, and the user sees it in both threads. Refused while orchestration is paused.",
+          "Answer one of your own workers' questions. Two kinds: (1) a question it asked you with `ask_question`, named by `questionId` (`WQ7`) from the digest's triage list: answer it only when the brief, a standing decision or a memory entry already settles it, and say which in `source`; otherwise forward it with `forward_question`. Once forwarded it is the user's and can't be answered here. Again, it changes your own answer. (2) A question it is waiting on the user for (its harness's ask), named by `threadId` and `requestId` from list_workers or the digest: only when the answer is in the brief, the memory or what the user has told you; never an approval or a plan request, which stay the user's. Give one or the other. The worker gets the answer at once, and the user sees it in both threads. Refused while orchestration is paused.",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -792,7 +792,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "record_user_answer",
         class: "self",
         description:
-          "Record that the user answered an open worker question (`WQ7`) in a message to you rather than on its card. Use it only when their latest message here answers it: Gram records that message, word for word, as the answer, and it leaves their board. A worker records its own questions; an orchestrator, its workers'. The other side is told.",
+          "Record that the user answered a worker question (`WQ7`) in a message to you rather than on its card, or changed its answer. Use it only when their latest message here answers it: Gram records that message, word for word, as the answer. A worker records its own questions; an orchestrator, its workers'. The other side is told.",
       },
       audience: ["worker", "orchestrator"],
       input: Schema.Struct({ questionId: Schema.NonEmptyString }),

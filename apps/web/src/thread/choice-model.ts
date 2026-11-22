@@ -40,3 +40,24 @@ export function choiceAnswer(choice: Choice): string[] {
   const custom = choice.otherChosen ? choice.other.trim() : "";
   return [...choice.selected, ...(custom === "" ? [] : [custom])];
 }
+
+/**
+ * The choice an answer given before was made with, to start a changed answer from: its options
+ * picked, and whatever isn't one of their labels as Other. The inverse of `choiceAnswer`, joined
+ * with "; " as a card sends it.
+ */
+export function choiceOf(
+  answer: string,
+  options: readonly { readonly label: string }[],
+  multiSelect: boolean,
+): Choice {
+  const text = answer.trim();
+  if (text === "") return NO_CHOICE;
+  const labels = new Set(options.map((option) => option.label));
+  if (labels.has(text)) return { selected: [text], other: "", otherChosen: false };
+  if (!multiSelect) return { selected: [], other: text, otherChosen: true };
+  const parts = text.split("; ");
+  const selected = parts.filter((part) => labels.has(part));
+  const other = parts.filter((part) => !labels.has(part)).join("; ");
+  return { selected, other, otherChosen: other !== "" };
+}

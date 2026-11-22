@@ -99,6 +99,29 @@ export const featureQuestions = (
 ): readonly WorkerQuestion[] =>
   (ledger?.questions ?? []).filter((question) => question.feature === feature);
 
+const progress = (question: WorkerQuestion): number =>
+  question.stage === "triage" ? 0 : question.stage === "forwarded" ? 1 : 2;
+
+/**
+ * The newer of two copies of one question: a transcript card's, kept as it was when the card was
+ * drawn, and the ledger's. A question only moves on (triage, forwarded, closed) and a changed
+ * answer moves `closedAt` on, so the one further along is the newer; when neither is, the ledger's.
+ * Without the ledger's, the card's.
+ */
+export const newerQuestion = (
+  card: WorkerQuestion,
+  ledger: WorkerQuestion | undefined,
+): WorkerQuestion => {
+  if (ledger === undefined) return card;
+  const ahead = progress(card) - progress(ledger);
+  if (ahead !== 0) return ahead > 0 ? card : ledger;
+  return (card.closedAt ?? 0) > (ledger.closedAt ?? 0) ? card : ledger;
+};
+
+/** Whether the user can change a closed question's answer: one that was answered, by anyone. */
+export const answerChangeable = (question: WorkerQuestion): boolean =>
+  question.stage === "answered" && question.withdrawal === undefined;
+
 /** What a closed question's card says it came to: the answer, the reason, and what settled it. */
 export const questionOutcome = (question: WorkerQuestion): string | undefined => {
   if (question.stage === "answered") {
