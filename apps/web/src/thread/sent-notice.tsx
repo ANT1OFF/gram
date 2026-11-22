@@ -10,8 +10,8 @@ import { sentHost, sentMark } from "./machine-mark";
 
 /**
  * Above where the composer would be, for a worker sent to a server: it runs there under that
- * server's rules, this computer holds none of its files, and its orchestrator messages it. Its
- * last reply there, as last heard; and when this app can't hear from it, since when and why, with
+ * server's rules, this computer holds none of its files, and its orchestrator messages it; and
+ * when this app can't hear from it, since when and why, with
  * the way to sign in again.
  */
 export function SentNotice({ threadId }: { threadId: ThreadId }) {
@@ -33,22 +33,10 @@ export function SentNotice({ threadId }: { threadId: ThreadId }) {
       <div className="flex items-start gap-3">
         <Glyph aria-hidden className="mt-0.5 size-icon-row shrink-0 text-muted-foreground" />
         <p className="min-w-0 flex-1">
-          Runs on {sent.workspace} · {host}, under {sent.server}'s rules.{" "}
-          <span className="text-muted-foreground">
-            {here} holds none of its files; its pull request is how the work comes back. Its
-            orchestrator messages it.
-          </span>
+          Its orchestrator messages it, so there is no message box here.{" "}
+          <span className="text-muted-foreground">{here} holds none of its files.</span>
         </p>
       </div>
-      {sent.reply !== undefined && sent.reply.trim() !== "" && (
-        <div data-testid="sent-reply" className="flex flex-col gap-0.5 pl-7">
-          <span className="text-meta text-muted-foreground">
-            {sent.state === "waiting" ? "It asks" : "Last said there"}
-            {sent.heardAt === undefined ? "" : ` · ${formatClockTime(sent.heardAt)}`}
-          </span>
-          <p className="line-clamp-6 whitespace-pre-wrap">{sent.reply}</p>
-        </div>
-      )}
       {unheard && (
         <div
           role="status"

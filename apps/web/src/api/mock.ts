@@ -2907,12 +2907,13 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
   /** Dev and e2e hook: puts the thread's checkout on the machine `hostId`, as one placed there has it. */
   placeOnMachine(threadId: ThreadId, hostId: string) {
     const runtime = this.#runtime(threadId);
-    const thread: Thread = {
-      ...runtime.summary.thread,
-      checkout: { ...runtime.summary.thread.checkout, hostId: HostId.make(hostId) },
-    };
-    runtime.summary = { ...runtime.summary, thread };
-    this.#emit({ type: "thread.upsert", thread });
+    const { checkout } = runtime.summary.thread;
+    this.#update(runtime, { checkout: { ...checkout, hostId: HostId.make(hostId) } });
+  }
+
+  /** Dev and e2e hook: the thread is a worker sent to a server, as `send_worker` records one. */
+  sendToServer(threadId: ThreadId, sentTo: NonNullable<Thread["sentTo"]>) {
+    this.#update(this.#runtime(threadId), { sentTo });
   }
 
   /** `simulateMissingFolder` (`mock-scenarios.ts`). */

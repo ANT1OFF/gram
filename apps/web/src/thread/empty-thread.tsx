@@ -34,6 +34,8 @@ import { prDetailQuery, prDetailStamp } from "@/panels/pr-detail-query";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
+import { SentStatus } from "./sent-status";
+
 const SUMMARY_MAX = 600;
 
 interface OutcomePr {
@@ -242,6 +244,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
   });
   const prDetail = prResult?.detail;
 
+  if (thread?.sentTo !== undefined) return <SentStatus thread={thread} sent={thread.sentTo} />;
   if (thread === undefined || !threadDidWork(thread, entry)) {
     const orchestrator = thread?.role === "orchestrator";
     return (

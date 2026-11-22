@@ -8,6 +8,7 @@ import { openPanelTab } from "../e2e/panel-tab";
 import { openBoardSidebar, openBoardView } from "./board";
 import { MACHINE_MARKER_SHOTS } from "./machine-marker-shots";
 import { MOVE_THREAD_SHOTS } from "./move-thread-shots";
+import { SENT_WORKER_SHOTS } from "./sent-worker-shots";
 
 // The screens `bun run --filter @gram/web pr:shots` can capture for a PR's before/after images.
 // The working tree's list drives both runs: the base checkout serves the app, these drive it. So a
@@ -3180,6 +3181,7 @@ export const SHOTS: readonly Shot[] = [
   ...CONTINUE_IN_SHOTS,
   ...MACHINE_SHOTS,
   ...MACHINE_MARKER_SHOTS,
+  ...SENT_WORKER_SHOTS,
   ...OLDER_SERVER_SHOTS,
   ...KEPT_WORK_GONE_SHOTS,
   ...PHONE_ACCESS_SHOTS,

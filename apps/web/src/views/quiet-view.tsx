@@ -464,7 +464,7 @@ function QuietCard({
             className="text-body text-muted-foreground"
           />
         )}
-        <AskDetails ask={ask} />
+        <AskDetails ask={ask} open={ask.detailsOpen === true} />
         {ask.freeForm !== undefined && (
           <ReplyField ask={ask} current onSend={onReply} inputRef={replyRef} />
         )}

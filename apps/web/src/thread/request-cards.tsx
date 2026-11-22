@@ -78,7 +78,7 @@ import {
   approvalExtras,
   approvalSubject,
   mcpServerProposal,
-  mustReadDetails,
+  opensDetails,
   settingsProposal,
   workspaceProposal,
   type AlwaysRule,
@@ -1334,11 +1334,8 @@ export function ApprovalCard({
           <p data-testid="approval-summary" className={cn("break-words", compact && "text-meta")}>
             {summary}
           </p>
-          {(!compact || mustReadDetails(request)) && (
-            <ApprovalDetailsFold
-              details={approvalDetails(request)}
-              open={mustReadDetails(request)}
-            />
+          {(!compact || opensDetails(request)) && (
+            <ApprovalDetailsFold details={approvalDetails(request)} open={opensDetails(request)} />
           )}
         </>
       )}
