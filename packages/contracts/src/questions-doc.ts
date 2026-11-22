@@ -147,3 +147,30 @@ export const readQuestionsEdit = (
   }
   return { content: render(file, drafts), asked, closed, kept };
 };
+
+/**
+ * The open questions an edit of `questions.md` asks that the file before it didn't: an entry it
+ * adds, or a closed one it opens again. An entry whose id or words were already open is not one.
+ */
+export const questionsAskedByEdit = (
+  before: string | undefined,
+  after: string,
+): readonly MemoryQuestion[] => {
+  const was = parse(before ?? "").entries.map((entry) => entry.question);
+  const openIds = new Set(
+    was.flatMap((question) =>
+      question.open && question.id !== undefined ? [keyOf(question.id)] : [],
+    ),
+  );
+  const openTexts = new Set(
+    was.filter((question) => question.open).map((question) => question.text),
+  );
+  return parse(after)
+    .entries.map((entry) => entry.question)
+    .filter(
+      (question) =>
+        question.open &&
+        !openTexts.has(question.text) &&
+        (question.id === undefined || !openIds.has(keyOf(question.id))),
+    );
+};
