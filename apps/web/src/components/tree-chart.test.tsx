@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { layOut, TreeChart } from "./tree-chart";
+import { layOut, pathTo, TreeChart } from "./tree-chart";
 import type { TreeNode } from "./tree-list";
 
 afterEach(cleanup);
@@ -59,5 +59,34 @@ describe("TreeChart", () => {
     expect(screen.getByText("A1")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Fold Lead" }));
     expect(screen.queryByText("A")).toBeNull();
+  });
+});
+
+describe("TreeChart horizontal layout and focus", () => {
+  it("finds the way down to an entry", () => {
+    expect(pathTo(TREE, "a2")).toEqual(["lead", "a", "a2"]);
+    expect(pathTo(TREE, "nope")).toEqual([]);
+  });
+
+  it("draws children in a column to the right when horizontal, and dims entries off the focus line", () => {
+    render(
+      <TreeChart
+        label="People"
+        nodes={TREE}
+        orientation="horizontal"
+        defaultExpanded={["lead", "a"]}
+        focusId="a1"
+        fitFocus
+      />,
+    );
+    const left = (name: string) =>
+      Number.parseFloat(screen.getByRole("treeitem", { name }).style.left);
+    const top = (name: string) =>
+      Number.parseFloat(screen.getByRole("treeitem", { name }).style.top);
+    expect(left("A")).toBeGreaterThan(left("Lead"));
+    expect(left("A1")).toBeGreaterThan(left("A"));
+    expect(top("A2")).toBeGreaterThan(top("A1"));
+    expect(screen.getByRole("treeitem", { name: "B" }).className).toContain("opacity-50");
+    expect(screen.getByRole("treeitem", { name: "A1" }).className).not.toContain("opacity-50");
   });
 });
