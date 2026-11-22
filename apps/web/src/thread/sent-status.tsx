@@ -52,7 +52,8 @@ export function SentStatus({ thread, sent }: { thread: Thread; sent: SentTo }) {
             )}
           </h2>
           <p>
-            In {sent.workspace} on {host}, under {sent.server}&apos;s rules and approvals.{" "}
+            In the {sent.workspace} workspace on {host}, under {sent.server}&apos;s rules and
+            approvals.{" "}
             <span className="text-muted-foreground">
               Its conversation is on that server, not this computer.
             </span>
@@ -76,7 +77,11 @@ export function SentStatus({ thread, sent }: { thread: Thread; sent: SentTo }) {
             <span className="font-mono text-meta">{sent.branch}</span>
           </Fact>
         )}
-        <Fact term="Comes back as">Its pull request, which its orchestrator follows.</Fact>
+        <Fact term="Pull request">
+          {thread.boundPr === undefined
+            ? "None yet. The work comes back as its pull request, which its orchestrator follows."
+            : `#${thread.boundPr.number}, which its orchestrator follows.`}
+        </Fact>
       </dl>
       {reply !== "" && (
         <div data-testid="sent-status-reply" className="flex flex-col gap-1 ps-7">
