@@ -11,7 +11,9 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { attachmentsDir } from "../attachments/attachments.ts";
 import { ServerConfig } from "../config.ts";
 import { Conversations, type ConversationsShape } from "../embedding/conversations.ts";
 import { readReplyFiles, type ReplyFile } from "../embedding/reply-files.ts";
@@ -45,15 +47,16 @@ const filesWithoutBytes = (files: ReadonlyArray<ReplyFile>) =>
 export const replyTool = (
   conversations: ConversationsShape,
   store: ThreadStoreShape,
-  runtimes?: Pick<ThreadRuntimesShape, "emitChunk">,
-  machines?: SentFromMachines,
+  runtimes: Pick<ThreadRuntimesShape, "emitChunk"> | undefined,
+  machines: SentFromMachines | undefined,
+  attachments: string,
 ) =>
   defineAppTool({
     descriptor: {
       name: "reply",
       class: "self",
       description:
-        "Post `text` in a conversation outside Gram that you own: one a message's header named as yours to answer (`[From … (conversation <id>)…]`), or one your orchestrator handed you. Name it by that id in `conversation`. Only `reply` reaches the people there; what you write in this chat doesn't. `files` sends files already on disk with it, such as a screenshot or a report, by path (absolute or relative to the thread's folder). Saying nothing is fine when nothing needs saying. Give `key` to make a retried call one reply.",
+        "Post `text` in a conversation outside Gram that you own: one a message's header named as yours to answer (`[From … (conversation <id>)…]`), or one your orchestrator handed you. Name it by that id in `conversation`. Only `reply` reaches the people there; what you write in this chat doesn't. `files` sends files with it, such as a screenshot or a report, by path in the thread's folder (relative to it, or absolute inside it); copy a file there first to send it. Saying nothing is fine when nothing needs saying. Give `key` to make a retried call one reply.",
     },
     input: Schema.Struct({
       conversation: Schema.String.check(Schema.isMaxLength(CONVERSATION_ID_MAX)),
@@ -73,9 +76,12 @@ export const replyTool = (
         const thread = yield* store
           .getThread(threadId)
           .pipe(Effect.mapError(() => replyFailed("That thread is gone.")));
-        const files = yield* readReplyFiles(thread, input.files, machines).pipe(
-          Effect.mapError(replyFailed),
-        );
+        const files = yield* readReplyFiles(
+          thread,
+          input.files,
+          machines,
+          join(attachments, threadId),
+        ).pipe(Effect.mapError(replyFailed));
         return { ...input, files };
       }),
     decision: (_threadId, target) => ({
@@ -168,7 +174,7 @@ export const ConversationAppToolsLive = Layer.effectDiscard(
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const machines = yield* sentFromMachinesHere;
     yield* registry.register([
-      replyTool(conversations, store, runtimes, machines),
+      replyTool(conversations, store, runtimes, machines, attachmentsDir(config.dataDir)),
       takeConversationTool(conversations),
     ]);
   }),

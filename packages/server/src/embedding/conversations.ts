@@ -177,9 +177,7 @@ export class Conversations extends Context.Service<Conversations, ConversationsS
             .update(`${threadId}\0${id}\0${key}`)
             .digest("hex")
             .slice(0, 32);
-          const kept = yield* keepReplyFiles(config.dataDir, replyId, files).pipe(
-            Effect.mapError(refuse),
-          );
+          const kept = yield* keepReplyFiles(config.dataDir, replyId, text, files);
           yield* sink.record({
             type: "conversation.reply",
             threadId,

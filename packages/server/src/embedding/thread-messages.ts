@@ -24,7 +24,7 @@ import { answer, EmbedInbound, refusal, type EmbedAnswer } from "./inbound.ts";
 import { ActingPerson } from "./person.ts";
 import {
   attachmentsOf,
-  storeMessageAttachments,
+  planMessageAttachments,
   THREAD_MESSAGE_BODY_MAX,
 } from "./message-attachments.ts";
 import { attachmentsDir } from "../attachments/attachments.ts";
@@ -115,18 +115,11 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         const id = threadId as ThreadId;
         if (Option.isNone(yield* store.getThread(id).pipe(Effect.option)))
           return refusal(404, "there is no such thread");
-        const attachments = yield* storeMessageAttachments(
-          attachmentsDir(config.dataDir),
-          id,
-          key,
-          files,
-        ).pipe(Effect.option);
-        if (Option.isNone(attachments))
-          return refusal(503, "the message's attachments couldn't be stored");
+        const planned = planMessageAttachments(attachmentsDir(config.dataDir), id, key, files);
 
         const input: UserInput = {
           text,
-          ...(attachments.value.length === 0 ? {} : { attachments: attachments.value }),
+          ...(planned.attachments.length === 0 ? {} : { attachments: planned.attachments }),
           ...(conversation === undefined
             ? {}
             : {
@@ -151,9 +144,12 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           ["embed", mode, input],
           sendRpc.successSchema,
           sendRpc.errorSchema,
-          input.conversation === undefined || conversations === undefined
-            ? deliver
-            : Effect.andThen(conversations.arrive(id, input.conversation), deliver),
+          Effect.andThen(
+            planned.write,
+            input.conversation === undefined || conversations === undefined
+              ? deliver
+              : Effect.andThen(conversations.arrive(id, input.conversation), deliver),
+          ),
         );
         const outcome = yield* asPerson(
           person,

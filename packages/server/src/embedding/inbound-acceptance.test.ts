@@ -509,6 +509,16 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
         for (const each of attached)
           expect(each.path.startsWith(join(tmp, "data", "attachments", quiet.id) + "/")).toBe(true);
         expect(readFileSync(attached[0]!.path).equals(png)).toBe(true);
+        // Other bytes under the same key are another message, refused, and the first file stays.
+        const swapped = yield* call(at, "/embed/v1/thread-messages", {
+          token: TOKEN,
+          body: {
+            ...withFiles,
+            attachments: [{ ...withFiles.attachments[0]!, data: btoa("not a png") }],
+          },
+        });
+        expect(swapped.status).toBe(409);
+        expect(readFileSync(attached[0]!.path).equals(png)).toBe(true);
 
         // At a card, neither a steer nor an interrupt goes past it: only the user's own composer's
         // does (`pastCard`), and the person's message waits for the turn's end.

@@ -1,11 +1,13 @@
 import {
   type Attachment,
+  InvalidState,
   MAX_ATTACHMENT_BYTES,
   THREAD_MESSAGE_ATTACHMENTS_BYTES_MAX,
   THREAD_MESSAGE_ATTACHMENTS_MAX,
   type ThreadId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sanitizeAttachmentName } from "../attachments/attachments.ts";
@@ -75,31 +77,57 @@ export const attachmentsOf = (value: unknown): ReadonlyArray<GivenAttachment> | 
   return given;
 };
 
+/** A message's files as the agent is given them, and the write that puts them there. */
+export interface PlannedAttachments {
+  readonly attachments: ReadonlyArray<Attachment>;
+  /**
+   * Writes the files, each once: run inside the message's reserved delivery, so only a caller
+   * allowed to write in the thread, sending this exact message, puts anything there.
+   */
+  readonly write: Effect.Effect<void, InvalidState>;
+}
+
 /**
- * Writes a message's files into its thread's attachments folder (`dir` is `<dataDir>/attachments`),
+ * Where a message's files go in its thread's attachments folder (`dir` is `<dataDir>/attachments`),
  * where an attachment a person uploads goes, so they are kept, carried to the machine the session
- * runs on and deleted with the thread alike. Their paths follow from the message's `key`, so a call
- * sent again writes the same files and names the same paths.
+ * runs on and deleted with the thread alike. Each path holds the file's own digest, so a message
+ * sent again under its key names the same paths only with the same bytes, and a file once written
+ * is never replaced: different bytes under a used key are a different message, which the key's
+ * receipt refuses.
  */
-export const storeMessageAttachments = (
+export const planMessageAttachments = (
   dir: string,
   threadId: ThreadId,
   key: string,
   given: ReadonlyArray<GivenAttachment>,
-): Effect.Effect<ReadonlyArray<Attachment>, string> =>
-  given.length === 0
-    ? Effect.succeed([])
-    : Effect.tryPromise({
-        try: async () => {
-          const folder = join(dir, threadId, `message-${key}`);
-          await mkdir(folder, { recursive: true });
-          const stored: Array<Attachment> = [];
-          for (const [index, each] of given.entries()) {
-            const path = join(folder, `${index + 1}-${sanitizeAttachmentName(each.name)}`);
-            await writeFile(path, each.bytes);
-            stored.push({ path, name: each.name, mediaType: each.mediaType });
-          }
-          return stored;
-        },
-        catch: () => "the message's attachments couldn't be stored",
-      });
+): PlannedAttachments => {
+  const folder = join(dir, threadId, `message-${key}`);
+  const files = given.map((each, index) => ({
+    each,
+    path: join(
+      folder,
+      `${index + 1}-${createHash("sha256").update(each.bytes).digest("hex").slice(0, 16)}-${sanitizeAttachmentName(each.name)}`,
+    ),
+  }));
+  return {
+    attachments: files.map(({ each, path }) => ({
+      path,
+      name: each.name,
+      mediaType: each.mediaType,
+    })),
+    write:
+      files.length === 0
+        ? Effect.void
+        : Effect.tryPromise({
+            try: async () => {
+              await mkdir(folder, { recursive: true });
+              for (const { each, path } of files)
+                await writeFile(path, each.bytes, { flag: "wx" }).catch((error: unknown) => {
+                  if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+                });
+            },
+            catch: () =>
+              new InvalidState({ message: "the message's attachments couldn't be stored" }),
+          }),
+  };
+};

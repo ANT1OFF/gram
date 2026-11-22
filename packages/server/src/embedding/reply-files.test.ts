@@ -6,7 +6,7 @@ import { applySettingsPatch, type SinkBatch, type SinkEvent } from "@gram/contra
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -127,8 +127,10 @@ const deskWith = (answer: { decision: "allow" | "refuse" }) =>
     writeFileSync(join(work, "chart.png"), PNG);
     writeFileSync(join(work, "notes.md"), "# Notes\n");
     writeFileSync(join(work, ".env"), "TOKEN=not-a-real-one\n");
+    writeFileSync(join(root, "elsewhere.txt"), "not the thread's\n");
+    symlinkSync(join(root, "elsewhere.txt"), join(work, "link.txt"));
     const asked: Array<DecisionQuestion> = [];
-    return { sink, work, dataDir, asked, layer: layerOf(sink.url, dataDir, asked, answer) };
+    return { sink, root, work, dataDir, asked, layer: layerOf(sink.url, dataDir, asked, answer) };
   });
 
 const openDesk = (work: string) =>
@@ -165,7 +167,7 @@ const openDesk = (work: string) =>
 describe("a reply's files", () => {
   it.live("are decided on, sent as named by their hashes and kept for the host to read back", () =>
     Effect.gen(function* () {
-      const { sink, work, dataDir, asked, layer } = yield* deskWith({ decision: "allow" });
+      const { sink, root, work, dataDir, asked, layer } = yield* deskWith({ decision: "allow" });
       yield* Effect.gen(function* () {
         const { desk, reply } = yield* openDesk(work);
         const sent = (yield* reply({
@@ -218,6 +220,30 @@ describe("a reply's files", () => {
         }).pipe(Effect.flip);
         expect(String(secret)).toContain("credentials");
         expect(asked).toHaveLength(2);
+
+        // Nothing past the thread's folder is read: not by an absolute path, `..` or a link.
+        for (const path of [join(root, "elsewhere.txt"), "../elsewhere.txt", "link.txt"]) {
+          const outside = yield* reply({
+            conversation: C.id,
+            text: "Look",
+            files: [path],
+            key: "k4",
+          }).pipe(Effect.flip);
+          expect(String(outside)).toContain("isn't in the thread's folder");
+        }
+        expect(asked).toHaveLength(2);
+
+        // A used key names one reply for ever: other bytes under it are refused, and the first
+        // reply's files read back as they were.
+        writeFileSync(join(work, "chart.png"), Buffer.from("changed"));
+        const reused = yield* reply({
+          conversation: C.id,
+          text: "Here it is.",
+          files: ["chart.png", "notes.md"],
+          key: "k1",
+        }).pipe(Effect.flip);
+        expect(String(reused)).toContain("already named another reply");
+        expect((yield* readKeptReplyFile(dataDir, sent.id, 0))?.bytes.equals(PNG)).toBe(true);
       }).pipe(Effect.provide(layer));
     }).pipe(Effect.scoped),
   );
