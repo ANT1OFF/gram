@@ -255,6 +255,7 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
   const summary = useThreadsStore((s) => s.byId[thread.id]);
   if (state === undefined || workspaceId === undefined) return null;
   const paused = state.paused?.reason === "parked" ? undefined : state.paused;
+  const changed = summary?.git?.changedFiles ?? 0;
   const onError =
     paused === undefined || summary === undefined ? undefined : pausedOnErrorText(paused, summary);
 
@@ -290,9 +291,28 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
               <span className="text-muted-foreground">
                 {onError.next} {pauseLeavesRunning(working, paused)}
               </span>
+              <span className="flex flex-wrap items-center gap-2 pt-1">
+                <Button
+                  size="xs"
+                  data-testid="orchestrator-banner-resume"
+                  onClick={() => void resume()}
+                >
+                  Resume
+                </Button>
+                {changed > 0 && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    data-testid="orchestrator-banner-changes"
+                    onClick={() => useLayoutStore.getState().revealPanel("diff")}
+                  >
+                    Show its {changed} changed {changed === 1 ? "file" : "files"}
+                  </Button>
+                )}
+              </span>
             </span>
           )}
-          {onError === undefined ? (
+          {onError === undefined && (
             <button
               type="button"
               data-testid="orchestrator-banner-resume"
@@ -301,15 +321,6 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
             >
               Resume
             </button>
-          ) : (
-            <Button
-              size="xs"
-              data-testid="orchestrator-banner-resume"
-              className="shrink-0"
-              onClick={() => void resume()}
-            >
-              Resume
-            </Button>
           )}
         </div>
       )}

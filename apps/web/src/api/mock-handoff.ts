@@ -72,8 +72,8 @@ export const failHandoff = (
   host.emit({
     type: "notify",
     kind: "needsInput",
-    title: `Orchestration paused: the orchestrator couldn't be reached (${state.workspace.name})`,
-    body: SERVER_IN_ERROR_DETAIL,
+    title: `Orchestration paused: the orchestrator stopped on an error (${state.workspace.name})`,
+    body: `${text} Sort that out, then resume it from its chat. Gram also tries again by itself from time to time.`,
     threadId: orchestrator.id,
   });
   return {

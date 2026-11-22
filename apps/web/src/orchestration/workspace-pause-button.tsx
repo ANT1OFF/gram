@@ -80,7 +80,7 @@ function PausedPill({
   const label =
     onError === undefined
       ? `${pauseText(paused)} since ${pauseClock(paused.at)}. Resume orchestration`
-      : `Paused since ${pauseClock(paused.at)}. ${onError.reason} Resume orchestration`;
+      : `Paused since ${pauseClock(paused.at)}: the orchestrator stopped on an error. Click to resume`;
   return (
     <Hint
       label={label}
