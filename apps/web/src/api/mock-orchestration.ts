@@ -64,6 +64,8 @@ import {
 
 import { createChannel } from "./channel";
 import { MockInvalidState } from "./mock-fs";
+import { clearHandoffFailure, failHandoff, handoffParts } from "./mock-handoff";
+import { mockHandoffFails } from "./mock-overrides";
 import {
   simulateBoard,
   simulateLiveCards,
@@ -729,6 +731,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       if (!paused && was !== undefined && parkedHolder?.parked === true) {
         host.replace({ ...parkedHolder, parked: false });
       }
+      if (!paused && was?.reason === "deliveryFailed") clearHandoffFailure(host, parkedHolder);
       host.emit({ type: "orchestration.changed", workspaceId });
       return next;
     },
@@ -1150,31 +1153,13 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         handingOff.delete(workspaceId);
         const current = host.threads().find((t) => t.id === orchestrator.id);
         if (current === undefined) return;
+        if (mockHandoffFails()) {
+          put(failHandoff(host, current, find(workspaceId)));
+          return host.emit({ type: "orchestration.changed", workspaceId });
+        }
         host.putMessage(
           orchestrator.id,
-          assistantMessage([
-            ...(unsaved ? [] : [{ type: "text" as const, text: "ready" }]),
-            {
-              type: "data-handoff",
-              id: host.ids(),
-              data: {
-                ...(current.agentSessionId === undefined
-                  ? {}
-                  : { previousAgentSessionId: current.agentSessionId }),
-                reason: "user",
-                ...(unsaved ? { unsaved: true } : {}),
-                ...(onto === undefined
-                  ? {}
-                  : {
-                      agent: onto.agent,
-                      model: onto.model,
-                      previousAgent: current.model.agent,
-                      previousModel: current.model.model,
-                    }),
-                at: Date.now(),
-              },
-            },
-          ]),
+          assistantMessage(handoffParts(current, { unsaved, onto, id: host.ids() })),
         );
         host.replace({
           ...current,
