@@ -17,7 +17,8 @@ import {
   type OpenCommand,
 } from "./command-view-model";
 import { useCommandViewStore } from "./command-view-store";
-import { CopyButton, StopButton } from "./subagent-strip";
+import { CopyButton } from "./copy-command";
+import { StopButton } from "./subagent-strip";
 import { formatElapsed } from "./subagent-strip-model";
 import { useSplitSubagents } from "./use-split-subagents";
 import { useStopTask } from "./use-stop-task";

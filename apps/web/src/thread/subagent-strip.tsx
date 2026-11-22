@@ -3,7 +3,6 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
-  Copy,
   Layers,
   Plug,
   Route,
@@ -17,8 +16,7 @@ import { Hint } from "@/components/hint";
 import { ShortcutKbd, useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
-import { DrawnCheck, PresenceItem, PresenceList, Swap } from "@/motion";
-import { useFlash } from "@/lib/timers";
+import { PresenceItem, PresenceList } from "@/motion";
 
 import {
   formatElapsed,
@@ -28,7 +26,7 @@ import {
   type RunningSubagent,
   type StripRow,
 } from "./subagent-strip-model";
-import { COPIED_MS, copyMarkdown } from "./message-actions";
+import { CopyButton } from "./copy-command";
 
 const ROW =
   "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md border border-edge bg-card px-2 text-meta hover:bg-muted/60";
@@ -255,39 +253,6 @@ function WorkHint({
 const code = (text: string) => (
   <code className="block min-w-0 truncate font-mono text-meta opacity-80">{text}</code>
 );
-
-/** Copies a task's whole command, which the line and its tooltip show only the start of. */
-export function CopyButton({ command, testId }: { command: string; testId: string }) {
-  const [copied = false, flash] = useFlash(COPIED_MS);
-  const label = copied ? "Copied" : "Copy command";
-  return (
-    <Hint
-      label={label}
-      render={
-        <button
-          type="button"
-          data-testid={testId}
-          aria-label={label}
-          onClick={() => {
-            void copyMarkdown(command).then((ok) => ok && flash(true));
-          }}
-          className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-        />
-      }
-    >
-      <Swap swapKey={copied ? "copied" : "copy"}>
-        {copied ? (
-          <DrawnCheck className="size-icon-chip text-success" />
-        ) : (
-          <Copy aria-hidden className="size-icon-row" />
-        )}
-      </Swap>
-      <span aria-live="polite" className="sr-only">
-        {copied ? "Copied" : ""}
-      </span>
-    </Hint>
-  );
-}
 
 function Jump({
   run,

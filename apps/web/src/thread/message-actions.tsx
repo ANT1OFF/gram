@@ -22,12 +22,12 @@ import { Button } from "@/components/ui/button";
 import { formatMessageStamp, formatMessageTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { DrawnCheck, Swap } from "@/motion";
-import { copyText } from "@/settings/copy-text";
 import { useDraftStore } from "@/stores/drafts";
 import { feedMessages } from "@/stores/feeds";
 import { useThreadsStore } from "@/stores/threads";
 import { useFlash } from "@/lib/timers";
 
+import { COPIED_MS, copyMarkdown } from "./copy-command";
 import { messageMarkdown, turnMarkdown, turnMessages } from "./copy-markdown";
 import { ForkDialog } from "./fork-dialog";
 import { ReplyTokens } from "./reply-tokens";
@@ -51,28 +51,6 @@ export const messageText = (message: GramUIMessage): string =>
 
 const hasAgentIds = (message: GramUIMessage) =>
   (message.metadata?.agentMessageIds?.length ?? 0) > 0;
-
-/** How long "Copied" stays before the button reads "Copy" again. */
-export const COPIED_MS = 1500;
-
-/** Copies `text`, telling the user in a toast when there's no button to show a checkmark. */
-export async function copyMarkdown(text: string, options: { toast?: boolean } = {}) {
-  try {
-    await copyText(text);
-    if (options.toast) {
-      useThreadsStore.getState().applyEvent({ type: "notify", kind: "info", title: "Copied" });
-    }
-    return true;
-  } catch (error) {
-    useThreadsStore.getState().applyEvent({
-      type: "notify",
-      kind: "error",
-      title: "Couldn't copy",
-      body: errorMessage(error),
-    });
-    return false;
-  }
-}
 
 const IN_FLOW =
   "-mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 has-data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100";

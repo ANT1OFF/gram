@@ -30,7 +30,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { CommandText } from "@/launch-checks/command-text";
 import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
-import { CopyButton } from "@/thread/subagent-strip";
+import { CopyButton } from "@/thread/copy-command";
 import { MENU_ITEM, MENU_POPUP } from "@/lib/selection";
 import { focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";

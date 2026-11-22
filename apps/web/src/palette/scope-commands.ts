@@ -27,7 +27,7 @@ import { useLayoutStore, type PaletteScope } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { branchDeleteLooksSafe, mergedPrRef } from "@/thread/merged-cleanup";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
-import { copyMarkdown } from "@/thread/message-actions";
+import { copyMarkdown } from "@/thread/copy-command";
 import { snoozePresets, snoozeTime, typedSnooze } from "@/thread/snooze-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useThreadBrowser } from "@/thread/browser-chip";
