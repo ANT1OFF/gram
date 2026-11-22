@@ -8,6 +8,7 @@ import {
 } from "./agent-failure.ts";
 import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
+import { DocId } from "./docs.ts";
 import { ConversationRef } from "./conversations.ts";
 import { SavedWork } from "./saved-work.ts";
 import { hidesText, revealHidden, valueHidesText } from "./reveal.ts";
@@ -620,6 +621,9 @@ export type HiddenPr = typeof HiddenPr.Type;
 /** The most hidden PRs a thread keeps; hiding one more forgets the oldest. */
 export const MAX_HIDDEN_PRS = 16;
 
+/** The most docs a thread keeps off its composer; hiding one more forgets the oldest. */
+export const MAX_HIDDEN_DOCS = 32;
+
 export const CompletedReason = Schema.Literals(["agent", "user", "prMerged"]);
 export type CompletedReason = typeof CompletedReason.Type;
 
@@ -1032,6 +1036,12 @@ export const Thread = Schema.Struct({
   runWatches: Schema.optionalKey(Schema.Array(RunWatch).check(Schema.isMaxLength(MAX_RUN_WATCHES))),
   /** PRs kept out of the PR strip (`pr.hide`), oldest first; bindings are untouched. */
   hiddenPrs: Schema.optionalKey(Schema.Array(HiddenPr).check(Schema.isMaxLength(MAX_HIDDEN_PRS))),
+  /**
+   * Docs whose chip the user put away above this thread's composer (`thread.hideDoc`), oldest
+   * first. Kept by doc id alone, so a later save of the doc leaves it hidden; the doc itself and
+   * its cards are untouched.
+   */
+  hiddenDocs: Schema.optionalKey(Schema.Array(DocId).check(Schema.isMaxLength(MAX_HIDDEN_DOCS))),
   /** Babysit mode on the bound PR (`thread.setBabysit`); absent while off. */
   babysit: Schema.optionalKey(BabysitState),
   /**

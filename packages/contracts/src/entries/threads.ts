@@ -12,6 +12,7 @@ export * from "../draft-stash.ts";
 export * from "../prompt-history.ts";
 export * from "../closed-threads.ts";
 export * from "../thread-ui.ts";
+export * from "../hidden-docs.ts";
 export * from "../assist.ts";
 export * from "../completion.ts";
 export * from "../resume.ts";
