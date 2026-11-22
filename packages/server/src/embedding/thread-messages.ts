@@ -22,6 +22,13 @@ import { resumeAfterMachineLost } from "../runtime/machine-lost.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { answer, EmbedInbound, refusal, type EmbedAnswer } from "./inbound.ts";
 import { ActingPerson } from "./person.ts";
+import {
+  attachmentsOf,
+  planMessageAttachments,
+  THREAD_MESSAGE_BODY_MAX,
+} from "./message-attachments.ts";
+import { attachmentsDir } from "../attachments/attachments.ts";
+import { ServerConfig } from "../config.ts";
 
 /** The longest message, as the platform's own API takes it. */
 export const THREAD_MESSAGE_MAX = 20_000;
@@ -60,6 +67,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
     const ownerOf = ownersOf(machines);
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const conversations = Option.getOrUndefined(yield* Effect.serviceOption(Conversations));
+    const config = yield* ServerConfig;
 
     const asPerson = <A, E>(
       person: Actor,
@@ -80,7 +88,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         Effect.provideService(RoutedFor, { person: person.id }),
       );
 
-    yield* inbound.route("POST", "thread-messages", (body) =>
+    const sendMessage = (body: Readonly<Record<string, unknown>> | undefined) =>
       Effect.gen(function* () {
         const threadId = body?.["threadId"];
         const key = body?.["key"];
@@ -102,12 +110,16 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         const conversation = given as ConversationRef | undefined;
         if (conversation !== undefined && conversations === undefined)
           return refusal(409, "this server keeps no conversations");
+        const files = attachmentsOf(body?.["attachments"]);
+        if (typeof files === "string") return refusal(400, files);
         const id = threadId as ThreadId;
         if (Option.isNone(yield* store.getThread(id).pipe(Effect.option)))
           return refusal(404, "there is no such thread");
+        const planned = planMessageAttachments(attachmentsDir(config.dataDir), id, key, files);
 
         const input: UserInput = {
           text,
+          ...(planned.attachments.length === 0 ? {} : { attachments: planned.attachments }),
           ...(conversation === undefined
             ? {}
             : {
@@ -132,9 +144,12 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           ["embed", mode, input],
           sendRpc.successSchema,
           sendRpc.errorSchema,
-          input.conversation === undefined || conversations === undefined
-            ? deliver
-            : Effect.andThen(conversations.arrive(id, input.conversation), deliver),
+          Effect.andThen(
+            planned.write,
+            input.conversation === undefined || conversations === undefined
+              ? deliver
+              : Effect.andThen(conversations.arrive(id, input.conversation), deliver),
+          ),
         );
         const outcome = yield* asPerson(
           person,
@@ -151,8 +166,10 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           Effect.catch((error) => Effect.succeed(failed(error))),
         );
         return outcome;
-      }),
-    );
+      });
+    yield* inbound.route("POST", "thread-messages", sendMessage, {
+      maxBytes: THREAD_MESSAGE_BODY_MAX,
+    });
 
     yield* inbound.route("POST", "thread-interrupt", (body) =>
       Effect.gen(function* () {

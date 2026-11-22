@@ -11,14 +11,14 @@ import {
   type NotFound,
   type ThreadId,
 } from "@gram/contracts";
-import { Proc, type ProcShape } from "@gram/git";
+import { Proc, type ProcShape, realPath } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { sanitizeAttachmentName } from "../attachments/attachments.ts";
 import { expandHome } from "../fs/folders.ts";
 import {
@@ -97,6 +97,11 @@ export interface HostFileReads {
     offset: number,
     length: number,
   ) => Effect.Effect<HostFilePart, NotFound | InvalidState>;
+  /**
+   * Whether `part` opens a path inside `roots` only where its real path, as opened, is still
+   * inside them (`file-parts-contained`), so no link swapped in after the check reaches out.
+   */
+  readonly partsContained?: true;
 }
 
 const gateOf = (outside: OutsideAllowed) => ({
@@ -143,8 +148,21 @@ const filePart = (
   length: number,
 ): Effect.Effect<HostFilePart, NotFound | InvalidState> =>
   Effect.gen(function* () {
-    const { target } = yield* previewTarget(path, roots, gateOf(outside));
-    const handle = yield* openOutside(target, {}, () => true, { regularFile: true });
+    const scoped = yield* previewTarget(path, roots, gateOf(outside));
+    const realRoots = scoped.outside
+      ? undefined
+      : (yield* Effect.promise(() =>
+          Promise.all(roots.map((root) => realPath(root).catch(() => undefined))),
+        )).filter((root): root is string => root !== undefined);
+    const handle = yield* openOutside(
+      scoped.target,
+      {},
+      realRoots === undefined
+        ? () => true
+        : (real) =>
+            realRoots.some((root) => real.startsWith(root.endsWith(sep) ? root : root + sep)),
+      { regularFile: true },
+    );
     const cant = new InvalidState({ message: `Can't read ${path}` });
     const info = yield* Effect.tryPromise({ try: () => handle.stat(), catch: () => cant });
     const wanted = Math.max(0, Math.min(length, HOST_FILE_PART_BYTES, info.size - offset));
@@ -159,7 +177,7 @@ const filePart = (
       filled += bytesRead;
     }
     return {
-      path: target,
+      path: scoped.target,
       size: info.size,
       mtime: Math.trunc(info.mtimeMs),
       data: bytes.subarray(0, filled).toString("base64"),
@@ -198,6 +216,7 @@ export const fileReadsOn = (proc: ProcShape): HostFileReads => {
     vocabulary: (root) => on(sources(root)),
     fetch: fetchFile,
     part: filePart,
+    partsContained: true,
   };
 };
 

@@ -69,6 +69,7 @@ import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
 import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
 import { OnDemand, ON_DEMAND_PATHS, onDemandRequest } from "../embedding/on-demand.ts";
 import { ThreadMessagesInboundLive } from "../embedding/thread-messages.ts";
+import { ConversationFilesInboundLive } from "../embedding/conversation-files.ts";
 import { ThreadImportsInboundLive } from "../embedding/thread-imports.ts";
 import { ThreadStartsInboundLive } from "../embedding/thread-starts.ts";
 import { ThreadNotesInboundLive } from "../embedding/thread-notes.ts";
@@ -869,6 +870,7 @@ export const ServerCore = Layer.unwrap(
       ThreadNotesInboundLive,
       IdleStopInboundLive,
       ThreadMessagesInboundLive,
+      ConversationFilesInboundLive,
       ThreadStartsInboundLive,
       ThreadImportsInboundLive.pipe(Layer.provide(ThreadTransfer.layer)),
       ConversationAppToolsLive,

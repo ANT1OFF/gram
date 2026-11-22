@@ -4,8 +4,11 @@ import { describe, expect, it } from "@effect/vitest";
 import { applySettingsPatch, type SinkBatch, type SinkEvent, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { mkdtempSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ConversationAppToolsLive } from "../app-tools/conversation-tools.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ServerConfig } from "../config.ts";
@@ -63,7 +66,11 @@ const serverLayer = (sinkUrl: string) =>
     Layer.provideMerge(TurnHooks.layerNoop),
     Layer.provideMerge(CheckoutService.layerNoGit),
     Layer.provideMerge(
-      ServerConfig.layer({ ...TEST_CONFIG, eventSink: { url: sinkUrl, token: "sink-token" } }),
+      ServerConfig.layer({
+        ...TEST_CONFIG,
+        dataDir: mkdtempSync(join(tmpdir(), "gram-conversations-")),
+        eventSink: { url: sinkUrl, token: "sink-token" },
+      }),
     ),
     Layer.orDie,
   );

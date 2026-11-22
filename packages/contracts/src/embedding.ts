@@ -19,6 +19,7 @@ export const DecisionAction = Schema.Literals([
   "host.place",
   "outward",
   "device",
+  "conversation.reply",
 ]);
 export type DecisionAction = typeof DecisionAction.Type;
 
