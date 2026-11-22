@@ -13,12 +13,16 @@ import { type NameLocks, withName } from "./worker-machine-stops.ts";
  * (`isLegacyRelayed`), with no start of its name on its way and nothing in its stop marks
  * (`stopsLetGo`), and whose server answers its status, as a 2xx naming the phase, that it is
  * stopped or failed. All of that is read under its name's lock, which every start and wake of the
- * name takes, and read again after the status: a wake, a start or a dial meanwhile keeps it.
- * Whoever calls this decides first that no thread here needs it (`threadsLetGo`).
+ * name takes, and read again after the status, with `letGo` (the threads read afresh,
+ * `threadsNow`): a wake, a start, a dial or a thread taken up meanwhile keeps it. `letGo` is read
+ * once more after it is forgotten, and a thread that took it up in between has it registered again,
+ * as it was.
  */
 export const forgetStoppedSignedIn = (
   port: WorkerMachinePortShape,
-  hosts: Pick<RemoteHostsShape, "list" | "remove" | "stops">,
+  hosts: Pick<RemoteHostsShape, "list" | "remove" | "stops"> & {
+    readonly machines: Pick<RemoteHostsShape["machines"], "get" | "provision">;
+  },
   deps: {
     readonly locks?: NameLocks | undefined;
     readonly asleep?: Set<string> | undefined;
@@ -26,6 +30,7 @@ export const forgetStoppedSignedIn = (
     readonly starting?: ReadonlySet<string> | undefined;
   },
   id: string,
+  letGo: Effect.Effect<boolean>,
 ): Effect.Effect<boolean> => {
   const free = () => {
     const machine = hosts.list().find((each) => each.id === id);
@@ -57,11 +62,28 @@ export const forgetStoppedSignedIn = (
       const phase = parseMachineStatus(answered.body).phase;
       if (phase !== "stopped" && phase !== "failed") return false;
       if (!settledSince(deps.sent, machine.name, before)) return false;
+      if (!(yield* letGo)) return false;
       const still = free();
-      if (still === undefined || still.name !== machine.name) return false;
+      const record = hosts.machines.get(id);
+      if (still === undefined || still.name !== machine.name || record === undefined) return false;
       port.unrelay(machine.name);
       deps.asleep?.delete(machine.name);
       hosts.remove(HostId.make(id));
+      if (!(yield* letGo)) {
+        const back = hosts.machines.provision({
+          name: record.name,
+          platform: record.platform,
+          publicKey: record.publicKey,
+          onDemand: "worker",
+          via: machine.via,
+          ...(record.viaAccount === undefined ? {} : { viaAccount: record.viaAccount }),
+          ...(record.viaName === undefined ? {} : { viaName: record.viaName }),
+        });
+        yield* Effect.logWarning(
+          "a worker machine taken up again as it was forgotten was registered again",
+        ).pipe(Effect.annotateLogs({ machine: machine.name, outcome: back.kind }));
+        return false;
+      }
       yield* Effect.logInfo("a stopped worker machine no thread here needs was forgotten").pipe(
         Effect.annotateLogs({ machine: machine.name }),
       );

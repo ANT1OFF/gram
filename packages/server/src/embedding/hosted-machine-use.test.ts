@@ -23,13 +23,12 @@ const letGo = (
   options: {
     waking?: ReadonlySet<ThreadId>;
     busy?: (id: ThreadId) => boolean;
-    unreadable?: ReadonlyArray<ThreadId>;
     joinedAt?: number | undefined;
   } = {},
 ) =>
   threadsLetGo(
     { id: machine.id, joinedAt: "joinedAt" in options ? options.joinedAt : machine.joinedAt },
-    { threads, unreadable: options.unreadable ?? [] },
+    threads,
     options.waking ?? none,
     options.busy ?? idle,
     NOW,
@@ -55,8 +54,8 @@ describe("whether the threads let a hosted worker machine go", () => {
     expect(letGo([thread("a")], { waking: new Set([a]) })).toBe(false);
   });
 
-  it("don't while some thread's row can't be read: it might be on the machine", () => {
-    expect(letGo([thread("a")], { unreadable: ["x" as ThreadId] })).toBe(false);
+  it("don't for an archived thread with a run watched: its notice comes once it is unarchived", () => {
+    expect(letGo([thread("a", { runWatches: [{}] as never })])).toBe(false);
   });
 
   it("don't for one just joined, whose worker may not be placed yet", () => {

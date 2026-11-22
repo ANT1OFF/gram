@@ -519,10 +519,11 @@ export class SignedInWorkers extends Context.Service<
       | { readonly refused: string }
     >;
     /**
-     * Forgets a hosted worker machine's registration once its server says it is stopped and
-     * nothing on it waits (`forgetStoppedSignedIn`): whether it did. Absent without the app.
+     * Forgets a hosted worker machine's registration once its server says it is stopped, nothing
+     * on it waits and `letGo` (the threads, read afresh) still says so (`forgetStoppedSignedIn`):
+     * whether it did. Absent without the app.
      */
-    readonly forgetStopped?: (id: string) => Effect.Effect<boolean>;
+    readonly forgetStopped?: (id: string, letGo: Effect.Effect<boolean>) => Effect.Effect<boolean>;
   }
 >()("@gram/server/SignedInWorkers") {}
 
@@ -706,8 +707,8 @@ export const SignedInWorkersLive = Layer.effect(
     );
     return {
       port,
-      forgetStopped: (id: string) =>
-        forgetStoppedSignedIn(port, hosts, { locks, asleep, sent, starting }, id),
+      forgetStopped: (id: string, letGo: Effect.Effect<boolean>) =>
+        forgetStoppedSignedIn(port, hosts, { locks, asleep, sent, starting }, id, letGo),
       source: port.server().pipe(
         Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
         Effect.map((answered) =>

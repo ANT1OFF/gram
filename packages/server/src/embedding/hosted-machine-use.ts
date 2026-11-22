@@ -9,7 +9,7 @@ export const WORKER_MACHINE_SETTLE_MS = 30 * 60_000;
 
 export type UseThread = Pick<
   Thread,
-  "id" | "parked" | "checkout" | "currentCheckout" | "extraCheckouts"
+  "id" | "parked" | "checkout" | "currentCheckout" | "extraCheckouts" | "runWatches"
 >;
 
 const placedOn = (thread: UseThread, id: string) =>
@@ -18,31 +18,29 @@ const placedOn = (thread: UseThread, id: string) =>
   );
 
 /**
- * What the threads say of a hosted worker machine whose release was taken: whether its
- * registration may be forgotten. Only when every thread placed on it is archived, none of them
- * has a wake pending (`waking`, a plain thread's or a worker's) or anything going on in its
- * session (`busy`: a turn, a queued message, a request waiting), and it joined at least
- * `WORKER_MACHINE_SETTLE_MS` ago. A thread that isn't archived keeps it, finished or not: it
- * can be taken up again. `unreadable`: threads whose rows don't decode, which might be on it,
- * so none is forgotten while there are any.
+ * What the threads say of a hosted worker machine: whether its registration may be forgotten.
+ * Only when every thread placed on it is archived, none of them has a wake pending (`waking`, a
+ * plain thread's or a worker's) or a run watched for it (`runWatches`, held across an archive),
+ * or anything going on in its session (`busy`), and it joined at least
+ * `WORKER_MACHINE_SETTLE_MS` ago. A thread that isn't archived keeps it, finished or not: it can
+ * be taken up again. Every thread is read (`threadsNow` fails closed on a row it can't).
  */
 export const threadsLetGo = (
   machine: { readonly id: string; readonly joinedAt?: number | undefined },
-  threads: {
-    readonly threads: ReadonlyArray<UseThread>;
-    readonly unreadable: ReadonlyArray<ThreadId>;
-  },
+  threads: ReadonlyArray<UseThread>,
   waking: ReadonlySet<ThreadId>,
   busy: (thread: ThreadId) => boolean,
   now: number,
 ): boolean => {
-  if (threads.unreadable.length > 0) return false;
   if (machine.joinedAt === undefined || now - machine.joinedAt < WORKER_MACHINE_SETTLE_MS)
     return false;
-  return threads.threads.every(
+  return threads.every(
     (thread) =>
       !placedOn(thread, machine.id) ||
-      (thread.parked === true && !waking.has(thread.id) && !busy(thread.id)),
+      (thread.parked === true &&
+        (thread.runWatches?.length ?? 0) === 0 &&
+        !waking.has(thread.id) &&
+        !busy(thread.id)),
   );
 };
 
